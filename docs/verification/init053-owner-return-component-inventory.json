@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r46-init053-integration",
+  "pack": "r47-init053-integration",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "3b80a054993635c0d854e89ad5dc7cb301de842413487a6b413ad41b0bec157d"
+      "sha256": "3b9bf4a5a1e0a94c3c2040f0f59a38f8222a724b116c08c484e5e63a5d4d3fc5"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -215,7 +215,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "b3f560ecf8f161c0a30fa6c8ec3580901e10f4b1bf4282c38759f356b4a6cd70"
+      "sha256": "59ec14b9e7586b1c6eef621ace58b23a16de939a6eb4afc9e77adddfc1c2952a"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -239,7 +239,7 @@
     },
     {
       "path": "packages/core/src/names.ts",
-      "sha256": "64ea1881e47ff99ecc0183f9a4c3c59fe891329772e0ef16f6d36cfaf1cb19ec"
+      "sha256": "342ce238b7d395dd8ca1e5f23c16d7914bbda93d217bf43626d3e1aa50a0aea7"
     },
     {
       "path": "packages/core/src/node-floor.ts",
@@ -255,7 +255,7 @@
     },
     {
       "path": "packages/core/src/project-scope.ts",
-      "sha256": "f3e5429179297921f0f197ca90182fc63b0bfb6e4237f68d505a4a804006e232"
+      "sha256": "2a90dc3a7a9d6bbe64ec078b9fb4fabd2653d72c632eb08cc1cd63239588aceb"
     },
     {
       "path": "packages/core/src/recall-inputs.ts",
@@ -307,7 +307,7 @@
     },
     {
       "path": "packages/core/src/setup.ts",
-      "sha256": "120fe321c26d4c8ddb457361fc81d8d8a76734311d3ee085d71d7e16bde2826c"
+      "sha256": "6c03eee4ba59781f3316f1a1b34d9bae27e47ad8d8a17acc94cd6213448a8de7"
     },
     {
       "path": "packages/core/src/skill-copies.ts",
@@ -475,7 +475,7 @@
     },
     {
       "path": "scripts/einzbern-hook-launcher.mjs",
-      "sha256": "b7f4507bb92a9d05860d25007108ce07c405876faf4971b189f7a1d995c0867b"
+      "sha256": "6f0664e97f5174c7ecfdd7709dba45e3636dbd3ddb998411ee6fd8c03053b2cf"
     },
     {
       "path": "scripts/einzbern-hook.mjs",
@@ -675,7 +675,7 @@
     },
     {
       "path": "scripts/platform-doctor.mjs",
-      "sha256": "b46fad5f3b14cd45fe75755c9369aa6341e51c10baaabc0c49064a8dff21dd14"
+      "sha256": "ca544f1fe8cbbd190ad3ddac5feec7420b42e868eede4adca93652c3df65ea30"
     },
     {
       "path": "scripts/preflight.mjs",
@@ -787,7 +787,7 @@
     },
     {
       "path": "scripts/verify-staged-privacy.mjs",
-      "sha256": "a3af30ccafb6eba0e7d9cc61fd826dc38c03c2ab622d89aa9cbbfbd5333116f4"
+      "sha256": "7bfa7338125e1c8a9db4e454080b46cf8daf88cba33d9e321c0976c33df6abad"
     },
     {
       "path": "scripts/wiki-cli-reference.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R46 integration batch-end generation (packages P-E-core and P-E-portal fast-forwarded into the E main checkout; the published Design System d53f2305 consumed in the same integration). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red, so there was no same-round disposal and no second pass, and the three Portal test files, which run in verify:portal and not in D1, ran once green in the DS consumer check. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R47 integration batch-end generation (package A2, which contains A1, fast-forwarded and package B merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red, so there was no same-round disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "e5e2ed983f8973ef67df403e21d0c428eb5f6ddc1e30f9f77423e1eeebb7466a",
+      "sha256": "17b5a032453207b216e517c9d2dd8481b25abc104eaa637ff78b494a562e35bb",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "cd3c4114ef3cacaf7adebd482dda7fc12792a6994d2ad3d1b9b3da5cb12cc2f1",
+      "sha256": "294f3b9b390ab69e96012e944225656b5414962d4d56eb30de1b1ce3ea4e1a01",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "6f9927312a9d9393937fabfa338539a903cacd0f92ee56f3cad8461dc4c3a99d",
+      "sha256": "b17975774bbed2fa50c191410276dcfb56c8eb4b0263dd161de9871eb1daec6e",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1012,8 +1012,8 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1754,
-      "pass": 1754,
+      "tests": 1769,
+      "pass": 1769,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
@@ -1156,10 +1156,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-08T20:19:34.658522+00:00",
+  "generationTimeUtc": "2026-10-08T23:41:33.836113+00:00",
   "currentApplicationCaseResults": [
     {
       "name": "target switch settles on matching response, UI authority and native inheritance",
@@ -11777,7 +11777,7 @@
     }
   },
   "actualBounds": [
-    "R46 re-ran the R39 browser probe once on the E main checkout at ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 (the integration head before this inventory commit), with Playwright from the DS main checkout at the published merge d53f2305; every case and failure is recorded individually in that application evidence; no canonical integration claim",
+    "R47 reuses in place the R46 browser probe result (integration-r46-init053-raw/u18, run once on ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 with Playwright from the DS main checkout at the published merge d53f2305); between fbc3a073 and the R47 integration head bb580d0f72396b13060c3dd07c7554e64b38b8ce only Portal test files changed under portal/ (index.html, locales.js, portal.mjs, styles and snapshots unchanged); every case and failure is recorded individually in that application evidence; no canonical integration claim",
     "actual wide/narrow/column and lifecycle outcomes are recorded individually in that application evidence; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
   ]

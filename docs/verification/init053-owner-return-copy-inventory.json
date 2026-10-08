@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r46-init053-integration",
+  "pack": "r47-init053-integration",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "3b80a054993635c0d854e89ad5dc7cb301de842413487a6b413ad41b0bec157d"
+      "sha256": "3b9bf4a5a1e0a94c3c2040f0f59a38f8222a724b116c08c484e5e63a5d4d3fc5"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -215,7 +215,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "b3f560ecf8f161c0a30fa6c8ec3580901e10f4b1bf4282c38759f356b4a6cd70"
+      "sha256": "59ec14b9e7586b1c6eef621ace58b23a16de939a6eb4afc9e77adddfc1c2952a"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -239,7 +239,7 @@
     },
     {
       "path": "packages/core/src/names.ts",
-      "sha256": "64ea1881e47ff99ecc0183f9a4c3c59fe891329772e0ef16f6d36cfaf1cb19ec"
+      "sha256": "342ce238b7d395dd8ca1e5f23c16d7914bbda93d217bf43626d3e1aa50a0aea7"
     },
     {
       "path": "packages/core/src/node-floor.ts",
@@ -255,7 +255,7 @@
     },
     {
       "path": "packages/core/src/project-scope.ts",
-      "sha256": "f3e5429179297921f0f197ca90182fc63b0bfb6e4237f68d505a4a804006e232"
+      "sha256": "2a90dc3a7a9d6bbe64ec078b9fb4fabd2653d72c632eb08cc1cd63239588aceb"
     },
     {
       "path": "packages/core/src/recall-inputs.ts",
@@ -307,7 +307,7 @@
     },
     {
       "path": "packages/core/src/setup.ts",
-      "sha256": "120fe321c26d4c8ddb457361fc81d8d8a76734311d3ee085d71d7e16bde2826c"
+      "sha256": "6c03eee4ba59781f3316f1a1b34d9bae27e47ad8d8a17acc94cd6213448a8de7"
     },
     {
       "path": "packages/core/src/skill-copies.ts",
@@ -475,7 +475,7 @@
     },
     {
       "path": "scripts/einzbern-hook-launcher.mjs",
-      "sha256": "b7f4507bb92a9d05860d25007108ce07c405876faf4971b189f7a1d995c0867b"
+      "sha256": "6f0664e97f5174c7ecfdd7709dba45e3636dbd3ddb998411ee6fd8c03053b2cf"
     },
     {
       "path": "scripts/einzbern-hook.mjs",
@@ -675,7 +675,7 @@
     },
     {
       "path": "scripts/platform-doctor.mjs",
-      "sha256": "b46fad5f3b14cd45fe75755c9369aa6341e51c10baaabc0c49064a8dff21dd14"
+      "sha256": "ca544f1fe8cbbd190ad3ddac5feec7420b42e868eede4adca93652c3df65ea30"
     },
     {
       "path": "scripts/preflight.mjs",
@@ -787,7 +787,7 @@
     },
     {
       "path": "scripts/verify-staged-privacy.mjs",
-      "sha256": "a3af30ccafb6eba0e7d9cc61fd826dc38c03c2ab622d89aa9cbbfbd5333116f4"
+      "sha256": "7bfa7338125e1c8a9db4e454080b46cf8daf88cba33d9e321c0976c33df6abad"
     },
     {
       "path": "scripts/wiki-cli-reference.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R46 integration batch-end generation (packages P-E-core and P-E-portal fast-forwarded into the E main checkout; the published Design System d53f2305 consumed in the same integration). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red, so there was no same-round disposal and no second pass, and the three Portal test files, which run in verify:portal and not in D1, ran once green in the DS consumer check. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R47 integration batch-end generation (package A2, which contains A1, fast-forwarded and package B merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red, so there was no same-round disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "e5e2ed983f8973ef67df403e21d0c428eb5f6ddc1e30f9f77423e1eeebb7466a",
+      "sha256": "17b5a032453207b216e517c9d2dd8481b25abc104eaa637ff78b494a562e35bb",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "cd3c4114ef3cacaf7adebd482dda7fc12792a6994d2ad3d1b9b3da5cb12cc2f1",
+      "sha256": "294f3b9b390ab69e96012e944225656b5414962d4d56eb30de1b1ce3ea4e1a01",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "6f9927312a9d9393937fabfa338539a903cacd0f92ee56f3cad8461dc4c3a99d",
+      "sha256": "b17975774bbed2fa50c191410276dcfb56c8eb4b0263dd161de9871eb1daec6e",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1012,8 +1012,8 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1754,
-      "pass": 1754,
+      "tests": 1769,
+      "pass": 1769,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
@@ -1156,10 +1156,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-08T20:19:34.658522+00:00",
+  "generationTimeUtc": "2026-10-08T23:41:33.836113+00:00",
   "supportedLocales": [
     "en",
     "zh-CN",
@@ -17169,7 +17169,7 @@
   "allTechnicalDiagnosticSourceMessages": [
     {
       "file": "packages/cli/src/index.ts",
-      "line": 223,
+      "line": 224,
       "call": "fail",
       "argument": 1,
       "text": "CLI arguments exceed the local input limit",
@@ -17177,7 +17177,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 298,
+      "line": 299,
       "call": "fail",
       "argument": 1,
       "text": "list",
@@ -17185,7 +17185,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 309,
+      "line": 310,
       "call": "fail",
       "argument": 1,
       "text": "sprint must be library:<id>#work:<id>",
@@ -17193,7 +17193,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 313,
+      "line": 314,
       "call": "fail",
       "argument": 1,
       "text": "sprint must be library:<id>#work:<id>",
@@ -17201,7 +17201,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 328,
+      "line": 329,
       "call": "WorkflowCliError",
       "argument": 1,
       "template": "`a new ${kind} is no longer created: ${WORK_KIND_RETIRED_REMEDY}`",
@@ -17209,7 +17209,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 330,
+      "line": 331,
       "call": "fail",
       "argument": 1,
       "template": "`kind=${kind}`",
@@ -17217,7 +17217,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 354,
+      "line": 355,
       "call": "fail",
       "argument": 1,
       "template": "`relation must be <name>=<id> with a name among ${[...RELATION_NAMES, ...REVERSE_RELATION_NAMES].join(\", \")}`",
@@ -17225,7 +17225,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 406,
+      "line": 407,
       "call": "fail",
       "argument": 1,
       "template": "`${path}: ${(error as { message?: string }).message ?? \"unreadable\"}`",
@@ -17233,7 +17233,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 460,
+      "line": 461,
       "call": "fail",
       "argument": 1,
       "template": "`decisions-file ${path}: ${(error as { message?: string }).message ?? \"unreadable\"}`",
@@ -17241,7 +17241,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 463,
+      "line": 464,
       "call": "fail",
       "argument": 1,
       "text": "decisions-file holds a JSON array of decision texts",
@@ -17249,7 +17249,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 475,
+      "line": 476,
       "call": "fail",
       "argument": 1,
       "template": "`supersedes ${entry}: give <decision>=<decision that supersedes it>`",
@@ -17257,7 +17257,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 486,
+      "line": 487,
       "call": "fail",
       "argument": 1,
       "template": "`status=${value}; one of ${DECISION_STATUS_FILTERS.join(\", \")}`",
@@ -17265,7 +17265,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 644,
+      "line": 645,
       "call": "fail",
       "argument": 1,
       "template": "`work-list page exceeds the canonical byte budget; ${remedy}`",
@@ -17273,7 +17273,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 714,
+      "line": 715,
       "call": "fail",
       "argument": 1,
       "text": "offset",
@@ -17281,7 +17281,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 770,
+      "line": 771,
       "call": "fail",
       "argument": 1,
       "template": "`${(page.records as readonly unknown[]).length} events do not fit one canonical page; lower --limit`",
@@ -17289,7 +17289,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 861,
+      "line": 862,
       "call": "fail",
       "argument": 1,
       "template": "`scope=${value}`",
@@ -17297,7 +17297,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 869,
+      "line": 870,
       "call": "fail",
       "argument": 1,
       "template": "`status=${value}`",
@@ -17305,7 +17305,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 888,
+      "line": 889,
       "call": "fail",
       "argument": 1,
       "template": "`status=${value}; one of ${RECALL_STATUS_FILTERS.join(\", \")}`",
@@ -17313,7 +17313,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 899,
+      "line": 900,
       "call": "fail",
       "argument": 1,
       "text": "command is a JSON array of strings: the gate's argv, run with no shell",
@@ -17321,7 +17321,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 933,
+      "line": 934,
       "call": "Error",
       "argument": 0,
       "text": "target identity or configuration changed; resolve again",
@@ -17329,7 +17329,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 935,
+      "line": 936,
       "call": "Error",
       "argument": 0,
       "text": "no registered repository matches this operation",
@@ -17337,7 +17337,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 939,
+      "line": 940,
       "call": "Error",
       "argument": 0,
       "text": "work revision changed; resolve again",
@@ -17345,7 +17345,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 972,
+      "line": 973,
       "call": "WorkflowCliError",
       "argument": 1,
       "text": "the gate root is not registered to this library and stable project",
@@ -17353,7 +17353,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1061,
+      "line": 1062,
       "call": "fail",
       "argument": 1,
       "template": "`setting ${key} is not registered`",
@@ -17361,7 +17361,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1116,
+      "line": 1117,
       "call": "WorkflowCliError",
       "argument": 1,
       "template": "`${target} is changed in Atelier; a model does not write it through the CLI`",
@@ -17369,7 +17369,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1151,
+      "line": 1152,
       "call": "fail",
       "argument": 1,
       "text": "the project directory has no stable project binding; managed output remains pending",
@@ -17377,7 +17377,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1157,
+      "line": 1158,
       "call": "fail",
       "argument": 1,
       "text": "project-id conflicts with this registered project directory",
@@ -17385,7 +17385,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1224,
+      "line": 1225,
       "call": "fail",
       "argument": 1,
       "template": "`template ${templateId}@${templateVersion} was not materialized after admission`",
@@ -17393,7 +17393,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1412,
+      "line": 1413,
       "call": "fail",
       "argument": 1,
       "template": "`${entry.name}: a command is either a governed write or authority-bearing output, never both`",
@@ -17401,7 +17401,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1508,
+      "line": 1509,
       "call": "fail",
       "argument": 1,
       "template": "`${command} emits host trust state (${fields.join(\",\")}) without a catalog mutates or authorityBearing declaration`",
@@ -17409,7 +17409,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1515,
+      "line": 1516,
       "call": "fail",
       "argument": 1,
       "text": "A governed command is required",
@@ -17417,7 +17417,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1534,
+      "line": 1535,
       "call": "fail",
       "argument": 1,
       "template": "`${command} is a retired replay-only path; use settings-catalog or vocabulary for read-only state`",
@@ -17425,7 +17425,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1601,
+      "line": 1602,
       "call": "fail",
       "argument": 1,
       "template": "`${join(source, part.name)} does not exist: the skill template beside this engine is incomplete`",
@@ -17433,7 +17433,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1606,
+      "line": 1607,
       "call": "fail",
       "argument": 1,
       "template": "`no skill/${BRAND.helper.id}/ beside this engine: skill-render runs only in the engine's source tree or in a release`",
@@ -17441,7 +17441,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1617,
+      "line": 1618,
       "call": "fail",
       "argument": 1,
       "template": "`${out} is a file; --out names a missing or empty directory`",
@@ -17449,7 +17449,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1620,
+      "line": 1621,
       "call": "fail",
       "argument": 1,
       "template": "`${out} is not empty; --out names a missing or empty directory`",
@@ -17457,7 +17457,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1671,
+      "line": 1672,
       "call": "fail",
       "argument": 1,
       "text": "managed-sections",
@@ -17465,7 +17465,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1747,
+      "line": 1748,
       "call": "fail",
       "argument": 1,
       "text": "A governed command is required",
@@ -17473,7 +17473,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1913,
+      "line": 1914,
       "call": "WorkflowCliError",
       "argument": 1,
       "template": "`the library records rule ${ruleId} at version ${status.recordedVersion}; this engine ships version ${status.version}`",
@@ -17481,7 +17481,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1973,
+      "line": 1974,
       "call": "fail",
       "argument": 1,
       "text": "rule-list project and library bindings conflict",
@@ -17489,7 +17489,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2115,
+      "line": 2116,
       "call": "WorkflowCliError",
       "argument": 1,
       "text": "--legacy must name exactly one old workspace in --mapping",
@@ -17497,7 +17497,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2119,
+      "line": 2120,
       "call": "WorkflowCliError",
       "argument": 1,
       "text": "--target must be the matched mapping entry's project library",
@@ -17505,7 +17505,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2518,
+      "line": 2520,
       "call": "fail",
       "argument": 1,
       "template": "`category=${values.category ?? \"\"}`",
@@ -17513,7 +17513,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2591,
+      "line": 2593,
       "call": "fail",
       "argument": 1,
       "template": "`${flag}=${provided}`",
@@ -17521,7 +17521,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2644,
+      "line": 2646,
       "call": "fail",
       "argument": 1,
       "template": "`${flag}=${provided}`",
@@ -17529,7 +17529,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2647,
+      "line": 2649,
       "call": "fail",
       "argument": 1,
       "template": "`role-scopes names roles of a role card, not of scope=${values.scope}`",
@@ -17537,7 +17537,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2753,
+      "line": 2755,
       "call": "fail",
       "argument": 1,
       "template": "`reason=${values.reason ?? \"\"}`",
@@ -17545,18 +17545,10 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2775,
+      "line": 2777,
       "call": "fail",
       "argument": 1,
       "template": "`${values[\"from-file\"] ?? \"\"}: ${(error as { message?: string }).message ?? \"unreadable\"}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/cli/src/index.ts",
-      "line": 2808,
-      "call": "fail",
-      "argument": 1,
-      "text": "query",
       "version": "current"
     },
     {
@@ -17564,12 +17556,20 @@
       "line": 2810,
       "call": "fail",
       "argument": 1,
+      "text": "query",
+      "version": "current"
+    },
+    {
+      "file": "packages/cli/src/index.ts",
+      "line": 2812,
+      "call": "fail",
+      "argument": 1,
       "text": "limit",
       "version": "current"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2819,
+      "line": 2821,
       "call": "fail",
       "argument": 1,
       "text": "tau",
@@ -17577,7 +17577,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2999,
+      "line": 3001,
       "call": "fail",
       "argument": 1,
       "text": "key",
@@ -17585,7 +17585,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3006,
+      "line": 3008,
       "call": "fail",
       "argument": 1,
       "text": "key",
@@ -17593,7 +17593,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3018,
+      "line": 3020,
       "call": "fail",
       "argument": 1,
       "text": "role",
@@ -17601,7 +17601,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3043,
+      "line": 3045,
       "call": "fail",
       "argument": 1,
       "template": "`status=${values.status}`",
@@ -17609,7 +17609,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3091,
+      "line": 3093,
       "call": "fail",
       "argument": 1,
       "template": "`${values[\"from-file\"] ?? \"\"}: ${(error as { message?: string }).message ?? \"unreadable\"}`",
@@ -17617,7 +17617,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3127,
+      "line": 3129,
       "call": "fail",
       "argument": 1,
       "template": "`status=${values.status}`",
@@ -17625,7 +17625,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3168,
+      "line": 3170,
       "call": "fail",
       "argument": 1,
       "text": "annotation-field",
@@ -17633,7 +17633,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3214,
+      "line": 3216,
       "call": "fail",
       "argument": 1,
       "text": "search",
@@ -17641,7 +17641,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3217,
+      "line": 3219,
       "call": "fail",
       "argument": 1,
       "template": "`kind=${values.kind}`",
@@ -17649,7 +17649,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3218,
+      "line": 3220,
       "call": "fail",
       "argument": 1,
       "template": "`status=${values.status}`",
@@ -17657,7 +17657,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3227,
+      "line": 3229,
       "call": "fail",
       "argument": 1,
       "text": "scope-bytes",
@@ -17665,7 +17665,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3263,
+      "line": 3265,
       "call": "fail",
       "argument": 1,
       "template": "`project ${values[\"project-id\"] ?? \"\"} does not exist in this workspace`",
@@ -17673,7 +17673,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3276,
+      "line": 3278,
       "call": "fail",
       "argument": 1,
       "text": "work-show takes exactly one of --id and --external-key",
@@ -17681,7 +17681,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3281,
+      "line": 3283,
       "call": "fail",
       "argument": 1,
       "template": "`work ${values.id ?? values[\"external-key\"] ?? \"\"} is unavailable`",
@@ -17689,7 +17689,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3321,
+      "line": 3323,
       "call": "fail",
       "argument": 1,
       "template": "`status=${status}`",
@@ -17697,7 +17697,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3341,
+      "line": 3343,
       "call": "WorkflowCliError",
       "argument": 1,
       "template": "`gate ${id} is released in Atelier; a model does not release it through the CLI`",
@@ -17705,7 +17705,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3383,
+      "line": 3385,
       "call": "fail",
       "argument": 1,
       "text": "minutes-record takes exactly one of --decisions and --decisions-file",
@@ -17713,7 +17713,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3446,
+      "line": 3448,
       "call": "fail",
       "argument": 1,
       "text": "minutes-show takes exactly one of --id and --external-key",
@@ -17721,7 +17721,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3451,
+      "line": 3453,
       "call": "fail",
       "argument": 1,
       "text": "a decision named by its number is read whatever its status; --status goes with a record",
@@ -17729,7 +17729,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3498,
+      "line": 3500,
       "call": "fail",
       "argument": 1,
       "text": "command",
@@ -26705,7 +26705,7 @@
     },
     {
       "file": "scripts/einzbern-hook-launcher.mjs",
-      "line": 95,
+      "line": 115,
       "call": "HookLaunchError",
       "argument": 1,
       "template": "`the registry cannot be read (${error?.code ?? \"error\"})`",
@@ -26713,7 +26713,7 @@
     },
     {
       "file": "scripts/einzbern-hook-launcher.mjs",
-      "line": 101,
+      "line": 121,
       "call": "HookLaunchError",
       "argument": 1,
       "text": "the registry is not JSON",
@@ -26721,7 +26721,7 @@
     },
     {
       "file": "scripts/einzbern-hook-launcher.mjs",
-      "line": 105,
+      "line": 125,
       "call": "HookLaunchError",
       "argument": 1,
       "template": "`the registry is not an ${REGISTRY_SCHEMA_VERSION} registry`",
@@ -26729,7 +26729,7 @@
     },
     {
       "file": "scripts/einzbern-hook-launcher.mjs",
-      "line": 355,
+      "line": 431,
       "call": "HookLaunchError",
       "argument": 1,
       "text": "engine/current does not name an engine version",
@@ -26737,7 +26737,7 @@
     },
     {
       "file": "scripts/einzbern-hook-launcher.mjs",
-      "line": 365,
+      "line": 441,
       "call": "HookLaunchError",
       "argument": 1,
       "template": "`the hook input is larger than ${HOOK_STDIN_MAX_BYTES} bytes`",
@@ -26745,7 +26745,7 @@
     },
     {
       "file": "scripts/einzbern-hook-launcher.mjs",
-      "line": 372,
+      "line": 448,
       "call": "HookLaunchError",
       "argument": 1,
       "text": "the hook input is not JSON",
@@ -26753,7 +26753,7 @@
     },
     {
       "file": "scripts/einzbern-hook-launcher.mjs",
-      "line": 374,
+      "line": 450,
       "call": "HookLaunchError",
       "argument": 1,
       "text": "the hook input is not a JSON object",
@@ -26761,7 +26761,7 @@
     },
     {
       "file": "scripts/einzbern-hook-launcher.mjs",
-      "line": 381,
+      "line": 457,
       "call": "HookLaunchError",
       "argument": 1,
       "text": "the hook command names no event",
@@ -26769,7 +26769,7 @@
     },
     {
       "file": "scripts/einzbern-hook-launcher.mjs",
-      "line": 392,
+      "line": 473,
       "call": "HookLaunchError",
       "argument": 1,
       "text": "the current engine's hook entry has no runHookEvent",
@@ -28937,7 +28937,7 @@
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 135,
+      "line": 140,
       "call": "Error",
       "argument": 0,
       "text": "git HEAD is not a full object id",
@@ -28945,7 +28945,7 @@
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 148,
+      "line": 153,
       "call": "Error",
       "argument": 0,
       "text": "chain has no event segments",
@@ -28953,7 +28953,7 @@
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 153,
+      "line": 158,
       "call": "Error",
       "argument": 0,
       "text": "chain head identity is malformed",
@@ -28961,7 +28961,7 @@
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 174,
+      "line": 179,
       "call": "Error",
       "argument": 0,
       "text": "chain container has no partition workspaces",
@@ -29545,7 +29545,7 @@
     },
     {
       "file": "scripts/verify-staged-privacy.mjs",
-      "line": 62,
+      "line": 66,
       "call": "fail",
       "argument": 1,
       "text": "git returned an empty repository root",

@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r46-init053-integration",
+  "pack": "r47-init053-integration",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "3b80a054993635c0d854e89ad5dc7cb301de842413487a6b413ad41b0bec157d"
+      "sha256": "3b9bf4a5a1e0a94c3c2040f0f59a38f8222a724b116c08c484e5e63a5d4d3fc5"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -215,7 +215,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "b3f560ecf8f161c0a30fa6c8ec3580901e10f4b1bf4282c38759f356b4a6cd70"
+      "sha256": "59ec14b9e7586b1c6eef621ace58b23a16de939a6eb4afc9e77adddfc1c2952a"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -239,7 +239,7 @@
     },
     {
       "path": "packages/core/src/names.ts",
-      "sha256": "64ea1881e47ff99ecc0183f9a4c3c59fe891329772e0ef16f6d36cfaf1cb19ec"
+      "sha256": "342ce238b7d395dd8ca1e5f23c16d7914bbda93d217bf43626d3e1aa50a0aea7"
     },
     {
       "path": "packages/core/src/node-floor.ts",
@@ -255,7 +255,7 @@
     },
     {
       "path": "packages/core/src/project-scope.ts",
-      "sha256": "f3e5429179297921f0f197ca90182fc63b0bfb6e4237f68d505a4a804006e232"
+      "sha256": "2a90dc3a7a9d6bbe64ec078b9fb4fabd2653d72c632eb08cc1cd63239588aceb"
     },
     {
       "path": "packages/core/src/recall-inputs.ts",
@@ -307,7 +307,7 @@
     },
     {
       "path": "packages/core/src/setup.ts",
-      "sha256": "120fe321c26d4c8ddb457361fc81d8d8a76734311d3ee085d71d7e16bde2826c"
+      "sha256": "6c03eee4ba59781f3316f1a1b34d9bae27e47ad8d8a17acc94cd6213448a8de7"
     },
     {
       "path": "packages/core/src/skill-copies.ts",
@@ -475,7 +475,7 @@
     },
     {
       "path": "scripts/einzbern-hook-launcher.mjs",
-      "sha256": "b7f4507bb92a9d05860d25007108ce07c405876faf4971b189f7a1d995c0867b"
+      "sha256": "6f0664e97f5174c7ecfdd7709dba45e3636dbd3ddb998411ee6fd8c03053b2cf"
     },
     {
       "path": "scripts/einzbern-hook.mjs",
@@ -675,7 +675,7 @@
     },
     {
       "path": "scripts/platform-doctor.mjs",
-      "sha256": "b46fad5f3b14cd45fe75755c9369aa6341e51c10baaabc0c49064a8dff21dd14"
+      "sha256": "ca544f1fe8cbbd190ad3ddac5feec7420b42e868eede4adca93652c3df65ea30"
     },
     {
       "path": "scripts/preflight.mjs",
@@ -787,7 +787,7 @@
     },
     {
       "path": "scripts/verify-staged-privacy.mjs",
-      "sha256": "a3af30ccafb6eba0e7d9cc61fd826dc38c03c2ab622d89aa9cbbfbd5333116f4"
+      "sha256": "7bfa7338125e1c8a9db4e454080b46cf8daf88cba33d9e321c0976c33df6abad"
     },
     {
       "path": "scripts/wiki-cli-reference.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R46 integration batch-end generation (packages P-E-core and P-E-portal fast-forwarded into the E main checkout; the published Design System d53f2305 consumed in the same integration). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red, so there was no same-round disposal and no second pass, and the three Portal test files, which run in verify:portal and not in D1, ran once green in the DS consumer check. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R47 integration batch-end generation (package A2, which contains A1, fast-forwarded and package B merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red, so there was no same-round disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "e5e2ed983f8973ef67df403e21d0c428eb5f6ddc1e30f9f77423e1eeebb7466a",
+      "sha256": "17b5a032453207b216e517c9d2dd8481b25abc104eaa637ff78b494a562e35bb",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "cd3c4114ef3cacaf7adebd482dda7fc12792a6994d2ad3d1b9b3da5cb12cc2f1",
+      "sha256": "294f3b9b390ab69e96012e944225656b5414962d4d56eb30de1b1ce3ea4e1a01",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "6f9927312a9d9393937fabfa338539a903cacd0f92ee56f3cad8461dc4c3a99d",
+      "sha256": "b17975774bbed2fa50c191410276dcfb56c8eb4b0263dd161de9871eb1daec6e",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1012,8 +1012,8 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1754,
-      "pass": 1754,
+      "tests": 1769,
+      "pass": 1769,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
@@ -1156,10 +1156,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r46-init053-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-08T20:19:34.658522+00:00",
+  "generationTimeUtc": "2026-10-08T23:41:33.836113+00:00",
   "settings": [
     {
       "catalog": {
@@ -1233,8 +1233,18 @@
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 157,
+          "line": 104,
+          "text": "const COORDINATION_LANGUAGE_KEY: SettingKey = \"artifact.language\";"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 172,
           "text": "// The artifact.language the old chain records, which the library keeps; null when it records none."
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 189,
+          "text": "* for itself, as its partition's plan lists it. artifact.language is always listed: the old chain's"
         },
         {
           "file": "packages/core/src/project-chain.ts",
@@ -1255,6 +1265,11 @@
           "file": "packages/core/src/project-chain.ts",
           "line": 138,
           "text": "for (const key of [\"design.authority\", \"design.buildProject\", \"models.tiers\", \"artifact.language\"]) {"
+        },
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 63,
+          "text": "\"artifact.language\", \"execution.maxConcurrentSubagents\","
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
@@ -1288,7 +1303,7 @@
         },
         {
           "file": "packages/core/src/setup.ts",
-          "line": 167,
+          "line": 178,
           "text": "// A language tag the library writes in (artifact.language)."
         },
         {
@@ -1583,7 +1598,7 @@
         },
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 63,
+          "line": 89,
           "text": "\"design.authority\", \"design.repository\", \"design.pullRequestTarget\", \"design.productionDocs\","
         },
         {
@@ -1756,7 +1771,7 @@
         },
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 64,
+          "line": 90,
           "text": "\"design.buildService\", \"design.buildProject\", \"design.consumedVersion\","
         },
         {
@@ -1854,7 +1869,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 64,
+          "line": 90,
           "text": "\"design.buildService\", \"design.buildProject\", \"design.consumedVersion\","
         },
         {
@@ -1952,12 +1967,12 @@
       "consumerSites": [
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 64,
+          "line": 90,
           "text": "\"design.buildService\", \"design.buildProject\", \"design.consumedVersion\","
         },
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 79,
+          "line": 105,
           "text": "const conflicting = bindings.some((entry) => entry.key !== \"design.consumedVersion\" && entry.value !== null && entry.source.inherited && (entry.source.projectId !== authoritySource.projectId || entry.source.libraryId !== authoritySource.libraryId || entry.source.kind !== authoritySource.kind));"
         },
         {
@@ -2055,7 +2070,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 63,
+          "line": 89,
           "text": "\"design.authority\", \"design.repository\", \"design.pullRequestTarget\", \"design.productionDocs\","
         },
         {
@@ -2153,7 +2168,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 63,
+          "line": 89,
           "text": "\"design.authority\", \"design.repository\", \"design.pullRequestTarget\", \"design.productionDocs\","
         },
         {
@@ -2251,7 +2266,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 63,
+          "line": 89,
           "text": "\"design.authority\", \"design.repository\", \"design.pullRequestTarget\", \"design.productionDocs\","
         },
         {
@@ -2352,6 +2367,11 @@
         "ether-library/format admission and setup/doctor required version; one library format"
       ],
       "consumerSites": [
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 62,
+          "text": "\"engine.requiredVersion\", \"storage.segmentBytes\", \"storage.snapshotEveryEvents\", \"workspace.generatedArtifactsPath\","
+        },
         {
           "file": "packages/core/src/settings.ts",
           "line": 139,
@@ -2464,27 +2484,27 @@
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1468,
+          "line": 1574,
           "text": "// The baseline is each partition's own `engine.requiredVersion` declaration — a"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1530,
+          "line": 1636,
           "text": "const row = rows.find((candidate) => candidate?.key === \"engine.requiredVersion\");"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1582,
+          "line": 1688,
           "text": "source: \"chain engine.requiredVersion + install-manifest\","
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1598,
+          "line": 1704,
           "text": "source: \"chain engine.requiredVersion + install-manifest\","
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1605,
+          "line": 1711,
           "text": "source: \"chain engine.requiredVersion + install-manifest\","
         }
       ],
@@ -2528,6 +2548,21 @@
         "managed batch preset variable consumed by the execution host; catalog/control/render declaration; this engine does not spawn arbitrary agents"
       ],
       "consumerSites": [
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 106,
+          "text": "\"execution.maxConcurrentSubagents\","
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 191,
+          "text": "* execution.maxConcurrentSubagents and the four quota.* keys only when the old chain declares them at"
+        },
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 63,
+          "text": "\"artifact.language\", \"execution.maxConcurrentSubagents\","
+        },
         {
           "file": "packages/core/src/rules-catalog.ts",
           "line": 66,
@@ -2691,7 +2726,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2830,
+          "line": 2832,
           "text": "const promptBytes = Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\");"
         },
         {
@@ -2995,7 +3030,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1052,
+          "line": 1053,
           "text": "// derived reads the same in both: an unset models.category is the default categories and every"
         },
         {
@@ -3065,7 +3100,7 @@
         },
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 128,
+          "line": 156,
           "text": "if (![\"models.category\", \"models.tiers\", \"models.escalation.ceiling\"].includes(key)) return;"
         },
         {
@@ -3437,7 +3472,7 @@
         },
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 128,
+          "line": 156,
           "text": "if (![\"models.category\", \"models.tiers\", \"models.escalation.ceiling\"].includes(key)) return;"
         },
         {
@@ -3838,7 +3873,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1053,
+          "line": 1054,
           "text": "// other category models.tiers names, not the default table. A set key is still its value and any"
         },
         {
@@ -3933,7 +3968,7 @@
         },
         {
           "file": "packages/core/src/project-scope.ts",
-          "line": 128,
+          "line": 156,
           "text": "if (![\"models.category\", \"models.tiers\", \"models.escalation.ceiling\"].includes(key)) return;"
         },
         {
@@ -4244,6 +4279,16 @@
       ],
       "consumerSites": [
         {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 107,
+          "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
+        },
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 64,
+          "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
+        },
+        {
           "file": "packages/core/src/settings.ts",
           "line": 148,
           "text": "| \"quota.fiveHourParallelOffPercent\""
@@ -4345,6 +4390,16 @@
         "catalog/control/project declaration for host scheduling; no engine account reader/enforcer exists, no actual quota claim"
       ],
       "consumerSites": [
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 107,
+          "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
+        },
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 64,
+          "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
+        },
         {
           "file": "packages/core/src/settings.ts",
           "line": 149,
@@ -4448,6 +4503,16 @@
       ],
       "consumerSites": [
         {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 107,
+          "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
+        },
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 64,
+          "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
+        },
+        {
           "file": "packages/core/src/settings.ts",
           "line": 150,
           "text": "| \"quota.weeklyParallelOffPercent\""
@@ -4549,6 +4614,16 @@
         "catalog/control/project declaration for host scheduling; no engine account reader/enforcer exists, no actual quota claim"
       ],
       "consumerSites": [
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 107,
+          "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
+        },
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 64,
+          "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
+        },
         {
           "file": "packages/core/src/settings.ts",
           "line": 151,
@@ -4830,12 +4905,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2826,
+          "line": 2828,
           "text": "const scopeBytes = Number(settingValue(\"retrieval.scopeExcerptBytes\") ?? \"512\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3225,
+          "line": 3227,
           "text": "const configuredScopeBytes = scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value;"
         },
         {
@@ -4976,7 +5051,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2815,
+          "line": 2817,
           "text": "const configuredTau = Number(settingValue(\"retrieval.tau\") ?? String(RECALL_DEFAULT_TAU));"
         },
         {
@@ -5003,6 +5078,11 @@
           "file": "packages/core/src/settings.ts",
           "line": 607,
           "text": "key: \"retrieval.tau\","
+        },
+        {
+          "file": "packages/core/src/setup.ts",
+          "line": 762,
+          "text": "`recall in ${projectRoot} does not find the card ${card.id} of ${libraryPath} by its subject, so the prompt hook would not inject it: nothing old was taken off and the project is not wired. Check the library's retrieval settings (retrieval.tau among them) and the card, then run the migration again with the same mapping; the migrated partitions are skipped and it goes on from here.`,"
         },
         {
           "file": "portal/locales.js",
@@ -5132,18 +5212,23 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1059,
+          "line": 1060,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources })"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2293,
+          "line": 2294,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources });"
         },
         {
           "file": "packages/core/src/akasha.ts",
           "line": 495,
           "text": "// storage.segmentBytes: a segment that would grow past this is closed and a new one begun."
+        },
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 62,
+          "text": "\"engine.requiredVersion\", \"storage.segmentBytes\", \"storage.snapshotEveryEvents\", \"workspace.generatedArtifactsPath\","
         },
         {
           "file": "packages/core/src/settings.ts",
@@ -5291,6 +5376,11 @@
         "library-config/akasha snapshot cadence; exact stream count"
       ],
       "consumerSites": [
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 62,
+          "text": "\"engine.requiredVersion\", \"storage.segmentBytes\", \"storage.snapshotEveryEvents\", \"workspace.generatedArtifactsPath\","
+        },
         {
           "file": "packages/core/src/settings.ts",
           "line": 156,
@@ -5441,12 +5531,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1244,
+          "line": 1245,
           "text": "// TCRN-CROSS-STORY-380: the three verbs that make workspace.generatedArtifactsPath a"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2345,
+          "line": 2347,
           "text": "if (values.key === \"workspace.generatedArtifactsPath\") {"
         },
         {
@@ -5463,6 +5553,11 @@
           "file": "packages/core/src/project-chain.ts",
           "line": 120,
           "text": "output: { language: value(\"artifact.language\"), knowledgeArticlesPath: value(\"knowledge.articlesPath\"), generatedArtifactsPath: value(\"workspace.generatedArtifactsPath\") },"
+        },
+        {
+          "file": "packages/core/src/project-scope.ts",
+          "line": 62,
+          "text": "\"engine.requiredVersion\", \"storage.segmentBytes\", \"storage.snapshotEveryEvents\", \"workspace.generatedArtifactsPath\","
         },
         {
           "file": "packages/core/src/settings.ts",
@@ -5586,7 +5681,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1863,
+          "line": 1864,
           "text": "// agents.navigation is written, the navigation section; CLAUDE.md's import section unless it"
         },
         {
@@ -5641,7 +5736,7 @@
         },
         {
           "file": "packages/core/src/setup.ts",
-          "line": 169,
+          "line": 180,
           "text": "// Whether AGENTS.md gets the navigation section (agents.navigation written or declined)."
         },
         {
@@ -6332,7 +6427,7 @@
     },
     {
       "area": "Coordination lifecycle",
-      "mechanism": "fresh setup and init --project join the coordination this device registers, else the one registered project libraries name, else the library at the device default location, else create one there and register it as its own project path; restore resolves the identity the library names (registered, located and registered, or unregistered and never replaced) and refuses competing identities with every candidate; uninstall releases the setup-made coordination registration once no registration names it and never writes or deletes a library; migration takes roles only from the mapping's explicit chainRole; setup's plan and receipt name the binding as coordination {libraryId, status, path}: create, registered, located or unregistered when planned, registered or unregistered once applied, released or retained for an uninstall, judged by the read-only predicate releaseSetupCoordination shares (R46 I08); a migration plan whose --project is the coordination partition holds one SETUP_ANSWER_INVALID blocker naming a project partition's root, plans no project language or wiring, and its apply imports nothing (R46 I07)",
+      "mechanism": "fresh setup and init --project join the coordination this device registers, else the one registered project libraries name, else the library at the device default location, else create one there and register it as its own project path; restore resolves the identity the library names (registered, located and registered, or unregistered and never replaced) and refuses competing identities with every candidate; uninstall releases the setup-made coordination registration once no registration names it and never writes or deletes a library; migration takes roles only from the mapping's explicit chainRole; setup's plan and receipt name the binding as coordination {libraryId, status, path}: create, registered, located or unregistered when planned, registered or unregistered once applied, released or retained for an uninstall, judged by the read-only predicate releaseSetupCoordination shares (R46 I08); a migration plan whose --project is the coordination partition holds one SETUP_ANSWER_INVALID blocker naming a project partition's root, plans no project language or wiring, and its apply imports nothing (R46 I07); the coordination partition of a migration plan lists coordinationSettings {key, value, source, action} for its own artifact.language (always; legacy-declared, else the catalog default as legacy-default) and the orchestration limits the old chain declares (execution.maxConcurrentSubagents, quota.*), each carried by the import or written once at the coordination library's library level by agent:setup as the last migration step, never into a project chain (R47-04); once the project's own library records its language, the migrate apply asks the prompt hook's recall (hook-recall.ts) for that library's newest valid card by its subject and answers recallSmoke hit or no-card, or stops with SETUP_RECALL_SMOKE_MISSED before the cleanup and the wiring (R47-05)",
       "files": [
         "project-chain.ts",
         "setup-fresh.ts",
@@ -6391,7 +6486,7 @@
     },
     {
       "area": "Per-target resolution, common and device defaults",
-      "mechanism": "resolveProjectTarget opens only registered locations of a stable {libraryId, projectId} and distinguishes unregistered, unavailable, invalid, absent, deleted, ambiguous, unconfigured, conflicting and configured; effective settings carry provenance (project, declared ancestor, library, opted-in common default, catalog default); an explicitly named common default supplies optional project scalars only, and each effective record keeps the project it was declared on, so a target keeps its own declarations as declaredValue (R46 I02); an unresolved one refuses resolution and the effective state, while settings-catalog reads that target per key: commonDefault names the reference, its target status and reason, each optional project scalar that would inherit carries an unresolved common source with no value, and its own, ancestral and library declarations stand (R46 I03); device settings are reported as device/user scope, never a chain default; coordination exposes runtime records only",
+      "mechanism": "resolveProjectTarget opens only registered locations of a stable {libraryId, projectId} and distinguishes unregistered, unavailable, invalid, absent, deleted, ambiguous, unconfigured, conflicting and configured; effective settings carry provenance (project, declared ancestor, library, opted-in common default, catalog default); an explicitly named common default supplies optional project scalars only, and each effective record keeps the project it was declared on, so a target keeps its own declarations as declaredValue (R46 I02); an unresolved one refuses resolution and the effective state, while settings-catalog reads that target per key: commonDefault names the reference, its target status and reason, each optional project scalar that would inherit carries an unresolved common source with no value, and its own, ancestral and library declarations stand (R46 I03); device settings are reported as device/user scope, never a chain default; coordination exposes runtime records and, at the library level only, its ten runtime settings (the four library settings, artifact.language, execution.maxConcurrentSubagents and the four quota.* keys; R47 c1-B), which settings-catalog lists with scope and layer library, a project override refuses, and no involved project or common default inherits",
       "files": [
         "project-chain.ts",
         "project-scope.ts",
@@ -6404,7 +6499,9 @@
         "tests/project-chain-model.test.mjs",
         "tests/init053-owner-return.test.mjs",
         "tests/variables.test.mjs",
-        "portal/tests/portal.test.mjs"
+        "portal/tests/portal.test.mjs",
+        "tests/config-records.test.mjs",
+        "portal/tests/ui-presence.test.mjs"
       ],
       "priorScope": "one unscoped library configuration or file target",
       "requiredScope": "exact stable project/root binding, with declared ancestry only for settings/rules/variables; library/device resources retain their actual owner",
@@ -6479,5 +6576,5 @@
     }
   ],
   "settingCount": 33,
-  "nativeReads": "installed engine 1.2.1, live 10044, INIT revision15 and INC399 revision6; read-only status/work-show readbacks of 2026-10-08T20:14:56Z retained in the raw archive (dispatch-runs/init-053/integration-r46-init053-raw/u18/native-reads.json)"
+  "nativeReads": "installed engine 1.2.1, live 10051, INIT revision16 and INC399 revision8; read-only status/work-show readbacks of 2026-10-08T23:40:39Z retained in the raw archive (dispatch-runs/init-053/integration-r47-init053-raw/u18/native-reads.json)"
 }

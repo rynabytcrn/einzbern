@@ -11,14 +11,14 @@ import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
-import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, readRegistry } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
 import { MACHINE_SETTINGS_FILE_NAME } from "../dist/build/packages/core/src/machine-settings.js";
@@ -418,4 +418,44 @@ test("480-AC4: uninstall with --managed-sections remove takes the section marker
   }
   assert.deepEqual(copies.sort(), [...originals].sort(), "both files are backed up as they were");
   assert.equal((await computeInstallTreeDigest(f.library)).sha256, libraryDigest, "the library's records of the sections are not written");
+});
+
+// TCRN-CROSS-STORY-480 R4/AC4 with approved contract item 3 (INIT-053 U04): the coordination
+// registration setup made goes with the last uninstall that leaves no registered project naming the
+// coordination; a registered project that still names it, or whose library cannot be read, keeps
+// it. No library is written, moved or deleted on any of these paths.
+test("480-AC4 (U04): uninstall keeps the coordination registration while a registered project names it or cannot be read, takes it out with the last one, and never touches a library", async (context) => {
+  const f = await installed(context);
+  const coordination = join(f.deviceHome, "coordination-library");
+  const coordinationId = chainIdentity(await materializeWorkspace(f.library)).coordinationLibraryId;
+  const projects = [f.project, join(f.base, "second"), join(f.base, "third")];
+  for (const project of projects.slice(1)) {
+    await mkdir(project);
+    const applied = await applySetup(await planSetup({ mode: "fresh", projectRoot: project, at: at(), home: f.home, deviceHome: f.deviceHome }));
+    assert.equal(applied.reasonCode, "SETUP_APPLIED");
+    assert.ok(!applied.written.some((entry) => entry.path === coordination), "a second project joins the registered coordination and creates none");
+    assert.equal(chainIdentity(await materializeWorkspace(join(project, ".ether"))).coordinationLibraryId, coordinationId);
+  }
+  const libraries = [...projects.map((project) => join(project, ".ether")), coordination];
+  const digests = () => Promise.all(libraries.map(async (path) => (await computeInstallTreeDigest(path)).sha256));
+  const before = await digests();
+  const registered = async () => (await readRegistry(f.deviceHome)).entries.map((entry) => entry.projectPath);
+  const uninstallPlanned = async (project) => applySetup(await planSetup({ mode: "uninstall", projectRoot: project, at: at(), home: f.home, deviceHome: f.deviceHome, managedSections: "keep" }));
+
+  // Referenced: the other two projects still name the coordination.
+  assert.equal((await uninstallPlanned(projects[0])).reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(await registered(), [coordination, projects[1], projects[2]], "a referenced coordination registration stays");
+
+  // Unreadable: the third project's library is away, so nothing proves the coordination unnamed.
+  const away = `${libraries[2]}-away`;
+  await rename(libraries[2], away);
+  await uninstallPlanned(projects[1]);
+  assert.deepEqual(await registered(), [coordination, projects[2]], "a registration whose library cannot be read keeps it");
+  await rename(away, libraries[2]);
+
+  // Unreferenced: the last project naming it goes, and the registration setup made goes with it.
+  await uninstallPlanned(projects[2]);
+  assert.deepEqual(await registered(), [], "the coordination registration goes with the last project naming it");
+  assert.deepEqual(await digests(), before, "no library was written, moved or deleted");
+  assert.ok((await lstat(join(coordination, "manifest.json"))).isFile(), "the coordination library itself stays");
 });

@@ -80,8 +80,9 @@ configuration or involved-project fields into a format-1 library refuse with
 
 Stable library and project identities survive restore and relocation. Registries
 on another device locate those identities independently. Setup validates a
-synchronized coordination binding before creating anything: missing restored
-bindings require registration, and competing identities or locations are
-conflicts. Low-level `initializeLibrary` creates an unclassified library; fresh
+synchronized coordination binding before creating anything: a restored binding
+this device does not locate stays unregistered until its library is registered,
+and nothing replaces it; competing identities or locations are conflicts.
+Low-level `initializeLibrary` creates an unclassified library; fresh
 installation and registered-project initialization create/reuse the explicit
 coordination identity. Real installation and migration are separate operations.

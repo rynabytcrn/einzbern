@@ -267,6 +267,20 @@ export async function unregisterLibrary(projectPathInput: string, home?: string)
   });
 }
 
+/**
+ * Drop the entries `select` names from the registry as it stands under the registry lock, each by
+ * its stored project path and library id (no path needs to exist any more); answers those dropped.
+ */
+export async function unregisterEntries(select: (registry: Registry) => Promise<readonly RegistryEntry[]>, home?: string): Promise<readonly RegistryEntry[]> {
+  return mutateRegistry(home, async (registry, directory) => {
+    const chosen = new Set((await select(registry)).map((entry) => JSON.stringify([entry.projectPath, entry.libraryId])));
+    const dropped = registry.entries.filter((entry) => chosen.has(JSON.stringify([entry.projectPath, entry.libraryId])));
+    if (dropped.length === 0) return dropped;
+    await writeRegistry({ ...registry, entries: registry.entries.filter((entry) => !dropped.includes(entry)) }, directory);
+    return dropped;
+  });
+}
+
 /** Point an entry at the library's new location (a relocation moved it). */
 export async function repointLibrary(libraryId: string, libraryPath: string, cloudHosted: boolean | undefined, home?: string): Promise<readonly RegistryEntry[]> {
   const target = await real(libraryPath);

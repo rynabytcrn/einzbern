@@ -18,8 +18,9 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, computeInstallTreeDigest, createProject, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, createProject, materializeWorkspace, readRegistry, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
+import { ENGINE_FORMAT_VERSION } from "../dist/build/packages/core/src/format-version.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 import { applySetup, planSetup } from "../dist/build/packages/core/src/setup.js";
 import { RESTORE_CHECKS, RESTORE_CHECK_REASON_CODES, verifyRestore } from "../dist/build/packages/core/src/setup-restore.js";
@@ -209,8 +210,8 @@ test("480-AC3: a library in a newer format stops the restore at the third check,
   const plan = await restorePlan(f, f.b, f.library);
   assert.deepEqual(plan.blockers, []);
 
-  // A newer engine moved the library to format 2 after the plan was made.
-  await rewriteManifest(f.library, { formatVersion: 2 });
+  // A newer engine moved the library one format past this engine's (format-version.ts) after the plan was made.
+  await rewriteManifest(f.library, { formatVersion: ENGINE_FORMAT_VERSION + 1 });
   const roots = [f.b.home, f.b.deviceHome, f.project];
   const before = await snapshot(roots);
   const refused = await planUnderTripwire(f, f.b, { mode: "restore", projectRoot: f.project, at: at(), home: f.b.home, deviceHome: f.b.deviceHome, restore: f.library }, roots);
@@ -219,8 +220,8 @@ test("480-AC3: a library in a newer format stops the restore at the third check,
   assert.equal(refused.details.check, "format");
   assert.equal(refused.details.item, "3");
   assert.equal(refused.details.cause, "LIBRARY_FORMAT_UNSUPPORTED");
-  assert.equal(refused.details.required, "2");
-  assert.equal(refused.details.supported, "1");
+  assert.equal(refused.details.required, String(ENGINE_FORMAT_VERSION + 1));
+  assert.equal(refused.details.supported, String(ENGINE_FORMAT_VERSION));
   assert.equal(refused.details.remedy, "engine-update");
   assert.deepEqual(await snapshot(roots), before, "the plan wrote nothing");
 
@@ -433,4 +434,85 @@ test("385-R16: a restore of a library outside the project names each project hos
   const applied = await applySetup(planned);
   assert.equal(applied.reasonCode, "SETUP_APPLIED");
   assert.deepEqual(applied.warnings, expected);
+});
+
+// Approved contract item 3 with STORY-480 R3/AC3 (INIT-053 U04): a second device restoring a
+// library recognizes the coordination identity the library names and never creates a second one;
+// a later first installation there joins the same identity; once the coordination library is at
+// the device's default location, a restore registers it as setup does, writing nothing into it.
+test("480-R3 (U04): a second device recognizes the restored coordination identity, creates none in its place, and registers it once it is at its default location", async (context) => {
+  const f = await fixture(context);
+  const first = await installOnA(f);
+  const coordinationId = chainIdentity(await materializeWorkspace(f.library)).coordinationLibraryId;
+  const coordinationOnA = join(f.a.deviceHome, "coordination-library");
+  const coordinationOnB = join(f.b.deviceHome, "coordination-library");
+  const digestOnA = (await computeInstallTreeDigest(coordinationOnA)).sha256;
+  use(f.b);
+  // The plan runs through the shipped entry with every network call refused: restore stays offline.
+  const offline = spawnSync(process.execPath, ["--import", join(repositoryRoot, "scripts/no-network.mjs"), join(repositoryRoot, "scripts/einzbern.mjs"),
+    "setup", "--mode", "restore", "--project", f.project, "--at", at(), "--restore", f.library], {
+    encoding: "utf8",
+    env: { ...process.env, EINZBERN_HOME: f.b.deviceHome, HOME: f.b.home, USERPROFILE: f.b.home },
+  });
+  assert.equal(offline.status, 0, offline.stderr);
+  assert.equal(JSON.parse(offline.stdout).reasonCode, "SETUP_PLAN_READY");
+  const applied = await applySetup(await restorePlan(f, f.b, f.library));
+  assert.equal(applied.reasonCode, "SETUP_APPLIED");
+  assert.equal(await lstat(coordinationOnB).catch(() => null), null, "no second coordination library is created");
+  assert.equal(chainIdentity(await materializeWorkspace(f.library)).coordinationLibraryId, coordinationId, "the restored library still names its coordination");
+  assert.deepEqual((await readRegistry(f.b.deviceHome)).entries.map((entry) => entry.libraryId), [first.library.libraryId], "the coordination stays unregistered on device b");
+
+  // A later first installation of another project on device b joins the same identity.
+  const other = join(f.base, "other");
+  await mkdir(other);
+  const planned = await planSetup({ mode: "fresh", projectRoot: other, at: at(), home: f.b.home, deviceHome: f.b.deviceHome });
+  assert.deepEqual(planned.blockers, []);
+  assert.ok(!planned.writes.some((entry) => entry.path === coordinationOnB), "the plan creates no coordination library");
+  assert.equal((await applySetup(planned)).reasonCode, "SETUP_APPLIED");
+  assert.equal(chainIdentity(await materializeWorkspace(join(other, ".ether"))).coordinationLibraryId, coordinationId, "it joins the identity the restored library names");
+  assert.equal(await lstat(coordinationOnB).catch(() => null), null);
+
+  // The coordination library arrives at device b's default location: a restore registers it.
+  await cp(coordinationOnA, coordinationOnB, { recursive: true });
+  const digestOnB = (await computeInstallTreeDigest(coordinationOnB)).sha256;
+  const located = await restorePlan(f, f.b, f.library);
+  assert.deepEqual(rows(located.writes), [["registry", join(f.b.deviceHome, "registry.json"), "update"]]);
+  const registered = await applySetup(located);
+  assert.deepEqual(rows(registered.written), rows(located.writes), "the apply wrote what the plan listed");
+  const entry = (await readRegistry(f.b.deviceHome)).entries.find((candidate) => candidate.libraryId === coordinationId);
+  assert.deepEqual([entry.projectPath, entry.libraryPath, entry.chainRole], [coordinationOnB, coordinationOnB, "coordination"]);
+  assert.equal((await computeInstallTreeDigest(coordinationOnB)).sha256, digestOnB, "registering it writes nothing into the coordination library");
+  assert.equal((await computeInstallTreeDigest(coordinationOnA)).sha256, digestOnA, "device a's coordination library is untouched");
+  assert.deepEqual((await restorePlan(f, f.b, f.library)).writes, [], "a further restore finds everything in place");
+});
+
+// Approved contract item 3 (INIT-053 U04): competing coordination identities are a conflict that
+// names every candidate and how to settle it, and the refused plan writes nothing.
+test("480-R3 (U04): restoring a library that names another coordination than this device's stops with both candidates", async (context) => {
+  const f = await fixture(context);
+  await installOnA(f);
+  const named = chainIdentity(await materializeWorkspace(f.library)).coordinationLibraryId;
+  use(f.b);
+  const own = join(f.base, "own");
+  await mkdir(own);
+  assert.equal((await applySetup(await planSetup({ mode: "fresh", projectRoot: own, at: at(), home: f.b.home, deviceHome: f.b.deviceHome }))).reasonCode, "SETUP_APPLIED");
+  const deviceCoordination = chainIdentity(await materializeWorkspace(join(own, ".ether"))).coordinationLibraryId;
+  assert.notEqual(deviceCoordination, named);
+  const registryBefore = await readFile(join(f.b.deviceHome, "registry.json"));
+  const projectBefore = await snapshot([f.project, f.b.home]);
+  await assert.rejects(restorePlan(f, f.b, f.library), (error) => {
+    assert.equal(error.reasonCode, "PROJECT_CHAIN_INVALID", error.message);
+    assert.deepEqual(error.details.conflicts, [named, deviceCoordination].sort());
+    assert.equal(error.details.remedy, "chain-declare");
+    return true;
+  });
+  const run = spawnSync(process.execPath, [join(repositoryRoot, "scripts/einzbern.mjs"), "setup", "--mode", "restore", "--project", f.project, "--at", at(), "--restore", f.library], {
+    encoding: "utf8",
+    env: { ...process.env, EINZBERN_HOME: f.b.deviceHome, HOME: f.b.home, USERPROFILE: f.b.home },
+  });
+  assert.equal(run.status, 1, run.stdout);
+  const refusal = JSON.parse(run.stderr.trim().split("\n").at(-1));
+  assert.deepEqual([refusal.reasonCode, refusal.conflicts, refusal.remedy], ["PROJECT_CHAIN_INVALID", [named, deviceCoordination].sort(), "chain-declare"]);
+  assert.deepEqual(await readFile(join(f.b.deviceHome, "registry.json")), registryBefore, "the registry is as it was");
+  assert.deepEqual(await snapshot([f.project, f.b.home]), projectBefore, "the project and device b's home are as they were");
 });

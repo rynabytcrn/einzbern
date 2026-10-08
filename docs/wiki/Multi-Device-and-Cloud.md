@@ -27,3 +27,9 @@ Register the same restored libraries on each device. Multiple repositories may
 share one product identity. Different physical locations claiming the same
 identity on one device are reported as ambiguous; equal display names never
 collapse distinct targets. Unavailable references stay saved on work items.
+
+A restored project library keeps naming its coordination library. Another
+device recognizes that identity and never creates a second coordination library
+for it. Until the coordination library is present on that device and registered
+with `library-register`, the device keeps the binding without opening the
+coordination's records.

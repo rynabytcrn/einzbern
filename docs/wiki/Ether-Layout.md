@@ -50,5 +50,8 @@
 Cross Project is an explicitly declared coordination chain. Each concrete
 project chain owns its development configuration. Names and directories never
 identify a chain's role. Stable `{libraryId, projectId}` references identify
-involved projects; this device's registry locates them. See the project-chain
-sections of the configuration and compatibility specifications.
+involved projects; this device's registry locates them. When this device has
+no coordination library, setup creates one in the device directory
+(`coordination-library`); another device finds it by its identity, never by that
+path. See the project-chain sections of the configuration and compatibility
+specifications.

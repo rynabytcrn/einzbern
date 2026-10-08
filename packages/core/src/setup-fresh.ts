@@ -1,4 +1,4 @@
-import { chainIdentity, declareChainIdentity, registeredCoordination, ensureProjectCoordination } from "./project-chain.js";
+import { chainIdentity, declareChainIdentity, ensureProjectCoordination, projectCoordinationChoice, resolveCoordinationBinding } from "./project-chain.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -852,7 +852,9 @@ export async function applyWiring(recorder: SetupRecorder, input: WiringApplyInp
   if (library !== null) {
     const prior = await materializeWorkspace(library.path);
     const identity = chainIdentity(prior);
-    if (identity !== null) await registeredCoordination(input.deviceHome, identity.coordinationLibraryId);
+    // Contract item 3: the coordination a project library names is resolved, never replaced; one
+    // this device does not locate stays unregistered here, and a competing identity refuses.
+    if (identity?.role === "project") await resolveCoordinationBinding(identity.coordinationLibraryId, input.deviceHome);
     const configurationProjectId = input.configurationProjectId ?? await ensureSetupProjectBinding(input.projectRoot, library.path, input);
     input = { ...input, configurationProjectId };
     if ((await materializeWorkspace(library.path)).version !== prior.version) recorder.write("library", library.path, "update");
@@ -945,11 +947,20 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
   if (library.action === "create") recorder.write("library", library.path, "create");
   else if (currentLanguage !== resolved.language) recorder.write("library", library.path, "update");
 
-  // The coordination binding is part of this plan, including repeat/restore conflicts.
+  // The coordination binding is part of this plan, including repeat/restore conflicts: the choice
+  // the apply makes (project-chain.ts), and the writes it takes. A coordination library at the
+  // default location that this device does not register yet is registered (with its Cross
+  // Project project when it has none), never created again.
   try {
     const identity = library.action === "reuse" ? chainIdentity(await materializeWorkspace(library.path)) : null;
-    const coordination = await registeredCoordination(deviceHome, identity?.coordinationLibraryId);
-    if (coordination === null) recorder.write("library", join(deviceHome, "coordination-library"), "create");
+    const coordination = await projectCoordinationChoice(identity, deviceHome);
+    if (coordination.status === "create") recorder.write("library", coordination.path!, "create");
+    if (coordination.status === "located") {
+      const registryFile = registryPath(deviceHome);
+      recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
+      const located = await materializeWorkspaceFromGenesis(coordination.path!);
+      if (!located.projects.some((entry) => entry.externalKey === "CROSS-PROJECT" && !entry.tombstone)) recorder.write("library", coordination.path!, "update");
+    }
     if (identity === null && library.action !== "create") recorder.write("library", library.path, "update");
   } catch (error) { recorder.block("library", library.path, "SETUP_LIBRARY_CONFLICT", String(error)); }
 
@@ -1016,8 +1027,16 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
   const libraryId = library.manifest.libraryId;
   if (planned.action === "create") recorder.write("library", libraryPath, "create");
   const existingIdentity = chainIdentity(await materializeWorkspace(libraryPath));
+  const registryFile = registryPath(deviceHome);
+  const registryKind = await entryKind(registryFile);
   const coordination = await ensureProjectCoordination(libraryPath, at, deviceHome);
-  if (coordination.created) recorder.write("library", coordination.path, "create");
+  if (coordination.created) recorder.write("library", coordination.path!, "create");
+  // Registering the coordination writes registry.json before the registry step: listed as the plan
+  // listed it, from what the file was before.
+  if (coordination.status === "create" || coordination.status === "located") {
+    recorder.write("registry", registryFile, registryKind === null ? "create" : "update");
+    if (coordination.status === "located" && coordination.written) recorder.write("library", coordination.path!, "update");
+  }
   if (existingIdentity === null) recorder.write("library", libraryPath, "update");
   const configurationProjectId = await ensureSetupProjectBinding(projectRoot, libraryPath, { at, deviceHome });
   const declaredIdentity = chainIdentity(await materializeWorkspace(libraryPath))!;

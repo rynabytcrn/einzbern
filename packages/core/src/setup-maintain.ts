@@ -18,7 +18,9 @@
 //              installation that is whole writes nothing. The library's settings are not written.
 //   uninstall  the Einzbern hook groups taken out of both hosts' user settings, both skill copies and
 //              skills.json moved whole into the backups of this run, and the project's registry entry
-//              removed once registry.json is copied there. The library is left exactly as it is.
+//              removed once registry.json is copied there, with the registration setup made for the
+//              coordination the project names once no other registration names it (STORY-480 R4,
+//              project-chain.ts). The libraries are only read, and left exactly as they are.
 //              --managed-sections keep, the default, leaves the sections in the project's files;
 //              remove takes their markers out and leaves their text, which is the user's from then on
 //              (unmanage, agents-sections.ts), without writing the library's records of them.
@@ -47,6 +49,7 @@ import type { AgentsNavigationChoice } from "./machine-settings.js";
 import { managedSectionRecordsFor, parseManagedFile } from "./managed-sections.js";
 import { BRAND, DIRECTORY } from "./names.js";
 import { readRegistry, unregisterLibrary } from "./registry.js";
+import { coordinationNamedBy, releaseSetupCoordination } from "./project-chain.js";
 import type { RegistryEntry } from "./registry.js";
 import { SETUP_ACTOR, setupFail } from "./setup.js";
 import type {
@@ -755,8 +758,8 @@ function managedSectionsChoice(input: SetupModeInput): "keep" | "remove" {
 /**
  * Plan an uninstall (R4): the hook groups that come out of both hosts' user settings, the skill
  * copies and skills.json that move into the backups, the registry entry that is removed and, with
- * --managed-sections remove, the project files whose section markers come out. The library is not
- * read for any of it and never written.
+ * --managed-sections remove, the project files whose section markers come out. A library is only
+ * read, to know which coordination it names, and never written.
  */
 export async function planUninstallSetup(input: SetupModeInput): Promise<SetupModePlan> {
   const { context, answers } = input;
@@ -810,9 +813,11 @@ async function moveIntoBackup(from: string, to: string): Promise<void> {
 
 /**
  * Apply an uninstall (R4, AC4): the hooks come out, the skill copies and skills.json move into the
- * backups of this run, and the registry entry goes once registry.json is copied there. The library is
- * never read for it, so its tree is as it was; with --managed-sections remove the section markers
- * come out of the project's files and their text stays.
+ * backups of this run, and the registry entry goes once registry.json is copied there, and with it
+ * the registration setup made for the coordination the project's library names, once no other
+ * registration names that coordination (releaseSetupCoordination). Libraries are only read, so
+ * their trees are as they were; with --managed-sections remove the section markers come out of the
+ * project's files and their text stays.
  */
 export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied> {
   const { at, projectRoot, home, deviceHome } = plan;
@@ -833,13 +838,17 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
     recorder.backup("skill-copies", record);
   }
   const registryFile = registryPath(deviceHome);
-  if ((await readRegistry(deviceHome)).entries.some((entry) => entry.projectPath === projectRoot)) {
+  const registered = (await readRegistry(deviceHome)).entries.find((entry) => entry.projectPath === projectRoot);
+  if (registered !== undefined) {
     const copy = join(recorder.backupDirectory("registry"), DEVICE_HOME_ENTRIES.registry);
     if (await entryKind(copy) === null) {
       await ensureDeviceDirectory(dirname(copy));
       await writeFileAtomic(copy, await readFile(registryFile));
     }
+    // The coordination this project's library names (none when it is unclassified or does not read).
+    const coordination = await coordinationNamedBy(registered.libraryPath);
     await unregisterLibrary(projectRoot, deviceHome);
+    if (typeof coordination === "string") await releaseSetupCoordination(coordination, deviceHome);
     recorder.write("registry", registryFile, "update");
     recorder.backup("registry", registryFile);
   }

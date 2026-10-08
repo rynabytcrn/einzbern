@@ -52,7 +52,15 @@ einzbern setup --mode fresh|restore|update|repair|migrate|uninstall --project <é
 
 Fresh installation creates one explicitly marked coordination library for this
 device's installation context and registers the concrete project separately.
-Repeated setup reuses the canonical coordination identity. Restore checks an
-existing project's synchronized binding first; register a missing coordination
-library instead of creating a replacement. Competing identities require an
-explicit choice. Planning reports the additional library write before apply.
+Repeated setup reuses the canonical coordination identity: the one this device
+registers, else the one its registered project libraries name, else the
+coordination library already at the device's default location. Restore checks
+the restored library's synchronized binding first. A coordination this device
+registers is checked; the same identity at the default location is registered
+with the project; otherwise the restore goes on and the coordination stays
+unregistered on this device until its library is registered with
+`library-register`. Nothing is created in its place, and a later fresh setup on
+this device joins the same identity. Competing identities stop the plan and name
+every candidate. Planning reports the additional library or registry write
+before apply. Uninstall takes out the coordination registration setup made once
+no registered project names it; the coordination library itself stays.

@@ -1,4 +1,4 @@
-import { chainIdentity, registeredCoordination } from "./project-chain.js";
+import { chainIdentity, registerSetupCoordination, restoredCoordinationBinding } from "./project-chain.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-480 R3, AC3 (MIN-227 D24; TCRN-CROSS-SUB-324): setup --mode restore, which
@@ -52,6 +52,7 @@ import { MACHINE_SETTINGS_CATALOG, MACHINE_SETTINGS_FILE_NAME, readMachineSettin
 import { managedSectionRecordsFor, planManagedWrite } from "./managed-sections.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY } from "./names.js";
 import { gitRemoteOf, normalizeGitRemote, readRegistry } from "./registry.js";
+import { registryPath } from "./device-home.js";
 import type { SetupApplied, SetupColumns, SetupModeInput, SetupModePlan, SetupPlan, SetupQuestion, ResolvedSetupAnswers } from "./setup.js";
 import { SETUP_ACTOR, setupFail } from "./setup.js";
 import {
@@ -673,11 +674,18 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
   const verification = await verifyRestore({ projectRoot, home, deviceHome, libraryPath: resolve(projectRoot, input.options.restore) });
   if (!verification.ok || verification.library === null) throw restoreRefusal(verification);
   const library = verification.library;
-  const identity = chainIdentity(library.state);
-  if (identity !== null) await registeredCoordination(deviceHome, identity.coordinationLibraryId);
+  // Contract item 3: the coordination the restored library names is resolved on this device and
+  // never replaced. One registered here is checked; the same identity at this device's default
+  // coordination location is registered by the apply; one this device does not locate stays
+  // unregistered (library-register it once it is here); a competing identity refuses.
+  const coordination = await restoredCoordinationBinding(chainIdentity(library.state), library.libraryId, deviceHome);
 
   const engine = await planEngineSource(recorder, deviceHome);
   await planDevice(recorder, deviceHome);
+  if (coordination?.status === "located") {
+    const registryFile = registryPath(deviceHome);
+    recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
+  }
   const cloud = defaultCloud(context, library.root);
   const resolved: ResolvedSetupAnswers = {
     artifacts: library.root,
@@ -745,10 +753,16 @@ export async function applyRestoreSetup(plan: SetupPlan): Promise<SetupApplied> 
   if (library.libraryId !== planned.libraryId) {
     setupFail("SETUP_LIBRARY_CONFLICT", `${library.root} holds ${library.libraryId}, not the planned ${planned.libraryId}`, { library: library.root });
   }
-  const identity = chainIdentity(library.state);
-  if (identity !== null) await registeredCoordination(deviceHome, identity.coordinationLibraryId);
+  const coordination = await restoredCoordinationBinding(chainIdentity(library.state), library.libraryId, deviceHome);
   const recorder = new SetupRecorder(deviceHome, at);
   const device = await applyDevice(recorder, deviceHome, at);
+  if (coordination?.status === "located") {
+    // Registered as setup registers it; nothing is written into the coordination library.
+    const registryFile = registryPath(deviceHome);
+    const kind = await entryKind(registryFile);
+    await registerSetupCoordination(coordination.path!, at, deviceHome, { createProject: false });
+    recorder.write("registry", registryFile, kind === null ? "create" : "update");
+  }
   const pending = await applyWiring(recorder, {
     projectRoot,
     home,

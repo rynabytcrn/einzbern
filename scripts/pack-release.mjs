@@ -63,13 +63,14 @@ const ATELIER_STATIC_FILES = Object.freeze(["atelier-brand-mark.svg", "index.htm
 // the build of that module in its place.
 const NAMES_SOURCE_SPECIFIER = "\"../../packages/core/src/names.ts\"";
 const NAMES_BUILD_SPECIFIER = "\"../../packages/core/src/names.js\"";
-// Atelier holds the device registry lock through the engine's own modules: portal/portal.mjs imports
-// the builds of the file lock and of the device directory from dist/build. The stage carries those
-// two builds beside the names build, where the device directory's own import of ./names.js finds the
-// one names module, and points the staged portal at them; dist/build is not part of a release.
-const ATELIER_CORE_MODULES = Object.freeze(["file-lock.js", "device-home.js"]);
-const atelierBuildSpecifier = (module) => `"../dist/build/packages/core/src/${module}"`;
-const atelierStagedSpecifier = (module) => `"../packages/core/src/${module}"`;
+// Atelier holds the device registry lock through the engine's own modules, which the portal reaches
+// through scripts/lib/registry-lock.mjs: the bridge re-exports the builds of the file lock and of the
+// device directory from dist/build. The stage carries those two builds beside the names build, where
+// the device directory's own import of ./names.js finds the one names module, and points the staged
+// bridge at them; dist/build is not part of a release.
+const REGISTRY_LOCK_MODULES = Object.freeze(["file-lock.js", "device-home.js"]);
+const registryLockBuildSpecifier = (module) => `"../../dist/build/packages/core/src/${module}"`;
+const registryLockStagedSpecifier = (module) => `"../../packages/core/src/${module}"`;
 const BUNDLED_CLI_DECLARATION = /^const BUNDLED_CLI = .*;$/gmu;
 const README = /^README(?:\.[A-Za-z-]+)?\.md$/u;
 const DOCUMENTS = Object.freeze(["CHANGELOG.md", "LICENSE", "NOTICE"]);
@@ -139,8 +140,8 @@ async function treeFiles(root, relativePath = "") {
  * The Atelier bundle: portal/portal.mjs and the modules it imports are staged as they sit in the
  * repository, under a package.json of their own so the bundle's labels read as the repository's,
  * with BUNDLED_CLI fixed to ATELIER_CLI, the names bridge pointed at the build of the names module
- * and the portal's two engine imports pointed at the builds staged beside it. The portal source
- * itself is not changed.
+ * and the registry-lock bridge pointed at the builds staged beside it. The portal source itself is
+ * not changed.
  */
 async function bundleAtelier(stage, coreBuild) {
   const root = join(stage, "atelier-source");
@@ -152,20 +153,22 @@ async function bundleAtelier(stage, coreBuild) {
   if (names.split(NAMES_SOURCE_SPECIFIER).length !== 2) {
     fail("PACK_ATELIER_UNBOUND", `scripts/lib/names.mjs no longer re-exports ${NAMES_SOURCE_SPECIFIER} once, so the Atelier stage no longer matches it`);
   }
-  for (const module of ATELIER_CORE_MODULES) {
-    if (portal.split(atelierBuildSpecifier(module)).length !== 2) {
-      fail("PACK_ATELIER_UNBOUND", `portal/portal.mjs no longer imports ${atelierBuildSpecifier(module)} once, so the Atelier stage no longer matches it`);
+  const registryLock = await readFile(join(repositoryRoot, "scripts", "lib", "registry-lock.mjs"), "utf8");
+  for (const module of REGISTRY_LOCK_MODULES) {
+    if (registryLock.split(registryLockBuildSpecifier(module)).length !== 2) {
+      fail("PACK_ATELIER_UNBOUND", `scripts/lib/registry-lock.mjs no longer re-exports ${registryLockBuildSpecifier(module)} once, so the Atelier stage no longer matches it`);
     }
   }
-  let stagedPortal = portal.replace(BUNDLED_CLI_DECLARATION, `const BUNDLED_CLI = join(portalRoot, ${JSON.stringify(ATELIER_CLI)});`);
-  for (const module of ATELIER_CORE_MODULES) stagedPortal = stagedPortal.replace(atelierBuildSpecifier(module), atelierStagedSpecifier(module));
+  let stagedRegistryLock = registryLock;
+  for (const module of REGISTRY_LOCK_MODULES) stagedRegistryLock = stagedRegistryLock.replace(registryLockBuildSpecifier(module), registryLockStagedSpecifier(module));
   await writeStaged(root, "package.json", `${JSON.stringify({ private: true, type: "module" }, null, 2)}\n`);
-  await writeStaged(root, "portal/portal.mjs", stagedPortal);
+  await writeStaged(root, "portal/portal.mjs", portal.replace(BUNDLED_CLI_DECLARATION, `const BUNDLED_CLI = join(portalRoot, ${JSON.stringify(ATELIER_CLI)});`));
   await copyStaged(root, "portal/locale-contract.mjs", join(repositoryRoot, "portal", "locale-contract.mjs"));
   await copyStaged(root, "scripts/lib/runtime-capacity.mjs", join(repositoryRoot, "scripts", "lib", "runtime-capacity.mjs"));
   await writeStaged(root, "scripts/lib/names.mjs", names.replace(NAMES_SOURCE_SPECIFIER, NAMES_BUILD_SPECIFIER));
+  await writeStaged(root, "scripts/lib/registry-lock.mjs", stagedRegistryLock);
   await copyStaged(root, "packages/core/src/names.js", join(coreBuild, "names.js"));
-  for (const module of ATELIER_CORE_MODULES) await copyStaged(root, `packages/core/src/${module}`, join(coreBuild, module));
+  for (const module of REGISTRY_LOCK_MODULES) await copyStaged(root, `packages/core/src/${module}`, join(coreBuild, module));
   return (await bundleEntry(join(root, "portal", "portal.mjs"))).code;
 }
 

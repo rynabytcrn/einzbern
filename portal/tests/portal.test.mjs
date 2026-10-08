@@ -4,6 +4,9 @@
 // Every CLI and portal child inherits the test process's device directory, never the real one.
 import "../../tests/helpers/device-home.mjs";
 import { forgeOwnStream } from "../../tests/helpers/library-forge.mjs";
+// Another process on the device unregistering a library or bringing up the coordination chain is
+// stood in for through the helper, outside the portal tree (TCRN-CROSS-INIT-053 R45 PP-1).
+import { ensureProjectCoordination, unregisterLibrary } from "../../tests/helpers/registry-control.mjs";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -1668,7 +1671,6 @@ test("STORY-482 R3: the portal refuses to start with no registered library, and 
 
 test("fresh coordination's own registration boots and switches without a prose output", async t => {
   const fixture = await scratch("portal-fresh-coordination-", "COORDINATION-LIFECYCLE");
-  const { ensureProjectCoordination } = await import("../../dist/build/packages/core/src/index.js");
   const coordination = await ensureProjectCoordination(fixture.workspace, "2026-10-08T10:00:00Z", fixture.deviceEnv.EINZBERN_HOME);
   const { child, url } = await startPortal({ ...fixture, library: coordination.path });
   t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
@@ -1693,7 +1695,6 @@ test("unregistered selection refuses every configuration and prose mutation with
   t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
   const before = await Promise.all([fixture.workspace, fixture.second.library].map(workspace => cli(["status", "--workspace", workspace], fixture.deviceEnv)));
-  const { unregisterLibrary } = await import("../../dist/build/packages/core/src/registry.js");
   await unregisterLibrary(fixture.proseRoot, fixture.deviceEnv.EINZBERN_HOME);
   const routes = [
     ["/api/settings", "POST", { key: "artifact.language", value: "fr" }],
@@ -1728,7 +1729,6 @@ test("an admitted request whose body is still in flight refuses an unregistered 
     });
     req.on("error", reject); req.flushHeaders(); req.write(body.slice(0, 1));
   });
-  const { unregisterLibrary } = await import("../../dist/build/packages/core/src/registry.js");
   await unregisterLibrary(fixture.proseRoot, fixture.deviceEnv.EINZBERN_HOME);
   req.end(body.slice(1));
   assert.equal((await completed).reasonCode, "PORTAL_CONFIGURATION_TARGET_CHANGED");

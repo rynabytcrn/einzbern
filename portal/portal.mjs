@@ -17,9 +17,9 @@ import { fileURLToPath } from "node:url";
 
 // Hold the same device registry lock used by register/unregister/repoint until
 // the CLI's library lock and all output writes finish. This is exclusion, not
-// another preflight or an authentication mechanism.
-import { withFileLock } from "../dist/build/packages/core/src/file-lock.js";
-import { registryPath } from "../dist/build/packages/core/src/device-home.js";
+// another preflight or an authentication mechanism. The lock and its path come
+// through the registry-lock bridge, as the names do through names.mjs.
+import { withFileLock, registryPath } from "../scripts/lib/registry-lock.mjs";
 
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
 import { DIRECTORY, LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";

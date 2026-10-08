@@ -13,8 +13,13 @@ import { constants as bufferConstants } from "node:buffer";
 // is, so the next question is whether this device's registry holds the prompt's directory. The
 // launcher reads the registry and, at most, one repository's Git configuration; it starts no
 // process (no git: problem list #6) and opens no library, and a directory no entry matches ends
-// the hook with exit code 0 and nothing written (R2). The match is a fast subset of the engine's
-// resolveLibrary (packages/core/src/registry.ts): the nearest registered project the directory lies in, otherwise
+// the hook with exit code 0 and nothing printed (R2). Such a directory inside a known container (a
+// library, an old-layout workspace or an old platform container) is noted, so a hook that answers
+// nothing can be told from one that never ran (TCRN-CROSS-INIT-053 R47-06): one line is appended
+// to log/hook.ndjson in the device directory, naming why, and a note that cannot be written is
+// dropped. Finding the container stats marker paths only; no library file is opened or read.
+// The match is a fast subset of the engine's resolveLibrary (packages/core/src/registry.ts): the
+// nearest registered project the directory lies in, otherwise
 // the remote of the Git working tree the directory is in (origin, else the first remote by name),
 // in the registry's one spelling (normalizeGitRemote, kept identical). A match reads
 // engine/current and imports that version's hook entry (scripts/einzbern-hook.mjs), whose
@@ -27,7 +32,7 @@ import { constants as bufferConstants } from "node:buffer";
 // Windows (R5): paths are the platform's own, and the engine's entry is imported through the file URL
 // pathToFileURL builds, never a string joined by hand.
 
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, posix, resolve, sep, win32 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -46,6 +51,21 @@ const HOOK_ENTRY = Object.freeze(["scripts", "einzbern-hook.mjs"]);
 // versioned hook, so it cannot use that version's compiled helper here.
 export const HOOK_NODE_FLOOR = "24.0.0";
 const NODE_VERSION = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/u;
+// TCRN-CROSS-INIT-053 R47-06: the note a prompt leaves when it is typed in a known container that the
+// registry does not cover. The file is appended to and never rotated here; deleting it loses nothing.
+const LOG_DIRECTORY = "log";
+const LOG_FILE = "hook.ndjson";
+const LOG_SCHEMA_VERSION = "einzbern.hook-log.v1";
+// The markers of a known container, held equal to packages/core/src/names.ts (DIRECTORY.library,
+// LEGACY_CONTROL_DIRECTORY, LEGACY_CONTAINER_DIRECTORY) and to LIBRARY_FILES.manifest by
+// tests/hook-launcher.test.mjs: this launcher imports only node: built-ins. An old-layout workspace
+// is a control directory holding workspace.json (legacyControlDirectory reads it the same way), so
+// the old device directory of the same name in a user's home is not taken for one.
+export const LIBRARY_DIRECTORY = ".ether";
+export const LIBRARY_MANIFEST = "manifest.json";
+export const LEGACY_CONTROL_DIRECTORY = ".tcrn-workflow";
+export const LEGACY_WORKSPACE_FILE = "workspace.json";
+export const LEGACY_CONTAINER_DIRECTORY = ".tcrn-workspace";
 
 class HookLaunchError extends Error {
   constructor(reasonCode, message) {
@@ -338,6 +358,62 @@ export function matchRegistry(entries, directory) {
   return entries.find((entry) => entry.gitRemote === normalized) ?? null;
 }
 
+/**
+ * The known container `directory` (a real path) lies in: the nearest of it and its ancestors that holds
+ * a library (marker "library") or an old-layout workspace or platform container (marker "legacy");
+ * null when none. Only marker paths are statted.
+ */
+export function knownContainer(directory) {
+  let current = directory;
+  for (;;) {
+    if (entryKind(join(current, LIBRARY_DIRECTORY, LIBRARY_MANIFEST)) === "file") return { container: current, marker: "library" };
+    if (entryKind(join(current, LEGACY_CONTROL_DIRECTORY, LEGACY_WORKSPACE_FILE)) === "file" ||
+      entryKind(join(current, LEGACY_CONTAINER_DIRECTORY)) === "directory") return { container: current, marker: "legacy" };
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+/**
+ * Why a prompt in the known container `found` got no answer from a registry with `entries` and no
+ * entry for its directory: no registry, an unregistered project in an old layout, or a library the
+ * registry does not hold; null when the container's library is registered for another project.
+ */
+export function unansweredReason(entries, found) {
+  if (entries.length === 0) return "HOOK_REGISTRY_ABSENT";
+  if (found.marker === "legacy") return "HOOK_PROJECT_UNREGISTERED";
+  const library = join(found.container, LIBRARY_DIRECTORY);
+  return entries.some((entry) => resolve(entry.libraryPath) === library) ? null : "HOOK_LIBRARY_UNREGISTERED";
+}
+
+function promptDirectory(payload) {
+  const cwd = typeof payload.cwd === "string" && payload.cwd.length > 0 && isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
+  return realpathSync.native(cwd);
+}
+
+// One line in log/hook.ndjson when the prompt's directory is in a known container (R47-06). Every
+// failure here is dropped: the hook's exit code, stdout and stderr stay what they were without it.
+function noteUnanswered(device, entries, event, payload, directory = null) {
+  try {
+    const cwd = directory ?? promptDirectory(payload);
+    const found = knownContainer(cwd);
+    if (found === null) return;
+    const reasonCode = unansweredReason(entries, found);
+    if (reasonCode === null) return;
+    const logDirectory = join(device, LOG_DIRECTORY);
+    try {
+      mkdirSync(logDirectory, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== "EEXIST") return;
+    }
+    const line = { schemaVersion: LOG_SCHEMA_VERSION, at: new Date().toISOString(), event, cwd, container: found.container, marker: found.marker, reasonCode };
+    appendFileSync(join(logDirectory, LOG_FILE), `${JSON.stringify(line)}\n`, { mode: 0o600 });
+  } catch {
+    // A hook never blocks a session, and a note it cannot write changes nothing it answers.
+  }
+}
+
 /** The file URL of a version's hook entry under `engineDirectory`, written for `platform` (R5). */
 export function hookEntryUrl(engineDirectory, version, platform = process.platform) {
   const paths = platform === "win32" ? win32 : posix;
@@ -382,11 +458,16 @@ async function launch(argv, env) {
   const payload = await readInput();
   const device = deviceDirectory(env);
   const entries = registryEntries(device);
-  if (entries.length === 0) return null;
-  const cwd = typeof payload.cwd === "string" && payload.cwd.length > 0 && isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
-  const directory = realpathSync.native(cwd);
+  if (entries.length === 0) {
+    noteUnanswered(device, entries, event, payload);
+    return null;
+  }
+  const directory = promptDirectory(payload);
   const entry = matchRegistry(entries, directory);
-  if (entry === null) return null;
+  if (entry === null) {
+    noteUnanswered(device, entries, event, payload, directory);
+    return null;
+  }
   const engine = join(device, ENGINE_DIRECTORY);
   const hook = await import(hookEntryUrl(engine, currentVersion(engine)));
   if (typeof hook.runHookEvent !== "function") throw new HookLaunchError("HOOK_ENTRY_INVALID", "the current engine's hook entry has no runHookEvent");

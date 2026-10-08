@@ -3,6 +3,9 @@
 // its real repository path, so the reviewed DS publication provenance line is classified at its
 // exact inventory paths and nowhere else. The owner and the reviewed line are built at run time
 // from the names module; this file carries no private literal.
+// TCRN-CROSS-INIT-053 R47-08: the same check runs in the helper repository before its rendered pages
+// are committed, so an origin naming the helper repository is accepted; the classification is not
+// widened, and an origin naming neither repository is still refused.
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -39,11 +42,11 @@ function fixtureGit(root, arguments_) {
   return result.stdout.trim();
 }
 
-async function fixtureRepository(context) {
+async function fixtureRepository(context, origin = `https://github.com/${OWNER}/${BRAND.engine.id}.git`) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-staged-reviewed-")));
   context.after(() => rm(root, { recursive: true, force: true }));
   fixtureGit(root, ["init", "-q", "-b", "main"]);
-  fixtureGit(root, ["remote", "add", "origin", `https://github.com/${OWNER}/${BRAND.engine.id}.git`]);
+  fixtureGit(root, ["remote", "add", "origin", origin]);
   await stage(root, "README.md", "fixture\n");
   fixtureGit(root, ["commit", "-q", "-m", "baseline"]);
   return root;
@@ -136,4 +139,41 @@ test("B3: a staged deletion scans no content and keeps the output fields", async
   assert.equal(report.scope, "staged-index-increment-only");
   assert.equal(report.historicalScan, "preserved-by-pnpm-verify:privacy");
   assert.equal(report.repositoryRoot, root);
+});
+
+test("R47-08: the helper repository's origin is accepted under both names, and the owner comes from origin", async (context) => {
+  for (const name of [BRAND.helper.id, LEGACY_REPOSITORY_NAMES.helper]) {
+    const root = await fixtureRepository(context, `https://github.com/${OWNER}/${name}.git`);
+    await stage(root, "references/doctor.md", "# Doctor\n\nRead the hook log.\n");
+    const { status, report } = check(root);
+    assert.equal(status, 0, JSON.stringify(report.findings));
+    assert.equal(report.reasonCode, "PRIVACY_STAGED_CLEAN", name);
+    assert.deepEqual(report.findings, []);
+    assert.equal(report.owner, OWNER);
+  }
+  const otherOwner = "fixture-owner";
+  // The scp-like form, built from parts so this file carries no address-shaped literal.
+  const ssh = await fixtureRepository(context, joinParts(["git", "@", "github.com:", otherOwner, "/", BRAND.helper.id, ".git"], ""));
+  await stage(ssh, "SKILL.md", "fixture\n");
+  const fromOrigin = check(ssh);
+  assert.equal(fromOrigin.report.reasonCode, "PRIVACY_STAGED_CLEAN");
+  assert.equal(fromOrigin.report.owner, otherOwner, "the owner is read from origin, not assumed");
+});
+
+test("R47-08: private content staged in the helper repository is still a finding, and an unrelated origin is still refused", async (context) => {
+  const helper = await fixtureRepository(context, `https://github.com/${OWNER}/${LEGACY_REPOSITORY_NAMES.helper}.git`);
+  const privateRoot = joinParts(["", "Users", OWNER, "Code"], "/");
+  await stage(helper, "references/doctor.md", `${privateRoot}\n`);
+  const found = check(helper);
+  assert.equal(found.status, 1);
+  assert.equal(found.report.reasonCode, "PRIVACY_STAGED_FINDINGS");
+  assert.ok(found.report.findings.includes("LOCAL_ABSOLUTE_PATH:source:references/doctor.md"), JSON.stringify(found.report.findings));
+  assert.ok(found.report.findings.includes("OWNER_PRIVATE_IDENTIFIER:source:references/doctor.md"), JSON.stringify(found.report.findings));
+
+  const unrelated = await fixtureRepository(context, `https://github.com/${OWNER}/unrelated-repository.git`);
+  await stage(unrelated, "README.md", "changed\n");
+  const refused = spawnSync(process.execPath, [CHECKER], { cwd: unrelated, encoding: "utf8" });
+  assert.equal(refused.status, 2);
+  assert.equal(refused.stdout, "");
+  assert.equal(JSON.parse(refused.stderr).reasonCode, "PRIVACY_ORIGIN_UNEXPECTED");
 });

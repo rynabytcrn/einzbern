@@ -26,7 +26,7 @@ function test(name, optionsOrBody, maybeBody) {
 import { coreExportedSymbols, inspectChainValidation, inspectPlatform } from "../scripts/platform-doctor.mjs";
 import { P1_SEQUENCE } from "../scripts/p1-sequence.mjs";
 import { HOST_HOOK_HOSTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
-import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
+import { BRAND, DEVICE_HOME_ENTRIES, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
 const FIXTURE_COMMIT = "f".repeat(40);
@@ -392,6 +392,9 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
       if (entry.acceptanceProbe.startsWith("probe:regular-executable")) await chmod(path, 0o755);
     }
   }
+  // TCRN-CROSS-INIT-053 R47-06: a complete device directory holds the registry beside engine/current;
+  // a launcher hook whose device lacks either one is PLATFORM_HOOK_ENGINE_NOT_INSTALLED.
+  await writeFile(join(home, DIRECTORY.device, DEVICE_HOME_ENTRIES.registry), `${JSON.stringify({ schemaVersion: "einzbern.registry.v1", entries: [] })}\n`);
   // TCRN-CROSS-INC-220: a complete install now includes each host's harness, because
   // Owner ruled a host is under the harness from the moment it installs its adapter. The
   // fixture's idea of "complete" moves with that ruling rather than around it.
@@ -421,7 +424,17 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
   return { root, home };
 }
 
-const inspectInstallFixture = (fixture, options = {}) => inspectPlatform(fixture.root, { homeRoot: fixture.home, launchdLabels: [launchdLabel], acceptanceHeadCommit: FIXTURE_COMMIT, ...options });
+// TCRN-CROSS-INIT-053 R47-07: a complete fixture teaches every key of a synthetic catalog. Its chain
+// container is empty, so the engine's catalog cannot be read there; these cases passed through the
+// unreadable branch while it was green, and that branch is red now. A case about it says so itself.
+const FIXTURE_SETTING_KEYS = Object.freeze(["backup.cadence", "design.authority"]);
+const inspectInstallFixture = (fixture, options = {}) => inspectPlatform(fixture.root, {
+  homeRoot: fixture.home,
+  launchdLabels: [launchdLabel],
+  acceptanceHeadCommit: FIXTURE_COMMIT,
+  helperSettingKeys: { catalog: FIXTURE_SETTING_KEYS, taught: FIXTURE_SETTING_KEYS },
+  ...options,
+});
 
 test("S264 four install-completeness legs are green on a synthetic full fixture", async (context) => {
   const fixture = await completeInstallFixture(context);
@@ -795,6 +808,93 @@ test("STORY-286 a registered codex hook whose target cannot run turns the leg re
   assert.equal(invalidHooks.reasonCode, "PLATFORM_CODEX_HOOKS_INVALID");
 });
 
+// TCRN-CROSS-INIT-053 R47-06. A hook can point at a script that is gone, or run Einzbern's launcher
+// on a device where the engine was never installed; the launcher then ends every prompt quietly.
+// Both looked alike from a session: no answer. The leg tells them apart, and reads the user-level
+// files too, where both of the harness audit's failures were.
+test("R47-06: a launcher hook on a device without the installed engine is its own red, after a missing script", async (context) => {
+  const fixture = await completeInstallFixture(context);
+  const hooks = (result) => result.checks.find((item) => item.name === "hooks");
+  const device = join(fixture.home, DIRECTORY.device);
+  assert.equal(hooks(await inspectInstallFixture(fixture)).ok, true, "the complete fixture's launcher hooks reach an installed engine");
+
+  await rm(join(device, DEVICE_HOME_ENTRIES.registry));
+  const noRegistry = hooks(await inspectInstallFixture(fixture));
+  assert.equal(noRegistry.ok, false);
+  assert.equal(noRegistry.reasonCode, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED");
+  assert.deepEqual(noRegistry.failures.map((failure) => [failure.source, failure.reasonCode, failure.missing]), [
+    ["container.codex-hooks", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]],
+    ["container.claude-settings", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]],
+  ]);
+  assert.equal(noRegistry.failures[0].device, device);
+
+  await rm(join(device, "engine", "current"));
+  assert.deepEqual(hooks(await inspectInstallFixture(fixture)).failures[0].missing, ["engine/current", "registry.json"]);
+
+  // A guarded old hook whose script is gone joins the same file: it is the first reason, and the
+  // engine finding stays listed beside it rather than folded into it.
+  const settingsPath = join(fixture.root, ".claude", "settings.json");
+  const settings = JSON.parse(await readFile(settingsPath, "utf8"));
+  const gone = '"${CLAUDE_PROJECT_DIR}/tools/stop-pact/hook.mjs"';
+  settings.hooks.Stop = [{ hooks: [{ type: "command", command: `if [ -f ${gone} ]; then node ${gone}; fi` }] }];
+  await writeFile(settingsPath, JSON.stringify(settings));
+  // engine/current is also a manifest item, so installWiring is the result's first red; the leg says the rest.
+  const both = await inspectInstallFixture(fixture);
+  assert.equal(both.reasonCode, "PLATFORM_INSTALL_WIRING_INCOMPLETE");
+  assert.equal(hooks(both).reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
+  assert.deepEqual(hooks(both).failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
+    ["container.claude-settings", "Stop", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
+    ["container.codex-hooks", "UserPromptSubmit", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"],
+    ["container.claude-settings", "UserPromptSubmit", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"],
+  ]);
+});
+
+test("R47-06: the hook leg reads the user-level Claude and Codex files of the given home, Einzbern's hooks only", async (context) => {
+  const fixture = await completeInstallFixture(context, { harness: false });
+  const hooks = (result) => result.checks.find((item) => item.name === "hooks");
+  const device = join(fixture.home, DIRECTORY.device);
+  const launcher = planHostHooks({ host: "codex", scope: "user", deviceHome: device }).launcher;
+  await mkdir(join(launcher, ".."), { recursive: true });
+  await writeFile(launcher, "export {}\n");
+  await rm(join(device, DEVICE_HOME_ENTRIES.registry));
+  const oldScript = join(fixture.root, LOCAL_DIRECTORY_NAMES.engine, "scripts", "knowledge-inject-hook.mjs");
+  await writeFile(join(fixture.home, ".claude", "settings.json"), JSON.stringify({ hooks: {
+    UserPromptSubmit: [{ hooks: [{ type: "command", command: `if [ -f "${oldScript}" ]; then node "${oldScript}" --host claude; fi` }] }],
+    // The user's own hook is not the platform's to judge, even when its script is missing.
+    Stop: [{ hooks: [{ type: "command", command: `node "${join(fixture.home, "own", "notify.mjs")}"` }] }],
+  } }));
+  await mkdir(join(fixture.home, ".codex"), { recursive: true });
+  await writeFile(join(fixture.home, ".codex", "hooks.json"), JSON.stringify(mergeHostHooks(null, planHostHooks({ host: "codex", scope: "user", deviceHome: device })).document));
+
+  const leg = hooks(await inspectInstallFixture(fixture));
+  assert.equal(leg.ok, false);
+  assert.equal(leg.reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
+  assert.deepEqual(leg.failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
+    ["machine.claude-settings", "UserPromptSubmit", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
+    ["machine.codex-hooks", "UserPromptSubmit", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"],
+  ]);
+  assert.deepEqual([leg.user.claude.state, leg.user.claude.checked, leg.user.codex.state, leg.user.codex.checked], ["broken", 1, "broken", 1]);
+  assert.equal(leg.failures[0].target, oldScript);
+
+  // An absent container Claude file defers that file only; the user-level findings stay red.
+  await rm(join(fixture.root, ".claude", "settings.json"));
+  const deferred = hooks(await inspectInstallFixture(fixture));
+  assert.equal(deferred.ok, false);
+  assert.equal(deferred.reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
+
+  // With the old hook gone and the engine installed, every file is live again.
+  await writeFile(join(fixture.root, ".claude", "settings.json"), "{}\n");
+  await writeFile(join(fixture.home, ".claude", "settings.json"), "{}\n");
+  await writeFile(join(device, DEVICE_HOME_ENTRIES.registry), `${JSON.stringify({ schemaVersion: "einzbern.registry.v1", entries: [] })}\n`);
+  const live = hooks(await inspectInstallFixture(fixture));
+  assert.equal(live.ok, true, JSON.stringify(live));
+  assert.deepEqual([live.user.claude.state, live.user.codex.state, live.user.codex.events], ["live", "live", ["UserPromptSubmit"]]);
+
+  await writeFile(join(fixture.home, ".codex", "hooks.json"), "{ not json");
+  const invalid = hooks(await inspectInstallFixture(fixture));
+  assert.deepEqual([invalid.ok, invalid.reasonCode, invalid.source], [false, "PLATFORM_CODEX_HOOKS_INVALID", "machine.codex-hooks"]);
+});
+
 // TCRN-CROSS-MIN-102 批0. The alignment leg has to be able to go red, and it has to
 // go red for the one condition that actually bites: a copy older than what a chain
 // declares it needs. Its green case is deliberately two different greens — nothing
@@ -880,6 +980,29 @@ test("MIN-103 the platform names a setting the placed Helper never teaches", asy
     helperSettingKeys: { catalog, taught: [...catalog, "some.future.key"] },
   });
   assert.equal(coverage(extra).ok, true);
+});
+
+// TCRN-CROSS-INIT-053 R47-07 (harness audit B4). Coverage that cannot be read is not coverage: both
+// unreadable sides are red, keep their reason codes, and assert nothing.
+test("R47-07: an unreadable engine settings catalog is red, and coverage is not asserted", async (context) => {
+  const fixture = await completeInstallFixture(context);
+  const coverage = (result) => result.checks.find((entry) => entry.name === "helperSettingsCoverage");
+  // The fixture's chain container holds no readable workspace, so the engine's catalog cannot be read.
+  const real = await inspectInstallFixture(fixture, { helperSettingKeys: undefined });
+  assert.equal(real.ok, false);
+  assert.deepEqual([coverage(real).ok, coverage(real).reasonCode, coverage(real).coverageAsserted, coverage(real).source],
+    [false, "PLATFORM_HELPER_SETTINGS_UNREADABLE", false, "engine settings-catalog + installed helper payload"]);
+  const synthetic = coverage(await inspectInstallFixture(fixture, { helperSettingKeys: { catalog: null, taught: [] } }));
+  assert.deepEqual([synthetic.ok, synthetic.reasonCode, synthetic.coverageAsserted, synthetic.source], [false, "PLATFORM_HELPER_SETTINGS_UNREADABLE", false, "synthetic"]);
+});
+
+test("R47-07: an unreadable helper payload is red, and coverage is not asserted", async (context) => {
+  const fixture = await completeInstallFixture(context);
+  const result = await inspectInstallFixture(fixture, { helperSettingKeys: { catalog: ["backup.cadence"], taught: null } });
+  const leg = result.checks.find((entry) => entry.name === "helperSettingsCoverage");
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, "PLATFORM_HELPER_PAYLOAD_UNREADABLE");
+  assert.deepEqual([leg.ok, leg.reasonCode, leg.coverageAsserted, leg.error], [false, "PLATFORM_HELPER_PAYLOAD_UNREADABLE", false, "UNREADABLE"]);
 });
 
 // TCRN-CROSS-INC-224. Headroom is reported before the wall, not at it.

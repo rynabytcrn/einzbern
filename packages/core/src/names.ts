@@ -160,6 +160,9 @@ export const LEGACY_REPOSITORY_NAMES = {
 // Every GitHub name the engine repository answers to: the new one, and the old one until
 // the Owner renames the remote. A remote or origin check accepts exactly these.
 export const ENGINE_REPOSITORY_NAMES: readonly string[] = Object.freeze([BRAND.engine.id, LEGACY_REPOSITORY_NAMES.engine]);
+// TCRN-CROSS-INIT-053 R47-08: the same for the helper repository, whose rendered pages are staged and
+// checked by scripts/verify-staged-privacy.mjs too. Read by scripts through scripts/lib/names.mjs.
+export const HELPER_REPOSITORY_NAMES: readonly string[] = Object.freeze([BRAND.helper.id, LEGACY_REPOSITORY_NAMES.helper]);
 
 export const ALIAS_TABLE_START_MARKER = "<!-- einzbern:alias-table:start -->" as const;
 export const ALIAS_TABLE_END_MARKER = "<!-- einzbern:alias-table:end -->" as const;

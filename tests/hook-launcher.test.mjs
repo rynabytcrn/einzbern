@@ -17,7 +17,10 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { FRAMEWORK_VERSION, createKnowledgeUnit, createProject, createWork, initializeLibrary, removeKnowledgeUnit, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import {
+  DIRECTORY, FRAMEWORK_VERSION, LEGACY_CONTAINER_DIRECTORY, LEGACY_CONTROL_DIRECTORY, LIBRARY_FILES, createKnowledgeUnit, createProject, createWork, initializeLibrary,
+  removeKnowledgeUnit, setWorkspaceSetting,
+} from "../dist/build/packages/core/src/index.js";
 import { deviceHome } from "../dist/build/packages/core/src/device-home.js";
 import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
 import { NAVIGATION_LINES } from "../dist/build/packages/core/src/agents-sections.js";
@@ -455,4 +458,91 @@ test("D9 (477-AC3, SUB-387 at the default threshold): a Story's prompt and a use
   assert.deepEqual(JSON.parse(card.stdout), { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: `[卡片 用户] Quoll den cleaning schedule · ${created.id}` } });
   const stillQuiet = runHook(launcherPath, { home, cwd: directory, prompt: "rename parser module, rerun compiler" });
   assert.deepEqual([stillQuiet.status, stillQuiet.stdout, stillQuiet.stderr], [0, "", ""]);
+});
+
+// TCRN-CROSS-INIT-053 R47-06: a prompt typed in a known container that the registry does not cover
+// gets nothing, as before, and leaves one line in log/hook.ndjson in the device directory saying
+// why; the harness audit found two hosts' hooks silent for days with nothing to show it. Outside
+// a known container nothing is written (477-AC2), and a note that cannot be written changes nothing.
+const LOG_KEYS = ["schemaVersion", "at", "event", "cwd", "container", "marker", "reasonCode"];
+
+async function hookLog(home) {
+  try {
+    const text = await readFile(join(home, "log", "hook.ndjson"), "utf8");
+    return text.trim().split("\n").map((line) => JSON.parse(line));
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+test("R47-06: the launcher's container markers are the names module's", () => {
+  assert.equal(launcher.LIBRARY_DIRECTORY, DIRECTORY.library);
+  assert.equal(launcher.LIBRARY_MANIFEST, LIBRARY_FILES.manifest);
+  assert.equal(launcher.LEGACY_CONTROL_DIRECTORY, LEGACY_CONTROL_DIRECTORY);
+  assert.equal(launcher.LEGACY_CONTAINER_DIRECTORY, LEGACY_CONTAINER_DIRECTORY);
+  assert.equal(launcher.LEGACY_WORKSPACE_FILE, "workspace.json");
+});
+
+test("R47-06: a prompt in a known container the registry does not cover is noted with its reason, with exit 0 and no output", async (context) => {
+  const { base, home } = await scratch(context);
+  const launcherPath = await installEngine(home);
+  const quiet = (run) => assert.deepEqual([run.status, run.stdout, run.stderr], [0, "", ""]);
+
+  // No registry: a library's prompt is noted as HOOK_REGISTRY_ABSENT, and only the library's
+  // manifest is statted to find it; nothing in the library is opened or read.
+  const first = join(base, "first");
+  await mkdir(join(first, "src"), { recursive: true });
+  const firstLibrary = join(first, ".ether");
+  await zooLibrary(firstLibrary);
+  const record = join(base, "reads.tsv");
+  quiet(runHook(launcherPath, { home, cwd: join(first, "src"), env: { EINZBERN_READ_RECORD_ROOT: firstLibrary, EINZBERN_READ_RECORD_FILE: record }, preload: recorderPath }));
+  const reads = (await readFile(record, "utf8")).trim().split("\n").map((line) => line.split("\t"));
+  assert.deepEqual([...new Set(reads.map(([, path]) => path))], [join(firstLibrary, "manifest.json")]);
+  assert.ok(reads.every(([call]) => /^(?:promises\.)?(?:stat|lstat)(?:Sync)?$/u.test(call)), JSON.stringify(reads));
+  let log = await hookLog(home);
+  assert.equal(log.length, 1);
+  assert.deepEqual(Object.keys(log[0]), LOG_KEYS);
+  assert.deepEqual({ ...log[0], at: undefined }, {
+    schemaVersion: "einzbern.hook-log.v1", at: undefined, event: "user-prompt-submit", cwd: join(first, "src"), container: first, marker: "library", reasonCode: "HOOK_REGISTRY_ABSENT",
+  });
+  assert.equal(new Date(log[0].at).toISOString(), log[0].at);
+
+  // A registry that holds another project: an unregistered library is HOOK_LIBRARY_UNREGISTERED, an
+  // old-layout workspace or platform container is HOOK_PROJECT_UNREGISTERED.
+  await registeredProject(base);
+  const legacyWorkspace = join(base, "legacy");
+  await mkdir(join(legacyWorkspace, LEGACY_CONTROL_DIRECTORY), { recursive: true });
+  await mkdir(join(legacyWorkspace, "docs"));
+  await writeFile(join(legacyWorkspace, LEGACY_CONTROL_DIRECTORY, "workspace.json"), "{}\n");
+  const platform = join(base, "platform");
+  await mkdir(join(platform, LEGACY_CONTAINER_DIRECTORY), { recursive: true });
+  await mkdir(join(platform, "app"));
+  quiet(runHook(launcherPath, { home, cwd: join(first, "src"), event: "session-start" }));
+  quiet(runHook(launcherPath, { home, cwd: join(legacyWorkspace, "docs") }));
+  quiet(runHook(launcherPath, { home, cwd: join(platform, "app") }));
+  log = await hookLog(home);
+  assert.deepEqual(log.slice(1).map(({ event, cwd, container, marker, reasonCode }) => [event, cwd, container, marker, reasonCode]), [
+    ["session-start", join(first, "src"), first, "library", "HOOK_LIBRARY_UNREGISTERED"],
+    ["user-prompt-submit", join(legacyWorkspace, "docs"), legacyWorkspace, "legacy", "HOOK_PROJECT_UNREGISTERED"],
+    ["user-prompt-submit", join(platform, "app"), platform, "legacy", "HOOK_PROJECT_UNREGISTERED"],
+  ]);
+
+  // Outside every known container nothing is written; an old device directory of the old name
+  // (no workspace.json in it) does not make its parent one.
+  const elsewhere = join(base, "elsewhere");
+  await mkdir(elsewhere);
+  const oldDevice = join(base, "user-home");
+  await mkdir(join(oldDevice, LEGACY_CONTROL_DIRECTORY), { recursive: true });
+  await mkdir(join(oldDevice, "work"));
+  await writeFile(join(oldDevice, LEGACY_CONTROL_DIRECTORY, "state.json"), "{}\n");
+  quiet(runHook(launcherPath, { home, cwd: elsewhere }));
+  quiet(runHook(launcherPath, { home, cwd: join(oldDevice, "work") }));
+  assert.equal((await hookLog(home)).length, 4);
+
+  // A note that cannot be written is dropped: log is a file here, and the hook still ends quietly.
+  await rm(join(home, "log"), { recursive: true });
+  await writeFile(join(home, "log"), "not a directory\n");
+  quiet(runHook(launcherPath, { home, cwd: join(legacyWorkspace, "docs") }));
+  assert.equal(await readFile(join(home, "log"), "utf8"), "not a directory\n");
 });

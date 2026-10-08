@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { promisify } from "node:util";
-import { dirname, extname, join, parse, relative, resolve, sep } from "node:path";
+import { dirname, extname, join, parse, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // The install manifest is the only path/residence authority. The doctor consumes
@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // read surface and by this host probe; there is no second path table here.
 import {
   BRAND,
+  DEVICE_HOME_ENTRIES,
   INSTALL_MANIFEST,
   LEGACY_BRAND_NAME,
   LEGACY_CONTROL_DIRECTORY,
@@ -26,6 +27,10 @@ import {
 // second implementation of a digest is a second answer waiting to disagree with the first
 // (TCRN-CROSS-INC-219).
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
+// Which hook commands are Einzbern's launcher or a script of the old harness: the engine's own
+// answer, read from the module that renders and reconciles host hooks (scripts/host-render.mjs
+// imports it the same way).
+import { HOST_HOOK_FILES, isEinzbernHookCommand, isLegacyHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 import { toPosixPath, walkFiles } from "./lib/files.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -1288,13 +1293,15 @@ function hookCommands(settings) {
  * confirm it is a file, and ask node to parse it. A registered hook whose target does not
  * parse is a hook that fails at the moment it is supposed to protect something.
  */
-async function hookTargetFailures(commands, resolveTarget) {
+async function hookTargetFailures(commands, resolveTarget, deviceEntries = null) {
   const failures = [];
   let checked = 0;
+  const events = new Set();
   for (const hook of commands) {
     const target = resolveTarget(hook.command);
     if (target === null) continue;
     checked += 1;
+    events.add(hook.event);
     if (target === undefined) {
       failures.push({ event: hook.event, command: hook.command, reasonCode: "PLATFORM_HOOK_COMMAND_UNSUPPORTED" });
       continue;
@@ -1308,9 +1315,93 @@ async function hookTargetFailures(commands, resolveTarget) {
       await execFileAsync(process.execPath, ["--check", target], { timeout: 10_000, maxBuffer: 1_048_576 });
     } catch (error) {
       failures.push({ event: hook.event, command: hook.command, target, reasonCode: "PLATFORM_HOOK_TARGET_UNUSABLE", error: error?.code ?? "NODE_CHECK_FAILED" });
+      continue;
+    }
+    if (deviceEntries !== null && isEinzbernHookCommand(hook.command)) {
+      const { device, missing } = await launcherDeviceGaps(target, deviceEntries);
+      if (missing.length > 0) failures.push({ event: hook.event, command: hook.command, target, device, missing, reasonCode: HOOK_ENGINE_NOT_INSTALLED });
     }
   }
-  return { failures, checked };
+  return { failures, checked, events: [...events].sort() };
+}
+
+// TCRN-CROSS-INIT-053 R47-06: a hook that runs Einzbern's launcher can be in place and still reach
+// nothing. The launcher answers only when its device directory holds the engine pointer and the
+// registry; without them it ends every prompt quietly, by design, so the hook looks alive and is
+// not. That is a separate finding from a hook whose script is gone (PLATFORM_HOOK_TARGET_UNAVAILABLE):
+// the hook is right and the engine is not installed. The install manifest names the launcher
+// (machine.hook-launcher) and the pointer (machine.engine-current) relative to the device directory
+// (machine.workflow-engine); the registry is DEVICE_HOME_ENTRIES.registry beside them.
+const HOOK_ENGINE_NOT_INSTALLED = "PLATFORM_HOOK_ENGINE_NOT_INSTALLED";
+
+function launcherDeviceEntries(manifest) {
+  const template = (id) => manifest.items.find((item) => item.id === id)?.pathTemplate ?? null;
+  const device = template("machine.workflow-engine");
+  const launcher = template("machine.hook-launcher");
+  const pointer = template("machine.engine-current");
+  if (device === null || launcher === null || pointer === null) return null;
+  return {
+    launcherDepth: posix.relative(device, launcher).split("/").length,
+    required: [posix.relative(device, pointer), DEVICE_HOME_ENTRIES.registry],
+  };
+}
+
+async function launcherDeviceGaps(target, deviceEntries) {
+  const device = resolve(target, ...Array.from({ length: deviceEntries.launcherDepth }, () => ".."));
+  const missing = [];
+  for (const entry of deviceEntries.required) {
+    if (!(await existingPath(join(device, ...entry.split("/"))))?.isFile()) missing.push(entry);
+  }
+  return { device, missing };
+}
+
+// The script a hook command runs with node: quoted or not, behind a `[ -f ]` guard or not.
+const NODE_HOOK_COMMAND = /^(?:if \[ -f "[^"]+" \]; then )?node\s+(?:"([^"]+)"|'([^']+)'|(\S+))/u;
+
+function nodeHookTarget(command, expand = (path) => path) {
+  const match = NODE_HOOK_COMMAND.exec(command.trim());
+  if (!match) return undefined;
+  return resolve(expand(match[1] ?? match[2] ?? match[3]));
+}
+
+async function readHookFile(path) {
+  const stats = await existingPath(path);
+  if (!stats) return { state: "absent" };
+  if (!stats.isFile()) return { state: "not-file" };
+  try {
+    return { state: "read", settings: JSON.parse(await readFile(path, "utf8")) };
+  } catch (error) {
+    return { state: "invalid", error: error?.message ?? "INVALID_JSON" };
+  }
+}
+
+/**
+ * The user-level hook files (TCRN-CROSS-INIT-053 R47-06): .claude/settings.json and .codex/hooks.json
+ * in the user's home, where the hooks a host runs in every project live. Both failures the harness
+ * audit found sat there, out of reach of a leg that read the container's files only. A user file
+ * also holds hooks of the user's own, so only the commands Einzbern can answer for are checked:
+ * its launcher and the old harness's scripts (host-hooks.ts names both). An absent file has no
+ * hook to fail; a file the host cannot parse is a finding.
+ */
+async function inspectUserHooks(platformRoot, homeRoot, deviceEntries) {
+  const expand = (path) => path.replaceAll("${CLAUDE_PROJECT_DIR}", platformRoot).replaceAll("${HOME}", homeRoot).replaceAll("$HOME", homeRoot);
+  const ours = (command) => (isEinzbernHookCommand(command) || isLegacyHookCommand(command) ? nodeHookTarget(command, expand) : null);
+  const user = {};
+  for (const [host, file, notFile, invalid] of [
+    ["claude", HOST_HOOK_FILES["claude-code"], "PLATFORM_HOOK_SETTINGS_NOT_FILE", "PLATFORM_HOOK_SETTINGS_INVALID"],
+    ["codex", HOST_HOOK_FILES.codex, "PLATFORM_CODEX_HOOKS_NOT_FILE", "PLATFORM_CODEX_HOOKS_INVALID"],
+  ]) {
+    const pathTemplate = `<HOME>/${file}`;
+    const read = await readHookFile(join(homeRoot, ...file.split("/")));
+    if (read.state === "absent") user[host] = { state: "absent", pathTemplate };
+    else if (read.state === "not-file") user[host] = { state: "invalid", pathTemplate, reasonCode: notFile };
+    else if (read.state === "invalid") user[host] = { state: "invalid", pathTemplate, reasonCode: invalid, error: read.error };
+    else {
+      const { failures, checked, events } = await hookTargetFailures(hookCommands(read.settings), ours, deviceEntries);
+      user[host] = { state: failures.length === 0 ? "live" : "broken", pathTemplate, checked, failures, events };
+    }
+  }
+  return user;
 }
 
 /**
@@ -1326,7 +1417,7 @@ async function hookTargetFailures(commands, resolveTarget) {
  * separate governed step, so a container with no hooks file has not failed anything — it
  * has not been activated. Saying so is different from saying it passed.
  */
-async function inspectCodexHooks(platformRoot) {
+async function inspectCodexHooks(platformRoot, deviceEntries = null) {
   const hooksPath = resolve(platformRoot, ".codex/hooks.json");
   const stats = await existingPath(hooksPath);
   if (!stats) return { state: "absent" };
@@ -1342,7 +1433,7 @@ async function inspectCodexHooks(platformRoot) {
     const match = /^node\s+(?:"([^"]+)"|'([^']+)'|(\S+))/u.exec(command.trim());
     if (!match) return undefined;
     return resolve(match[1] ?? match[2] ?? match[3]);
-  });
+  }, deviceEntries);
   return {
     state: failures.length === 0 ? "live" : "broken",
     checked,
@@ -1351,56 +1442,71 @@ async function inspectCodexHooks(platformRoot) {
   };
 }
 
-async function inspectHookExecutability(platformRoot, manifest) {
-  const codex = await inspectCodexHooks(platformRoot);
+// A hook file's own failure (not a file, not JSON) and its hooks' failures, each naming its source.
+function sourcedHookFailures(source, part) {
+  if (part === undefined || part === null) return [];
+  if (part.state === "invalid") return [{ source, reasonCode: part.reasonCode, ...(part.error === undefined ? {} : { error: part.error }) }];
+  return (part.failures ?? []).map((failure) => ({ ...failure, source }));
+}
+
+// The container's Claude settings: the commands the old harness wrote with the project-dir
+// placeholder, in their one accepted shape, and the Einzbern launcher's command (R47-06).
+function containerClaudeTarget(platformRoot) {
+  return (command) => {
+    if (command.includes("${CLAUDE_PROJECT_DIR}")) {
+      const match = /^(?:if \[ -f "[^"]+" \]; then )?node\s+"([^"]+)"(?:\s+--container-root\s+"[^"]+")?(?:\s+--host\s+claude)?(?:; fi)?$/u.exec(command.trim());
+      return match ? resolve(match[1].replaceAll("${CLAUDE_PROJECT_DIR}", platformRoot)) : undefined;
+    }
+    return isEinzbernHookCommand(command) ? nodeHookTarget(command) : null;
+  };
+}
+
+/**
+ * The hooks leg reads four files: the container's Claude settings and Codex hooks, and the same two
+ * at user level (R47-06). A hook whose script is gone or does not parse is red at once (target
+ * failures, unchanged codes); a launcher hook whose device directory lacks the installed engine is
+ * PLATFORM_HOOK_ENGINE_NOT_INSTALLED, listed after them in `failures` so the first reason code
+ * stays the broken script when there is one. An absent container Claude file defers that file to
+ * installWiring and nothing else: a failure in any other file is still red.
+ */
+async function inspectHookExecutability(platformRoot, homeRoot, manifest) {
+  const deviceEntries = launcherDeviceEntries(manifest);
+  const codex = await inspectCodexHooks(platformRoot, deviceEntries);
+  const user = await inspectUserHooks(platformRoot, homeRoot, deviceEntries);
   const entry = manifest.items.find((candidate) => candidate.id === "container.claude-settings");
-  if (!entry) return check("hooks", false, { reasonCode: "PLATFORM_MANIFEST_HOOK_SETTINGS_MISSING", codex });
+  if (!entry) return check("hooks", false, { reasonCode: "PLATFORM_MANIFEST_HOOK_SETTINGS_MISSING", codex, user });
   const settingsPath = expandTemplate(entry.pathTemplate, platformRoot, platformRoot);
   const stats = settingsPath === null ? null : await existingPath(settingsPath);
-  if (!stats) return check("hooks", true, { source: "installWiring", deferredTo: "installWiring", codex });
-  if (!stats.isFile()) return check("hooks", false, { reasonCode: "PLATFORM_HOOK_SETTINGS_NOT_FILE", pathTemplate: entry.pathTemplate, codex });
-  let settings;
-  try {
-    settings = JSON.parse(await readFile(settingsPath, "utf8"));
-  } catch (error) {
-    return check("hooks", false, { reasonCode: "PLATFORM_HOOK_SETTINGS_INVALID", error: error?.message ?? "INVALID_JSON", codex });
-  }
-  const commands = hookCommands(settings);
-  const failures = [];
-  let checked = 0;
-  for (const hook of commands) {
-    if (!hook.command.includes("${CLAUDE_PROJECT_DIR}")) continue;
-    checked += 1;
-    const match = /^(?:if \[ -f "[^"]+" \]; then )?node\s+"([^"]+)"(?:\s+--container-root\s+"[^"]+")?(?:\s+--host\s+claude)?(?:; fi)?$/u.exec(hook.command.trim());
-    if (!match) {
-      failures.push({ event: hook.event, command: hook.command, reasonCode: "PLATFORM_HOOK_COMMAND_UNSUPPORTED" });
-      continue;
-    }
-    const target = resolve(match[1].replaceAll("${CLAUDE_PROJECT_DIR}", platformRoot));
-    const targetStats = await existingPath(target);
-    if (!targetStats?.isFile()) {
-      failures.push({ event: hook.event, command: hook.command, target, reasonCode: "PLATFORM_HOOK_TARGET_UNAVAILABLE" });
-      continue;
-    }
+  let claude = { state: "absent" };
+  if (stats) {
+    if (!stats.isFile()) return check("hooks", false, { reasonCode: "PLATFORM_HOOK_SETTINGS_NOT_FILE", pathTemplate: entry.pathTemplate, codex, user });
+    let settings;
     try {
-      await execFileAsync(process.execPath, ["--check", target], { timeout: 10_000, maxBuffer: 1_048_576 });
+      settings = JSON.parse(await readFile(settingsPath, "utf8"));
     } catch (error) {
-      failures.push({ event: hook.event, command: hook.command, target, reasonCode: "PLATFORM_HOOK_TARGET_UNUSABLE", error: error?.code ?? "NODE_CHECK_FAILED" });
+      return check("hooks", false, { reasonCode: "PLATFORM_HOOK_SETTINGS_INVALID", error: error?.message ?? "INVALID_JSON", codex, user });
     }
+    const { failures, checked, events } = await hookTargetFailures(hookCommands(settings), containerClaudeTarget(platformRoot), deviceEntries);
+    claude = { state: failures.length === 0 ? "live" : "broken", checked, failures, events };
   }
   // A codex hooks file that exists and is broken is a finding of its own: activation
   // wrote it, so something is registered and unrunnable. Absent stays deferral.
-  if (codex.state === "broken" || codex.state === "invalid") {
-    return check("hooks", false, {
-      reasonCode: codex.reasonCode ?? codex.failures?.[0]?.reasonCode ?? "PLATFORM_CODEX_HOOK_TARGET_UNUSABLE",
-      source: "container.codex-hooks",
-      codex,
-      claude: { checked, failures },
-    });
+  const sourced = [
+    ...sourcedHookFailures("container.codex-hooks", codex),
+    ...sourcedHookFailures("container.claude-settings", claude),
+    ...sourcedHookFailures("machine.claude-settings", user.claude),
+    ...sourcedHookFailures("machine.codex-hooks", user.codex),
+  ];
+  const failures = [
+    ...sourced.filter((failure) => failure.reasonCode !== HOOK_ENGINE_NOT_INSTALLED),
+    ...sourced.filter((failure) => failure.reasonCode === HOOK_ENGINE_NOT_INSTALLED),
+  ];
+  if (failures.length > 0) {
+    return check("hooks", false, { reasonCode: failures[0].reasonCode, failures, source: failures[0].source, codex, claude, user });
   }
-  return failures.length === 0
-    ? check("hooks", true, { source: "container.claude-settings", checked, events: [...new Set(commands.filter((hook) => hook.command.includes("${CLAUDE_PROJECT_DIR}")).map((hook) => hook.event))].sort(), codex })
-    : check("hooks", false, { reasonCode: failures[0].reasonCode, failures, source: "container.claude-settings", codex });
+  return claude.state === "absent"
+    ? check("hooks", true, { source: "installWiring", deferredTo: "installWiring", codex, user })
+    : check("hooks", true, { source: "container.claude-settings", checked: claude.checked, events: claude.events, codex, user });
 }
 
 function versionFromSkill(text) {
@@ -1898,36 +2004,38 @@ function engineCapabilitySurfaceVerdict(installedCatalog, worktreeCatalog, sourc
 // The Helper now declares the roster it teaches and holds itself to it; this leg
 // answers whether that declaration still matches the engine's own catalog, read
 // through the engine's read face rather than by pattern-matching its source.
+const HELPER_COVERAGE_SOURCE = "engine settings-catalog + installed helper payload";
+
+// TCRN-CROSS-INIT-053 R47-07: coverage that cannot be read is red. With no catalog, or no payload,
+// there is nothing to compare and coverage is not asserted -- and an unasserted coverage is not a
+// pass. This leg used to answer green here, so a container whose catalog it could not read looked
+// covered (harness audit B4). The reason code still names the side that could not be read, and
+// coverageAsserted stays false.
+function unreadableHelperCoverage(reasonCode, source, details = {}) {
+  return check("helperSettingsCoverage", false, { reasonCode, coverageAsserted: false, ...details, source });
+}
+
 async function inspectHelperSettingsCoverage(root, homeRoot, manifest, options) {
   if (options.helperSettingKeys && typeof options.helperSettingKeys === "object") {
-    return checkHelperSettingsCoverage(options.helperSettingKeys.catalog, options.helperSettingKeys.taught, "synthetic");
+    // The synthetic seam: a null catalog or a null taught list stands for the side that cannot be read.
+    const { catalog, taught } = options.helperSettingKeys;
+    if (catalog === null) return unreadableHelperCoverage("PLATFORM_HELPER_SETTINGS_UNREADABLE", "synthetic");
+    if (taught === null) return unreadableHelperCoverage("PLATFORM_HELPER_PAYLOAD_UNREADABLE", "synthetic", { error: "UNREADABLE" });
+    return checkHelperSettingsCoverage(catalog, taught, "synthetic");
   }
   const entry = manifest.items.find((item) => item.id === "machine.claude-skill");
   const skillRoot = entry ? expandTemplate(entry.pathTemplate, "<PLATFORM_ROOT>", homeRoot) : null;
   if (skillRoot === null) return check("helperSettingsCoverage", false, { reasonCode: "PLATFORM_MANIFEST_PATH_INVALID" });
 
   const catalogKeys = await engineSettingKeys(root, options);
-  if (catalogKeys === null) {
-    // Unreadable is reported, not red: with no catalog there is nothing to compare,
-    // which is the same epistemic position as engineFloorSatisfied's undeclared case.
-    return check("helperSettingsCoverage", true, {
-      reasonCode: "PLATFORM_HELPER_SETTINGS_UNREADABLE",
-      coverageAsserted: false,
-      source: "engine settings-catalog + installed helper payload",
-    });
-  }
+  if (catalogKeys === null) return unreadableHelperCoverage("PLATFORM_HELPER_SETTINGS_UNREADABLE", HELPER_COVERAGE_SOURCE);
   let taught;
   try {
     taught = await taughtSettingKeys(skillRoot, catalogKeys);
   } catch (error) {
-    return check("helperSettingsCoverage", true, {
-      reasonCode: "PLATFORM_HELPER_PAYLOAD_UNREADABLE",
-      coverageAsserted: false,
-      error: error?.code ?? "UNREADABLE",
-      source: "engine settings-catalog + installed helper payload",
-    });
+    return unreadableHelperCoverage("PLATFORM_HELPER_PAYLOAD_UNREADABLE", HELPER_COVERAGE_SOURCE, { error: error?.code ?? "UNREADABLE" });
   }
-  return checkHelperSettingsCoverage(catalogKeys, taught, "engine settings-catalog + installed helper payload");
+  return checkHelperSettingsCoverage(catalogKeys, taught, HELPER_COVERAGE_SOURCE);
 }
 
 function checkHelperSettingsCoverage(catalogKeys, taught, source) {
@@ -2321,7 +2429,7 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
       await inspectChainValidation(root, options),
       await inspectAcceptanceVerdicts(root, options),
       await inspectInstallWiring(root, homeRoot, manifest),
-      await inspectHookExecutability(root, manifest),
+      await inspectHookExecutability(root, homeRoot, manifest),
       await inspectDeploymentFreshness(homeRoot, manifest),
       await inspectEngineFloorSatisfied(root, homeRoot, manifest, options),
       await inspectEngineCapabilitySurface(root, homeRoot, manifest, options),

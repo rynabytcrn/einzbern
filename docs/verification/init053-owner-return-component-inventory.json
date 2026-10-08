@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r41-init053-release",
+  "pack": "r45-init053-integration",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "192762b80a44ee5b955ed3cb12ae5fd3294160b393a5f090823667a44bcc3b42"
+      "sha256": "049926c369bfce756a72dd648017734cb17225bc5e62605373acd205a8ce57e7"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -19,11 +19,11 @@
     },
     {
       "path": "packages/core/src/agents-sections.ts",
-      "sha256": "bd5fca0c6a9d23a7f0dbc2e02181385c59a22a56c271d42deacad2dddda68ee1"
+      "sha256": "b70ad321d14fc9ad9b2b66ad301fcf900379051dd85b9bbf8b427741921e2a62"
     },
     {
       "path": "packages/core/src/akasha.ts",
-      "sha256": "bbc58d2bf69cd3e4ea7d61e4580293dd9be37498b4df2effba8752a3f0a19678"
+      "sha256": "e7947635d4f6477eba45fb6cf6c0992b9ec8476ebf7b1a9b70c80ad90b21b212"
     },
     {
       "path": "packages/core/src/artifact-store.ts",
@@ -42,6 +42,10 @@
       "sha256": "aa52f28d300d04702bcb27b5e711bb24c9b7bb29f7be4f894dab28f04abe4419"
     },
     {
+      "path": "packages/core/src/chain-identity.ts",
+      "sha256": "68656eb781b5523e8ee7ef541a4c612ec0ac63fa8b194e155b48d2c6a49a5fe6"
+    },
+    {
       "path": "packages/core/src/cloud-roots.ts",
       "sha256": "271be423d2f4346a26220e85ac304beb68484e4ebfa4be231c76d1d6980366ec"
     },
@@ -55,7 +59,7 @@
     },
     {
       "path": "packages/core/src/config-records.ts",
-      "sha256": "91d60027927f56a43b168893fb3dab1cbfd97a2088453ee9159b1d105990aa91"
+      "sha256": "8d25502891bd0a1cd446a9a422b0d31d770aa2caee23c12e00e599419b3da0d5"
     },
     {
       "path": "packages/core/src/dependency.ts",
@@ -71,7 +75,7 @@
     },
     {
       "path": "packages/core/src/doctor.ts",
-      "sha256": "a096ad19e497781fa785020a748d86228bccc11b2771370b3f0fe74624527ed7"
+      "sha256": "17fa586350ff27e30016a3758de0568690e189d7cd194c90d29c2729bb037cc2"
     },
     {
       "path": "packages/core/src/effort.ts",
@@ -79,11 +83,11 @@
     },
     {
       "path": "packages/core/src/engine-home.ts",
-      "sha256": "0f06b57e29638bb9efa968190295fdc6b7d3e102d36948bf146519162f066fe9"
+      "sha256": "39a31ddc981b5842c6f5fe36afb264ea7bfa392ff2c71892fedef9e3c3370941"
     },
     {
       "path": "packages/core/src/ether-library.ts",
-      "sha256": "c30b1aa89a7918a2e66550007e3ec4a69c4f546d9b84701ff6a84492ec4f3202"
+      "sha256": "8a4744a874c63814f743149d4d255267276541c4cbf0ded135cddcee9db8e3bf"
     },
     {
       "path": "packages/core/src/execution-collection.ts",
@@ -99,7 +103,11 @@
     },
     {
       "path": "packages/core/src/format-version.ts",
-      "sha256": "a61b696416f15bdd5a62956de57dbb3094eeb9798f0ee8bcb67ad60e707a2f54"
+      "sha256": "803bb32742bf40fd5b501b4bb04bb841c5ccc22a1e302cbad2f252ecd0774b47"
+    },
+    {
+      "path": "packages/core/src/framework-version.ts",
+      "sha256": "264d202baad527d27cc70a593569d0bb3e8de3c3a7e1d8794fd65f59f6205ded"
     },
     {
       "path": "packages/core/src/gate-identity.ts",
@@ -119,11 +127,11 @@
     },
     {
       "path": "packages/core/src/gates-run.ts",
-      "sha256": "172496ddde9d1a7ae3448927561889d6e46452cd854773586fd5abdb2bdd38f2"
+      "sha256": "ecb50421cfa45870f488126c7cc5f10bea54d930355f49c225e4d9d1d5d09682"
     },
     {
       "path": "packages/core/src/hook-recall.ts",
-      "sha256": "0e6c52cd732208e27f059b29101656c2c186a6883e798885cad8ef8d23e146f2"
+      "sha256": "c3529ead14fd54580eec81ff07b8e524fa63748c6fc98676154a3b8f4eef4a7e"
     },
     {
       "path": "packages/core/src/host-hooks.ts",
@@ -139,7 +147,7 @@
     },
     {
       "path": "packages/core/src/index.ts",
-      "sha256": "9c077f29f1ace654afda0eabe24917430054504481cc5f8cb5b4b7d63dd7a871"
+      "sha256": "bc22a6c407652788829a5f571786819eebed6afb245953be14e1c5c55ce853b4"
     },
     {
       "path": "packages/core/src/install-manifest.ts",
@@ -148,6 +156,10 @@
     {
       "path": "packages/core/src/install-tree-digest.ts",
       "sha256": "a18ce21b890b4b6b06edf518cf15d5f853a3dc1a522da82978d75d901c165abd"
+    },
+    {
+      "path": "packages/core/src/involved-projects.ts",
+      "sha256": "c83994f2fe9bb50ed8f2d2f08740401676200c638a852efe2203266e7a6c0ac2"
     },
     {
       "path": "packages/core/src/io-policy.ts",
@@ -175,7 +187,7 @@
     },
     {
       "path": "packages/core/src/legacy-import.ts",
-      "sha256": "b3f174cb0920818f80b2e47e4dbc182ef7027b5ca330811f4b2b3afb3497f210"
+      "sha256": "645056757c3d253d019b8ab8a6365995f286a7319453e75d9321f4ef64081533"
     },
     {
       "path": "packages/core/src/legacy-workspace.ts",
@@ -203,7 +215,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "e7cf4f4bb60d54abf7a25023096ca64b6533acab3b40e571a1599db2afc14e4f"
+      "sha256": "b3f560ecf8f161c0a30fa6c8ec3580901e10f4b1bf4282c38759f356b4a6cd70"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -238,16 +250,20 @@
       "sha256": "f25fe6ce90c518a5366fadb6ede16ee7166ff2a9ba1bed7e7608d0ce7ea091f3"
     },
     {
+      "path": "packages/core/src/project-chain.ts",
+      "sha256": "755dbd03fde0ada3fe4b89a7b95a43a12dc67711ed8ab1c4c3e654d5019852d3"
+    },
+    {
       "path": "packages/core/src/project-scope.ts",
-      "sha256": "5bb6747a531e6c6651fdaa425f59b883252e02156f232ab12f30120a4620a323"
+      "sha256": "ac494bdf5537c67c47527a259dce1434404e0081ae6c23e2367139dbc1a5730a"
     },
     {
       "path": "packages/core/src/recall-inputs.ts",
-      "sha256": "7f10230baba14321b7fe615b3ef768e806e8e118d107de6f5d8dacd6a9433ec1"
+      "sha256": "7d9fbfa5e0ac9c09b278f3f6c1fb4346ba7e04a1d09b9b84ccda91b568a1ef8c"
     },
     {
       "path": "packages/core/src/recall.ts",
-      "sha256": "fe62f4285ba349e491f2edc503e37b65faa0cf9719112d13959933c976d3cb25"
+      "sha256": "b30c37024756f7ddff599b0251ecdbe73c3cd77e5421611895d71b8045ea2fc8"
     },
     {
       "path": "packages/core/src/reference-profiles.ts",
@@ -255,7 +271,7 @@
     },
     {
       "path": "packages/core/src/registry.ts",
-      "sha256": "83e1fe22f61c5fa3c127b4ae1bd7ac8dd580da803a2b7a4b8a5ace2f8713c31f"
+      "sha256": "e2ca0e7723b12d3ce5d16b53dbf34379555c3686598b6ac7962b3bde9f344c13"
     },
     {
       "path": "packages/core/src/relocate.ts",
@@ -271,7 +287,7 @@
     },
     {
       "path": "packages/core/src/rules.ts",
-      "sha256": "30fbaf19ab503883f750c6647504a099e18a9dbc7c65c78f0e6136a9cbef4f88"
+      "sha256": "350de809f7f0c8dea71dd598e3023415dfae1ed81d6c96cc17ced15ba844f464"
     },
     {
       "path": "packages/core/src/settings.ts",
@@ -279,19 +295,19 @@
     },
     {
       "path": "packages/core/src/setup-fresh.ts",
-      "sha256": "6337f750d48df564e40a872bc81252e7046d409b539eec40325ab979da331e7f"
+      "sha256": "464ff48fb98b3b429450a3eb739d0e3c8afd8d242fea5956917a164b85568100"
     },
     {
       "path": "packages/core/src/setup-maintain.ts",
-      "sha256": "680344396fbef0cfb5eb253ae42b8f39523b0cd8248a96ec222077d3f8482a45"
+      "sha256": "74d3a7152839828fba804854e547203d6125dd2c0baa85421ea6ce1c60cb1bee"
     },
     {
       "path": "packages/core/src/setup-restore.ts",
-      "sha256": "71860a69ff13056dad695911f4adab0af29cf5ac9c3cdb9977fa71c4a0248926"
+      "sha256": "2b19647cb2fe4d15273c6dd178925ef99e7ab831360a39d4a43d7b618e468bd8"
     },
     {
       "path": "packages/core/src/setup.ts",
-      "sha256": "a66b97a792814b5156a293f8889efccb162e4f9c5d9dd8c594cc41717e773f62"
+      "sha256": "129a9094587580b1b0708e37d0f91aa10559b3d5df1259e32f1a45f918097cab"
     },
     {
       "path": "packages/core/src/skill-copies.ts",
@@ -299,7 +315,7 @@
     },
     {
       "path": "packages/core/src/skill-render.ts",
-      "sha256": "8bcfafd4ceb338d8367ada3946ca9b70302b6187f08f45cafce38e457dcbaa28"
+      "sha256": "0f53741f59e84ef56fcfac940c0b39317593df634557df2d4a46d06ccf59f106"
     },
     {
       "path": "packages/core/src/store-backend.ts",
@@ -323,7 +339,7 @@
     },
     {
       "path": "packages/core/src/variables-sections.ts",
-      "sha256": "a9a25fb35a397b7d399fe4e437cc2d11020265a419427075f57cfe8cc6692132"
+      "sha256": "3ccec5b4ee0707b67b4b30c30892d22342b2dedf23c24014101d388f5510663e"
     },
     {
       "path": "packages/core/src/variables.ts",
@@ -335,7 +351,7 @@
     },
     {
       "path": "packages/core/src/work-batch.ts",
-      "sha256": "2ccf12cf26e9289d832b2a452e62784ee79c4143f6bcc5b296b52cfe88f75787"
+      "sha256": "b056769b564f6c188f245d47e8545ba0a368fb69cdb3d4ab5bd6b57b45c9821e"
     },
     {
       "path": "packages/core/src/work-relations.ts",
@@ -351,15 +367,15 @@
     },
     {
       "path": "packages/core/src/workspace.ts",
-      "sha256": "fbb02b049c8cc82ec5378b8fc342f138635cd5c60e18e387c3c10d29646b75c6"
+      "sha256": "b95921464ddb7505b0c3fe24247bb40eb496aa007f74dd1712392c63d857328f"
     },
     {
       "path": "packages/protocol/src/index.ts",
-      "sha256": "520f3e1215fd37c4b29b8f4f46e79243d47d7868124ae557f2a1cb09b30eaa54"
+      "sha256": "23ce4261410c354ecdb242c51a32e9fb678c357ab05f8f80548b2bb9acdf2b24"
     },
     {
       "path": "portal/index.html",
-      "sha256": "713b14dc4697eeef284f39dfcd6748ef9536e9e1bac09a31a563d564877bc5a1"
+      "sha256": "1dee1b656a163eac80606824937f39657dec08df2bdd3e1a1a8e383d2921353e"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -367,11 +383,11 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "696e9c83bcd33999ad7a95791a0da56ca0af04ebc5763feef2d3d4fddf672757"
+      "sha256": "db808426a4b3a755506f5d1eee4fa6c3565cc497c574f4ccaebedb4d4b2c1abe"
     },
     {
       "path": "portal/portal.mjs",
-      "sha256": "7e3085d89ce0afb056e628c1d42db09a328a3f4b575a15f1ad70dff23dc5c75c"
+      "sha256": "8e2947917ffdaa456563234476537ab42836be7105de1d968a99e3e43c04eb3b"
     },
     {
       "path": "portal/scripts/dependency-audit.mjs",
@@ -379,7 +395,7 @@
     },
     {
       "path": "portal/scripts/design-proof.mjs",
-      "sha256": "fdc3bb78b51a25d52c22c416d7b3c8f186056c6e0146a2aa7a85abb5942fb495"
+      "sha256": "7090efe5a2490cb8057228949c7297cbb3104fb82b4c760bc3e6853573b5c455"
     },
     {
       "path": "portal/scripts/e2e-demo.mjs",
@@ -582,12 +598,16 @@
       "sha256": "b89c936bdfce8ccae3a0e6f1962d644adbcef09f2ad902e5cf7939607d7e85be"
     },
     {
+      "path": "scripts/lib/registry-lock.mjs",
+      "sha256": "6e1b53fd30963941e133467e0aeebc8b7b95a72b17a0f11e0e930ceb847c22b9"
+    },
+    {
       "path": "scripts/lib/release-lockstep.mjs",
-      "sha256": "37b7a7b48e2cbd3820f3e766814638eaa9cfe03e38b87a2bfbbb6b252293ee56"
+      "sha256": "942a7da95a5a50cb949dc214de44eae6e34091dd85e69c066a3466cf3be53026"
     },
     {
       "path": "scripts/lib/release-tag-gate.mjs",
-      "sha256": "d4b74b264f8ea6f875550afc56fcde853b93e2ca9e63fe4be8e5ea61cb49347d"
+      "sha256": "b03f7befb2b0e92e2f443afa1e7963d257a2c786032141278c462dd165227b97"
     },
     {
       "path": "scripts/lib/release-trust.mjs",
@@ -643,7 +663,7 @@
     },
     {
       "path": "scripts/pack-release.mjs",
-      "sha256": "bce5c8b74117fa1d4a3a06fc934fecadff5adfeaeefb4e2c0546aaa92f11b27e"
+      "sha256": "39a8a685063e271c5fc2da0b17eacec89ede1f201ef8f379858444a4d632d39d"
     },
     {
       "path": "scripts/pg-test-connection.mjs",
@@ -707,7 +727,7 @@
     },
     {
       "path": "scripts/spawn-guard.mjs",
-      "sha256": "68b1cf59fe0793a0f7b368bf08b891b1fd412612900c37d746b6fbe31aef6c36"
+      "sha256": "a0ec77e41f744814469130eedc6a95646f26d0714b964433b4207fa611e07913"
     },
     {
       "path": "scripts/story-rule-conservation.mjs",
@@ -715,7 +735,7 @@
     },
     {
       "path": "scripts/task.mjs",
-      "sha256": "36d149f65c8932f7c3ecf36b4077e7f3c2737b69fe90a0db0f7c75dcf853136d"
+      "sha256": "29c7db449d14cd0ca591907dc87b3ca2fa8d1356c839744349befa10a700b089"
     },
     {
       "path": "scripts/test-controller-bootstrap.mjs",
@@ -778,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R41 current Source final generation (package r41-release). The original 62 whole files and the R41 necessary added whole files ran before this generation; the actual exit and counts of that run are attached below with every failure. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the unchanged R39 Source inputs, read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R45 integration batch-end generation (packages P-E-core and P-E-portal fast-forwarded into the E main checkout). The second D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below with every failure: its one red, the Wiki CLI reference, was the generation backlog regenerated earlier in this batch-end tail, and the three Portal test files run in verify:portal, not in D1. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the unchanged R39 Source inputs, read in place (the R45 DS publication is held; E consumes 884f3c7b); no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -887,9 +907,9 @@
   "inputProjections": [
     {
       "input": "inventory-values.json",
-      "sha256": "922873f49c8237f7b23c4e538b2c1a8a68171d232ecc53949faed4c7850e9c20",
+      "sha256": "f2e76bca79e88c8c74f17f8e4f26f664cbc831d353745173a5a90243cbb71bd1",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -905,9 +925,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "ef6c1bed10343bc39ee1377ca53c32d219b4d11fba755b75fdb9db2861a65c82",
+      "sha256": "3d7112df3b46208f51c1a6eb9146b67291e997d954e0d142dfe07bc987d1a3a8",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -917,15 +937,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "9617347e15a29462213e32deaa84d7f921f4a296fe79ac1ca0af85541d7bd6ca",
+      "sha256": "f29dff4e7e8add825e23ab6d65e3c968d84ad0ad8af4486aa6f79af585895e8e",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "c7beedc8a11ec946ee1c6a708d46833c98a405e8712163054b017831b45e178e",
+      "sha256": "a130b3813f4b2d6e61a64c583207e78d34eabbf9451d8ec281151ea440543cf8",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -937,68 +957,193 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
-      "sha256": "4bcecb845148e64363169e7b737fe2a9e68ae66bbc4191f73c95441ca8687879",
+      "sha256": "4bfaea5ea9dea853be7f0129df651abac4ef2c4469a98697625e06ed2d1f8b15",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/application-combined-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/application-combined-result.json"
     },
     {
       "input": "consumer-remedy-disposition.json",
-      "sha256": "17ba361419edb3e400f1b32ed1b4b8e555ab578b2da232d32b344fef71f36692",
+      "sha256": "a6fc6926387bb47d795a617bae7c3eaa74e913d289eeff7e49e5a3f926f4f8d1",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/consumer-remedy-disposition.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/consumer-remedy-disposition.json"
     },
     {
       "input": "copy-edits.json",
-      "sha256": "4a668021b44cccb33b74595d5bbd2cfcf74b95a0cc326e4a236e0915da0dab18",
+      "sha256": "9d6292c3f0da2ec7fbb2b178ba065787775d676fe0d250b051a5c37de3a83249",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/copy-edits.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/copy-edits.json"
     },
     {
       "input": "copy-semantic-review.json",
-      "sha256": "7fa1da8d4d18889564fb0bfb672ad907b1cec140aca9c2869fe79c7849b809fc",
+      "sha256": "47f44997cede817abd3c024eeec48d66a10ccd459045cd7906436a9c247ea5f1",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/copy-semantic-review.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/copy-semantic-review.json"
     }
   ],
   "currentWholeFileCadence": {
-    "exit": 0,
+    "exit": 1,
     "counts": {
-      "tests": 835,
-      "pass": 835,
-      "fail": 0,
+      "tests": 1750,
+      "pass": 1749,
+      "fail": 1,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 77,
-    "original61Retained": true,
+    "wholeFiles": 191,
+    "original61Retained": false,
     "necessaryAddedWholeFiles": [
-      "tests/e2e-governed-loop.test.mjs",
+      "tests/act11-adapter-acceptance.test.mjs",
+      "tests/act13-authority-output.test.mjs",
+      "tests/act3-persona-render.test.mjs",
+      "tests/act7-execution-collection.test.mjs",
+      "tests/actor-attestation.test.mjs",
+      "tests/atomic-file.test.mjs",
+      "tests/background-resource.test.mjs",
+      "tests/bootstrap.test.mjs",
+      "tests/bundle.test.mjs",
+      "tests/ci-bootstrap.test.mjs",
+      "tests/closeout-verify-dispositions.test.mjs",
+      "tests/cloud-roots.test.mjs",
+      "tests/code-only.test.mjs",
+      "tests/conference.test.mjs",
+      "tests/config-records.test.mjs",
+      "tests/cross-repo-privacy.test.mjs",
+      "tests/dependency-materialization.test.mjs",
+      "tests/dependency-policy.test.mjs",
+      "tests/device-home.test.mjs",
+      "tests/ds-component-css-observation.test.mjs",
+      "tests/ether-library.test.mjs",
+      "tests/final-gate-plan-batch-verify.test.mjs",
+      "tests/final-gate-plan.test.mjs",
+      "tests/format-version.test.mjs",
+      "tests/gates-plan.test.mjs",
+      "tests/gates-run.test.mjs",
+      "tests/governance-trim-surface.test.mjs",
+      "tests/hook-launcher.test.mjs",
+      "tests/host-harness.test.mjs",
+      "tests/host-writable-roots.test.mjs",
+      "tests/inc224-chain-event-bound.test.mjs",
+      "tests/inc226-trailing-read.test.mjs",
+      "tests/inc230-snippet-search.test.mjs",
+      "tests/inc232-trailing-cli-surface.test.mjs",
+      "tests/inc238-markdown-link-gate.test.mjs",
+      "tests/inc244-auto-rebase.test.mjs",
+      "tests/inc256-knowledge-policy.test.mjs",
+      "tests/inc258-install-manifest.test.mjs",
+      "tests/inc263-closeout.test.mjs",
+      "tests/inc269-annotation-advisory-guard.test.mjs",
+      "tests/inc270-engine-capability-surface.test.mjs",
+      "tests/inc274-platform-storage-shape.test.mjs",
+      "tests/inc275-mcp-absent.test.mjs",
+      "tests/init033-install-surface.test.mjs",
+      "tests/involved-projects-cli.test.mjs",
+      "tests/io-boundaries.test.mjs",
+      "tests/knowledge-batch.test.mjs",
+      "tests/knowledge-bodies-migrate.test.mjs",
+      "tests/knowledge-capacity.test.mjs",
+      "tests/knowledge-cli.test.mjs",
+      "tests/knowledge-duplicates.test.mjs",
+      "tests/knowledge-index-ceiling.test.mjs",
+      "tests/knowledge-lifecycle.test.mjs",
+      "tests/knowledge-write-retrievable.test.mjs",
+      "tests/library-cache.test.mjs",
+      "tests/library-crest-devices.test.mjs",
+      "tests/local-command-byte-fidelity.test.mjs",
+      "tests/managed-sections.test.mjs",
+      "tests/minutes-cli.test.mjs",
+      "tests/minutes.test.mjs",
+      "tests/models-category.test.mjs",
+      "tests/models-escalation.test.mjs",
+      "tests/models-tiers.test.mjs",
+      "tests/multi-device-upgrade.test.mjs",
+      "tests/names-alias-table.test.mjs",
+      "tests/no-sibling-dependency.test.mjs",
+      "tests/node-floor.test.mjs",
+      "tests/otel-privacy-guard.test.mjs",
+      "tests/output-session-lifecycle.test.mjs",
+      "tests/p1-all-legs.test.mjs",
+      "tests/p1-roster.test.mjs",
+      "tests/p3-cli-read-surface.test.mjs",
+      "tests/p3-engine-complexity.test.mjs",
+      "tests/p3-file-engine.test.mjs",
+      "tests/p8-workflow-rc.test.mjs",
+      "tests/platform-chain-backup.test.mjs",
+      "tests/preflight.test.mjs",
+      "tests/privacy-normalization.test.mjs",
+      "tests/project-chain-model.test.mjs",
+      "tests/protocol-v1.test.mjs",
+      "tests/push-wiki.test.mjs",
+      "tests/readme-render.test.mjs",
+      "tests/recall-cli.test.mjs",
+      "tests/recall-strong-hit.test.mjs",
       "tests/release-lockstep.test.mjs",
       "tests/release-tag-gate.test.mjs",
       "tests/release-trust.test.mjs",
-      "tests/names-alias-table.test.mjs",
-      "tests/inc238-markdown-link-gate.test.mjs",
-      "tests/bootstrap.test.mjs",
-      "tests/staged-privacy-reviewed-paths.test.mjs",
-      "tests/p8-workflow-rc.test.mjs",
-      "tests/privacy-normalization.test.mjs",
-      "tests/local-command-byte-fidelity.test.mjs",
-      "tests/readme-render.test.mjs",
       "tests/render-helper-docs.test.mjs",
-      "tests/cross-repo-privacy.test.mjs",
-      "tests/otel-privacy-guard.test.mjs",
-      "tests/token-attribution.test.mjs"
+      "tests/retired-settings-replay.test.mjs",
+      "tests/review-evidence.test.mjs",
+      "tests/root-boundaries.test.mjs",
+      "tests/rules-catalog.test.mjs",
+      "tests/s212-template-admission.test.mjs",
+      "tests/s222-engine-version.test.mjs",
+      "tests/s223-allowed-values.test.mjs",
+      "tests/s232-execution-config.test.mjs",
+      "tests/s238-persona-store.test.mjs",
+      "tests/s244-model-plan.test.mjs",
+      "tests/s246-persona-overlay.test.mjs",
+      "tests/s247-vocabulary.test.mjs",
+      "tests/s281-machine-settings.test.mjs",
+      "tests/s300-append-events.test.mjs",
+      "tests/s300-catalog-behaviour.test.mjs",
+      "tests/s300-story-refusal.test.mjs",
+      "tests/s300-work-batch.test.mjs",
+      "tests/s6-lessons.test.mjs",
+      "tests/s7-behavior-surface.test.mjs",
+      "tests/schema-namespace.test.mjs",
+      "tests/skill-install-bootstrap.test.mjs",
+      "tests/skill-references.test.mjs",
+      "tests/skill-render.test.mjs",
+      "tests/spawn-guard.test.mjs",
+      "tests/staged-privacy-reviewed-paths.test.mjs",
+      "tests/story-335-336-work-fields.test.mjs",
+      "tests/story-338-339-archive-inventory.test.mjs",
+      "tests/story-341-knowledge-body-migration.test.mjs",
+      "tests/story-346-pg-disabled.test.mjs",
+      "tests/story-347-348-settings-policy.test.mjs",
+      "tests/story-354-snapshot-event-segment-limit.test.mjs",
+      "tests/story-362-recall.test.mjs",
+      "tests/story-363-work-summary.test.mjs",
+      "tests/story-378-incident-replay.test.mjs",
+      "tests/story-380-artifact-blob-store.test.mjs",
+      "tests/story-381-compaction-prototype.test.mjs",
+      "tests/story-fields.test.mjs",
+      "tests/story-rule-conservation.test.mjs",
+      "tests/token-attribution.test.mjs",
+      "tests/variables.test.mjs",
+      "tests/wiki-pages.test.mjs",
+      "tests/work-index-ceiling.test.mjs",
+      "tests/work-relations-cli.test.mjs",
+      "tests/workspace-extension-records.test.mjs"
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/r41-release-raw/full-file-cadence-result.json",
-    "failures": []
+    "rawEvidence": "dispatch-runs/init-053/integration-r45-init053-raw/u18/full-file-cadence-result.json",
+    "failures": [
+      {
+        "test": "487-AC2: the Wiki CLI reference is generated from COMMAND_CATALOG",
+        "file": "tests/wiki-cli-reference.test.mjs",
+        "line": 11,
+        "reason": "Expected values to be strictly equal:",
+        "reasonCode": "ERR_ASSERTION",
+        "rawAnchor": "dispatch-runs/init-053/integration-r45-init053-raw/u18/full-file-cadence-result.json#/reds/0"
+      }
+    ]
   },
-  "generationTimeUtc": "2026-10-08T00:23:43.506120+00:00",
+  "generationTimeUtc": "2026-10-08T12:43:01.645303+00:00",
   "currentApplicationCaseResults": [
     {
       "name": "target switch settles on matching response, UI authority and native inheritance",
@@ -1728,6 +1873,252 @@
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
+    },
+    {
+      "family": "Select / Menu / MultiSelect",
+      "use": "work view involved projects selection, project filter, common default source",
+      "constructionAndStates": "native hidden select[multiple] value with the published tcrn-select trigger (svg caret), tcrn-menu listbox and tcrn-menu__item options with label and svg check, built as the settings multi-select; mountStaticMultiSelect raises the listbox to the body; options named by the label rule (name, Unnamed project or Unavailable project, shortest id tails when alike), never a complete id or a title; Save, Undo and Project readiness in Surface head actions",
+      "interaction": "the published bridge owns ArrowUp/Down/Home/End, typeahead, Space, Enter, Escape, Tab and outside dismissal; Save writes work-annotate --involved-projects and reads back through refreshWork; Undo restores the saved relation",
+      "authority": {
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
+        "standardRegistry": "foundation-visual-standards-v1",
+        "standardCategories": [
+          "visual-philosophy-ownership",
+          "layout-rhythm",
+          "spacing-density",
+          "typography-localization",
+          "color-elevation-border-radius-focus",
+          "component-composition",
+          "interaction-motion-accessibility",
+          "responsive-mobile",
+          "evidence-proof-oracle",
+          "consumer-enforcement"
+        ],
+        "route": "foundations.html#foundation-visual-standards"
+      },
+      "comparisonAxes": [
+        "color",
+        "font family/size/weight/line",
+        "spacing/density",
+        "control size",
+        "radii",
+        "border/elevation",
+        "icons",
+        "motion/reduced motion",
+        "layout/overflow",
+        "selection/navigation",
+        "Save/Undo/Reset/error",
+        "keyboard/focus/disabled/required"
+      ],
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
+      "ownerVisualStatus": "pending, not a machine claim"
+    },
+    {
+      "family": "DisclosurePanel / DefinitionList / Clipboard",
+      "use": "full project identities under every target list and inside Project readiness",
+      "constructionAndStates": "native details.tcrn-disclosure-panel with summary.tcrn-disclosure-panel__title; dense tcrn-definition-list rows: term is the label, definition is the code identity and a Clipboard-family copy Button (tcrn-button secondary sm, data-clipboard-copy-state idle/copying/copied/failed/unsupported, polite role=status region, the DS five-locale labels)",
+      "interaction": "summary opens and closes with Enter or Space; Escape closes and returns focus to the summary; copy writes the complete identity, keeps focus, announces its state and returns to idle after two seconds",
+      "authority": {
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
+        "standardRegistry": "foundation-visual-standards-v1",
+        "standardCategories": [
+          "visual-philosophy-ownership",
+          "layout-rhythm",
+          "spacing-density",
+          "typography-localization",
+          "color-elevation-border-radius-focus",
+          "component-composition",
+          "interaction-motion-accessibility",
+          "responsive-mobile",
+          "evidence-proof-oracle",
+          "consumer-enforcement"
+        ],
+        "route": "foundations.html#foundation-visual-standards"
+      },
+      "comparisonAxes": [
+        "color",
+        "font family/size/weight/line",
+        "spacing/density",
+        "control size",
+        "radii",
+        "border/elevation",
+        "icons",
+        "motion/reduced motion",
+        "layout/overflow",
+        "selection/navigation",
+        "Save/Undo/Reset/error",
+        "keyboard/focus/disabled/required"
+      ],
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
+      "ownerVisualStatus": "pending, not a machine claim"
+    },
+    {
+      "family": "DefinitionList / Badge / LabelSet / StateSurface",
+      "use": "Project readiness of a work item (work-project-context)",
+      "constructionAndStates": "disclosure panel; overall development and coordination readiness rows with positive or warning Badges; one row per target with its label, a status Badge (positive configured; warning unconfigured, ambiguous, conflicting; danger otherwise) and a readiness Badge in a LabelSet, missing requirements as code; setting keys that differ between projects; a failed read uses the page's read-failure StateSurface",
+      "interaction": "read on demand and dropped when the library or the editor render changed; Escape closes the panel and returns focus to its summary",
+      "authority": {
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
+        "standardRegistry": "foundation-visual-standards-v1",
+        "standardCategories": [
+          "visual-philosophy-ownership",
+          "layout-rhythm",
+          "spacing-density",
+          "typography-localization",
+          "color-elevation-border-radius-focus",
+          "component-composition",
+          "interaction-motion-accessibility",
+          "responsive-mobile",
+          "evidence-proof-oracle",
+          "consumer-enforcement"
+        ],
+        "route": "foundations.html#foundation-visual-standards"
+      },
+      "comparisonAxes": [
+        "color",
+        "font family/size/weight/line",
+        "spacing/density",
+        "control size",
+        "radii",
+        "border/elevation",
+        "icons",
+        "motion/reduced motion",
+        "layout/overflow",
+        "selection/navigation",
+        "Save/Undo/Reset/error",
+        "keyboard/focus/disabled/required"
+      ],
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
+      "ownerVisualStatus": "pending, not a machine claim"
+    },
+    {
+      "family": "ProductShell / SideNavCollapseButton / Brand / MobileNavToggle",
+      "use": "Atelier shell",
+      "constructionAndStates": "sidebar header in the family's order: brand home link a.tcrn-product-shell__brand with the 38px mark, IconButton tcrn-shell-side-nav-toggle with collapse and expand svg icons, IconButton tcrn-shell-mobile-nav-toggle; data-product-shell-collapsed drives the 92px icon rail; main keeps the published padding; every page is tcrn-product-shell-content-stack on the shell's left edge; the top bar keeps the TopBar module and actions in a two-track grid (one line at 1024/1280/1440/1680, where the family utility row wraps at 1024 and 1280)",
+      "interaction": "collapse control: native button with Enter and Space, aria-expanded, a name and title that say the next action in the page's language, the choice remembered in this browser, hidden under 760px where the mobile toggle takes over",
+      "authority": {
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
+        "standardRegistry": "foundation-visual-standards-v1",
+        "standardCategories": [
+          "visual-philosophy-ownership",
+          "layout-rhythm",
+          "spacing-density",
+          "typography-localization",
+          "color-elevation-border-radius-focus",
+          "component-composition",
+          "interaction-motion-accessibility",
+          "responsive-mobile",
+          "evidence-proof-oracle",
+          "consumer-enforcement"
+        ],
+        "route": "foundations.html#foundation-visual-standards"
+      },
+      "comparisonAxes": [
+        "color",
+        "font family/size/weight/line",
+        "spacing/density",
+        "control size",
+        "radii",
+        "border/elevation",
+        "icons",
+        "motion/reduced motion",
+        "layout/overflow",
+        "selection/navigation",
+        "Save/Undo/Reset/error",
+        "keyboard/focus/disabled/required"
+      ],
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
+      "ownerVisualStatus": "pending, not a machine claim"
+    },
+    {
+      "family": "Link",
+      "use": "vocabulary source links",
+      "constructionAndStates": "a.tcrn-link with the family's colour, underline and focus ring; the local rule only places it in its cell",
+      "interaction": "native link; opens the source in a new tab",
+      "authority": {
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
+        "standardRegistry": "foundation-visual-standards-v1",
+        "standardCategories": [
+          "visual-philosophy-ownership",
+          "layout-rhythm",
+          "spacing-density",
+          "typography-localization",
+          "color-elevation-border-radius-focus",
+          "component-composition",
+          "interaction-motion-accessibility",
+          "responsive-mobile",
+          "evidence-proof-oracle",
+          "consumer-enforcement"
+        ],
+        "route": "foundations.html#foundation-visual-standards"
+      },
+      "comparisonAxes": [
+        "color",
+        "font family/size/weight/line",
+        "spacing/density",
+        "control size",
+        "radii",
+        "border/elevation",
+        "icons",
+        "motion/reduced motion",
+        "layout/overflow",
+        "selection/navigation",
+        "Save/Undo/Reset/error",
+        "keyboard/focus/disabled/required"
+      ],
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
+      "ownerVisualStatus": "pending, not a machine claim"
+    },
+    {
+      "family": "Surface / Heading / Button",
+      "use": "project bindings in Settings and the involved projects editor",
+      "constructionAndStates": "tcrn-surface sections with tcrn-heading--3 headings; Save, Undo, Add, Remove and readiness actions as tcrn-button --md inside tcrn-surface__head-actions, so buttons keep their content width (the unstyled tcrn-action-row and tcrn-menu-item classes are gone)",
+      "interaction": "Save commits through the CLI and the page reads the result back; Undo discards the draft; Add and Remove change the repository draft only",
+      "authority": {
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
+        "standardRegistry": "foundation-visual-standards-v1",
+        "standardCategories": [
+          "visual-philosophy-ownership",
+          "layout-rhythm",
+          "spacing-density",
+          "typography-localization",
+          "color-elevation-border-radius-focus",
+          "component-composition",
+          "interaction-motion-accessibility",
+          "responsive-mobile",
+          "evidence-proof-oracle",
+          "consumer-enforcement"
+        ],
+        "route": "foundations.html#foundation-visual-standards"
+      },
+      "comparisonAxes": [
+        "color",
+        "font family/size/weight/line",
+        "spacing/density",
+        "control size",
+        "radii",
+        "border/elevation",
+        "icons",
+        "motion/reduced motion",
+        "layout/overflow",
+        "selection/navigation",
+        "Save/Undo/Reset/error",
+        "keyboard/focus/disabled/required"
+      ],
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
+      "ownerVisualStatus": "pending, not a machine claim"
     }
   ],
   "allConsumedPublicClasses": [
@@ -1735,7 +2126,7 @@
       "class": "tcrn-app-status-bar",
       "variant": "family root/alias",
       "consumerLines": [
-        4248
+        4249
       ],
       "publishedStyleSites": [
         {
@@ -1763,7 +2154,7 @@
       "class": "tcrn-app-status-bar__action",
       "variant": "component part",
       "consumerLines": [
-        4248
+        4249
       ],
       "publishedStyleSites": [
         {
@@ -1779,7 +2170,7 @@
       "class": "tcrn-app-status-bar__command",
       "variant": "component part",
       "consumerLines": [
-        4248
+        4249
       ],
       "publishedStyleSites": [
         {
@@ -1795,7 +2186,7 @@
       "class": "tcrn-app-status-bar__state",
       "variant": "component part",
       "consumerLines": [
-        4248
+        4249
       ],
       "publishedStyleSites": [
         {
@@ -1811,38 +2202,40 @@
       "class": "tcrn-badge",
       "variant": "family root/alias",
       "consumerLines": [
-        4098,
-        4122,
-        4129,
-        4138,
-        4142,
+        4078,
+        4123,
+        4130,
+        4139,
         4143,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223,
-        4236,
-        4252,
-        4432,
-        4436,
-        4451,
-        4573,
-        4574,
-        4958,
-        4959,
-        5273,
-        5334,
+        4144,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224,
+        4237,
+        4253,
+        4433,
+        4437,
+        4452,
+        4576,
+        4577,
+        5024,
+        5025,
+        5339,
         5353,
-        5404,
-        5416,
-        5426,
-        5436,
-        5540,
-        5544,
-        5636,
-        5682
+        5362,
+        5482,
+        5501,
+        5552,
+        5564,
+        5574,
+        5584,
+        5688,
+        5692,
+        5784,
+        5830
       ],
       "publishedStyleSites": [
         {
@@ -1921,13 +2314,13 @@
       "class": "tcrn-badge--danger",
       "variant": "modifier",
       "consumerLines": [
-        4432,
-        4436,
-        4451,
-        5404,
-        5416,
-        5426,
-        5436
+        4433,
+        4437,
+        4452,
+        5552,
+        5564,
+        5574,
+        5584
       ],
       "publishedStyleSites": [
         {
@@ -1949,20 +2342,20 @@
       "class": "tcrn-badge--positive",
       "variant": "modifier",
       "consumerLines": [
-        4098,
-        4122,
-        4129,
-        4138,
-        4252,
-        4432,
-        4436,
-        4451,
-        5404,
-        5416,
-        5426,
-        5436,
-        5540,
-        5682
+        4078,
+        4123,
+        4130,
+        4139,
+        4253,
+        4433,
+        4437,
+        4452,
+        5552,
+        5564,
+        5574,
+        5584,
+        5688,
+        5830
       ],
       "publishedStyleSites": [
         {
@@ -1991,8 +2384,8 @@
       "class": "tcrn-badge--warning",
       "variant": "modifier",
       "consumerLines": [
-        4958,
-        5682
+        5024,
+        5830
       ],
       "publishedStyleSites": [
         {
@@ -2041,40 +2434,44 @@
       "class": "tcrn-button",
       "variant": "family root/alias",
       "consumerLines": [
-        4068,
-        4104,
-        4132,
-        4208,
-        4223,
-        4226,
-        4248,
-        4252,
-        4595,
-        4645,
-        4662,
-        4761,
-        4772,
-        4908,
-        4941,
-        4942,
-        4961,
-        4982,
-        4992,
-        4993,
-        5021,
-        5038,
-        5039,
-        5040,
-        5215,
-        5216,
-        5351,
-        5389,
-        5393,
-        5624,
-        5635,
-        5683,
-        5848,
-        5901
+        4075,
+        4076,
+        4105,
+        4133,
+        4209,
+        4224,
+        4227,
+        4249,
+        4253,
+        4598,
+        4648,
+        4665,
+        4765,
+        4776,
+        4810,
+        4830,
+        4974,
+        5007,
+        5008,
+        5027,
+        5048,
+        5058,
+        5059,
+        5087,
+        5104,
+        5105,
+        5106,
+        5281,
+        5282,
+        5397,
+        5499,
+        5537,
+        5541,
+        5772,
+        5783,
+        5831,
+        6009,
+        6063
       ],
       "publishedStyleSites": [
         {
@@ -2192,28 +2589,31 @@
       "class": "tcrn-button--md",
       "variant": "modifier",
       "consumerLines": [
-        4068,
-        4104,
-        4761,
-        4772,
-        4908,
-        4941,
-        4942,
-        4961,
-        4982,
-        4992,
-        4993,
-        5021,
-        5038,
-        5039,
-        5040,
-        5215,
-        5216,
-        5351,
-        5624,
-        5635,
-        5683,
-        5848
+        4075,
+        4076,
+        4105,
+        4765,
+        4776,
+        4830,
+        4974,
+        5007,
+        5008,
+        5027,
+        5048,
+        5058,
+        5059,
+        5087,
+        5104,
+        5105,
+        5106,
+        5281,
+        5282,
+        5397,
+        5499,
+        5772,
+        5783,
+        5831,
+        6009
       ],
       "publishedStyleSites": [
         {
@@ -2247,14 +2647,16 @@
       "class": "tcrn-button--primary",
       "variant": "modifier",
       "consumerLines": [
-        4208,
-        4223,
-        4645,
-        4942,
-        4992,
-        5038,
-        5039,
-        5215
+        4209,
+        4224,
+        4648,
+        4830,
+        5008,
+        5058,
+        5104,
+        5105,
+        5281,
+        5397
       ],
       "publishedStyleSites": [
         {
@@ -2285,28 +2687,29 @@
       "class": "tcrn-button--quiet",
       "variant": "modifier",
       "consumerLines": [
-        4068,
-        4226,
-        4248,
-        4252,
-        4595,
-        4645,
-        4662,
-        4761,
-        4908,
-        4941,
-        4961,
-        4982,
-        4993,
-        5021,
-        5040,
-        5216,
-        5351,
-        5389,
-        5393,
-        5683,
-        5848,
-        5901
+        4227,
+        4249,
+        4253,
+        4598,
+        4648,
+        4665,
+        4765,
+        4830,
+        4974,
+        5007,
+        5027,
+        5048,
+        5059,
+        5087,
+        5106,
+        5282,
+        5397,
+        5499,
+        5537,
+        5541,
+        5831,
+        6009,
+        6063
       ],
       "publishedStyleSites": [
         {
@@ -2341,15 +2744,20 @@
       "class": "tcrn-button--secondary",
       "variant": "modifier",
       "consumerLines": [
-        4104,
-        4223,
-        4226,
-        4772,
-        4942,
-        5216,
-        5389,
-        5624,
-        5635
+        4075,
+        4076,
+        4105,
+        4224,
+        4227,
+        4776,
+        4810,
+        4830,
+        5008,
+        5282,
+        5397,
+        5537,
+        5772,
+        5783
       ],
       "publishedStyleSites": [
         {
@@ -2372,8 +2780,9 @@
       "class": "tcrn-button--sm",
       "variant": "modifier",
       "consumerLines": [
-        4645,
-        4662
+        4648,
+        4665,
+        4810
       ],
       "publishedStyleSites": [
         {
@@ -2390,8 +2799,8 @@
       "class": "tcrn-content-scope",
       "variant": "family root/alias",
       "consumerLines": [
-        4806,
-        4809
+        4871,
+        4874
       ],
       "publishedStyleSites": [
         {
@@ -2424,7 +2833,7 @@
       "class": "tcrn-content-scope__content",
       "variant": "component part",
       "consumerLines": [
-        4806
+        4871
       ],
       "publishedStyleSites": [
         {
@@ -2440,14 +2849,19 @@
       "class": "tcrn-definition-list",
       "variant": "family root/alias",
       "consumerLines": [
-        4138,
         4139,
-        4252,
-        4461,
-        4959,
-        4961,
-        5404,
-        5444
+        4140,
+        4253,
+        4462,
+        4810,
+        5025,
+        5027,
+        5362,
+        5364,
+        5365,
+        5367,
+        5552,
+        5592
       ],
       "publishedStyleSites": [
         {
@@ -2492,9 +2906,11 @@
       "class": "tcrn-definition-list--dense",
       "variant": "modifier",
       "consumerLines": [
-        4138,
-        4961,
-        5404
+        4139,
+        4810,
+        5027,
+        5367,
+        5552
       ],
       "publishedStyleSites": [
         {
@@ -2512,8 +2928,12 @@
       "class": "tcrn-definition-list__definition",
       "variant": "component part",
       "consumerLines": [
-        4461,
-        5444
+        4462,
+        4810,
+        5362,
+        5364,
+        5365,
+        5592
       ],
       "publishedStyleSites": [
         {
@@ -2529,10 +2949,14 @@
       "class": "tcrn-definition-list__item",
       "variant": "component part",
       "consumerLines": [
-        4461,
-        4959,
-        5404,
-        5444
+        4462,
+        4810,
+        5025,
+        5362,
+        5364,
+        5365,
+        5552,
+        5592
       ],
       "publishedStyleSites": [
         {
@@ -2560,8 +2984,12 @@
       "class": "tcrn-definition-list__term",
       "variant": "component part",
       "consumerLines": [
-        4461,
-        5444
+        4462,
+        4810,
+        5362,
+        5364,
+        5365,
+        5592
       ],
       "publishedStyleSites": [
         {
@@ -2577,7 +3005,7 @@
       "class": "tcrn-detail-drawer",
       "variant": "family root/alias",
       "consumerLines": [
-        4252
+        4253
       ],
       "publishedStyleSites": [
         {
@@ -2601,7 +3029,10 @@
       "class": "tcrn-disclosure-panel",
       "variant": "family root/alias",
       "consumerLines": [
-        4380
+        4078,
+        4381,
+        4810,
+        5367
       ],
       "publishedStyleSites": [
         {
@@ -2627,7 +3058,10 @@
       "class": "tcrn-disclosure-panel__title",
       "variant": "component part",
       "consumerLines": [
-        4380
+        4078,
+        4381,
+        4810,
+        5367
       ],
       "publishedStyleSites": [
         {
@@ -2641,9 +3075,9 @@
       "class": "tcrn-document-canvas",
       "variant": "family root/alias",
       "consumerLines": [
-        5308,
-        5319,
-        5353
+        5456,
+        5467,
+        5501
       ],
       "publishedStyleSites": [
         {
@@ -2705,8 +3139,8 @@
       "class": "tcrn-document-canvas__section",
       "variant": "component part",
       "consumerLines": [
-        5319,
-        5353
+        5467,
+        5501
       ],
       "publishedStyleSites": [
         {
@@ -2728,26 +3162,29 @@
       "class": "tcrn-field",
       "variant": "family root/alias",
       "consumerLines": [
-        4199,
         4200,
         4201,
         4202,
-        4676,
-        4677,
-        4687,
-        4691,
-        4753,
-        4845,
-        4903,
-        5204,
-        5205,
-        5206,
-        5338,
-        5339,
-        5384,
-        5386,
-        5387,
-        5625
+        4203,
+        4679,
+        4680,
+        4690,
+        4694,
+        4757,
+        4830,
+        4911,
+        4969,
+        5270,
+        5271,
+        5272,
+        5383,
+        5397,
+        5486,
+        5487,
+        5532,
+        5534,
+        5535,
+        5773
       ],
       "publishedStyleSites": [
         {
@@ -2849,7 +3286,7 @@
       "class": "tcrn-field--error",
       "variant": "modifier",
       "consumerLines": [
-        4845
+        4911
       ],
       "publishedStyleSites": [
         {
@@ -2867,7 +3304,7 @@
       "class": "tcrn-field__hint",
       "variant": "component part",
       "consumerLines": [
-        4753
+        4757
       ],
       "publishedStyleSites": [
         {
@@ -2881,15 +3318,18 @@
       "class": "tcrn-field__label",
       "variant": "component part",
       "consumerLines": [
-        4199,
         4200,
         4201,
         4202,
-        5338,
-        5339,
-        5386,
-        5387,
-        5625
+        4203,
+        4830,
+        5383,
+        5397,
+        5486,
+        5487,
+        5534,
+        5535,
+        5773
       ],
       "publishedStyleSites": [
         {
@@ -2914,17 +3354,19 @@
       "class": "tcrn-heading",
       "variant": "family root/alias",
       "consumerLines": [
-        4129,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223,
-        4236,
-        4252,
-        5334,
-        5636
+        4130,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224,
+        4237,
+        4253,
+        4830,
+        5383,
+        5482,
+        5784
       ],
       "publishedStyleSites": [
         {
@@ -2994,14 +3436,14 @@
       "class": "tcrn-heading--2",
       "variant": "modifier",
       "consumerLines": [
-        4129,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223,
-        4236
+        4130,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224,
+        4237
       ],
       "publishedStyleSites": [
         {
@@ -3015,9 +3457,11 @@
       "class": "tcrn-heading--3",
       "variant": "modifier",
       "consumerLines": [
-        4252,
-        5334,
-        5636
+        4253,
+        4830,
+        5383,
+        5482,
+        5784
       ],
       "publishedStyleSites": [
         {
@@ -3032,10 +3476,11 @@
       "variant": "family root/alias",
       "consumerLines": [
         4075,
-        4104,
-        4595,
-        4761,
-        5021
+        4076,
+        4105,
+        4598,
+        4765,
+        5087
       ],
       "publishedStyleSites": [
         {
@@ -3059,10 +3504,10 @@
       "class": "tcrn-inline-alert",
       "variant": "family root/alias",
       "consumerLines": [
-        4725,
-        4726,
-        4894,
-        4896
+        4728,
+        4729,
+        4960,
+        4962
       ],
       "publishedStyleSites": [
         {
@@ -3097,7 +3542,7 @@
       "class": "tcrn-inline-alert--danger",
       "variant": "modifier",
       "consumerLines": [
-        4896
+        4962
       ],
       "publishedStyleSites": [
         {
@@ -3113,7 +3558,7 @@
       "class": "tcrn-inline-alert--warning",
       "variant": "modifier",
       "consumerLines": [
-        4726
+        4729
       ],
       "publishedStyleSites": [
         {
@@ -3129,25 +3574,26 @@
       "class": "tcrn-input",
       "variant": "family root/alias",
       "consumerLines": [
-        4101,
-        4199,
+        4102,
         4200,
         4201,
         4202,
-        4229,
-        4676,
-        4677,
-        4687,
-        4691,
-        4901,
-        4902,
-        5201,
-        5206,
-        5339,
-        5386,
-        5387,
-        5393,
-        5900
+        4203,
+        4230,
+        4679,
+        4680,
+        4690,
+        4694,
+        4830,
+        4967,
+        4968,
+        5267,
+        5272,
+        5487,
+        5534,
+        5535,
+        5541,
+        6062
       ],
       "publishedStyleSites": [
         {
@@ -3198,8 +3644,9 @@
       "class": "tcrn-label-set",
       "variant": "family root/alias",
       "consumerLines": [
-        5319,
-        5353
+        5362,
+        5467,
+        5501
       ],
       "publishedStyleSites": [
         {
@@ -3217,9 +3664,9 @@
       "class": "tcrn-line-numbered-editor",
       "variant": "family root/alias",
       "consumerLines": [
-        4229,
-        5676,
-        5683
+        4230,
+        5824,
+        5831
       ],
       "publishedStyleSites": [
         {
@@ -3285,7 +3732,7 @@
       "class": "tcrn-line-numbered-editor__content",
       "variant": "component part",
       "consumerLines": [
-        4229
+        4230
       ],
       "publishedStyleSites": [
         {
@@ -3301,7 +3748,7 @@
       "class": "tcrn-line-numbered-editor__control",
       "variant": "component part",
       "consumerLines": [
-        4229
+        4230
       ],
       "publishedStyleSites": [
         {
@@ -3321,7 +3768,7 @@
       "class": "tcrn-line-numbered-editor__findings",
       "variant": "component part",
       "consumerLines": [
-        4229
+        4230
       ],
       "publishedStyleSites": [
         {
@@ -3337,7 +3784,7 @@
       "class": "tcrn-line-numbered-editor__gutter",
       "variant": "component part",
       "consumerLines": [
-        4229
+        4230
       ],
       "publishedStyleSites": [
         {
@@ -3362,11 +3809,81 @@
       ]
     },
     {
+      "class": "tcrn-link",
+      "variant": "family root/alias",
+      "consumerLines": [
+        5706
+      ],
+      "publishedStyleSites": [
+        {
+          "line": 30,
+          "source": ".tcrn-link-button,"
+        },
+        {
+          "line": 32,
+          "source": ".tcrn-link-button--secondary {"
+        },
+        {
+          "line": 59,
+          "source": ".tcrn-link-button--primary {"
+        },
+        {
+          "line": 65,
+          "source": "[data-tcrn-theme=\"dark\"] .tcrn-link-button--primary {"
+        },
+        {
+          "line": 69,
+          "source": ".tcrn-link-button--quiet {"
+        },
+        {
+          "line": 78,
+          "source": ".tcrn-link-button:hover {"
+        },
+        {
+          "line": 84,
+          "source": ".tcrn-link-button--primary:hover {"
+        },
+        {
+          "line": 89,
+          "source": ".tcrn-link-button:focus-visible {"
+        },
+        {
+          "line": 93,
+          "source": ".tcrn-link-button:active {"
+        },
+        {
+          "line": 2378,
+          "source": ".tcrn-link-button:active,"
+        },
+        {
+          "line": 2796,
+          "source": ".tcrn-link--quiet,"
+        },
+        {
+          "line": 2801,
+          "source": ".tcrn-link--quiet:hover,"
+        },
+        {
+          "line": 2813,
+          "source": ".tcrn-link {"
+        },
+        {
+          "line": 2820,
+          "source": ".tcrn-link:hover {"
+        },
+        {
+          "line": 2823,
+          "source": ".tcrn-link:focus-visible {"
+        }
+      ],
+      "previousConsumerLines": []
+    },
+    {
       "class": "tcrn-machine-token",
       "variant": "family root/alias",
       "consumerLines": [
-        5561,
-        5683
+        5709,
+        5831
       ],
       "publishedStyleSites": [
         {
@@ -3423,7 +3940,7 @@
       "class": "tcrn-machine-token--compact",
       "variant": "modifier",
       "consumerLines": [
-        5683
+        5831
       ],
       "publishedStyleSites": [
         {
@@ -3447,7 +3964,7 @@
       "class": "tcrn-machine-token__value",
       "variant": "component part",
       "consumerLines": [
-        5683
+        5831
       ],
       "publishedStyleSites": [
         {
@@ -3471,8 +3988,10 @@
       "class": "tcrn-menu",
       "variant": "family root/alias",
       "consumerLines": [
-        4644,
-        4645
+        4647,
+        4648,
+        5396,
+        5397
       ],
       "publishedStyleSites": [
         {
@@ -3502,7 +4021,8 @@
       "class": "tcrn-menu__item",
       "variant": "component part",
       "consumerLines": [
-        4644
+        4647,
+        5396
       ],
       "publishedStyleSites": [
         {
@@ -3528,10 +4048,13 @@
       "class": "tcrn-multi-select-dropdown",
       "variant": "family root/alias",
       "consumerLines": [
-        4644,
-        4645,
-        5695,
-        5709
+        4647,
+        4648,
+        5396,
+        5397,
+        5398,
+        5843,
+        5857
       ],
       "publishedStyleSites": [
         {
@@ -3597,7 +4120,8 @@
       "class": "tcrn-multi-select-dropdown__caret",
       "variant": "component part",
       "consumerLines": [
-        4645
+        4648,
+        5397
       ],
       "publishedStyleSites": [
         {
@@ -3611,7 +4135,8 @@
       "class": "tcrn-multi-select-dropdown__list",
       "variant": "component part",
       "consumerLines": [
-        4645
+        4648,
+        5397
       ],
       "publishedStyleSites": [
         {
@@ -3629,7 +4154,8 @@
       "class": "tcrn-multi-select-dropdown__option",
       "variant": "component part",
       "consumerLines": [
-        4644
+        4647,
+        5396
       ],
       "publishedStyleSites": [
         {
@@ -3659,9 +4185,10 @@
       "class": "tcrn-multi-select-dropdown__trigger",
       "variant": "component part",
       "consumerLines": [
-        4645,
-        5695,
-        5709
+        4648,
+        5397,
+        5843,
+        5857
       ],
       "publishedStyleSites": [
         {
@@ -3687,7 +4214,6 @@
       "class": "tcrn-nav-item",
       "variant": "family root/alias",
       "consumerLines": [
-        4079,
         4080,
         4081,
         4082,
@@ -3695,8 +4221,10 @@
         4084,
         4085,
         4086,
-        4788,
-        5575
+        4087,
+        4853,
+        5723,
+        5932
       ],
       "publishedStyleSites": [
         {
@@ -3775,14 +4303,14 @@
       "class": "tcrn-nav-item__content",
       "variant": "component part",
       "consumerLines": [
-        4079,
         4080,
         4081,
         4082,
         4083,
         4084,
         4085,
-        4086
+        4086,
+        4087
       ],
       "publishedStyleSites": [
         {
@@ -3805,14 +4333,15 @@
       "class": "tcrn-nav-item__label",
       "variant": "component part",
       "consumerLines": [
-        4079,
         4080,
         4081,
         4082,
         4083,
         4084,
         4085,
-        4086
+        4086,
+        4087,
+        5932
       ],
       "publishedStyleSites": [
         {
@@ -3839,10 +4368,10 @@
       "class": "tcrn-number-input",
       "variant": "family root/alias",
       "consumerLines": [
-        4676,
-        4687,
-        4901,
-        5201
+        4679,
+        4690,
+        4967,
+        5267
       ],
       "publishedStyleSites": [
         {
@@ -3873,7 +4402,7 @@
       "class": "tcrn-number-input-field",
       "variant": "family root/alias",
       "consumerLines": [
-        4687
+        4690
       ],
       "publishedStyleSites": [
         {
@@ -3889,12 +4418,12 @@
       "class": "tcrn-operation-feedback",
       "variant": "family root/alias",
       "consumerLines": [
-        4252,
-        4380,
-        4432,
-        4451,
-        4460,
-        5426
+        4253,
+        4381,
+        4433,
+        4452,
+        4461,
+        5574
       ],
       "publishedStyleSites": [
         {
@@ -3962,9 +4491,9 @@
       "class": "tcrn-operation-feedback__details",
       "variant": "component part",
       "consumerLines": [
-        4252,
-        4380,
-        5426
+        4253,
+        4381,
+        5574
       ],
       "publishedStyleSites": [
         {
@@ -4001,9 +4530,9 @@
       "class": "tcrn-operation-feedback__details-body",
       "variant": "component part",
       "consumerLines": [
-        4252,
-        4380,
-        5426
+        4253,
+        4381,
+        5574
       ],
       "publishedStyleSites": [
         {
@@ -4028,8 +4557,8 @@
       "class": "tcrn-operation-feedback__details-trigger",
       "variant": "component part",
       "consumerLines": [
-        4252,
-        5426
+        4253,
+        5574
       ],
       "publishedStyleSites": [
         {
@@ -4050,9 +4579,9 @@
       "class": "tcrn-operation-feedback__identity",
       "variant": "component part",
       "consumerLines": [
-        4252,
-        4460,
-        5426
+        4253,
+        4461,
+        5574
       ],
       "publishedStyleSites": [
         {
@@ -4082,8 +4611,8 @@
       "class": "tcrn-operation-feedback__identity-row",
       "variant": "component part",
       "consumerLines": [
-        4460,
-        5426
+        4461,
+        5574
       ],
       "publishedStyleSites": [
         {
@@ -4100,10 +4629,10 @@
       "class": "tcrn-operation-feedback__status",
       "variant": "component part",
       "consumerLines": [
-        4252,
-        4432,
-        4451,
-        5426
+        4253,
+        4433,
+        4452,
+        5574
       ],
       "publishedStyleSites": [
         {
@@ -4122,8 +4651,8 @@
       "class": "tcrn-operation-feedback__summary",
       "variant": "component part",
       "consumerLines": [
-        4252,
-        5426
+        4253,
+        5574
       ],
       "publishedStyleSites": [
         {
@@ -4140,14 +4669,14 @@
       "class": "tcrn-page-header",
       "variant": "family root/alias",
       "consumerLines": [
-        4129,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223,
-        4236
+        4130,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224,
+        4237
       ],
       "publishedStyleSites": [
         {
@@ -4233,14 +4762,14 @@
       "class": "tcrn-page-header__actions",
       "variant": "component part",
       "consumerLines": [
-        4129,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223,
-        4236
+        4130,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224,
+        4237
       ],
       "publishedStyleSites": [
         {
@@ -4262,14 +4791,14 @@
       "class": "tcrn-page-header__body",
       "variant": "component part",
       "consumerLines": [
-        4129,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223,
-        4236
+        4130,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224,
+        4237
       ],
       "publishedStyleSites": [
         {
@@ -4287,14 +4816,14 @@
       "class": "tcrn-page-header__title",
       "variant": "component part",
       "consumerLines": [
-        4129,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223,
-        4236
+        4130,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224,
+        4237
       ],
       "publishedStyleSites": [
         {
@@ -4316,38 +4845,38 @@
       "class": "tcrn-page-hierarchy",
       "variant": "family root/alias",
       "consumerLines": [
-        4127,
         4128,
-        4131,
-        4134,
-        4148,
+        4129,
+        4132,
+        4135,
         4149,
-        4152,
-        4155,
-        4161,
+        4150,
+        4153,
+        4156,
         4162,
-        4165,
+        4163,
         4166,
-        4170,
+        4167,
         4171,
-        4174,
+        4172,
         4175,
-        4179,
+        4176,
         4180,
-        4183,
+        4181,
         4184,
-        4188,
+        4185,
         4189,
-        4192,
+        4190,
         4193,
-        4221,
+        4194,
         4222,
-        4225,
-        4228,
-        4234,
+        4223,
+        4226,
+        4229,
         4235,
-        4238,
-        4241
+        4236,
+        4239,
+        4242
       ],
       "publishedStyleSites": [
         {
@@ -4422,14 +4951,14 @@
       "class": "tcrn-page-hierarchy__header",
       "variant": "component part",
       "consumerLines": [
-        4128,
-        4149,
-        4162,
-        4171,
-        4180,
-        4189,
-        4222,
-        4235
+        4129,
+        4150,
+        4163,
+        4172,
+        4181,
+        4190,
+        4223,
+        4236
       ],
       "publishedStyleSites": [
         {
@@ -4452,14 +4981,14 @@
       "class": "tcrn-page-hierarchy__lower-content",
       "variant": "component part",
       "consumerLines": [
-        4134,
-        4155,
-        4166,
-        4175,
-        4184,
-        4193,
-        4228,
-        4241
+        4135,
+        4156,
+        4167,
+        4176,
+        4185,
+        4194,
+        4229,
+        4242
       ],
       "publishedStyleSites": [
         {
@@ -4482,14 +5011,14 @@
       "class": "tcrn-page-hierarchy__section-tabs",
       "variant": "component part",
       "consumerLines": [
-        4131,
-        4152,
-        4165,
-        4174,
-        4183,
-        4192,
-        4225,
-        4238
+        4132,
+        4153,
+        4166,
+        4175,
+        4184,
+        4193,
+        4226,
+        4239
       ],
       "publishedStyleSites": [
         {
@@ -4516,7 +5045,7 @@
       "class": "tcrn-popover",
       "variant": "family root/alias",
       "consumerLines": [
-        4591
+        4594
       ],
       "publishedStyleSites": [
         {
@@ -4706,11 +5235,19 @@
         4066,
         4067,
         4068,
-        4090,
-        4125,
-        4251,
-        5848,
-        6043
+        4091,
+        4126,
+        4127,
+        4148,
+        4161,
+        4170,
+        4179,
+        4188,
+        4221,
+        4234,
+        4252,
+        6009,
+        6242
       ],
       "publishedStyleSites": [
         {
@@ -4993,11 +5530,36 @@
       ]
     },
     {
+      "class": "tcrn-product-shell-content-stack",
+      "variant": "family root/alias",
+      "consumerLines": [
+        4127,
+        4148,
+        4161,
+        4170,
+        4179,
+        4188,
+        4221,
+        4234
+      ],
+      "publishedStyleSites": [
+        {
+          "line": 608,
+          "source": ".tcrn-product-shell-content-stack {"
+        },
+        {
+          "line": 615,
+          "source": ".tcrn-product-shell-content-stack > *,"
+        }
+      ],
+      "previousConsumerLines": []
+    },
+    {
       "class": "tcrn-product-shell-search__result",
       "variant": "component part",
       "consumerLines": [
-        4251,
-        5848
+        4252,
+        6009
       ],
       "publishedStyleSites": [
         {
@@ -5031,7 +5593,7 @@
       "class": "tcrn-product-shell-search__results",
       "variant": "component part",
       "consumerLines": [
-        4251
+        4252
       ],
       "publishedStyleSites": [
         {
@@ -5069,7 +5631,7 @@
       "class": "tcrn-product-shell__main",
       "variant": "component part",
       "consumerLines": [
-        4125
+        4126
       ],
       "publishedStyleSites": [
         {
@@ -5163,7 +5725,7 @@
       "class": "tcrn-product-shell__workspace",
       "variant": "component part",
       "consumerLines": [
-        4090
+        4091
       ],
       "publishedStyleSites": [
         {
@@ -5191,7 +5753,7 @@
       "class": "tcrn-readback-panel",
       "variant": "family root/alias",
       "consumerLines": [
-        4252
+        4253
       ],
       "publishedStyleSites": [
         {
@@ -5216,9 +5778,9 @@
       "class": "tcrn-record-row",
       "variant": "family root/alias",
       "consumerLines": [
-        5306,
-        5307,
-        5308
+        5454,
+        5455,
+        5456
       ],
       "publishedStyleSites": [
         {
@@ -5344,7 +5906,7 @@
       "class": "tcrn-record-row--dense",
       "variant": "modifier",
       "consumerLines": [
-        5306
+        5454
       ],
       "publishedStyleSites": [
         {
@@ -5366,9 +5928,9 @@
       "class": "tcrn-record-row__id",
       "variant": "component part",
       "consumerLines": [
-        5306,
-        5307,
-        5308
+        5454,
+        5455,
+        5456
       ],
       "publishedStyleSites": [
         {
@@ -5386,7 +5948,7 @@
       "class": "tcrn-record-row__meta",
       "variant": "component part",
       "consumerLines": [
-        5306
+        5454
       ],
       "publishedStyleSites": [
         {
@@ -5404,7 +5966,7 @@
       "class": "tcrn-record-row__summary",
       "variant": "component part",
       "consumerLines": [
-        5306
+        5454
       ],
       "publishedStyleSites": [
         {
@@ -5430,8 +5992,8 @@
       "class": "tcrn-record-table",
       "variant": "family root/alias",
       "consumerLines": [
-        5307,
-        5308
+        5455,
+        5456
       ],
       "publishedStyleSites": [
         {
@@ -5461,8 +6023,8 @@
       "class": "tcrn-row-group",
       "variant": "family root/alias",
       "consumerLines": [
-        5307,
-        5308
+        5455,
+        5456
       ],
       "publishedStyleSites": [
         {
@@ -5516,8 +6078,8 @@
       "class": "tcrn-row-group--dense",
       "variant": "modifier",
       "consumerLines": [
-        5307,
-        5308
+        5455,
+        5456
       ],
       "publishedStyleSites": [
         {
@@ -5531,8 +6093,8 @@
       "class": "tcrn-row-group__head",
       "variant": "component part",
       "consumerLines": [
-        5307,
-        5308
+        5455,
+        5456
       ],
       "publishedStyleSites": [
         {
@@ -5558,10 +6120,10 @@
       "class": "tcrn-search-input",
       "variant": "family root/alias",
       "consumerLines": [
-        4099,
         4100,
         4101,
-        4102
+        4102,
+        4103
       ],
       "publishedStyleSites": [
         {
@@ -5640,7 +6202,7 @@
       "class": "tcrn-search-input__control",
       "variant": "component part",
       "consumerLines": [
-        4101
+        4102
       ],
       "publishedStyleSites": [
         {
@@ -5676,7 +6238,7 @@
       "class": "tcrn-search-input__icon",
       "variant": "component part",
       "consumerLines": [
-        4100
+        4101
       ],
       "publishedStyleSites": [
         {
@@ -5696,7 +6258,7 @@
       "class": "tcrn-search-input__shortcut",
       "variant": "component part",
       "consumerLines": [
-        4102
+        4103
       ],
       "publishedStyleSites": [
         {
@@ -5712,9 +6274,9 @@
       "class": "tcrn-search-result-list",
       "variant": "family root/alias",
       "consumerLines": [
-        5319,
-        5343,
-        5353
+        5467,
+        5491,
+        5501
       ],
       "publishedStyleSites": [
         {
@@ -5772,8 +6334,8 @@
       "class": "tcrn-search-result-list__item",
       "variant": "component part",
       "consumerLines": [
-        5319,
-        5353
+        5467,
+        5501
       ],
       "publishedStyleSites": [
         {
@@ -5795,7 +6357,7 @@
       "class": "tcrn-section-tabs",
       "variant": "family root/alias",
       "consumerLines": [
-        4132
+        4133
       ],
       "publishedStyleSites": [
         {
@@ -5843,16 +6405,19 @@
       "class": "tcrn-select",
       "variant": "family root/alias",
       "consumerLines": [
-        4095,
-        4097,
-        4226,
-        4645,
-        4662,
-        4679,
-        4690,
-        5021,
-        5205,
-        5338
+        4096,
+        4098,
+        4227,
+        4648,
+        4665,
+        4682,
+        4693,
+        4830,
+        5087,
+        5271,
+        5383,
+        5397,
+        5486
       ],
       "publishedStyleSites": [
         {
@@ -5887,11 +6452,11 @@
       "class": "tcrn-setting-choice",
       "variant": "family root/alias",
       "consumerLines": [
-        4645,
-        4662,
-        4679,
-        4687,
-        4690
+        4648,
+        4665,
+        4682,
+        4690,
+        4693
       ],
       "publishedStyleSites": [
         {
@@ -5943,8 +6508,8 @@
       "class": "tcrn-setting-choice__hint",
       "variant": "component part",
       "consumerLines": [
-        4662,
-        4687
+        4665,
+        4690
       ],
       "publishedStyleSites": [
         {
@@ -5965,9 +6530,9 @@
       "class": "tcrn-setting-choice__select-label",
       "variant": "component part",
       "consumerLines": [
-        4662,
-        4679,
-        4690
+        4665,
+        4682,
+        4693
       ],
       "publishedStyleSites": [
         {
@@ -5989,13 +6554,13 @@
       "class": "tcrn-setting-row",
       "variant": "family root/alias",
       "consumerLines": [
-        4753,
-        4756,
-        4762,
-        4763,
+        4757,
+        4760,
+        4766,
         4767,
-        4773,
-        4806
+        4771,
+        4777,
+        4871
       ],
       "publishedStyleSites": [
         {
@@ -6137,7 +6702,7 @@
       "class": "tcrn-setting-row-list",
       "variant": "family root/alias",
       "consumerLines": [
-        4806
+        4871
       ],
       "publishedStyleSites": [
         {
@@ -6169,9 +6734,9 @@
       "class": "tcrn-setting-row__control",
       "variant": "component part",
       "consumerLines": [
-        4763,
         4767,
-        4773
+        4771,
+        4777
       ],
       "publishedStyleSites": [
         {
@@ -6217,7 +6782,7 @@
       "class": "tcrn-setting-row__description",
       "variant": "component part",
       "consumerLines": [
-        4753
+        4757
       ],
       "publishedStyleSites": [
         {
@@ -6233,7 +6798,7 @@
       "class": "tcrn-setting-row__key",
       "variant": "component part",
       "consumerLines": [
-        4753
+        4757
       ],
       "publishedStyleSites": [
         {
@@ -6249,7 +6814,7 @@
       "class": "tcrn-setting-row__label",
       "variant": "component part",
       "consumerLines": [
-        4753
+        4757
       ],
       "publishedStyleSites": [
         {
@@ -6269,7 +6834,7 @@
       "class": "tcrn-setting-row__modified",
       "variant": "component part",
       "consumerLines": [
-        4762
+        4766
       ],
       "publishedStyleSites": [
         {
@@ -6285,7 +6850,7 @@
       "class": "tcrn-setting-row__name",
       "variant": "component part",
       "consumerLines": [
-        4753
+        4757
       ],
       "publishedStyleSites": [
         {
@@ -6301,7 +6866,7 @@
       "class": "tcrn-setting-row__reset",
       "variant": "component part",
       "consumerLines": [
-        4756
+        4760
       ],
       "publishedStyleSites": [
         {
@@ -6321,9 +6886,9 @@
       "class": "tcrn-setting-row__tools",
       "variant": "component part",
       "consumerLines": [
-        4763,
         4767,
-        4773
+        4771,
+        4777
       ],
       "publishedStyleSites": [
         {
@@ -6361,9 +6926,9 @@
       "class": "tcrn-settings-layout",
       "variant": "family root/alias",
       "consumerLines": [
-        4153,
-        4156,
-        4806
+        4154,
+        4157,
+        4871
       ],
       "publishedStyleSites": [
         {
@@ -6469,7 +7034,7 @@
       "class": "tcrn-settings-layout__content",
       "variant": "component part",
       "consumerLines": [
-        4156
+        4157
       ],
       "publishedStyleSites": [
         {
@@ -6485,8 +7050,8 @@
       "class": "tcrn-settings-layout__form",
       "variant": "component part",
       "consumerLines": [
-        4156,
-        4806
+        4157,
+        4871
       ],
       "publishedStyleSites": [
         {
@@ -6563,7 +7128,7 @@
       "class": "tcrn-settings-layout__frame",
       "variant": "component part",
       "consumerLines": [
-        4156
+        4157
       ],
       "publishedStyleSites": [
         {
@@ -6579,7 +7144,7 @@
       "class": "tcrn-settings-layout__grid",
       "variant": "component part",
       "consumerLines": [
-        4156
+        4157
       ],
       "publishedStyleSites": [
         {
@@ -6599,7 +7164,7 @@
       "class": "tcrn-settings-layout__nav",
       "variant": "component part",
       "consumerLines": [
-        4153
+        4154
       ],
       "publishedStyleSites": [
         {
@@ -6651,16 +7216,16 @@
       "class": "tcrn-shell-locale-menu",
       "variant": "family root/alias",
       "consumerLines": [
-        4108,
         4109,
-        4111,
-        4114,
+        4110,
+        4112,
         4115,
         4116,
         4117,
         4118,
         4119,
-        4476
+        4120,
+        4477
       ],
       "publishedStyleSites": [
         {
@@ -6773,8 +7338,8 @@
       "class": "tcrn-shell-locale-menu__current",
       "variant": "component part",
       "consumerLines": [
-        4111,
-        4476
+        4112,
+        4477
       ],
       "publishedStyleSites": [
         {
@@ -6791,11 +7356,11 @@
       "class": "tcrn-shell-locale-menu__name",
       "variant": "component part",
       "consumerLines": [
-        4115,
         4116,
         4117,
         4118,
-        4119
+        4119,
+        4120
       ],
       "publishedStyleSites": [
         {
@@ -6815,11 +7380,11 @@
       "class": "tcrn-shell-locale-menu__option",
       "variant": "component part",
       "consumerLines": [
-        4115,
         4116,
         4117,
         4118,
-        4119
+        4119,
+        4120
       ],
       "publishedStyleSites": [
         {
@@ -6851,7 +7416,7 @@
       "class": "tcrn-shell-locale-menu__panel",
       "variant": "component part",
       "consumerLines": [
-        4114
+        4115
       ],
       "publishedStyleSites": [
         {
@@ -6871,7 +7436,7 @@
       "class": "tcrn-shell-locale-menu__trigger",
       "variant": "component part",
       "consumerLines": [
-        4109
+        4110
       ],
       "publishedStyleSites": [
         {
@@ -6923,8 +7488,8 @@
       "class": "tcrn-shell-mobile-nav-toggle",
       "variant": "family root/alias",
       "consumerLines": [
-        4075,
-        6041
+        4076,
+        6240
       ],
       "publishedStyleSites": [
         {
@@ -6942,10 +7507,48 @@
       ]
     },
     {
+      "class": "tcrn-shell-side-nav-toggle",
+      "variant": "family root/alias",
+      "consumerLines": [
+        4075,
+        4076
+      ],
+      "publishedStyleSites": [
+        {
+          "line": 143,
+          "source": ".tcrn-shell-side-nav-toggle {"
+        },
+        {
+          "line": 151,
+          "source": ".tcrn-shell-side-nav-toggle:hover,"
+        },
+        {
+          "line": 160,
+          "source": ".tcrn-product-shell .tcrn-shell-side-nav-toggle:focus-visible,"
+        },
+        {
+          "line": 202,
+          "source": ".tcrn-shell-side-nav-toggle {"
+        },
+        {
+          "line": 226,
+          "source": ".tcrn-shell-side-nav-toggle__icon {"
+        },
+        {
+          "line": 2255,
+          "source": ".tcrn-product-shell__sidebar-header .tcrn-shell-side-nav-toggle {"
+        }
+      ],
+      "previousConsumerLines": [
+        4237
+      ]
+    },
+    {
       "class": "tcrn-shell-side-nav-toggle__icon",
       "variant": "component part",
       "consumerLines": [
-        4075
+        4075,
+        4076
       ],
       "publishedStyleSites": [
         {
@@ -6961,9 +7564,9 @@
       "class": "tcrn-shell-theme-toggle",
       "variant": "family root/alias",
       "consumerLines": [
-        4104,
         4105,
-        4106
+        4106,
+        4107
       ],
       "publishedStyleSites": [
         {
@@ -7029,8 +7632,8 @@
       "class": "tcrn-shell-theme-toggle__icon",
       "variant": "component part",
       "consumerLines": [
-        4105,
-        4106
+        4106,
+        4107
       ],
       "publishedStyleSites": [
         {
@@ -7067,7 +7670,7 @@
       "class": "tcrn-side-nav",
       "variant": "family root/alias",
       "consumerLines": [
-        4078
+        4079
       ],
       "publishedStyleSites": [
         {
@@ -7095,18 +7698,20 @@
       "class": "tcrn-sr-only",
       "variant": "family root/alias",
       "consumerLines": [
-        4094,
-        4096,
-        4226,
-        4645,
-        4662,
-        4676,
-        4677,
+        4095,
+        4097,
+        4227,
+        4648,
+        4665,
         4679,
-        4687,
+        4680,
+        4682,
         4690,
-        4691,
-        5384
+        4693,
+        4694,
+        4810,
+        5397,
+        5532
       ],
       "publishedStyleSites": [
         {
@@ -7135,7 +7740,7 @@
       "class": "tcrn-stat-card",
       "variant": "family root/alias",
       "consumerLines": [
-        4136
+        4137
       ],
       "publishedStyleSites": [
         {
@@ -7175,7 +7780,7 @@
       "class": "tcrn-stat-card__label",
       "variant": "component part",
       "consumerLines": [
-        4136
+        4137
       ],
       "publishedStyleSites": [
         {
@@ -7191,7 +7796,7 @@
       "class": "tcrn-stat-card__note",
       "variant": "component part",
       "consumerLines": [
-        4136
+        4137
       ],
       "publishedStyleSites": [
         {
@@ -7207,7 +7812,7 @@
       "class": "tcrn-stat-card__value",
       "variant": "component part",
       "consumerLines": [
-        4136
+        4137
       ],
       "publishedStyleSites": [
         {
@@ -7235,23 +7840,24 @@
       "class": "tcrn-state-surface",
       "variant": "family root/alias",
       "consumerLines": [
-        4142,
-        4214,
-        4380,
-        4807,
-        4921,
-        4932,
-        5228,
-        5293,
-        5302,
-        5332,
-        5335,
-        5341,
-        5399,
-        5404,
-        5427,
-        5584,
-        5637
+        4143,
+        4215,
+        4381,
+        4872,
+        4987,
+        4998,
+        5294,
+        5355,
+        5435,
+        5450,
+        5480,
+        5483,
+        5489,
+        5547,
+        5552,
+        5575,
+        5732,
+        5785
       ],
       "publishedStyleSites": [
         {
@@ -7322,7 +7928,7 @@
       "class": "tcrn-state-surface__action",
       "variant": "component part",
       "consumerLines": [
-        4932
+        4998
       ],
       "publishedStyleSites": [
         {
@@ -7338,8 +7944,8 @@
       "class": "tcrn-state-surface__description",
       "variant": "component part",
       "consumerLines": [
-        4380,
-        4932
+        4381,
+        4998
       ],
       "publishedStyleSites": [
         {
@@ -7355,7 +7961,7 @@
       "class": "tcrn-state-surface__title",
       "variant": "component part",
       "consumerLines": [
-        4932
+        4998
       ],
       "publishedStyleSites": [
         {
@@ -7379,24 +7985,27 @@
       "class": "tcrn-surface",
       "variant": "family root/alias",
       "consumerLines": [
-        4138,
         4139,
-        4142,
+        4140,
         4143,
-        4195,
+        4144,
         4196,
-        4212,
-        4226,
-        4252,
-        4645,
-        4809,
-        4942,
-        4961,
-        5229,
-        5332,
-        5334,
-        5335,
-        5636
+        4197,
+        4213,
+        4227,
+        4253,
+        4648,
+        4820,
+        4830,
+        4874,
+        5008,
+        5027,
+        5295,
+        5397,
+        5480,
+        5482,
+        5483,
+        5784
       ],
       "publishedStyleSites": [
         {
@@ -7453,23 +8062,25 @@
       "class": "tcrn-surface__head",
       "variant": "component part",
       "consumerLines": [
-        4138,
         4139,
-        4142,
+        4140,
         4143,
-        4195,
+        4144,
         4196,
-        4212,
-        4252,
-        4645,
-        4809,
-        4942,
-        4961,
-        5229,
-        5332,
-        5334,
-        5335,
-        5636
+        4197,
+        4213,
+        4253,
+        4648,
+        4830,
+        4874,
+        5008,
+        5027,
+        5295,
+        5397,
+        5480,
+        5482,
+        5483,
+        5784
       ],
       "publishedStyleSites": [
         {
@@ -7514,8 +8125,10 @@
       "class": "tcrn-surface__head-actions",
       "variant": "component part",
       "consumerLines": [
-        4645,
-        4942
+        4648,
+        4830,
+        5008,
+        5397
       ],
       "publishedStyleSites": [
         {
@@ -7531,18 +8144,18 @@
       "class": "tcrn-surface__head-content",
       "variant": "component part",
       "consumerLines": [
-        4138,
         4139,
-        4142,
+        4140,
         4143,
-        4195,
+        4144,
         4196,
-        4212,
-        4809,
-        4942,
-        4961,
-        5229,
-        5334
+        4197,
+        4213,
+        4874,
+        5008,
+        5027,
+        5295,
+        5482
       ],
       "publishedStyleSites": [
         {
@@ -7569,14 +8182,14 @@
       "class": "tcrn-switch",
       "variant": "family root/alias",
       "consumerLines": [
-        4205,
         4206,
         4207,
-        4686,
-        5388,
-        5391,
-        5392,
-        5636
+        4208,
+        4689,
+        5536,
+        5539,
+        5540,
+        5784
       ],
       "publishedStyleSites": [
         {
@@ -7635,14 +8248,14 @@
       "class": "tcrn-switch__control",
       "variant": "component part",
       "consumerLines": [
-        4205,
         4206,
         4207,
-        4686,
-        5388,
-        5391,
-        5392,
-        5636
+        4208,
+        4689,
+        5536,
+        5539,
+        5540,
+        5784
       ],
       "publishedStyleSites": [
         {
@@ -7685,14 +8298,14 @@
       "class": "tcrn-switch__label",
       "variant": "component part",
       "consumerLines": [
-        4205,
         4206,
         4207,
-        4686,
-        5388,
-        5391,
-        5392,
-        5636
+        4208,
+        4689,
+        5536,
+        5539,
+        5540,
+        5784
       ],
       "publishedStyleSites": [
         {
@@ -7715,30 +8328,30 @@
       "class": "tcrn-table-shell",
       "variant": "family root/alias",
       "consumerLines": [
-        4213,
-        4897,
-        4903,
-        4914,
-        4915,
-        4919,
-        4921,
-        4929,
-        5204,
-        5205,
-        5206,
-        5208,
-        5214,
-        5225,
-        5229,
-        5383,
-        5384,
-        5385,
-        5391,
-        5392,
-        5393,
-        5585,
-        5586,
-        5587
+        4214,
+        4963,
+        4969,
+        4980,
+        4981,
+        4985,
+        4987,
+        4995,
+        5270,
+        5271,
+        5272,
+        5274,
+        5280,
+        5291,
+        5295,
+        5531,
+        5532,
+        5533,
+        5539,
+        5540,
+        5541,
+        5733,
+        5734,
+        5735
       ],
       "publishedStyleSites": [
         {
@@ -7834,18 +8447,18 @@
       "class": "tcrn-table-shell__cell",
       "variant": "component part",
       "consumerLines": [
-        4897,
-        4903,
-        5204,
-        5205,
-        5206,
-        5214,
-        5384,
-        5385,
-        5391,
-        5392,
-        5393,
-        5587
+        4963,
+        4969,
+        5270,
+        5271,
+        5272,
+        5280,
+        5532,
+        5533,
+        5539,
+        5540,
+        5541,
+        5735
       ],
       "publishedStyleSites": [
         {
@@ -7883,9 +8496,9 @@
       "class": "tcrn-table-shell__empty",
       "variant": "component part",
       "consumerLines": [
-        4914,
-        4921,
-        5225
+        4980,
+        4987,
+        5291
       ],
       "publishedStyleSites": [
         {
@@ -7907,9 +8520,9 @@
       "class": "tcrn-table-shell__empty-row",
       "variant": "component part",
       "consumerLines": [
-        4914,
-        4921,
-        5225
+        4980,
+        4987,
+        5291
       ],
       "publishedStyleSites": [
         {
@@ -7927,10 +8540,10 @@
       "class": "tcrn-table-shell__head",
       "variant": "component part",
       "consumerLines": [
-        4213,
-        4919,
-        5229,
-        5586
+        4214,
+        4985,
+        5295,
+        5734
       ],
       "publishedStyleSites": [
         {
@@ -7960,13 +8573,13 @@
       "class": "tcrn-table-shell__row",
       "variant": "component part",
       "consumerLines": [
-        4914,
-        4915,
-        4921,
-        5208,
-        5225,
-        5383,
-        5587
+        4980,
+        4981,
+        4987,
+        5274,
+        5291,
+        5531,
+        5735
       ],
       "publishedStyleSites": [
         {
@@ -7999,53 +8612,55 @@
       "class": "tcrn-text",
       "variant": "family root/alias",
       "consumerLines": [
-        4077,
-        4088,
-        4129,
-        4138,
+        4089,
+        4130,
         4139,
-        4142,
+        4140,
         4143,
-        4150,
-        4163,
-        4165,
-        4172,
-        4174,
-        4181,
-        4183,
-        4190,
-        4192,
-        4201,
+        4144,
+        4151,
+        4164,
+        4166,
+        4173,
+        4175,
+        4182,
+        4184,
+        4191,
+        4193,
         4202,
-        4223,
-        4229,
-        4236,
-        4252,
-        4380,
-        4771,
-        4809,
-        4942,
-        4961,
-        4981,
-        5210,
-        5229,
-        5306,
-        5307,
-        5318,
-        5319,
-        5334,
-        5338,
-        5353,
-        5386,
-        5404,
-        5539,
-        5544,
-        5548,
-        5549,
-        5555,
-        5582,
-        5636,
-        5683
+        4203,
+        4224,
+        4230,
+        4237,
+        4253,
+        4381,
+        4775,
+        4874,
+        5008,
+        5027,
+        5047,
+        5276,
+        5295,
+        5362,
+        5366,
+        5383,
+        5454,
+        5455,
+        5466,
+        5467,
+        5482,
+        5486,
+        5501,
+        5534,
+        5552,
+        5687,
+        5692,
+        5696,
+        5697,
+        5703,
+        5730,
+        5784,
+        5831
       ],
       "publishedStyleSites": [
         {
@@ -8120,10 +8735,10 @@
       "class": "tcrn-textarea",
       "variant": "family root/alias",
       "consumerLines": [
-        4201,
         4202,
-        4229,
-        5386
+        4203,
+        4230,
+        5534
       ],
       "publishedStyleSites": [
         {
@@ -8142,8 +8757,8 @@
       "class": "tcrn-tooltip",
       "variant": "family root/alias",
       "consumerLines": [
-        4591,
-        4594
+        4594,
+        4597
       ],
       "publishedStyleSites": [
         {
@@ -8232,7 +8847,7 @@
       "class": "tcrn-tooltip__content",
       "variant": "component part",
       "consumerLines": [
-        4591
+        4594
       ],
       "publishedStyleSites": [
         {
@@ -8316,9 +8931,9 @@
       "class": "tcrn-top-bar",
       "variant": "family root/alias",
       "consumerLines": [
-        4091,
         4092,
-        4093
+        4093,
+        4094
       ],
       "publishedStyleSites": [
         {
@@ -8365,7 +8980,7 @@
       "class": "tcrn-top-bar__actions",
       "variant": "component part",
       "consumerLines": [
-        4093
+        4094
       ],
       "publishedStyleSites": [
         {
@@ -8381,7 +8996,7 @@
       "class": "tcrn-top-bar__module",
       "variant": "component part",
       "consumerLines": [
-        4092
+        4093
       ],
       "publishedStyleSites": [
         {
@@ -8399,8 +9014,8 @@
       "class": "tcrn-action-row",
       "variant": "family root/alias",
       "consumerLines": [
-        4645,
-        4942
+        4648,
+        5008
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8412,7 +9027,7 @@
       "variant": "family root/alias",
       "consumerLines": [
         4064,
-        4248
+        4249
       ],
       "publishedStyleSites": [
         {
@@ -8441,22 +9056,24 @@
       "class": "tcrn-badge--",
       "variant": "modifier",
       "consumerLines": [
-        4098,
-        4122,
-        4129,
-        4138,
-        4252,
-        4432,
-        4436,
-        4451,
-        4958,
-        5273,
-        5404,
-        5416,
-        5426,
-        5436,
-        5540,
-        5682
+        4078,
+        4123,
+        4130,
+        4139,
+        4253,
+        4433,
+        4437,
+        4452,
+        5024,
+        5339,
+        5353,
+        5362,
+        5552,
+        5564,
+        5574,
+        5584,
+        5688,
+        5830
       ],
       "publishedStyleSites": [
         {
@@ -8507,7 +9124,7 @@
       "class": "tcrn-checkbox",
       "variant": "family root/alias",
       "consumerLines": [
-        5636
+        5784
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8518,7 +9135,7 @@
       "class": "tcrn-dashboard-grid",
       "variant": "family root/alias",
       "consumerLines": [
-        4137
+        4138
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8529,7 +9146,7 @@
       "class": "tcrn-design-authority",
       "variant": "family root/alias",
       "consumerLines": [
-        4699
+        4702
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8540,13 +9157,13 @@
       "class": "tcrn-design-system-storybook",
       "variant": "family root/alias",
       "consumerLines": [
-        4091,
-        4095,
-        4098,
-        4101,
-        4104,
-        4108,
-        4122
+        4078,
+        4092,
+        4096,
+        4102,
+        4105,
+        4109,
+        4123
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8563,7 +9180,7 @@
       "class": "tcrn-detail-drawer__head",
       "variant": "component part",
       "consumerLines": [
-        4252
+        4253
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8574,9 +9191,9 @@
       "class": "tcrn-dot",
       "variant": "family root/alias",
       "consumerLines": [
-        4248,
-        4762,
-        5683
+        4249,
+        4766,
+        5831
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8589,7 +9206,7 @@
       "class": "tcrn-editor-shell",
       "variant": "family root/alias",
       "consumerLines": [
-        4229
+        4230
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8600,7 +9217,7 @@
       "class": "tcrn-editor__bar",
       "variant": "component part",
       "consumerLines": [
-        4229
+        4230
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8611,7 +9228,7 @@
       "class": "tcrn-editor__status",
       "variant": "component part",
       "consumerLines": [
-        4229
+        4230
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8622,7 +9239,7 @@
       "class": "tcrn-finding-link",
       "variant": "family root/alias",
       "consumerLines": [
-        5683
+        5831
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8633,9 +9250,9 @@
       "class": "tcrn-grid",
       "variant": "family root/alias",
       "consumerLines": [
-        4136,
         4137,
-        4198
+        4138,
+        4199
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8648,8 +9265,8 @@
       "class": "tcrn-grid--2",
       "variant": "modifier",
       "consumerLines": [
-        4137,
-        4198
+        4138,
+        4199
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8661,7 +9278,7 @@
       "class": "tcrn-grid--4",
       "variant": "modifier",
       "consumerLines": [
-        4136
+        4137
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8672,7 +9289,7 @@
       "class": "tcrn-highlightable",
       "variant": "family root/alias",
       "consumerLines": [
-        4763
+        4767
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8684,12 +9301,15 @@
       "variant": "family root/alias",
       "consumerLines": [
         4075,
-        4104,
-        4595,
-        4644,
-        4645,
-        4761,
-        5021
+        4076,
+        4105,
+        4598,
+        4647,
+        4648,
+        4765,
+        5087,
+        5396,
+        5397
       ],
       "publishedStyleSites": [
         {
@@ -8713,9 +9333,9 @@
       "class": "tcrn-inline-alert--",
       "variant": "modifier",
       "consumerLines": [
-        4726,
-        4894,
-        4896
+        4729,
+        4960,
+        4962
       ],
       "publishedStyleSites": [
         {
@@ -8745,7 +9365,7 @@
       "class": "tcrn-line-numbered-editor__finding--",
       "variant": "modifier",
       "consumerLines": [
-        5683
+        5831
       ],
       "publishedStyleSites": [
         {
@@ -8769,7 +9389,7 @@
       "class": "tcrn-line-numbered-editor__line--",
       "variant": "modifier",
       "consumerLines": [
-        5676
+        5824
       ],
       "publishedStyleSites": [
         {
@@ -8785,7 +9405,7 @@
       "class": "tcrn-machine-token--key",
       "variant": "modifier",
       "consumerLines": [
-        5683
+        5831
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8796,7 +9416,7 @@
       "class": "tcrn-main",
       "variant": "family root/alias",
       "consumerLines": [
-        4125
+        4126
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8807,7 +9427,7 @@
       "class": "tcrn-manage",
       "variant": "family root/alias",
       "consumerLines": [
-        4156
+        4157
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8818,7 +9438,7 @@
       "class": "tcrn-multi-select-dropdown__validation",
       "variant": "component part",
       "consumerLines": [
-        4645
+        4648
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -8827,7 +9447,8 @@
       "class": "tcrn-multi-select-dropdown__value",
       "variant": "component part",
       "consumerLines": [
-        4645
+        4648,
+        5397
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -8836,7 +9457,7 @@
       "class": "tcrn-operation-feedback__identity-value",
       "variant": "component part",
       "consumerLines": [
-        4460
+        4461
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8847,54 +9468,54 @@
       "class": "tcrn-page",
       "variant": "family root/alias",
       "consumerLines": [
-        4126,
         4127,
         4128,
         4129,
-        4131,
-        4134,
-        4147,
+        4130,
+        4132,
+        4135,
         4148,
         4149,
         4150,
-        4152,
-        4155,
-        4160,
+        4151,
+        4153,
+        4156,
         4161,
         4162,
         4163,
-        4165,
+        4164,
         4166,
-        4169,
+        4167,
         4170,
         4171,
         4172,
-        4174,
+        4173,
         4175,
-        4178,
+        4176,
         4179,
         4180,
         4181,
-        4183,
+        4182,
         4184,
-        4187,
+        4185,
         4188,
         4189,
         4190,
-        4192,
+        4191,
         4193,
-        4220,
+        4194,
         4221,
         4222,
         4223,
-        4225,
-        4228,
-        4233,
+        4224,
+        4226,
+        4229,
         4234,
         4235,
         4236,
-        4238,
-        4241
+        4237,
+        4239,
+        4242
       ],
       "publishedStyleSites": [
         {
@@ -9058,39 +9679,16 @@
       ]
     },
     {
-      "class": "tcrn-page--manage",
-      "variant": "modifier",
-      "consumerLines": [
-        4147,
-        4160,
-        4169,
-        4178,
-        4187,
-        4220,
-        4233
-      ],
-      "publishedStyleSites": [],
-      "previousConsumerLines": [
-        4307,
-        4320,
-        4329,
-        4338,
-        4347,
-        4380,
-        4393
-      ]
-    },
-    {
       "class": "tcrn-page__actions",
       "variant": "component part",
       "consumerLines": [
-        4129,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223
+        4130,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9107,14 +9705,14 @@
       "class": "tcrn-page__head",
       "variant": "component part",
       "consumerLines": [
-        4129,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223,
-        4236
+        4130,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224,
+        4237
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9132,14 +9730,14 @@
       "class": "tcrn-page__lede",
       "variant": "component part",
       "consumerLines": [
-        4129,
-        4150,
-        4163,
-        4172,
-        4181,
-        4190,
-        4223,
-        4236
+        4130,
+        4151,
+        4164,
+        4173,
+        4182,
+        4191,
+        4224,
+        4237
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9157,7 +9755,7 @@
       "class": "tcrn-rail__footer",
       "variant": "component part",
       "consumerLines": [
-        4088
+        4089
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9165,21 +9763,10 @@
       ]
     },
     {
-      "class": "tcrn-rail__library",
-      "variant": "component part",
-      "consumerLines": [
-        4077
-      ],
-      "publishedStyleSites": [],
-      "previousConsumerLines": [
-        4239
-      ]
-    },
-    {
       "class": "tcrn-rail__mark",
       "variant": "component part",
       "consumerLines": [
-        4077
+        4078
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9190,7 +9777,7 @@
       "class": "tcrn-rail__workspace",
       "variant": "component part",
       "consumerLines": [
-        4077
+        4078
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9201,7 +9788,7 @@
       "class": "tcrn-search-input--compact",
       "variant": "modifier",
       "consumerLines": [
-        4101
+        4102
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9212,7 +9799,7 @@
       "class": "tcrn-search-results",
       "variant": "family root/alias",
       "consumerLines": [
-        4251
+        4252
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9223,7 +9810,7 @@
       "class": "tcrn-setting-row--modified",
       "variant": "modifier",
       "consumerLines": [
-        4763
+        4767
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9234,10 +9821,10 @@
       "class": "tcrn-subnav",
       "variant": "family root/alias",
       "consumerLines": [
-        4153,
-        4239,
-        4788,
-        5575
+        4154,
+        4240,
+        4853,
+        5723
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9251,8 +9838,8 @@
       "class": "tcrn-subnav__item",
       "variant": "component part",
       "consumerLines": [
-        4788,
-        5575
+        4853,
+        5723
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9264,7 +9851,7 @@
       "class": "tcrn-subnav__row",
       "variant": "component part",
       "consumerLines": [
-        5575
+        5723
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9275,7 +9862,7 @@
       "class": "tcrn-table-shell__heading",
       "variant": "component part",
       "consumerLines": [
-        4213
+        4214
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -9284,7 +9871,7 @@
       "class": "tcrn-top-bar__module--path",
       "variant": "modifier",
       "consumerLines": [
-        4092
+        4093
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9295,7 +9882,7 @@
       "class": "tcrn-variable-table",
       "variant": "family root/alias",
       "consumerLines": [
-        5229
+        5295
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9306,10 +9893,10 @@
       "class": "tcrn-vocabulary",
       "variant": "family root/alias",
       "consumerLines": [
-        4242,
-        5549,
-        5558,
-        5582
+        4243,
+        5697,
+        5706,
+        5730
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9323,7 +9910,7 @@
       "class": "tcrn-vocabulary__category-description",
       "variant": "component part",
       "consumerLines": [
-        5582
+        5730
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9334,7 +9921,7 @@
       "class": "tcrn-vocabulary__semantic",
       "variant": "component part",
       "consumerLines": [
-        5549
+        5697
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9345,7 +9932,7 @@
       "class": "tcrn-vocabulary__source",
       "variant": "component part",
       "consumerLines": [
-        5558
+        5706
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9356,7 +9943,7 @@
       "class": "tcrn-vocabulary__terms",
       "variant": "component part",
       "consumerLines": [
-        4242
+        4243
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9367,9 +9954,9 @@
       "class": "tcrn-work-tree",
       "variant": "family root/alias",
       "consumerLines": [
-        5306,
-        5307,
-        5308
+        5454,
+        5455,
+        5456
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9382,8 +9969,8 @@
       "class": "tcrn-work-tree__children",
       "variant": "component part",
       "consumerLines": [
-        5307,
-        5308
+        5455,
+        5456
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9395,8 +9982,8 @@
       "class": "tcrn-work-tree__epic",
       "variant": "component part",
       "consumerLines": [
-        5307,
-        5308
+        5455,
+        5456
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9408,9 +9995,9 @@
       "class": "tcrn-work-tree__key",
       "variant": "component part",
       "consumerLines": [
-        5306,
-        5307,
-        5308
+        5454,
+        5455,
+        5456
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9423,7 +10010,7 @@
       "class": "tcrn-work-tree__missing",
       "variant": "component part",
       "consumerLines": [
-        5306
+        5454
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9434,7 +10021,7 @@
       "class": "tcrn-work-tree__story",
       "variant": "component part",
       "consumerLines": [
-        5306
+        5454
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9445,8 +10032,8 @@
       "class": "tcrn-work-tree__summary",
       "variant": "component part",
       "consumerLines": [
-        5307,
-        5308
+        5455,
+        5456
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9458,7 +10045,7 @@
       "class": "tcrn-work-tree__text",
       "variant": "component part",
       "consumerLines": [
-        5306
+        5454
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9469,7 +10056,7 @@
       "class": "tcrn-work-tree__title",
       "variant": "component part",
       "consumerLines": [
-        5306
+        5454
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9510,7 +10097,7 @@
     {
       "selector": "body",
       "context": [],
-      "declarations": "margin: 0; min-width: 320px; background: var(--tcrn-color-surface-canvas); color: var(--tcrn-color-text-primary); font: var(--tcrn-text-body-dense);",
+      "declarations": "margin: 0; min-width: 320px; background: var(--tcrn-color-surface-canvas); color: var(--tcrn-color-text-primary); font-family: var(--tcrn-type-family-ui); font-size: var(--tcrn-type-size-ui); line-height: var(--tcrn-type-line-ui);",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
     },
     {
@@ -9570,19 +10157,7 @@
     {
       "selector": ".tcrn-main",
       "context": [],
-      "declarations": "min-width: 0; min-height: 0; overflow: auto; padding: var(--tcrn-space-4) var(--tcrn-space-6) var(--tcrn-space-6);",
-      "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
-    },
-    {
-      "selector": ".tcrn-page",
-      "context": [],
-      "declarations": "width: min(1040px, 100%); margin: 0 auto;",
-      "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
-    },
-    {
-      "selector": ".tcrn-page--manage",
-      "context": [],
-      "declarations": "width: min(1100px, 100%);",
+      "declarations": "min-width: 0; min-height: 0; overflow: auto;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
     },
     {
@@ -9762,19 +10337,13 @@
     {
       "selector": ".tcrn-vocabulary__source",
       "context": [],
-      "declarations": "display: block; color: var(--tcrn-color-brand-primary); text-decoration: none;",
+      "declarations": "display: block;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
     },
     {
       "selector": ".tcrn-vocabulary__source + .tcrn-vocabulary__source",
       "context": [],
       "declarations": "margin-top: var(--tcrn-space-1);",
-      "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
-    },
-    {
-      "selector": ".tcrn-vocabulary__source:hover",
-      "context": [],
-      "declarations": "text-decoration: underline;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
     },
     {
@@ -9855,14 +10424,6 @@
         "@media (max-width: 760px)"
       ],
       "declarations": "width: auto; white-space: nowrap;",
-      "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
-    },
-    {
-      "selector": ".tcrn-main",
-      "context": [
-        "@media (max-width: 760px)"
-      ],
-      "declarations": "padding: var(--tcrn-space-4);",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
     },
     {
@@ -10002,9 +10563,9 @@
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
     },
     {
-      "selector": ".tcrn-product-shell__sidebar-header .tcrn-brand-mark",
+      "selector": ".tcrn-product-shell[data-product-shell-collapsed=\"true\"] .tcrn-rail__mark,\n.tcrn-product-shell[data-product-shell-collapsed=\"true\"] .tcrn-rail__footer",
       "context": [],
-      "declarations": "--tcrn-brand-mark-size: 28px;",
+      "declarations": "display: none;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
     },
     {
@@ -10047,12 +10608,6 @@
       "selector": ".tcrn-page[data-page=\"prose\"]",
       "context": [],
       "declarations": "max-width: 860px;",
-      "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
-    },
-    {
-      "selector": ".tcrn-page[data-page=\"dashboard\"],\n.tcrn-page[data-page=\"settings\"],\n.tcrn-page[data-page=\"model-categories\"],\n.tcrn-page[data-page=\"model-tiers\"],\n.tcrn-page[data-page=\"variables\"],\n.tcrn-page[data-page=\"entities\"],\n.tcrn-page[data-page=\"vocabulary\"]",
-      "context": [],
-      "declarations": "max-width: 1040px;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
     },
     {
@@ -10491,18 +11046,20 @@
       "diagnostic": "diagnosis-application-checkpoints.ndjson preserves complete hit stack and independent keyboard views for12 mobile cases",
       "desktopInterval": "Both max980 single-column shell overrides now use the published max760 stack breakpoint, matching desktop min761 fractional row/sidebar height. Adjacent981/980/761/760 and interior900/800 plus preserved720/390 and all7 routes exercised. No z-index/pointer workaround or shared authority source change."
     },
-    "currentR37": {
-      "shell": "Published760 shell transition preserved; existing app content/topbar/editor allocations adapt at980. Actual87 application cases83 pass4 fail. Six routes now fit at900/800; model-tiers still spills at900/800/761, variables at761. No global overflow:hidden or forced clicks.",
-      "settingLifecycle": "mutateSetting renders targets on pending entry and finally exit; library switch finally also settles target through same renderer. Existing epochs, exclusion, failure receipts and focus retained. All original formerly target-blocked application cases now pass.",
-      "reset": "Both complete tests now assert absence by default, actual native saved override before five-locale labels, one owning-row action and actual removal/inherited readback. Both original whole-file scenarios pass.",
-      "designProof": "Three old structural requirements reconciled but full design-proof remains red; no qualifying negatives until full/restored positives recover.",
-      "authority": "Published PR24 exact source/consumption unchanged. Correct DS-cwd lifecycle invocation now actually passes21+53 checks; no publication or271 screenshot regeneration."
-    },
-    "currentR38": {
-      "tableFields": "Only redundant absolute sr-only spans removed in collectionInputCell and variableField. Native complete aria-label is unchanged and equals visible mobile data-label; native label/cell/table associations remain. All87 original application cases pass, including four formerly spilled routes/widths. No visual CSS or DS snapshot change. Actual prior removed-node containing block remains unknown.",
-      "reset": "Explicit published SettingRow Reset button family admitted. Original13-leg positives and original38 layout/nonlayout/versioned tail pass; newly added contested Reset box negative fails because the owner predicate requests padding while the published declaration is padding-inline. This failure is retained, no immediate repair/rerun.",
-      "authority": "PR24 production/build/contract unchanged; no generic DS gap claimed and no republication.",
-      "projection": "Every emitted key/string checked recursively; actual cadence failures explicitly projected to test/file/line/reason plus archive-relative anchor, raw diagnostics remain private."
+    "currentR45": {
+      "shell": "Compared in Chromium against the same DOM on the DS documentation base (browser/before-u15.json, browser/final.json). Fixed: the 28px brand mark (family 38px), the 16/32/32px main padding (published 20px), the pages centred at 1040/1100px (now the content stack: top bar location, page title and content start at the same 300px edge at four widths), the brand button (now the home link), the mobile toggle without Button classes, the missing collapse control. Kept as application placement: the one-viewport shell with the status row and inner scroll, the dashboard stat grid, the top bar's two-track grid.",
+      "identity": "Visible labels hold names, Unnamed project or Unavailable project with the shortest id tails when alike; complete identities live in keyboard Details with a copy action; titles and accessible names carry no complete id. Measured in Chromium: Enter/Space open, Escape closes with focus on the summary, the copied value equals the identity.",
+      "readiness": "Project readiness replaced the JSON dump with Badges, labels and engine names of missing requirements.",
+      "proofs": "design-proof leg 6 scans anchors and summaries against their published families; leg 11 checks every side-navigation destination by tag and slots; the dashboard measure invariant now names the content stack.",
+      "dsGaps": [
+        "The ProductShell utility row has no single-line arrangement for Atelier's seven top bar controls; it wraps at 1024 and 1280.",
+        "Clipboard has no static bridge; Atelier composes the documented Button and status-region construction with the family's labels."
+      ],
+      "notVerified": [
+        "dark theme",
+        "locales other than en in the browser",
+        "Owner visual acceptance"
+      ]
     }
   },
   "snapshotBinding": {
@@ -10604,7 +11161,7 @@
     }
   },
   "actualBounds": [
-    "R41 reuses the R39 isolated current Source browser observations retained in the archive in place, with every failed case; they ran on the commit now named 14a953ce7b07dbe532be6b365b28bf169ff67020 after the authorized tree-identical history rewrite (old-to-new map: dispatch-runs/init-053/history-rewrite-r40/sha-map.json). R41 changes no portal file, settings.ts or machine-settings.ts (their git diff against that commit is empty before this generation); no canonical integration claim",
+    "R45 re-ran the R39 browser probe once on the E main checkout at 7d844bb254fd3733151fe34f7d45dfac92cdc6d2 (the integration head before this inventory commit), with Playwright from the published DS checkout 884f3c7b; every case and failure is recorded individually in that application evidence; no canonical integration claim",
     "actual wide/narrow/column and lifecycle outcomes are recorded individually in that application evidence; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
   ]

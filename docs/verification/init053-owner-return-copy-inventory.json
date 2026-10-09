@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r50-init053-integration",
+  "pack": "u23-pf-init053",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -579,7 +579,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "57af661c425e6227bfed4572d0eeb1aa7e7a0ec04c9ae5d765a1c16fadd25589"
+      "sha256": "b2f4c0bf6d2912c90b1ce1afbfc6f5ca6239041dcd4061d54f7894151d5e0ce5"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R50 integration batch-end generation (package P-A1 fast-forwarded, packages P-A2b (carrying P-A2a), P-B and P-C merged with one merge commit each and the CHANGELOG paragraph openings unified in one integration commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red (1782 of 1782 tests in 191 files: the 1774 of the R48 continuation plus the 4 gates-cli cases of P-A1, the 3 migrate cases of P-A2a and the 1 push-wiki case of P-C), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "U23 P-F package regeneration (TCRN-CROSS-INIT-053 U23 P-F, MIN-236 D2: the release tests derive the next version (a50aff32) and the reviewed 2.0.1 package members are classified (2172a256), both on C50 42e0ef77 in the package worktree before any merge; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at 2172a256 in a clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1783 of 1783 tests in 191 files: the 1782 of R50 plus the one 2.0.1 member case of P-F), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "2da6524552ac3cddcfae6011ef8b7fd3077271927aa867754faa530593282268",
+      "sha256": "a50b60abbc50b46e644ba3bf2dc4ad7c0e999e1beb34891f495ee2d9b16c49df",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "566b136e91bac55ad0cc72e7de67ae4a03c64daa44fd040f000397a556ead852",
+      "sha256": "c284f4de62d3d9b3163bad33ede049693012ae22e7b2b00c278c6e4459b06baa",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "58a30bade54a90aaee3c033ab4d44570949097a22bef60bb29f234a97d0b8381",
+      "sha256": "d1c9677e4da52dee65157c0b20d0ab7be34717d2d3983303520fa20229e392c1",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1012,8 +1012,8 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1782,
-      "pass": 1782,
+      "tests": 1783,
+      "pass": 1783,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
@@ -1156,10 +1156,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-09T13:26:46.533233+00:00",
+  "generationTimeUtc": "2026-10-09T16:41:28.727288+00:00",
   "supportedLocales": [
     "en",
     "zh-CN",

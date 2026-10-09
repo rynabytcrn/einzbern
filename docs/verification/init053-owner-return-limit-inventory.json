@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r50-init053-integration",
+  "pack": "u23-pf-init053",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -579,7 +579,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "57af661c425e6227bfed4572d0eeb1aa7e7a0ec04c9ae5d765a1c16fadd25589"
+      "sha256": "b2f4c0bf6d2912c90b1ce1afbfc6f5ca6239041dcd4061d54f7894151d5e0ce5"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R50 integration batch-end generation (package P-A1 fast-forwarded, packages P-A2b (carrying P-A2a), P-B and P-C merged with one merge commit each and the CHANGELOG paragraph openings unified in one integration commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red (1782 of 1782 tests in 191 files: the 1774 of the R48 continuation plus the 4 gates-cli cases of P-A1, the 3 migrate cases of P-A2a and the 1 push-wiki case of P-C), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "U23 P-F package regeneration (TCRN-CROSS-INIT-053 U23 P-F, MIN-236 D2: the release tests derive the next version (a50aff32) and the reviewed 2.0.1 package members are classified (2172a256), both on C50 42e0ef77 in the package worktree before any merge; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at 2172a256 in a clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1783 of 1783 tests in 191 files: the 1782 of R50 plus the one 2.0.1 member case of P-F), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "2da6524552ac3cddcfae6011ef8b7fd3077271927aa867754faa530593282268",
+      "sha256": "a50b60abbc50b46e644ba3bf2dc4ad7c0e999e1beb34891f495ee2d9b16c49df",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "566b136e91bac55ad0cc72e7de67ae4a03c64daa44fd040f000397a556ead852",
+      "sha256": "c284f4de62d3d9b3163bad33ede049693012ae22e7b2b00c278c6e4459b06baa",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "58a30bade54a90aaee3c033ab4d44570949097a22bef60bb29f234a97d0b8381",
+      "sha256": "d1c9677e4da52dee65157c0b20d0ab7be34717d2d3983303520fa20229e392c1",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1012,8 +1012,8 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1782,
-      "pass": 1782,
+      "tests": 1783,
+      "pass": 1783,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
@@ -1156,10 +1156,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/init-053/u23-pf-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-09T13:26:46.533233+00:00",
+  "generationTimeUtc": "2026-10-09T16:41:28.727288+00:00",
   "currentIndividualReview": {
     "namedDeclarations": [
       {
@@ -30662,7 +30662,7 @@
             "initializer": "0"
           },
           {
-            "line": 253,
+            "line": 260,
             "initializer": "Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\")"
           }
         ],
@@ -30704,7 +30704,7 @@
             ]
           },
           {
-            "line": 253,
+            "line": 260,
             "syntax": "VariableDeclaration",
             "context": [
               "",
@@ -30716,7 +30716,7 @@
             ]
           },
           {
-            "line": 254,
+            "line": 261,
             "syntax": "CallExpression",
             "context": [
               "function expandSourceArchiveEntry(entry) {",
@@ -30728,7 +30728,7 @@
             ]
           },
           {
-            "line": 258,
+            "line": 265,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  let offset = 0;",
@@ -30740,7 +30740,7 @@
             ]
           },
           {
-            "line": 258,
+            "line": 265,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  let offset = 0;",
@@ -30752,7 +30752,7 @@
             ]
           },
           {
-            "line": 259,
+            "line": 266,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  let fileIndex = 0;",
@@ -30764,7 +30764,7 @@
             ]
           },
           {
-            "line": 267,
+            "line": 274,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const joinedPath = prefix === \"\" ? path : `${prefix}/${path}`;",
@@ -30776,7 +30776,7 @@
             ]
           },
           {
-            "line": 273,
+            "line": 280,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const dataEnd = dataStart + size;",
@@ -30788,7 +30788,7 @@
             ]
           },
           {
-            "line": 275,
+            "line": 282,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    if (paddedEnd > bytes.length) throw new Error(\"PRIVACY_ARCHIVE_LAYOUT_INVALID\");",
@@ -30800,7 +30800,7 @@
             ]
           },
           {
-            "line": 276,
+            "line": 283,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    expanded.push({ label: `${entry.label}#header:${joinedPath}`, kind: entry.kind, content: header.toString(\"utf8\") });",
@@ -30812,7 +30812,7 @@
             ]
           },
           {
-            "line": 281,
+            "line": 288,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  }",
@@ -30835,7 +30835,7 @@
         "currentInitializer": "[]",
         "declarations": [
           {
-            "line": 859,
+            "line": 866,
             "initializer": "[]"
           }
         ],
@@ -30853,7 +30853,7 @@
             ]
           },
           {
-            "line": 135,
+            "line": 142,
             "syntax": "PropertyAccessExpression",
             "context": [
               "]);",
@@ -30865,7 +30865,7 @@
             ]
           },
           {
-            "line": 722,
+            "line": 729,
             "syntax": "Parameter",
             "context": [
               "// `repositories` names the public GitHub repositories whose origin URL under `owner` is",
@@ -30877,7 +30877,7 @@
             ]
           },
           {
-            "line": 726,
+            "line": 733,
             "syntax": "CallExpression",
             "context": [
               "    throw new Error(\"PRIVACY_OWNER_REQUIRED\");",
@@ -30889,7 +30889,7 @@
             ]
           },
           {
-            "line": 732,
+            "line": 739,
             "syntax": "ForOfStatement",
             "context": [
               "  const archiveExpansions = new Map();",
@@ -30901,7 +30901,7 @@
             ]
           },
           {
-            "line": 751,
+            "line": 758,
             "syntax": "ForOfStatement",
             "context": [
               "  let entriesScanned = 0;",
@@ -30913,7 +30913,7 @@
             ]
           },
           {
-            "line": 859,
+            "line": 866,
             "syntax": "VariableDeclaration",
             "context": [
               "  }",
@@ -30925,7 +30925,7 @@
             ]
           },
           {
-            "line": 878,
+            "line": 885,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const name = decodeGitMetadataBytes(nameBytes, \"PRIVACY_TREE_UTF8_INVALID\");",
@@ -30937,7 +30937,7 @@
             ]
           },
           {
-            "line": 881,
+            "line": 888,
             "syntax": "ReturnStatement",
             "context": [
               "    cursor = objectEnd;",
@@ -30949,7 +30949,7 @@
             ]
           },
           {
-            "line": 929,
+            "line": 936,
             "syntax": "PropertyAssignment",
             "context": [
               "    if (rootTree === undefined || !trees.has(rootTree)) throw new Error(\"PRIVACY_GIT_OBJECT_TYPE\");",
@@ -30961,7 +30961,7 @@
             ]
           },
           {
-            "line": 932,
+            "line": 939,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    while (stack.length > 0) {",
@@ -30973,7 +30973,7 @@
             ]
           },
           {
-            "line": 936,
+            "line": 943,
             "syntax": "PropertyAccessExpression",
             "context": [
               "        continue;",
@@ -30985,7 +30985,7 @@
             ]
           },
           {
-            "line": 942,
+            "line": 949,
             "syntax": "PropertyAssignment",
             "context": [
               "        const children = trees.get(entry.object);",
@@ -31008,13 +31008,13 @@
         "currentInitializer": "0",
         "declarations": [
           {
-            "line": 749,
+            "line": 756,
             "initializer": "0"
           }
         ],
         "exactUses": [
           {
-            "line": 749,
+            "line": 756,
             "syntax": "VariableDeclaration",
             "context": [
               "    }",
@@ -31026,7 +31026,7 @@
             ]
           },
           {
-            "line": 773,
+            "line": 780,
             "syntax": "BinaryExpression",
             "context": [
               "      }",
@@ -31038,7 +31038,7 @@
             ]
           },
           {
-            "line": 774,
+            "line": 781,
             "syntax": "BinaryExpression",
             "context": [
               "",
@@ -31050,7 +31050,7 @@
             ]
           },
           {
-            "line": 775,
+            "line": 782,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "      entriesScanned += 1;",
@@ -31062,7 +31062,7 @@
             ]
           },
           {
-            "line": 776,
+            "line": 783,
             "syntax": "BinaryExpression",
             "context": [
               "      if (typeof onProgress === \"function\" && entriesScanned % 5_000 === 0) {",
@@ -31074,7 +31074,7 @@
             ]
           },
           {
-            "line": 780,
+            "line": 787,
             "syntax": "BinaryExpression",
             "context": [
               "    }",
@@ -31086,7 +31086,7 @@
             ]
           },
           {
-            "line": 781,
+            "line": 788,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "  }",
@@ -31109,13 +31109,13 @@
         "currentInitializer": "content.subarray(modeEnd + 1, nameEnd)",
         "declarations": [
           {
-            "line": 874,
+            "line": 881,
             "initializer": "content.subarray(modeEnd + 1, nameEnd)"
           }
         ],
         "exactUses": [
           {
-            "line": 874,
+            "line": 881,
             "syntax": "VariableDeclaration",
             "context": [
               "      throw new Error(\"PRIVACY_TREE_RECORD_INVALID\");",
@@ -31127,7 +31127,7 @@
             ]
           },
           {
-            "line": 875,
+            "line": 882,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    }",
@@ -31139,7 +31139,7 @@
             ]
           },
           {
-            "line": 875,
+            "line": 882,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    }",
@@ -31151,7 +31151,7 @@
             ]
           },
           {
-            "line": 876,
+            "line": 883,
             "syntax": "CallExpression",
             "context": [
               "    const nameBytes = content.subarray(modeEnd + 1, nameEnd);",
@@ -31174,13 +31174,13 @@
         "currentInitializer": "objectIdLength / 2",
         "declarations": [
           {
-            "line": 858,
+            "line": 865,
             "initializer": "objectIdLength / 2"
           }
         ],
         "exactUses": [
           {
-            "line": 858,
+            "line": 865,
             "syntax": "VariableDeclaration",
             "context": [
               "    throw new Error(\"PRIVACY_GIT_OBJECT_TYPE\");",
@@ -31192,7 +31192,7 @@
             ]
           },
           {
-            "line": 867,
+            "line": 874,
             "syntax": "BinaryExpression",
             "context": [
               "    if (nameEnd === -1) throw new Error(\"PRIVACY_TREE_RECORD_INVALID\");",
@@ -31215,13 +31215,13 @@
         "currentInitializer": "commits[0]?.length",
         "declarations": [
           {
-            "line": 904,
+            "line": 911,
             "initializer": "commits[0]?.length"
           }
         ],
         "exactUses": [
           {
-            "line": 854,
+            "line": 861,
             "syntax": "Parameter",
             "context": [
               "}",
@@ -31233,7 +31233,7 @@
             ]
           },
           {
-            "line": 855,
+            "line": 862,
             "syntax": "CallExpression",
             "context": [
               "",
@@ -31245,7 +31245,7 @@
             ]
           },
           {
-            "line": 858,
+            "line": 865,
             "syntax": "BinaryExpression",
             "context": [
               "    throw new Error(\"PRIVACY_GIT_OBJECT_TYPE\");",
@@ -31257,7 +31257,7 @@
             ]
           },
           {
-            "line": 884,
+            "line": 891,
             "syntax": "Parameter",
             "context": [
               "}",
@@ -31269,7 +31269,7 @@
             ]
           },
           {
-            "line": 890,
+            "line": 897,
             "syntax": "BinaryExpression",
             "context": [
               "  const firstLine = content.subarray(0, lineEnd).toString(\"ascii\");",
@@ -31281,7 +31281,7 @@
             ]
           },
           {
-            "line": 904,
+            "line": 911,
             "syntax": "VariableDeclaration",
             "context": [
               "  const commitTrees = new Map();",
@@ -31293,7 +31293,7 @@
             ]
           },
           {
-            "line": 905,
+            "line": 912,
             "syntax": "BinaryExpression",
             "context": [
               "  const trees = new Map();",
@@ -31305,7 +31305,7 @@
             ]
           },
           {
-            "line": 913,
+            "line": 920,
             "syntax": "BinaryExpression",
             "context": [
               "    if (!match) continue;",
@@ -31317,7 +31317,7 @@
             ]
           },
           {
-            "line": 917,
+            "line": 924,
             "syntax": "CallExpression",
             "context": [
               "    }",
@@ -31329,7 +31329,7 @@
             ]
           },
           {
-            "line": 919,
+            "line": 926,
             "syntax": "CallExpression",
             "context": [
               "      commitTrees.set(object, parseCommitTreeId(record.content, objectIdLength));",
@@ -31352,13 +31352,13 @@
         "currentInitializer": "[]",
         "declarations": [
           {
-            "line": 637,
+            "line": 644,
             "initializer": "[]"
           }
         ],
         "exactUses": [
           {
-            "line": 637,
+            "line": 644,
             "syntax": "VariableDeclaration",
             "context": [
               "  let normalized = String(content);",
@@ -31370,7 +31370,7 @@
             ]
           },
           {
-            "line": 640,
+            "line": 647,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    normalized = normalized.split(\"\\n\").map((line) => {",
@@ -31382,7 +31382,7 @@
             ]
           },
           {
-            "line": 641,
+            "line": 648,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      if (/\\[\\s*[\"'](?:LOCAL_ABSOLUTE_PATH|PRIVATE_SSH_URL)[\"']\\s*,/u.test(line)) {",
@@ -31394,7 +31394,7 @@
             ]
           },
           {
-            "line": 687,
+            "line": 694,
             "syntax": "ElementAccessExpression",
             "context": [
               "    normalized = normalized",
@@ -31417,13 +31417,13 @@
         "currentInitializer": "0",
         "declarations": [
           {
-            "line": 731,
+            "line": 738,
             "initializer": "0"
           }
         ],
         "exactUses": [
           {
-            "line": 731,
+            "line": 738,
             "syntax": "VariableDeclaration",
             "context": [
               "  const filenameMatches = new Map();",
@@ -31435,7 +31435,7 @@
             ]
           },
           {
-            "line": 743,
+            "line": 750,
             "syntax": "BinaryExpression",
             "context": [
               "      const expanded = expandSourceArchiveEntry(entry);",
@@ -31447,7 +31447,7 @@
             ]
           },
           {
-            "line": 746,
+            "line": 753,
             "syntax": "BinaryExpression",
             "context": [
               "    } else {",
@@ -31459,7 +31459,7 @@
             ]
           },
           {
-            "line": 775,
+            "line": 782,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "      entriesScanned += 1;",
@@ -31471,7 +31471,7 @@
             ]
           },
           {
-            "line": 781,
+            "line": 788,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "  }",
@@ -65043,11 +65043,11 @@
         "oldLine": 270,
         "source": "if (padding.length > 0) expanded.push({ label: `${entry.label}#padding:${joinedPath}`, kind: entry.kind, content: padding.toString(\"utf8\") });",
         "currentLines": [
-          277
+          284
         ],
         "syntax": [
           {
-            "line": 277,
+            "line": 284,
             "parents": [
               "IfStatement",
               "Block",
@@ -65076,11 +65076,11 @@
         "oldLine": 275,
         "source": "if (trailer.length > 0) expanded.push({ label: `${entry.label}#trailer`, kind: entry.kind, content: trailer.toString(\"utf8\") });",
         "currentLines": [
-          282
+          289
         ],
         "syntax": [
           {
-            "line": 282,
+            "line": 289,
             "parents": [
               "IfStatement",
               "Block",
@@ -65108,11 +65108,11 @@
         "oldLine": 468,
         "source": "if (digits.length > 0 && /^[0-9a-f]+$/iu.test(digits) && (!brace || close >= 0)) {",
         "currentLines": [
-          475
+          482
         ],
         "syntax": [
           {
-            "line": 475,
+            "line": 482,
             "parents": [
               "IfStatement",
               "Block",
@@ -65141,12 +65141,12 @@
         "oldLine": 668,
         "source": "return parts.length > 0 ? parts.join(separator) : _;",
         "currentLines": [
-          675,
-          683
+          682,
+          690
         ],
         "syntax": [
           {
-            "line": 675,
+            "line": 682,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -65165,7 +65165,7 @@
             ]
           },
           {
-            "line": 683,
+            "line": 690,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -65194,12 +65194,12 @@
         "oldLine": 676,
         "source": "return parts.length > 0 ? parts.join(separator) : _;",
         "currentLines": [
-          675,
-          683
+          682,
+          690
         ],
         "syntax": [
           {
-            "line": 675,
+            "line": 682,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -65218,7 +65218,7 @@
             ]
           },
           {
-            "line": 683,
+            "line": 690,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -65247,11 +65247,11 @@
         "oldLine": 837,
         "source": ".slice(0, -1)",
         "currentLines": [
-          844
+          851
         ],
         "syntax": [
           {
-            "line": 844,
+            "line": 851,
             "parents": [
               "PropertyAccessExpression",
               "CallExpression",
@@ -65280,11 +65280,11 @@
         "oldLine": 923,
         "source": "while (stack.length > 0) {",
         "currentLines": [
-          930
+          937
         ],
         "syntax": [
           {
-            "line": 930,
+            "line": 937,
             "parents": [
               "WhileStatement",
               "Block",
@@ -77149,7 +77149,7 @@
     },
     "remainingConsumerExposureIssues": [],
     "r48CarriedReviewLines": {
-      "source": "integration-r50-init053-raw/u18/limit-review-carried.json",
+      "source": "u23-pf-raw/u18/limit-review-carried.json",
       "rule": "re-line only (zero-context hunk mapping 4535a863..HEAD); review, source and patterns unchanged; a candidate whose line falls in a hunk or whose source is not on both lines is not carried",
       "counts": {
         "input": 52,
@@ -95722,7 +95722,7 @@
       "oldInitializer": "Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\")",
       "oldLine": 242,
       "currentInitializer": "Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\")",
-      "currentLine": 253,
+      "currentLine": 260,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -95742,52 +95742,52 @@
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 253,
+          "line": 260,
           "text": "const bytes = Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 254,
+          "line": 261,
           "text": "const files = readUstar(bytes);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 258,
+          "line": 265,
           "text": "while (offset + TAR_BLOCK_BYTES <= bytes.length && !bytes.subarray(offset, offset + TAR_BLOCK_BYTES).every((byte) => byte === 0)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 259,
+          "line": 266,
           "text": "const header = bytes.subarray(offset, offset + TAR_BLOCK_BYTES);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 267,
+          "line": 274,
           "text": "if (file === undefined || file.path !== joinedPath || file.bytes.length !== size) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 273,
+          "line": 280,
           "text": "if (paddedEnd > bytes.length) throw new Error(\"PRIVACY_ARCHIVE_LAYOUT_INVALID\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 275,
+          "line": 282,
           "text": "expanded.push({ label: `${entry.label}#body:${joinedPath}`, kind: entry.kind, sourcePaths: [joinedPath], content: decodePrivacyScanBytes(file.bytes) });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 276,
+          "line": 283,
           "text": "const padding = bytes.subarray(dataEnd, paddedEnd);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 281,
+          "line": 288,
           "text": "const trailer = bytes.subarray(offset);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 788,
+          "line": 795,
           "text": "// `git cat-file --batch` frames each object as \"<oid> SP <type> SP <size> LF <bytes> LF\"."
         }
       ],
@@ -95802,7 +95802,7 @@
       "oldInitializer": "[]",
       "oldLine": 848,
       "currentInitializer": "[]",
-      "currentLine": 859,
+      "currentLine": 866,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -95817,67 +95817,67 @@
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 135,
+          "line": 142,
           "text": "[...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => ["
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 211,
+          "line": 218,
           "text": "// other release entries need the exact P8 package rule above."
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 722,
+          "line": 729,
           "text": "export function scanPrivacyEntries(entries, { owner, privateTokens = [], repositories = [], onProgress = undefined } = {}) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 726,
+          "line": 733,
           "text": "if (!Array.isArray(entries)) throw new Error(\"PRIVACY_ENTRY_INVALID\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 732,
+          "line": 739,
           "text": "for (const entry of entries) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 751,
+          "line": 758,
           "text": "for (const originalEntry of entries) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 859,
+          "line": 866,
           "text": "const entries = [];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 878,
+          "line": 885,
           "text": "entries.push({ name, object: content.subarray(objectStart, objectEnd).toString(\"hex\"), type });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 881,
+          "line": 888,
           "text": "return entries;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 929,
+          "line": 936,
           "text": "const stack = [{ tree: rootTree, prefix: \"\", entries: trees.get(rootTree), nextIndex: 0 }];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 932,
+          "line": 939,
           "text": "if (frame.nextIndex >= frame.entries.length) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 936,
+          "line": 943,
           "text": "const entry = frame.entries[frame.nextIndex];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 942,
+          "line": 949,
           "text": "stack.push({ tree: entry.object, prefix: path, entries: children, nextIndex: 0 });"
         }
       ],
@@ -95892,42 +95892,42 @@
       "oldInitializer": "0",
       "oldLine": 738,
       "currentInitializer": "0",
-      "currentLine": 749,
+      "currentLine": 756,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 749,
+          "line": 756,
           "text": "let entriesScanned = 0;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 773,
+          "line": 780,
           "text": "entriesScanned += 1;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 774,
+          "line": 781,
           "text": "if (typeof onProgress === \"function\" && entriesScanned % 5_000 === 0) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 775,
+          "line": 782,
           "text": "onProgress({ entriesScanned, totalEntries });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 776,
+          "line": 783,
           "text": "lastProgressCount = entriesScanned;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 780,
+          "line": 787,
           "text": "if (typeof onProgress === \"function\" && lastProgressCount !== entriesScanned) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 781,
+          "line": 788,
           "text": "onProgress({ entriesScanned, totalEntries });"
         }
       ],
@@ -95942,22 +95942,22 @@
       "oldInitializer": "content.subarray(modeEnd + 1, nameEnd)",
       "oldLine": 863,
       "currentInitializer": "content.subarray(modeEnd + 1, nameEnd)",
-      "currentLine": 874,
+      "currentLine": 881,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 874,
+          "line": 881,
           "text": "const nameBytes = content.subarray(modeEnd + 1, nameEnd);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 875,
+          "line": 882,
           "text": "if (nameBytes.length === 0 || nameBytes.includes(0x2f)) throw new Error(\"PRIVACY_TREE_RECORD_INVALID\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 876,
+          "line": 883,
           "text": "const name = decodeGitMetadataBytes(nameBytes, \"PRIVACY_TREE_UTF8_INVALID\");"
         }
       ],
@@ -95972,17 +95972,17 @@
       "oldInitializer": "objectIdLength / 2",
       "oldLine": 847,
       "currentInitializer": "objectIdLength / 2",
-      "currentLine": 858,
+      "currentLine": 865,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 858,
+          "line": 865,
           "text": "const objectIdBytes = objectIdLength / 2;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 867,
+          "line": 874,
           "text": "const objectEnd = objectStart + objectIdBytes;"
         }
       ],
@@ -95997,57 +95997,57 @@
       "oldInitializer": "commits[0]?.length",
       "oldLine": 893,
       "currentInitializer": "commits[0]?.length",
-      "currentLine": 904,
+      "currentLine": 911,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 854,
+          "line": 861,
           "text": "export function parseGitTreeObject(content, objectIdLength) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 855,
+          "line": 862,
           "text": "if (!Buffer.isBuffer(content) || ![40, 64].includes(objectIdLength)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 858,
+          "line": 865,
           "text": "const objectIdBytes = objectIdLength / 2;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 884,
+          "line": 891,
           "text": "function parseCommitTreeId(content, objectIdLength) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 890,
+          "line": 897,
           "text": "if (!match || match[1].length !== objectIdLength) throw new Error(\"PRIVACY_GIT_OBJECT_TYPE\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 904,
+          "line": 911,
           "text": "const objectIdLength = commits[0]?.length;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 905,
+          "line": 912,
           "text": "if (commits.some((commit) => typeof commit !== \"string\" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(commit) || commit.length !== objectIdLength)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 913,
+          "line": 920,
           "text": "if (object.length !== objectIdLength || !Buffer.isBuffer(record.content)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 917,
+          "line": 924,
           "text": "commitTrees.set(object, parseCommitTreeId(record.content, objectIdLength));"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 919,
+          "line": 926,
           "text": "trees.set(object, parseGitTreeObject(record.content, objectIdLength));"
         }
       ],
@@ -96062,27 +96062,27 @@
       "oldInitializer": "[]",
       "oldLine": 626,
       "currentInitializer": "[]",
-      "currentLine": 637,
+      "currentLine": 644,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 637,
+          "line": 644,
           "text": "const protectedPatternLines = [];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 640,
+          "line": 647,
           "text": "const marker = `__PUBLIC_PATTERN_LINE_${protectedPatternLines.length}__`;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 641,
+          "line": 648,
           "text": "protectedPatternLines.push(line);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 687,
+          "line": 694,
           "text": ".replace(/__PUBLIC_PATTERN_LINE_(\\d+)__/gu, (_, index) => protectedPatternLines[Number(index)]);"
         }
       ],
@@ -96097,32 +96097,32 @@
       "oldInitializer": "0",
       "oldLine": 720,
       "currentInitializer": "0",
-      "currentLine": 731,
+      "currentLine": 738,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 731,
+          "line": 738,
           "text": "let totalEntries = 0;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 743,
+          "line": 750,
           "text": "totalEntries += expanded.length;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 746,
+          "line": 753,
           "text": "totalEntries += 1;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 775,
+          "line": 782,
           "text": "onProgress({ entriesScanned, totalEntries });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 781,
+          "line": 788,
           "text": "onProgress({ entriesScanned, totalEntries });"
         }
       ],
@@ -97469,22 +97469,22 @@
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 258,
+          "line": 265,
           "text": "while (offset + TAR_BLOCK_BYTES <= bytes.length && !bytes.subarray(offset, offset + TAR_BLOCK_BYTES).every((byte) => byte === 0)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 259,
+          "line": 266,
           "text": "const header = bytes.subarray(offset, offset + TAR_BLOCK_BYTES);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 270,
+          "line": 277,
           "text": "const dataStart = offset + TAR_BLOCK_BYTES;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 272,
+          "line": 279,
           "text": "const paddedEnd = dataStart + Math.ceil(size / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;"
         },
         {
@@ -104755,37 +104755,37 @@
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 277,
+      "line": 284,
       "source": "if (padding.length > 0) expanded.push({ label: `${entry.label}#padding:${joinedPath}`, kind: entry.kind, content: padding.toString(\"utf8\") });"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 282,
+      "line": 289,
       "source": "if (trailer.length > 0) expanded.push({ label: `${entry.label}#trailer`, kind: entry.kind, content: trailer.toString(\"utf8\") });"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 475,
+      "line": 482,
       "source": "if (digits.length > 0 && /^[0-9a-f]+$/iu.test(digits) && (!brace || close >= 0)) {"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 675,
+      "line": 682,
       "source": "return parts.length > 0 ? parts.join(separator) : _;"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 683,
+      "line": 690,
       "source": "return parts.length > 0 ? parts.join(separator) : _;"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 844,
+      "line": 851,
       "source": ".slice(0, -1)"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 930,
+      "line": 937,
       "source": "while (stack.length > 0) {"
     },
     {

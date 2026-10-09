@@ -15,6 +15,12 @@ const GREEN = {
   tag: "v0.11.8",
 };
 const COMMIT = "a".repeat(40);
+// A stable version `step` patches after `version`, so a test never names a release literal that the
+// tree itself may reach.
+const patchAfter = (version, step = 1n) => {
+  const [major, minor, patch] = version.split(".");
+  return `${major}.${minor}.${BigInt(patch) + step}`;
+};
 
 test("INC-093: a green P8 result must bind exactly to the candidate tag commit", () => {
   assert.deepEqual(
@@ -41,7 +47,7 @@ test("INC-093 red leg: a red P8 result or a different basis refuses tag prefligh
 test("SUB-357: a release commit admits only the actual single core version replacement", async () => {
   const before = await readFile(new URL("../packages/core/src/framework-version.ts", import.meta.url), "utf8");
   const current = /^export const FRAMEWORK_VERSION = "(\d+\.\d+\.\d+)" as const;$/mu.exec(before)[1];
-  const version = current === "2.0.0" ? "2.0.1" : "2.0.0";
+  const version = patchAfter(current);
   const after = before.replace(`FRAMEWORK_VERSION = "${current}"`, `FRAMEWORK_VERSION = "${version}"`);
   const input = { changedPaths: ["packages/core/src/framework-version.ts", "package.json"], frameworkBefore: before, frameworkAfter: after, version };
   assert.deepEqual(assertReleaseCommitShape(input).changedPaths, ["package.json", "packages/core/src/framework-version.ts"]);
@@ -50,7 +56,7 @@ test("SUB-357: a release commit admits only the actual single core version repla
     { frameworkAfter: `${after}\nexport const EXTRA = true;\n` },
     // A byte change in framework-version.ts beside the version replacement: its comment line.
     { frameworkAfter: after.replace("// Dependency-free release identity", "// A dependency-free release identity") },
-    { frameworkAfter: after.replace(`FRAMEWORK_VERSION = "${version}"`, 'FRAMEWORK_VERSION = "2.0.2"') },
+    { frameworkAfter: after.replace(`FRAMEWORK_VERSION = "${version}"`, `FRAMEWORK_VERSION = "${patchAfter(current, 2n)}"`) },
     { frameworkAfter: `${after}\nexport const FRAMEWORK_VERSION = "${version}" as const;\n` },
   ].entries()) {
     // Each mutation must change a source, or it would prove nothing about the shape check.
@@ -65,8 +71,8 @@ test("SUB-357: only the generated README language set and a checked CLI referenc
   assert.equal(checked.ok, true);
   assert.deepEqual(assertReleaseCommitShape({ changedPaths: [...README_NAMES, "docs/wiki/CLI-Reference.md"], version: checked.version, generatedReadmes: checked, cliReferenceChecked: true }).changedPaths, [...README_NAMES, "docs/wiki/CLI-Reference.md"].sort());
   assert.throws(() => assertReleaseCommitShape({ changedPaths: ["README.zh-CN.md"], generatedReadmes: checked }), (error) => error.reasonCode === "RELEASE_COMMIT_SHAPE_INVALID");
-  // Another version than the current one, derived as above so a 2.0.0 tree still has one.
-  const otherVersion = checked.version === "2.0.0" ? "2.0.1" : "2.0.0";
+  // Another version than the current one, derived from it so every tree has one.
+  const otherVersion = patchAfter(checked.version);
   for (const generatedReadmes of [undefined, { ...checked, drifted: ["README.md"] }, { ...checked, version: otherVersion }]) {
     assert.throws(() => assertReleaseCommitShape({ changedPaths: ["README.md"], version: checked.version, generatedReadmes }), (error) => error.reasonCode === "RELEASE_COMMIT_README_UNVERIFIED");
   }

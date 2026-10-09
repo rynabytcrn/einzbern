@@ -28,6 +28,7 @@ import {
 } from "../scripts/lib/release-lockstep.mjs";
 import { README_NAMES, renderReadmes } from "../scripts/render-readme.mjs";
 import { FRAMEWORK_VERSION, initializeLibrary } from "../dist/build/packages/core/src/index.js";
+import { compareSemver, parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
 import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
 import { setGate } from "../dist/build/packages/core/src/gates-config.js";
 import { gateTreeState } from "../dist/build/packages/core/src/gates-run.js";
@@ -37,7 +38,12 @@ import { BRAND, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-release-lockstep-")));
 const OLD_VERSION = FRAMEWORK_VERSION;
 const HELPER_OLD_VERSION = "1.0.7";
-const NEXT_VERSION = OLD_VERSION === "2.0.0" ? "2.0.1" : "2.0.0";
+// The version these fixtures prepare is the patch after the built one, derived rather than written:
+// a literal stops being newer the day the tree reaches it, and a fixture library the current build
+// initialises refuses an older engine (ENGINE_TOO_OLD).
+const OLD_PARTS = parseEngineVersion(OLD_VERSION);
+const NEXT_VERSION = `${OLD_PARTS.major}.${OLD_PARTS.minor}.${BigInt(OLD_PARTS.patch) + 1n}`;
+assert.ok(OLD_PARTS.prerelease.length === 0 && compareSemver(OLD_VERSION, NEXT_VERSION) < 0, "the prepared version is a stable version after the built one");
 const FIXTURE_SCHEMA_VERSION = "tcrn.fixture-contract.v1";
 const HELPER_READMES = ["README.md", "README.en.md", "README.ja.md", "README.ko.md", "README.fr.md"];
 const RELEASE_NOTES = "Einzbern renamed TCRN Workflow and Mana Orchestrate replaced tcrn-workflow-helper. The previous commands are retired.";

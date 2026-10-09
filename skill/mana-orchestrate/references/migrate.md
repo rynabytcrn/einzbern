@@ -56,6 +56,19 @@ and never guess an answer.
    partition `{"partition", "legacyWorkspace", "projectRoot"}` with absolute paths, and optionally
    `"projectName"` and `"gitRemote"`. Only when the user explicitly chooses to leave that partition's
    old knowledge behind, add `"omitLegacyKnowledge": {"reason": "<why>"}` to that entry (see below).
+   `"projectId"` names the old chain's project that the project's configuration (language, managed
+   sections, registry entry) belongs to: `project:` and 24 hexadecimal digits. The plan lists each
+   partition's live projects in `projectCandidates` (`id`, `name`, `externalKey`, and `work`, the
+   count of its live work items). When the `--project` partition's candidates are not empty, show
+   them as a table and ask which one the project is; write the chosen `id` as that row's
+   `projectId` and plan again. Never pick one for the user: not by name, not because it is the only
+   one, not by path. A row whose `chainRole` is `project` cannot go without it (the plan blocks with
+   `SETUP_ANSWER_INVALID`). A row without `chainRole` that names none, for a library no earlier run
+   bound to a project, gets a configuration project of setup's own beside the old ones (see "When a
+   migration created a second project" below). A coordination row takes none. Another project row
+   may name its project the same way, which binds its registry entry and its identity's primary
+   project. A malformed `projectId`, or one on a coordination row, refuses the mapping with
+   `SETUP_ANSWER_INVALID` on `projectId`.
    Pass it with `--mapping <file>`.
 2. Cloud drive. Is a library location synced by a cloud drive? The plan suggests an answer from
    the location; the answer holds for every library. Flag: `--cloud true` or `--cloud false`.
@@ -83,8 +96,15 @@ and never guess an answer.
      `execution.maxConcurrentSubagents` and the `quota.*` keys the old chain declares; `action` is
      `carried` (the import brings it), `write` (the apply writes it into the coordination library)
      or `default` (a `legacy-default` language: written nowhere, so the coordination library records
-     no language and its card writes need no language bundle);
-   - `registry`, the entry each library gets, and `deviceSettings`, the portal keys that move;
+     no language and its card writes need no language bundle); every partition also has `projectId`,
+     the project its row names (`null` for none), and `projectCandidates`, the old chain's live
+     projects (`null` when the old chain does not read), and a project row that names a project has
+     it in `chainIdentity` as `primaryProjectId`;
+   - `registry`, the entry each library gets (with `projectId` when its row names one), and
+     `deviceSettings`, the portal keys that move;
+   - `projectBinding`, only when the `--project` partition's row names a project and the partition
+     is not blocked: `{partition, library, from, to, retirement}` (see "When a migration created a
+     second project" below);
    - `hostCleanup`, each item `{kind, path, action, into}`: `kind` is `host-file` (updated, its
      original copied first), `template`, `injection-state`, `launcher`, `skill-copy` or `marker`
      (moved), and `into` is where it goes in the backups.
@@ -98,7 +118,14 @@ and never guess an answer.
    - `KNOWLEDGE_RECORD_INVALID`, `KNOWLEDGE_PATH_INVALID` or `KNOWLEDGE_PARTIAL_STATE`: the
      partition's old knowledge store does not read, and the blocker's `path` is the file of the
      store it is about. Handle it as "Knowledge carried" below says.
-   - `SETUP_LIBRARY_CONFLICT`: this device registered the project to another library.
+   - `SETUP_LIBRARY_CONFLICT`: this device registered the project to another library, or a library
+     migrated before names another primary project than its row's `projectId`. A primary project
+     changes only through `chain-declare`, run in Atelier; from a model it is refused with
+     `MODEL_WRITE_REFUSED`, so tell the user.
+   - `SETUP_ANSWER_INVALID` on a partition's library: its row's `projectId` is not a live project of
+     its old chain (or, for a library migrated before, of the library), or the `--project`
+     partition's row has `chainRole` `project`, its old chain holds live projects and the row names
+     none. The message lists the candidates; ask question 1 for the row and plan again.
    - `SETUP_ANSWER_INVALID` on the project itself: `--project` names the partition whose
      `chainRole` is `coordination`. Nothing is imported. Plan again with the same mapping and
      `--project` set to the root of a partition whose `chainRole` is `project`; the blocker names
@@ -113,8 +140,9 @@ and never guess an answer.
    unvalidated card identities, the gates that stay pending, the `hostCleanup` list and every file the plan
    would write, and ask once whether to apply. Continue only on a clear yes.
 5. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: `migration` with
-   each partition `imported` or `skipped`, the registry entries and `hostCleanup` as it was done,
-   the files `written`, the backup directory (`backupDir`), `recallSmoke` and `selfCheck`. If it
+   each partition `imported` or `skipped`, the registry entries and `hostCleanup` as it was done
+   (and `projectBinding` as it was left, when the plan had one), the files `written`, the backup
+   directory (`backupDir`), `recallSmoke` and `selfCheck`. If it
    stops with `LEGACY_IMPORT_MISMATCH`, its `partition` names where; the partitions before it are in
    their libraries and are skipped when you plan and apply again. If it stops with
    `SETUP_RECALL_SMOKE_MISSED`, the libraries are imported and registered, nothing old is taken off
@@ -237,6 +265,45 @@ language gates still apply. Reconstruction is a later migration action, never an
   run with `EINZBERN_SURFACE=atelier`, which records who released it, when and why. Run from a
   model, it is refused with `MODEL_WRITE_REFUSED`: do not set that surface yourself; tell the user
   which gates are theirs to release. `work-gate-list --status all` lists them.
+
+## When a migration created a second project
+
+When the `--project` partition's row named no project and nothing bound the library to one yet,
+setup created a configuration project of its own (external key `SETUP-CONFIG-` and a digest, named
+after the project directory) and bound the language, the managed-section records and the registry
+entry's `projectId` to it. An engine that did not take `projectId` always did. Beside an old chain
+that holds projects, the library then has one project more: the old chain's work is in its own
+project, the configuration in setup's. `library-list` shows the registry entry naming setup's
+project, and the plan's `projectCandidates` tells the projects apart by `externalKey` and `work`.
+
+Repair it with `setup --mode migrate` again; there is no other verb for it. An engine that does not
+take `projectId` refuses the row (`SETUP_ANSWER_INVALID` on `projectId`, the message saying a
+partition does not take it): update the engine first, as `update.md` says.
+
+1. Write a mapping of two rows, the coordination row and the project's row, each as the first
+   migration wrote it (partition, old workspace, project root, `chainRole` and every other field),
+   and add to the project's row the `projectId` the user chooses from `projectCandidates`, the
+   project that holds the old chain's records.
+2. Plan with `--project` set to that project's root and the first migration's answers (the
+   language is the one setup's project records). Both partitions must be `skip`; an `import` means
+   a row differs from the first migration: stop and show it. `migration.projectBinding` gives
+   `from`, the project the registry entry names now, `to`, the row's project, and `retirement`,
+   what becomes of `from`: `action` `delete` when setup created it and nothing but setup's language
+   and managed-section records is in it, otherwise `keep`, with `holds` saying what keeps it.
+3. At the final confirmation show the binding, the retirement with its `settings`, `records` and
+   `holds`, and every file the plan would write, then apply with `--yes true` and a later `--at`.
+   The apply reads the former project again and checks that the registry entry, a project chain's
+   identity and the managed sections have moved before it removes anything; `registry-not-moved`,
+   `identity-not-moved` or `sections-not-moved` in `holds` say one has not. `retirement.action` is
+   `deleted` or `kept`.
+4. Report the binding, what was removed or what kept the former project, and that `AGENTS.md`'s
+   system-variables section now names the new configuration target, a change in the project's
+   working tree that is the user's to commit or not. Planning the same mapping again writes
+   nothing.
+
+The deletion is a `project.deleted` event on the chain: the record stays as a tombstone and no file
+is deleted. With `kept` only the binding moved, and the former project stays as it was; what to do
+with it is the user's call.
 
 ## Backup, and move but never delete
 

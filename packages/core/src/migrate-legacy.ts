@@ -31,7 +31,9 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // projectId and the identity's primaryProjectId to it, so setup's language and managed sections go to
 // that project rather than to a configuration project of its own (setup.ts). A coordination row binds
 // no project: a coordination chain takes no project language or wiring. Nothing infers a project from
-// a name, a sole project or a path.
+// a name, a sole project or a path. D-517-2: when the registry entry of the --project partition named
+// another project, a configuration project setup created and that holds nothing but setup's own
+// configuration is deleted once the wiring has moved the binding (planProjectBinding, applyProjectBinding).
 //
 // planMigration writes nothing. For each partition whose target the import can create the library
 // in, it runs the import's dry run (legacy-import.ts), which validates the whole chain from genesis
@@ -69,13 +71,15 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 // The barrel is loaded first, so every module below is evaluated in the order the engine's own entry
 // evaluates it, whichever module a caller imports first.
 import "./index.js";
-import type { WorkStatus } from "../../protocol/src/index.js";
+import type { JsonValue, WorkStatus } from "../../protocol/src/index.js";
 import { readAllStreams } from "./akasha.js";
 import type { GateRecord } from "./assignment-gate.js";
 import { writeFileAtomic } from "./atomic-file.js";
+import { removeConfigRecord } from "./config-records.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 import { ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { hasLibraryManifest, openLibrary } from "./ether-library.js";
+import { listKnowledgeMetadata } from "./knowledge-core.js";
 import { LegacyImportError, LegacyKnowledgeRefusedError, importLegacyWorkspace, legacyKnowledgeOmissionIssue } from "./legacy-import.js";
 import type { LegacyImportKnowledge, LegacyImportReport, LegacyKnowledgeOmission, LegacyKnowledgeOmissionReport } from "./legacy-import.js";
 import { openLegacyWorkspace, replayLegacyWorkspace } from "./legacy-workspace.js";
@@ -94,7 +98,7 @@ import type { SetupBlocker, SetupStep, SetupWrite, SetupWriteAction } from "./se
 import { defaultLanguage, entryKind, libraryLanguage, messageOf, realTarget, reasonOf } from "./setup-fresh.js";
 import type { SetupRecorder } from "./setup-fresh.js";
 import type { SettingKey } from "./settings.js";
-import { legacyWorkspaceStreamId, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
+import { deleteProject, legacyWorkspaceStreamId, materializeWorkspaceFromGenesis, removeWorkspaceSetting, setWorkspaceSetting } from "./workspace.js";
 import { chainIdentity, declareChainIdentity } from "./project-chain.js";
 import type { ChainIdentity } from "./project-chain.js";
 import type { WorkspaceState } from "./workspace.js";
@@ -1157,4 +1161,152 @@ export async function applyMigration(recorder: SetupRecorder, input: MigrationAp
     await applyCoordinationSettings(recorder, partition, partitions[index]!, input.at);
   }
   return { partitions, registry, deviceSettings };
+}
+
+// ---- TCRN-CROSS-STORY-517 (R50 D-517-2): the binding moved off setup's own configuration project ----
+
+// The external keys setup gives the configuration project it creates (setup-fresh.ts,
+// ensureSetupProjectBinding), and what it writes into one: the artifact language and managed-section
+// records. A project holding anything else is not setup's alone.
+const SETUP_CONFIGURATION_KEY_PREFIX = "SETUP-CONFIG-";
+const SETUP_CONFIGURATION_SETTINGS: readonly string[] = Object.freeze(["artifact.language"]);
+const SETUP_CONFIGURATION_RECORDS: readonly string[] = Object.freeze(["managed-section"]);
+
+/**
+ * The project the registry entry named before a migration moved the binding to the mapping's projectId,
+ * when it is not that project. delete (plan) and deleted (apply): setup created it for its configuration
+ * (external key SETUP-CONFIG-...) and only setup's own settings and managed-section records are left in
+ * it, which go with it, signed by the setup actor; keep and kept: it stays, and holds says what keeps it.
+ */
+export interface MigrationProjectRetirement {
+  readonly projectId: string;
+  readonly externalKey: string | null;
+  readonly action: "delete" | "keep" | "deleted" | "kept";
+  readonly holds: readonly string[];
+  // Its settings (keys) and configuration records (<collection>:<key>), removed with it when it goes.
+  readonly settings: readonly string[];
+  readonly records: readonly string[];
+}
+
+/** The --project partition's binding: the project its registry entry named before (null for none), the one the mapping binds, and what becomes of the former. */
+export interface MigrationProjectBinding {
+  readonly partition: string;
+  readonly library: string;
+  readonly from: string | null;
+  readonly to: string;
+  readonly retirement: MigrationProjectRetirement | null;
+}
+
+function recordOf(value: JsonValue): Readonly<Record<string, JsonValue>> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Readonly<Record<string, JsonValue>> : null;
+}
+
+// Whether an event wrote something of the project: a record scoped to it, or the project itself.
+function eventTouches(payload: Readonly<Record<string, JsonValue>>, projectId: string): boolean {
+  const record = recordOf(payload["record"] ?? null);
+  if (record === null) return false;
+  return record["projectId"] === projectId || (typeof payload["operation"] === "string" && payload["operation"].startsWith("project.") && record["id"] === projectId);
+}
+
+// The cards of a library scoped to the project, counted across every status; null when the store does not read.
+async function projectCards(library: string, projectId: string, at: string): Promise<number | null> {
+  try {
+    const listed = await listKnowledgeMetadata(library, { at, allowTrailing: true, status: "all", selection: "all", includeExplicitOnly: true, limit: Number.MAX_SAFE_INTEGER });
+    const records = listed["records"];
+    return (Array.isArray(records) ? records : []).filter((record) => recordOf(record)?.["projectId"] === projectId).length;
+  } catch (error) {
+    if (reasonOf(error) === null) throw error;
+    return null;
+  }
+}
+
+/** What keeps the project in the library (empty when only setup's own configuration is in it), read from genesis, cards included. */
+async function retirementOf(library: string, projectId: string, at: string): Promise<Omit<MigrationProjectRetirement, "action">> {
+  const state = await materializeWorkspaceFromGenesis(library);
+  const project = state.projects.find((entry) => entry.id === projectId);
+  const holds: string[] = [];
+  if (project === undefined) holds.push("absent");
+  else if (project.tombstone) holds.push("deleted");
+  if (project !== undefined && !project.externalKey.startsWith(SETUP_CONFIGURATION_KEY_PREFIX)) holds.push("not-setup-configuration");
+  if (state.projects.some((entry) => entry.parentProjectId === projectId && !entry.tombstone)) holds.push("projects");
+  const scoped: readonly (readonly [string, readonly unknown[]])[] = [
+    ["work", state.work], ["conferences", state.conferences], ["conference-minutes", state.conferenceMinutes],
+    ["minutes", state.minutes], ["gates", state.gates], ["templates", state.templates],
+  ];
+  for (const [name, records] of scoped) {
+    if (records.some((record) => (record as { readonly projectId?: unknown }).projectId === projectId)) holds.push(name);
+  }
+  const settings = state.settings.filter((entry) => entry.projectId === projectId);
+  for (const setting of settings) if (!SETUP_CONFIGURATION_SETTINGS.includes(setting.key)) holds.push(`setting:${setting.key}`);
+  const records = state.configRecords.filter((entry) => entry.projectId === projectId);
+  for (const record of records) if (!SETUP_CONFIGURATION_RECORDS.includes(record.collection)) holds.push(`record:${record.collection}:${record.key}`);
+  const cards = await projectCards(library, projectId, at);
+  if (cards === null) holds.push("cards-unreadable");
+  else if (cards > 0) holds.push("cards");
+  // A signed write by anyone but setup makes it someone else's too; an unsigned library names no writer.
+  const writers = new Set<string>();
+  for (const event of state.events) {
+    const payload = recordOf(event.payload);
+    if (payload === null || !eventTouches(payload, projectId)) continue;
+    const actor = payload["actor"];
+    if (typeof actor === "string" && actor !== SETUP_ACTOR) writers.add(actor);
+  }
+  for (const writer of [...writers].sort()) holds.push(`writer:${writer}`);
+  return {
+    projectId,
+    externalKey: project?.externalKey ?? null,
+    holds,
+    settings: settings.map((entry) => entry.key).sort(),
+    records: records.map((entry) => `${entry.collection}:${entry.key}`).sort(),
+  };
+}
+
+/**
+ * Plan the --project partition's binding (TCRN-CROSS-STORY-517, D-517-2): the project its registry entry
+ * names now and the one the mapping binds. When they differ, the former is listed to be deleted if setup
+ * created it for its configuration and nothing but that configuration is in it, else to be kept with
+ * what keeps it. Null when the row binds no project. Nothing is written.
+ */
+export async function planProjectBinding(partition: MigrationPartitionPlan, projectRoot: string, deviceHome: string, at: string): Promise<MigrationProjectBinding | null> {
+  if (partition.projectId === null || partition.action === "blocked") return null;
+  const entry = (await readRegistry(deviceHome)).entries.find((candidate) => candidate.projectPath === projectRoot && candidate.libraryPath === partition.target);
+  const from = entry?.projectId ?? null;
+  const base = { partition: partition.partition, library: partition.target, from, to: partition.projectId };
+  if (from === null || from === partition.projectId || partition.action !== "skip") return { ...base, retirement: null };
+  const found = await retirementOf(partition.target, from, at);
+  return { ...base, retirement: { ...found, action: found.holds.length === 0 ? "delete" : "keep" } };
+}
+
+/**
+ * Apply a planned binding once the migration, the language and the wiring have moved it (TCRN-CROSS-STORY-517,
+ * D-517-2): the registry entry and a project identity name the mapping's project, and every managed-section
+ * record of the former project has its counterpart in the new one. The former project, planned for
+ * deletion, is read again from genesis; when only setup's own configuration is still in it, its settings
+ * and records are removed and the project is deleted, each signed by the setup actor. Otherwise nothing is
+ * removed and the receipt says what keeps it.
+ */
+export async function applyProjectBinding(recorder: SetupRecorder, binding: MigrationProjectBinding, projectRoot: string, deviceHome: string, at: string): Promise<MigrationProjectBinding> {
+  const planned = binding.retirement;
+  if (planned === null) return binding;
+  if (planned.action !== "delete") return { ...binding, retirement: { ...planned, action: "kept" } };
+  const found = await retirementOf(binding.library, planned.projectId, at);
+  const holds = [...found.holds];
+  const entry = (await readRegistry(deviceHome)).entries.find((candidate) => candidate.projectPath === projectRoot && candidate.libraryPath === binding.library);
+  if (entry?.projectId !== binding.to) holds.push("registry-not-moved");
+  const state = await materializeWorkspaceFromGenesis(binding.library);
+  const identity = chainIdentity(state);
+  if (identity?.role === "project" && identity.primaryProjectId !== binding.to) holds.push("identity-not-moved");
+  const sections = (projectId: string): ReadonlySet<string> => new Set(state.configRecords
+    .filter((record) => record.projectId === projectId && record.collection === "managed-section").map((record) => record.key));
+  const moved = sections(binding.to);
+  if ([...sections(planned.projectId)].some((key) => !moved.has(key))) holds.push("sections-not-moved");
+  if (holds.length > 0) return { ...binding, retirement: { ...found, holds, action: "kept" } };
+  const signed = { occurredAt: at, actorId: SETUP_ACTOR };
+  for (const key of found.settings) await removeWorkspaceSetting(binding.library, { key, configurationProjectId: planned.projectId, ...signed });
+  for (const record of state.configRecords.filter((candidate) => candidate.projectId === planned.projectId)) {
+    await removeConfigRecord(binding.library, { collection: record.collection, key: record.key, projectId: planned.projectId, ...signed });
+  }
+  await deleteProject(binding.library, { id: planned.projectId, ...signed });
+  recorder.write("library", binding.library, "update");
+  return { ...binding, retirement: { ...found, action: "deleted" } };
 }

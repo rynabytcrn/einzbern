@@ -958,3 +958,98 @@ test("STORY-517 GWT1, GWT3 (fixture): a project partition with an old project re
   const again = receipt(migrate(bound, ["--yes", "true"]));
   assert.deepEqual(again.written.filter((entry) => entry.step === "library" || entry.step === "registry"), []);
 });
+
+// TCRN-CROSS-STORY-517 GWT2 (R50 D-517-2): the TCRN-AOS shape. A 2.0.0 migration without projectId bound
+// the project partition to a configuration project setup created (SETUP-CONFIG-..., holding the language
+// and three managed-section records) while the old project kept the work and the gate, and the roles were
+// written after it without a primary project. Running the same path again with the row's projectId moves
+// the binding to the old project: the registry entry, the identity's primaryProjectId, the language and
+// the managed-section records name it, and the configuration project is deleted with its settings and
+// records, signed agent:setup, because only setup's own configuration was in it. When anything else is in
+// it (here a write signed by another actor) the binding moves all the same and the project is kept, and
+// the receipt says what keeps it. Work and gates read the same before and after; the chain validates.
+async function aosShaped(context) {
+  const m = await machine(context);
+  const crossProject = await oldPartition(m, "cross-project");
+  const alpha = await oldPartition(m, "alpha", ALPHA_EXTERNAL_KEY);
+  const alphaProject = await project(m, "alpha");
+  const target = join(alphaProject, ".ether");
+  const rows = [
+    { partition: "cross-project", legacyWorkspace: crossProject.root, projectRoot: m.container },
+    { partition: "alpha", legacyWorkspace: alpha.root, projectRoot: alphaProject },
+  ];
+  // As 2.0.0 left it: the configuration project setup created holds the language and the managed sections ...
+  const first = receipt(run(m, ["setup", "--mode", "migrate", "--project", alphaProject, "--mapping", await writeMapping(m, rows, join(m.base, "unroled.json")),
+    "--language", "zh-CN", "--at", at(), "--yes", "true"]));
+  assert.equal(first.reasonCode, "SETUP_APPLIED");
+  // ... and the roles were written after it, with no primary project.
+  const roled = [{ ...rows[0], chainRole: "coordination" }, { ...rows[1], chainRole: "project" }];
+  assert.deepEqual((await migrateOnly(m, await writeMapping(m, roled, join(m.base, "roled.json")))).planned.blockers, []);
+  const setupProjectId = (await readRegistry(m.deviceHome)).entries.find((entry) => entry.projectPath === alphaProject).projectId;
+  const state = await materializeWorkspace(target);
+  assert.deepEqual(state.projects.filter((entry) => !entry.tombstone).map((entry) => entry.id).sort(), [FIXTURE_PROJECT_ID, setupProjectId].sort(), "two live projects");
+  assert.ok(state.projects.find((entry) => entry.id === setupProjectId).externalKey.startsWith("SETUP-CONFIG-"));
+  assert.deepEqual(chainIdentity(state), { role: "project", coordinationLibraryId: crossProject.workspaceId });
+  assert.deepEqual(state.settings.filter((entry) => entry.projectId !== undefined).map((entry) => [entry.key, entry.projectId]), [["artifact.language", setupProjectId]]);
+  // TCRN-AOS holds the three AGENTS.md records; the fixture's project also took CLAUDE.md's import record.
+  const sectionKeys = state.configRecords.filter((entry) => entry.projectId === setupProjectId).map((entry) => `${entry.collection}:${entry.key}`).sort();
+  assert.deepEqual(sectionKeys, ["managed-section:AGENTS.md#navigation", "managed-section:AGENTS.md#variables-custom", "managed-section:AGENTS.md#variables-system", "managed-section:CLAUDE.md#claude-import"]);
+  const fixed = await writeMapping(m, [roled[0], { ...roled[1], projectId: FIXTURE_PROJECT_ID }], join(m.base, "fixed.json"));
+  const fix = (extra = []) => run(m, ["setup", "--mode", "migrate", "--project", alphaProject, "--mapping", fixed, "--language", "zh-CN", "--at", at(), ...extra]);
+  const kept = (current) => ({ work: current.work.map((entry) => [entry.id, entry.projectId, entry.status, entry.revision, entry.tombstone]),
+    gates: current.gates.map((entry) => [entry.id, entry.projectId, entry.workId, entry.status, entry.revision, entry.tombstone]) });
+  return { m, crossProject, alphaProject, target, setupProjectId, sectionKeys, fix, kept, before: kept(state), events: state.version };
+}
+
+test("STORY-517 GWT2 (fixture, TCRN-AOS shape): the binding moves to the old project and setup's configuration project is deleted, or kept and named when anything else is in it", async (context) => {
+  // Only setup's own configuration is in it: planned for deletion, deleted.
+  const clean = await aosShaped(context);
+  const planned = receipt(clean.fix());
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.migration.projectBinding, {
+    partition: "alpha", library: clean.target, from: clean.setupProjectId, to: FIXTURE_PROJECT_ID,
+    retirement: { projectId: clean.setupProjectId, externalKey: planned.migration.projectBinding.retirement.externalKey, action: "delete", holds: [],
+      settings: ["artifact.language"], records: clean.sectionKeys },
+  });
+  assert.ok(planned.writes.some((entry) => entry.step === "library" && entry.path === clean.target && entry.action === "update"));
+  const applied = receipt(clean.fix(["--yes", "true"]));
+  assert.equal(applied.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual([applied.migration.projectBinding.retirement.action, applied.migration.projectBinding.retirement.holds], ["deleted", []]);
+  const after = await materializeWorkspace(clean.target);
+  assert.deepEqual(after.projects.filter((entry) => !entry.tombstone).map((entry) => entry.id), [FIXTURE_PROJECT_ID], "one live project: the old chain's");
+  assert.equal(after.projects.find((entry) => entry.id === clean.setupProjectId).tombstone, true);
+  assert.deepEqual(chainIdentity(after), { role: "project", coordinationLibraryId: clean.crossProject.workspaceId, primaryProjectId: FIXTURE_PROJECT_ID });
+  assert.equal((await readRegistry(clean.m.deviceHome)).entries.find((entry) => entry.projectPath === clean.alphaProject).projectId, FIXTURE_PROJECT_ID);
+  assert.deepEqual(after.settings.filter((entry) => entry.projectId !== undefined).map((entry) => [entry.key, entry.value, entry.projectId]), [["artifact.language", "zh-CN", FIXTURE_PROJECT_ID]]);
+  assert.deepEqual(after.configRecords.filter((entry) => entry.projectId !== undefined).map((entry) => `${entry.projectId}|${entry.collection}:${entry.key}`).sort(),
+    clean.sectionKeys.map((key) => `${FIXTURE_PROJECT_ID}|${key}`), "the managed-section records name the old project, and only it");
+  const language = receipt(run(clean.m, ["settings-catalog", "--workspace", clean.target, "--project-id", FIXTURE_PROJECT_ID])).settings.find((entry) => entry.key === "artifact.language");
+  assert.deepEqual([language.currentValue, language.source.kind, language.source.projectId], ["zh-CN", "project", FIXTURE_PROJECT_ID]);
+  assert.equal(refusal(run(clean.m, ["settings-catalog", "--workspace", clean.target, "--project-id", clean.setupProjectId])).reasonCode, "WORKSPACE_INPUT_INVALID", "the deleted project has no view");
+  assert.deepEqual(clean.kept(after), clean.before, "work and gates read the same");
+  const fixEvents = (await readAllStreams(clean.target)).streams.flatMap((stream) => stream.events).slice(clean.events);
+  assert.deepEqual([...new Set(fixEvents.map((event) => event.payload.actor))], ["agent:setup"], "every write of the fix is signed by the setup actor");
+  assert.deepEqual(fixEvents.slice(-(2 + clean.sectionKeys.length)).map((event) => event.payload.operation),
+    ["settings.removed", ...clean.sectionKeys.map(() => "config.record.removed"), "project.deleted"], "the retirement's own writes, last");
+  assert.equal(receipt(run(clean.m, ["chain-validate", "--workspace", clean.target])).reasonCode, "CHAIN_VALIDATED");
+  for (const section of ["navigation", "variables-system", "variables-custom"]) {
+    assert.match(await readFile(join(clean.alphaProject, "AGENTS.md"), "utf8"), new RegExp(`<!-- einzbern:section id=${section} rev=\\d+ digest=`, "u"), section);
+  }
+  // The same mapping again: the binding is in place, nothing is written into a library or the registry.
+  const again = receipt(clean.fix(["--yes", "true"]));
+  assert.deepEqual(again.migration.projectBinding, { partition: "alpha", library: clean.target, from: FIXTURE_PROJECT_ID, to: FIXTURE_PROJECT_ID, retirement: null });
+  assert.deepEqual(again.written.filter((entry) => entry.step === "library" || entry.step === "registry"), []);
+
+  // Something else is in it: the binding moves, and the project is kept and says why.
+  const used = await aosShaped(context);
+  await asDevice(used.m, () => setWorkspaceSetting(used.target, { key: "artifact.language", value: "zh-CN", configurationProjectId: used.setupProjectId, occurredAt: at(), actorId: "agent:owner-review" }));
+  const keepPlan = receipt(used.fix());
+  assert.deepEqual([keepPlan.migration.projectBinding.retirement.action, keepPlan.migration.projectBinding.retirement.holds], ["keep", ["writer:agent:owner-review"]]);
+  const keptApply = receipt(used.fix(["--yes", "true"]));
+  assert.deepEqual([keptApply.migration.projectBinding.retirement.action, keptApply.migration.projectBinding.retirement.holds], ["kept", ["writer:agent:owner-review"]]);
+  const usedAfter = await materializeWorkspace(used.target);
+  assert.deepEqual(usedAfter.projects.filter((entry) => !entry.tombstone).map((entry) => entry.id).sort(), [FIXTURE_PROJECT_ID, used.setupProjectId].sort(), "the configuration project stays");
+  assert.equal((await readRegistry(used.m.deviceHome)).entries.find((entry) => entry.projectPath === used.alphaProject).projectId, FIXTURE_PROJECT_ID, "the binding moved all the same");
+  assert.deepEqual(chainIdentity(usedAfter).primaryProjectId, FIXTURE_PROJECT_ID);
+  assert.deepEqual(used.kept(usedAfter), used.before);
+});

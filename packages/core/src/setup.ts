@@ -59,8 +59,8 @@ import { ARTIFACT_LANGUAGE_TAGS } from "./knowledge-language.js";
 import { legacyControlDirectory } from "./legacy-workspace.js";
 import { applyCleanup, planCleanup } from "./migrate-cleanup.js";
 import type { MigrateCleanupInput, MigrateCleanupItem } from "./migrate-cleanup.js";
-import { applyMigration, describeProjectCandidates, inferMigrationMapping, planMigration, readMigrationMapping } from "./migrate-legacy.js";
-import type { MigrationApplied, MigrationPartitionPlan, MigrationPlan } from "./migrate-legacy.js";
+import { applyMigration, applyProjectBinding, describeProjectCandidates, inferMigrationMapping, planMigration, planProjectBinding, readMigrationMapping } from "./migrate-legacy.js";
+import type { MigrationApplied, MigrationPartitionPlan, MigrationPlan, MigrationProjectBinding } from "./migrate-legacy.js";
 import { DIRECTORY, LEGACY_DEVICE_DIRECTORY } from "./names.js";
 import { readRegistry } from "./registry.js";
 import type { RegistryEntry } from "./registry.js";
@@ -446,10 +446,18 @@ export interface SetupCoordination {
  * hostCleanup as migrate-cleanup.ts fills it in: each host file updated and each entry moved into
  * this run's backups, {kind, path, action, into}.
  */
-export type SetupMigrationPlan = MigrationPlan & { readonly hostCleanup: readonly MigrateCleanupItem[] };
+export type SetupMigrationPlan = MigrationPlan & {
+  readonly hostCleanup: readonly MigrateCleanupItem[];
+  // TCRN-CROSS-STORY-517 (D-517-2): the --project partition's binding when its mapping row names a project.
+  readonly projectBinding?: MigrationProjectBinding;
+};
 
 /** What migrate's apply did: the partitions, the registry entries and the portal keys (migrate-legacy.ts), and hostCleanup as it was made. */
-export type SetupMigrationApplied = MigrationApplied & { readonly hostCleanup: readonly MigrateCleanupItem[] };
+export type SetupMigrationApplied = MigrationApplied & {
+  readonly hostCleanup: readonly MigrateCleanupItem[];
+  // TCRN-CROSS-STORY-517 (D-517-2): the binding as the apply left it, and what became of the former project.
+  readonly projectBinding?: MigrationProjectBinding;
+};
 
 /** update and rollback: the version current before and after, and for an update the release it installs from. */
 export interface SetupEngineSwitch {
@@ -698,6 +706,10 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
     navigation: answers.navigation ?? defaults.navigation,
   };
   if (own !== null && ownState !== null && ownLanguage !== resolved.language) recorder.write("library", own.target, "update");
+  // TCRN-CROSS-STORY-517 (D-517-2): the binding the row names, and the project the registry entry named
+  // before it: deleted after the wiring when setup created it and only setup's configuration is in it.
+  const projectBinding = own === null || ownCoordination ? null : await planProjectBinding(own, projectRoot, deviceHome, input.at);
+  if (projectBinding?.retirement?.action === "delete") recorder.write("library", own!.target, "update");
 
   // The cleanup, then skill-copies, launchers, host-hooks, writable-roots, machine-settings and
   // managed-sections as fresh plans them. Without a mapping there are no projects to clean or wire
@@ -733,7 +745,7 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
     pendingSections: pending,
     blockers: recorder.blockers,
     warnings: recorder.warnings,
-    migration: { ...planned.migration, hostCleanup },
+    migration: { ...planned.migration, hostCleanup, ...(projectBinding === null ? {} : { projectBinding }) },
   };
 }
 
@@ -833,6 +845,8 @@ async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
     steps: migrateWiringSteps(),
     actorId: SETUP_ACTOR,
   });
+  // TCRN-CROSS-STORY-517 (D-517-2): once the wiring has moved the binding, the former project goes, or stays and says why.
+  const projectBinding = migration.projectBinding === undefined ? null : await applyProjectBinding(recorder, migration.projectBinding, projectRoot, deviceHome, at);
   const receipt = await setupApplied(plan, recorder, {
     deviceId: device.deviceId,
     library: own === null ? null : { path: own.target, libraryId: own.libraryId, created: own.action === "imported" },
@@ -841,7 +855,7 @@ async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
   // Project binding and wiring may enrich the imported registry entries. The receipt
   // describes the final explicit registration, not the earlier import snapshot.
   const registry = (await readRegistry(deviceHome)).entries;
-  return { ...receipt, migration: { ...applied, registry, hostCleanup }, ...(smoke === null ? {} : { recallSmoke: smoke }) };
+  return { ...receipt, migration: { ...applied, registry, hostCleanup, ...(projectBinding === null ? {} : { projectBinding }) }, ...(smoke === null ? {} : { recallSmoke: smoke }) };
 }
 
 // The mode table. Each row names the options its mode takes, its planner and its apply; the rows

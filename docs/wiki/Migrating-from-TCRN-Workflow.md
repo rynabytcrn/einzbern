@@ -183,9 +183,16 @@ dry-run、计划的分区项和执行回执都列出 `knowledgeOmission`：
   - 模型直接运行会被拒绝（`MODEL_WRITE_REFUSED`）。
   - `work-gate-list --status all` 列出这些 gate。
 - 库里的事件数与头哈希：
-  - 项目自己的库，第一条流前段就是旧链，到旧头为止；之后是本机在迁移中写入的语言与受管段记录，由安装向导以 `agent:setup` 署名；
-  - 其余分区的库与旧链的事件数和头哈希完全相同；映射给了 `chainRole` 时，旧链之后另有一条链身份记录，同样以 `agent:setup` 署名；协调库在其后还可能有它自己的设置记录（见下文），同样署名；
+  - 项目自己的库，第一条流前段就是旧链，到旧头为止；之后是本机在迁移中写入的语言与受管段记录，写入者是安装向导 `agent:setup`；
+  - 其余分区的库与旧链的事件数和头哈希完全相同；映射给了 `chainRole` 时，旧链之后另有一条链身份记录；协调库在其后还可能有它自己的设置记录（见下文）；
+  - 这些记录只在已启用署名的库里带上 `agent:setup`，见下一条；
   - 可用 `chain-validate --workspace <库>` 核对。
+- 写入者（事件 `payload` 里的 `actor`）只记在已启用署名的库里：
+  - 旧链启用过署名（链上有 `attestation.actor.enabled` 事件）的库，从那条事件起，每条事件的 `payload` 都带 `actor`：迁移写入的语言、受管段、链身份与设置记录带 `agent:setup`；Atelier 的写入带 `TCRN_PORTAL_ACTOR` 的值，缺省为 `agent:portal`，见 [Atelier](Atelier.md)；CLI 的写入带 `--actor` 的值。cross-project 迁移出的协调库就是这样。
+  - 旧链从未启用署名的库（例如 TCRN-TMS 与 dsh-tcrn-workflow-plugin），整条链都不记写入者：setup 写入的链身份与设置记录（项目自己的库还有语言与受管段记录）都不带 `actor`，事件 `payload` 只有 `operation` 与 `record`；Atelier 与 CLI 的写入也一样，`TCRN_PORTAL_ACTOR` 与 `--actor` 照常接受，但不写进事件。记录内容本身要写明操作者的，例如 `work-gate-release` 写下的解除记录，照旧记在记录里。
+  - 引擎没有为已有的库启用署名的命令，也不给旧事件补写写入者。
+  - 读法：`event-list --workspace <库>` 分页列出事件，每页缺省 64 条，用 `--offset` 与 `--limit` 翻页；看各事件的 `payload` 里有没有 `actor`。
+  - 写入者只说明经哪个入口写入，不证明身份。
 - 用 `doctor --project <项目目录>` 检查八项。旧名与当前名的对应关系见[词汇表](Glossary.md)。
 
 ## 迁移新建了第二个项目时
@@ -276,7 +283,9 @@ mapping's one coordination chain, whose identity names its own library, and
 partition's library. A mapping takes at most one coordination partition, and
 project partitions need it in the same mapping; otherwise the plan refuses with
 `SETUP_ANSWER_INVALID` on `chainRole`. The identity is written after the import is
-checked, signed `agent:setup`, and the registry entry records the role. A
+checked, and the registry entry records the role; the identity's event carries the
+actor `agent:setup` only in a library whose old chain enabled actor attestation
+(see 「迁移完成后」 above), and in one that never did, it carries no actor. A
 library migrated before without an identity gets it on the next run; one with
 another identity stops the plan (`SETUP_LIBRARY_CONFLICT`) until `chain-declare`
 changes it. A project row may also name `projectId`, a live project of its old

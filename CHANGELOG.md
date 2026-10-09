@@ -26,6 +26,21 @@ is deleted once the binding has moved; otherwise it is kept and `retirement.hold
 verb is added. `docs/wiki/Migrating-from-TCRN-Workflow.md` and the skill's `references/migrate.md`
 describe the field, the candidates, the blockers and the repair.
 
+TCRN-CROSS-STORY-518 (INIT-053 R50; fixes TCRN-CROSS-STORY-489): the Wiki migration page says which
+libraries record who wrote an event, instead of saying every record a migration writes is signed
+`agent:setup`. An event's payload carries `actor` only in a library whose chain enabled actor
+attestation (its old chain carries `attestation.actor.enabled`), from that event on: there the
+language, managed-section, chain-identity and settings records a migration writes carry
+`agent:setup`, Atelier's writes carry `TCRN_PORTAL_ACTOR` (default `agent:portal`) and the CLI's
+carry `--actor`; the coordination library migrated from cross-project is one. A library whose old
+chain never enabled it, such as TCRN-TMS and dsh-tcrn-workflow-plugin, records no writer: the
+chain identity and settings records setup writes there hold only `operation` and `record`, and
+Atelier and the CLI take their actor without writing it into the event; a record that names its
+operator in its own value, such as a gate release, still does. `event-list` shows whether a
+library's event payloads carry `actor`. The engine is unchanged: it writes no actor before
+attestation is enabled, has no verb that enables it for an existing library, and leaves old events'
+bytes as they are.
+
 ## 2.0.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.0.0. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

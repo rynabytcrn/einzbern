@@ -32,6 +32,7 @@ import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
 import { setGate } from "../dist/build/packages/core/src/gates-config.js";
 import { gateTreeState } from "../dist/build/packages/core/src/gates-run.js";
 import { stripTypesWithScopedExperimentalWarning } from "../scripts/lib/scoped-strip-types.mjs";
+import { BRAND, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
 
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-release-lockstep-")));
 const OLD_VERSION = FRAMEWORK_VERSION;
@@ -323,6 +324,13 @@ test("488-R4: a red release gate stops preparation before the archive step", asy
   assert.equal(calls.some((call) => call.args[0]?.endsWith("pack-release.mjs")), false);
 });
 
+// TCRN-CROSS-STORY-520 (MIN-243 D6): the release body the script must build, with the Wiki page's
+// address composed from the names module as the script composes it, never written here as a literal.
+function expectedReleaseBody(version) {
+  const address = `https://github.com/${LEGACY_REPOSITORY_NAMES.owner}/${BRAND.engine.id}/wiki/Release-Notes-${version}`;
+  return `Einzbern and Mana Orchestrate ship in lockstep at ${version}.\n\nRelease notes, by functional module: ${address}\n\nAttachments: \`einzbern-${version}.tar.gz\` and its SHA-256 file \`einzbern-${version}.tar.gz.sha256\`.\n`;
+}
+
 test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each need an explicit action", async () => {
   const repos = await createRepos("publish");
   await createOrigin(repos.engineRoot, "publish-engine-origin");
@@ -334,6 +342,37 @@ test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each 
   await commitAll(repos.helperRoot, "prepare helper release");
   const wikiDirectory = join(base, "publish-wiki");
   await mkdir(wikiDirectory, { recursive: true });
+  const bin = join(base, "fake-gh-bin");
+  const home = join(base, "publish", "home");
+  await mkdir(bin, { recursive: true });
+  const capture = join(base, "fake-gh-args.json");
+  const fakeGh = join(bin, "gh");
+  await writeFile(fakeGh, "#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(process.env.GH_CAPTURE, JSON.stringify(process.argv.slice(2)));\n");
+  await chmod(fakeGh, 0o755);
+  const releaseEnvironment = { ...environment, HOME: home, EINZBERN_HOME: join(home, ".einzbern"), GH_CAPTURE: capture, PATH: `${bin}:${process.env.PATH ?? ""}` };
+  await mkdir(releaseEnvironment.EINZBERN_HOME, { recursive: true });
+
+  // STORY-520 GWT2: without the version's Wiki page the plan is refused, the CLI prints no command,
+  // and no action runs: no tag is created and gh is never called. An empty page is refused the same way.
+  const wikiPage = `docs/wiki/Release-Notes-${NEXT_VERSION}.md`;
+  const missingPage = (state) => (error) => error.reasonCode === "RELEASE_WIKI_NOTES_MISSING" && error.details.path === wikiPage && error.details.state === state;
+  await assert.rejects(buildPublishPlan({ ...repos, version: NEXT_VERSION, wikiDirectory, env: environment }), missingPage("absent"));
+  for (const action of ["tag", "push", "release", "wiki"]) {
+    await assert.rejects(executeReleaseAction({ action, ...repos, version: NEXT_VERSION, wikiDirectory, env: releaseEnvironment }), missingPage("absent"), action);
+  }
+  assert.throws(
+    () => execFileSync(process.execPath, [join(repos.engineRoot, "scripts/release.mjs"), "publish-plan", "--version", NEXT_VERSION, "--helper", repos.helperRoot, "--wiki-dir", wikiDirectory], { env: environment, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }),
+    (error) => error.status === 1 && error.stdout === "" && JSON.parse(error.stderr).reasonCode === "RELEASE_WIKI_NOTES_MISSING",
+  );
+  assert.equal(git(repos.engineRoot, ["tag", "--list", `v${NEXT_VERSION}`]), "");
+  assert.equal(git(repos.helperRoot, ["tag", "--list", `v${NEXT_VERSION}`]), "");
+  await assert.rejects(readFile(capture), (error) => error.code === "ENOENT", "gh never ran");
+  await writeText(repos.engineRoot, wikiPage, " \n");
+  await commitAll(repos.engineRoot, "empty Wiki release notes page");
+  await assert.rejects(buildPublishPlan({ ...repos, version: NEXT_VERSION, wikiDirectory, env: environment }), missingPage("empty"));
+  await writeText(repos.engineRoot, wikiPage, `# Release Notes ${NEXT_VERSION}\n\nThe module directory of this version.\n`);
+  await commitAll(repos.engineRoot, "Wiki release notes page");
+
   const plan = await buildPublishPlan({ ...repos, version: NEXT_VERSION, wikiDirectory, env: environment });
   assert.equal(plan.reasonCode, "RELEASE_PUBLISH_PLAN_READY");
   assert.deepEqual(plan.commands.tag.map((args) => args.at(-1)), [`v${NEXT_VERSION}`, `v${NEXT_VERSION}`]);
@@ -343,6 +382,17 @@ test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each 
   assert.match(plan.printable.wiki, /push-wiki\.mjs.*--execute push/u);
   assert.equal(git(repos.engineRoot, ["tag", "--list", `v${NEXT_VERSION}`]), "");
   assert.equal(git(repos.helperRoot, ["tag", "--list", `v${NEXT_VERSION}`]), "");
+
+  // STORY-520 GWT1: --notes is the short body and the Wiki page's address, not the CHANGELOG section;
+  // the title and the two attachments are unchanged.
+  const body = expectedReleaseBody(NEXT_VERSION);
+  const archive = join(repos.engineRoot, `dist/release/einzbern-${NEXT_VERSION}.tar.gz`);
+  assert.deepEqual(plan.commands.release, ["gh", "release", "create", `v${NEXT_VERSION}`, archive, `${archive}.sha256`, "--title", `Einzbern ${NEXT_VERSION}`, "--notes", body]);
+  assert.ok(body.length <= 2000, `${body.length} characters`);
+  const changelog = await readFile(join(repos.engineRoot, "CHANGELOG.md"), "utf8");
+  assert.ok(changelog.includes(`## ${NEXT_VERSION}\n`) && changelog.includes(RELEASE_NOTES), "the CHANGELOG section holds the release notes");
+  assert.equal(body.includes(RELEASE_NOTES) || body.includes("Retired surfaces are listed below."), false, "the body carries no CHANGELOG section text beyond its first sentence");
+  assert.ok(plan.printable.release.endsWith(` --notes '${body}'`));
 
   const tag = await executeReleaseAction({ action: "tag", ...repos, version: NEXT_VERSION, env: environment });
   assert.equal(tag.reasonCode, "RELEASE_TAGS_CREATED");
@@ -360,15 +410,6 @@ test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each 
     assert.notEqual(git(root, ["ls-remote", "--tags", "origin", `refs/tags/v${NEXT_VERSION}`]), "");
   }
 
-  const bin = join(base, "fake-gh-bin");
-  const home = join(base, "publish", "home");
-  await mkdir(bin, { recursive: true });
-  const capture = join(base, "fake-gh-args.json");
-  const fakeGh = join(bin, "gh");
-  await writeFile(fakeGh, "#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(process.env.GH_CAPTURE, JSON.stringify(process.argv.slice(2)));\n");
-  await chmod(fakeGh, 0o755);
-  const releaseEnvironment = { ...environment, HOME: home, EINZBERN_HOME: join(home, ".einzbern"), GH_CAPTURE: capture, PATH: `${bin}:${process.env.PATH ?? ""}` };
-  await mkdir(releaseEnvironment.EINZBERN_HOME, { recursive: true });
   const released = await executeReleaseAction({ action: "release", ...repos, version: NEXT_VERSION, env: releaseEnvironment });
   assert.equal(released.reasonCode, "RELEASE_PUBLISHED");
   const ghArgs = JSON.parse(await readFile(capture, "utf8"));
@@ -377,6 +418,7 @@ test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each 
   assert.equal(ghArgs[2], `v${NEXT_VERSION}`);
   assert.ok(ghArgs.includes(join(repos.engineRoot, `dist/release/einzbern-${NEXT_VERSION}.tar.gz`)));
   assert.ok(ghArgs.includes(join(repos.engineRoot, `dist/release/einzbern-${NEXT_VERSION}.tar.gz.sha256`)));
+  assert.deepEqual(ghArgs, ["release", "create", `v${NEXT_VERSION}`, archive, `${archive}.sha256`, "--title", `Einzbern ${NEXT_VERSION}`, "--notes", body], "gh receives the short body as --notes");
 });
 
 test("SUB-357: actual CLI rejects the old release argv and release preflight refuses empty, disabled, optional and missing required roots", async () => {
@@ -544,6 +586,13 @@ test("SUB-357 R41 B1: generate writes the release files and a receipt without a 
   const note = `docs/releases/${NEXT_VERSION}.md`;
   const noteText = await readFile(join(fixture.engineRoot, note), "utf8");
   assert.ok(noteText.startsWith(`# Einzbern ${NEXT_VERSION}\n\n`) && noteText.includes(RELEASE_NOTES) && noteText.endsWith("\n"));
+  // STORY-520 GWT3: the short GitHub Release body leaves the release note file as the version's
+  // CHANGELOG section in full.
+  const cutChangelog = await readFile(join(fixture.engineRoot, "CHANGELOG.md"), "utf8");
+  const sectionStart = cutChangelog.indexOf(`\n## ${NEXT_VERSION}\n`) + `\n## ${NEXT_VERSION}\n`.length;
+  const section = cutChangelog.slice(sectionStart, cutChangelog.indexOf(`\n## ${OLD_VERSION}\n`, sectionStart)).trim();
+  assert.ok(section.includes(RELEASE_NOTES));
+  assert.equal(noteText, `# Einzbern ${NEXT_VERSION}\n\n${section}\n`);
   assert.deepEqual(receipt.engine.changes.filter((change) => change.status === "A").map((change) => change.path), [note]);
   assert.ok(["CHANGELOG.md", "package.json", "packages/core/src/framework-version.ts", ...README_NAMES].every((path) => receipt.engine.changes.some((change) => change.path === path && change.status === "M")));
   for (const [root, changes] of [[fixture.engineRoot, receipt.engine.changes], [fixture.helperRoot, receipt.helper.changes]]) {

@@ -999,10 +999,34 @@ function repoPublishInfo(root, env) {
   return { root, branch, remote: "origin", remoteUrl };
 }
 
-function releaseNotes(changelog, version) {
-  const section = changelogSection(changelog, version);
-  if (section === null) refuse("RELEASE_CHANGELOG_VERSION_MISSING", `CHANGELOG.md has no ${version} section`, { version });
-  return section;
+// TCRN-CROSS-STORY-520 (MIN-243 D6, D7): the GitHub Release body is a short description of the
+// version and a link to its page in the Wiki's Release Notes chapter, never the CHANGELOG section,
+// which stays complete in docs/releases/<version>.md and in the Wiki. The body has three paragraphs:
+// the first sentence of RELEASE_SUMMARY, the page's address, and the two attachments. The address is
+// composed from the names module when the plan is built, loaded the way legacyReleaseNames loads it:
+// scripts/lib/privacy.mjs counts an address that continues into a path as a finding, so no source or
+// test file carries it as a literal. A page that is missing, empty or not a regular file is refused,
+// so that no release links to an empty Wiki page.
+const RELEASE_WIKI_NOTES_PAGE = (version) => `Release-Notes-${version}`;
+
+async function releaseWikiNotesAddress(version) {
+  const { BRAND, LEGACY_REPOSITORY_NAMES } = await import("./names.mjs");
+  return `https://github.com/${LEGACY_REPOSITORY_NAMES.owner}/${BRAND.engine.id}/wiki/${RELEASE_WIKI_NOTES_PAGE(version)}`;
+}
+
+async function releaseNotes(engineRoot, version) {
+  const path = `docs/wiki/${RELEASE_WIKI_NOTES_PAGE(version)}.md`;
+  const target = join(engineRoot, ...path.split("/"));
+  const stats = await lstat(target).catch(() => null);
+  const page = stats !== null && stats.isFile() ? await readFile(target, "utf8") : "";
+  if (page.trim().length === 0) {
+    const state = stats === null ? "absent" : stats.isFile() ? "empty" : "not-a-file";
+    refuse("RELEASE_WIKI_NOTES_MISSING", `${path} is ${state}; the release body would link to an empty Wiki page`, { version, path, state });
+  }
+  const summary = RELEASE_SUMMARY(version, await legacyReleaseNames());
+  const headline = /^.*?\.(?=\s|$)/u.exec(summary)?.[0] ?? summary;
+  const asset = RELEASE_ASSET(version);
+  return `${headline}\n\nRelease notes, by functional module: ${await releaseWikiNotesAddress(version)}\n\nAttachments: \`${asset}\` and its SHA-256 file \`${asset}.sha256\`.\n`;
 }
 
 export async function buildPublishPlan({ engineRoot, helperRoot, version, wikiDirectory, env = process.env }) {
@@ -1020,7 +1044,7 @@ export async function buildPublishPlan({ engineRoot, helperRoot, version, wikiDi
   const archive = join(engine.root, RELEASE_OUTPUT_DIRECTORY, RELEASE_ASSET(version));
   const checksum = `${archive}.sha256`;
   await validatePackOutput(engine.root, version);
-  const notes = releaseNotes(await readFile(join(engine.root, CHANGELOG_FILE), "utf8"), version);
+  const notes = await releaseNotes(engine.root, version);
   const tagCommands = [engineInfo, helperInfo].map(({ root }) => ["git", "-C", root, "tag", tag]);
   const pushCommands = [engineInfo, helperInfo].map(({ root, branch, remote }) => ["git", "-C", root, "push", remote, `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`]);
   const releaseCommand = ["gh", "release", "create", tag, archive, checksum, "--title", `Einzbern ${version}`, "--notes", notes];

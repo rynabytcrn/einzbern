@@ -729,3 +729,77 @@ test("489-R1 (R2): the portal keys of the old device directory's machine setting
   assert.deepEqual(unreadable.blockers.map((entry) => [entry.step, entry.path, entry.reasonCode]), [["machine-settings", from, "MACHINE_SETTINGS_FILE_INVALID"]]);
   assert.deepEqual(unreadable.migration.deviceSettings.keys, []);
 });
+
+// TCRN-CROSS-STORY-517 (R50 D-517-1; fixes STORY-489): a mapping row may name projectId, the project of
+// its old chain the library's configuration is bound to. The mapping checks its shape and refuses it on
+// the coordination row; the plan lists the old chain's live projects (projectCandidates) for every
+// partition, refuses a projectId that is not one of them (a deleted project included), and names the
+// bound project in the registry entry (the identity's primaryProjectId: tests/migrate-apply.test.mjs).
+// Rows without projectId plan as they did, and nothing is written.
+test("STORY-517 GWT1, GWT3 (fixture): projectId in a mapping row is checked against the old chain's live projects, listed as candidates, and named in the registry entry", async (context) => {
+  const m = await machine(context);
+  const crossProject = await oldPartition(m, "cross-project");
+  const alpha = await oldPartition(m, "alpha");
+  const alphaProject = await project(m, "alpha");
+  const old = replayLegacyWorkspace(await openLegacyWorkspace(alpha));
+  const live = old.projects.filter((entry) => !entry.tombstone);
+  const deleted = old.projects.find((entry) => entry.tombstone);
+  assert.equal(live.length, 1, "the fixture holds one live project");
+  assert.ok(deleted !== undefined, "and one deleted project");
+  const candidates = live.map((entry) => ({ id: entry.id, name: entry.name, externalKey: entry.externalKey,
+    work: old.work.filter((record) => record.projectId === entry.id && !record.tombstone).length }));
+  assert.deepEqual(candidates.map((entry) => [entry.id, entry.work]), [["project:3443417fe20a3dd2b9f42d05", 7]]);
+
+  // The shape: a project id, and never on the coordination row.
+  const good = { partition: "alpha", legacyWorkspace: alpha, projectRoot: alphaProject };
+  for (const [label, rows] of [
+    ["malformed", [{ ...good, projectId: "project:xyz" }]],
+    ["not-text", [{ ...good, projectId: 42 }]],
+    ["coordination", [{ partition: "cross-project", legacyWorkspace: crossProject, projectRoot: m.container, chainRole: "coordination", projectId: live[0].id }]],
+  ]) {
+    const file = await writeMapping(m, rows, join(m.base, `project-id-${label}.json`));
+    await assert.rejects(readMigrationMapping(file), (error) => {
+      assert.deepEqual([error.reasonCode, error.details.question, error.details.field], ["SETUP_ANSWER_INVALID", "mapping", "projectId"], label);
+      return true;
+    });
+  }
+
+  // Both rows without chainRole (the fixture restored twice keeps one workspace id, so it cannot also be a
+  // coordination and a project chain here; tests/migrate-apply.test.mjs covers the roles).
+  const planWith = async (projectId) => {
+    const rows = [
+      { partition: "cross-project", legacyWorkspace: crossProject, projectRoot: m.container },
+      { ...good, ...(projectId === undefined ? {} : { projectId }) },
+    ];
+    const file = await writeMapping(m, rows, join(m.base, `project-id-plan-${second}.json`));
+    const mapping = await readMigrationMapping(file);
+    assert.deepEqual(mapping.partitions[1].projectId, projectId, "the row keeps its projectId, or none");
+    return planMigration({ mapping, mappingFile: file, home: m.home, deviceHome: m.deviceHome, legacyDeviceHome: m.legacyDevice, at: at() });
+  };
+  // The plans read the old chains and write nothing: the container (old workspaces and projects) and the home stay as they are.
+  const unchanged = async () => [await treeDigest(m.container), await treeDigest(m.home)];
+  const before = await unchanged();
+  const target = join(alphaProject, ".ether");
+
+  // Without projectId: the candidates are listed, nothing is bound, and the registry entries carry no projectId.
+  const plain = await planWith(undefined);
+  assert.deepEqual(plain.blockers, []);
+  assert.deepEqual(plain.migration.partitions.map((entry) => [entry.projectId, entry.projectCandidates]), [[null, candidates], [null, candidates]]);
+  assert.deepEqual(plain.migration.registry.map((entry) => Object.hasOwn(entry, "projectId")), [false, false]);
+
+  // A project the old chain does not hold, or holds deleted, stops the plan at that partition and names the candidates.
+  for (const projectId of ["project:000000000000000000000000", deleted.id]) {
+    const refused = await planWith(projectId);
+    assert.deepEqual(refused.blockers.map((entry) => [entry.step, entry.path, entry.reasonCode]), [["library", target, "SETUP_ANSWER_INVALID"]], projectId);
+    assert.match(refused.blockers[0].message, new RegExp(`projectId ${projectId} for partition alpha is not a live project of its old chain: name one of ${live[0].id} "${live[0].name}" \\(7 work items\\)`, "u"));
+    assert.deepEqual(refused.migration.partitions.map((entry) => entry.action), ["import", "blocked"]);
+  }
+
+  // A live project: the registry entry names it; a row without chainRole has no identity to name it in.
+  const bound = await planWith(live[0].id);
+  assert.deepEqual(bound.blockers, []);
+  assert.deepEqual(bound.migration.partitions.map((entry) => [entry.projectId, entry.chainIdentity]), [[null, null], [live[0].id, null]]);
+  assert.deepEqual(bound.migration.registry.map((entry) => entry.projectId ?? null), [null, live[0].id]);
+  assert.equal(Object.hasOwn(bound.migration.registry[0], "projectId"), false, "a row without projectId binds none");
+  assert.deepEqual(await unchanged(), before, "the plans wrote nothing");
+});

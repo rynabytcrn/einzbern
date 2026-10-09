@@ -1650,13 +1650,14 @@ async function inspectEngineFloorSatisfied(root, homeRoot, manifest, options) {
   }
   const declared = await declaredEngineRequirements(root, options);
   if (declared.declarations === null) {
-    // Unreadable is reported, not red. This leg's claim is "no copy is behind a
-    // declared floor"; with no readable declaration there is no floor, which is the
-    // same epistemic position as none being declared — and a container without a
-    // live chain (a fixture, a partial checkout) is not a platform fault any more
-    // than it is a passing one. `requirementAsserted` carries the distinction into
-    // the verdict so this can never be read as "aligned".
-    return check("engineFloorSatisfied", true, {
+    // TCRN-CROSS-INIT-053 R48 (PB-2, the family of R47-07): a declaration that cannot be read is
+    // red. This leg's claim is "no copy is behind a declared floor"; with the declarations unread
+    // it cannot tell whether a floor exists, and a floor that is not asserted is not a pass. It used
+    // to answer green here, so a container whose chains it could not read looked aligned. The
+    // reason code still names the unread declarations (and the partition whose settings-catalog
+    // failed), and requirementAsserted stays false. A container whose chains read and declare
+    // nothing is a different answer: PLATFORM_ENGINE_REQUIREMENT_UNDECLARED below, green by design.
+    return check("engineFloorSatisfied", false, {
       reasonCode: "PLATFORM_ENGINE_REQUIREMENT_UNREADABLE",
       copies,
       error: declared.error,

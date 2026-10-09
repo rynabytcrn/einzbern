@@ -427,12 +427,16 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
 // TCRN-CROSS-INIT-053 R47-07: a complete fixture teaches every key of a synthetic catalog. Its chain
 // container is empty, so the engine's catalog cannot be read there; these cases passed through the
 // unreadable branch while it was green, and that branch is red now. A case about it says so itself.
+// R48 (PB-2): the same holds for the engine floor. A complete fixture's one chain reads and declares
+// no engine.requiredVersion (UNDECLARED, green by design); the unreadable declaration is red now,
+// and the cases about it say so themselves.
 const FIXTURE_SETTING_KEYS = Object.freeze(["backup.cadence", "design.authority"]);
 const inspectInstallFixture = (fixture, options = {}) => inspectPlatform(fixture.root, {
   homeRoot: fixture.home,
   launchdLabels: [launchdLabel],
   acceptanceHeadCommit: FIXTURE_COMMIT,
   helperSettingKeys: { catalog: FIXTURE_SETTING_KEYS, taught: FIXTURE_SETTING_KEYS },
+  engineRequiredVersions: { "cross-project": null },
   ...options,
 });
 
@@ -945,6 +949,51 @@ test("MIN-102 engine alignment names a copy that is behind a chain declaration",
   });
   assert.equal(lexicalTrap.ok, true);
   assert.equal(alignment(lexicalTrap).ok, true);
+});
+
+// TCRN-CROSS-INIT-053 R48 (PB-2, the family of R47-07): the floor leg reads each partition's
+// declaration through the engine's settings-catalog. A declaration it cannot read is red, still
+// named PLATFORM_ENGINE_REQUIREMENT_UNREADABLE with requirementAsserted false: a partition whose
+// catalog fails, and a container it cannot list. Chains that read and declare nothing stay green
+// (UNDECLARED), and a declaration read through the same path still asserts.
+test("R48 PB-2: an engine floor that cannot be read is red, and chains that read and declare nothing stay green", async (context) => {
+  const fixture = await completeInstallFixture(context);
+  const alignment = (result) => result.checks.find((entry) => entry.name === "engineFloorSatisfied");
+  const copies = { installed: "0.11.15", worktree: "0.11.15" };
+  const engine = async (name, body) => {
+    const path = join(fixture.root, "..", `${name}.mjs`);
+    await writeFile(path, body);
+    return path;
+  };
+  const answering = (value) => engine(`catalog-${value ?? "none"}`, `process.stdout.write(JSON.stringify({ settings: [{ key: "engine.requiredVersion", currentValue: ${JSON.stringify(value)} }] }) + "\\n");\n`);
+  const real = (cli) => inspectInstallFixture(fixture, { engineCopyVersions: copies, engineRequiredVersions: undefined, engineCli: cli });
+
+  // A partition whose catalog fails: red, naming the partition.
+  const failing = await real(await engine("failing", "process.exitCode = 1;\n"));
+  assert.equal(failing.ok, false);
+  assert.deepEqual([alignment(failing).ok, alignment(failing).reasonCode, alignment(failing).requirementAsserted, alignment(failing).partition, alignment(failing).source],
+    [false, "PLATFORM_ENGINE_REQUIREMENT_UNREADABLE", false, "cross-project", "unreadable"]);
+  assert.deepEqual(alignment(failing).copies, copies, "the observed copies are still reported");
+
+  // The fixture's own empty workspace through the real engine: its catalog does not read either.
+  const unread = await real(undefined);
+  assert.deepEqual([alignment(unread).ok, alignment(unread).reasonCode, alignment(unread).requirementAsserted], [false, "PLATFORM_ENGINE_REQUIREMENT_UNREADABLE", false]);
+
+  // Chains that read and declare nothing: green, and still not asserted.
+  const undeclared = await real(await answering(null));
+  assert.deepEqual([alignment(undeclared).ok, alignment(undeclared).reasonCode, alignment(undeclared).requirementAsserted, alignment(undeclared).source],
+    [true, "PLATFORM_ENGINE_REQUIREMENT_UNDECLARED", false, "chain engine.requiredVersion + install-manifest"]);
+  assert.deepEqual(alignment(undeclared).partitions, ["cross-project"]);
+
+  // A declaration read through the same path asserts.
+  const satisfied = await real(await answering("0.11.15"));
+  assert.deepEqual([alignment(satisfied).ok, alignment(satisfied).requirementAsserted, alignment(satisfied).declaringPartitions], [true, true, ["cross-project"]]);
+
+  // A container it cannot list at all: red, with the read error and no partition.
+  await rm(join(fixture.root, ".tcrn-workspace"), { recursive: true, force: true });
+  const unlisted = await real(await answering("0.11.15"));
+  assert.deepEqual([alignment(unlisted).ok, alignment(unlisted).reasonCode, alignment(unlisted).requirementAsserted, alignment(unlisted).partition, alignment(unlisted).error],
+    [false, "PLATFORM_ENGINE_REQUIREMENT_UNREADABLE", false, null, "ENOENT"]);
 });
 
 // MIN-103. The Helper's own suite used to check its settings teaching against the

@@ -6,7 +6,7 @@ The Grail grants wishes. Einzbern remembers the wishes you made, the decisions y
 
 [简体中文](README.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md)
 
-![release](https://img.shields.io/badge/release-1.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+![release](https://img.shields.io/badge/release-2.0.0-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
 [What happened on Wednesday afternoon](#what-happened-on-wednesday-afternoon) · [What it remembers](#what-it-remembers) · [When you will want it](#when-you-will-want-it) · [Why this and not a memory plugin](#why-this-and-not-a-memory-plugin) · [Install](#install) · [Day to day](#day-to-day) · [Several devices and cloud folders](#several-devices-and-cloud-folders) · [How we use it ourselves](#how-we-use-it-ourselves) · [How the preset rules make your tokens go further](#how-the-preset-rules-make-your-tokens-go-further) · [Why it is designed this way](#why-it-is-designed-this-way) · [Glossary](#glossary)
 

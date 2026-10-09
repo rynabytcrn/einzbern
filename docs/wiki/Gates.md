@@ -61,6 +61,8 @@ gates-run [--project <目录>] [--base <提交>] [--work-id <work-id,...>] [--re
 
 运行必须同树、同门声明并绑定同一组 Story id；树、声明或目标 Story 组一变，之前的运行就不再算数，要按新的 `--base` 或 `--release` 和 `--work-id` 重新 `gates-run`。直接出生、单项转换和批量转换遵守相同拒绝与零写入规则。
 
+门声明与运行都按 Story 所在的项目区分：判据只读 Story 项目作用域里的门声明，只认记录了同一 `projectId` 的运行。所以在项目库上，门要用 `gates-config-set --project-id <Story 的项目>` 声明，带 `--work-id` 的 `gates-run` 也要带同一个 `--project-id`；不带时这次运行不记项目，判据找不到它，Story 转完成时仍报 `WORK_DONE_GATES_NOT_RUN`。协调库上的 `gates-run` 不必带 `--project-id`：门同样声明在 Story 的项目里，只要其中有启用门以精确 work id 覆盖这张 Story，`gates-run --work-id <Story id>` 就按 Story 自己的项目在协调库的项目根运行并记下项目（TCRN-CROSS-STORY-519，见「Target boundaries」），之后 `work-transition` 与 `work-batch` 读的就是这次运行；判据与三种拒绝和项目库相同。
+
 门的顺序只决定何时运行，不决定运行证明了什么，所以不计入门声明的摘要：只改顺序，之前的运行照样算数。改 `command`、`covers`、`required` 等其余字段，之前的运行仍然作废。
 
 ## 发布门
@@ -76,7 +78,9 @@ gates-run --release true --at <时刻>
 
 ## 项目从哪里来
 
-`gates-plan`、`gates-run`、`work-transition` 与 `work-batch` 都接受 `--project`。省略时取本机注册表为这个库记录的项目；门需要项目而注册表里一个也没有时，命令报 `GATES_PROJECT_UNKNOWN`。
+`gates-plan`、`gates-run`、`work-transition` 与 `work-batch` 都接受 `--project`。省略时取本机注册表为这个库记录的项目：当前目录解析到这个库、这个项目时取它，否则取注册表里这个库、这个项目唯一的那一项。带 `--project-id`，或按 Story 的项目查找时，只认记录了同一 `projectId` 的注册项；此时给了 `--project`，这个目录所属的注册项也要记着这个项目。门需要项目而注册表里一个也没有时，命令报 `GATES_PROJECT_UNKNOWN`。
+
+协调库例外（TCRN-CROSS-STORY-519）：setup 与迁移为协调库登记的注册项不带 `projectId`，协调库的项目都在它服务的那个目录下。所以在链身份为 coordination 的库上，注册表里没有一项记录所查的项目、而这个项目在库里且未删除时，为这个库登记、不带 `projectId` 的那一项代为回答；这样的项不止一项时用 `--project` 指明其中一项。一旦有注册项记录了这个项目，就只认那一项。项目库（链身份为 project，或没有链身份的库）不变，仍须有记录这个项目的注册项（`library-register --project-id`），否则报 `GATES_PROJECT_UNKNOWN`。
 
 ## Target boundaries
 
@@ -93,3 +97,20 @@ process: the target's `handoff` from `work-project-context`, with the repository
 and root the gates run in. A missing or unavailable target is a refused result
 of its own; the other targets still run. A target reference does not grant filesystem access. An undecided
 relation must be resolved; coordination-only work needs no development target.
+
+A Story that the coordination library's own gates cover by exact work id, in
+the scope of the Story's project, is planned and run in the coordination library
+as well (TCRN-CROSS-STORY-519): in the project root this device registered for
+that library, under that project's declarations, one plan or run per project.
+The run records the project and the Story ids, so `work-transition` and
+`work-batch` read it when the Story goes to done. These results are listed under
+`library`, beside `targets`: `projectId`, `workIds`, `projectRoot` and `ok`, with
+the `plan`, or the run's `reds`, `requiredReds`, `run` and `recordPath`; a
+refused one has its own `reasonCode`. `library` is absent when the coordination
+library covers none of the given work. Such a Story needs no decided relation
+and gets no `PROJECT_SCOPE_UNDECIDED` or `COORDINATION_ONLY` result; a selected
+one still runs per target as well, and the coordination library never becomes a
+development target. Leave out `--project-id`: each Story runs in its own
+project's scope. Given, it must name the project of every covered Story, or the
+command refuses with `GATES_PROJECT_MISMATCH` before any gate runs. Work the
+coordination library does not cover keeps the results described above.

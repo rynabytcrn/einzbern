@@ -906,18 +906,84 @@ function optionalBoolean(value: string | undefined, name: string): boolean | und
   return value === undefined ? undefined : booleanValue(value, name);
 }
 
+// TCRN-CROSS-STORY-519 (D-519-1, D-519-2): the work a coordination library's own gates cover. A work
+// item that an enabled gate of its own project's scope in this library covers by exact work id is
+// planned and run in this library, in the scope of that project, and the run records the project;
+// a cover is the declaration itself, so no target is inferred. The items are grouped by project, in
+// the order they were given, one plan and one run per project. A --project-id given names the project
+// of every one of them, or the operation is refused before anything runs.
+interface LibraryGateGroup {
+  readonly projectId: string | undefined;
+  readonly workIds: string[];
+}
+
+function libraryCoveredWork(state: Awaited<ReturnType<typeof materializeWorkspace>>, workIds: readonly string[], projectId: string | undefined): { readonly ids: ReadonlySet<string>; readonly groups: readonly LibraryGateGroup[] } {
+  const ids = new Set<string>();
+  const groups = new Map<string, LibraryGateGroup>();
+  for (const workId of workIds) {
+    const record = state.work.find((entry) => entry.id === workId && !entry.tombstone);
+    if (record === undefined || ids.has(workId)) continue;
+    if (!listGates(scopedWorkspaceState(state, record.projectId)).some((gate) => gate.enabled && gate.covers.includes(workId))) continue;
+    if (projectId !== undefined && record.projectId !== projectId) {
+      throw new WorkflowCliError("GATES_PROJECT_MISMATCH", `--project-id names ${projectId}, but ${workId} belongs to ${record.projectId ?? "no project"}, the scope its gates in this library are declared in`, {
+        field: "project-id",
+        workId,
+        remedy: "leave out --project-id: each work item runs in its own project's scope, one run per project",
+      });
+    }
+    ids.add(workId);
+    const key = record.projectId ?? "";
+    const group = groups.get(key) ?? { projectId: record.projectId, workIds: [] };
+    group.workIds.push(workId);
+    groups.set(key, group);
+  }
+  return { ids, groups: [...groups.values()] };
+}
+
+// One project's share of the work a coordination library covers itself (libraryCoveredWork): its plan,
+// or its run with the reds as the single-library form gives them. A refusal is this result's own, as a
+// target's is, and the other results stand.
+async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean, group: LibraryGateGroup): Promise<Record<string, unknown>> {
+  const binding = { projectId: group.projectId ?? null, workIds: group.workIds };
+  let projectRoot: string | undefined;
+  try {
+    projectRoot = await gatesProjectRoot(state.metadata.workspaceId, values.project, group.projectId);
+    const plan = await planGates({
+      projectRoot,
+      gates: listGates(scopedWorkspaceState(state, group.projectId)),
+      release: booleanValue(values.release, "release"),
+      ...(values.base === undefined ? {} : { base: values.base }),
+      workIds: group.workIds,
+    });
+    if (!execute) return { ...binding, projectRoot, ok: true, plan };
+    const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(group.projectId === undefined ? {} : { projectId: group.projectId }), at: values.at ?? "" });
+    return {
+      ...binding, projectRoot, ok: run.reds.length === 0, reds: run.reds,
+      requiredReds: run.gates.filter((gate) => gate.required && !gate.ok).map((gate) => gate.name),
+      run, recordPath,
+    };
+  } catch (error) {
+    return { ...binding, ...(projectRoot === undefined ? {} : { projectRoot }), ok: false, reasonCode: (error as { reasonCode?: string }).reasonCode ?? "PROJECT_OPERATION_REFUSED", error: String(error) };
+  }
+}
+
 /** Apply a Cross Project work relation through the existing gate consumer. Each
  * target has its own native state, root, declaration set and cache identity.
  * A relation is never a writable-root grant; actual filesystem/host refusals are
- * retained per target, and one refused target does not erase other results. */
+ * retained per target, and one refused target does not erase other results.
+ * Work this library's own gates cover runs here as well (TCRN-CROSS-STORY-519),
+ * listed apart under `library`; such work needs no target and no decided relation. */
 async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean): Promise<Record<string, unknown> | null> {
   if (chainIdentity(state)?.role !== "coordination" || values["work-id"] === undefined) return null;
+  const workIds = listValue(values["work-id"]);
+  const covered = libraryCoveredWork(state, workIds, values["project-id"]);
   const results: Record<string, unknown>[] = [];
-  for (const workId of listValue(values["work-id"])) {
+  for (const workId of workIds) {
     const resolved = await workProjectContexts(state, workId);
     const relation = resolved.involvedProjects as ReturnType<typeof involvedProjectsOf>;
     if (relation.state !== "selected") {
-      results.push({ workId, status: relation.state, ok: relation.state === "coordination-only", reasonCode: relation.state === "coordination-only" ? "COORDINATION_ONLY" : "PROJECT_SCOPE_UNDECIDED" });
+      // Work this library covers runs below in its own project root, whatever relation it records.
+      if (!covered.ids.has(workId)) results.push({ workId, status: relation.state, ok: relation.state === "coordination-only", reasonCode: relation.state === "coordination-only" ? "COORDINATION_ONLY" : "PROJECT_SCOPE_UNDECIDED" });
       continue;
     }
     for (const context of resolved.contexts as Record<string, unknown>[]) {
@@ -958,7 +1024,13 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
       }
     }
   }
-  return { reasonCode: execute ? "GATES_RUN_COMPLETED" : "GATES_PLAN_READY", workspaceId: state.metadata.workspaceId, version: state.version, ok: results.every(result => result.ok === true), targets: results };
+  const library: Record<string, unknown>[] = [];
+  for (const group of covered.groups) library.push(await libraryGateResult(state, values, execute, group));
+  return {
+    reasonCode: execute ? "GATES_RUN_COMPLETED" : "GATES_PLAN_READY", workspaceId: state.metadata.workspaceId, version: state.version,
+    ok: results.every(result => result.ok === true) && library.every(result => result.ok === true), targets: results,
+    ...(library.length === 0 ? {} : { library }),
+  };
 }
 
 // TCRN-CROSS-STORY-485 R2, R4: the project a library's gate roots are relative to. --project names

@@ -86,6 +86,22 @@ targets keep theirs. `work-project-context` gives each resolved context the same
 `handoff` (reference, work revision, version, library, repositories, effective
 settings, design, readiness, output places, enabled rules and variables) for a
 native host dispatch to pass per target; a target that does not resolve has a
-null `handoff`. Undecided work
+null `handoff`. Undecided work that the coordination library does not cover
 refuses this operation; explicit coordination-only work needs no project run.
 Without a Cross Project work subject the existing single-library form remains.
+
+A work item that an enabled gate of the coordination library itself covers by
+exact work id, in the scope of the item's own project, is planned and run in that
+library as well (TCRN-CROSS-STORY-519): in the project root this device
+registered for the library, under that project's declarations, one plan or run
+per project, and the run records the project and the exact work ids, so the done
+check of `work-transition` and `work-batch` reads it. These results are listed
+apart under `library`: `projectId`, `workIds`, `projectRoot`, `ok`, and the
+`plan`, or the run's `reds`, `requiredReds`, `run` and `recordPath`; a refused
+one carries its `reasonCode` and the others stand. `targets` keeps its shape,
+and `library` is absent when no item is covered. A covered item needs no decided
+relation and gets no `PROJECT_SCOPE_UNDECIDED` or `COORDINATION_ONLY` result; a
+selected one also runs per target, and the coordination library is never made a
+development target. `--project-id`, when given, must name the project of every
+covered item, or the operation refuses with `GATES_PROJECT_MISMATCH` before
+anything runs; left out, each item's own project applies.

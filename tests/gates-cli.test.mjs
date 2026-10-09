@@ -6,13 +6,16 @@
 // TCRN-CROSS-STORY-513 R1, AC1 (MIN-238 D2; TCRN-CROSS-SUB-422): gates-config-set and
 // gates-config-remove run for Atelier only; a model's run is refused with MODEL_WRITE_REFUSED and
 // appends nothing, while the reads, the plan and the run answer it.
+// TCRN-CROSS-STORY-519 (TCRN-CROSS-SUB-430, SUB-431): on a coordination library, a Story that the
+// library's own gates cover by exact work id is planned and run in the project root registered for
+// the library, in its project's scope, and that run takes it to done; uncovered work keeps its results.
 // Every project, library and device directory here is a temporary one.
 
 import "./helpers/device-home.mjs";
 import { ATELIER_SURFACE, standInForAtelier, withSurface } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -86,6 +89,14 @@ async function cli(args) {
 
 async function refusal(args) {
   return runCli(args, { write() {} }).then(() => null, (error) => error);
+}
+
+// TCRN-CROSS-STORY-519: the CLI as a caller types it, without the --project-id cli() adds. The
+// coordination fixtures go through it alone, so their registry entry is the one a migration writes.
+async function raw(args) {
+  let output = "";
+  await runCli(args, { write(value) { output += value; } });
+  return JSON.parse(output);
 }
 
 /** A Git project with one commit, a library beside it and a device directory, all temporary. */
@@ -471,4 +482,139 @@ test("513-AC1 (CLI): a model's gates-config-set and gates-config-remove are refu
   assert.equal((await cli(writes[2][0]())).removed, "unit");
   assert.equal(await versionOf(), before.version + writes.length);
   assert.deepEqual((await listed()).map((gate) => gate.name), ["self-check"]);
+});
+
+/**
+ * TCRN-CROSS-STORY-519: a coordination library as setup and migration leave it. Its chain identity
+ * names it the coordination library, its Stories sit under its own project with their relation left
+ * undecided, and this device registered the directory it serves (`project`) for it, with no project
+ * unless `registeredProjectId` adds one, as library-register --project-id would.
+ */
+async function coordination(context, { registeredProjectId = false } = {}) {
+  const fixture = await setup(context);
+  const { project, library } = fixture;
+  const libraryId = (await materializeWorkspace(library)).metadata.workspaceId;
+  await raw(["chain-declare", "--workspace", library, "--at", at(), "--role", "coordination", "--coordination-library-id", libraryId]);
+  const projectId = (await raw(["project-create", "--workspace", library, "--at", at(), "--external-key", "CO-PROJECT", "--name", "Cross project"])).record.id;
+  await raw(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "CO-INIT", "--kind", "Initiative", "--title", "Coordinated work"]);
+  await raw(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "CO-EPIC", "--kind", "Epic", "--status", "active", "--parent-id", workId("CO-INIT"), "--title", "Coordinated epic"]);
+  await raw(["library-register", "--project", project, "--library", library, "--at", at(), ...(registeredProjectId ? ["--project-id", projectId] : [])]);
+  const story = async (key, extra = [], storyProjectId = projectId) => (await raw([
+    "work-create", "--workspace", library, "--at", at(), "--project-id", storyProjectId, "--external-key", key, "--kind", "Story", "--status", "active",
+    "--parent-id", workId("CO-EPIC"), "--title", `Coordinated story ${key}`, "--goal", "Pass the gates", "--acceptance", "GIVEN the gates WHEN green THEN done", ...extra,
+  ])).record.id;
+  const gate = (name, command, extra = [], gateProjectId = projectId) => raw(["gates-config-set", "--workspace", library, "--project-id", gateProjectId, "--at", at(), "--name", name, "--command", JSON.stringify(command), ...extra]);
+  return { ...fixture, libraryId, projectId, story, gate };
+}
+
+/** A project library that the coordination library's work can select, registered with its project. */
+async function selectableTarget(base, coordinationLibraryId) {
+  const repo = join(base, "target");
+  await mkdir(repo);
+  git(repo, ["init", "-q"]);
+  await put(repo, "README.md");
+  git(repo, ["add", "-A"]);
+  git(repo, ["commit", "-q", "-m", "initial"]);
+  const library = join(base, "target.ether");
+  await raw(["init", "--workspace", library, "--at", at()]);
+  await raw(["chain-declare", "--workspace", library, "--at", at(), "--role", "project", "--coordination-library-id", coordinationLibraryId]);
+  const libraryId = (await materializeWorkspace(library)).metadata.workspaceId;
+  const projectId = (await raw(["project-create", "--workspace", library, "--at", at(), "--external-key", "CO-TARGET", "--name", "Target"])).record.id;
+  await raw(["gates-config-set", "--workspace", library, "--project-id", projectId, "--at", at(), "--name", "target-unit", "--command", JSON.stringify([node, "-e", "process.exit(0)"])]);
+  await raw(["library-register", "--project", repo, "--library", library, "--at", at(), "--project-id", projectId]);
+  return { repo, library, reference: { libraryId, projectId } };
+}
+
+const gateRunFiles = (recordPath) => readdirSync(dirname(recordPath)).filter((name) => name.endsWith(".json")).sort();
+
+// TCRN-CROSS-STORY-519 GWT1 (TCRN-CROSS-SUB-430; D-519-1, D-519-2): on a coordination library,
+// gates-plan and gates-run with --work-id plan and run a Story that the library's own gates cover by
+// exact work id, in the project root this device registered for the library and in the scope of the
+// Story's project. The run records that project and exactly that Story, and its required gate the
+// Story among its matched work ids. --project-id is the Story's project when left out; another one
+// is refused before anything runs.
+test("519-GWT1 (CLI): a Story a coordination library's own gates cover by exact work id is planned and run in the library's project root, in its project's scope", async (context) => {
+  const { project, library, libraryId, projectId, story, gate } = await coordination(context, { registeredProjectId: true });
+  const storyId = await story("CO-STORY-1");
+  await gate("unit", [node, "-e", "process.exit(require('node:fs').existsSync('src/ok') ? 0 : 1)"], ["--covers", `src/**,${storyId}`]);
+  await gate("links", [node, "-e", "process.exit(0)"], ["--covers", "**/*.md", "--required", "false"]);
+  await put(project, "src/ok", "");
+  const args = ["--workspace", library, "--release", "true", "--work-id", storyId];
+
+  // In 2.0.0 this plan answered PROJECT_SCOPE_UNDECIDED for the Story and no gate ran.
+  const planned = await raw(["gates-plan", ...args]);
+  assert.deepEqual([planned.reasonCode, planned.ok, planned.targets], ["GATES_PLAN_READY", true, []]);
+  assert.equal(planned.library.length, 1);
+  const [plan] = planned.library;
+  assert.deepEqual([plan.projectId, plan.workIds, plan.projectRoot, plan.ok], [projectId, [storyId], project, true]);
+  assert.deepEqual([plan.plan.projectRoot, plan.plan.release, plan.plan.workIds], [project, true, [storyId]]);
+  assert.deepEqual(plan.plan.gates.map((entry) => [entry.name, entry.required, entry.matchedWorkIds]), [["links", false, []], ["unit", true, [storyId]]]);
+  assert.deepEqual((await raw(["gates-plan", ...args, "--project-id", projectId])).library, planned.library, "--project-id naming the Story's own project is the same plan");
+
+  const ran = await raw(["gates-run", ...args, "--at", at()]);
+  assert.deepEqual([ran.reasonCode, ran.ok, ran.targets], ["GATES_RUN_COMPLETED", true, []]);
+  assert.equal(ran.library.length, 1);
+  const [result] = ran.library;
+  assert.deepEqual([result.projectId, result.workIds, result.projectRoot, result.ok, result.reds, result.requiredReds], [projectId, [storyId], project, true, [], []], gateDiagnostic(result.run, result.recordPath));
+  assert.deepEqual([result.run.libraryId, result.run.projectId, result.run.workIds, result.run.release], [libraryId, projectId, [storyId], true]);
+  assert.deepEqual(result.run.gates.map((entry) => [entry.name, entry.required, entry.matchedWorkIds, entry.ok]), [["links", false, [], true], ["unit", true, [storyId], true]]);
+  assert.deepEqual(JSON.parse(readFileSync(result.recordPath, "utf8")), result.run, "the run is recorded in this device's cache of the library");
+
+  // A --project-id other than the Story's is refused before any gate runs.
+  const otherProjectId = (await raw(["project-create", "--workspace", library, "--at", at(), "--external-key", "CO-OTHER", "--name", "Other"])).record.id;
+  const runs = gateRunFiles(result.recordPath);
+  for (const verb of [["gates-plan"], ["gates-run", "--at", at()]]) {
+    const refused = await refusal([...verb, ...args, "--project-id", otherProjectId]);
+    assert.equal(refused?.reasonCode, "GATES_PROJECT_MISMATCH", verb[0]);
+    assert.deepEqual([refused.details.field, refused.details.workId], ["project-id", storyId]);
+    assert.match(refused.details.remedy, /--project-id/u);
+  }
+  assert.deepEqual(gateRunFiles(result.recordPath), runs, "the refused run recorded nothing");
+});
+
+// TCRN-CROSS-STORY-519 GWT3 (TCRN-CROSS-SUB-430; D-519-1): work the coordination library does not
+// cover keeps the results it had in 2.0.0: undecided, coordination-only, or one per selected target,
+// and nothing under library. A covered Story needs no decided relation; a selected Story still runs
+// per target, one the library also covers runs in both, and the coordination library is never a
+// target.
+test("519-GWT3 (CLI): uncovered work keeps its results; a selected Story still runs per target, and one the library also covers runs in both", async (context) => {
+  const { base, project, library, libraryId, projectId, story, gate } = await coordination(context, { registeredProjectId: true });
+  const target = await selectableTarget(base, libraryId);
+  const selected = ["--involved-projects", JSON.stringify({ state: "selected", targets: [target.reference] })];
+  const coordinationOnly = ["--involved-projects", JSON.stringify({ state: "coordination-only", targets: [] })];
+  const ids = {
+    undecided: await story("CO-UNDECIDED"),
+    coordinationOnly: await story("CO-ONLY", coordinationOnly),
+    selected: await story("CO-SELECTED", selected),
+    coveredUndecided: await story("CO-COVERED-UNDECIDED"),
+    coveredOnly: await story("CO-COVERED-ONLY", coordinationOnly),
+    coveredSelected: await story("CO-COVERED-SELECTED", selected),
+  };
+  await gate("unit", [node, "-e", "process.exit(0)"], ["--covers", `${ids.coveredUndecided},${ids.coveredOnly},${ids.coveredSelected}`]);
+  // A gate that is not enabled covers nothing.
+  await gate("off", [node, "-e", "process.exit(0)"], ["--covers", ids.undecided, "--enabled", "false"]);
+  const plan = (workIds) => raw(["gates-plan", "--workspace", library, "--release", "true", "--work-id", workIds.join(",")]);
+
+  const uncovered = await plan([ids.undecided, ids.coordinationOnly]);
+  assert.deepEqual(uncovered.targets, [
+    { workId: ids.undecided, status: "undecided", ok: false, reasonCode: "PROJECT_SCOPE_UNDECIDED" },
+    { workId: ids.coordinationOnly, status: "coordination-only", ok: true, reasonCode: "COORDINATION_ONLY" },
+  ]);
+  assert.equal(uncovered.ok, false);
+  assert.equal(Object.hasOwn(uncovered, "library"), false, "nothing is listed under library when the library covers none of the work");
+
+  const covered = await plan([ids.coveredUndecided, ids.coveredOnly]);
+  assert.deepEqual([covered.ok, covered.targets], [true, []], "a covered Story gets no PROJECT_SCOPE_UNDECIDED or COORDINATION_ONLY result");
+  assert.deepEqual(covered.library.map((entry) => [entry.projectId, entry.workIds, entry.projectRoot, entry.ok]), [[projectId, [ids.coveredUndecided, ids.coveredOnly], project, true]]);
+
+  const ran = await raw(["gates-run", "--workspace", library, "--release", "true", "--at", at(), "--work-id", [ids.selected, ids.coveredOnly, ids.coveredSelected].join(",")]);
+  assert.equal(ran.ok, true, JSON.stringify(ran.targets.map((entry) => [entry.workId, entry.reasonCode ?? null])));
+  assert.deepEqual(ran.targets.map((entry) => [entry.workId, entry.reference.libraryId, entry.reference.projectId, entry.projectRoot, entry.ok]), [
+    [ids.selected, target.reference.libraryId, target.reference.projectId, target.repo, true],
+    [ids.coveredSelected, target.reference.libraryId, target.reference.projectId, target.repo, true],
+  ], "each selected Story runs per target, and the coordination library is not one");
+  assert.deepEqual(ran.targets.map((entry) => entry.run.gates.map((result) => result.name)), [["target-unit"], ["target-unit"]]);
+  assert.deepEqual(ran.library.map((entry) => [entry.projectId, entry.workIds, entry.projectRoot, entry.ok]), [[projectId, [ids.coveredOnly, ids.coveredSelected], project, true]]);
+  assert.deepEqual(ran.library[0].run.workIds, [ids.coveredOnly, ids.coveredSelected].sort());
+  assert.deepEqual(ran.library[0].run.gates.map((result) => [result.name, result.matchedWorkIds]), [["unit", [ids.coveredOnly, ids.coveredSelected].sort()]]);
 });

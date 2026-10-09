@@ -747,7 +747,7 @@
     },
     {
       "path": "scripts/test-controller-child-policy.mjs",
-      "sha256": "7a41a236b4797be9b0b423d760bb361a5adf12703877e63094749f135a6fde0f"
+      "sha256": "fcf4967c4800a2313f97f5fb3d6426e88ba01c2cf499f3a8b538a32b7314d87d"
     },
     {
       "path": "scripts/test-controller-reaper.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R48 integration batch-end generation (package C fast-forwarded and package D merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below with its one failure (the new platform-doctor case R48 PB-2, introduced this round and returned to the MAIN package as a shared-contract item), so the integration made no correction and ran no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R48 integration batch-end generation after the R48-INT-1 fix (package C fast-forwarded, package D merged with one merge commit and the package D fix 15754197 fast-forwarded in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 second pass ran the full engine suite once after the fix and before this generation; its actual exit and counts are attached below: no leg was red (tests/platform-doctor.test.mjs R48 PB-2 green after the fix; one added parity case in tests/output-session-lifecycle.test.mjs), so there was no disposal and no further pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "532e04114e1688166b90fde69a7fb4a815235a5aaceb147b28b8634af9a0289a",
+      "sha256": "b51898aa43d5cb46fd9268f34ea0ae220fdc310e47c198a0a312ff4c5ea30c8b",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "6e4fbaf2ca07c783cf3430cb63cfb1a11b24125efad5b1675b1ec5a7b11e60ae",
+      "sha256": "506af4beb06e1ff2bbfb7100053634c106d2ce740c7b88177f1ace611bedd94e",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "eba5e5238ee9f1ea16b97c0e24539d430dc74caf0cf40f7b52cf190278730612",
+      "sha256": "91e1cd9fbc01b2a851c2441d4ec1c0f1789eef7aaf463a8673746e9fc5d136b5",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1010,11 +1010,11 @@
     }
   ],
   "currentWholeFileCadence": {
-    "exit": 1,
+    "exit": 0,
     "counts": {
-      "tests": 1773,
-      "pass": 1772,
-      "fail": 1,
+      "tests": 1774,
+      "pass": 1774,
+      "fail": 0,
       "cancelled": 0,
       "skipped": 0
     },
@@ -1156,19 +1156,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json",
-    "failures": [
-      {
-        "test": "R48 PB-2: an engine floor that cannot be read is red, and chains that read and declare nothing stay green",
-        "file": "tests/platform-doctor.test.mjs",
-        "line": 1574,
-        "reason": "Expected values to be strictly deep-equal:",
-        "reasonCode": "ERR_ASSERTION",
-        "rawAnchor": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json#/reds/0"
-      }
-    ]
+    "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/full-file-cadence-result.json",
+    "failures": []
   },
-  "generationTimeUtc": "2026-10-09T01:45:20.358219+00:00",
+  "generationTimeUtc": "2026-10-09T02:11:51.466656+00:00",
   "supportedLocales": [
     "en",
     "zh-CN",

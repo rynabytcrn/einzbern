@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r47-init053-integration",
+  "pack": "r48-init053-integration",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -215,7 +215,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "59ec14b9e7586b1c6eef621ace58b23a16de939a6eb4afc9e77adddfc1c2952a"
+      "sha256": "601c534a1bb2387211ad47d59632d9c0ef0748ae42f6c9e16376ef6efc2b8a4c"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -283,7 +283,7 @@
     },
     {
       "path": "packages/core/src/rules-catalog.ts",
-      "sha256": "6db60b7fe6433d99a5cb5d53fede363180aaa7c99be5b08fa5b7f8bfb3c5f5c6"
+      "sha256": "37d699a6fb79c96c44ab7cbf263bf5042e4c4094253f434aafa4ec064c970727"
     },
     {
       "path": "packages/core/src/rules.ts",
@@ -487,7 +487,7 @@
     },
     {
       "path": "scripts/einzbern.mjs",
-      "sha256": "1a59ebce12200dcc5c22ab66b6ed1ad1dd27cbdb03e59c3be1636a4a1cf45c30"
+      "sha256": "04a39cc72dfbbe1bcf27c760785742cc386efde188e6be84b6fb1b961f537883"
     },
     {
       "path": "scripts/embed-ds-component-css-snapshot.mjs",
@@ -575,7 +575,7 @@
     },
     {
       "path": "scripts/lib/p8-workflow-rc.mjs",
-      "sha256": "ab096f0a77328d80e61be3677a3b3d73191cd458966cc0b0d5c242cfce8e3742"
+      "sha256": "f34e3006756daf413e32f6a98b6008a06d6cbbf4271565363c6cd925bf4ce4bc"
     },
     {
       "path": "scripts/lib/privacy.mjs",
@@ -675,7 +675,7 @@
     },
     {
       "path": "scripts/platform-doctor.mjs",
-      "sha256": "ca544f1fe8cbbd190ad3ddac5feec7420b42e868eede4adca93652c3df65ea30"
+      "sha256": "f2ddf46fff81596c5a56aff6874435021bc9c42e13181a19374da5c08c59a60c"
     },
     {
       "path": "scripts/preflight.mjs",
@@ -735,7 +735,7 @@
     },
     {
       "path": "scripts/task.mjs",
-      "sha256": "29c7db449d14cd0ca591907dc87b3ca2fa8d1356c839744349befa10a700b089"
+      "sha256": "2ab916bf41fbf14a460d3ab64b84eefb1e068e3375144b2cf2a0fb679bd040a0"
     },
     {
       "path": "scripts/test-controller-bootstrap.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R47 integration batch-end generation (package A2, which contains A1, fast-forwarded and package B merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red, so there was no same-round disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R48 integration batch-end generation (package C fast-forwarded and package D merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below with its one failure (the new platform-doctor case R48 PB-2, introduced this round and returned to the MAIN package as a shared-contract item), so the integration made no correction and ran no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "17b5a032453207b216e517c9d2dd8481b25abc104eaa637ff78b494a562e35bb",
+      "sha256": "532e04114e1688166b90fde69a7fb4a815235a5aaceb147b28b8634af9a0289a",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "294f3b9b390ab69e96012e944225656b5414962d4d56eb30de1b1ce3ea4e1a01",
+      "sha256": "6e4fbaf2ca07c783cf3430cb63cfb1a11b24125efad5b1675b1ec5a7b11e60ae",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "b17975774bbed2fa50c191410276dcfb56c8eb4b0263dd161de9871eb1daec6e",
+      "sha256": "eba5e5238ee9f1ea16b97c0e24539d430dc74caf0cf40f7b52cf190278730612",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1010,11 +1010,11 @@
     }
   ],
   "currentWholeFileCadence": {
-    "exit": 0,
+    "exit": 1,
     "counts": {
-      "tests": 1769,
-      "pass": 1769,
-      "fail": 0,
+      "tests": 1773,
+      "pass": 1772,
+      "fail": 1,
       "cancelled": 0,
       "skipped": 0
     },
@@ -1156,10 +1156,19 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json",
-    "failures": []
+    "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json",
+    "failures": [
+      {
+        "test": "R48 PB-2: an engine floor that cannot be read is red, and chains that read and declare nothing stay green",
+        "file": "tests/platform-doctor.test.mjs",
+        "line": 1574,
+        "reason": "Expected values to be strictly deep-equal:",
+        "reasonCode": "ERR_ASSERTION",
+        "rawAnchor": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json#/reds/0"
+      }
+    ]
   },
-  "generationTimeUtc": "2026-10-08T23:41:33.836113+00:00",
+  "generationTimeUtc": "2026-10-09T01:45:20.358219+00:00",
   "currentIndividualReview": {
     "namedDeclarations": [
       {
@@ -14207,13 +14216,13 @@
         "currentInitializer": "RUNTIME_CAPACITY.stringCodeUnits",
         "declarations": [
           {
-            "line": 99,
+            "line": 100,
             "initializer": "RUNTIME_CAPACITY.stringCodeUnits"
           }
         ],
         "exactUses": [
           {
-            "line": 99,
+            "line": 100,
             "syntax": "VariableDeclaration",
             "context": [
               "const CHAIN_ROLES: readonly string[] = Object.freeze([\"coordination\", \"project\"]);",
@@ -14225,7 +14234,7 @@
             ]
           },
           {
-            "line": 318,
+            "line": 325,
             "syntax": "BinaryExpression",
             "context": [
               "",
@@ -14237,7 +14246,7 @@
             ]
           },
           {
-            "line": 349,
+            "line": 356,
             "syntax": "TemplateSpan",
             "context": [
               "    if (!isAbsolutePath(legacyWorkspace)) mappingInvalid(`partitions[${index}].legacyWorkspace must be an absolute path`, at(\"legacyWorkspace\"));",
@@ -14249,7 +14258,7 @@
             ]
           },
           {
-            "line": 350,
+            "line": 357,
             "syntax": "TemplateSpan",
             "context": [
               "    if (!isAbsolutePath(projectRoot)) mappingInvalid(`partitions[${index}].projectRoot must be an absolute path`, at(\"projectRoot\"));",
@@ -14272,13 +14281,13 @@
         "currentInitializer": "RUNTIME_CAPACITY.bufferBytes",
         "declarations": [
           {
-            "line": 95,
+            "line": 96,
             "initializer": "RUNTIME_CAPACITY.bufferBytes"
           }
         ],
         "exactUses": [
           {
-            "line": 95,
+            "line": 96,
             "syntax": "VariableDeclaration",
             "context": [
               "",
@@ -14290,7 +14299,7 @@
             ]
           },
           {
-            "line": 401,
+            "line": 408,
             "syntax": "BinaryExpression",
             "context": [
               "    throw error;",
@@ -14302,7 +14311,7 @@
             ]
           },
           {
-            "line": 401,
+            "line": 408,
             "syntax": "TemplateSpan",
             "context": [
               "    throw error;",
@@ -14325,13 +14334,13 @@
         "currentInitializer": "[]",
         "declarations": [
           {
-            "line": 817,
+            "line": 826,
             "initializer": "[]"
           }
         ],
         "exactUses": [
           {
-            "line": 817,
+            "line": 826,
             "syntax": "VariableDeclaration",
             "context": [
               "  const registry = await recorder.attempt(\"registry\", registryFile, () => readRegistry(input.deviceHome));",
@@ -14343,7 +14352,7 @@
             ]
           },
           {
-            "line": 831,
+            "line": 840,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    }",
@@ -14355,7 +14364,7 @@
             ]
           },
           {
-            "line": 841,
+            "line": 850,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  partitions.splice(0, partitions.length, ...identified);",
@@ -14367,7 +14376,7 @@
             ]
           },
           {
-            "line": 852,
+            "line": 861,
             "syntax": "PropertyAssignment",
             "context": [
               "      mapping: input.mapping,",
@@ -30083,13 +30092,13 @@
         "currentInitializer": "documents.get(P8_RELEASE_ARCHIVE)",
         "declarations": [
           {
-            "line": 294,
+            "line": 299,
             "initializer": "documents.get(P8_RELEASE_ARCHIVE)"
           }
         ],
         "exactUses": [
           {
-            "line": 294,
+            "line": 299,
             "syntax": "VariableDeclaration",
             "context": [
               "    assertion(Buffer.isBuffer(bytes) && artifact.sha256 === sha256(bytes) && artifact.size === bytes.length, \"P8_RELEASE_MANIFEST_ARTIFACT_MISMATCH\", String(artifact.path));",
@@ -30101,7 +30110,7 @@
             ]
           },
           {
-            "line": 296,
+            "line": 301,
             "syntax": "CallExpression",
             "context": [
               "  const archiveBytes = documents.get(P8_RELEASE_ARCHIVE);",
@@ -30124,17 +30133,17 @@
         "currentInitializer": "documents.get(artifact.path)",
         "declarations": [
           {
-            "line": 164,
+            "line": 169,
             "initializer": "Buffer.from(value, \"utf8\")"
           },
           {
-            "line": 291,
+            "line": 296,
             "initializer": "documents.get(artifact.path)"
           }
         ],
         "exactUses": [
           {
-            "line": 143,
+            "line": 148,
             "syntax": "Parameter",
             "context": [
               "}",
@@ -30146,7 +30155,7 @@
             ]
           },
           {
-            "line": 144,
+            "line": 149,
             "syntax": "CallExpression",
             "context": [
               "",
@@ -30158,7 +30167,7 @@
             ]
           },
           {
-            "line": 159,
+            "line": 164,
             "syntax": "Parameter",
             "context": [
               "}",
@@ -30170,7 +30179,7 @@
             ]
           },
           {
-            "line": 160,
+            "line": 165,
             "syntax": "PropertyAccessExpression",
             "context": [
               "",
@@ -30182,7 +30191,7 @@
             ]
           },
           {
-            "line": 164,
+            "line": 169,
             "syntax": "VariableDeclaration",
             "context": [
               "",
@@ -30194,7 +30203,7 @@
             ]
           },
           {
-            "line": 165,
+            "line": 170,
             "syntax": "PropertyAccessExpression",
             "context": [
               "function tarField(target, offset, size, value) {",
@@ -30206,7 +30215,7 @@
             ]
           },
           {
-            "line": 166,
+            "line": 171,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const bytes = Buffer.from(value, \"utf8\");",
@@ -30218,7 +30227,7 @@
             ]
           },
           {
-            "line": 179,
+            "line": 184,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  tarField(header, 108, 8, tarOctal(0, 8));",
@@ -30230,7 +30239,7 @@
             ]
           },
           {
-            "line": 189,
+            "line": 194,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const checksum = header.reduce((total, byte) => total + byte, 0);",
@@ -30242,7 +30251,7 @@
             ]
           },
           {
-            "line": 190,
+            "line": 195,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  tarField(header, 148, 8, `${checksum.toString(8).padStart(6, \"0\")}\\0 `);",
@@ -30254,7 +30263,7 @@
             ]
           },
           {
-            "line": 196,
+            "line": 201,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  assertion(Array.isArray(records) && records.length > 0, \"P8_RELEASE_RECORDS_EMPTY\");",
@@ -30266,7 +30275,7 @@
             ]
           },
           {
-            "line": 199,
+            "line": 204,
             "syntax": "PropertyAssignment",
             "context": [
               "    const path = safePath(record.path);",
@@ -30278,7 +30287,7 @@
             ]
           },
           {
-            "line": 199,
+            "line": 204,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const path = safePath(record.path);",
@@ -30290,7 +30299,7 @@
             ]
           },
           {
-            "line": 219,
+            "line": 224,
             "syntax": "PropertyAssignment",
             "context": [
               "      pathChangedReasonCode: \"P8_RELEASE_SOURCE_CHANGED\",",
@@ -30302,7 +30311,7 @@
             ]
           },
           {
-            "line": 233,
+            "line": 238,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    assertion(posix(relative(root, target)) === record.path, \"P8_RELEASE_PATH_ESCAPE\", record.path);",
@@ -30314,7 +30323,7 @@
             ]
           },
           {
-            "line": 269,
+            "line": 274,
             "syntax": "Parameter",
             "context": [
               "}",
@@ -30326,7 +30335,7 @@
             ]
           },
           {
-            "line": 270,
+            "line": 275,
             "syntax": "PropertyAccessExpression",
             "context": [
               "",
@@ -30338,7 +30347,7 @@
             ]
           },
           {
-            "line": 270,
+            "line": 275,
             "syntax": "CallExpression",
             "context": [
               "",
@@ -30350,7 +30359,7 @@
             ]
           },
           {
-            "line": 291,
+            "line": 296,
             "syntax": "VariableDeclaration",
             "context": [
               "  assertion(JSON.stringify(manifestPaths) === JSON.stringify(expectedManifestPaths), \"P8_RELEASE_MANIFEST_INVALID\", \"artifacts\");",
@@ -30362,7 +30371,7 @@
             ]
           },
           {
-            "line": 292,
+            "line": 297,
             "syntax": "CallExpression",
             "context": [
               "  for (const artifact of manifest.artifacts) {",
@@ -30374,7 +30383,7 @@
             ]
           },
           {
-            "line": 292,
+            "line": 297,
             "syntax": "CallExpression",
             "context": [
               "  for (const artifact of manifest.artifacts) {",
@@ -30386,7 +30395,7 @@
             ]
           },
           {
-            "line": 292,
+            "line": 297,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  for (const artifact of manifest.artifacts) {",
@@ -30398,7 +30407,7 @@
             ]
           },
           {
-            "line": 297,
+            "line": 302,
             "syntax": "BindingElement",
             "context": [
               "  const archiveChecksum = documents.get(P8_RELEASE_ARCHIVE_SHA256).toString(\"utf8\");",
@@ -30410,7 +30419,7 @@
             ]
           },
           {
-            "line": 297,
+            "line": 302,
             "syntax": "CallExpression",
             "context": [
               "  const archiveChecksum = documents.get(P8_RELEASE_ARCHIVE_SHA256).toString(\"utf8\");",
@@ -30422,7 +30431,7 @@
             ]
           },
           {
-            "line": 349,
+            "line": 354,
             "syntax": "BindingElement",
             "context": [
               "  const checksums = Buffer.from([...records]",
@@ -30434,7 +30443,7 @@
             ]
           },
           {
-            "line": 349,
+            "line": 354,
             "syntax": "CallExpression",
             "context": [
               "  const checksums = Buffer.from([...records]",
@@ -30446,7 +30455,7 @@
             ]
           },
           {
-            "line": 358,
+            "line": 363,
             "syntax": "BindingElement",
             "context": [
               "export function p8ArtifactRecords(artifacts) {",
@@ -30458,7 +30467,7 @@
             ]
           },
           {
-            "line": 358,
+            "line": 363,
             "syntax": "CallExpression",
             "context": [
               "export function p8ArtifactRecords(artifacts) {",
@@ -30467,6 +30476,78 @@
               "}",
               "",
               "export function assertClosedReleaseArtifactAllowlist(artifacts) {"
+            ]
+          },
+          {
+            "line": 461,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "    formalPackageLayout(USTAR_REGULAR_TYPES.has(header[156]) && (prefix === \"\" ? name : `${prefix}/${name}`) === member.path, `${label} holds an entry other than its regular files`);",
+              "    const dataStart = blockOffset + TAR_BLOCK_BYTES;",
+              "    const dataEnd = dataStart + member.bytes.length;",
+              "    const paddedEnd = dataStart + Math.ceil(member.bytes.length / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;",
+              "    formalPackageLayout(tar.subarray(dataStart, dataEnd).equals(member.bytes), `${label}: ${member.path} is not where its header puts it`);",
+              "    const memberLabel = `${label}/${member.path}`;"
+            ]
+          },
+          {
+            "line": 462,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "    const dataStart = blockOffset + TAR_BLOCK_BYTES;",
+              "    const dataEnd = dataStart + member.bytes.length;",
+              "    const paddedEnd = dataStart + Math.ceil(member.bytes.length / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;",
+              "    formalPackageLayout(tar.subarray(dataStart, dataEnd).equals(member.bytes), `${label}: ${member.path} is not where its header puts it`);",
+              "    const memberLabel = `${label}/${member.path}`;",
+              "    entries.push({ label: `${label}#header:${member.path}`, kind: \"release\", content: decodePrivacyScanBytes(header) });"
+            ]
+          },
+          {
+            "line": 463,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "    const dataEnd = dataStart + member.bytes.length;",
+              "    const paddedEnd = dataStart + Math.ceil(member.bytes.length / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;",
+              "    formalPackageLayout(tar.subarray(dataStart, dataEnd).equals(member.bytes), `${label}: ${member.path} is not where its header puts it`);",
+              "    const memberLabel = `${label}/${member.path}`;",
+              "    entries.push({ label: `${label}#header:${member.path}`, kind: \"release\", content: decodePrivacyScanBytes(header) });",
+              "    entries.push({ label: memberLabel, kind: \"filename\", content: member.path });"
+            ]
+          },
+          {
+            "line": 472,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "      releaseArchiveMember: true,",
+              "      sourcePaths: p8ReleasePrivacySourcePaths(memberLabel),",
+              "      content: decodePrivacyScanBytes(member.bytes),",
+              "    });",
+              "    if (paddedEnd > dataEnd) entries.push({ label: `${label}#padding:${member.path}`, kind: \"release\", content: decodePrivacyScanBytes(tar.subarray(dataEnd, paddedEnd)) });",
+              "    blockOffset = paddedEnd;"
+            ]
+          },
+          {
+            "line": 493,
+            "syntax": "BindingElement",
+            "context": [
+              "export function p8ReleasePrivacyEntries(artifacts) {",
+              "  assertion(artifacts instanceof Map && p8ReleaseArtifactSetMatches([...artifacts.keys()]), \"P8_PRIVACY_RELEASE_ARTIFACT_SET\");",
+              "  for (const [name, bytes] of artifacts) assertion(Buffer.isBuffer(bytes), \"P8_RELEASE_DOCUMENT_INVALID\", name);",
+              "  const archive = artifacts.get(P8_RELEASE_ARCHIVE);",
+              "  assertion(artifacts.get(P8_RELEASE_ARCHIVE_SHA256).toString(\"utf8\") === `${sha256(archive)}  ${P8_RELEASE_ARCHIVE}\\n`, \"P8_RELEASE_ARCHIVE_CHECKSUM_MISMATCH\");",
+              "  const formalPackage = p8FormalPackagePrivacyEntries(archive, `dist/release/${P8_RELEASE_ARCHIVE}`);"
+            ]
+          },
+          {
+            "line": 493,
+            "syntax": "CallExpression",
+            "context": [
+              "export function p8ReleasePrivacyEntries(artifacts) {",
+              "  assertion(artifacts instanceof Map && p8ReleaseArtifactSetMatches([...artifacts.keys()]), \"P8_PRIVACY_RELEASE_ARTIFACT_SET\");",
+              "  for (const [name, bytes] of artifacts) assertion(Buffer.isBuffer(bytes), \"P8_RELEASE_DOCUMENT_INVALID\", name);",
+              "  const archive = artifacts.get(P8_RELEASE_ARCHIVE);",
+              "  assertion(artifacts.get(P8_RELEASE_ARCHIVE_SHA256).toString(\"utf8\") === `${sha256(archive)}  ${P8_RELEASE_ARCHIVE}\\n`, \"P8_RELEASE_ARCHIVE_CHECKSUM_MISMATCH\");",
+              "  const formalPackage = p8FormalPackagePrivacyEntries(archive, `dist/release/${P8_RELEASE_ARCHIVE}`);"
             ]
           }
         ],
@@ -30481,13 +30562,13 @@
         "currentInitializer": "checksumText.slice(0, -1).split(\"\\n\")",
         "declarations": [
           {
-            "line": 301,
+            "line": 306,
             "initializer": "checksumText.slice(0, -1).split(\"\\n\")"
           }
         ],
         "exactUses": [
           {
-            "line": 301,
+            "line": 306,
             "syntax": "VariableDeclaration",
             "context": [
               "  const checksumText = documents.get(\"checksums.txt\").toString(\"utf8\");",
@@ -30499,7 +30580,7 @@
             ]
           },
           {
-            "line": 302,
+            "line": 307,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  assertion(checksumText.endsWith(\"\\n\") && !checksumText.endsWith(\"\\n\\n\"), \"P8_RELEASE_CHECKSUMS_INVALID\");",
@@ -30511,7 +30592,7 @@
             ]
           },
           {
-            "line": 304,
+            "line": 309,
             "syntax": "ForOfStatement",
             "context": [
               "  assertion(lines.length === expected.size, \"P8_RELEASE_CHECKSUMS_INVALID\");",
@@ -37305,7 +37386,7 @@
             "initializer": "await readdir(root, { withFileTypes: true })"
           },
           {
-            "line": 2094,
+            "line": 2095,
             "initializer": "helperSkillEntries(manifest)"
           }
         ],
@@ -37635,7 +37716,7 @@
             ]
           },
           {
-            "line": 1669,
+            "line": 1670,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  }",
@@ -37647,7 +37728,7 @@
             ]
           },
           {
-            "line": 1671,
+            "line": 1672,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  for (const [partition, required] of Object.entries(declared.declarations).sort(([left], [right]) => compareCanonicalTextLocal(left, right))) {",
@@ -37659,7 +37740,7 @@
             ]
           },
           {
-            "line": 1691,
+            "line": 1692,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    });",
@@ -37671,7 +37752,7 @@
             ]
           },
           {
-            "line": 1756,
+            "line": 1757,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const unreadable = {}; // { installed?: \"ABSENT\"|\"FAILED\", worktree?: \"ABSENT\"|\"FAILED\" }",
@@ -37683,7 +37764,7 @@
             ]
           },
           {
-            "line": 2056,
+            "line": 2057,
             "syntax": "VariableDeclaration",
             "context": [
               "  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), \"einzbern.mjs\");",
@@ -37695,7 +37776,7 @@
             ]
           },
           {
-            "line": 2058,
+            "line": 2059,
             "syntax": "BinaryExpression",
             "context": [
               "  let entries;",
@@ -37707,7 +37788,7 @@
             ]
           },
           {
-            "line": 2062,
+            "line": 2063,
             "syntax": "ForOfStatement",
             "context": [
               "    return null;",
@@ -37719,7 +37800,7 @@
             ]
           },
           {
-            "line": 2094,
+            "line": 2095,
             "syntax": "VariableDeclaration",
             "context": [
               "",
@@ -37731,7 +37812,7 @@
             ]
           },
           {
-            "line": 2095,
+            "line": 2096,
             "syntax": "PropertyAccessExpression",
             "context": [
               "async function inspectHelperCopies(platformRoot, homeRoot, manifest) {",
@@ -37743,7 +37824,7 @@
             ]
           },
           {
-            "line": 2097,
+            "line": 2098,
             "syntax": "ForOfStatement",
             "context": [
               "  const hosts = entries.map((entry) => /^<HOME>\\/\\.([^/]+)\\/skills\\//u.exec(entry.pathTemplate)?.[1] ?? entry.id).sort();",
@@ -37755,7 +37836,7 @@
             ]
           },
           {
-            "line": 2206,
+            "line": 2207,
             "syntax": "VariableDeclaration",
             "context": [
               "  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), \"einzbern.mjs\");",
@@ -37767,7 +37848,7 @@
             ]
           },
           {
-            "line": 2208,
+            "line": 2209,
             "syntax": "BinaryExpression",
             "context": [
               "  let entries;",
@@ -37779,7 +37860,7 @@
             ]
           },
           {
-            "line": 2213,
+            "line": 2214,
             "syntax": "ForOfStatement",
             "context": [
               "  }",
@@ -37791,7 +37872,7 @@
             ]
           },
           {
-            "line": 2281,
+            "line": 2282,
             "syntax": "VariableDeclaration",
             "context": [
               "async function hostLocalHarnessFiles(path, name) {",
@@ -37803,7 +37884,7 @@
             ]
           },
           {
-            "line": 2283,
+            "line": 2284,
             "syntax": "BinaryExpression",
             "context": [
               "  let entries;",
@@ -37815,7 +37896,7 @@
             ]
           },
           {
-            "line": 2287,
+            "line": 2288,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    return null;",
@@ -37827,7 +37908,7 @@
             ]
           },
           {
-            "line": 2288,
+            "line": 2289,
             "syntax": "ForOfStatement",
             "context": [
               "  }",
@@ -37839,7 +37920,7 @@
             ]
           },
           {
-            "line": 2292,
+            "line": 2293,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    if (!(await gitIgnores(path, entry.name))) return null;",
@@ -39644,13 +39725,13 @@
         "currentInitializer": "decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean)",
         "declarations": [
           {
-            "line": 1019,
+            "line": 1001,
             "initializer": "decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean)"
           }
         ],
         "exactUses": [
           {
-            "line": 1019,
+            "line": 1001,
             "syntax": "VariableDeclaration",
             "context": [
               "  );",
@@ -39662,7 +39743,7 @@
             ]
           },
           {
-            "line": 1021,
+            "line": 1003,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const batchCheckLines = decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean);",
@@ -39674,7 +39755,7 @@
             ]
           },
           {
-            "line": 1021,
+            "line": 1003,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const batchCheckLines = decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean);",
@@ -39686,7 +39767,7 @@
             ]
           },
           {
-            "line": 1023,
+            "line": 1005,
             "syntax": "ForOfStatement",
             "context": [
               "    assertion(batchCheckLines.length === objectIds.length, \"PRIVACY_REACHABLE_OBJECT_COUNT_MISMATCH\", `${objectIds.length}/${batchCheckLines.length}`);",
@@ -39698,7 +39779,7 @@
             ]
           },
           {
-            "line": 1032,
+            "line": 1014,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  writePrivacyProgress({",
@@ -39721,13 +39802,13 @@
         "currentInitializer": "await readFile(path, \"utf8\")",
         "declarations": [
           {
-            "line": 318,
+            "line": 317,
             "initializer": "await readFile(path, \"utf8\")"
           }
         ],
         "exactUses": [
           {
-            "line": 318,
+            "line": 317,
             "syntax": "VariableDeclaration",
             "context": [
               "        (typeof process.getuid !== \"function\" || metadata.uid === process.getuid()),",
@@ -39739,7 +39820,7 @@
             ]
           },
           {
-            "line": 319,
+            "line": 318,
             "syntax": "CallExpression",
             "context": [
               "        \"TEST_CONTROLLER_REAPER_READY_INVALID\", path);",
@@ -39751,7 +39832,7 @@
             ]
           },
           {
-            "line": 321,
+            "line": 320,
             "syntax": "BinaryExpression",
             "context": [
               "      const ready = JSON.parse(bytes);",
@@ -39763,31 +39844,7 @@
             ]
           },
           {
-            "line": 701,
-            "syntax": "BindingElement",
-            "context": [
-              "  const { readUstar } = await import(\"./lib/tar.mjs\");",
-              "  const packagedEntries = readUstar(gunzipSync(releaseArchive));",
-              "  const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {",
-              "    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;",
-              "    return [",
-              "      { label, kind: \"filename\", content: path },"
-            ]
-          },
-          {
-            "line": 710,
-            "syntax": "CallExpression",
-            "context": [
-              "        releaseArchiveMember: true,",
-              "        sourcePaths: p8ReleasePrivacySourcePaths(label),",
-              "        content: decodePrivacyScanBytes(bytes),",
-              "      },",
-              "    ];",
-              "  });"
-            ]
-          },
-          {
-            "line": 811,
+            "line": 793,
             "syntax": "PropertyAssignment",
             "context": [
               "  const records = [];",
@@ -39810,25 +39867,25 @@
         "currentInitializer": "[]",
         "declarations": [
           {
-            "line": 972,
+            "line": 954,
             "initializer": "[]"
           }
         ],
         "exactUses": [
           {
-            "line": 716,
-            "syntax": "PropertyAccessExpression",
+            "line": 702,
+            "syntax": "BindingElement",
             "context": [
+              "  // come from the one builder the P8 face of verifyPrivacy also scans; the compressed bytes are",
+              "  // bound by digest there and are not read as text.",
+              "  const { entries: releasePrivacyEntries } = p8ReleasePrivacyEntries(artifacts);",
               "  const owner = await remoteOwner();",
-              "  const privacyFindings = scanPrivacyEntries(",
-              "    [...artifacts.entries()].map(([path, content]) => ({",
-              "      label: `dist/release/${path}`,",
-              "      kind: \"release\",",
-              "      content: path.endsWith(\"-source.tar\") ? content : content.toString(\"utf8\"),"
+              "  const privacyFindings = scanPrivacyEntries(releasePrivacyEntries, { owner, repositories: await engineRepositoryNames() });",
+              "  assertion(privacyFindings.length === 0, \"P8_RELEASE_PRIVACY_FINDINGS\", privacyFindings.join(\",\"));"
             ]
           },
           {
-            "line": 972,
+            "line": 954,
             "syntax": "VariableDeclaration",
             "context": [
               "  writePrivacyProgress({ phase: \"source-surface-scan\", historicalPaths: 0 });",
@@ -39840,7 +39897,7 @@
             ]
           },
           {
-            "line": 973,
+            "line": 955,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const owner = await remoteOwner();",
@@ -39852,7 +39909,7 @@
             ]
           },
           {
-            "line": 981,
+            "line": 963,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  for (const record of trackedSourceRecords) {",
@@ -39864,7 +39921,7 @@
             ]
           },
           {
-            "line": 982,
+            "line": 964,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const label = record.path;",
@@ -39876,7 +39933,7 @@
             ]
           },
           {
-            "line": 984,
+            "line": 966,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    entries.push({ label, kind: \"source\", content: record.content.toString(\"utf8\") });",
@@ -39888,7 +39945,7 @@
             ]
           },
           {
-            "line": 1046,
+            "line": 1028,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    objectCount += 1;",
@@ -39900,43 +39957,55 @@
             ]
           },
           {
-            "line": 1070,
+            "line": 1052,
             "syntax": "PropertyAccessExpression",
             "context": [
-              "    const { p8ReleaseArtifactSetMatches } = await p8Release();",
+              "    const { p8ReleaseArtifactSetMatches, p8ReleasePrivacyEntries } = await p8Release();",
               "    assertion(p8ReleaseArtifactSetMatches(releaseRecords.map((record) => record.path.slice(\"dist/release/\".length))), \"P8_PRIVACY_RELEASE_ARTIFACT_SET\");",
               "    entries.push(...buildRecords.map((record) => ({ label: record.path, kind: \"build\", content: record.content.toString(\"utf8\") })));",
               "    entries.push({ label: \"dist/source/einzbern-source.tar\", kind: \"archive\", content: sourceArchive.content });",
-              "    entries.push(...releaseRecords.map((record) => ({",
-              "      label: record.path,"
+              "    // TCRN-CROSS-INIT-053 R48-01 (R47-REG-1): the same entries verifyP8 scans, from the same",
+              "    // builder: the formal package by its content, its compressed bytes bound by digest only."
             ]
           },
           {
-            "line": 1071,
+            "line": 1053,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    assertion(p8ReleaseArtifactSetMatches(releaseRecords.map((record) => record.path.slice(\"dist/release/\".length))), \"P8_PRIVACY_RELEASE_ARTIFACT_SET\");",
               "    entries.push(...buildRecords.map((record) => ({ label: record.path, kind: \"build\", content: record.content.toString(\"utf8\") })));",
               "    entries.push({ label: \"dist/source/einzbern-source.tar\", kind: \"archive\", content: sourceArchive.content });",
-              "    entries.push(...releaseRecords.map((record) => ({",
-              "      label: record.path,",
-              "      kind: \"release\","
+              "    // TCRN-CROSS-INIT-053 R48-01 (R47-REG-1): the same entries verifyP8 scans, from the same",
+              "    // builder: the formal package by its content, its compressed bytes bound by digest only.",
+              "    entries.push(...p8ReleasePrivacyEntries(new Map(releaseRecords.map((record) => [record.path.slice(\"dist/release/\".length), record.content]))).entries);"
             ]
           },
           {
-            "line": 1072,
+            "line": 1056,
             "syntax": "PropertyAccessExpression",
             "context": [
-              "    entries.push(...buildRecords.map((record) => ({ label: record.path, kind: \"build\", content: record.content.toString(\"utf8\") })));",
-              "    entries.push({ label: \"dist/source/einzbern-source.tar\", kind: \"archive\", content: sourceArchive.content });",
-              "    entries.push(...releaseRecords.map((record) => ({",
-              "      label: record.path,",
-              "      kind: \"release\",",
-              "      content: record.path.endsWith(\"-source.tar\") ? record.content : record.content.toString(\"utf8\"),"
+              "    // TCRN-CROSS-INIT-053 R48-01 (R47-REG-1): the same entries verifyP8 scans, from the same",
+              "    // builder: the formal package by its content, its compressed bytes bound by digest only.",
+              "    entries.push(...p8ReleasePrivacyEntries(new Map(releaseRecords.map((record) => [record.path.slice(\"dist/release/\".length), record.content]))).entries);",
+              "    p8Surfaces.aggregateAlgorithm = \"sha256(path-NUL-byteLength-NUL-bytes over canonical path order)\";",
+              "    p8Surfaces.trackedSource = aggregatePrivacySurface(trackedSourceRecords);",
+              "    p8Surfaces.fullHistory = aggregatePrivacySurface(historyRecords);"
             ]
           },
           {
-            "line": 1105,
+            "line": 1056,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "    // TCRN-CROSS-INIT-053 R48-01 (R47-REG-1): the same entries verifyP8 scans, from the same",
+              "    // builder: the formal package by its content, its compressed bytes bound by digest only.",
+              "    entries.push(...p8ReleasePrivacyEntries(new Map(releaseRecords.map((record) => [record.path.slice(\"dist/release/\".length), record.content]))).entries);",
+              "    p8Surfaces.aggregateAlgorithm = \"sha256(path-NUL-byteLength-NUL-bytes over canonical path order)\";",
+              "    p8Surfaces.trackedSource = aggregatePrivacySurface(trackedSourceRecords);",
+              "    p8Surfaces.fullHistory = aggregatePrivacySurface(historyRecords);"
+            ]
+          },
+          {
+            "line": 1085,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      (commit, path, object) => {",
@@ -39948,7 +40017,7 @@
             ]
           },
           {
-            "line": 1150,
+            "line": 1130,
             "syntax": "ForOfStatement",
             "context": [
               "    throw error;",
@@ -39960,7 +40029,7 @@
             ]
           },
           {
-            "line": 1156,
+            "line": 1136,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  }",
@@ -39972,7 +40041,7 @@
             ]
           },
           {
-            "line": 1179,
+            "line": 1159,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    historicalPaths,",
@@ -39984,7 +40053,7 @@
             ]
           },
           {
-            "line": 1182,
+            "line": 1162,
             "syntax": "CallExpression",
             "context": [
               "  });",
@@ -39996,7 +40065,7 @@
             ]
           },
           {
-            "line": 1210,
+            "line": 1190,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      totalCommits: commits.length,",
@@ -40008,7 +40077,7 @@
             ]
           },
           {
-            "line": 1211,
+            "line": 1191,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      historicalPaths,",
@@ -40020,7 +40089,7 @@
             ]
           },
           {
-            "line": 1223,
+            "line": 1203,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    totalCommits: commits.length,",
@@ -40032,7 +40101,7 @@
             ]
           },
           {
-            "line": 1224,
+            "line": 1204,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    historicalPaths,",
@@ -40044,7 +40113,7 @@
             ]
           },
           {
-            "line": 1228,
+            "line": 1208,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  return success(\"PRIVACY_SOURCE_CLEAN\", {",
@@ -40056,7 +40125,7 @@
             ]
           },
           {
-            "line": 1232,
+            "line": 1212,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    historicalCommits: commits.length,",
@@ -40068,7 +40137,7 @@
             ]
           },
           {
-            "line": 1340,
+            "line": 1320,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const packageJson = await readJson(resolve(repositoryRoot, \"package.json\"));",
@@ -40080,7 +40149,7 @@
             ]
           },
           {
-            "line": 1382,
+            "line": 1362,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  }",
@@ -40103,13 +40172,13 @@
         "currentInitializer": "batchCheck.length",
         "declarations": [
           {
-            "line": 1018,
+            "line": 1000,
             "initializer": "batchCheck.length"
           }
         ],
         "exactUses": [
           {
-            "line": 1018,
+            "line": 1000,
             "syntax": "VariableDeclaration",
             "context": [
               "    { raw: true, input: objectInput, maxBuffer: 64 * 1024 * 1024 },",
@@ -40121,7 +40190,7 @@
             ]
           },
           {
-            "line": 1028,
+            "line": 1010,
             "syntax": "BinaryExpression",
             "context": [
               "    const declaredSize = Number(sizeText);",
@@ -40133,7 +40202,7 @@
             ]
           },
           {
-            "line": 1033,
+            "line": 1015,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "    phase: \"git-object-read\",",
@@ -40145,7 +40214,7 @@
             ]
           },
           {
-            "line": 1039,
+            "line": 1021,
             "syntax": "BinaryExpression",
             "context": [
               "    \"git\",",
@@ -40157,7 +40226,7 @@
             ]
           },
           {
-            "line": 1043,
+            "line": 1025,
             "syntax": "CallExpression",
             "context": [
               "  const historyRecords = [];",
@@ -40177,83 +40246,23 @@
       {
         "file": "scripts/task.mjs",
         "symbol": "packagedEntries",
-        "currentInitializer": "readUstar(gunzipSync(releaseArchive))",
-        "declarations": [
-          {
-            "line": 700,
-            "initializer": "readUstar(gunzipSync(releaseArchive))"
-          }
-        ],
-        "exactUses": [
-          {
-            "line": 700,
-            "syntax": "VariableDeclaration",
-            "context": [
-              "  const { gunzipSync } = await import(\"node:zlib\");",
-              "  const { readUstar } = await import(\"./lib/tar.mjs\");",
-              "  const packagedEntries = readUstar(gunzipSync(releaseArchive));",
-              "  const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {",
-              "    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;",
-              "    return ["
-            ]
-          },
-          {
-            "line": 701,
-            "syntax": "PropertyAccessExpression",
-            "context": [
-              "  const { readUstar } = await import(\"./lib/tar.mjs\");",
-              "  const packagedEntries = readUstar(gunzipSync(releaseArchive));",
-              "  const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {",
-              "    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;",
-              "    return [",
-              "      { label, kind: \"filename\", content: path },"
-            ]
-          }
-        ],
+        "currentInitializer": null,
+        "declarations": [],
+        "exactUses": [],
         "review": {
-          "class": "computed-data",
-          "basis": "initializer reads, measures, transforms, or accumulates data; declaration alone does not enforce an upper bound"
+          "class": "removed-declaration",
+          "basis": "the prior declaration is absent from current source"
         }
       },
       {
         "file": "scripts/task.mjs",
         "symbol": "packagedPrivacyEntries",
-        "currentInitializer": "packagedEntries.flatMap(({ path, bytes }) => {\n    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;\n    return [\n      { label, kind: \"filename\", content: path },\n      {\n        label,\n        kind: \"release\",\n        releaseArchiveMember: true,\n        sourcePaths: p8ReleasePrivacySourcePaths(label),\n        content: decodePrivacyScanBytes(bytes),\n      },\n    ];\n  })",
-        "declarations": [
-          {
-            "line": 701,
-            "initializer": "packagedEntries.flatMap(({ path, bytes }) => {\n    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;\n    return [\n      { label, kind: \"filename\", content: path },\n      {\n        label,\n        kind: \"release\",\n        releaseArchiveMember: true,\n        sourcePaths: p8ReleasePrivacySourcePaths(label),\n        content: decodePrivacyScanBytes(bytes),\n      },\n    ];\n  })"
-          }
-        ],
-        "exactUses": [
-          {
-            "line": 701,
-            "syntax": "VariableDeclaration",
-            "context": [
-              "  const { readUstar } = await import(\"./lib/tar.mjs\");",
-              "  const packagedEntries = readUstar(gunzipSync(releaseArchive));",
-              "  const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {",
-              "    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;",
-              "    return [",
-              "      { label, kind: \"filename\", content: path },"
-            ]
-          },
-          {
-            "line": 720,
-            "syntax": "CallExpression",
-            "context": [
-              "      kind: \"release\",",
-              "      content: path.endsWith(\"-source.tar\") ? content : content.toString(\"utf8\"),",
-              "    })).concat(packagedPrivacyEntries),",
-              "    { owner, repositories: await engineRepositoryNames() },",
-              "  );",
-              "  assertion(privacyFindings.length === 0, \"P8_RELEASE_PRIVACY_FINDINGS\", privacyFindings.join(\",\"));"
-            ]
-          }
-        ],
+        "currentInitializer": null,
+        "declarations": [],
+        "exactUses": [],
         "review": {
-          "class": "computed-data",
-          "basis": "initializer reads, measures, transforms, or accumulates data; declaration alone does not enforce an upper bound"
+          "class": "removed-declaration",
+          "basis": "the prior declaration is absent from current source"
         }
       },
       {
@@ -40287,8 +40296,8 @@
               "  assertion(packed.sha256 === createHash(\"sha256\").update(releaseArchive).digest(\"hex\"), \"P8_RELEASE_PACK_DIGEST_MISMATCH\");",
               "  const artifacts = buildP8ReleaseArtifacts({ sourceArchive: sourceBytes, sbom: sbomBytes, releaseArchive, releaseArchiveSha256 });",
               "  for (const [name, content] of artifacts) await safeWriteOutput(repositoryRoot, `dist/release/${name}`, content);",
-              "  const { gunzipSync } = await import(\"node:zlib\");",
-              "  const { readUstar } = await import(\"./lib/tar.mjs\");"
+              "  // TCRN-CROSS-INIT-053 R48-01 (R47-REG-1): the seven artifacts and the formal package's content",
+              "  // (gzip text fields, every ustar header, padding and end block, each member's path and body)"
             ]
           }
         ],
@@ -40340,8 +40349,8 @@
               "  assertion(packed.sha256 === createHash(\"sha256\").update(releaseArchive).digest(\"hex\"), \"P8_RELEASE_PACK_DIGEST_MISMATCH\");",
               "  const artifacts = buildP8ReleaseArtifacts({ sourceArchive: sourceBytes, sbom: sbomBytes, releaseArchive, releaseArchiveSha256 });",
               "  for (const [name, content] of artifacts) await safeWriteOutput(repositoryRoot, `dist/release/${name}`, content);",
-              "  const { gunzipSync } = await import(\"node:zlib\");",
-              "  const { readUstar } = await import(\"./lib/tar.mjs\");"
+              "  // TCRN-CROSS-INIT-053 R48-01 (R47-REG-1): the seven artifacts and the formal package's content",
+              "  // (gzip text fields, every ustar header, padding and end block, each member's path and body)"
             ]
           }
         ],
@@ -40356,13 +40365,13 @@
         "currentInitializer": "controllerTimeoutMs()",
         "declarations": [
           {
-            "line": 181,
+            "line": 180,
             "initializer": "controllerTimeoutMs()"
           }
         ],
         "exactUses": [
           {
-            "line": 181,
+            "line": 180,
             "syntax": "VariableDeclaration",
             "context": [
               "    await bindOutputSessionProcessGroup(reaperProcessGroup);",
@@ -40374,7 +40383,7 @@
             ]
           },
           {
-            "line": 189,
+            "line": 188,
             "syntax": "BinaryExpression",
             "context": [
               "    let completed;",
@@ -40386,7 +40395,7 @@
             ]
           },
           {
-            "line": 209,
+            "line": 208,
             "syntax": "PropertyAssignment",
             "context": [
               "        cursor,",
@@ -40398,7 +40407,7 @@
             ]
           },
           {
-            "line": 243,
+            "line": 242,
             "syntax": "BinaryExpression",
             "context": [
               "      counters = { polls: outcome.value.polls, unchangedPolls: outcome.value.unchangedPolls, bytesRead: outcome.value.bytesRead };",
@@ -52171,11 +52180,11 @@
         "oldLine": 77,
         "source": "const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;",
         "currentLines": [
-          95
+          96
         ],
         "syntax": [
           {
-            "line": 95,
+            "line": 96,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -52202,11 +52211,11 @@
         "oldLine": 80,
         "source": "const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;",
         "currentLines": [
-          99
+          100
         ],
         "syntax": [
           {
-            "line": 99,
+            "line": 100,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -52233,11 +52242,11 @@
         "oldLine": 264,
         "source": "return typeof value === \"string\" && value.length > 0 && value.length <= HINT_MAXIMUM_LENGTH && !/[\\u0000-\\u001f\\u007f]/u.test(value);",
         "currentLines": [
-          318
+          325
         ],
         "syntax": [
           {
-            "line": 318,
+            "line": 325,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -64685,11 +64694,11 @@
         "oldLine": 44,
         "source": "assertion(typeof error === \"string\" && error.length > 0, \"P8_FAILURE_TERMINAL_MESSAGE_INVALID\");",
         "currentLines": [
-          44
+          49
         ],
         "syntax": [
           {
-            "line": 44,
+            "line": 49,
             "parents": [
               "Identifier",
               "CallExpression",
@@ -64718,11 +64727,11 @@
         "oldLine": 152,
         "source": "assertion(typeof path === \"string\" && path.length > 0, \"P8_RELEASE_PATH_INVALID\", String(path));",
         "currentLines": [
-          152
+          157
         ],
         "syntax": [
           {
-            "line": 152,
+            "line": 157,
             "parents": [
               "Identifier",
               "CallExpression",
@@ -64751,11 +64760,11 @@
         "oldLine": 194,
         "source": "assertion(Array.isArray(records) && records.length > 0, \"P8_RELEASE_RECORDS_EMPTY\");",
         "currentLines": [
-          194
+          199
         ],
         "syntax": [
           {
-            "line": 194,
+            "line": 199,
             "parents": [
               "Identifier",
               "CallExpression",
@@ -64784,11 +64793,11 @@
         "oldLine": 206,
         "source": "assertion(Array.isArray(allowedFiles) && allowedFiles.length > 0, \"P8_RELEASE_ALLOWLIST_INVALID\");",
         "currentLines": [
-          206
+          211
         ],
         "syntax": [
           {
-            "line": 206,
+            "line": 211,
             "parents": [
               "Identifier",
               "CallExpression",
@@ -64817,11 +64826,11 @@
         "oldLine": 301,
         "source": "const lines = checksumText.slice(0, -1).split(\"\\n\");",
         "currentLines": [
-          301
+          306
         ],
         "syntax": [
           {
-            "line": 301,
+            "line": 306,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -64850,11 +64859,11 @@
         "oldLine": 374,
         "source": "assertion(Object.values(projection).every((value) => typeof value === \"string\" && value.length > 0), \"P8_SANITIZED_CORE_INVALID\");",
         "currentLines": [
-          374
+          511
         ],
         "syntax": [
           {
-            "line": 374,
+            "line": 511,
             "parents": [
               "Identifier",
               "CallExpression",
@@ -69057,8 +69066,8 @@
         "source": "const result = await execFileAsync(process.execPath, [cli, \"settings-catalog\", \"--workspace\", workspacePath], { timeout: 30_000, maxBuffer: 8 * 1_048_576 });",
         "currentLines": [
           1633,
-          2067,
-          2218
+          2068,
+          2219
         ],
         "syntax": [
           {
@@ -69081,7 +69090,7 @@
             ]
           },
           {
-            "line": 2067,
+            "line": 2068,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -69100,7 +69109,7 @@
             ]
           },
           {
-            "line": 2218,
+            "line": 2219,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -69129,11 +69138,11 @@
         "oldLine": 1576,
         "source": "if (behind.length > 0) {",
         "currentLines": [
-          1682
+          1683
         ],
         "syntax": [
           {
-            "line": 1682,
+            "line": 1683,
             "parents": [
               "IfStatement",
               "Block",
@@ -69161,11 +69170,11 @@
         "oldLine": 1586,
         "source": ".filter(([, required]) => typeof required === \"string\" && required.length > 0)",
         "currentLines": [
-          1692
+          1693
         ],
         "syntax": [
           {
-            "line": 1692,
+            "line": 1693,
             "parents": [
               "PropertyAccessExpression",
               "CallExpression",
@@ -69194,11 +69203,11 @@
         "oldLine": 1663,
         "source": "const result = await execFileAsync(process.execPath, [scriptPath, \"commands\"], { timeout: 30_000, maxBuffer: 8 * 1_048_576 });",
         "currentLines": [
-          1769
+          1770
         ],
         "syntax": [
           {
-            "line": 1769,
+            "line": 1770,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -69227,11 +69236,11 @@
         "oldLine": 1683,
         "source": "Object.keys(unreadable).length > 0 ? unreadable : undefined",
         "currentLines": [
-          1789
+          1790
         ],
         "syntax": [
           {
-            "line": 1789,
+            "line": 1790,
             "parents": [
               "Identifier",
               "PropertyAccessExpression",
@@ -69260,12 +69269,12 @@
         "oldLine": 1755,
         "source": "digest: installedDigest.slice(0, 12),",
         "currentLines": [
-          1861,
-          1988
+          1862,
+          1989
         ],
         "syntax": [
           {
-            "line": 1861,
+            "line": 1862,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69284,7 +69293,7 @@
             ]
           },
           {
-            "line": 1988,
+            "line": 1989,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69313,11 +69322,11 @@
         "oldLine": 1797,
         "source": "if (iOnly.length > 0) installedOnlyFlags[verbName] = iOnly;",
         "currentLines": [
-          1903
+          1904
         ],
         "syntax": [
           {
-            "line": 1903,
+            "line": 1904,
             "parents": [
               "IfStatement",
               "Block",
@@ -69346,11 +69355,11 @@
         "oldLine": 1798,
         "source": "if (wOnly.length > 0) worktreeOnlyFlags[verbName] = wOnly;",
         "currentLines": [
-          1904
+          1905
         ],
         "syntax": [
           {
-            "line": 1904,
+            "line": 1905,
             "parents": [
               "IfStatement",
               "Block",
@@ -69379,11 +69388,11 @@
         "oldLine": 1818,
         "source": "const hasInstalledOnlyVerbsOrFlags = installedOnly.length > 0 || Object.keys(installedOnlyFlags).length > 0;",
         "currentLines": [
-          1924
+          1925
         ],
         "syntax": [
           {
-            "line": 1924,
+            "line": 1925,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -69412,11 +69421,11 @@
         "oldLine": 1819,
         "source": "const hasWorktreeOnlyVerbsOrFlags = worktreeOnly.length > 0 || Object.keys(worktreeOnlyFlags).length > 0;",
         "currentLines": [
-          1925
+          1926
         ],
         "syntax": [
           {
-            "line": 1925,
+            "line": 1926,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -69445,11 +69454,11 @@
         "oldLine": 1829,
         "source": "installedOnly: installedOnly.length > 0 ? installedOnly : undefined,",
         "currentLines": [
-          1935
+          1936
         ],
         "syntax": [
           {
-            "line": 1935,
+            "line": 1936,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69478,11 +69487,11 @@
         "oldLine": 1830,
         "source": "installedOnlyFlags: Object.keys(installedOnlyFlags).length > 0 ? installedOnlyFlags : undefined,",
         "currentLines": [
-          1936
+          1937
         ],
         "syntax": [
           {
-            "line": 1936,
+            "line": 1937,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69511,12 +69520,12 @@
         "oldLine": 1832,
         "source": "worktreeOnlyFlags: Object.keys(worktreeOnlyFlags).length > 0 ? worktreeOnlyFlags : undefined,",
         "currentLines": [
-          1938,
-          1953
+          1939,
+          1954
         ],
         "syntax": [
           {
-            "line": 1938,
+            "line": 1939,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69535,7 +69544,7 @@
             ]
           },
           {
-            "line": 1953,
+            "line": 1954,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69564,11 +69573,11 @@
         "oldLine": 1846,
         "source": "worktreeOnly: worktreeOnly.length > 0 ? worktreeOnly : undefined,",
         "currentLines": [
-          1952
+          1953
         ],
         "syntax": [
           {
-            "line": 1952,
+            "line": 1953,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69597,12 +69606,12 @@
         "oldLine": 1847,
         "source": "worktreeOnlyFlags: Object.keys(worktreeOnlyFlags).length > 0 ? worktreeOnlyFlags : undefined,",
         "currentLines": [
-          1938,
-          1953
+          1939,
+          1954
         ],
         "syntax": [
           {
-            "line": 1938,
+            "line": 1939,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69621,7 +69630,7 @@
             ]
           },
           {
-            "line": 1953,
+            "line": 1954,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69650,11 +69659,11 @@
         "oldLine": 1854,
         "source": "if (attributeDifferences.length > 0) {",
         "currentLines": [
-          1960
+          1961
         ],
         "syntax": [
           {
-            "line": 1960,
+            "line": 1961,
             "parents": [
               "IfStatement",
               "Block",
@@ -69682,11 +69691,11 @@
         "oldLine": 1870,
         "source": "installedDigest: installedDigest.slice(0, 12),",
         "currentLines": [
-          1976
+          1977
         ],
         "syntax": [
           {
-            "line": 1976,
+            "line": 1977,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69715,11 +69724,11 @@
         "oldLine": 1871,
         "source": "worktreeDigest: worktreeDigest.slice(0, 12),",
         "currentLines": [
-          1977
+          1978
         ],
         "syntax": [
           {
-            "line": 1977,
+            "line": 1978,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69748,12 +69757,12 @@
         "oldLine": 1882,
         "source": "digest: installedDigest.slice(0, 12),",
         "currentLines": [
-          1861,
-          1988
+          1862,
+          1989
         ],
         "syntax": [
           {
-            "line": 1861,
+            "line": 1862,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69772,7 +69781,7 @@
             ]
           },
           {
-            "line": 1988,
+            "line": 1989,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -69802,8 +69811,8 @@
         "source": "const result = await execFileAsync(process.execPath, [cli, \"settings-catalog\", \"--workspace\", workspacePath], { timeout: 30_000, maxBuffer: 8 * 1_048_576 });",
         "currentLines": [
           1633,
-          2067,
-          2218
+          2068,
+          2219
         ],
         "syntax": [
           {
@@ -69826,7 +69835,7 @@
             ]
           },
           {
-            "line": 2067,
+            "line": 2068,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -69845,7 +69854,7 @@
             ]
           },
           {
-            "line": 2218,
+            "line": 2219,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -69874,11 +69883,11 @@
         "oldLine": 1963,
         "source": "if (keys.length > 0) return keys;",
         "currentLines": [
-          2071
+          2072
         ],
         "syntax": [
           {
-            "line": 2071,
+            "line": 2072,
             "parents": [
               "IfStatement",
               "Block",
@@ -69907,11 +69916,11 @@
         "oldLine": 2012,
         "source": "const result = await execFileAsync(\"launchctl\", [\"list\"], { timeout: 10_000, maxBuffer: 1_048_576 });",
         "currentLines": [
-          2120
+          2121
         ],
         "syntax": [
           {
-            "line": 2120,
+            "line": 2121,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -69940,11 +69949,11 @@
         "oldLine": 2013,
         "source": "return result.stdout.split(\"\\n\").map((line) => line.trim().split(/\\s+/u).at(-1)).filter((value) => typeof value === \"string\" && value.length > 0);",
         "currentLines": [
-          2121
+          2122
         ],
         "syntax": [
           {
-            "line": 2121,
+            "line": 2122,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -69973,11 +69982,11 @@
         "oldLine": 2028,
         "source": "const result = await execFileAsync(\"launchctl\", [\"print\", `gui/${process.getuid?.() ?? 0}/${label}`], { timeout: 10_000, maxBuffer: 1_048_576 });",
         "currentLines": [
-          2136
+          2137
         ],
         "syntax": [
           {
-            "line": 2136,
+            "line": 2137,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -70007,8 +70016,8 @@
         "source": "const result = await execFileAsync(process.execPath, [cli, \"settings-catalog\", \"--workspace\", workspacePath], { timeout: 30_000, maxBuffer: 8 * 1_048_576 });",
         "currentLines": [
           1633,
-          2067,
-          2218
+          2068,
+          2219
         ],
         "syntax": [
           {
@@ -70031,7 +70040,7 @@
             ]
           },
           {
-            "line": 2067,
+            "line": 2068,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -70050,7 +70059,7 @@
             ]
           },
           {
-            "line": 2218,
+            "line": 2219,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -70079,11 +70088,11 @@
         "oldLine": 2163,
         "source": "await execFileAsync(\"git\", [\"-C\", directory, \"check-ignore\", \"--quiet\", \"--\", name], { timeout: 30_000 });",
         "currentLines": [
-          2271
+          2272
         ],
         "syntax": [
           {
-            "line": 2271,
+            "line": 2272,
             "parents": [
               "AwaitExpression",
               "ExpressionStatement",
@@ -70112,11 +70121,11 @@
         "oldLine": 2221,
         "source": "if (undeclared.length > 0) {",
         "currentLines": [
-          2329
+          2330
         ],
         "syntax": [
           {
-            "line": 2329,
+            "line": 2330,
             "parents": [
               "IfStatement",
               "Block",
@@ -70144,11 +70153,11 @@
         "oldLine": 2225,
         "source": "...(hostLocal.length > 0 ? { hostLocal: hostLocal.sort(compareCanonicalTextLocal) } : {}),",
         "currentLines": [
-          2333
+          2334
         ],
         "syntax": [
           {
-            "line": 2333,
+            "line": 2334,
             "parents": [
               "SpreadAssignment",
               "ObjectLiteralExpression",
@@ -70177,11 +70186,11 @@
         "oldLine": 2230,
         "source": "if (hostLocal.length > 0) {",
         "currentLines": [
-          2338
+          2339
         ],
         "syntax": [
           {
-            "line": 2338,
+            "line": 2339,
             "parents": [
               "IfStatement",
               "Block",
@@ -72182,11 +72191,11 @@
         "oldLine": 48,
         "source": "import { delay, PROGRESS_WAIT_MAX_MS, readProgressDelta, summarizeProgress, waitForProgress } from \"./lib/incremental-output.mjs\";",
         "currentLines": [
-          48
+          47
         ],
         "syntax": [
           {
-            "line": 48,
+            "line": 47,
             "parents": [
               "ImportDeclaration",
               "SourceFile"
@@ -72212,11 +72221,11 @@
         "oldLine": 209,
         "source": "timeoutMs: Math.min(remaining, PROGRESS_WAIT_MAX_MS),",
         "currentLines": [
-          209
+          208
         ],
         "syntax": [
           {
-            "line": 209,
+            "line": 208,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -72254,11 +72263,11 @@
         "oldLine": 374,
         "source": "if (repeatsLast) injected[injected.length - 1] = injected.at(-1).slice(0, -1);",
         "currentLines": [
-          374
+          373
         ],
         "syntax": [
           {
-            "line": 374,
+            "line": 373,
             "parents": [
               "IfStatement",
               "Block",
@@ -72286,11 +72295,11 @@
         "oldLine": 416,
         "source": "return run(\"git\", [\"ls-files\", \"-z\"]).split(\"\\0\").filter((path) => path.length > 0).sort(compareCanonicalText);",
         "currentLines": [
-          416
+          415
         ],
         "syntax": [
           {
-            "line": 416,
+            "line": 415,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -72318,11 +72327,11 @@
         "oldLine": 848,
         "source": "serialNumber: `urn:uuid:${basis.slice(0, 8)}-${basis.slice(8, 12)}-4${basis.slice(13, 16)}-a${basis.slice(17, 20)}-${basis.slice(20, 32)}`,",
         "currentLines": [
-          850
+          832
         ],
         "syntax": [
           {
-            "line": 850,
+            "line": 832,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -72351,11 +72360,11 @@
         "oldLine": 996,
         "source": "assertion(objectIds.length > 0, \"PRIVACY_REACHABLE_OBJECTS_EMPTY\");",
         "currentLines": [
-          998
+          980
         ],
         "syntax": [
           {
-            "line": 998,
+            "line": 980,
             "parents": [
               "Identifier",
               "CallExpression",
@@ -72384,11 +72393,11 @@
         "oldLine": 1014,
         "source": "{ raw: true, input: objectInput, maxBuffer: 64 * 1024 * 1024 },",
         "currentLines": [
-          1016
+          998
         ],
         "syntax": [
           {
-            "line": 1016,
+            "line": 998,
             "parents": [
               "ObjectLiteralExpression",
               "CallExpression",
@@ -72417,11 +72426,11 @@
         "oldLine": 1037,
         "source": "{ raw: true, input: objectInput, maxBuffer: expectedStreamBytes + 1 },",
         "currentLines": [
-          1039
+          1021
         ],
         "syntax": [
           {
-            "line": 1039,
+            "line": 1021,
             "parents": [
               "ObjectLiteralExpression",
               "CallExpression",
@@ -72450,11 +72459,11 @@
         "oldLine": 1199,
         "source": "if (findings.length > 0) {",
         "currentLines": [
-          1201
+          1181
         ],
         "syntax": [
           {
-            "line": 1201,
+            "line": 1181,
             "parents": [
               "IfStatement",
               "Block",
@@ -72482,11 +72491,11 @@
         "oldLine": 1404,
         "source": "if (outcome.reds.length > 0) {",
         "currentLines": [
-          1406
+          1386
         ],
         "syntax": [
           {
-            "line": 1406,
+            "line": 1386,
             "parents": [
               "IfStatement",
               "Block",
@@ -74011,7 +74020,7 @@
         "caller-default": 5,
         "removed-product-cap": 6,
         "structural-data-or-grammar": 65,
-        "computed-data": 207,
+        "computed-data": 205,
         "input-derived-value": 33,
         "caller-budget": 4,
         "processing-default": 7,
@@ -74020,7 +74029,7 @@
         "io-function": 1,
         "data-extraction": 17,
         "identity-lower-bound": 1,
-        "removed-declaration": 12,
+        "removed-declaration": 14,
         "security-detection-lower-threshold": 1,
         "operator-default": 2,
         "verification-page-window": 1,
@@ -75847,27 +75856,27 @@
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          105
+          106
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          368
+          375
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          372
+          379
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          721
+          730
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          837
+          846
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          906
+          915
         ],
         [
           "packages/core/src/project-chain.ts",
@@ -76007,7 +76016,7 @@
         ],
         [
           "scripts/task.mjs",
-          774
+          756
         ]
       ],
       "sameKeyAndLineFromTwoReviews": [
@@ -76987,7 +76996,68 @@
         "P-E-portal R46, carried (A/r46-portal-raw/u18-limit-review-scripts.json)"
       ]
     },
-    "remainingConsumerExposureIssues": []
+    "remainingConsumerExposureIssues": [],
+    "r48CarriedReviewLines": {
+      "source": "integration-r48-init053-raw/u18/limit-review-carried.json",
+      "rule": "re-line only (zero-context hunk mapping 4535a863..HEAD); review, source and patterns unchanged; a candidate whose line falls in a hunk or whose source is not on both lines is not carried",
+      "counts": {
+        "input": 52,
+        "carried": 52,
+        "relined": 7,
+        "notCarried": 0
+      },
+      "relined": [
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "from": 105,
+          "to": 106,
+          "source": "const COORDINATION_LIMIT_KEYS = Object.freeze([",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "from": 368,
+          "to": 375,
+          "source": "if (coordinationRows.length > 1) {",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "from": 372,
+          "to": 379,
+          "source": "if (projectRow >= 0 && coordinationRows.length === 0) {",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "from": 721,
+          "to": 730,
+          "source": "const coordinationId = coordinationIndex >= 0 ? planned[coordinationIndex]?.workspaceId ?? null : null;",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "from": 837,
+          "to": 846,
+          "source": "coordinationWrites(partition).length > 0)) recorder.write(\"library\", partition.target, \"update\");",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "from": 906,
+          "to": 915,
+          "source": "if (writes.length === 0) return;",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
+          "file": "scripts/task.mjs",
+          "from": 774,
+          "to": 756,
+          "source": "const matched = /^100644 blob ([0-9a-f]{40,64})\\tpackages\\/core\\/src\\/framework-version\\.ts$/u.exec(entry);",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        }
+      ]
+    }
   },
   "actualCurrentCallerReview": {
     "rows": [
@@ -86250,17 +86320,17 @@
       "oldInitializer": null,
       "oldLine": null,
       "currentInitializer": "Object.freeze([\n  \"execution.maxConcurrentSubagents\",\n  \"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\",\n] as const satisfies readonly SettingKey[])",
-      "currentLine": 105,
+      "currentLine": 106,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 105,
+          "line": 106,
           "text": "const COORDINATION_LIMIT_KEYS = Object.freeze(["
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 514,
+          "line": 523,
           "text": "for (const key of [COORDINATION_LANGUAGE_KEY, ...COORDINATION_LIMIT_KEYS]) {"
         }
       ],
@@ -86275,27 +86345,27 @@
       "oldInitializer": "512",
       "oldLine": 79,
       "currentInitializer": "RUNTIME_CAPACITY.stringCodeUnits",
-      "currentLine": 99,
+      "currentLine": 100,
       "disposition": "runtime representation; immutable running Node capacities, with physical memory/OS failure threshold unknown",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 99,
+          "line": 100,
           "text": "const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 318,
+          "line": 325,
           "text": "return typeof value === \"string\" && value.length > 0 && value.length <= HINT_MAXIMUM_LENGTH && !/[\\u0000-\\u001f\\u007f]/u.test(value);"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 349,
+          "line": 356,
           "text": "if (projectName !== undefined && !isHint(projectName)) mappingInvalid(`partitions[${index}].projectName must be one line of at most ${HINT_MAXIMUM_LENGTH} characters`, at(\"projectName\"));"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 350,
+          "line": 357,
           "text": "if (gitRemote !== undefined && !isHint(gitRemote)) mappingInvalid(`partitions[${index}].gitRemote must be one line of at most ${HINT_MAXIMUM_LENGTH} characters`, at(\"gitRemote\"));"
         }
       ],
@@ -86310,17 +86380,17 @@
       "oldInitializer": "1_048_576",
       "oldLine": 76,
       "currentInitializer": "RUNTIME_CAPACITY.bufferBytes",
-      "currentLine": 95,
+      "currentLine": 96,
       "disposition": "runtime representation; immutable running Node capacities, with physical memory/OS failure threshold unknown",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 95,
+          "line": 96,
           "text": "const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 401,
+          "line": 408,
           "text": "if (!regular || size > MAPPING_MAXIMUM_BYTES) mappingInvalid(`the mapping ${file} is not a regular file of at most ${MAPPING_MAXIMUM_BYTES} bytes`, { file });"
         }
       ],
@@ -86335,27 +86405,27 @@
       "oldInitializer": "[]",
       "oldLine": 670,
       "currentInitializer": "[]",
-      "currentLine": 817,
+      "currentLine": 826,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 817,
+          "line": 826,
           "text": "const registryEntries: MigrationRegistryEntry[] = [];"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 831,
+          "line": 840,
           "text": "registryEntries.push(planned.registry);"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 841,
+          "line": 850,
           "text": "if (registryEntries.some((planned) => !registryEntryCurrent(registry, planned, plannedRole(partitions, planned.partition)))) {"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 852,
+          "line": 861,
           "text": "registry: registryEntries,"
         }
       ],
@@ -94858,12 +94928,12 @@
         },
         {
           "file": "scripts/task.mjs",
-          "line": 48,
+          "line": 47,
           "text": "import { delay, PROGRESS_WAIT_MAX_MS, readProgressDelta, summarizeProgress, waitForProgress } from \"./lib/incremental-output.mjs\";"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 209,
+          "line": 208,
           "text": "timeoutMs: Math.min(remaining, PROGRESS_WAIT_MAX_MS),"
         }
       ],
@@ -94994,21 +95064,81 @@
     },
     {
       "file": "scripts/lib/p8-workflow-rc.mjs",
-      "symbol": "archiveBytes",
-      "oldInitializer": "documents.get(P8_RELEASE_ARCHIVE)",
-      "oldLine": 294,
-      "currentInitializer": "documents.get(P8_RELEASE_ARCHIVE)",
-      "currentLine": 294,
+      "symbol": "GZIP_HEADER_BYTES",
+      "oldInitializer": null,
+      "oldLine": null,
+      "currentInitializer": "10",
+      "currentLine": 387,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 294,
+          "line": 387,
+          "text": "const GZIP_HEADER_BYTES = 10;"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 412,
+          "text": "formalPackageLayout(archive.length >= GZIP_HEADER_BYTES + GZIP_TRAILER_BYTES && archive[0] === 0x1f && archive[1] === 0x8b && archive[2] === 8, `${label} is not a deflate gzip file`);"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 416,
+          "text": "let offset = GZIP_HEADER_BYTES;"
+        }
+      ],
+      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
+      "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
+      "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
+    },
+    {
+      "file": "scripts/lib/p8-workflow-rc.mjs",
+      "symbol": "GZIP_TRAILER_BYTES",
+      "oldInitializer": null,
+      "oldLine": null,
+      "currentInitializer": "8",
+      "currentLine": 388,
+      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
+      "currentConsumerSites": [
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 388,
+          "text": "const GZIP_TRAILER_BYTES = 8;"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 412,
+          "text": "formalPackageLayout(archive.length >= GZIP_HEADER_BYTES + GZIP_TRAILER_BYTES && archive[0] === 0x1f && archive[1] === 0x8b && archive[2] === 8, `${label} is not a deflate gzip file`);"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 443,
+          "text": "formalPackageLayout(trailer + GZIP_TRAILER_BYTES === archive.length, `${label} is not exactly one gzip member`);"
+        }
+      ],
+      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
+      "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
+      "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
+    },
+    {
+      "file": "scripts/lib/p8-workflow-rc.mjs",
+      "symbol": "archiveBytes",
+      "oldInitializer": "documents.get(P8_RELEASE_ARCHIVE)",
+      "oldLine": 294,
+      "currentInitializer": "documents.get(P8_RELEASE_ARCHIVE)",
+      "currentLine": 299,
+      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
+      "currentConsumerSites": [
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 299,
           "text": "const archiveBytes = documents.get(P8_RELEASE_ARCHIVE);"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 296,
+          "line": 301,
           "text": "assertion(archiveChecksum === `${sha256(archiveBytes)}  ${P8_RELEASE_ARCHIVE}\\n`, \"P8_RELEASE_ARCHIVE_CHECKSUM_MISMATCH\");"
         }
       ],
@@ -95023,128 +95153,283 @@
       "oldInitializer": "documents.get(artifact.path)",
       "oldLine": 291,
       "currentInitializer": "documents.get(artifact.path)",
-      "currentLine": 291,
+      "currentLine": 296,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 90,
+          "line": 95,
           "text": "* destination already holding other bytes fails closed so neither copy is lost."
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 143,
+          "line": 148,
           "text": "function sha256(bytes) {"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 144,
+          "line": 149,
           "text": "return createHash(\"sha256\").update(bytes).digest(\"hex\");"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 159,
+          "line": 164,
           "text": "function fixedMode(path, bytes) {"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 160,
+          "line": 165,
           "text": "return bytes.subarray(0, 2).toString(\"utf8\") === \"#!\" ? 0o755 : 0o644;"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 164,
+          "line": 169,
           "text": "const bytes = Buffer.from(value, \"utf8\");"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 165,
+          "line": 170,
           "text": "assertion(bytes.length <= size, \"P8_RELEASE_TAR_FIELD\", value);"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 166,
+          "line": 171,
           "text": "bytes.copy(target, offset);"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 179,
+          "line": 184,
           "text": "tarField(header, 124, 12, tarOctal(record.bytes.length, 12));"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 189,
+          "line": 194,
           "text": "const padding = Buffer.alloc((512 - (record.bytes.length % 512)) % 512, 0);"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 190,
+          "line": 195,
           "text": "return Buffer.concat([header, record.bytes, padding]);"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 196,
+          "line": 201,
           "text": "assertion(record && Buffer.isBuffer(record.bytes), \"P8_RELEASE_RECORD_INVALID\");"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 199,
+          "line": 204,
           "text": "return { path, bytes: Buffer.from(record.bytes), mode: record.mode };"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 219,
+          "line": 224,
           "text": "records.push({ path, bytes: source.content, mode: fixedMode(path, source.content) });"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 233,
+          "line": 238,
           "text": "await writeFile(target, record.bytes, { mode: record.mode });"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 269,
+          "line": 274,
           "text": "function documentRecord(path, bytes) {"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 270,
+          "line": 275,
           "text": "return { path, size: bytes.length, sha256: sha256(bytes) };"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 284,
+          "line": 289,
           "text": "// SBOM, formal archive and its sidecar, and release notes as bytes. These identifiers and"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 291,
+          "line": 296,
           "text": "const bytes = documents.get(artifact.path);"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 292,
+          "line": 297,
           "text": "assertion(Buffer.isBuffer(bytes) && artifact.sha256 === sha256(bytes) && artifact.size === bytes.length, \"P8_RELEASE_MANIFEST_ARTIFACT_MISMATCH\", String(artifact.path));"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 297,
+          "line": 302,
           "text": "const expected = new Map([...documents].filter(([path]) => path !== \"checksums.txt\").map(([path, bytes]) => [path, sha256(bytes)]));"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 336,
+          "line": 341,
           "text": "// P8's manifest and checksums are local records of candidate bytes. The formal archive sidecar"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 349,
+          "line": 354,
           "text": ".map(([path, bytes]) => `${sha256(bytes)}  ${path}`)"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 358,
+          "line": 363,
           "text": "return [...artifacts.entries()].map(([path, bytes]) => documentRecord(`dist/release/${path}`, bytes)).sort((left, right) => compareCanonicalText(left.path, right.path));"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 377,
+          "text": "// random bytes: read as UTF-8 it shows no content, and now and then it spells an address (the"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 383,
+          "text": "// bytes are bound by digest only: the sidecar checked here, the release manifest and the"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 385,
+          "text": "// not label (reserved flags, a second gzip member, bytes after the trailer, a CRC or length that"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 406,
+          "text": "* The privacy entries of the formal package `archive` (the bytes of einzbern-<version>.tar.gz),"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 461,
+          "text": "const dataEnd = dataStart + member.bytes.length;"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 462,
+          "text": "const paddedEnd = dataStart + Math.ceil(member.bytes.length / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 463,
+          "text": "formalPackageLayout(tar.subarray(dataStart, dataEnd).equals(member.bytes), `${label}: ${member.path} is not where its header puts it`);"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 472,
+          "text": "content: decodePrivacyScanBytes(member.bytes),"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 486,
+          "text": "* The privacy entries of the exact P8 release set `artifacts` (dist/release name to bytes), in"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 487,
+          "text": "* canonical name order: the source archive as bytes for privacy.mjs to expand, the formal"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 493,
+          "text": "for (const [name, bytes] of artifacts) assertion(Buffer.isBuffer(bytes), \"P8_RELEASE_DOCUMENT_INVALID\", name);"
+        }
+      ],
+      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
+      "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
+      "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
+    },
+    {
+      "file": "scripts/lib/p8-workflow-rc.mjs",
+      "symbol": "entries",
+      "oldInitializer": null,
+      "oldLine": null,
+      "currentInitializer": "[...artifacts.keys()].sort(compareCanonicalText).flatMap((name) => {\n    const label = `dist/release/${name}`;\n    if (name === P8_RELEASE_ARCHIVE) return formalPackage.entries;\n    if (name === P8_RELEASE_ARTIFACTS[0]) return [{ label, kind: \"release\", content: artifacts.get(name) }];\n    return [{ label, kind: \"release\", content: decodePrivacyScanBytes(artifacts.get(name)) }];\n  })",
+      "currentLine": 497,
+      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
+      "currentConsumerSites": [
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 15,
+          "text": "// Only the reader: the formal package is read back here for its privacy entries. The source"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 363,
+          "text": "return [...artifacts.entries()].map(([path, bytes]) => documentRecord(`dist/release/${path}`, bytes)).sort((left, right) => compareCanonicalText(left.path, right.path));"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 374,
+          "text": "// TCRN-CROSS-INIT-053 R48-01 (R47-REG-1). The one builder of the privacy entries for the P8"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 406,
+          "text": "* The privacy entries of the formal package `archive` (the bytes of einzbern-<version>.tar.gz),"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 415,
+          "text": "const entries = [];"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 421,
+          "text": "entries.push({ label: `${label}#gzip-extra`, kind: \"release\", content: decodePrivacyScanBytes(archive.subarray(offset + 2, end)) });"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 428,
+          "text": "entries.push({ label: `${label}#gzip-${field}`, kind: \"release\", content: decodePrivacyScanBytes(archive.subarray(offset, end)) });"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 465,
+          "text": "entries.push({ label: `${label}#header:${member.path}`, kind: \"release\", content: decodePrivacyScanBytes(header) });"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 466,
+          "text": "entries.push({ label: memberLabel, kind: \"filename\", content: member.path });"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 467,
+          "text": "entries.push({"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 474,
+          "text": "if (paddedEnd > dataEnd) entries.push({ label: `${label}#padding:${member.path}`, kind: \"release\", content: decodePrivacyScanBytes(tar.subarray(dataEnd, paddedEnd)) });"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 478,
+          "text": "entries.push({ label: `${label}#trailer`, kind: \"release\", content: decodePrivacyScanBytes(tar.subarray(blockOffset)) });"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 480,
+          "text": "entries,"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 486,
+          "text": "* The privacy entries of the exact P8 release set `artifacts` (dist/release name to bytes), in"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 497,
+          "text": "const entries = [...artifacts.keys()].sort(compareCanonicalText).flatMap((name) => {"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 499,
+          "text": "if (name === P8_RELEASE_ARCHIVE) return formalPackage.entries;"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 503,
+          "text": "return { entries, formalPackage: formalPackage.binding };"
         }
       ],
       "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
@@ -95158,22 +95443,22 @@
       "oldInitializer": "checksumText.slice(0, -1).split(\"\\n\")",
       "oldLine": 301,
       "currentInitializer": "checksumText.slice(0, -1).split(\"\\n\")",
-      "currentLine": 301,
+      "currentLine": 306,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 301,
+          "line": 306,
           "text": "const lines = checksumText.slice(0, -1).split(\"\\n\");"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 302,
+          "line": 307,
           "text": "assertion(lines.length === expected.size, \"P8_RELEASE_CHECKSUMS_INVALID\");"
         },
         {
           "file": "scripts/lib/p8-workflow-rc.mjs",
-          "line": 304,
+          "line": 309,
           "text": "for (const line of lines) {"
         }
       ],
@@ -96909,6 +97194,26 @@
       "disposition": "declared archive field/format representation; unrepresentable names refuse without truncation",
       "currentConsumerSites": [
         {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 17,
+          "text": "import { TAR_BLOCK_BYTES, TarError, readUstar } from \"./tar.mjs\";"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 454,
+          "text": "const header = tar.subarray(blockOffset, blockOffset + TAR_BLOCK_BYTES);"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 460,
+          "text": "const dataStart = blockOffset + TAR_BLOCK_BYTES;"
+        },
+        {
+          "file": "scripts/lib/p8-workflow-rc.mjs",
+          "line": 462,
+          "text": "const paddedEnd = dataStart + Math.ceil(member.bytes.length / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;"
+        },
+        {
           "file": "scripts/lib/privacy.mjs",
           "line": 8,
           "text": "import { TAR_BLOCK_BYTES, readUstar } from \"./tar.mjs\";"
@@ -98257,7 +98562,7 @@
       "oldInitializer": "helperSkillEntries(manifest)",
       "oldLine": 1986,
       "currentInitializer": "helperSkillEntries(manifest)",
-      "currentLine": 2094,
+      "currentLine": 2095,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -98402,92 +98707,92 @@
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1669,
+          "line": 1670,
           "text": "for (const [partition, required] of Object.entries(declared.declarations).sort(([left], [right]) => compareCanonicalTextLocal(left, right))) {"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1671,
+          "line": 1672,
           "text": "for (const [copy, version] of Object.entries(copies).sort(([left], [right]) => compareCanonicalTextLocal(left, right))) {"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1691,
+          "line": 1692,
           "text": "const declaringPartitions = Object.entries(declared.declarations)"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1756,
+          "line": 1757,
           "text": "for (const [copy, scriptPath] of Object.entries(scriptPaths)) {"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2056,
+          "line": 2057,
           "text": "let entries;"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2058,
+          "line": 2059,
           "text": "entries = await readdir(containerPath, { withFileTypes: true });"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2062,
+          "line": 2063,
           "text": "for (const entry of entries) {"
-        },
-        {
-          "file": "scripts/platform-doctor.mjs",
-          "line": 2094,
-          "text": "const entries = helperSkillEntries(manifest);"
         },
         {
           "file": "scripts/platform-doctor.mjs",
           "line": 2095,
+          "text": "const entries = helperSkillEntries(manifest);"
+        },
+        {
+          "file": "scripts/platform-doctor.mjs",
+          "line": 2096,
           "text": "const hosts = entries.map((entry) => /^<HOME>\\/\\.([^/]+)\\/skills\\//u.exec(entry.pathTemplate)?.[1] ?? entry.id).sort();"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2097,
+          "line": 2098,
           "text": "for (const entry of entries) {"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2206,
+          "line": 2207,
           "text": "let entries;"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2208,
+          "line": 2209,
           "text": "entries = await readdir(containerPath, { withFileTypes: true });"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2213,
+          "line": 2214,
           "text": "for (const entry of entries) {"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2281,
+          "line": 2282,
           "text": "let entries;"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2283,
+          "line": 2284,
           "text": "entries = await readdir(path, { withFileTypes: true });"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2287,
+          "line": 2288,
           "text": "if (entries.length === 0) return null;"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2288,
+          "line": 2289,
           "text": "for (const entry of entries) {"
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 2292,
+          "line": 2293,
           "text": "return entries.map((entry) => entry.name).sort(compareCanonicalTextLocal);"
         }
       ],
@@ -99475,27 +99780,27 @@
       "oldInitializer": "decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean)",
       "oldLine": 1015,
       "currentInitializer": "decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean)",
-      "currentLine": 1019,
+      "currentLine": 1001,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 1019,
+          "line": 1001,
           "text": "const batchCheckLines = decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean);"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1021,
+          "line": 1003,
           "text": "assertion(batchCheckLines.length === objectIds.length, \"PRIVACY_REACHABLE_OBJECT_COUNT_MISMATCH\", `${objectIds.length}/${batchCheckLines.length}`);"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1023,
+          "line": 1005,
           "text": "for (const line of batchCheckLines) {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1032,
+          "line": 1014,
           "text": "objectCount: batchCheckLines.length,"
         }
       ],
@@ -99510,72 +99815,72 @@
       "oldInitializer": "await readFile(path, \"utf8\")",
       "oldLine": 318,
       "currentInitializer": "await readFile(path, \"utf8\")",
-      "currentLine": 318,
+      "currentLine": 317,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 318,
+          "line": 317,
           "text": "const bytes = await readFile(path, \"utf8\");"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 319,
+          "line": 318,
           "text": "const ready = JSON.parse(bytes);"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 321,
+          "line": 320,
           "text": "bytes === `${JSON.stringify(ready)}\\n` && ready.bootstrapPid === bootstrapPid &&"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 701,
-          "text": "const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {"
+          "line": 700,
+          "text": "// come from the one builder the P8 face of verifyPrivacy also scans; the compressed bytes are"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 710,
-          "text": "content: decodePrivacyScanBytes(bytes),"
-        },
-        {
-          "file": "scripts/task.mjs",
-          "line": 770,
+          "line": 752,
           "text": "// Resolve each real commit's full blob id, then read that object's complete bytes. Caller"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 811,
+          "line": 793,
           "text": "records.push({ path: record.path, bytes: await readSourceFile(resolve(repositoryRoot, record.path)) });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1004,
+          "line": 986,
           "text": "// \"<oid> <type> <size>\\n\" followed by exactly <size> bytes and a trailing newline,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1077,
+          "line": 1055,
+          "text": "// builder: the formal package by its content, its compressed bytes bound by digest only."
+        },
+        {
+          "file": "scripts/task.mjs",
+          "line": 1057,
           "text": "p8Surfaces.aggregateAlgorithm = \"sha256(path-NUL-byteLength-NUL-bytes over canonical path order)\";"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1285,
+          "line": 1265,
           "text": "!localArchiveSource.includes(\"if (sha256 !== null) return { bytes, expected: sha256, source: archive };\") ||"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1286,
+          "line": 1266,
           "text": "!localArchiveSource.includes(\"return { bytes, expected: statedDigest(stated,\")) return null;"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1291,
+          "line": 1271,
           "text": "!versionRetrievalSource.includes(\"const bytes = await download(url);\") ||"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1303,
+          "line": 1283,
           "text": "// is a loopback server: it binds 127.0.0.1 and serves bytes already on disk, and its"
         }
       ],
@@ -99590,122 +99895,127 @@
       "oldInitializer": "[]",
       "oldLine": 968,
       "currentInitializer": "[]",
-      "currentLine": 972,
+      "currentLine": 954,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 716,
-          "text": "[...artifacts.entries()].map(([path, content]) => ({"
+          "line": 702,
+          "text": "const { entries: releasePrivacyEntries } = p8ReleasePrivacyEntries(artifacts);"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 972,
+          "line": 954,
           "text": "const entries = [];"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 973,
+          "line": 955,
           "text": "entries.push({"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 981,
+          "line": 963,
           "text": "entries.push({ label, kind: \"filename\", content: label });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 982,
+          "line": 964,
           "text": "entries.push({ label, kind: \"source\", content: record.content.toString(\"utf8\") });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 984,
+          "line": 966,
           "text": "entries.push(...await archiveEntryIfPresent());"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1046,
+          "line": 1028,
           "text": "entries.push({"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1070,
+          "line": 1052,
           "text": "entries.push(...buildRecords.map((record) => ({ label: record.path, kind: \"build\", content: record.content.toString(\"utf8\") })));"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1071,
+          "line": 1053,
           "text": "entries.push({ label: \"dist/source/einzbern-source.tar\", kind: \"archive\", content: sourceArchive.content });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1072,
-          "text": "entries.push(...releaseRecords.map((record) => ({"
+          "line": 1054,
+          "text": "// TCRN-CROSS-INIT-053 R48-01 (R47-REG-1): the same entries verifyP8 scans, from the same"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1105,
+          "line": 1056,
+          "text": "entries.push(...p8ReleasePrivacyEntries(new Map(releaseRecords.map((record) => [record.path.slice(\"dist/release/\".length), record.content]))).entries);"
+        },
+        {
+          "file": "scripts/task.mjs",
+          "line": 1085,
           "text": "entries.push({ label: `git-commit-tree:${commit}:${path}`, kind: \"filename\", content: path });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1150,
+          "line": 1130,
           "text": "for (const entry of entries) {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1156,
+          "line": 1136,
           "text": "entries.push({ label: \"git-refs\", kind: \"ref\", content: decodeGitMetadataBytes(refs, \"PRIVACY_REFS_UTF8_INVALID\") });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1179,
+          "line": 1159,
           "text": "totalEntries: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1182,
+          "line": 1162,
           "text": "const findings = scanPrivacyEntries(entries, {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1210,
+          "line": 1190,
           "text": "entriesScanned: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1211,
+          "line": 1191,
           "text": "totalEntries: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1223,
+          "line": 1203,
           "text": "entriesScanned: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1224,
+          "line": 1204,
           "text": "totalEntries: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1228,
+          "line": 1208,
           "text": "scannedEntries: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1232,
+          "line": 1212,
           "text": "archiveScanned: entries.some((entry) => entry.kind === \"archive\"),"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1340,
+          "line": 1320,
           "text": "for (const [name, script] of Object.entries(packageJson.scripts ?? {})) {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1382,
+          "line": 1362,
           "text": "for (const [task, outcome] of Object.entries(value)) {"
         }
       ],
@@ -99720,32 +100030,32 @@
       "oldInitializer": "batchCheck.length",
       "oldLine": 1014,
       "currentInitializer": "batchCheck.length",
-      "currentLine": 1018,
+      "currentLine": 1000,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 1018,
+          "line": 1000,
           "text": "let expectedStreamBytes = batchCheck.length;"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1028,
+          "line": 1010,
           "text": "expectedStreamBytes += declaredSize + 1;"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1033,
+          "line": 1015,
           "text": "expectedStreamBytes,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1039,
+          "line": 1021,
           "text": "{ raw: true, input: objectInput, maxBuffer: expectedStreamBytes + 1 },"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1043,
+          "line": 1025,
           "text": "for (const { object, type, content } of parseGitObjectBatch(batch, expectedStreamBytes)) {"
         }
       ],
@@ -99759,21 +100069,10 @@
       "symbol": "packagedEntries",
       "oldInitializer": "readUstar(gunzipSync(releaseArchive))",
       "oldLine": 696,
-      "currentInitializer": "readUstar(gunzipSync(releaseArchive))",
-      "currentLine": 700,
-      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
-      "currentConsumerSites": [
-        {
-          "file": "scripts/task.mjs",
-          "line": 700,
-          "text": "const packagedEntries = readUstar(gunzipSync(releaseArchive));"
-        },
-        {
-          "file": "scripts/task.mjs",
-          "line": 701,
-          "text": "const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {"
-        }
-      ],
+      "currentInitializer": null,
+      "currentLine": null,
+      "disposition": "removed declaration",
+      "currentConsumerSites": [],
       "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
       "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
       "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
@@ -99784,21 +100083,10 @@
       "symbol": "packagedPrivacyEntries",
       "oldInitializer": "packagedEntries.flatMap(({ path, bytes }) => {\n    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;\n    return [\n      { label, kind: \"filename\", content: path },\n      {\n        label,\n        kind: \"release\",\n        releaseArchiveMember: true,\n        sourcePaths: p8ReleasePrivacySourcePaths(label),\n        content: decodePrivacyScanBytes(bytes),\n      },\n    ];\n  })",
       "oldLine": 697,
-      "currentInitializer": "packagedEntries.flatMap(({ path, bytes }) => {\n    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;\n    return [\n      { label, kind: \"filename\", content: path },\n      {\n        label,\n        kind: \"release\",\n        releaseArchiveMember: true,\n        sourcePaths: p8ReleasePrivacySourcePaths(label),\n        content: decodePrivacyScanBytes(bytes),\n      },\n    ];\n  })",
-      "currentLine": 701,
-      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
-      "currentConsumerSites": [
-        {
-          "file": "scripts/task.mjs",
-          "line": 701,
-          "text": "const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {"
-        },
-        {
-          "file": "scripts/task.mjs",
-          "line": 720,
-          "text": "})).concat(packagedPrivacyEntries),"
-        }
-      ],
+      "currentInitializer": null,
+      "currentLine": null,
+      "disposition": "removed declaration",
+      "currentConsumerSites": [],
       "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
       "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
       "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
@@ -99865,30 +100153,72 @@
       "oldInitializer": "controllerTimeoutMs()",
       "oldLine": 181,
       "currentInitializer": "controllerTimeoutMs()",
-      "currentLine": 181,
+      "currentLine": 180,
       "disposition": "default or caller processing budget; actual caller/environment settings and timer validation determine the run",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 181,
+          "line": 180,
           "text": "const timeoutMs = controllerTimeoutMs();"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 189,
+          "line": 188,
           "text": "const remaining = timeoutMs - (Date.now() - startedAt);"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 209,
+          "line": 208,
           "text": "timeoutMs: Math.min(remaining, PROGRESS_WAIT_MAX_MS),"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 243,
+          "line": 242,
           "text": "const remainingAfterProgress = timeoutMs - (Date.now() - startedAt);"
         }
       ],
+      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
+      "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
+      "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
+    },
+    {
+      "file": "scripts/task.mjs",
+      "symbol": "{\n    P8_SUPPORTED_AOS_RELEASES,\n    P8_RELEASE_ARCHIVE,\n    P8_RELEASE_ARCHIVE_SHA256,\n    P8_TAG,\n    P8_VERSION,\n    buildP8ReleaseArtifacts,\n    moveStaleReleaseArtifacts,\n    p8ArtifactRecords,\n    p8ReleasePrivacyEntries,\n    rebuildP8SourceArchiveInIndependentRoots,\n  }",
+      "oldInitializer": null,
+      "oldLine": null,
+      "currentInitializer": "await p8Release()",
+      "currentLine": 652,
+      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
+      "currentConsumerSites": [],
+      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
+      "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
+      "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
+    },
+    {
+      "file": "scripts/task.mjs",
+      "symbol": "{ entries: releasePrivacyEntries }",
+      "oldInitializer": null,
+      "oldLine": null,
+      "currentInitializer": "p8ReleasePrivacyEntries(artifacts)",
+      "currentLine": 702,
+      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
+      "currentConsumerSites": [],
+      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
+      "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
+      "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
+    },
+    {
+      "file": "scripts/task.mjs",
+      "symbol": "{ p8ReleaseArtifactSetMatches, p8ReleasePrivacyEntries }",
+      "oldInitializer": null,
+      "oldLine": null,
+      "currentInitializer": "await p8Release()",
+      "currentLine": 1050,
+      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
+      "currentConsumerSites": [],
       "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
       "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
       "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
@@ -102062,27 +102392,27 @@
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 95,
+      "line": 96,
       "source": "const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;"
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 99,
+      "line": 100,
       "source": "const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;"
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 318,
+      "line": 325,
       "source": "return typeof value === \"string\" && value.length > 0 && value.length <= HINT_MAXIMUM_LENGTH && !/[\\u0000-\\u001f\\u007f]/u.test(value);"
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 368,
+      "line": 375,
       "source": "if (coordinationRows.length > 1) {"
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 837,
+      "line": 846,
       "source": "coordinationWrites(partition).length > 0)) recorder.write(\"library\", partition.target, \"update\");"
     },
     {
@@ -104002,32 +104332,37 @@
     },
     {
       "file": "scripts/lib/p8-workflow-rc.mjs",
-      "line": 44,
+      "line": 49,
       "source": "assertion(typeof error === \"string\" && error.length > 0, \"P8_FAILURE_TERMINAL_MESSAGE_INVALID\");"
     },
     {
       "file": "scripts/lib/p8-workflow-rc.mjs",
-      "line": 152,
+      "line": 157,
       "source": "assertion(typeof path === \"string\" && path.length > 0, \"P8_RELEASE_PATH_INVALID\", String(path));"
     },
     {
       "file": "scripts/lib/p8-workflow-rc.mjs",
-      "line": 194,
+      "line": 199,
       "source": "assertion(Array.isArray(records) && records.length > 0, \"P8_RELEASE_RECORDS_EMPTY\");"
     },
     {
       "file": "scripts/lib/p8-workflow-rc.mjs",
-      "line": 206,
+      "line": 211,
       "source": "assertion(Array.isArray(allowedFiles) && allowedFiles.length > 0, \"P8_RELEASE_ALLOWLIST_INVALID\");"
     },
     {
       "file": "scripts/lib/p8-workflow-rc.mjs",
-      "line": 301,
+      "line": 306,
       "source": "const lines = checksumText.slice(0, -1).split(\"\\n\");"
     },
     {
       "file": "scripts/lib/p8-workflow-rc.mjs",
-      "line": 374,
+      "line": 411,
+      "source": "assertion(Buffer.isBuffer(archive) && typeof label === \"string\" && label.length > 0, \"P8_RELEASE_DOCUMENT_INVALID\", String(label));"
+    },
+    {
+      "file": "scripts/lib/p8-workflow-rc.mjs",
+      "line": 511,
       "source": "assertion(Object.values(projection).every((value) => typeof value === \"string\" && value.length > 0), \"P8_SANITIZED_CORE_INVALID\");"
     },
     {
@@ -104662,142 +104997,142 @@
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1682,
+      "line": 1683,
       "source": "if (behind.length > 0) {"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1692,
+      "line": 1693,
       "source": ".filter(([, required]) => typeof required === \"string\" && required.length > 0)"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1769,
+      "line": 1770,
       "source": "const result = await execFileAsync(process.execPath, [scriptPath, \"commands\"], { timeout: 30_000, maxBuffer: 8 * 1_048_576 });"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1789,
+      "line": 1790,
       "source": "Object.keys(unreadable).length > 0 ? unreadable : undefined"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1861,
+      "line": 1862,
       "source": "digest: installedDigest.slice(0, 12),"
-    },
-    {
-      "file": "scripts/platform-doctor.mjs",
-      "line": 1903,
-      "source": "if (iOnly.length > 0) installedOnlyFlags[verbName] = iOnly;"
     },
     {
       "file": "scripts/platform-doctor.mjs",
       "line": 1904,
+      "source": "if (iOnly.length > 0) installedOnlyFlags[verbName] = iOnly;"
+    },
+    {
+      "file": "scripts/platform-doctor.mjs",
+      "line": 1905,
       "source": "if (wOnly.length > 0) worktreeOnlyFlags[verbName] = wOnly;"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1924,
+      "line": 1925,
       "source": "const hasInstalledOnlyVerbsOrFlags = installedOnly.length > 0 || Object.keys(installedOnlyFlags).length > 0;"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1925,
+      "line": 1926,
       "source": "const hasWorktreeOnlyVerbsOrFlags = worktreeOnly.length > 0 || Object.keys(worktreeOnlyFlags).length > 0;"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1935,
+      "line": 1936,
       "source": "installedOnly: installedOnly.length > 0 ? installedOnly : undefined,"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1936,
+      "line": 1937,
       "source": "installedOnlyFlags: Object.keys(installedOnlyFlags).length > 0 ? installedOnlyFlags : undefined,"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1938,
+      "line": 1939,
       "source": "worktreeOnlyFlags: Object.keys(worktreeOnlyFlags).length > 0 ? worktreeOnlyFlags : undefined,"
-    },
-    {
-      "file": "scripts/platform-doctor.mjs",
-      "line": 1952,
-      "source": "worktreeOnly: worktreeOnly.length > 0 ? worktreeOnly : undefined,"
     },
     {
       "file": "scripts/platform-doctor.mjs",
       "line": 1953,
+      "source": "worktreeOnly: worktreeOnly.length > 0 ? worktreeOnly : undefined,"
+    },
+    {
+      "file": "scripts/platform-doctor.mjs",
+      "line": 1954,
       "source": "worktreeOnlyFlags: Object.keys(worktreeOnlyFlags).length > 0 ? worktreeOnlyFlags : undefined,"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1960,
+      "line": 1961,
       "source": "if (attributeDifferences.length > 0) {"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1976,
+      "line": 1977,
       "source": "installedDigest: installedDigest.slice(0, 12),"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1977,
+      "line": 1978,
       "source": "worktreeDigest: worktreeDigest.slice(0, 12),"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 1988,
+      "line": 1989,
       "source": "digest: installedDigest.slice(0, 12),"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2067,
+      "line": 2068,
       "source": "const result = await execFileAsync(process.execPath, [cli, \"settings-catalog\", \"--workspace\", workspacePath], { timeout: 30_000, maxBuffer: 8 * 1_048_576 });"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2071,
+      "line": 2072,
       "source": "if (keys.length > 0) return keys;"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2120,
+      "line": 2121,
       "source": "const result = await execFileAsync(\"launchctl\", [\"list\"], { timeout: 10_000, maxBuffer: 1_048_576 });"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2121,
+      "line": 2122,
       "source": "return result.stdout.split(\"\\n\").map((line) => line.trim().split(/\\s+/u).at(-1)).filter((value) => typeof value === \"string\" && value.length > 0);"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2136,
+      "line": 2137,
       "source": "const result = await execFileAsync(\"launchctl\", [\"print\", `gui/${process.getuid?.() ?? 0}/${label}`], { timeout: 10_000, maxBuffer: 1_048_576 });"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2218,
+      "line": 2219,
       "source": "const result = await execFileAsync(process.execPath, [cli, \"settings-catalog\", \"--workspace\", workspacePath], { timeout: 30_000, maxBuffer: 8 * 1_048_576 });"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2271,
+      "line": 2272,
       "source": "await execFileAsync(\"git\", [\"-C\", directory, \"check-ignore\", \"--quiet\", \"--\", name], { timeout: 30_000 });"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2329,
+      "line": 2330,
       "source": "if (undeclared.length > 0) {"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2333,
+      "line": 2334,
       "source": "...(hostLocal.length > 0 ? { hostLocal: hostLocal.sort(compareCanonicalTextLocal) } : {}),"
     },
     {
       "file": "scripts/platform-doctor.mjs",
-      "line": 2338,
+      "line": 2339,
       "source": "if (hostLocal.length > 0) {"
     },
     {
@@ -105087,52 +105422,52 @@
     },
     {
       "file": "scripts/task.mjs",
-      "line": 48,
+      "line": 47,
       "source": "import { delay, PROGRESS_WAIT_MAX_MS, readProgressDelta, summarizeProgress, waitForProgress } from \"./lib/incremental-output.mjs\";"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 209,
+      "line": 208,
       "source": "timeoutMs: Math.min(remaining, PROGRESS_WAIT_MAX_MS),"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 374,
+      "line": 373,
       "source": "if (repeatsLast) injected[injected.length - 1] = injected.at(-1).slice(0, -1);"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 416,
+      "line": 415,
       "source": "return run(\"git\", [\"ls-files\", \"-z\"]).split(\"\\0\").filter((path) => path.length > 0).sort(compareCanonicalText);"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 850,
+      "line": 832,
       "source": "serialNumber: `urn:uuid:${basis.slice(0, 8)}-${basis.slice(8, 12)}-4${basis.slice(13, 16)}-a${basis.slice(17, 20)}-${basis.slice(20, 32)}`,"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 998,
+      "line": 980,
       "source": "assertion(objectIds.length > 0, \"PRIVACY_REACHABLE_OBJECTS_EMPTY\");"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 1016,
+      "line": 998,
       "source": "{ raw: true, input: objectInput, maxBuffer: 64 * 1024 * 1024 },"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 1039,
+      "line": 1021,
       "source": "{ raw: true, input: objectInput, maxBuffer: expectedStreamBytes + 1 },"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 1201,
+      "line": 1181,
       "source": "if (findings.length > 0) {"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 1406,
+      "line": 1386,
       "source": "if (outcome.reds.length > 0) {"
     },
     {

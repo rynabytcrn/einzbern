@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r47-init053-integration",
+  "pack": "r48-init053-integration",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -215,7 +215,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "59ec14b9e7586b1c6eef621ace58b23a16de939a6eb4afc9e77adddfc1c2952a"
+      "sha256": "601c534a1bb2387211ad47d59632d9c0ef0748ae42f6c9e16376ef6efc2b8a4c"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -283,7 +283,7 @@
     },
     {
       "path": "packages/core/src/rules-catalog.ts",
-      "sha256": "6db60b7fe6433d99a5cb5d53fede363180aaa7c99be5b08fa5b7f8bfb3c5f5c6"
+      "sha256": "37d699a6fb79c96c44ab7cbf263bf5042e4c4094253f434aafa4ec064c970727"
     },
     {
       "path": "packages/core/src/rules.ts",
@@ -487,7 +487,7 @@
     },
     {
       "path": "scripts/einzbern.mjs",
-      "sha256": "1a59ebce12200dcc5c22ab66b6ed1ad1dd27cbdb03e59c3be1636a4a1cf45c30"
+      "sha256": "04a39cc72dfbbe1bcf27c760785742cc386efde188e6be84b6fb1b961f537883"
     },
     {
       "path": "scripts/embed-ds-component-css-snapshot.mjs",
@@ -575,7 +575,7 @@
     },
     {
       "path": "scripts/lib/p8-workflow-rc.mjs",
-      "sha256": "ab096f0a77328d80e61be3677a3b3d73191cd458966cc0b0d5c242cfce8e3742"
+      "sha256": "f34e3006756daf413e32f6a98b6008a06d6cbbf4271565363c6cd925bf4ce4bc"
     },
     {
       "path": "scripts/lib/privacy.mjs",
@@ -675,7 +675,7 @@
     },
     {
       "path": "scripts/platform-doctor.mjs",
-      "sha256": "ca544f1fe8cbbd190ad3ddac5feec7420b42e868eede4adca93652c3df65ea30"
+      "sha256": "f2ddf46fff81596c5a56aff6874435021bc9c42e13181a19374da5c08c59a60c"
     },
     {
       "path": "scripts/preflight.mjs",
@@ -735,7 +735,7 @@
     },
     {
       "path": "scripts/task.mjs",
-      "sha256": "29c7db449d14cd0ca591907dc87b3ca2fa8d1356c839744349befa10a700b089"
+      "sha256": "2ab916bf41fbf14a460d3ab64b84eefb1e068e3375144b2cf2a0fb679bd040a0"
     },
     {
       "path": "scripts/test-controller-bootstrap.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R47 integration batch-end generation (package A2, which contains A1, fast-forwarded and package B merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red, so there was no same-round disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R48 integration batch-end generation (package C fast-forwarded and package D merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below with its one failure (the new platform-doctor case R48 PB-2, introduced this round and returned to the MAIN package as a shared-contract item), so the integration made no correction and ran no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "17b5a032453207b216e517c9d2dd8481b25abc104eaa637ff78b494a562e35bb",
+      "sha256": "532e04114e1688166b90fde69a7fb4a815235a5aaceb147b28b8634af9a0289a",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "294f3b9b390ab69e96012e944225656b5414962d4d56eb30de1b1ce3ea4e1a01",
+      "sha256": "6e4fbaf2ca07c783cf3430cb63cfb1a11b24125efad5b1675b1ec5a7b11e60ae",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "b17975774bbed2fa50c191410276dcfb56c8eb4b0263dd161de9871eb1daec6e",
+      "sha256": "eba5e5238ee9f1ea16b97c0e24539d430dc74caf0cf40f7b52cf190278730612",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1010,11 +1010,11 @@
     }
   ],
   "currentWholeFileCadence": {
-    "exit": 0,
+    "exit": 1,
     "counts": {
-      "tests": 1769,
-      "pass": 1769,
-      "fail": 0,
+      "tests": 1773,
+      "pass": 1772,
+      "fail": 1,
       "cancelled": 0,
       "skipped": 0
     },
@@ -1156,10 +1156,19 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json",
-    "failures": []
+    "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json",
+    "failures": [
+      {
+        "test": "R48 PB-2: an engine floor that cannot be read is red, and chains that read and declare nothing stay green",
+        "file": "tests/platform-doctor.test.mjs",
+        "line": 1574,
+        "reason": "Expected values to be strictly deep-equal:",
+        "reasonCode": "ERR_ASSERTION",
+        "rawAnchor": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json#/reds/0"
+      }
+    ]
   },
-  "generationTimeUtc": "2026-10-08T23:41:33.836113+00:00",
+  "generationTimeUtc": "2026-10-09T01:45:20.358219+00:00",
   "currentApplicationCaseResults": [
     {
       "name": "target switch settles on matching response, UI authority and native inheritance",
@@ -11777,7 +11786,7 @@
     }
   },
   "actualBounds": [
-    "R47 reuses in place the R46 browser probe result (integration-r46-init053-raw/u18, run once on ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 with Playwright from the DS main checkout at the published merge d53f2305); between fbc3a073 and the R47 integration head bb580d0f72396b13060c3dd07c7554e64b38b8ce only Portal test files changed under portal/ (index.html, locales.js, portal.mjs, styles and snapshots unchanged); every case and failure is recorded individually in that application evidence; no canonical integration claim",
+    "R48 reuses in place the R46 browser probe result (integration-r46-init053-raw/u18, run once on ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 with Playwright from the DS main checkout at the published merge d53f2305); between fbc3a073 and the R48 integration head d80cc51531539a726978addb96918023a35b129e only Portal test files changed under portal/ (index.html, locales.js, portal.mjs, styles and snapshots unchanged); every case and failure is recorded individually in that application evidence; no canonical integration claim",
     "actual wide/narrow/column and lifecycle outcomes are recorded individually in that application evidence; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
   ]

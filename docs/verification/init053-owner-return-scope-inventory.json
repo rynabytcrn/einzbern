@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r47-init053-integration",
+  "pack": "r48-init053-integration",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -215,7 +215,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "59ec14b9e7586b1c6eef621ace58b23a16de939a6eb4afc9e77adddfc1c2952a"
+      "sha256": "601c534a1bb2387211ad47d59632d9c0ef0748ae42f6c9e16376ef6efc2b8a4c"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -283,7 +283,7 @@
     },
     {
       "path": "packages/core/src/rules-catalog.ts",
-      "sha256": "6db60b7fe6433d99a5cb5d53fede363180aaa7c99be5b08fa5b7f8bfb3c5f5c6"
+      "sha256": "37d699a6fb79c96c44ab7cbf263bf5042e4c4094253f434aafa4ec064c970727"
     },
     {
       "path": "packages/core/src/rules.ts",
@@ -487,7 +487,7 @@
     },
     {
       "path": "scripts/einzbern.mjs",
-      "sha256": "1a59ebce12200dcc5c22ab66b6ed1ad1dd27cbdb03e59c3be1636a4a1cf45c30"
+      "sha256": "04a39cc72dfbbe1bcf27c760785742cc386efde188e6be84b6fb1b961f537883"
     },
     {
       "path": "scripts/embed-ds-component-css-snapshot.mjs",
@@ -575,7 +575,7 @@
     },
     {
       "path": "scripts/lib/p8-workflow-rc.mjs",
-      "sha256": "ab096f0a77328d80e61be3677a3b3d73191cd458966cc0b0d5c242cfce8e3742"
+      "sha256": "f34e3006756daf413e32f6a98b6008a06d6cbbf4271565363c6cd925bf4ce4bc"
     },
     {
       "path": "scripts/lib/privacy.mjs",
@@ -675,7 +675,7 @@
     },
     {
       "path": "scripts/platform-doctor.mjs",
-      "sha256": "ca544f1fe8cbbd190ad3ddac5feec7420b42e868eede4adca93652c3df65ea30"
+      "sha256": "f2ddf46fff81596c5a56aff6874435021bc9c42e13181a19374da5c08c59a60c"
     },
     {
       "path": "scripts/preflight.mjs",
@@ -735,7 +735,7 @@
     },
     {
       "path": "scripts/task.mjs",
-      "sha256": "29c7db449d14cd0ca591907dc87b3ca2fa8d1356c839744349befa10a700b089"
+      "sha256": "2ab916bf41fbf14a460d3ab64b84eefb1e068e3375144b2cf2a0fb679bd040a0"
     },
     {
       "path": "scripts/test-controller-bootstrap.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R47 integration batch-end generation (package A2, which contains A1, fast-forwarded and package B merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red, so there was no same-round disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R48 integration batch-end generation (package C fast-forwarded and package D merged with one merge commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below with its one failure (the new platform-doctor case R48 PB-2, introduced this round and returned to the MAIN package as a shared-contract item), so the integration made no correction and ran no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "17b5a032453207b216e517c9d2dd8481b25abc104eaa637ff78b494a562e35bb",
+      "sha256": "532e04114e1688166b90fde69a7fb4a815235a5aaceb147b28b8634af9a0289a",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "294f3b9b390ab69e96012e944225656b5414962d4d56eb30de1b1ce3ea4e1a01",
+      "sha256": "6e4fbaf2ca07c783cf3430cb63cfb1a11b24125efad5b1675b1ec5a7b11e60ae",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "b17975774bbed2fa50c191410276dcfb56c8eb4b0263dd161de9871eb1daec6e",
+      "sha256": "eba5e5238ee9f1ea16b97c0e24539d430dc74caf0cf40f7b52cf190278730612",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1010,11 +1010,11 @@
     }
   ],
   "currentWholeFileCadence": {
-    "exit": 0,
+    "exit": 1,
     "counts": {
-      "tests": 1769,
-      "pass": 1769,
-      "fail": 0,
+      "tests": 1773,
+      "pass": 1772,
+      "fail": 1,
       "cancelled": 0,
       "skipped": 0
     },
@@ -1156,10 +1156,19 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r47-init053-raw/u18/full-file-cadence-result.json",
-    "failures": []
+    "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json",
+    "failures": [
+      {
+        "test": "R48 PB-2: an engine floor that cannot be read is red, and chains that read and declare nothing stay green",
+        "file": "tests/platform-doctor.test.mjs",
+        "line": 1574,
+        "reason": "Expected values to be strictly deep-equal:",
+        "reasonCode": "ERR_ASSERTION",
+        "rawAnchor": "dispatch-runs/init-053/integration-r48-init053-raw/u18/full-file-cadence-result.json#/reds/0"
+      }
+    ]
   },
-  "generationTimeUtc": "2026-10-08T23:41:33.836113+00:00",
+  "generationTimeUtc": "2026-10-09T01:45:20.358219+00:00",
   "settings": [
     {
       "catalog": {
@@ -1233,18 +1242,23 @@
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 104,
+          "line": 105,
           "text": "const COORDINATION_LANGUAGE_KEY: SettingKey = \"artifact.language\";"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 172,
+          "line": 173,
           "text": "// The artifact.language the old chain records, which the library keeps; null when it records none."
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 189,
+          "line": 190,
           "text": "* for itself, as its partition's plan lists it. artifact.language is always listed: the old chain's"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 200,
+          "text": "* artifact.language takes it. A recorded artifact.language turns on a library's fail-closed write"
         },
         {
           "file": "packages/core/src/project-chain.ts",
@@ -1273,7 +1287,7 @@
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 178,
+          "line": 185,
           "text": "* artifact.language is zh-CN, and the English body for every other value and when it is not set."
         },
         {
@@ -1603,12 +1617,12 @@
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 150,
+          "line": 157,
           "text": "const DESIGN_AUTHORITY_ZH = \"## \\u8bbe\\u8ba1\\u6743\\u5a01\\u4e0e\\u4e00\\u81f4\\u6027\\u539f\\u5219 v1\\n\\n1. \\u5148\\u786e\\u5b9a\\u8bbe\\u8ba1\\u6743\\u5a01\\u3002\\u8bfb\\u53d6\\u5f53\\u524d\\u9879\\u76ee\\u53ca\\u76ee\\u6807\\u5b50\\u9879\\u76ee\\u7684\\u7cfb\\u7edf\\u53d8\\u91cf `design.authority`\\uff0c\\u4ee5\\u53ca\\u540c\\u4e00\\u914d\\u7f6e\\u4e2d\\u58f0\\u660e\\u7684\\u6743\\u5a01\\u4ed3\\u5e93\\u3001\\u751f\\u4ea7\\u6587\\u6863\\u548c\\u6784\\u5efa\\u90e8\\u7f72\\u7ed1\\u5b9a\\u3002\\u6bcf\\u4e2a\\u9879\\u76ee\\u3001\\u5b50\\u9879\\u76ee\\u90fd\\u5e94\\u80fd\\u5bf9\\u5e94\\u5230\\u81ea\\u5df1\\u7684\\u6709\\u6548\\u6743\\u5a01\\uff1b\\u7ee7\\u627f\\u503c\\u987b\\u663e\\u793a\\u6765\\u6e90\\u3002\\u7f3a\\u5931\\u6216\\u51b2\\u7a81\\u65f6\\u5148\\u8865\\u9f50\\u914d\\u7f6e\\uff0c\\u4e0d\\u6309\\u76ee\\u5f55\\u4f4d\\u7f6e\\u3001\\u9876\\u5c42\\u9879\\u76ee\\u6216\\u8bb0\\u5fc6\\u731c\\u6d4b\\u3002\\n2. \\u5148\\u67e5\\u5df2\\u6709\\u7ec4\\u4ef6\\u4e0e\\u89c4\\u8303\\u3002\\u6839\\u636e\\u8be5\\u6743\\u5a01\\u7684\\u5df2\\u53d1\\u5e03\\u5951\\u7ea6\\uff0c\\u6838\\u5bf9\\u7ec4\\u4ef6\\u5bb6\\u65cf\\u3001\\u53d8\\u4f53\\u3001\\u72b6\\u6001\\u3001\\u5e03\\u5c40\\u548c\\u4ea4\\u4e92\\u89c4\\u8303\\uff0c\\u518d\\u51b3\\u5b9a\\u5982\\u4f55\\u5b9e\\u73b0\\u3002\\u5df2\\u6709\\u80fd\\u529b\\u76f4\\u63a5\\u590d\\u7528\\uff1b\\u7f3a\\u5c11\\u80fd\\u529b\\u8bb0\\u5165\\u8bbe\\u8ba1\\u6743\\u5a01\\u7684\\u6539\\u52a8\\u8303\\u56f4\\u3002\\n3. \\u8bbe\\u8ba1\\u6743\\u5a01\\u5148\\u6539\\u3002\\u4efb\\u4f55\\u7ec4\\u4ef6\\u3001\\u89c6\\u89c9\\u8bbe\\u8ba1\\u6216\\u8bbe\\u8ba1\\u89c4\\u8303\\u7684\\u65b0\\u589e\\u4e0e\\u6539\\u52a8\\uff0c\\u5148\\u5411\\u6743\\u5a01\\u4ed3\\u5e93\\u63d0 PR\\uff0c\\u5728\\u6743\\u5a01\\u4e2d\\u8865\\u9f50\\u5b9e\\u73b0\\u3001\\u8bbe\\u8ba1\\u89c4\\u8303\\u3001\\u5b9e\\u9645\\u793a\\u4f8b\\u548c\\u9002\\u7528\\u9a8c\\u8bc1\\uff1b\\u4e0d\\u5f97\\u5148\\u5728\\u5e94\\u7528\\u4e2d\\u53e6\\u9020\\u4e00\\u5957\\u518d\\u8865\\u89c4\\u8303\\u3002\\n4. \\u53d1\\u5e03\\u901a\\u8fc7\\u540e\\u518d\\u63a5\\u5165\\u3002\\u6743\\u5a01 PR \\u5408\\u5e76\\u3001\\u58f0\\u660e\\u7684\\u751f\\u4ea7\\u6587\\u6863\\u6216\\u7ec4\\u4ef6\\u5e93\\u53d1\\u5e03\\u6210\\u529f\\u3001\\u58f0\\u660e\\u7684\\u6784\\u5efa\\u90e8\\u7f72\\u670d\\u52a1\\u6210\\u529f\\uff0c\\u5e76\\u6838\\u5bf9\\u8fd9\\u4e9b\\u8bc1\\u636e\\u5bf9\\u5e94\\u540c\\u4e00\\u63d0\\u4ea4\\u6216\\u4ea7\\u7269\\u7248\\u672c\\u540e\\uff0c\\u5e94\\u7528\\u624d\\u80fd\\u63a5\\u5165\\u65b0\\u80fd\\u529b\\u3002\\u672c\\u5730\\u901a\\u8fc7\\u3001\\u9884\\u89c8\\u90e8\\u7f72\\u6216\\u53ea\\u6709\\u9875\\u9762\\u80fd\\u6253\\u5f00\\uff0c\\u90fd\\u4e0d\\u4ee3\\u8868\\u751f\\u4ea7\\u53d1\\u5e03\\u901a\\u8fc7\\u3002\\u8fd9\\u4e2a\\u53d1\\u5e03\\u4f9d\\u8d56\\u5e94\\u5728\\u6279\\u6b21\\u5206\\u5305\\u65f6\\u660e\\u786e\\uff0c\\u672a\\u6ee1\\u8db3\\u65f6\\u4e0d\\u8d8a\\u8fc7\\u4f9d\\u8d56\\u3002\\n5. \\u4fdd\\u6301\\u7ec4\\u4ef6\\u5bb6\\u65cf\\u4e00\\u81f4\\u3002\\u65b0\\u589e\\u548c\\u4fee\\u6539\\u7684\\u7ec4\\u4ef6\\u6cbf\\u7528\\u539f\\u5bb6\\u65cf\\u7684\\u989c\\u8272\\u3001\\u5b57\\u4f53\\u3001\\u95f4\\u8ddd\\u3001\\u5c3a\\u5bf8\\u3001\\u5706\\u89d2\\u3001\\u8fb9\\u6846\\u3001\\u56fe\\u6807\\u3001\\u52a8\\u6548\\u53ca\\u4ea4\\u4e92\\u72b6\\u6001\\uff1b\\u589e\\u91cf\\u529f\\u80fd\\u6cbf\\u7528\\u5df2\\u6709\\u9009\\u7528\\u65b9\\u5f0f\\u3001\\u53cd\\u9988\\u548c\\u952e\\u76d8\\u64cd\\u4f5c\\u3002\\u7528\\u540c\\u7c7b\\u7ec4\\u4ef6\\u9010\\u9879\\u5bf9\\u7167\\uff0c\\u907f\\u514d\\u4ea7\\u751f\\u660e\\u663e\\u4e0d\\u540c\\u7684\\u89c6\\u89c9\\u6216\\u4ea4\\u4e92\\u8bed\\u8a00\\uff1b\\u8f83\\u5927\\u7684\\u98ce\\u683c\\u53d8\\u5316\\u5148\\u53d6\\u5f97 Owner \\u660e\\u786e\\u540c\\u610f\\u3002 \\u628a\\u660e\\u663e\\u504f\\u79bb\\u539f\\u5bb6\\u65cf\\u7684\\u5b9e\\u73b0\\u8865\\u8fdb\\u8bbe\\u8ba1\\u6743\\u5a01\\uff0c\\u4e0d\\u80fd\\u4f5c\\u4e3a\\u98ce\\u683c\\u4e00\\u81f4\\u6216 Owner \\u76ee\\u89c6\\u901a\\u8fc7\\u7684\\u8bc1\\u660e\\u3002 \\u68c0\\u67e5\\u5168\\u90e8\\u65b0\\u589e\\u6216\\u4fee\\u6539\\u7684\\u7ec4\\u4ef6\\u4e0e\\u53d8\\u4f53\\uff1a\\u540c\\u7c7b\\u4efb\\u52a1\\u5e94\\u4f7f\\u7528\\u540c\\u7c7b\\u63a7\\u4ef6\\uff0c\\u4fdd\\u6301\\u9009\\u62e9\\u3001\\u5bfc\\u822a\\u3001\\u4fdd\\u5b58\\u3001\\u64a4\\u9500\\u3001\\u91cd\\u7f6e\\u3001\\u9519\\u8bef\\u53cd\\u9988\\u548c\\u952e\\u76d8\\u64cd\\u4f5c\\u7684\\u542b\\u4e49\\u4e0e\\u9884\\u671f\\u4e00\\u81f4\\u3002\\n6. \\u901a\\u8fc7\\u6b63\\u5f0f\\u5951\\u7ea6\\u6d88\\u8d39\\u3002\\u5e94\\u7528\\u4f7f\\u7528\\u5df2\\u53d1\\u5e03\\u7ec4\\u4ef6\\u3001\\u4ee4\\u724c\\u6216\\u6743\\u5a01\\u8ba4\\u53ef\\u7684\\u9759\\u6001\\u6d88\\u8d39\\u65b9\\u5f0f\\uff0c\\u7ed1\\u5b9a\\u5b9e\\u9645\\u7248\\u672c\\u5e76\\u540c\\u6b65\\u751f\\u6210\\u7684\\u5951\\u7ea6\\u4e0e\\u6837\\u5f0f\\u5feb\\u7167\\uff1b\\u4e0d\\u590d\\u5236\\u6587\\u6863\\u7ad9\\u79c1\\u6709\\u6837\\u5f0f\\u3001\\u4e0d\\u5728\\u5e94\\u7528\\u5185\\u91cd\\u9020\\u901a\\u7528\\u7ec4\\u4ef6\\u3001\\u4e0d\\u7528\\u5c40\\u90e8\\u8986\\u76d6\\u63a9\\u76d6\\u6743\\u5a01\\u7f3a\\u53e3\\u3002\\n7. \\u6838\\u5bf9\\u73b0\\u5b58\\u7f3a\\u53e3\\u3002\\u53d1\\u73b0\\u5e94\\u7528\\u5df2\\u4f7f\\u7528\\u6743\\u5a01\\u672a\\u63d0\\u4f9b\\u6216\\u672a\\u53d1\\u5e03\\u7684\\u7ec4\\u4ef6\\u3001\\u53d8\\u4f53\\u3001\\u8bbe\\u8ba1\\u89c4\\u8303\\u65f6\\uff0c\\u5217\\u51fa\\u4f7f\\u7528\\u5904\\u548c\\u7f3a\\u5c11\\u7684\\u6743\\u5a01\\u8bc1\\u636e\\uff0c\\u5148\\u6309\\u540c\\u4e00 PR\\u3001\\u751f\\u4ea7\\u53d1\\u5e03\\u548c\\u6784\\u5efa\\u6d41\\u7a0b\\u8865\\u9f50\\u6743\\u5a01\\uff0c\\u518d\\u7ee7\\u7eed\\u53d7\\u5f71\\u54cd\\u7684\\u5e94\\u7528\\u6539\\u52a8\\u3002\\u673a\\u5668\\u9a8c\\u8bc1\\u4e0e Owner \\u76ee\\u89c6\\u9a8c\\u6536\\u5206\\u522b\\u8bb0\\u5f55\\u3002\\n8. \\u89c4\\u5219\\u4e0e\\u53d8\\u91cf\\u5206\\u79bb\\u3002\\u89c4\\u5219\\u6b63\\u6587\\u53ea\\u5f15\\u7528\\u7cfb\\u7edf\\u53d8\\u91cf\\u53ca\\u5176\\u6743\\u5a01\\u5951\\u7ea6\\uff0c\\u4e0d\\u5199\\u6b7b\\u9879\\u76ee\\u540d\\u3001\\u4ed3\\u5e93\\u5730\\u5740\\u3001\\u6587\\u6863 URL\\u3001\\u90e8\\u7f72\\u5382\\u5546\\u3001\\u7248\\u672c\\u53f7\\u6216\\u7ec4\\u4ef6\\u6570\\u503c\\u3002\\u5f53\\u524d\\u9879\\u76ee\\u4f7f\\u7528\\u7684\\u5177\\u4f53\\u503c\\u5c5e\\u4e8e\\u9879\\u76ee\\u6216\\u5b50\\u9879\\u76ee\\u914d\\u7f6e\\uff1b\\u914d\\u7f6e\\u80fd\\u529b\\u5c1a\\u672a\\u5b9e\\u73b0\\u6216\\u8bc1\\u636e\\u65e0\\u6cd5\\u8bfb\\u53d6\\u65f6\\uff0c\\u660e\\u786e\\u8bb0\\u5f55\\u4e3a\\u672a\\u914d\\u7f6e\\u6216\\u672a\\u9a8c\\u8bc1\\u3002\\u63d0\\u4ea4\\u548c\\u53d1\\u5e03\\u52a8\\u4f5c\\u4f7f\\u7528\\u5f53\\u524d\\u4efb\\u52a1\\u5df2\\u7ecf\\u83b7\\u5f97\\u7684\\u6388\\u6743\\u3002\\n\";"
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 151,
+          "line": 158,
           "text": "const DESIGN_AUTHORITY_EN = \"## Design Authority and Consistency Principle v1\\n\\n1. Resolve the design authority first. Read the current project's and target subproject's system variable `design.authority`, together with the authority repository, production documentation, and build and deployment bindings declared in the same configuration. Each project and subproject must resolve to its own effective authority; inherited values must identify their source. Resolve missing or conflicting bindings before design work, without guessing from directory placement, the parent project, or memory.\\n2. Inspect existing components and standards. Use the authority's published contract to identify component families, variants, states, layouts, and interactions before implementation. Reuse existing capabilities and include missing ones in the authority's change scope.\\n3. Change the authority first. Every addition or change to a component, visual design, or design standard starts with a PR to the authority repository, covering implementation, standards, working examples, and applicable validation. Do not create a separate design in the application and document it afterwards.\\n4. Consume changes after production succeeds. The application may use the new capability only after the authority PR is merged, its declared production documentation or component library is published successfully, and its declared build and deployment service succeeds, with all evidence bound to the same source commit or artifact version. A local pass, preview deployment, or reachable page does not establish production success. Include this dependency when organizing the batch and do not consume the change before it is satisfied.\\n5. Keep component families consistent. Preserve the family's colors, typography, spacing, sizing, radii, borders, icons, motion, and interaction states. Added features follow existing selection, feedback, and keyboard patterns. Compare equivalent components directly to prevent a substantially different visual or interaction language; obtain explicit Owner agreement before a substantial style change. Adding a substantially divergent implementation to the authority does not establish family consistency or Owner visual acceptance. Check every added or changed component and variant: equivalent tasks use equivalent controls, with consistent meanings and expectations for selection, navigation, saving, undoing, resetting, error feedback, and keyboard interaction.\\n6. Consume the published contract. Use published components, tokens, or an authority-approved static consumption method, bind the actual version, and refresh generated contracts and stylesheet snapshots together. Do not copy documentation-only styles, recreate reusable components in the application, or conceal missing authority support with local overrides.\\n7. Reconcile existing gaps. When the application already uses a component, variant, or design standard absent from the authority or its production release, identify the consumer locations and missing evidence. Complete the same authority PR, production publication, and build sequence before continuing affected application changes. Record machine verification and Owner visual acceptance separately.\\n8. Separate rules from values. Reference system variables and their authority contracts in the rule body instead of hard-coding project names, repository addresses, documentation URLs, deployment vendors, versions, or component measurements. Store actual values in project or subproject configuration. Mark unavailable configuration capabilities or unreadable evidence as unconfigured or unverified. Use the current task's existing authorization for commits and publication.\\n\";"
         },
         {
@@ -2494,17 +2508,17 @@
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1688,
+          "line": 1689,
           "text": "source: \"chain engine.requiredVersion + install-manifest\","
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1704,
+          "line": 1705,
           "text": "source: \"chain engine.requiredVersion + install-manifest\","
         },
         {
           "file": "scripts/platform-doctor.mjs",
-          "line": 1711,
+          "line": 1712,
           "text": "source: \"chain engine.requiredVersion + install-manifest\","
         }
       ],
@@ -2550,12 +2564,12 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 106,
+          "line": 107,
           "text": "\"execution.maxConcurrentSubagents\","
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 191,
+          "line": 192,
           "text": "* execution.maxConcurrentSubagents and the four quota.* keys only when the old chain declares them at"
         },
         {
@@ -2565,12 +2579,12 @@
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 66,
+          "line": 71,
           "text": "2. 实施分包并行。拆分完成后先分包：有先后依赖或改同一批文件的 Subtask 进同一个包，包内按顺序做；互不影响的 Subtask 各成一包。每个包派一个经济档子代理，在自己的工作树与分支上做，多个包同时跑。并发上限按 execution.maxConcurrentSubagents；该值超过宿主的上限或未设置时，按宿主的规则派遣。包完成即退役，不跑门、不验收、不写链。全部包完成后按依赖顺序合并到集成分支，冲突交一个集成子代理。"
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 90,
+          "line": 96,
           "text": "2. Implementation runs in parallel packages. Once decomposition is done, group the Subtasks into packages first: Subtasks that depend on one another or change the same files go into the same package and are done in order within it; Subtasks that do not affect one another each form a package of their own. Each package goes to one economy-tier subagent, which works in its own worktree and branch, and several packages run at the same time. The concurrency limit is execution.maxConcurrentSubagents; when that value exceeds the host's limit or is not set, dispatch by the host's rules. A package retires as soon as it is finished: it runs no gates, does no acceptance and writes nothing to the chain. When every package is finished, merge them into the integration branch in dependency order and hand any conflicts to one integration subagent."
         },
         {
@@ -4280,7 +4294,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 107,
+          "line": 108,
           "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
         },
         {
@@ -4392,7 +4406,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 107,
+          "line": 108,
           "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
         },
         {
@@ -4504,7 +4518,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 107,
+          "line": 108,
           "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
         },
         {
@@ -4616,7 +4630,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 107,
+          "line": 108,
           "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
         },
         {
@@ -6427,7 +6441,7 @@
     },
     {
       "area": "Coordination lifecycle",
-      "mechanism": "fresh setup and init --project join the coordination this device registers, else the one registered project libraries name, else the library at the device default location, else create one there and register it as its own project path; restore resolves the identity the library names (registered, located and registered, or unregistered and never replaced) and refuses competing identities with every candidate; uninstall releases the setup-made coordination registration once no registration names it and never writes or deletes a library; migration takes roles only from the mapping's explicit chainRole; setup's plan and receipt name the binding as coordination {libraryId, status, path}: create, registered, located or unregistered when planned, registered or unregistered once applied, released or retained for an uninstall, judged by the read-only predicate releaseSetupCoordination shares (R46 I08); a migration plan whose --project is the coordination partition holds one SETUP_ANSWER_INVALID blocker naming a project partition's root, plans no project language or wiring, and its apply imports nothing (R46 I07); the coordination partition of a migration plan lists coordinationSettings {key, value, source, action} for its own artifact.language (always; legacy-declared, else the catalog default as legacy-default) and the orchestration limits the old chain declares (execution.maxConcurrentSubagents, quota.*), each carried by the import or written once at the coordination library's library level by agent:setup as the last migration step, never into a project chain (R47-04); once the project's own library records its language, the migrate apply asks the prompt hook's recall (hook-recall.ts) for that library's newest valid card by its subject and answers recallSmoke hit or no-card, or stops with SETUP_RECALL_SMOKE_MISSED before the cleanup and the wiring (R47-05)",
+      "mechanism": "fresh setup and init --project join the coordination this device registers, else the one registered project libraries name, else the library at the device default location, else create one there and register it as its own project path; restore resolves the identity the library names (registered, located and registered, or unregistered and never replaced) and refuses competing identities with every candidate; uninstall releases the setup-made coordination registration once no registration names it and never writes or deletes a library; migration takes roles only from the mapping's explicit chainRole; setup's plan and receipt name the binding as coordination {libraryId, status, path}: create, registered, located or unregistered when planned, registered or unregistered once applied, released or retained for an uninstall, judged by the read-only predicate releaseSetupCoordination shares (R46 I08); a migration plan whose --project is the coordination partition holds one SETUP_ANSWER_INVALID blocker naming a project partition's root, plans no project language or wiring, and its apply imports nothing (R46 I07); the coordination partition of a migration plan lists coordinationSettings {key, value, source, action} for its own artifact.language (always; legacy-declared, else the catalog default as legacy-default) and the orchestration limits the old chain declares (execution.maxConcurrentSubagents, quota.*), each carried by the import or written once at the coordination library's library level by agent:setup as the last migration step, never into a project chain (R47-04); once the project's own library records its language, the migrate apply asks the prompt hook's recall (hook-recall.ts) for that library's newest valid card by its subject and answers recallSmoke hit or no-card, or stops with SETUP_RECALL_SMOKE_MISSED before the cleanup and the wiring (R47-05); a legacy-default language is listed with action default and written nowhere, so the coordination library records no language and its write language policy stays off, while a key the old chain declares and the library no longer holds is a write row again (R48 J-2); a SETUP_RECALL_SMOKE_MISSED refusal from the shipped entry carries cardId and query (R48 PA2-3)",
       "files": [
         "project-chain.ts",
         "setup-fresh.ts",
@@ -6576,5 +6590,5 @@
     }
   ],
   "settingCount": 33,
-  "nativeReads": "installed engine 1.2.1, live 10051, INIT revision16 and INC399 revision8; read-only status/work-show readbacks of 2026-10-08T23:40:39Z retained in the raw archive (dispatch-runs/init-053/integration-r47-init053-raw/u18/native-reads.json)"
+  "nativeReads": "installed engine 1.2.1, live 10051, INIT revision16 and INC399 revision8; read-only status/work-show readbacks of 2026-10-09T01:42:49Z retained in the raw archive (dispatch-runs/init-053/integration-r48-init053-raw/u18/native-reads.json)"
 }

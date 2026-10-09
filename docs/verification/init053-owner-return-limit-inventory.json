@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r48-init053-integration",
+  "pack": "r50-init053-integration",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "3b9bf4a5a1e0a94c3c2040f0f59a38f8222a724b116c08c484e5e63a5d4d3fc5"
+      "sha256": "680918eb93e2c0d6411ab2a63573b524ea0b9e0270636128f0b8861087709ae5"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -107,7 +107,7 @@
     },
     {
       "path": "packages/core/src/framework-version.ts",
-      "sha256": "264d202baad527d27cc70a593569d0bb3e8de3c3a7e1d8794fd65f59f6205ded"
+      "sha256": "a39abb1bfe40af4d2cc8db759953c194dfd2d8b291df755f0d8ee63a43b07738"
     },
     {
       "path": "packages/core/src/gate-identity.ts",
@@ -215,7 +215,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "601c534a1bb2387211ad47d59632d9c0ef0748ae42f6c9e16376ef6efc2b8a4c"
+      "sha256": "3bb8f083a0a22626258b076bc9dc9afa8fb966a68fad39d98c9f8992b22e0adc"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -307,7 +307,7 @@
     },
     {
       "path": "packages/core/src/setup.ts",
-      "sha256": "6c03eee4ba59781f3316f1a1b34d9bae27e47ad8d8a17acc94cd6213448a8de7"
+      "sha256": "422c4133a068e1154ad24108c8e33735287261c6ceef9c9adcdae59c4728a08b"
     },
     {
       "path": "packages/core/src/skill-copies.ts",
@@ -603,7 +603,7 @@
     },
     {
       "path": "scripts/lib/release-lockstep.mjs",
-      "sha256": "942a7da95a5a50cb949dc214de44eae6e34091dd85e69c066a3466cf3be53026"
+      "sha256": "f3743e1845dbe469aaece350a73006c1fbd1c1b9c894484e425b764bacaadc13"
     },
     {
       "path": "scripts/lib/release-tag-gate.mjs",
@@ -687,7 +687,7 @@
     },
     {
       "path": "scripts/push-wiki.mjs",
-      "sha256": "8544451a4b759e7cc56cf8a5d70ebe94ae18b4d92fabbfd63bd16be38d747434"
+      "sha256": "5879b6bb6ae7413978b952eb694b228e27503280c6e76f232d9ae657c18a1622"
     },
     {
       "path": "scripts/release.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R48 integration batch-end generation after the R48-INT-1 fix (package C fast-forwarded, package D merged with one merge commit and the package D fix 15754197 fast-forwarded in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 second pass ran the full engine suite once after the fix and before this generation; its actual exit and counts are attached below: no leg was red (tests/platform-doctor.test.mjs R48 PB-2 green after the fix; one added parity case in tests/output-session-lifecycle.test.mjs), so there was no disposal and no further pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R50 integration batch-end generation (package P-A1 fast-forwarded, packages P-A2b (carrying P-A2a), P-B and P-C merged with one merge commit each and the CHANGELOG paragraph openings unified in one integration commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red (1782 of 1782 tests in 191 files: the 1774 of the R48 continuation plus the 4 gates-cli cases of P-A1, the 3 migrate cases of P-A2a and the 1 push-wiki case of P-C), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "b51898aa43d5cb46fd9268f34ea0ae220fdc310e47c198a0a312ff4c5ea30c8b",
+      "sha256": "2da6524552ac3cddcfae6011ef8b7fd3077271927aa867754faa530593282268",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "506af4beb06e1ff2bbfb7100053634c106d2ce740c7b88177f1ace611bedd94e",
+      "sha256": "566b136e91bac55ad0cc72e7de67ae4a03c64daa44fd040f000397a556ead852",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "91e1cd9fbc01b2a851c2441d4ec1c0f1789eef7aaf463a8673746e9fc5d136b5",
+      "sha256": "58a30bade54a90aaee3c033ab4d44570949097a22bef60bb29f234a97d0b8381",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1012,8 +1012,8 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1774,
-      "pass": 1774,
+      "tests": 1782,
+      "pass": 1782,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
@@ -1156,10 +1156,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-09T02:11:51.466656+00:00",
+  "generationTimeUtc": "2026-10-09T13:26:46.533233+00:00",
   "currentIndividualReview": {
     "namedDeclarations": [
       {
@@ -1220,13 +1220,13 @@
         "currentInitializer": "Object.freeze([\n  new URL(`../skill/${BRAND.helper.id}/`, import.meta.url),\n  new URL(`../../../skill/${BRAND.helper.id}/`, import.meta.url),\n  new URL(`../../../../../skill/${BRAND.helper.id}/`, import.meta.url),\n])",
         "declarations": [
           {
-            "line": 1572,
+            "line": 1674,
             "initializer": "Object.freeze([\n  new URL(`../skill/${BRAND.helper.id}/`, import.meta.url),\n  new URL(`../../../skill/${BRAND.helper.id}/`, import.meta.url),\n  new URL(`../../../../../skill/${BRAND.helper.id}/`, import.meta.url),\n])"
           }
         ],
         "exactUses": [
           {
-            "line": 1572,
+            "line": 1674,
             "syntax": "VariableDeclaration",
             "context": [
               "// bundled scripts/einzbern.mjs beside skill/), the source tree (packages/cli/src/index.ts) and its",
@@ -1238,7 +1238,7 @@
             ]
           },
           {
-            "line": 1597,
+            "line": 1699,
             "syntax": "ForOfStatement",
             "context": [
               "",
@@ -1326,13 +1326,13 @@
         "currentInitializer": "scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value",
         "declarations": [
           {
-            "line": 3227,
+            "line": 3329,
             "initializer": "scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value"
           }
         ],
         "exactUses": [
           {
-            "line": 3227,
+            "line": 3329,
             "syntax": "VariableDeclaration",
             "context": [
               "    const sprintFilter = values.sprint === undefined ? undefined : canonicalJson(sprintReference(values.sprint));",
@@ -1344,7 +1344,7 @@
             ]
           },
           {
-            "line": 3228,
+            "line": 3330,
             "syntax": "BinaryExpression",
             "context": [
               "    const state = await validateWorkspace(values.workspace ?? \"\");",
@@ -1367,25 +1367,77 @@
         "currentInitializer": "(await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId)",
         "declarations": [
           {
-            "line": 1166,
+            "line": 1059,
+            "initializer": "(await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId)"
+          },
+          {
+            "line": 1268,
             "initializer": "(await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId)"
           }
         ],
         "exactUses": [
           {
-            "line": 987,
+            "line": 1059,
+            "syntax": "VariableDeclaration",
+            "context": [
+              "  const unscoped = async (): Promise<Awaited<ReturnType<typeof readRegistry>>[\"entries\"] | null> => {",
+              "    if (!coordinationRootAnswersFor(library, projectId)) return null;",
+              "    const entries = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId);",
+              "    return entries.some((entry) => entry.projectId === projectId) ? null : entries.filter((entry) => entry.projectId === undefined);",
+              "  };",
+              "  if (project !== undefined) {"
+            ]
+          },
+          {
+            "line": 1059,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "  const unscoped = async (): Promise<Awaited<ReturnType<typeof readRegistry>>[\"entries\"] | null> => {",
+              "    if (!coordinationRootAnswersFor(library, projectId)) return null;",
+              "    const entries = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId);",
+              "    return entries.some((entry) => entry.projectId === projectId) ? null : entries.filter((entry) => entry.projectId === undefined);",
+              "  };",
+              "  if (project !== undefined) {"
+            ]
+          },
+          {
+            "line": 1060,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "    if (!coordinationRootAnswersFor(library, projectId)) return null;",
+              "    const entries = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId);",
+              "    return entries.some((entry) => entry.projectId === projectId) ? null : entries.filter((entry) => entry.projectId === undefined);",
+              "  };",
+              "  if (project !== undefined) {",
+              "    const root = resolve(project);"
+            ]
+          },
+          {
+            "line": 1060,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "    if (!coordinationRootAnswersFor(library, projectId)) return null;",
+              "    const entries = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId);",
+              "    return entries.some((entry) => entry.projectId === projectId) ? null : entries.filter((entry) => entry.projectId === undefined);",
+              "  };",
+              "  if (project !== undefined) {",
+              "    const root = resolve(project);"
+            ]
+          },
+          {
+            "line": 1083,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  }",
               "  if (here !== null && here.libraryId === libraryId && here.entry.projectId === projectId) return here.entry.projectPath;",
               "  const registered = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId && entry.projectId === projectId);",
               "  if (registered.length === 1) return registered[0]!.projectPath;",
-              "  throw new WorkflowCliError(",
-              "    \"GATES_PROJECT_UNKNOWN\","
+              "  const fallback = registered.length === 0 ? await unscoped() : null;",
+              "  if (fallback?.length === 1) return fallback[0]!.projectPath;"
             ]
           },
           {
-            "line": 1166,
+            "line": 1268,
             "syntax": "VariableDeclaration",
             "context": [
               "async function registeredProjectRootForWorkspace(workspace: string, projectId?: string): Promise<string | null> {",
@@ -1397,7 +1449,7 @@
             ]
           },
           {
-            "line": 1166,
+            "line": 1268,
             "syntax": "PropertyAccessExpression",
             "context": [
               "async function registeredProjectRootForWorkspace(workspace: string, projectId?: string): Promise<string | null> {",
@@ -1409,7 +1461,7 @@
             ]
           },
           {
-            "line": 1167,
+            "line": 1269,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const state = await materializeWorkspace(workspace);",
@@ -1421,7 +1473,7 @@
             ]
           },
           {
-            "line": 1167,
+            "line": 1269,
             "syntax": "ElementAccessExpression",
             "context": [
               "  const state = await materializeWorkspace(workspace);",
@@ -1433,7 +1485,7 @@
             ]
           },
           {
-            "line": 1485,
+            "line": 1587,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    }",
@@ -1445,7 +1497,7 @@
             ]
           },
           {
-            "line": 1648,
+            "line": 1750,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    out: target,",
@@ -1457,7 +1509,7 @@
             ]
           },
           {
-            "line": 1663,
+            "line": 1765,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const fields = details as Readonly<Record<string, unknown>>;",
@@ -1469,7 +1521,7 @@
             ]
           },
           {
-            "line": 1977,
+            "line": 2079,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const projectId = configurationOptions(values, project?.projectId).configurationProjectId;",
@@ -1481,7 +1533,7 @@
             ]
           },
           {
-            "line": 2101,
+            "line": 2203,
             "syntax": "PropertyAssignment",
             "context": [
               "    parseArguments(rest, []);",
@@ -1493,7 +1545,7 @@
             ]
           },
           {
-            "line": 2101,
+            "line": 2203,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    parseArguments(rest, []);",
@@ -1597,7 +1649,7 @@
             "initializer": "boundedInteger(values, \"limit\")"
           },
           {
-            "line": 2811,
+            "line": 2913,
             "initializer": "values.limit === undefined ? undefined : integerValue(values, \"limit\")"
           }
         ],
@@ -1663,7 +1715,7 @@
             ]
           },
           {
-            "line": 2698,
+            "line": 2800,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      // rule (>= 1, <= the canonical view-byte budget, offset >= 0), and a CLI-side",
@@ -1675,7 +1727,7 @@
             ]
           },
           {
-            "line": 2698,
+            "line": 2800,
             "syntax": "PropertyAssignment",
             "context": [
               "      // rule (>= 1, <= the canonical view-byte budget, offset >= 0), and a CLI-side",
@@ -1687,7 +1739,7 @@
             ]
           },
           {
-            "line": 2811,
+            "line": 2913,
             "syntax": "VariableDeclaration",
             "context": [
               "    const query = values.query ?? \"\";",
@@ -1699,7 +1751,7 @@
             ]
           },
           {
-            "line": 2811,
+            "line": 2913,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const query = values.query ?? \"\";",
@@ -1711,7 +1763,7 @@
             ]
           },
           {
-            "line": 2812,
+            "line": 2914,
             "syntax": "BinaryExpression",
             "context": [
               "    if (query.length === 0 || query.length > RUNTIME_CAPACITY.stringCodeUnits || !query.isWellFormed()) fail(\"CLI_ARGUMENT_MALFORMED\", \"query\");",
@@ -1723,7 +1775,7 @@
             ]
           },
           {
-            "line": 2812,
+            "line": 2914,
             "syntax": "BinaryExpression",
             "context": [
               "    if (query.length === 0 || query.length > RUNTIME_CAPACITY.stringCodeUnits || !query.isWellFormed()) fail(\"CLI_ARGUMENT_MALFORMED\", \"query\");",
@@ -1735,7 +1787,7 @@
             ]
           },
           {
-            "line": 2812,
+            "line": 2914,
             "syntax": "CallExpression",
             "context": [
               "    if (query.length === 0 || query.length > RUNTIME_CAPACITY.stringCodeUnits || !query.isWellFormed()) fail(\"CLI_ARGUMENT_MALFORMED\", \"query\");",
@@ -1747,7 +1799,7 @@
             ]
           },
           {
-            "line": 2866,
+            "line": 2968,
             "syntax": "BinaryExpression",
             "context": [
               "      query,",
@@ -1759,7 +1811,7 @@
             ]
           },
           {
-            "line": 2866,
+            "line": 2968,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "      query,",
@@ -1771,7 +1823,7 @@
             ]
           },
           {
-            "line": 2920,
+            "line": 3022,
             "syntax": "PropertyAssignment",
             "context": [
               "      tau: result.tau.toFixed(4),",
@@ -1783,7 +1835,7 @@
             ]
           },
           {
-            "line": 2920,
+            "line": 3022,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      tau: result.tau.toFixed(4),",
@@ -1806,13 +1858,13 @@
         "currentInitializer": "Number.isSafeInteger(promptBytes) && promptBytes > 0 ? promptBytes : 1600",
         "declarations": [
           {
-            "line": 2833,
+            "line": 2935,
             "initializer": "Number.isSafeInteger(promptBytes) && promptBytes > 0 ? promptBytes : 1600"
           }
         ],
         "exactUses": [
           {
-            "line": 2833,
+            "line": 2935,
             "syntax": "VariableDeclaration",
             "context": [
               "    // at whole lines, which is what a host puts in front of the prompt.",
@@ -1824,7 +1876,7 @@
             ]
           },
           {
-            "line": 2943,
+            "line": 3045,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "        ...(hit.removal === undefined ? {} : { removal: { ...hit.removal } }),",
@@ -1836,7 +1888,7 @@
             ]
           },
           {
-            "line": 2944,
+            "line": 3046,
             "syntax": "CallExpression",
             "context": [
               "      })),",
@@ -1859,13 +1911,13 @@
         "currentInitializer": "Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\")",
         "declarations": [
           {
-            "line": 2832,
+            "line": 2934,
             "initializer": "Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\")"
           }
         ],
         "exactUses": [
           {
-            "line": 2832,
+            "line": 2934,
             "syntax": "VariableDeclaration",
             "context": [
               "    // The byte budget of one prompt's answer (TCRN-CROSS-STORY-474 R2): the hit lines are cut to it",
@@ -1877,7 +1929,7 @@
             ]
           },
           {
-            "line": 2833,
+            "line": 2935,
             "syntax": "CallExpression",
             "context": [
               "    // at whole lines, which is what a host puts in front of the prompt.",
@@ -1889,7 +1941,7 @@
             ]
           },
           {
-            "line": 2833,
+            "line": 2935,
             "syntax": "BinaryExpression",
             "context": [
               "    // at whole lines, which is what a host puts in front of the prompt.",
@@ -1901,7 +1953,7 @@
             ]
           },
           {
-            "line": 2833,
+            "line": 2935,
             "syntax": "ConditionalExpression",
             "context": [
               "    // at whole lines, which is what a host puts in front of the prompt.",
@@ -1924,11 +1976,11 @@
         "currentInitializer": "values[\"scope-bytes\"] === undefined ? Number(configuredScopeBytes ?? \"512\") : integerValue(values, \"scope-bytes\")",
         "declarations": [
           {
-            "line": 2828,
+            "line": 2930,
             "initializer": "Number(settingValue(\"retrieval.scopeExcerptBytes\") ?? \"512\")"
           },
           {
-            "line": 3228,
+            "line": 3330,
             "initializer": "values[\"scope-bytes\"] === undefined ? Number(configuredScopeBytes ?? \"512\") : integerValue(values, \"scope-bytes\")"
           }
         ],
@@ -1970,7 +2022,7 @@
             ]
           },
           {
-            "line": 2828,
+            "line": 2930,
             "syntax": "VariableDeclaration",
             "context": [
               "    // answer is worse than an answer ranked in the wrong language.",
@@ -1982,7 +2034,7 @@
             ]
           },
           {
-            "line": 2829,
+            "line": 2931,
             "syntax": "CallExpression",
             "context": [
               "    const languageAnswer = resolveQueryLanguage(query, readKnowledgeLanguagePolicy(state.settings, values.host));",
@@ -1994,7 +2046,7 @@
             ]
           },
           {
-            "line": 2829,
+            "line": 2931,
             "syntax": "BinaryExpression",
             "context": [
               "    const languageAnswer = resolveQueryLanguage(query, readKnowledgeLanguagePolicy(state.settings, values.host));",
@@ -2006,7 +2058,7 @@
             ]
           },
           {
-            "line": 2829,
+            "line": 2931,
             "syntax": "ConditionalExpression",
             "context": [
               "    const languageAnswer = resolveQueryLanguage(query, readKnowledgeLanguagePolicy(state.settings, values.host));",
@@ -2018,7 +2070,7 @@
             ]
           },
           {
-            "line": 3228,
+            "line": 3330,
             "syntax": "VariableDeclaration",
             "context": [
               "    const state = await validateWorkspace(values.workspace ?? \"\");",
@@ -2030,7 +2082,7 @@
             ]
           },
           {
-            "line": 3229,
+            "line": 3331,
             "syntax": "BinaryExpression",
             "context": [
               "    const configuredScopeBytes = scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value;",
@@ -2042,7 +2094,7 @@
             ]
           },
           {
-            "line": 3229,
+            "line": 3331,
             "syntax": "BinaryExpression",
             "context": [
               "    const configuredScopeBytes = scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value;",
@@ -2054,7 +2106,7 @@
             ]
           },
           {
-            "line": 3255,
+            "line": 3357,
             "syntax": "CallExpression",
             "context": [
               "      // makes the round trip closed for every spelling the writer accepts, by construction.",
@@ -2077,13 +2129,13 @@
         "currentInitializer": "Number.isSafeInteger(scopeBytes) && scopeBytes > 0 ? scopeBytes : 512",
         "declarations": [
           {
-            "line": 2829,
+            "line": 2931,
             "initializer": "Number.isSafeInteger(scopeBytes) && scopeBytes > 0 ? scopeBytes : 512"
           }
         ],
         "exactUses": [
           {
-            "line": 2829,
+            "line": 2931,
             "syntax": "VariableDeclaration",
             "context": [
               "    const languageAnswer = resolveQueryLanguage(query, readKnowledgeLanguagePolicy(state.settings, values.host));",
@@ -2095,7 +2147,7 @@
             ]
           },
           {
-            "line": 2852,
+            "line": 2954,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "    // the verb and the prompt hook cannot index differently: the Stories, Incidents, Initiatives and",
@@ -2107,7 +2159,7 @@
             ]
           },
           {
-            "line": 2921,
+            "line": 3023,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "      relativeFloor: result.relativeFloor.toFixed(4),",
@@ -2130,13 +2182,13 @@
         "currentInitializer": "values[\"segment-bytes\"] === undefined ? undefined : integerValue(values, \"segment-bytes\")",
         "declarations": [
           {
-            "line": 2502,
+            "line": 2604,
             "initializer": "values[\"segment-bytes\"] === undefined ? undefined : integerValue(values, \"segment-bytes\")"
           }
         ],
         "exactUses": [
           {
-            "line": 2502,
+            "line": 2604,
             "syntax": "VariableDeclaration",
             "context": [
               "    const values = parseArguments(rest, [\"workspace\", \"segment-bytes\", \"clear-removed\", \"at\"]);",
@@ -2148,7 +2200,7 @@
             ]
           },
           {
-            "line": 2503,
+            "line": 2605,
             "syntax": "CallExpression",
             "context": [
               "    required(values, [\"workspace\"]);",
@@ -14207,16 +14259,16 @@
         "currentInitializer": "RUNTIME_CAPACITY.stringCodeUnits",
         "declarations": [
           {
-            "line": 100,
+            "line": 115,
             "initializer": "RUNTIME_CAPACITY.stringCodeUnits"
           }
         ],
         "exactUses": [
           {
-            "line": 100,
+            "line": 115,
             "syntax": "VariableDeclaration",
             "context": [
-              "const CHAIN_ROLES: readonly string[] = Object.freeze([\"coordination\", \"project\"]);",
+              "const PROJECT_ID_PATTERN = /^project:[a-f0-9]{24}$/u;",
               "// The library manifest's bound on a project hint (ether-library.ts), which a partition's name shares.",
               "const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;",
               "const PORTAL_KEY_PREFIX = \"portal.\";",
@@ -14225,7 +14277,7 @@
             ]
           },
           {
-            "line": 325,
+            "line": 359,
             "syntax": "BinaryExpression",
             "context": [
               "",
@@ -14237,7 +14289,7 @@
             ]
           },
           {
-            "line": 356,
+            "line": 390,
             "syntax": "TemplateSpan",
             "context": [
               "    if (!isAbsolutePath(legacyWorkspace)) mappingInvalid(`partitions[${index}].legacyWorkspace must be an absolute path`, at(\"legacyWorkspace\"));",
@@ -14249,7 +14301,7 @@
             ]
           },
           {
-            "line": 357,
+            "line": 391,
             "syntax": "TemplateSpan",
             "context": [
               "    if (!isAbsolutePath(projectRoot)) mappingInvalid(`partitions[${index}].projectRoot must be an absolute path`, at(\"projectRoot\"));",
@@ -14272,25 +14324,25 @@
         "currentInitializer": "RUNTIME_CAPACITY.bufferBytes",
         "declarations": [
           {
-            "line": 96,
+            "line": 109,
             "initializer": "RUNTIME_CAPACITY.bufferBytes"
           }
         ],
         "exactUses": [
           {
-            "line": 96,
+            "line": 109,
             "syntax": "VariableDeclaration",
             "context": [
               "",
               "// A mapping names a handful of partitions; a file larger than this is not one.",
               "const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;",
-              "const MAPPING_FIELDS: readonly string[] = Object.freeze([\"partition\", \"legacyWorkspace\", \"projectRoot\", \"projectName\", \"gitRemote\", \"omitLegacyKnowledge\", \"chainRole\"]);",
+              "const MAPPING_FIELDS: readonly string[] = Object.freeze([\"partition\", \"legacyWorkspace\", \"projectRoot\", \"projectName\", \"gitRemote\", \"omitLegacyKnowledge\", \"chainRole\", \"projectId\"]);",
               "const CHAIN_ROLES: readonly string[] = Object.freeze([\"coordination\", \"project\"]);",
-              "// The library manifest's bound on a project hint (ether-library.ts), which a partition's name shares."
+              "// A project id as the chain identity's primaryProjectId takes it (chain-identity.ts)."
             ]
           },
           {
-            "line": 408,
+            "line": 450,
             "syntax": "BinaryExpression",
             "context": [
               "    throw error;",
@@ -14302,7 +14354,7 @@
             ]
           },
           {
-            "line": 408,
+            "line": 450,
             "syntax": "TemplateSpan",
             "context": [
               "    throw error;",
@@ -14325,13 +14377,13 @@
         "currentInitializer": "[]",
         "declarations": [
           {
-            "line": 826,
+            "line": 911,
             "initializer": "[]"
           }
         ],
         "exactUses": [
           {
-            "line": 826,
+            "line": 911,
             "syntax": "VariableDeclaration",
             "context": [
               "  const registry = await recorder.attempt(\"registry\", registryFile, () => readRegistry(input.deviceHome));",
@@ -14343,7 +14395,7 @@
             ]
           },
           {
-            "line": 840,
+            "line": 925,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    }",
@@ -14355,7 +14407,7 @@
             ]
           },
           {
-            "line": 850,
+            "line": 935,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  partitions.splice(0, partitions.length, ...identified);",
@@ -14367,7 +14419,7 @@
             ]
           },
           {
-            "line": 861,
+            "line": 946,
             "syntax": "PropertyAssignment",
             "context": [
               "      mapping: input.mapping,",
@@ -38222,13 +38274,13 @@
         "currentInitializer": "readFileSync(join(source, ...file.split(\"/\")))",
         "declarations": [
           {
-            "line": 152,
+            "line": 285,
             "initializer": "readFileSync(join(source, ...file.split(\"/\")))"
           }
         ],
         "exactUses": [
           {
-            "line": 110,
+            "line": 122,
             "syntax": "Parameter",
             "context": [
               "}",
@@ -38240,7 +38292,7 @@
             ]
           },
           {
-            "line": 112,
+            "line": 124,
             "syntax": "CallExpression",
             "context": [
               "function sameBytes(path, bytes) {",
@@ -38252,22 +38304,130 @@
             ]
           },
           {
-            "line": 152,
-            "syntax": "VariableDeclaration",
+            "line": 210,
+            "syntax": "Parameter",
             "context": [
-              "  const updated = [];",
-              "  for (const file of files) {",
-              "    const bytes = readFileSync(join(source, ...file.split(\"/\")));",
-              "    const target = join(top, ...file.split(\"/\"));",
-              "    if (sameBytes(target, bytes)) continue;",
-              "    mkdirSync(dirname(target), { recursive: true });"
+              "// A Markdown file as the Wiki is given it, and how many links were rewritten. Bytes that are not",
+              "// UTF-8 are copied as they are.",
+              "function rewritePageLinks(bytes, pages) {",
+              "  const text = bytes.toString(\"utf8\");",
+              "  if (!Buffer.from(text, \"utf8\").equals(bytes)) return { bytes, count: 0 };",
+              "  const lines = text.split(\"\\n\");"
             ]
           },
           {
-            "line": 154,
+            "line": 211,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "// UTF-8 are copied as they are.",
+              "function rewritePageLinks(bytes, pages) {",
+              "  const text = bytes.toString(\"utf8\");",
+              "  if (!Buffer.from(text, \"utf8\").equals(bytes)) return { bytes, count: 0 };",
+              "  const lines = text.split(\"\\n\");",
+              "  let count = 0;"
+            ]
+          },
+          {
+            "line": 212,
             "syntax": "CallExpression",
             "context": [
-              "    const bytes = readFileSync(join(source, ...file.split(\"/\")));",
+              "function rewritePageLinks(bytes, pages) {",
+              "  const text = bytes.toString(\"utf8\");",
+              "  if (!Buffer.from(text, \"utf8\").equals(bytes)) return { bytes, count: 0 };",
+              "  const lines = text.split(\"\\n\");",
+              "  let count = 0;",
+              "  let block = [];"
+            ]
+          },
+          {
+            "line": 212,
+            "syntax": "ShorthandPropertyAssignment",
+            "context": [
+              "function rewritePageLinks(bytes, pages) {",
+              "  const text = bytes.toString(\"utf8\");",
+              "  if (!Buffer.from(text, \"utf8\").equals(bytes)) return { bytes, count: 0 };",
+              "  const lines = text.split(\"\\n\");",
+              "  let count = 0;",
+              "  let block = [];"
+            ]
+          },
+          {
+            "line": 245,
+            "syntax": "ShorthandPropertyAssignment",
+            "context": [
+              "  }",
+              "  flush();",
+              "  return count === 0 ? { bytes, count } : { bytes: Buffer.from(lines.join(\"\\n\"), \"utf8\"), count };",
+              "}",
+              "",
+              "function main() {"
+            ]
+          },
+          {
+            "line": 245,
+            "syntax": "PropertyAssignment",
+            "context": [
+              "  }",
+              "  flush();",
+              "  return count === 0 ? { bytes, count } : { bytes: Buffer.from(lines.join(\"\\n\"), \"utf8\"), count };",
+              "}",
+              "",
+              "function main() {"
+            ]
+          },
+          {
+            "line": 285,
+            "syntax": "VariableDeclaration",
+            "context": [
+              "  let linksRewritten = 0;",
+              "  for (const file of files) {",
+              "    let bytes = readFileSync(join(source, ...file.split(\"/\")));",
+              "    if (file.endsWith(\".md\")) {",
+              "      const rewritten = rewritePageLinks(bytes, pages);",
+              "      bytes = rewritten.bytes;"
+            ]
+          },
+          {
+            "line": 287,
+            "syntax": "CallExpression",
+            "context": [
+              "    let bytes = readFileSync(join(source, ...file.split(\"/\")));",
+              "    if (file.endsWith(\".md\")) {",
+              "      const rewritten = rewritePageLinks(bytes, pages);",
+              "      bytes = rewritten.bytes;",
+              "      linksRewritten += rewritten.count;",
+              "    }"
+            ]
+          },
+          {
+            "line": 288,
+            "syntax": "BinaryExpression",
+            "context": [
+              "    if (file.endsWith(\".md\")) {",
+              "      const rewritten = rewritePageLinks(bytes, pages);",
+              "      bytes = rewritten.bytes;",
+              "      linksRewritten += rewritten.count;",
+              "    }",
+              "    const target = join(top, ...file.split(\"/\"));"
+            ]
+          },
+          {
+            "line": 288,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "    if (file.endsWith(\".md\")) {",
+              "      const rewritten = rewritePageLinks(bytes, pages);",
+              "      bytes = rewritten.bytes;",
+              "      linksRewritten += rewritten.count;",
+              "    }",
+              "    const target = join(top, ...file.split(\"/\"));"
+            ]
+          },
+          {
+            "line": 292,
+            "syntax": "CallExpression",
+            "context": [
+              "    }",
               "    const target = join(top, ...file.split(\"/\"));",
               "    if (sameBytes(target, bytes)) continue;",
               "    mkdirSync(dirname(target), { recursive: true });",
@@ -38276,7 +38436,7 @@
             ]
           },
           {
-            "line": 156,
+            "line": 294,
             "syntax": "CallExpression",
             "context": [
               "    if (sameBytes(target, bytes)) continue;",
@@ -42105,11 +42265,11 @@
         "oldLine": 956,
         "source": "const gated = listGates(view).some((gate) => gate.enabled && gate.required && gate.covers.length > 0);",
         "currentLines": [
-          1019
+          1121
         ],
         "syntax": [
           {
-            "line": 1019,
+            "line": 1121,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -42122,7 +42282,7 @@
               "    const ids = stories.filter((record) => record.projectId === projectId).map((record) => record.id);",
               "    const gated = listGates(view).some((gate) => gate.enabled && gate.required && gate.covers.length > 0);",
               "    const verdict = await assertDoneGates({",
-              "      projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project, projectId) : \"\",",
+              "      projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project, projectId, state) : \"\",",
               "      library: { ...view, work }, workIds: ids,",
               "      ...(projectId === undefined ? {} : { configurationProjectId: projectId }),"
             ]
@@ -42138,11 +42298,11 @@
         "oldLine": 1552,
         "source": "if (names.length > 0) fail(\"SKILL_OUT_NOT_EMPTY\", `${out} is not empty; --out names a missing or empty directory`);",
         "currentLines": [
-          1621
+          1723
         ],
         "syntax": [
           {
-            "line": 1621,
+            "line": 1723,
             "parents": [
               "IfStatement",
               "Block",
@@ -42170,11 +42330,11 @@
         "oldLine": 1645,
         "source": "maxBuffer: RUNTIME_CAPACITY.bufferBytes,",
         "currentLines": [
-          1714
+          1816
         ],
         "syntax": [
           {
-            "line": 1714,
+            "line": 1816,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -42214,11 +42374,11 @@
         "oldLine": 2306,
         "source": "if (missing.length > 0) fail(\"CLI_ARGUMENT_MISSING\", missing.join(\",\"));",
         "currentLines": [
-          2393
+          2495
         ],
         "syntax": [
           {
-            "line": 2393,
+            "line": 2495,
             "parents": [
               "IfStatement",
               "Block",
@@ -42247,11 +42407,11 @@
         "oldLine": 2532,
         "source": "stalenessPolicy: { maximumAgeDays: nullableIntegerValue(values, \"stale-days\"), unknownDisposition: \"fail-closed\" },",
         "currentLines": [
-          2619
+          2721
         ],
         "syntax": [
           {
-            "line": 2619,
+            "line": 2721,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -42280,11 +42440,11 @@
         "oldLine": 2723,
         "source": "if (query.length === 0 || query.length > RUNTIME_CAPACITY.stringCodeUnits || !query.isWellFormed()) fail(\"CLI_ARGUMENT_MALFORMED\", \"query\");",
         "currentLines": [
-          2810
+          2912
         ],
         "syntax": [
           {
-            "line": 2810,
+            "line": 2912,
             "parents": [
               "IfStatement",
               "Block",
@@ -42313,11 +42473,11 @@
         "oldLine": 3090,
         "source": "if (values.search !== undefined && (values.search.length === 0 || values.search.length > RUNTIME_CAPACITY.stringCodeUnits || !values.search.isWellFormed())) {",
         "currentLines": [
-          3215
+          3317
         ],
         "syntax": [
           {
-            "line": 3215,
+            "line": 3317,
             "parents": [
               "IfStatement",
               "Block",
@@ -42346,11 +42506,11 @@
         "oldLine": 3104,
         "source": "if (scopeBytes < 1 || scopeBytes > Number.MAX_SAFE_INTEGER) fail(\"CLI_ARGUMENT_MALFORMED\", \"scope-bytes\");",
         "currentLines": [
-          3229
+          3331
         ],
         "syntax": [
           {
-            "line": 3229,
+            "line": 3331,
             "parents": [
               "IfStatement",
               "Block",
@@ -52171,11 +52331,11 @@
         "oldLine": 77,
         "source": "const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;",
         "currentLines": [
-          96
+          109
         ],
         "syntax": [
           {
-            "line": 96,
+            "line": 109,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -52185,10 +52345,10 @@
               "",
               "// A mapping names a handful of partitions; a file larger than this is not one.",
               "const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;",
-              "const MAPPING_FIELDS: readonly string[] = Object.freeze([\"partition\", \"legacyWorkspace\", \"projectRoot\", \"projectName\", \"gitRemote\", \"omitLegacyKnowledge\", \"chainRole\"]);",
+              "const MAPPING_FIELDS: readonly string[] = Object.freeze([\"partition\", \"legacyWorkspace\", \"projectRoot\", \"projectName\", \"gitRemote\", \"omitLegacyKnowledge\", \"chainRole\", \"projectId\"]);",
               "const CHAIN_ROLES: readonly string[] = Object.freeze([\"coordination\", \"project\"]);",
-              "// The library manifest's bound on a project hint (ether-library.ts), which a partition's name shares.",
-              "const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;"
+              "// A project id as the chain identity's primaryProjectId takes it (chain-identity.ts).",
+              "const PROJECT_ID_PATTERN = /^project:[a-f0-9]{24}$/u;"
             ]
           }
         ],
@@ -52202,18 +52362,18 @@
         "oldLine": 80,
         "source": "const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;",
         "currentLines": [
-          100
+          115
         ],
         "syntax": [
           {
-            "line": 100,
+            "line": 115,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
               "SourceFile"
             ],
             "context": [
-              "const CHAIN_ROLES: readonly string[] = Object.freeze([\"coordination\", \"project\"]);",
+              "const PROJECT_ID_PATTERN = /^project:[a-f0-9]{24}$/u;",
               "// The library manifest's bound on a project hint (ether-library.ts), which a partition's name shares.",
               "const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;",
               "const PORTAL_KEY_PREFIX = \"portal.\";",
@@ -52233,11 +52393,11 @@
         "oldLine": 264,
         "source": "return typeof value === \"string\" && value.length > 0 && value.length <= HINT_MAXIMUM_LENGTH && !/[\\u0000-\\u001f\\u007f]/u.test(value);",
         "currentLines": [
-          325
+          359
         ],
         "syntax": [
           {
-            "line": 325,
+            "line": 359,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -55114,11 +55274,11 @@
         "oldLine": 638,
         "source": "backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,",
         "currentLines": [
-          711
+          744
         ],
         "syntax": [
           {
-            "line": 711,
+            "line": 744,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -55133,7 +55293,7 @@
               "    pendingSections: pending,",
               "    blockers: recorder.blockers,",
               "    warnings: recorder.warnings,",
-              "    migration: { ...planned.migration, hostCleanup },"
+              "    migration: { ...planned.migration, hostCleanup, ...(projectBinding === null ? {} : { projectBinding }) },"
             ]
           }
         ],
@@ -70663,11 +70823,11 @@
         "oldLine": 179,
         "source": "const pushed = options.push && pending.length > 0;",
         "currentLines": [
-          179
+          317
         ],
         "syntax": [
           {
-            "line": 179,
+            "line": 317,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -75807,15 +75967,15 @@
       "notInOpenCensus": [
         [
           "packages/cli/src/index.ts",
-          949
+          1015
         ],
         [
           "packages/cli/src/index.ts",
-          2294
+          2396
         ],
         [
           "packages/cli/src/index.ts",
-          3170
+          3272
         ],
         [
           "packages/core/src/chain-identity.ts",
@@ -75847,27 +76007,27 @@
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          106
+          121
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          375
+          417
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          379
+          421
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          730
+          809
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          846
+          931
         ],
         [
           "packages/core/src/migrate-legacy.ts",
-          915
+          1002
         ],
         [
           "packages/core/src/project-chain.ts",
@@ -75943,7 +76103,7 @@
         ],
         [
           "packages/core/src/setup.ts",
-          736
+          769
         ],
         [
           "packages/core/src/workspace.ts",
@@ -76989,55 +77149,83 @@
     },
     "remainingConsumerExposureIssues": [],
     "r48CarriedReviewLines": {
-      "source": "integration-r48-init053-raw/u18b/limit-review-carried.json",
+      "source": "integration-r50-init053-raw/u18/limit-review-carried.json",
       "rule": "re-line only (zero-context hunk mapping 4535a863..HEAD); review, source and patterns unchanged; a candidate whose line falls in a hunk or whose source is not on both lines is not carried",
       "counts": {
         "input": 52,
         "carried": 52,
-        "relined": 7,
+        "relined": 11,
         "notCarried": 0
       },
       "relined": [
         {
+          "file": "packages/cli/src/index.ts",
+          "from": 949,
+          "to": 1015,
+          "source": "results.push({ ...binding, projectRoot, ok: run.reds.length === 0, handoff, run, recordPath });",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
+          "file": "packages/cli/src/index.ts",
+          "from": 2294,
+          "to": 2396,
+          "source": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources });",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
+          "file": "packages/cli/src/index.ts",
+          "from": 3170,
+          "to": 3272,
+          "source": "if (values[\"involved-projects\"] === undefined && values.scope === undefined && Object.keys(fields).length === 0 && values[\"decided-by\"] === undefined && relations.relations === undefined && values.verify === undefined && values.result === undefined && values.sprint === undefined && values.title === undefined && values.summary === undefined && values.labels === undefined) fail(\"CLI_ARGUMENT_MALFORMED\", \"annotation-field\");",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
           "file": "packages/core/src/migrate-legacy.ts",
           "from": 105,
-          "to": 106,
+          "to": 121,
           "source": "const COORDINATION_LIMIT_KEYS = Object.freeze([",
           "reviewer": "A2 (R47; carries A1's rows)"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
           "from": 368,
-          "to": 375,
+          "to": 417,
           "source": "if (coordinationRows.length > 1) {",
           "reviewer": "A2 (R47; carries A1's rows)"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
           "from": 372,
-          "to": 379,
+          "to": 421,
           "source": "if (projectRow >= 0 && coordinationRows.length === 0) {",
           "reviewer": "A2 (R47; carries A1's rows)"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
           "from": 721,
-          "to": 730,
+          "to": 809,
           "source": "const coordinationId = coordinationIndex >= 0 ? planned[coordinationIndex]?.workspaceId ?? null : null;",
           "reviewer": "A2 (R47; carries A1's rows)"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
           "from": 837,
-          "to": 846,
+          "to": 931,
           "source": "coordinationWrites(partition).length > 0)) recorder.write(\"library\", partition.target, \"update\");",
           "reviewer": "A2 (R47; carries A1's rows)"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
           "from": 906,
-          "to": 915,
+          "to": 1002,
           "source": "if (writes.length === 0) return;",
+          "reviewer": "A2 (R47; carries A1's rows)"
+        },
+        {
+          "file": "packages/core/src/setup.ts",
+          "from": 736,
+          "to": 769,
+          "source": "listed = await listKnowledgeMetadata(libraryPath, { at, allowTrailing: true, status: \"valid\", includeExplicitOnly: true, limit: Number.MAX_SAFE_INTEGER });",
           "reviewer": "A2 (R47; carries A1's rows)"
         },
         {
@@ -79564,17 +79752,17 @@
       "oldInitializer": "Object.freeze([\n  new URL(`../skill/${BRAND.helper.id}/`, import.meta.url),\n  new URL(`../../../skill/${BRAND.helper.id}/`, import.meta.url),\n  new URL(`../../../../../skill/${BRAND.helper.id}/`, import.meta.url),\n])",
       "oldLine": 1470,
       "currentInitializer": "Object.freeze([\n  new URL(`../skill/${BRAND.helper.id}/`, import.meta.url),\n  new URL(`../../../skill/${BRAND.helper.id}/`, import.meta.url),\n  new URL(`../../../../../skill/${BRAND.helper.id}/`, import.meta.url),\n])",
-      "currentLine": 1572,
+      "currentLine": 1674,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1572,
+          "line": 1674,
           "text": "const SKILL_SOURCE_CANDIDATES: readonly URL[] = Object.freeze(["
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1597,
+          "line": 1699,
           "text": "for (const candidate of SKILL_SOURCE_CANDIDATES) {"
         }
       ],
@@ -79634,62 +79822,62 @@
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1287,
+          "line": 1389,
           "text": "{ name: \"knowledge-bodies-migrate\", availability: \"cli\", mutates: true, flags: [{ name: \"workspace\", required: false, valueKind: \"string\" }, { name: \"segment-bytes\", required: false, valueKind: \"integer\" }, { name: \"clear-removed\", required: false, valueKind: \"boolean\" }, { name: \"at\", required: false, valueKind: \"instant\" }] },"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1381,
+          "line": 1483,
           "text": "{ name: \"work-list\", availability: \"cli\", mutates: false, flags: [{ name: \"involved-project\", required: false, valueKind: \"json\" }, { name: \"workspace\", required: false, valueKind: \"string\" }, { name: \"project-id\", required: false, valueKind: \"string\" }, { name: \"kind\", required: false, valueKind: \"string\" }, { name: \"status\", required: false, valueKind: \"string\" }, { name: \"parent-id\", required: false, valueKind: \"string\" }, { name: \"sprint\", required: false, valueKind: \"string\" }, { name: \"relation\", required: false, valueKind: \"string\" }, { name: \"search\", required: false, valueKind: \"string\" }, { name: \"scope-bytes\", required: false, valueKind: \"integer\" }, { name: \"limit\", required: false, valueKind: \"integer\" }, { name: \"offset\", required: false, valueKind: \"integer\" }] },"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1499,
+          "line": 1601,
           "text": "// may speak about host trust state; this reads the bytes and checks that declaration rather"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1540,
+          "line": 1642,
           "text": "// check from the flag to the bytes."
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2500,
+          "line": 2602,
           "text": "const values = parseArguments(rest, [\"workspace\", \"segment-bytes\", \"clear-removed\", \"at\"]);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2502,
+          "line": 2604,
           "text": "const segmentBytes = values[\"segment-bytes\"] === undefined ? undefined : integerValue(values, \"segment-bytes\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2816,
+          "line": 2918,
           "text": "// order work-list's scope-bytes already uses."
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3213,
+          "line": 3315,
           "text": "const values = parseArguments(rest, [\"workspace\", \"project-id\", \"kind\", \"status\", \"parent-id\", \"sprint\", \"relation\", \"involved-project\", \"search\", \"scope-bytes\", \"limit\", \"offset\"]);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3224,
+          "line": 3326,
           "text": "// against the stored advisory:sprint value by canonical bytes so the round trip is closed."
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3228,
+          "line": 3330,
           "text": "const scopeBytes = values[\"scope-bytes\"] === undefined ? Number(configuredScopeBytes ?? \"512\") : integerValue(values, \"scope-bytes\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3229,
+          "line": 3331,
           "text": "if (scopeBytes < 1 || scopeBytes > Number.MAX_SAFE_INTEGER) fail(\"CLI_ARGUMENT_MALFORMED\", \"scope-bytes\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3365,
+          "line": 3467,
           "text": "// canonical event bytes when this was filed). So the one thing a mirror needs in"
         }
       ],
@@ -79704,17 +79892,17 @@
       "oldInitializer": "state.settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value",
       "oldLine": 3061,
       "currentInitializer": "scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value",
-      "currentLine": 3227,
+      "currentLine": 3329,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3227,
+          "line": 3329,
           "text": "const configuredScopeBytes = scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value;"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3228,
+          "line": 3330,
           "text": "const scopeBytes = values[\"scope-bytes\"] === undefined ? Number(configuredScopeBytes ?? \"512\") : integerValue(values, \"scope-bytes\");"
         }
       ],
@@ -79729,47 +79917,72 @@
       "oldInitializer": null,
       "oldLine": null,
       "currentInitializer": "(await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId)",
-      "currentLine": 1166,
+      "currentLine": 1268,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 987,
+          "line": 1038,
+          "text": "// TCRN-CROSS-STORY-519 (D-519-3): whether a library's entries registered with no project answer for"
+        },
+        {
+          "file": "packages/cli/src/index.ts",
+          "line": 1056,
+          "text": "// The library's entries with no project, when they answer for projectId; null when they do not."
+        },
+        {
+          "file": "packages/cli/src/index.ts",
+          "line": 1057,
+          "text": "const unscoped = async (): Promise<Awaited<ReturnType<typeof readRegistry>>[\"entries\"] | null> => {"
+        },
+        {
+          "file": "packages/cli/src/index.ts",
+          "line": 1059,
+          "text": "const entries = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId);"
+        },
+        {
+          "file": "packages/cli/src/index.ts",
+          "line": 1060,
+          "text": "return entries.some((entry) => entry.projectId === projectId) ? null : entries.filter((entry) => entry.projectId === undefined);"
+        },
+        {
+          "file": "packages/cli/src/index.ts",
+          "line": 1083,
           "text": "const registered = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId && entry.projectId === projectId);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1166,
+          "line": 1268,
           "text": "const entries = (await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1167,
+          "line": 1269,
           "text": "return entries.length === 1 ? entries[0]!.projectPath : null;"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1485,
+          "line": 1587,
           "text": "for (const [key, child] of Object.entries(node as Readonly<Record<string, unknown>>)) {"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1648,
+          "line": 1750,
           "text": "files: digest.entries.map((entry) => entry.path),"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1663,
+          "line": 1765,
           "text": "const strings = Object.fromEntries(Object.entries(fields).filter((entry): entry is [string, string] => typeof entry[1] === \"string\"));"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1977,
+          "line": 2079,
           "text": "const mapped = (await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2101,
+          "line": 2203,
           "text": "io.write(canonicalJson({ reasonCode: \"LIBRARY_REGISTRY_READY\", entries: registry.entries as unknown as JsonValue }));"
         }
       ],
@@ -79814,7 +80027,7 @@
       "oldInitializer": "values.limit === undefined ? undefined : integerValue(values, \"limit\")",
       "oldLine": 2683,
       "currentInitializer": "values.limit === undefined ? undefined : integerValue(values, \"limit\")",
-      "currentLine": 2811,
+      "currentLine": 2913,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -79869,107 +80082,107 @@
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1270,
+          "line": 1372,
           "text": "{ name: \"event-list\", availability: \"cli\", mutates: false, flags: [{ name: \"workspace\", required: false, valueKind: \"string\" }, { name: \"limit\", required: false, valueKind: \"integer\" }, { name: \"offset\", required: false, valueKind: \"integer\" }] },"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1297,
+          "line": 1399,
           "text": "{ name: \"knowledge-list\", availability: \"cli\", mutates: false, flags: [{ name: \"workspace\", required: false, valueKind: \"string\" }, { name: \"at\", required: true, valueKind: \"instant\" }, { name: \"scope\", required: false, valueKind: \"string\" }, { name: \"selection\", required: false, valueKind: \"string\" }, { name: \"status\", required: false, valueKind: \"string\" }, { name: \"project-id\", required: false, valueKind: \"string\" }, { name: \"role-scope\", required: false, valueKind: \"string\" }, { name: \"category\", required: false, valueKind: \"string\" }, { name: \"kind\", required: false, valueKind: \"string\" }, { name: \"tag\", required: false, valueKind: \"string\" }, { name: \"freshness\", required: false, valueKind: \"string\" }, { name: \"search\", required: false, valueKind: \"string\" }, { name: \"limit\", required: false, valueKind: \"integer\" }, { name: \"offset\", required: false, valueKind: \"integer\" }, { name: \"allow-trailing\", required: false, valueKind: \"boolean\" }] },"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1322,
+          "line": 1424,
           "text": "{ name: \"minutes-list\", availability: \"cli\", mutates: false, flags: [{ name: \"workspace\", required: false, valueKind: \"string\" }, { name: \"project-id\", required: false, valueKind: \"string\" }, { name: \"work-id\", required: false, valueKind: \"string\" }, { name: \"status\", required: false, valueKind: \"string\" }, { name: \"limit\", required: false, valueKind: \"integer\" }, { name: \"offset\", required: false, valueKind: \"integer\" }] },"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1330,
+          "line": 1432,
           "text": "{ name: \"project-list\", availability: \"cli\", mutates: false, flags: [{ name: \"workspace\", required: false, valueKind: \"string\" }, { name: \"limit\", required: false, valueKind: \"integer\" }, { name: \"offset\", required: false, valueKind: \"integer\" }] },"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1332,
+          "line": 1434,
           "text": "{ name: \"recall\", availability: \"cli\", mutates: false, flags: [{ name: \"workspace\", required: false, valueKind: \"string\" }, { name: \"host\", required: false, valueKind: \"string\" }, { name: \"at\", required: true, valueKind: \"instant\" }, { name: \"query\", required: true, valueKind: \"string\" }, { name: \"limit\", required: false, valueKind: \"integer\" }, { name: \"tau\", required: false, valueKind: \"string\" }, { name: \"allow-trailing\", required: false, valueKind: \"boolean\" }, { name: \"status\", required: false, valueKind: \"string\" }, { name: \"project-id\", required: false, valueKind: \"string\" }] },"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1379,
+          "line": 1481,
           "text": "{ name: \"work-gate-list\", availability: \"cli\", mutates: false, flags: [{ name: \"workspace\", required: false, valueKind: \"string\" }, { name: \"work-id\", required: false, valueKind: \"string\" }, { name: \"status\", required: false, valueKind: \"string\" }, { name: \"limit\", required: false, valueKind: \"integer\" }, { name: \"offset\", required: false, valueKind: \"integer\" }] },"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1381,
+          "line": 1483,
           "text": "{ name: \"work-list\", availability: \"cli\", mutates: false, flags: [{ name: \"involved-project\", required: false, valueKind: \"json\" }, { name: \"workspace\", required: false, valueKind: \"string\" }, { name: \"project-id\", required: false, valueKind: \"string\" }, { name: \"kind\", required: false, valueKind: \"string\" }, { name: \"status\", required: false, valueKind: \"string\" }, { name: \"parent-id\", required: false, valueKind: \"string\" }, { name: \"sprint\", required: false, valueKind: \"string\" }, { name: \"relation\", required: false, valueKind: \"string\" }, { name: \"search\", required: false, valueKind: \"string\" }, { name: \"scope-bytes\", required: false, valueKind: \"integer\" }, { name: \"limit\", required: false, valueKind: \"integer\" }, { name: \"offset\", required: false, valueKind: \"integer\" }] },"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1798,
+          "line": 1900,
           "text": "// directory). The five explicit roots, the workspace external key and the segment limit of"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2677,
+          "line": 2779,
           "text": "const values = parseArguments(rest, [\"workspace\", \"at\", \"scope\", \"selection\", \"status\", \"project-id\", \"role-scope\", \"category\", \"kind\", \"tag\", \"freshness\", \"search\", \"limit\", \"offset\", \"allow-trailing\"]);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2694,
+          "line": 2796,
           "text": "// typo as KNOWLEDGE_INPUT_INVALID \"limit\" -- a syntax error dressed as a range"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2698,
+          "line": 2800,
           "text": "...(values.limit !== undefined ? { limit: integerValue(values, \"limit\") } : {}),"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2803,
+          "line": 2905,
           "text": "const values = parseArguments(rest, [\"project-id\", \"workspace\", \"host\", \"at\", \"query\", \"limit\", \"tau\", \"allow-trailing\", \"status\"]);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2811,
+          "line": 2913,
           "text": "const limit = values.limit === undefined ? undefined : integerValue(values, \"limit\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2812,
+          "line": 2914,
           "text": "if (limit !== undefined && (limit < 1 || !Number.isSafeInteger(limit))) fail(\"CLI_ARGUMENT_MALFORMED\", \"limit\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2866,
+          "line": 2968,
           "text": "...(limit === undefined ? {} : { limit }),"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2920,
+          "line": 3022,
           "text": "limit: result.limit,"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3205,
+          "line": 3307,
           "text": "const values = parseArguments(rest, [\"workspace\", \"limit\", \"offset\"]);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3213,
+          "line": 3315,
           "text": "const values = parseArguments(rest, [\"workspace\", \"project-id\", \"kind\", \"status\", \"parent-id\", \"sprint\", \"relation\", \"involved-project\", \"search\", \"scope-bytes\", \"limit\", \"offset\"]);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3320,
+          "line": 3422,
           "text": "const values = parseArguments(rest, [\"workspace\", \"work-id\", \"status\", \"limit\", \"offset\"]);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3371,
+          "line": 3473,
           "text": "const values = parseArguments(rest, [\"workspace\", \"limit\", \"offset\"]);"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3428,
+          "line": 3530,
           "text": "const values = parseArguments(rest, [\"workspace\", \"project-id\", \"work-id\", \"status\", \"limit\", \"offset\"]);"
         }
       ],
@@ -79984,27 +80197,27 @@
       "oldInitializer": "Number.isSafeInteger(promptBytes) && promptBytes > 0 ? promptBytes : 1600",
       "oldLine": 2705,
       "currentInitializer": "Number.isSafeInteger(promptBytes) && promptBytes > 0 ? promptBytes : 1600",
-      "currentLine": 2833,
+      "currentLine": 2935,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2832,
+          "line": 2934,
           "text": "const promptBytes = Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2833,
+          "line": 2935,
           "text": "const perPromptBytes = Number.isSafeInteger(promptBytes) && promptBytes > 0 ? promptBytes : 1600;"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2943,
+          "line": 3045,
           "text": "perPromptBytes,"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2944,
+          "line": 3046,
           "text": "context: [...recallContextLines(hits, perPromptBytes)],"
         }
       ],
@@ -80019,17 +80232,17 @@
       "oldInitializer": "Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\")",
       "oldLine": 2704,
       "currentInitializer": "Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\")",
-      "currentLine": 2832,
+      "currentLine": 2934,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2832,
+          "line": 2934,
           "text": "const promptBytes = Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2833,
+          "line": 2935,
           "text": "const perPromptBytes = Number.isSafeInteger(promptBytes) && promptBytes > 0 ? promptBytes : 1600;"
         }
       ],
@@ -80044,7 +80257,7 @@
       "oldInitializer": "values[\"scope-bytes\"] === undefined ? Number(configuredScopeBytes ?? \"512\") : integerValue(values, \"scope-bytes\")",
       "oldLine": 3062,
       "currentInitializer": "values[\"scope-bytes\"] === undefined ? Number(configuredScopeBytes ?? \"512\") : integerValue(values, \"scope-bytes\")",
-      "currentLine": 3228,
+      "currentLine": 3330,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -80059,27 +80272,27 @@
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2828,
+          "line": 2930,
           "text": "const scopeBytes = Number(settingValue(\"retrieval.scopeExcerptBytes\") ?? \"512\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2829,
+          "line": 2931,
           "text": "const scopeExcerptBytes = Number.isSafeInteger(scopeBytes) && scopeBytes > 0 ? scopeBytes : 512;"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3228,
+          "line": 3330,
           "text": "const scopeBytes = values[\"scope-bytes\"] === undefined ? Number(configuredScopeBytes ?? \"512\") : integerValue(values, \"scope-bytes\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3229,
+          "line": 3331,
           "text": "if (scopeBytes < 1 || scopeBytes > Number.MAX_SAFE_INTEGER) fail(\"CLI_ARGUMENT_MALFORMED\", \"scope-bytes\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3255,
+          "line": 3357,
           "text": ".map((entry) => search === undefined ? workListSummary(entry) : workSearchSummary(entry, scopeBytes));"
         }
       ],
@@ -80094,32 +80307,32 @@
       "oldInitializer": "Number.isSafeInteger(scopeBytes) && scopeBytes > 0 ? scopeBytes : 512",
       "oldLine": 2701,
       "currentInitializer": "Number.isSafeInteger(scopeBytes) && scopeBytes > 0 ? scopeBytes : 512",
-      "currentLine": 2829,
+      "currentLine": 2931,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2828,
+          "line": 2930,
           "text": "const scopeBytes = Number(settingValue(\"retrieval.scopeExcerptBytes\") ?? \"512\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2829,
+          "line": 2931,
           "text": "const scopeExcerptBytes = Number.isSafeInteger(scopeBytes) && scopeBytes > 0 ? scopeBytes : 512;"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2852,
+          "line": 2954,
           "text": "const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes, ...(decisions === \"valid\" ? {} : { decisions }) });"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2921,
+          "line": 3023,
           "text": "scopeExcerptBytes,"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3227,
+          "line": 3329,
           "text": "const configuredScopeBytes = scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value;"
         }
       ],
@@ -80134,27 +80347,27 @@
       "oldInitializer": "values[\"segment-bytes\"] === undefined ? undefined : integerValue(values, \"segment-bytes\")",
       "oldLine": 2376,
       "currentInitializer": "values[\"segment-bytes\"] === undefined ? undefined : integerValue(values, \"segment-bytes\")",
-      "currentLine": 2502,
+      "currentLine": 2604,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1060,
+          "line": 1162,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources })"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2294,
+          "line": 2396,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources });"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2502,
+          "line": 2604,
           "text": "const segmentBytes = values[\"segment-bytes\"] === undefined ? undefined : integerValue(values, \"segment-bytes\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2503,
+          "line": 2605,
           "text": "io.write(canonicalJson(await migrateKnowledgeBodies(values.workspace ?? \"\", segmentBytes, {"
         }
       ],
@@ -86311,17 +86524,17 @@
       "oldInitializer": null,
       "oldLine": null,
       "currentInitializer": "Object.freeze([\n  \"execution.maxConcurrentSubagents\",\n  \"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\",\n] as const satisfies readonly SettingKey[])",
-      "currentLine": 106,
+      "currentLine": 121,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 106,
+          "line": 121,
           "text": "const COORDINATION_LIMIT_KEYS = Object.freeze(["
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 523,
+          "line": 584,
           "text": "for (const key of [COORDINATION_LANGUAGE_KEY, ...COORDINATION_LIMIT_KEYS]) {"
         }
       ],
@@ -86336,27 +86549,27 @@
       "oldInitializer": "512",
       "oldLine": 79,
       "currentInitializer": "RUNTIME_CAPACITY.stringCodeUnits",
-      "currentLine": 100,
+      "currentLine": 115,
       "disposition": "runtime representation; immutable running Node capacities, with physical memory/OS failure threshold unknown",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 100,
+          "line": 115,
           "text": "const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 325,
+          "line": 359,
           "text": "return typeof value === \"string\" && value.length > 0 && value.length <= HINT_MAXIMUM_LENGTH && !/[\\u0000-\\u001f\\u007f]/u.test(value);"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 356,
+          "line": 390,
           "text": "if (projectName !== undefined && !isHint(projectName)) mappingInvalid(`partitions[${index}].projectName must be one line of at most ${HINT_MAXIMUM_LENGTH} characters`, at(\"projectName\"));"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 357,
+          "line": 391,
           "text": "if (gitRemote !== undefined && !isHint(gitRemote)) mappingInvalid(`partitions[${index}].gitRemote must be one line of at most ${HINT_MAXIMUM_LENGTH} characters`, at(\"gitRemote\"));"
         }
       ],
@@ -86371,17 +86584,17 @@
       "oldInitializer": "1_048_576",
       "oldLine": 76,
       "currentInitializer": "RUNTIME_CAPACITY.bufferBytes",
-      "currentLine": 96,
+      "currentLine": 109,
       "disposition": "runtime representation; immutable running Node capacities, with physical memory/OS failure threshold unknown",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 96,
+          "line": 109,
           "text": "const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 408,
+          "line": 450,
           "text": "if (!regular || size > MAPPING_MAXIMUM_BYTES) mappingInvalid(`the mapping ${file} is not a regular file of at most ${MAPPING_MAXIMUM_BYTES} bytes`, { file });"
         }
       ],
@@ -86392,31 +86605,76 @@
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "symbol": "registryEntries",
-      "oldInitializer": "[]",
-      "oldLine": 670,
-      "currentInitializer": "[]",
-      "currentLine": 826,
+      "symbol": "candidates",
+      "oldInitializer": null,
+      "oldLine": null,
+      "currentInitializer": "replayed === null ? null : projectCandidates(replayed)",
+      "currentLine": 730,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 826,
+          "line": 558,
+          "text": "/** The candidates as a wizard reads them in a message: id \"name\" (n work items), in the old chain's order. */"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 559,
+          "text": "export function describeProjectCandidates(candidates: readonly MigrationProjectCandidate[]): string {"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 560,
+          "text": "return candidates.map((candidate) => `${candidate.id} \"${candidate.name}\" (${candidate.work} work items)`).join(\", \");"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 730,
+          "text": "const candidates = replayed === null ? null : projectCandidates(replayed);"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 735,
+          "text": "`the mapping's projectId ${entry.projectId} for partition ${name} is not a live project of its old chain${library === null ? \"\" : ` and of ${target}`}: name one of ${describeProjectCandidates(candidates ?? []) || \"none (the old chain has no live project; leave projectId out)\"}`);"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 762,
+          "text": "projectCandidates: candidates,"
+        }
+      ],
+      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
+      "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
+      "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
+    },
+    {
+      "file": "packages/core/src/migrate-legacy.ts",
+      "symbol": "registryEntries",
+      "oldInitializer": "[]",
+      "oldLine": 670,
+      "currentInitializer": "[]",
+      "currentLine": 911,
+      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
+      "currentConsumerSites": [
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 911,
           "text": "const registryEntries: MigrationRegistryEntry[] = [];"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 840,
+          "line": 925,
           "text": "registryEntries.push(planned.registry);"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 850,
+          "line": 935,
           "text": "if (registryEntries.some((planned) => !registryEntryCurrent(registry, planned, plannedRole(partitions, planned.partition)))) {"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 861,
+          "line": 946,
           "text": "registry: registryEntries,"
         }
       ],
@@ -98938,33 +99196,138 @@
       "oldInitializer": "readFileSync(join(source, ...file.split(\"/\")))",
       "oldLine": 152,
       "currentInitializer": "readFileSync(join(source, ...file.split(\"/\")))",
-      "currentLine": 152,
+      "currentLine": 285,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/push-wiki.mjs",
-          "line": 110,
+          "line": 122,
           "text": "function sameBytes(path, bytes) {"
         },
         {
           "file": "scripts/push-wiki.mjs",
-          "line": 112,
+          "line": 124,
           "text": "return readFileSync(path).equals(bytes);"
         },
         {
           "file": "scripts/push-wiki.mjs",
-          "line": 152,
-          "text": "const bytes = readFileSync(join(source, ...file.split(\"/\")));"
+          "line": 210,
+          "text": "function rewritePageLinks(bytes, pages) {"
         },
         {
           "file": "scripts/push-wiki.mjs",
-          "line": 154,
+          "line": 211,
+          "text": "const text = bytes.toString(\"utf8\");"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 212,
+          "text": "if (!Buffer.from(text, \"utf8\").equals(bytes)) return { bytes, count: 0 };"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 245,
+          "text": "return count === 0 ? { bytes, count } : { bytes: Buffer.from(lines.join(\"\\n\"), \"utf8\"), count };"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 285,
+          "text": "let bytes = readFileSync(join(source, ...file.split(\"/\")));"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 287,
+          "text": "const rewritten = rewritePageLinks(bytes, pages);"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 288,
+          "text": "bytes = rewritten.bytes;"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 292,
           "text": "if (sameBytes(target, bytes)) continue;"
         },
         {
           "file": "scripts/push-wiki.mjs",
-          "line": 156,
+          "line": 294,
           "text": "writeFileSync(target, bytes);"
+        }
+      ],
+      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
+      "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
+      "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
+    },
+    {
+      "file": "scripts/push-wiki.mjs",
+      "symbol": "depth",
+      "oldInitializer": null,
+      "oldLine": null,
+      "currentInitializer": "0",
+      "currentLine": 175,
+      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
+      "currentConsumerSites": [
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 175,
+          "text": "let depth = 0;"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 178,
+          "text": "if (text[at] === \"]\") depth += 1;"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 179,
+          "text": "else if (depth === 0) return at;"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 180,
+          "text": "else depth -= 1;"
+        }
+      ],
+      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
+      "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
+      "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
+    },
+    {
+      "file": "scripts/push-wiki.mjs",
+      "symbol": "lines",
+      "oldInitializer": null,
+      "oldLine": null,
+      "currentInitializer": "text.split(\"\\n\")",
+      "currentLine": 213,
+      "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
+      "currentConsumerSites": [
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 213,
+          "text": "const lines = text.split(\"\\n\");"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 218,
+          "text": "const rewritten = rewriteBlock(block.map((index) => lines[index]).join(\"\\n\"), pages);"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 220,
+          "text": "lines[block[offset]] = line;"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 226,
+          "text": "for (const [index, line] of lines.entries()) {"
+        },
+        {
+          "file": "scripts/push-wiki.mjs",
+          "line": 245,
+          "text": "return count === 0 ? { bytes, count } : { bytes: Buffer.from(lines.join(\"\\n\"), \"utf8\"), count };"
         }
       ],
       "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
@@ -100967,42 +101330,52 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1019,
+      "line": 1089,
+      "source": "registered.length > 1"
+    },
+    {
+      "file": "packages/cli/src/index.ts",
+      "line": 1091,
+      "source": ": fallback !== null && fallback.length > 1"
+    },
+    {
+      "file": "packages/cli/src/index.ts",
+      "line": 1121,
       "source": "const gated = listGates(view).some((gate) => gate.enabled && gate.required && gate.covers.length > 0);"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1621,
+      "line": 1723,
       "source": "if (names.length > 0) fail(\"SKILL_OUT_NOT_EMPTY\", `${out} is not empty; --out names a missing or empty directory`);"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1714,
+      "line": 1816,
       "source": "maxBuffer: RUNTIME_CAPACITY.bufferBytes,"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2393,
+      "line": 2495,
       "source": "if (missing.length > 0) fail(\"CLI_ARGUMENT_MISSING\", missing.join(\",\"));"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2619,
+      "line": 2721,
       "source": "stalenessPolicy: { maximumAgeDays: nullableIntegerValue(values, \"stale-days\"), unknownDisposition: \"fail-closed\" },"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2810,
+      "line": 2912,
       "source": "if (query.length === 0 || query.length > RUNTIME_CAPACITY.stringCodeUnits || !query.isWellFormed()) fail(\"CLI_ARGUMENT_MALFORMED\", \"query\");"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3215,
+      "line": 3317,
       "source": "if (values.search !== undefined && (values.search.length === 0 || values.search.length > RUNTIME_CAPACITY.stringCodeUnits || !values.search.isWellFormed())) {"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3229,
+      "line": 3331,
       "source": "if (scopeBytes < 1 || scopeBytes > Number.MAX_SAFE_INTEGER) fail(\"CLI_ARGUMENT_MALFORMED\", \"scope-bytes\");"
     },
     {
@@ -102397,28 +102770,38 @@
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 96,
+      "line": 109,
       "source": "const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;"
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 100,
+      "line": 115,
       "source": "const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;"
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 325,
+      "line": 359,
       "source": "return typeof value === \"string\" && value.length > 0 && value.length <= HINT_MAXIMUM_LENGTH && !/[\\u0000-\\u001f\\u007f]/u.test(value);"
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 375,
+      "line": 417,
       "source": "if (coordinationRows.length > 1) {"
     },
     {
       "file": "packages/core/src/migrate-legacy.ts",
-      "line": 846,
+      "line": 931,
       "source": "coordinationWrites(partition).length > 0)) recorder.write(\"library\", partition.target, \"update\");"
+    },
+    {
+      "file": "packages/core/src/migrate-legacy.ts",
+      "line": 1214,
+      "source": "const listed = await listKnowledgeMetadata(library, { at, allowTrailing: true, status: \"all\", selection: \"all\", includeExplicitOnly: true, limit: Number.MAX_SAFE_INTEGER });"
+    },
+    {
+      "file": "packages/core/src/migrate-legacy.ts",
+      "line": 1303,
+      "source": "if (holds.length > 0) return { ...binding, retirement: { ...found, holds, action: \"kept\" } };"
     },
     {
       "file": "packages/core/src/minutes.ts",
@@ -102877,12 +103260,12 @@
     },
     {
       "file": "packages/core/src/setup.ts",
-      "line": 711,
+      "line": 744,
       "source": "backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,"
     },
     {
       "file": "packages/core/src/setup.ts",
-      "line": 736,
+      "line": 769,
       "source": "listed = await listKnowledgeMetadata(libraryPath, { at, allowTrailing: true, status: \"valid\", includeExplicitOnly: true, limit: Number.MAX_SAFE_INTEGER });"
     },
     {
@@ -105212,7 +105595,12 @@
     },
     {
       "file": "scripts/push-wiki.mjs",
-      "line": 179,
+      "line": 279,
+      "source": "const pages = new Set(files.filter((file) => !file.includes(\"/\") && file.endsWith(\".md\")).map((file) => file.slice(0, -\".md\".length)));"
+    },
+    {
+      "file": "scripts/push-wiki.mjs",
+      "line": 317,
       "source": "const pushed = options.push && pending.length > 0;"
     },
     {

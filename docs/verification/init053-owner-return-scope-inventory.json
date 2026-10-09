@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r48-init053-integration",
+  "pack": "r50-init053-integration",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "3b9bf4a5a1e0a94c3c2040f0f59a38f8222a724b116c08c484e5e63a5d4d3fc5"
+      "sha256": "680918eb93e2c0d6411ab2a63573b524ea0b9e0270636128f0b8861087709ae5"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -107,7 +107,7 @@
     },
     {
       "path": "packages/core/src/framework-version.ts",
-      "sha256": "264d202baad527d27cc70a593569d0bb3e8de3c3a7e1d8794fd65f59f6205ded"
+      "sha256": "a39abb1bfe40af4d2cc8db759953c194dfd2d8b291df755f0d8ee63a43b07738"
     },
     {
       "path": "packages/core/src/gate-identity.ts",
@@ -215,7 +215,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "601c534a1bb2387211ad47d59632d9c0ef0748ae42f6c9e16376ef6efc2b8a4c"
+      "sha256": "3bb8f083a0a22626258b076bc9dc9afa8fb966a68fad39d98c9f8992b22e0adc"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -307,7 +307,7 @@
     },
     {
       "path": "packages/core/src/setup.ts",
-      "sha256": "6c03eee4ba59781f3316f1a1b34d9bae27e47ad8d8a17acc94cd6213448a8de7"
+      "sha256": "422c4133a068e1154ad24108c8e33735287261c6ceef9c9adcdae59c4728a08b"
     },
     {
       "path": "packages/core/src/skill-copies.ts",
@@ -603,7 +603,7 @@
     },
     {
       "path": "scripts/lib/release-lockstep.mjs",
-      "sha256": "942a7da95a5a50cb949dc214de44eae6e34091dd85e69c066a3466cf3be53026"
+      "sha256": "f3743e1845dbe469aaece350a73006c1fbd1c1b9c894484e425b764bacaadc13"
     },
     {
       "path": "scripts/lib/release-tag-gate.mjs",
@@ -687,7 +687,7 @@
     },
     {
       "path": "scripts/push-wiki.mjs",
-      "sha256": "8544451a4b759e7cc56cf8a5d70ebe94ae18b4d92fabbfd63bd16be38d747434"
+      "sha256": "5879b6bb6ae7413978b952eb694b228e27503280c6e76f232d9ae657c18a1622"
     },
     {
       "path": "scripts/release.mjs",
@@ -798,7 +798,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R48 integration batch-end generation after the R48-INT-1 fix (package C fast-forwarded, package D merged with one merge commit and the package D fix 15754197 fast-forwarded in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 second pass ran the full engine suite once after the fix and before this generation; its actual exit and counts are attached below: no leg was red (tests/platform-doctor.test.mjs R48 PB-2 green after the fix; one added parity case in tests/output-session-lifecycle.test.mjs), so there was no disposal and no further pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R50 integration batch-end generation (package P-A1 fast-forwarded, packages P-A2b (carrying P-A2a), P-B and P-C merged with one merge commit each and the CHANGELOG paragraph openings unified in one integration commit in the E main checkout; the Design System is unchanged and E still consumes d53f2305). The D1 pass ran the full engine suite once before this generation; its actual exit and counts are attached below: no leg was red (1782 of 1782 tests in 191 files: the 1774 of the R48 continuation plus the 4 gates-cli cases of P-A1, the 3 migrate cases of P-A2a and the 1 push-wiki case of P-C), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Integration verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -934,7 +934,7 @@
       "input": "inventory-values.json",
       "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +950,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "b51898aa43d5cb46fd9268f34ea0ae220fdc310e47c198a0a312ff4c5ea30c8b",
+      "sha256": "2da6524552ac3cddcfae6011ef8b7fd3077271927aa867754faa530593282268",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +962,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "506af4beb06e1ff2bbfb7100053634c106d2ce740c7b88177f1ace611bedd94e",
+      "sha256": "566b136e91bac55ad0cc72e7de67ae4a03c64daa44fd040f000397a556ead852",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "91e1cd9fbc01b2a851c2441d4ec1c0f1789eef7aaf463a8673746e9fc5d136b5",
+      "sha256": "58a30bade54a90aaee3c033ab4d44570949097a22bef60bb29f234a97d0b8381",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +982,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1012,8 +1012,8 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1774,
-      "pass": 1774,
+      "tests": 1782,
+      "pass": 1782,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
@@ -1156,10 +1156,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/integration-r48-init053-raw/u18b/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/init-053/integration-r50-init053-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-09T02:11:51.466656+00:00",
+  "generationTimeUtc": "2026-10-09T13:26:46.533233+00:00",
   "settings": [
     {
       "catalog": {
@@ -1233,23 +1233,28 @@
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 105,
+          "line": 120,
           "text": "const COORDINATION_LANGUAGE_KEY: SettingKey = \"artifact.language\";"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 173,
+          "line": 199,
           "text": "// The artifact.language the old chain records, which the library keeps; null when it records none."
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 190,
+          "line": 221,
           "text": "* for itself, as its partition's plan lists it. artifact.language is always listed: the old chain's"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 200,
+          "line": 231,
           "text": "* artifact.language takes it. A recorded artifact.language turns on a library's fail-closed write"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 1172,
+          "text": "const SETUP_CONFIGURATION_SETTINGS: readonly string[] = Object.freeze([\"artifact.language\"]);"
         },
         {
           "file": "packages/core/src/project-chain.ts",
@@ -2555,12 +2560,12 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 107,
+          "line": 122,
           "text": "\"execution.maxConcurrentSubagents\","
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 192,
+          "line": 223,
           "text": "* execution.maxConcurrentSubagents and the four quota.* keys only when the old chain declares them at"
         },
         {
@@ -2731,7 +2736,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2832,
+          "line": 2934,
           "text": "const promptBytes = Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\");"
         },
         {
@@ -3035,7 +3040,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1053,
+          "line": 1155,
           "text": "// derived reads the same in both: an unset models.category is the default categories and every"
         },
         {
@@ -3878,7 +3883,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1054,
+          "line": 1156,
           "text": "// other category models.tiers names, not the default table. A set key is still its value and any"
         },
         {
@@ -4285,7 +4290,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 108,
+          "line": 123,
           "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
         },
         {
@@ -4397,7 +4402,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 108,
+          "line": 123,
           "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
         },
         {
@@ -4509,7 +4514,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 108,
+          "line": 123,
           "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
         },
         {
@@ -4621,7 +4626,7 @@
       "consumerSites": [
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 108,
+          "line": 123,
           "text": "\"quota.fiveHourParallelOffPercent\", \"quota.fiveHourWaitPercent\", \"quota.weeklyParallelOffPercent\", \"quota.weeklyWaitPercent\","
         },
         {
@@ -4910,12 +4915,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2828,
+          "line": 2930,
           "text": "const scopeBytes = Number(settingValue(\"retrieval.scopeExcerptBytes\") ?? \"512\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3227,
+          "line": 3329,
           "text": "const configuredScopeBytes = scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value;"
         },
         {
@@ -5056,7 +5061,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2817,
+          "line": 2919,
           "text": "const configuredTau = Number(settingValue(\"retrieval.tau\") ?? String(RECALL_DEFAULT_TAU));"
         },
         {
@@ -5086,7 +5091,7 @@
         },
         {
           "file": "packages/core/src/setup.ts",
-          "line": 762,
+          "line": 795,
           "text": "`recall in ${projectRoot} does not find the card ${card.id} of ${libraryPath} by its subject, so the prompt hook would not inject it: nothing old was taken off and the project is not wired. Check the library's retrieval settings (retrieval.tau among them) and the card, then run the migration again with the same mapping; the migrated partitions are skipped and it goes on from here.`,"
         },
         {
@@ -5217,12 +5222,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1060,
+          "line": 1162,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources })"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2294,
+          "line": 2396,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources });"
         },
         {
@@ -5536,12 +5541,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1245,
+          "line": 1347,
           "text": "// TCRN-CROSS-STORY-380: the three verbs that make workspace.generatedArtifactsPath a"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2347,
+          "line": 2449,
           "text": "if (values.key === \"workspace.generatedArtifactsPath\") {"
         },
         {
@@ -5686,7 +5691,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1864,
+          "line": 1966,
           "text": "// agents.navigation is written, the navigation section; CLAUDE.md's import section unless it"
         },
         {
@@ -6581,5 +6586,5 @@
     }
   ],
   "settingCount": 33,
-  "nativeReads": "installed engine 1.2.1, live 10051, INIT revision16 and INC399 revision8; read-only status/work-show readbacks of 2026-10-09T02:10:40Z retained in the raw archive (dispatch-runs/init-053/integration-r48-init053-raw/u18b/native-reads.json)"
+  "nativeReads": "installed engine 2.0.0, live 10151, INIT revision17 and INC399 revision9; read-only status/work-show readbacks of 2026-10-09T13:25:27Z retained in the raw archive (dispatch-runs/init-053/integration-r50-init053-raw/u18/native-reads.json)"
 }

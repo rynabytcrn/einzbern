@@ -6,83 +6,82 @@ Versioning after the first accepted release.
 ## Unreleased
 
 A coordination library's Stories can reach done through their gates (TCRN-CROSS-STORY-519, INIT-053
-R50). On a coordination chain, `gates-plan` and `gates-run` with `--work-id` also plan and run a
-Story that an enabled gate of the library's own project scope covers by exact work id: in the
-project root registered for the library, under that project's declarations, one plan or run per
-project, recording the project and the Story ids, so `work-transition` and `work-batch` read that
-run at done. These results are listed under a new `library` field beside `targets`, which keeps its
-shape; a covered Story gets no `PROJECT_SCOPE_UNDECIDED` or `COORDINATION_ONLY` result, a selected
-one still runs per target, and uncovered work answers as before. `--project-id` may be left out;
-given, it must name the project of every covered Story, or the command refuses with
-`GATES_PROJECT_MISMATCH` before any gate runs. The gate root of a coordination library's project,
-for these runs, for plans and runs with `--project-id` and for the done check, now comes from the
-library's registry entry even when that entry records no project, as setup and migration write it,
-as long as no entry records the project itself; a project chain still needs an entry for the
-project, or the root is `GATES_PROJECT_UNKNOWN`. The done criteria and their refusals are unchanged.
+R50; fixes TCRN-CROSS-STORY-485). On a coordination chain, `gates-plan` and `gates-run` with
+`--work-id` also plan and run a Story that an enabled gate of the library's own project scope covers
+by exact work id: in the project root registered for the library, under that project's declarations,
+one plan or run per project, recording the project and the Story ids, so `work-transition` and
+`work-batch` read that run at done. These results are listed under a new `library` field beside
+`targets`, which keeps its shape; a covered Story gets no `PROJECT_SCOPE_UNDECIDED` or
+`COORDINATION_ONLY` result, a selected one still runs per target, and uncovered work answers as
+before. `--project-id` may be left out; given, it must name the project of every covered Story, or
+the command refuses with `GATES_PROJECT_MISMATCH` before any gate runs. The gate root of a
+coordination library's project, for these runs, for plans and runs with `--project-id` and for the
+done check, now comes from the library's registry entry even when that entry records no project, as
+setup and migration write it, as long as no entry records the project itself; a project chain still
+needs an entry for the project, or the root is `GATES_PROJECT_UNKNOWN`. The done criteria and their
+refusals are unchanged.
 
-TCRN-CROSS-STORY-517 (INIT-053 R50; fixes TCRN-CROSS-STORY-489): a migration binds a project's
-configuration to the old chain's project its mapping row names, instead of creating a project of
-setup's own beside it. A mapping row takes `projectId` (`project:` and 24 hexadecimal digits); a
-malformed one, or one on a coordination row, refuses with `SETUP_ANSWER_INVALID` on `projectId`.
-The plan gives every partition `projectId` and `projectCandidates`, the old chain's live projects
-as `{id, name, externalKey, work}`, and blocks with `SETUP_ANSWER_INVALID`, listing them, when a
-row's project is not live in its old chain (or in a library migrated before), or when the
-`--project` partition's row has `chainRole` `project`, its old chain holds live projects and the
-row names none; a row without `chainRole` may name one and otherwise keeps the former behaviour.
-The registry entry records the row's project as `projectId`, and a project chain's identity as
-`primaryProjectId`, which an identity migrated without one gets on the next run and an identity
-naming another stops with `SETUP_LIBRARY_CONFLICT`; the `--project` partition's language and
-managed sections go to that project. Running the migration again with the coordination row and the
-project's row, now naming its project, repairs a library an earlier migration gave a second
-project: the plan and the `SETUP_APPLIED` receipt carry `migration.projectBinding` (`partition`,
-`library`, `from`, `to`, `retirement`), and the former project, when setup created it (external key
-`SETUP-CONFIG-`) and nothing but its language and managed-section records is in it, loses them and
-is deleted once the binding has moved; otherwise it is kept and `retirement.holds` says why. No CLI
-verb is added. `docs/wiki/Migrating-from-TCRN-Workflow.md` and the skill's `references/migrate.md`
-describe the field, the candidates, the blockers and the repair.
+A migration binds a project's configuration to the old chain's project its mapping row names,
+instead of creating a project of setup's own beside it (TCRN-CROSS-STORY-517, INIT-053 R50; fixes
+TCRN-CROSS-STORY-489). A mapping row takes `projectId` (`project:` and 24 hexadecimal digits); a
+malformed one, or one on a coordination row, refuses with `SETUP_ANSWER_INVALID` on `projectId`. The
+plan gives every partition `projectId` and `projectCandidates`, the old chain's live projects as
+`{id, name, externalKey, work}`, and blocks with `SETUP_ANSWER_INVALID`, listing them, when a row's
+project is not live in its old chain (or in a library migrated before), or when the `--project`
+partition's row has `chainRole` `project`, its old chain holds live projects and the row names none;
+a row without `chainRole` may name one and otherwise keeps the former behaviour. The registry entry
+records the row's project as `projectId`, and a project chain's identity as `primaryProjectId`,
+which an identity migrated without one gets on the next run and an identity naming another stops
+with `SETUP_LIBRARY_CONFLICT`; the `--project` partition's language and managed sections go to that
+project. Running the migration again with the coordination row and the project's row, now naming its
+project, repairs a library an earlier migration gave a second project: the plan and the
+`SETUP_APPLIED` receipt carry `migration.projectBinding` (`partition`, `library`, `from`, `to`,
+`retirement`), and the former project, when setup created it (external key `SETUP-CONFIG-`) and
+nothing but its language and managed-section records is in it, loses them and is deleted once the
+binding has moved; otherwise it is kept and `retirement.holds` says why. No CLI verb is added.
+`docs/wiki/Migrating-from-TCRN-Workflow.md` and the skill's `references/migrate.md` describe the
+field, the candidates, the blockers and the repair.
 
-TCRN-CROSS-STORY-518 (INIT-053 R50; fixes TCRN-CROSS-STORY-489): the Wiki migration page says which
-libraries record who wrote an event, instead of saying every record a migration writes is signed
-`agent:setup`. An event's payload carries `actor` only in a library whose chain enabled actor
-attestation (its old chain carries `attestation.actor.enabled`), from that event on: there the
+The Wiki migration page says which libraries record who wrote an event, instead of saying every
+record a migration writes is signed `agent:setup` (TCRN-CROSS-STORY-518, INIT-053 R50; fixes
+TCRN-CROSS-STORY-489). An event's payload carries `actor` only in a library whose chain enabled
+actor attestation (its old chain carries `attestation.actor.enabled`), from that event on: there the
 language, managed-section, chain-identity and settings records a migration writes carry
 `agent:setup`, Atelier's writes carry `TCRN_PORTAL_ACTOR` (default `agent:portal`) and the CLI's
 carry `--actor`; the coordination library migrated from cross-project is one. A library whose old
-chain never enabled it, such as TCRN-TMS and dsh-tcrn-workflow-plugin, records no writer: the
-chain identity and settings records setup writes there hold only `operation` and `record`, and
-Atelier and the CLI take their actor without writing it into the event; a record that names its
-operator in its own value, such as a gate release, still does. `event-list` shows whether a
-library's event payloads carry `actor`. The engine is unchanged: it writes no actor before
-attestation is enabled, has no verb that enables it for an existing library, and leaves old events'
-bytes as they are.
+chain never enabled it, such as TCRN-TMS and dsh-tcrn-workflow-plugin, records no writer: the chain
+identity and settings records setup writes there hold only `operation` and `record`, and Atelier and
+the CLI take their actor without writing it into the event; a record that names its operator in its
+own value, such as a gate release, still does. `event-list` shows whether a library's event payloads
+carry `actor`. The engine is unchanged: it writes no actor before attestation is enabled, has no
+verb that enables it for an existing library, and leaves old events' bytes as they are.
 
-TCRN-CROSS-STORY-520 (INIT-053 R50, fixes TCRN-CROSS-STORY-488): the GitHub Release body that
-`scripts/release.mjs publish-plan` prints and `--execute release` passes to `gh release create`
-as `--notes` is a short description of the version and a link to its page in the Wiki's Release
-Notes chapter, as the release policy requires (MIN-243 D6), instead of the version's CHANGELOG
-section, which for 2.0.0 was longer than GitHub's 125,000-character limit for a release body.
-The body has three paragraphs: the first sentence of the release summary, the line
-`Release notes, by functional module:` with the address of the Wiki page
-`Release-Notes-<version>`, which the script composes from the names module, and the two
-attachments. When `docs/wiki/Release-Notes-<version>.md` is missing, empty or not a regular
-file, the plan refuses with `RELEASE_WIKI_NOTES_MISSING` before any command is printed or run.
-The release title, the two attachments and `docs/releases/<version>.md`, which keeps the
-CHANGELOG section in full, are unchanged.
+The GitHub Release body that `scripts/release.mjs publish-plan` prints and `--execute release`
+passes to `gh release create` as `--notes` is a short description of the version and a link to its
+page in the Wiki's Release Notes chapter, as the release policy requires (MIN-243 D6), instead of
+the version's CHANGELOG section, which for 2.0.0 was longer than GitHub's 125,000-character limit
+for a release body (TCRN-CROSS-STORY-520, INIT-053 R50; fixes TCRN-CROSS-STORY-488). The body has
+three paragraphs: the first sentence of the release summary, the line
+`Release notes, by functional module:` with the address of the Wiki page `Release-Notes-<version>`,
+which the script composes from the names module, and the two attachments. When
+`docs/wiki/Release-Notes-<version>.md` is missing, empty or not a regular file, the plan refuses
+with `RELEASE_WIKI_NOTES_MISSING` before any command is printed or run. The release title, the two
+attachments and `docs/releases/<version>.md`, which keeps the CHANGELOG section in full, are
+unchanged.
 
-TCRN-CROSS-STORY-521 (INIT-053 R50; fixes TCRN-CROSS-STORY-487): links between Wiki pages open the
-pages, and the Atelier page says how to start Atelier. A GitHub Wiki opens a link written
+Links between Wiki pages open the pages, and the Atelier page says how to start Atelier
+(TCRN-CROSS-STORY-521, INIT-053 R50; fixes TCRN-CROSS-STORY-487). A GitHub Wiki opens a link written
 `](Page.md)` as the page's raw Markdown, so `scripts/push-wiki.mjs` now gives the Wiki each Markdown
 file with its inline links to the source's top-level pages by page name: `](<page>.md)` and
 `](<page>.md#<anchor>)` become `](<page>)` and `](<page>#<anchor>)`. Fenced code blocks, code spans,
-images, other links and links to a page the source does not have keep their bytes; `docs/wiki`
-keeps its `.md` links for the repository's rendering and the link gate, putting `.md` back gives
-the source again, and the receipt counts the rewritten links in `linksRewritten`.
-`docs/wiki/Atelier.md` gains a section on starting Atelier: the command, `--library` and `--port`
-with `TCRN_PORTAL_LIBRARY` and `TCRN_PORTAL_PORT`, the order in which a library is chosen,
-`portal.port` and the default 4319, the listener on 127.0.0.1 only, the writer
-`TCRN_PORTAL_ACTOR` (default `agent:portal`; a library without actor attestation records no
-writer), the page token and the target each answer names, the `PORTAL_LISTENING` line and how
-to stop it.
+images, other links and links to a page the source does not have keep their bytes; `docs/wiki` keeps
+its `.md` links for the repository's rendering and the link gate, putting `.md` back gives the
+source again, and the receipt counts the rewritten links in `linksRewritten`. `docs/wiki/Atelier.md`
+gains a section on starting Atelier: the command, `--library` and `--port` with
+`TCRN_PORTAL_LIBRARY` and `TCRN_PORTAL_PORT`, the order in which a library is chosen, `portal.port`
+and the default 4319, the listener on 127.0.0.1 only, the writer `TCRN_PORTAL_ACTOR` (default
+`agent:portal`; a library without actor attestation records no writer), the page token and the
+target each answer names, the `PORTAL_LISTENING` line and how to stop it.
 
 ## 2.0.0
 

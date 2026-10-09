@@ -21,6 +21,11 @@
 // unchanged section of it takes the revised text at its next agents-render with its section
 // revision raised by one, and a section the user changed is left as it is and waits (pending).
 //
+// INIT-053 R48 (MIN-242 D10, the Owner's fifth round): batch v3 gains clause 8 (knowledge is
+// captured per round), recorded as rev 3 of its section in the Owner's own AGENTS.md. The Chinese
+// text equals the Owner's archived wording again; the English of clause 8 is an agent's translation
+// that awaits the Owner's correction. The version stays at 3, with the same consequences as above.
+//
 // Every text is a constant in this file, and this module reads no file: a packaged engine is one
 // script, and a text kept anywhere else would not travel with it. A body is the whole rule as it
 // is written into a project file: a heading that names the rule and its version, the text, and
@@ -69,6 +74,7 @@ const BATCH_ZH = `## 批量处理原则 v3
 5. 一批一次链写、一次汇报。转态与注解用批量入口一次写完。待 Owner 决定的事项在收口汇报里成批列出，每项附建议。不阻塞工作的事项按建议先做，汇报里回显所做的选择，由 Owner 事后更正。
 6. 派工按批段。拆分一个代理，实施每包一个代理，集成一个代理，验收一个代理，验收可按 Epic 分片同批并行。不为单步派代理，不为确认读数派代理。
 7. 「一次」按轮计，不是整个会话只做一轮。一轮（一个批次）内，拆分、每包实施、集成、名册、验收、判断各做一遍，不逐红重复；一轮做完，判断列出的问题清单与排队项就是下一轮的输入，loop 立即开下一轮（R41、R42……），直到 goal 写明的终态达成，或剩余工作全部阻塞于只有 Owner 能做的决定。轮与轮之间不等 Owner 答复、不换会话、不汇报。
+8. 知识采集按轮。每轮的单名判断代理在判断报告旁产出 lessons.json：每条含 subject、summary、snippet、body、tags 与来源证据路径，只写本轮新确立的事实与教训，不超过 5 条；主线程在同一轮的链写里用引擎 knowledge-capture 逐条落卡并读回，卡被预算拒绝就记阻塞、迁移后补写。不依赖 Stop 钩子的标记行采集。
 
 修完一条又红一条的循环，本身就是违反本原则的信号：停下，把清单列全，再动手。
 
@@ -80,8 +86,8 @@ const BATCH_ZH = `## 批量处理原则 v3
 4. 等待避免空轮询。使用宿主支持的完成通知与阻塞等待；连续没有新状态时延长查询间隔，遵守宿主等待上限和用户中断要求；有独立可做的工作时继续该工作。
 `;
 
-// Translated when this module was written, clause 7 with the Owner's revision (INIT-053 R40);
-// awaits the Owner's correction.
+// Translated when this module was written, clause 7 with the Owner's revision (INIT-053 R40) and
+// clause 8 with the Owner's fifth round (INIT-053 R48, MIN-242 D10); awaits the Owner's correction.
 const BATCH_EN = `## Batch Processing Principle v3
 
 This applies to all work in this workspace: decomposition, implementation, running gates, testing, acceptance, chain writes, reporting and dispatch.
@@ -93,6 +99,7 @@ This applies to all work in this workspace: decomposition, implementation, runni
 5. One chain write and one report per batch. Status transitions and annotations are written in one pass through the batch entry point. Items awaiting the Owner's decision are listed together in the closing report, each with a recommendation. Items that do not block the work are done first as recommended; the report echoes the choices made, and the Owner corrects them afterwards.
 6. Dispatch follows the batch stages. One agent for decomposition, one agent per package for implementation, one agent for integration and one agent for acceptance; acceptance may be split by Epic and run in parallel within the same batch. Do not dispatch an agent for a single step, and do not dispatch an agent to confirm a reading.
 7. "Once" counts per round, not once for the whole session. Within a round (one batch), decomposition, the implementation of each package, integration, the gate roster, acceptance and judgment are each done once, not repeated for every red result. When a round is done, the problem list and the queued items that the judgment lists are the input to the next round, and the loop starts the next round at once (R41, R42 and so on), until the end state written in the goal is reached or all remaining work is blocked on decisions only the Owner can make. Between rounds, do not wait for the Owner's reply, do not change sessions, and do not report.
+8. Knowledge is captured per round. Beside its judgment report, each round's one judgment agent produces lessons.json with at most 5 entries, each carrying subject, summary, snippet, body, tags and the paths of its source evidence, and holding only facts and lessons newly established in that round. In the same round's chain write, the main thread records the entries one by one as cards with the engine's knowledge-capture and reads each one back; a card the budget refuses is recorded as blocked and written after the migration. Capture does not rely on the Stop hook's marker lines.
 
 A cycle in which fixing one red result turns up another is itself a sign that this principle is being broken: stop, list everything, then act.
 

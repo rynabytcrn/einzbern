@@ -8,6 +8,9 @@
 // silent-reporting v1 (its last sentence, no report between rounds) at the same version. The
 // Chinese fixtures are the Owner's archived revision; the English of the two additions is an
 // agent's translation that awaits the Owner's correction, and its fixture follows the constant.
+// INIT-053 R48 (MIN-242 D10, the Owner's fifth round): batch v3 gains clause 8 (knowledge is captured
+// per round) at the same version; the Chinese fixture is the archive again, byte for byte, and the
+// English of clause 8 is an agent's translation that awaits the Owner's correction.
 
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -92,21 +95,30 @@ test("ruleBody gives the Chinese body when artifact.language is zh-CN and the En
 });
 
 // The old bodies remain applicable to enabled v2 projects until an explicit upgrade. The Owner's
-// revision of v3 (INIT-053 R40) adds clause 7 to the six principles at the same version.
-test("INIT-053 R1-R5, R40: v3 preserves the six principles in both languages, adds clause 7, and adds communication and waiting", async () => {
+// revisions of v3 add clause 7 (INIT-053 R40) and clause 8 (INIT-053 R48, MIN-242 D10) to the six
+// principles at the same version.
+test("INIT-053 R1-R5, R40, R48: v3 preserves the six principles in both languages, adds clauses 7 and 8, and adds communication and waiting", async () => {
   for (const language of LANGUAGES) {
     const previous = await readFile(join(fixtures, `batch-v2.${language}.md`), "utf8");
     const current = builtInRule("batch").body[language];
     const heading = language === "zh" ? "### 代理通信与等待" : "### Agent communication and waiting";
     const principles = current.split(heading)[0].split("\n");
     const clause7 = principles.filter((line) => line.startsWith("7. "));
+    const clause8 = principles.filter((line) => line.startsWith("8. "));
     assert.equal(clause7.length, 1, `${language}: one clause 7`);
+    assert.equal(clause8.length, 1, `${language}: one clause 8`);
     assert.equal(principles.indexOf(clause7[0]), principles.findIndex((line) => line.startsWith("6. ")) + 1, `${language}: clause 7 follows clause 6`);
-    assert.equal(principles.filter((line) => line !== clause7[0]).join("\n").trimEnd(), previous.replace("v2", "v3").trimEnd());
+    assert.equal(principles.indexOf(clause8[0]), principles.indexOf(clause7[0]) + 1, `${language}: clause 8 follows clause 7`);
+    assert.equal(principles.filter((line) => line !== clause7[0] && line !== clause8[0]).join("\n").trimEnd(), previous.replace("v2", "v3").trimEnd());
     for (const fragment of language === "zh"
       ? ["「一次」按轮计", "不是整个会话只做一轮", "各做一遍", "不逐红重复", "下一轮的输入", "立即开下一轮", "goal 写明的终态", "只有 Owner 能做的决定", "不等 Owner 答复", "不换会话", "不汇报"]
       : ["\"Once\" counts per round", "not once for the whole session", "each done once", "not repeated for every red result", "input to the next round", "starts the next round at once", "end state written in the goal", "decisions only the Owner can make", "do not wait for the Owner's reply", "do not change sessions", "do not report"]) {
       assert.ok(clause7[0].includes(fragment), `${language} clause 7: ${fragment}`);
+    }
+    for (const fragment of language === "zh"
+      ? ["知识采集按轮", "单名判断代理", "lessons.json", "subject、summary、snippet、body、tags", "来源证据路径", "本轮新确立的事实与教训", "不超过 5 条", "同一轮的链写", "knowledge-capture", "逐条落卡并读回", "被预算拒绝就记阻塞", "迁移后补写", "不依赖 Stop 钩子的标记行"]
+      : ["Knowledge is captured per round", "one judgment agent", "lessons.json", "subject, summary, snippet, body, tags", "paths of its source evidence", "newly established in that round", "at most 5 entries", "same round's chain write", "knowledge-capture", "reads each one back", "budget refuses is recorded as blocked", "written after the migration", "does not rely on the Stop hook's marker lines"]) {
+      assert.ok(clause8[0].includes(fragment), `${language} clause 8: ${fragment}`);
     }
     const clauses = current.split(heading)[1];
     for (const fragment of language === "zh"

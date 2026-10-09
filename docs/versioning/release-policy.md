@@ -174,10 +174,19 @@ and reach the Wiki through the Wiki action above.
 The GitHub Release body carries only a short description of the version and a link
 to the version's page in the Wiki's Release Notes chapter (the Wiki page
 `Release-Notes-<version>`); it never carries the full release notes. The release
-attachments are unchanged: the archive `einzbern-<version>.tar.gz` and its
-`.sha256` file. The release command that `publish-plan` prints and
-`--execute release` runs still passes the version's CHANGELOG section as the body,
-so it does not follow this rule yet.
+command that `publish-plan` prints and `--execute release` runs builds this body as
+its `--notes` value, in three paragraphs: the first sentence of the release summary
+that preparation writes at the top of the version's CHANGELOG section, the line
+`Release notes, by functional module:` followed by the page's address, and a line
+naming the two attachments. The script composes the address when it builds the
+plan, from the repository owner and the engine name in the core names module. The
+release attachments are unchanged: the archive `einzbern-<version>.tar.gz` and its
+`.sha256` file. When `docs/wiki/Release-Notes-<version>.md` in the engine tree is
+missing, empty or not a regular file, the plan refuses with
+`RELEASE_WIKI_NOTES_MISSING`, prints no command and runs no action, so a release
+never links to an empty Wiki page. The complete notes stay in
+`docs/releases/<version>.md`, which `generate` still writes from the version's
+CHANGELOG section in full, and in the Wiki.
 
 ## Version identity
 

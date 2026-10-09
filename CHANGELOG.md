@@ -56,6 +56,19 @@ library's event payloads carry `actor`. The engine is unchanged: it writes no ac
 attestation is enabled, has no verb that enables it for an existing library, and leaves old events'
 bytes as they are.
 
+TCRN-CROSS-STORY-520 (INIT-053 R50, fixes TCRN-CROSS-STORY-488): the GitHub Release body that
+`scripts/release.mjs publish-plan` prints and `--execute release` passes to `gh release create`
+as `--notes` is a short description of the version and a link to its page in the Wiki's Release
+Notes chapter, as the release policy requires (MIN-243 D6), instead of the version's CHANGELOG
+section, which for 2.0.0 was longer than GitHub's 125,000-character limit for a release body.
+The body has three paragraphs: the first sentence of the release summary, the line
+`Release notes, by functional module:` with the address of the Wiki page
+`Release-Notes-<version>`, which the script composes from the names module, and the two
+attachments. When `docs/wiki/Release-Notes-<version>.md` is missing, empty or not a regular
+file, the plan refuses with `RELEASE_WIKI_NOTES_MISSING` before any command is printed or run.
+The release title, the two attachments and `docs/releases/<version>.md`, which keeps the
+CHANGELOG section in full, are unchanged.
+
 ## 2.0.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.0.0. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

@@ -59,7 +59,7 @@ import { ARTIFACT_LANGUAGE_TAGS } from "./knowledge-language.js";
 import { legacyControlDirectory } from "./legacy-workspace.js";
 import { applyCleanup, planCleanup } from "./migrate-cleanup.js";
 import type { MigrateCleanupInput, MigrateCleanupItem } from "./migrate-cleanup.js";
-import { applyMigration, inferMigrationMapping, planMigration, readMigrationMapping } from "./migrate-legacy.js";
+import { applyMigration, describeProjectCandidates, inferMigrationMapping, planMigration, readMigrationMapping } from "./migrate-legacy.js";
 import type { MigrationApplied, MigrationPartitionPlan, MigrationPlan } from "./migrate-legacy.js";
 import { DIRECTORY, LEGACY_DEVICE_DIRECTORY } from "./names.js";
 import { readRegistry } from "./registry.js";
@@ -598,6 +598,17 @@ function coordinationProjectMessage(migration: MigrationPlan, own: MigrationPart
   return `--project names the coordination partition ${own.partition}: a coordination chain takes no project language or project wiring. Plan again with --project set to the root of a partition whose chainRole is "project"${example === undefined ? "" : ` (for example ${example})`} and the same --mapping.`;
 }
 
+// The chain role the mapping row of a partition gives it, or null without one.
+function rowRole(migration: MigrationPlan, own: MigrationPartitionPlan): "coordination" | "project" | null {
+  return migration.mapping?.partitions.find((entry) => entry.partition === own.partition)?.chainRole ?? null;
+}
+
+// TCRN-CROSS-STORY-517: the refusal a plan holds when the --project partition's row binds no project
+// although its old chain holds live projects; the wizard asks which one and writes it into the row.
+function projectIdQuestionMessage(own: MigrationPartitionPlan): string {
+  return `partition ${own.partition} is a project chain whose old chain holds live projects: name the one its configuration (language, managed sections, registry entry) belongs to as projectId in its --mapping row, one of ${describeProjectCandidates(own.projectCandidates ?? [])}. Setup picks none and creates no project of its own beside them.`;
+}
+
 // The records the project's own library starts from: the old chain it is imported from, or, when an
 // earlier run imported it, the library as it stands. Both are read from genesis and nothing is
 // written; null for a partition the plan stops at.
@@ -660,8 +671,18 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
   // records no project language and plans no project wiring for a coordination chain.
   const ownCoordination = coordinationPartition(planned.migration, own);
   if (ownCoordination) recorder.block("library", projectRoot, "SETUP_ANSWER_INVALID", coordinationProjectMessage(planned.migration, own!));
+  // TCRN-CROSS-STORY-517 (R50 D-517-1): a project partition whose old chain holds live projects binds
+  // the project's configuration (language, managed sections, registry entry) to one of them, the one
+  // its mapping row names as projectId. Without it the plan stops here and lists them; setup never
+  // picks one, and never creates a configuration project of its own beside them. A row without
+  // chainRole names no project chain and keeps 2.0.0's configuration project unless it names one.
+  if (own !== null && !ownCoordination && own.projectId === null && rowRole(planned.migration, own) === "project" && (own.projectCandidates?.length ?? 0) > 0) {
+    recorder.block("library", own.target, "SETUP_ANSWER_INVALID", projectIdQuestionMessage(own));
+  }
   const retainedState = ownCoordination ? null : await ownLibraryState(recorder, own);
-  const ownState = retainedState === null ? null : await scopeSetupTargetState(projectRoot, own!.target, deviceHome, retainedState);
+  const scoped = retainedState === null ? null : await scopeSetupTargetState(projectRoot, own!.target, deviceHome, retainedState);
+  // TCRN-CROSS-STORY-517: the project the mapping binds is the configuration's scope from here on.
+  const ownState = scoped === null || own!.projectId === null ? scoped : scopedWorkspaceState(retainedState!, own!.projectId);
   const ownLanguage = ownState === null ? own?.language ?? null : libraryLanguage(ownState);
   const artifacts = own?.target ?? await realTarget(join(projectRoot, DIRECTORY.library));
   const defaults: ResolvedSetupAnswers = {

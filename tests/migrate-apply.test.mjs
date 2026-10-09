@@ -72,6 +72,9 @@ const ALPHA_EXTERNAL_KEY = "LEGACY-ALPHA-WORKSPACE";
 const ALPHA_WORKSPACE_ID = deriveStableId("workspace", ALPHA_EXTERNAL_KEY);
 // The fixture's one live gate: pending, bound to its Story.
 const FIXTURE_GATE_ID = "gate:f48272b1736ccd8d29165c37";
+// TCRN-CROSS-STORY-517: the fixture's one live project ("Legacy fixture", seven live work items); its
+// id derives from its external key, so every rehomed partition holds the same one.
+const FIXTURE_PROJECT_ID = "project:3443417fe20a3dd2b9f42d05";
 
 let second = 0;
 const at = () => {
@@ -676,6 +679,8 @@ test("R46 I07 (fixture): --project at the coordination partition's root is refus
     await mkdir(projectRoot, { recursive: true });
     rows.push({ partition: name, legacyWorkspace: old.root, projectRoot, chainRole: "project" });
   }
+  // TCRN-CROSS-STORY-517: the --project partition's old chain holds a live project, so its row names it.
+  rows[1] = { ...rows[1], projectId: FIXTURE_PROJECT_ID };
   const mapping = await writeMapping(m, rows);
   const targets = rows.map((row) => join(row.projectRoot, ".ether"));
   const migrate = (project, extra = []) => run(m, ["setup", "--mode", "migrate", "--project", project, "--mapping", mapping, "--at", at(), ...extra]);
@@ -778,6 +783,8 @@ test("R47-04 (fixture): the coordination partition's own language and orchestrat
     const old = await oldPartition(m, name, `LEGACY-${name.toUpperCase()}-WORKSPACE`);
     rows.push({ partition: name, legacyWorkspace: old.root, projectRoot: await project(m, name), chainRole: "project" });
   }
+  // TCRN-CROSS-STORY-517: the --project partition's old chain holds a live project, so its row names it.
+  rows[1] = { ...rows[1], projectId: FIXTURE_PROJECT_ID };
   const mapping = await writeMapping(m, rows);
   const targets = rows.map((row) => join(row.projectRoot, ".ether"));
   const migrate = (projectRoot, extra = []) => run(m, ["setup", "--mode", "migrate", "--project", projectRoot, "--mapping", mapping, "--at", at(), ...extra]);
@@ -888,4 +895,66 @@ test("R47-05 (fixture): a forced miss stops before the cleanup and the wiring, a
   assert.deepEqual(resumed.recallSmoke, { status: "hit", cardId: old.newest.id, query: old.newest.subject });
   for (const file of ["AGENTS.md", "CLAUDE.md"]) assert.ok((await lstat(join(alphaProject, file))).isFile(), `${file} is wired once the smoke hits`);
   assert.ok((await lstat(join(m.deviceHome, "engine", "hook.mjs"))).isFile());
+});
+
+// TCRN-CROSS-STORY-517 GWT1, GWT3 (R50 D-517-1; fixes STORY-489): a project partition whose old chain holds
+// a live project. Without projectId the wizard's plan stops on that partition, lists the project as the
+// one candidate and imports nothing; with it the migration reuses that project: no configuration project
+// of setup's own is created, and the registry entry, the identity's primaryProjectId, the language and
+// the managed-section records all name the old chain's project. The same mapping again writes nothing.
+test("STORY-517 GWT1, GWT3 (fixture): a project partition with an old project reuses the project its mapping row names and creates none", async (context) => {
+  const m = await machine(context);
+  const crossProject = await oldPartition(m, "cross-project");
+  const alpha = await oldPartition(m, "alpha", ALPHA_EXTERNAL_KEY);
+  const alphaProject = await project(m, "alpha");
+  const rows = [
+    { partition: "cross-project", legacyWorkspace: crossProject.root, projectRoot: m.container, chainRole: "coordination" },
+    { partition: "alpha", legacyWorkspace: alpha.root, projectRoot: alphaProject, chainRole: "project" },
+  ];
+  const targets = rows.map((row) => join(row.projectRoot, ".ether"));
+  const migrate = (mapping, extra = []) => run(m, ["setup", "--mode", "migrate", "--project", alphaProject, "--mapping", mapping, "--language", "zh-CN", "--at", at(), ...extra]);
+
+  // No projectId: the plan stops on alpha and names its old project; the apply imports nothing.
+  const unbound = await writeMapping(m, rows, join(m.base, "unbound.json"));
+  const before = { container: await treeDigest(m.container), device: await treeDigest(m.deviceHome), home: await treeDigest(m.home) };
+  const asked = receipt(migrate(unbound));
+  assert.deepEqual(asked.blockers.map((blocker) => [blocker.step, blocker.path, blocker.reasonCode]), [["library", targets[1], "SETUP_ANSWER_INVALID"]]);
+  assert.match(asked.blockers[0].message, /^partition alpha is a project chain whose old chain holds live projects: name the one its configuration \(language, managed sections, registry entry\) belongs to as projectId in its --mapping row, one of project:3443417fe20a3dd2b9f42d05 "Legacy fixture" \(7 work items\)\./u);
+  assert.deepEqual(asked.migration.partitions[1].projectCandidates.map((entry) => [entry.id, entry.name, entry.work]), [[FIXTURE_PROJECT_ID, "Legacy fixture", 7]]);
+  assert.equal(refusal(migrate(unbound, ["--yes", "true"])).reasonCode, "SETUP_BLOCKED");
+  for (const target of targets) await assert.rejects(lstat(target), { code: "ENOENT" }, `${target}: nothing is imported`);
+  assert.deepEqual({ container: await treeDigest(m.container), device: await treeDigest(m.deviceHome), home: await treeDigest(m.home) }, before, "the refused run wrote nothing");
+
+  // projectId names it: the migration reuses it.
+  const bound = await writeMapping(m, [rows[0], { ...rows[1], projectId: FIXTURE_PROJECT_ID }], join(m.base, "bound.json"));
+  const planned = receipt(migrate(bound));
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.migration.partitions[1].chainIdentity, { role: "project", coordinationLibraryId: crossProject.workspaceId, primaryProjectId: FIXTURE_PROJECT_ID });
+  assert.deepEqual(planned.migration.registry.map((entry) => entry.projectId ?? null), [null, FIXTURE_PROJECT_ID]);
+  const applied = receipt(migrate(bound, ["--yes", "true"]));
+  assert.deepEqual([applied.reasonCode, applied.answers.language], ["SETUP_APPLIED", "zh-CN"]);
+  const state = await materializeWorkspace(targets[1]);
+  assert.deepEqual(state.projects.filter((entry) => !entry.tombstone).map((entry) => entry.id), [FIXTURE_PROJECT_ID], "no project beside the old chain's own");
+  assert.equal(state.projects.some((entry) => entry.externalKey.startsWith("SETUP-CONFIG-")), false, "no configuration project of setup's own");
+  assert.deepEqual(chainIdentity(state), { role: "project", coordinationLibraryId: crossProject.workspaceId, primaryProjectId: FIXTURE_PROJECT_ID });
+  const registry = await readRegistry(m.deviceHome);
+  assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.chainRole, entry.projectId ?? null]).sort(), [
+    [alphaProject, "project", FIXTURE_PROJECT_ID],
+    [m.container, "coordination", null],
+  ].sort());
+  assert.deepEqual(applied.migration.registry.find((entry) => entry.projectPath === alphaProject).projectId, FIXTURE_PROJECT_ID);
+  const language = receipt(run(m, ["settings-catalog", "--workspace", targets[1], "--project-id", FIXTURE_PROJECT_ID])).settings.find((entry) => entry.key === "artifact.language");
+  assert.deepEqual([language.currentValue, language.source.kind, language.source.projectId], ["zh-CN", "project", FIXTURE_PROJECT_ID]);
+  assert.deepEqual(state.settings.filter((entry) => entry.key === "artifact.language").map((entry) => entry.projectId ?? null), [FIXTURE_PROJECT_ID]);
+  const sections = state.configRecords.filter((entry) => entry.collection === "managed-section");
+  assert.deepEqual(sections.filter((entry) => entry.key.startsWith("AGENTS.md#")).map((entry) => entry.key).sort(), ["AGENTS.md#navigation", "AGENTS.md#variables-custom", "AGENTS.md#variables-system"]);
+  assert.deepEqual([...new Set(sections.map((entry) => entry.projectId))], [FIXTURE_PROJECT_ID], "every managed-section record names the old chain's project");
+  // Every write after the old chain is signed by the setup actor.
+  const written = (await readAllStreams(targets[1])).streams.flatMap((stream) => stream.events).slice(expected.events);
+  assert.ok(written.length > 0);
+  assert.deepEqual([...new Set(written.map((event) => event.payload.actor))], ["agent:setup"]);
+
+  // The same mapping again: nothing is written into a library or the registry.
+  const again = receipt(migrate(bound, ["--yes", "true"]));
+  assert.deepEqual(again.written.filter((entry) => entry.step === "library" || entry.step === "registry"), []);
 });

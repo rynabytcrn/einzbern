@@ -24,6 +24,15 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // once the import is checked, signed by the setup actor; a library migrated before carrying none
 // gets it, and one carrying another identity stops the plan.
 //
+// projectId (TCRN-CROSS-STORY-517, R50 D-517-1; fixes STORY-489) is the project of the old chain the
+// library's configuration is bound to, given explicitly: a live project of the old chain (and, for a
+// library migrated before, of the library as it stands), else the plan stops with SETUP_ANSWER_INVALID
+// and lists the old chain's live projects (projectCandidates). The apply binds the registry entry's
+// projectId and the identity's primaryProjectId to it, so setup's language and managed sections go to
+// that project rather than to a configuration project of its own (setup.ts). A coordination row binds
+// no project: a coordination chain takes no project language or wiring. Nothing infers a project from
+// a name, a sole project or a path.
+//
 // planMigration writes nothing. For each partition whose target the import can create the library
 // in, it runs the import's dry run (legacy-import.ts), which validates the whole chain from genesis
 // and reports its events and head, then replays the chain once more and requires the same head.
@@ -94,8 +103,10 @@ export const MIGRATION_MAPPING_SCHEMA_VERSION = "einzbern.migration-mapping.v1" 
 
 // A mapping names a handful of partitions; a file larger than this is not one.
 const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;
-const MAPPING_FIELDS: readonly string[] = Object.freeze(["partition", "legacyWorkspace", "projectRoot", "projectName", "gitRemote", "omitLegacyKnowledge", "chainRole"]);
+const MAPPING_FIELDS: readonly string[] = Object.freeze(["partition", "legacyWorkspace", "projectRoot", "projectName", "gitRemote", "omitLegacyKnowledge", "chainRole", "projectId"]);
 const CHAIN_ROLES: readonly string[] = Object.freeze(["coordination", "project"]);
+// A project id as the chain identity's primaryProjectId takes it (chain-identity.ts).
+const PROJECT_ID_PATTERN = /^project:[a-f0-9]{24}$/u;
 // The library manifest's bound on a project hint (ether-library.ts), which a partition's name shares.
 const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 const PORTAL_KEY_PREFIX = "portal.";
@@ -118,6 +129,9 @@ export interface MigrationMappingEntry {
   readonly omitLegacyKnowledge?: LegacyKnowledgeOmission;
   // The partition's chain role, given explicitly; absent, the library stays unclassified.
   readonly chainRole?: ChainIdentity["role"];
+  // TCRN-CROSS-STORY-517: the old chain's project the library's configuration is bound to, given
+  // explicitly; absent, the binding is left as it is (see projectCandidates).
+  readonly projectId?: string;
 }
 
 export interface MigrationMapping {
@@ -147,6 +161,14 @@ const OPEN_WORK_STATUSES: readonly OpenWorkStatus[] = Object.freeze(["planned", 
 export interface MigrationOpenItems {
   readonly total: number;
   readonly byStatus: Readonly<Record<OpenWorkStatus, number>>;
+}
+
+/** TCRN-CROSS-STORY-517: a live project of the old chain, which a mapping row's projectId may name; work counts its live work items. */
+export interface MigrationProjectCandidate {
+  readonly id: string;
+  readonly name: string;
+  readonly externalKey: string;
+  readonly work: number;
 }
 
 export interface MigrationPartitionPlan {
@@ -180,6 +202,11 @@ export interface MigrationPartitionPlan {
   // The chain identity the mapping's chainRole gives the library; null while unclassified (no
   // chainRole), or while the coordination row's library id is unknown.
   readonly chainIdentity: ChainIdentity | null;
+  // TCRN-CROSS-STORY-517: the project the mapping row binds the library's configuration to (null
+  // when it names none), and the old chain's live projects a wizard offers for it (null when the
+  // old chain does not read: unknown, never none).
+  readonly projectId: string | null;
+  readonly projectCandidates: readonly MigrationProjectCandidate[] | null;
   // TCRN-CROSS-INIT-053 R47 (R47-04): the coordination partition's own settings
   // (MigrationCoordinationSetting); absent on every other partition, and while the old chain does not read.
   readonly coordinationSettings?: readonly MigrationCoordinationSetting[];
@@ -218,6 +245,9 @@ export interface MigrationRegistryEntry {
   readonly gitRemote: string | null;
   // The old workspace the library was imported from.
   readonly migratedFrom: string;
+  // TCRN-CROSS-STORY-517: the project the mapping row binds; absent when it names none, and an
+  // entry's projectId is then left as it is.
+  readonly projectId?: string;
 }
 
 /** A portal key of the old device directory's machine settings, and what the migration does with it. */
@@ -349,7 +379,7 @@ export function checkMigrationMapping(value: unknown, file: string): MigrationMa
     if (!isRecord(raw)) mappingInvalid(`partitions[${index}] is not an object`, at("partitions"));
     const extra = Object.keys(raw).filter((field) => !MAPPING_FIELDS.includes(field));
     if (extra[0] !== undefined) mappingInvalid(`partitions[${index}] carries ${extra.join(", ")}, which a partition does not take`, at(extra[0]));
-    const { partition, legacyWorkspace, projectRoot, projectName, gitRemote, omitLegacyKnowledge, chainRole } = raw;
+    const { partition, legacyWorkspace, projectRoot, projectName, gitRemote, omitLegacyKnowledge, chainRole, projectId } = raw;
     if (!isHint(partition)) mappingInvalid(`partitions[${index}].partition must name the partition on one line`, at("partition"));
     if (!isAbsolutePath(legacyWorkspace)) mappingInvalid(`partitions[${index}].legacyWorkspace must be an absolute path`, at("legacyWorkspace"));
     if (!isAbsolutePath(projectRoot)) mappingInvalid(`partitions[${index}].projectRoot must be an absolute path`, at("projectRoot"));
@@ -360,6 +390,13 @@ export function checkMigrationMapping(value: unknown, file: string): MigrationMa
       if (field !== null) mappingInvalid(`partitions[${index}].omitLegacyKnowledge must contain only a nonempty one-line reason`, at(field));
     }
     if (chainRole !== undefined && !CHAIN_ROLES.includes(chainRole as string)) mappingInvalid(`partitions[${index}].chainRole must be coordination or project`, at("chainRole"));
+    // TCRN-CROSS-STORY-517: a project id; a coordination chain takes no project language or wiring, so its row binds none.
+    if (projectId !== undefined && (typeof projectId !== "string" || !PROJECT_ID_PATTERN.test(projectId))) {
+      mappingInvalid(`partitions[${index}].projectId must be a project id (project: and 24 hexadecimal digits)`, at("projectId"));
+    }
+    if (projectId !== undefined && chainRole === "coordination") {
+      mappingInvalid(`partitions[${index}].projectId binds a project to the coordination chain, which takes no project language or wiring; name it on a project row`, at("projectId"));
+    }
     partitions.push({
       partition,
       legacyWorkspace,
@@ -368,6 +405,7 @@ export function checkMigrationMapping(value: unknown, file: string): MigrationMa
       ...(gitRemote === undefined ? {} : { gitRemote }),
       ...(omitLegacyKnowledge === undefined ? {} : { omitLegacyKnowledge: { reason: (omitLegacyKnowledge as LegacyKnowledgeOmission).reason } }),
       ...(chainRole === undefined ? {} : { chainRole: chainRole as ChainIdentity["role"] }),
+      ...(projectId === undefined ? {} : { projectId: projectId as string }),
     });
   }
   // One coordination chain per mapping; project rows name the coordination of this same mapping.
@@ -501,6 +539,25 @@ function openItems(state: WorkspaceState): MigrationOpenItems {
     total += 1;
   }
   return { total, byStatus };
+}
+
+// TCRN-CROSS-STORY-517: the live projects of a state, each with its live work counted.
+function projectCandidates(state: WorkspaceState): readonly MigrationProjectCandidate[] {
+  return state.projects.filter((project) => !project.tombstone).map((project) => ({
+    id: project.id,
+    name: project.name,
+    externalKey: project.externalKey,
+    work: state.work.filter((record) => record.projectId === project.id && !record.tombstone).length,
+  }));
+}
+
+/** The candidates as a wizard reads them in a message: id "name" (n work items), in the old chain's order. */
+export function describeProjectCandidates(candidates: readonly MigrationProjectCandidate[]): string {
+  return candidates.map((candidate) => `${candidate.id} "${candidate.name}" (${candidate.work} work items)`).join(", ");
+}
+
+function hasLiveProject(state: WorkspaceState, projectId: string): boolean {
+  return state.projects.some((project) => project.id === projectId && !project.tombstone);
 }
 
 function hintOrNull(value: string | null): string | null {
@@ -663,6 +720,18 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
     : state === "migrated" ? await recorder.attempt("library", target, () => materializeWorkspaceFromGenesis(target)) : replayed;
   const coordinationSettings = replayed === null || held === null ? null : plannedCoordinationSettings(replayed, held);
 
+  // TCRN-CROSS-STORY-517 (D-517-1): the project the row binds is a live project of the old chain and,
+  // for a library migrated before, of the library as it stands; anything else stops the apply here,
+  // with the old chain's live projects to choose from. Nothing is picked for the row.
+  const candidates = replayed === null ? null : projectCandidates(replayed);
+  if (entry.projectId !== undefined && replayed !== null) {
+    const library = state === "migrated" ? await recorder.attempt("library", target, () => materializeWorkspaceFromGenesis(target)) : null;
+    if (!hasLiveProject(replayed, entry.projectId) || (library !== null && !hasLiveProject(library, entry.projectId))) {
+      recorder.block("library", target, "SETUP_ANSWER_INVALID",
+        `the mapping's projectId ${entry.projectId} for partition ${name} is not a live project of its old chain${library === null ? "" : ` and of ${target}`}: name one of ${describeProjectCandidates(candidates ?? []) || "none (the old chain has no live project; leave projectId out)"}`);
+    }
+  }
+
   const remote = entry.gitRemote ?? (projectKind === "directory" ? gitRemoteOf(projectRoot) : null);
   const gitRemote = remote === null ? null : hintOrNull(normalizeGitRemote(remote));
   const workspaceId = chain?.workspaceId ?? null;
@@ -685,6 +754,8 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
     knowledge: report?.knowledge ?? null,
     knowledgeOmission: report?.knowledgeOmission ?? null,
     chainIdentity: null,
+    projectId: entry.projectId ?? null,
+    projectCandidates: candidates,
     ...(coordinationSettings === null ? {} : { coordinationSettings }),
   };
   // The cloud flag: --cloud; else what this device's registry holds for the project and this
@@ -701,6 +772,7 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
       cloudHosted,
       gitRemote,
       migratedFrom: legacyWorkspace,
+      ...(entry.projectId === undefined ? {} : { projectId: entry.projectId }),
     },
   };
 }
@@ -708,12 +780,12 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
 // Whether the registry already holds the entry a partition gets, so the apply leaves it as it is.
 // With the partition's chain role, the entry must also record that role (registry.ts records it from
 // the library's identity when the entry is written), so an entry written before the identity is
-// written again.
+// written again. TCRN-CROSS-STORY-517: a row that binds a project needs the entry to name it.
 function registryEntryCurrent(registry: Registry | null, planned: MigrationRegistryEntry, role: ChainIdentity["role"] | null = null): boolean {
   const entry = registry?.entries.find((candidate) => candidate.projectPath === planned.projectPath);
   return entry !== undefined && entry.libraryPath === planned.libraryPath && entry.libraryId === planned.libraryId &&
     entry.cloudHosted === planned.cloudHosted && entry.gitRemote === planned.gitRemote && entry.migratedFrom === planned.migratedFrom &&
-    (role === null || entry.chainRole === role);
+    (role === null || entry.chainRole === role) && (planned.projectId === undefined || entry.projectId === planned.projectId);
 }
 
 // The role the plan gives the partition named `name`; null while it stays unclassified.
@@ -725,15 +797,19 @@ function plannedRole(partitions: readonly MigrationPartitionPlan[], name: string
 // coordination row names its own library; a project row names the coordination row's library. A
 // partition migrated before is read for the identity it carries: none is written by the apply,
 // the same is left, another stops the plan. Answers the partitions with their identities.
+// TCRN-CROSS-STORY-517: a project row that binds a project names it as the identity's
+// primaryProjectId; an identity that names another primary project stops the plan, and one that
+// names none gets it.
 async function plannedChainIdentities(recorder: MigrationRecorder, entries: readonly MigrationMappingEntry[], planned: readonly MigrationPartitionPlan[]): Promise<MigrationPartitionPlan[]> {
   const coordinationIndex = entries.findIndex((entry) => entry.chainRole === "coordination");
   const coordinationId = coordinationIndex >= 0 ? planned[coordinationIndex]?.workspaceId ?? null : null;
   const partitions: MigrationPartitionPlan[] = [];
   for (const [index, partition] of planned.entries()) {
     const role = entries[index]?.chainRole;
+    const primary = role === "project" && partition.projectId !== null ? { primaryProjectId: partition.projectId } : {};
     const identity: ChainIdentity | null = role === undefined || coordinationId === null || partition.workspaceId === null
       ? null
-      : role === "coordination" ? { role, coordinationLibraryId: partition.workspaceId } : { role, coordinationLibraryId: coordinationId };
+      : role === "coordination" ? { role, coordinationLibraryId: partition.workspaceId } : { role, coordinationLibraryId: coordinationId, ...primary };
     const conflict = (message: string): void => {
       recorder.block("library", partition.target, "SETUP_LIBRARY_CONFLICT", message);
     };
@@ -750,6 +826,11 @@ async function plannedChainIdentities(recorder: MigrationRecorder, entries: read
       }
       if (held.identity !== null && (held.identity.role !== identity.role || held.identity.coordinationLibraryId !== identity.coordinationLibraryId)) {
         conflict(`${partition.target} already declares the ${held.identity.role} identity naming ${held.identity.coordinationLibraryId}; a chain role changes only through chain-declare`);
+        partitions.push({ ...partition, action: "blocked", chainIdentity: identity });
+        continue;
+      }
+      if (held.identity?.primaryProjectId !== undefined && identity.primaryProjectId !== undefined && held.identity.primaryProjectId !== identity.primaryProjectId) {
+        conflict(`${partition.target} already declares ${held.identity.primaryProjectId} its primary project, not the mapping's projectId ${identity.primaryProjectId}; a primary project changes only through chain-declare`);
         partitions.push({ ...partition, action: "blocked", chainIdentity: identity });
         continue;
       }
@@ -842,7 +923,7 @@ export async function planMigration(input: MigrationPlanInput): Promise<Migratio
   const identified = await plannedChainIdentities(recorder, input.mapping?.partitions ?? [], partitions);
   for (const partition of identified) {
     if (partition.action === "import") recorder.write("library", partition.target, "create");
-    else if (partition.action === "skip" && ((partition.chainIdentity !== null && await libraryLacksIdentity(partition.target)) ||
+    else if (partition.action === "skip" && ((partition.chainIdentity !== null && await identityToWrite(partition.target, partition.chainIdentity)) ||
       coordinationWrites(partition).length > 0)) recorder.write("library", partition.target, "update");
   }
   partitions.splice(0, partitions.length, ...identified);
@@ -895,9 +976,11 @@ function plannedChain(partition: MigrationPartitionPlan): LegacyChainFacts {
   return { workspaceId: partition.workspaceId, streamId: partition.streamId, events: partition.events, headEventHash: partition.headEventHash };
 }
 
-// Whether the library at `target` declares no chain identity yet (read without writing).
-async function libraryLacksIdentity(target: string): Promise<boolean> {
-  return chainIdentity(await materializeWorkspaceFromGenesis(target)) === null;
+// Whether the apply writes the library's chain identity (read without writing): it declares none yet,
+// or (TCRN-CROSS-STORY-517) it names no primary project and the plan's identity names one.
+async function identityToWrite(target: string, planned: ChainIdentity): Promise<boolean> {
+  const held = chainIdentity(await materializeWorkspaceFromGenesis(target));
+  return held === null || (held.primaryProjectId === undefined && planned.primaryProjectId !== undefined);
 }
 
 // The coordination settings the plan lists for the apply to write (TCRN-CROSS-INIT-053 R47, R47-04).
@@ -927,14 +1010,22 @@ async function applyCoordinationSettings(recorder: SetupRecorder, partition: Mig
 // INIT-053 U08: the identity the plan gave the partition, written once the import is checked and
 // signed by the setup actor (an imported chain that enabled attestation requires one). A library
 // migrated before gets it when it has none; one holding another identity stops the apply.
+// TCRN-CROSS-STORY-517: one that names no primary project gets the plan's primaryProjectId, the rest
+// of it kept; one naming another primary project stops the apply.
 async function applyChainIdentity(recorder: SetupRecorder, partition: MigrationPartitionPlan, at: string, imported: boolean): Promise<ChainIdentity | null> {
   if (partition.chainIdentity === null) return null;
   const current = chainIdentity(await materializeWorkspaceFromGenesis(partition.target));
   if (current !== null) {
-    if (current.role !== partition.chainIdentity.role || current.coordinationLibraryId !== partition.chainIdentity.coordinationLibraryId) {
-      setupFail("SETUP_LIBRARY_CONFLICT", `${partition.target} declares another chain identity than partition ${partition.partition}'s plan; a chain role changes only through chain-declare`, { library: partition.target, partition: partition.partition });
+    const primary = partition.chainIdentity.primaryProjectId;
+    if (current.role !== partition.chainIdentity.role || current.coordinationLibraryId !== partition.chainIdentity.coordinationLibraryId ||
+      (primary !== undefined && current.primaryProjectId !== undefined && current.primaryProjectId !== primary)) {
+      setupFail("SETUP_LIBRARY_CONFLICT", `${partition.target} declares another chain identity than partition ${partition.partition}'s plan; a chain role or primary project changes only through chain-declare`, { library: partition.target, partition: partition.partition });
     }
-    return current;
+    if (primary === undefined || current.primaryProjectId !== undefined) return current;
+    const bound: ChainIdentity = { ...current, primaryProjectId: primary };
+    await declareChainIdentity(partition.target, bound, { occurredAt: at, actorId: SETUP_ACTOR });
+    recorder.write("library", partition.target, imported ? "create" : "update");
+    return bound;
   }
   await declareChainIdentity(partition.target, partition.chainIdentity, { occurredAt: at, actorId: SETUP_ACTOR });
   recorder.write("library", partition.target, imported ? "create" : "update");
@@ -1012,6 +1103,8 @@ async function applyRegistryEntries(recorder: SetupRecorder, input: MigrationApp
         cloudHosted: entry.cloudHosted,
         gitRemote: entry.gitRemote,
         migratedFrom: entry.migratedFrom,
+        // TCRN-CROSS-STORY-517: the bound project; without one, registerLibrary keeps the entry's own.
+        ...(entry.projectId === undefined ? {} : { projectId: entry.projectId }),
       }, input.deviceHome);
       recorder.write("registry", registryFile, existed ? "update" : "create");
       registry = await readRegistry(input.deviceHome);

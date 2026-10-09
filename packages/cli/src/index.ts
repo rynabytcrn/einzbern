@@ -947,7 +947,7 @@ async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWor
   const binding = { projectId: group.projectId ?? null, workIds: group.workIds };
   let projectRoot: string | undefined;
   try {
-    projectRoot = await gatesProjectRoot(state.metadata.workspaceId, values.project, group.projectId);
+    projectRoot = await gatesProjectRoot(state.metadata.workspaceId, values.project, group.projectId, state);
     const plan = await planGates({
       projectRoot,
       gates: listGates(scopedWorkspaceState(state, group.projectId)),
@@ -1033,15 +1033,39 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
   };
 }
 
+type GatesLibrary = Pick<Awaited<ReturnType<typeof materializeWorkspace>>, "configRecords" | "metadata" | "projects">;
+
+// TCRN-CROSS-STORY-519 (D-519-3): whether a library's entries registered with no project answer for
+// `projectId`: only on a coordination chain, and only for a project the library holds, not deleted.
+// A coordination library is registered once on a device, for the directory it serves, and every one
+// of its projects is a coordination project of that place: setup and migration record no project in
+// that entry. A project chain still needs an entry for the stable project.
+function coordinationRootAnswersFor(library: GatesLibrary | undefined, projectId: string | undefined): boolean {
+  if (library === undefined || projectId === undefined || chainIdentity(library)?.role !== "coordination") return false;
+  return library.projects.some((record) => record.id === projectId && !record.tombstone);
+}
+
 // TCRN-CROSS-STORY-485 R2, R4: the project a library's gate roots are relative to. --project names
 // it; left out, it is the project this device's registry holds for the library: the one the current
 // directory resolves to when that is this library, or else the only project registered for it.
-async function gatesProjectRoot(libraryId: string, project: string | undefined, projectId?: string): Promise<string> {
+// TCRN-CROSS-STORY-519 (D-519-3): `library`, given, is the library's state. On a coordination chain,
+// when no entry of this device holds the requested project, an entry registered for the library
+// with no project answers for it (coordinationRootAnswersFor): the only such entry, or the one
+// --project names.
+async function gatesProjectRoot(libraryId: string, project: string | undefined, projectId?: string, library?: GatesLibrary): Promise<string> {
+  // The library's entries with no project, when they answer for projectId; null when they do not.
+  const unscoped = async (): Promise<Awaited<ReturnType<typeof readRegistry>>["entries"] | null> => {
+    if (!coordinationRootAnswersFor(library, projectId)) return null;
+    const entries = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId);
+    return entries.some((entry) => entry.projectId === projectId) ? null : entries.filter((entry) => entry.projectId === undefined);
+  };
   if (project !== undefined) {
     const root = resolve(project);
     if (projectId !== undefined) {
       const binding = await resolveLibrary(root);
-      if (binding.libraryId !== libraryId || binding.entry.projectId !== projectId) {
+      const answers = binding.libraryId === libraryId &&
+        (binding.entry.projectId === projectId || (binding.entry.projectId === undefined && (await unscoped()) !== null));
+      if (!answers) {
         throw new WorkflowCliError("GATES_PROJECT_UNKNOWN", "the gate root is not registered to this library and stable project", {
           remedy: "register the intended directory with library-register --project-id, then run its gates",
         });
@@ -1058,11 +1082,15 @@ async function gatesProjectRoot(libraryId: string, project: string | undefined, 
   if (here !== null && here.libraryId === libraryId && here.entry.projectId === projectId) return here.entry.projectPath;
   const registered = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId && entry.projectId === projectId);
   if (registered.length === 1) return registered[0]!.projectPath;
+  const fallback = registered.length === 0 ? await unscoped() : null;
+  if (fallback?.length === 1) return fallback[0]!.projectPath;
   throw new WorkflowCliError(
     "GATES_PROJECT_UNKNOWN",
-    registered.length === 0
-      ? `no project is registered for library ${libraryId} on this device, so the gates have no root to run in`
-      : `library ${libraryId} is registered for ${registered.length} projects on this device`,
+    registered.length > 1
+      ? `library ${libraryId} is registered for ${registered.length} projects on this device`
+      : fallback !== null && fallback.length > 1
+        ? `coordination library ${libraryId} is registered for ${fallback.length} directories on this device, none of them for ${projectId ?? "a project"}`
+        : `no project is registered for library ${libraryId} on this device, so the gates have no root to run in`,
     { remedy: "pass --project with the project directory the gate roots are relative to" },
   );
 }
@@ -1072,6 +1100,8 @@ async function gatesProjectRoot(libraryId: string, project: string | undefined, 
 // against the library as it stands before the write, and a Story the same batch creates counts as
 // one; a project is looked up only when a Story is among them and an enabled required declaration
 // could cover it. No enabled required coverage is itself a refusal, before a project lookup.
+// TCRN-CROSS-STORY-519 (D-519-3): the lookup reads the library, so a coordination library registered
+// with no project finds its root for each of its projects; the verdict and its refusals are unchanged.
 async function doneGates(
   state: Awaited<ReturnType<typeof materializeWorkspace>>,
   workIds: readonly string[],
@@ -1090,7 +1120,7 @@ async function doneGates(
     const ids = stories.filter((record) => record.projectId === projectId).map((record) => record.id);
     const gated = listGates(view).some((gate) => gate.enabled && gate.required && gate.covers.length > 0);
     const verdict = await assertDoneGates({
-      projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project, projectId) : "",
+      projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project, projectId, state) : "",
       library: { ...view, work }, workIds: ids,
       ...(projectId === undefined ? {} : { configurationProjectId: projectId }),
     });
@@ -3612,7 +3642,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     if (targets !== null) { io.write(canonicalJson(targets)); return; }
     const state = await effectiveProjectState(native, values["project-id"]);
     const plan = await planGates({
-      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"]),
+      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"], native),
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
@@ -3638,7 +3668,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     if (targets !== null) { io.write(canonicalJson(targets)); return; }
     const state = await effectiveProjectState(native, values["project-id"]);
     const plan = await planGates({
-      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"]),
+      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"], native),
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),

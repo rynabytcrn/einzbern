@@ -105,3 +105,11 @@ selected one also runs per target, and the coordination library is never made a
 development target. `--project-id`, when given, must name the project of every
 covered item, or the operation refuses with `GATES_PROJECT_MISMATCH` before
 anything runs; left out, each item's own project applies.
+
+The gate root of a project in a coordination library, for these runs, for
+`gates-plan` / `gates-run` with `--project-id` and for the done check of its
+Stories, is the directory this device registered for the library. When no entry
+holds that project, an entry registered for the library with no project, as
+setup and migration write it, answers for any project the library holds and has
+not deleted: the only such entry, or the one `--project` names. A project chain
+still needs an entry for the stable project, or the root is `GATES_PROJECT_UNKNOWN`.

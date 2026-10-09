@@ -2,6 +2,26 @@
 
 Atelier 是项目配置工作台。进入页面后，先核对当前项目与知识库，再查看状态、设置、模型分类与模型档位、变量、规则和门配置。页面中的配置来自引擎管理的项目记录；需要更改时使用 Atelier 或引擎支持的配置入口，不要直接改写 `.ether` 控制文件。
 
+## 启动
+
+Atelier 随引擎装在设备目录里，在终端用 Node 启动：
+
+```text
+node ~/.einzbern/engine/<版本>/atelier/portal.mjs [--library <库>] [--port <端口>]
+```
+
+设备目录缺省是 `~/.einzbern`，不在这里时换成实际的 `<设备目录>`；`<版本>` 是设备目录 `engine/current` 记着的当前版本，例如 `2.0.0`。
+
+- 选库：`--library` 写库的路径、库 id 或该库已登记项目的路径，只认本设备注册表里登记过的库。不给 `--library` 时读环境变量 `TCRN_PORTAL_LIBRARY`；两者都没有时，依次取启动目录经 `library-resolve` 找到的库、本机设置 `portal.defaultPartition` 指向的已登记库、注册表里的第一项。启动后可以在库切换器里换库。
+- 端口：`--port` 指定；不给时读环境变量 `TCRN_PORTAL_PORT`，再没有就用本机设置 `portal.port`（设置页「Atelier 门户」组，重启 Atelier 后生效），仍没有就是 `4319`。
+- 只监听 `127.0.0.1`，只能在本机打开；请求的主机名只认 `127.0.0.1` 和 `localhost`，其他主机名以 `PORTAL_HOST_REJECTED` 拒绝。
+- 写入者：Atelier 的每次写入都经引擎 CLI，以 `--actor` 带上环境变量 `TCRN_PORTAL_ACTOR` 的值；没设时是 `agent:portal`，看不出是谁操作的，所以宜在启动时设成实际操作者，例如 `TCRN_PORTAL_ACTOR=<操作者> node ~/.einzbern/engine/<版本>/atelier/portal.mjs`。这个值只说明经哪个入口写入，不证明身份。未启用署名的库（链上没有 `attestation.actor.enabled`）不记写入者，事件里不会留下这个值，见[从 TCRN Workflow 迁移](Migrating-from-TCRN-Workflow.md)。
+- 页面令牌：Atelier 每次启动随机生成一个令牌，写进它发给浏览器的页面。页面发往 Atelier 接口的请求都在请求头 `x-portal-token` 里带上它，缺少或不符时以 `PORTAL_TOKEN_REQUIRED` 拒绝；所以 Atelier 重启后，已打开的页面要重新载入。通过令牌检查的回答都带 `x-portal-served-target`，写明它服务的是哪个库和配置目标；除切换库、切换配置作用域和本机设置外，写请求另在 `x-configuration-target` 里写明它针对的目标，选择已变时以 `PORTAL_CONFIGURATION_TARGET_CHANGED` 拒绝（见下文「切换知识库」）。
+
+启动成功时，Atelier 在标准输出打印一行 JSON，`reasonCode` 为 `PORTAL_LISTENING`：`url` 是在浏览器里打开的地址 `http://127.0.0.1:<端口>/`，另有打开的库（`library`、`workspace`）、选库依据（`selectedBy`：`argument`、`working-directory`、`machine-default` 或 `first-registered`）、已登记的库数（`libraries`）、AGENTS.md 所在的项目目录（`proseRoot`）、写入者（`actor`）和所用的 CLI（`cli`）。启动失败时在标准错误打印一行 `ok` 为 `false` 的 JSON 并以退出码 2 结束，例如注册表里没有库（`PORTAL_LIBRARY_REGISTRY_EMPTY`，先用 `library-register` 登记），或 `--library` 不是已登记的库（`PORTAL_LIBRARY_UNKNOWN`）。
+
+Atelier 在前台运行，没有停止命令：在启动它的终端按 Ctrl-C；在后台启动的，结束这个 node 进程。
+
 ## 状态
 
 状态页用于核对当前引擎、项目与已选知识库。链上工作记录的状态仍以引擎只读结果为准，例如 `status`、`work-list` 和 `work-show`；页面显示不能代替对具体 Story 的读取。

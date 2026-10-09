@@ -5,6 +5,21 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+TCRN-CROSS-STORY-521 (INIT-053 R50; fixes TCRN-CROSS-STORY-487): links between Wiki pages open the
+pages, and the Atelier page says how to start Atelier. A GitHub Wiki opens a link written
+`](Page.md)` as the page's raw Markdown, so `scripts/push-wiki.mjs` now gives the Wiki each Markdown
+file with its inline links to the source's top-level pages by page name: `](<page>.md)` and
+`](<page>.md#<anchor>)` become `](<page>)` and `](<page>#<anchor>)`. Fenced code blocks, code spans,
+images, other links and links to a page the source does not have keep their bytes; `docs/wiki`
+keeps its `.md` links for the repository's rendering and the link gate, putting `.md` back gives
+the source again, and the receipt counts the rewritten links in `linksRewritten`.
+`docs/wiki/Atelier.md` gains a section on starting Atelier: the command, `--library` and `--port`
+with `TCRN_PORTAL_LIBRARY` and `TCRN_PORTAL_PORT`, the order in which a library is chosen,
+`portal.port` and the default 4319, the listener on 127.0.0.1 only, the writer
+`TCRN_PORTAL_ACTOR` (default `agent:portal`; a library without actor attestation records no
+writer), the page token and the target each answer names, the `PORTAL_LISTENING` line and how
+to stop it.
+
 ## 2.0.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.0.0. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

@@ -17,6 +17,7 @@
 ## 发行说明
 
 - [各版本发行说明](Release-Notes.md)
+- [Einzbern 2.0.1](Release-Notes-2.0.1.md)
 - [Einzbern 2.0.0](Release-Notes-2.0.0.md)
 
 ## 历史

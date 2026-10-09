@@ -157,6 +157,28 @@ The release action requires the matching version tag at both repositories' origi
 The Wiki action delegates to `scripts/push-wiki.mjs`, which rehearses and commits
 the local Wiki sync before pushing it.
 
+## Release notes
+
+Each version's release notes are published in the Wiki's Release Notes chapter,
+under that version. `docs/wiki/Release-Notes.md` lists the versions, and
+`docs/wiki/Release-Notes-<version>.md` is the version's page. Within the version,
+the notes are divided into sub-chapters by functional module, one page per module
+(`docs/wiki/Release-Notes-<version>-<module>.md`), so that no reader has to take in
+the whole version at once; the version's page opens with the module directory, and
+the module pages link to the directory and to each other. The pages rearrange the
+paragraphs of `docs/releases/<version>.md` under module and item headings without
+shortening, extending or rewording them, and that file at the version's tag remains
+the complete release notes. Like every Wiki page they are edited in `docs/wiki/`
+and reach the Wiki through the Wiki action above.
+
+The GitHub Release body carries only a short description of the version and a link
+to the version's page in the Wiki's Release Notes chapter (the Wiki page
+`Release-Notes-<version>`); it never carries the full release notes. The release
+attachments are unchanged: the archive `einzbern-<version>.tar.gz` and its
+`.sha256` file. The release command that `publish-plan` prints and
+`--execute release` runs still passes the version's CHANGELOG section as the body,
+so it does not follow this rule yet.
+
 ## Version identity
 
 The release tag is `v<version>` in both repositories. The archive is named

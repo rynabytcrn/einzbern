@@ -14,6 +14,11 @@
 - [命令行参考](CLI-Reference.md)
 - [常见问题](FAQ.md)
 
+## 发行说明
+
+- [各版本发行说明](Release-Notes.md)
+- [Einzbern 2.0.0](Release-Notes-2.0.0.md)
+
 ## 历史
 
 - [旧 Wiki 草稿归档](History.md)

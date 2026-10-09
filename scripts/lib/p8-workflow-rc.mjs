@@ -5,11 +5,16 @@ import { readFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
+import { crc32, inflateRawSync } from "node:zlib";
 
 import { canonicalJson } from "./canonical-json.mjs";
 import { compareCanonicalText } from "./canonical-order.mjs";
 import { BRAND, LEGACY_ENGINE_NAME, LEGACY_REPOSITORY_NAMES } from "./names.mjs";
+import { decodePrivacyScanBytes, p8ReleasePrivacySourcePaths } from "./privacy.mjs";
 import { readBoundRegularFile, safeWriteOutput } from "./safe-io.mjs";
+// Only the reader: the formal package is read back here for its privacy entries. The source
+// archive is still rebuilt below with this file's own writer, independently of tar.mjs.
+import { TAR_BLOCK_BYTES, TarError, readUstar } from "./tar.mjs";
 
 // The release identity comes from this tree's manifest, including after an approved prepare.
 // Schema identifiers remain independently versioned; neither argv nor an environment override
@@ -364,6 +369,138 @@ export function assertClosedReleaseArtifactAllowlist(artifacts) {
   const expected = [...P8_RELEASE_ARTIFACTS].sort(compareCanonicalText);
   assertion(JSON.stringify(actual) === JSON.stringify(expected), "P8_RELEASE_ALLOWLIST_MISMATCH");
   return actual;
+}
+
+// TCRN-CROSS-INIT-053 R48-01 (R47-REG-1). The one builder of the privacy entries for the P8
+// release set: verifyP8 and the P8 face of verifyPrivacy both scan exactly what it returns.
+// The formal package is scanned by its content, never as text. Its deflate stream is close to
+// random bytes: read as UTF-8 it shows no content, and now and then it spells an address (the
+// 1.2.1 package did at stream byte 683,325 while no member held one). What an unpacker gets out
+// of the package is scanned instead: the gzip header's text fields (FNAME, FCOMMENT and the
+// FEXTRA payload), and, in the inflated ustar archive, every header, padding and the end blocks
+// under the source archive's #header:, #padding: and #trailer labels, and each member as its
+// path and as its body under the reviewed dist/release/<package>/<member> label. The compressed
+// bytes are bound by digest only: the sidecar checked here, the release manifest and the
+// aggregate surface digest. A package another reader would unpack to something this walk does
+// not label (reserved flags, a second gzip member, bytes after the trailer, a CRC or length that
+// does not add up, an entry other than a regular file) is refused rather than left unscanned.
+const GZIP_HEADER_BYTES = 10;
+const GZIP_TRAILER_BYTES = 8;
+const GZIP_FLAG_HEADER_CRC = 0x02;
+const GZIP_FLAG_EXTRA = 0x04;
+const GZIP_TEXT_FIELDS = Object.freeze([[0x08, "name"], [0x10, "comment"]]);
+const GZIP_RESERVED_FLAGS = 0xe0;
+const USTAR_REGULAR_TYPES = new Set([0x30, 0x00]);
+
+function formalPackageLayout(condition, message) {
+  assertion(condition, "P8_RELEASE_ARCHIVE_LAYOUT_INVALID", message);
+}
+
+function ustarHeaderText(header, offset, length) {
+  const field = header.subarray(offset, offset + length);
+  const end = field.indexOf(0);
+  return field.subarray(0, end === -1 ? length : end).toString("utf8");
+}
+
+/**
+ * The privacy entries of the formal package `archive` (the bytes of einzbern-<version>.tar.gz),
+ * labelled under `label`, and its digest binding. Refuses with P8_RELEASE_ARCHIVE_LAYOUT_INVALID
+ * a package whose every byte an unpacker could read is not covered by an entry.
+ */
+export function p8FormalPackagePrivacyEntries(archive, label = `dist/release/${P8_RELEASE_ARCHIVE}`) {
+  assertion(Buffer.isBuffer(archive) && typeof label === "string" && label.length > 0, "P8_RELEASE_DOCUMENT_INVALID", String(label));
+  formalPackageLayout(archive.length >= GZIP_HEADER_BYTES + GZIP_TRAILER_BYTES && archive[0] === 0x1f && archive[1] === 0x8b && archive[2] === 8, `${label} is not a deflate gzip file`);
+  const flags = archive[3];
+  formalPackageLayout((flags & GZIP_RESERVED_FLAGS) === 0, `${label} sets reserved gzip flags`);
+  const entries = [];
+  let offset = GZIP_HEADER_BYTES;
+  if ((flags & GZIP_FLAG_EXTRA) !== 0) {
+    formalPackageLayout(offset + 2 <= archive.length, `${label} ends inside its gzip FEXTRA length`);
+    const end = offset + 2 + archive.readUInt16LE(offset);
+    formalPackageLayout(end <= archive.length, `${label} ends inside its gzip FEXTRA field`);
+    entries.push({ label: `${label}#gzip-extra`, kind: "release", content: decodePrivacyScanBytes(archive.subarray(offset + 2, end)) });
+    offset = end;
+  }
+  for (const [flag, field] of GZIP_TEXT_FIELDS) {
+    if ((flags & flag) === 0) continue;
+    const end = archive.indexOf(0, offset);
+    formalPackageLayout(end !== -1, `${label} has a gzip ${field} field without its NUL`);
+    entries.push({ label: `${label}#gzip-${field}`, kind: "release", content: decodePrivacyScanBytes(archive.subarray(offset, end)) });
+    offset = end + 1;
+  }
+  if ((flags & GZIP_FLAG_HEADER_CRC) !== 0) {
+    formalPackageLayout(offset + 2 <= archive.length && archive.readUInt16LE(offset) === (crc32(archive.subarray(0, offset)) & 0xffff), `${label} has a gzip header CRC that does not match`);
+    offset += 2;
+  }
+  let inflated;
+  try {
+    inflated = inflateRawSync(archive.subarray(offset), { info: true });
+  } catch (error) {
+    fail("P8_RELEASE_ARCHIVE_LAYOUT_INVALID", `${label} does not inflate: ${error.code ?? error.message}`);
+  }
+  const tar = inflated.buffer;
+  const trailer = offset + inflated.engine.bytesWritten;
+  formalPackageLayout(trailer + GZIP_TRAILER_BYTES === archive.length, `${label} is not exactly one gzip member`);
+  formalPackageLayout(archive.readUInt32LE(trailer) === crc32(tar) && archive.readUInt32LE(trailer + 4) === tar.length % 2 ** 32, `${label} has a gzip trailer that does not match its archive`);
+  let members;
+  try {
+    members = readUstar(tar);
+  } catch (error) {
+    if (!(error instanceof TarError)) throw error;
+    fail("P8_RELEASE_ARCHIVE_LAYOUT_INVALID", `${label}: ${error.reasonCode}: ${error.message}`);
+  }
+  let blockOffset = 0;
+  for (const member of members) {
+    const header = tar.subarray(blockOffset, blockOffset + TAR_BLOCK_BYTES);
+    const prefix = ustarHeaderText(header, 345, 155);
+    const name = ustarHeaderText(header, 0, 100);
+    // readUstar skips a directory entry; the package is written with regular files only, and a
+    // header this walk did not label would be one no entry scans.
+    formalPackageLayout(USTAR_REGULAR_TYPES.has(header[156]) && (prefix === "" ? name : `${prefix}/${name}`) === member.path, `${label} holds an entry other than its regular files`);
+    const dataStart = blockOffset + TAR_BLOCK_BYTES;
+    const dataEnd = dataStart + member.bytes.length;
+    const paddedEnd = dataStart + Math.ceil(member.bytes.length / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;
+    formalPackageLayout(tar.subarray(dataStart, dataEnd).equals(member.bytes), `${label}: ${member.path} is not where its header puts it`);
+    const memberLabel = `${label}/${member.path}`;
+    entries.push({ label: `${label}#header:${member.path}`, kind: "release", content: decodePrivacyScanBytes(header) });
+    entries.push({ label: memberLabel, kind: "filename", content: member.path });
+    entries.push({
+      label: memberLabel,
+      kind: "release",
+      releaseArchiveMember: true,
+      sourcePaths: p8ReleasePrivacySourcePaths(memberLabel),
+      content: decodePrivacyScanBytes(member.bytes),
+    });
+    if (paddedEnd > dataEnd) entries.push({ label: `${label}#padding:${member.path}`, kind: "release", content: decodePrivacyScanBytes(tar.subarray(dataEnd, paddedEnd)) });
+    blockOffset = paddedEnd;
+  }
+  // readUstar has checked that only zero blocks, at least two, follow the last member.
+  entries.push({ label: `${label}#trailer`, kind: "release", content: decodePrivacyScanBytes(tar.subarray(blockOffset)) });
+  return {
+    entries,
+    binding: { path: label, size: archive.length, sha256: sha256(archive), inflatedBytes: tar.length, members: members.length },
+  };
+}
+
+/**
+ * The privacy entries of the exact P8 release set `artifacts` (dist/release name to bytes), in
+ * canonical name order: the source archive as bytes for privacy.mjs to expand, the formal
+ * package through p8FormalPackagePrivacyEntries after its sidecar is checked against its
+ * digest, and every other artifact as its UTF-8 text.
+ */
+export function p8ReleasePrivacyEntries(artifacts) {
+  assertion(artifacts instanceof Map && p8ReleaseArtifactSetMatches([...artifacts.keys()]), "P8_PRIVACY_RELEASE_ARTIFACT_SET");
+  for (const [name, bytes] of artifacts) assertion(Buffer.isBuffer(bytes), "P8_RELEASE_DOCUMENT_INVALID", name);
+  const archive = artifacts.get(P8_RELEASE_ARCHIVE);
+  assertion(artifacts.get(P8_RELEASE_ARCHIVE_SHA256).toString("utf8") === `${sha256(archive)}  ${P8_RELEASE_ARCHIVE}\n`, "P8_RELEASE_ARCHIVE_CHECKSUM_MISMATCH");
+  const formalPackage = p8FormalPackagePrivacyEntries(archive, `dist/release/${P8_RELEASE_ARCHIVE}`);
+  const entries = [...artifacts.keys()].sort(compareCanonicalText).flatMap((name) => {
+    const label = `dist/release/${name}`;
+    if (name === P8_RELEASE_ARCHIVE) return formalPackage.entries;
+    if (name === P8_RELEASE_ARTIFACTS[0]) return [{ label, kind: "release", content: artifacts.get(name) }];
+    return [{ label, kind: "release", content: decodePrivacyScanBytes(artifacts.get(name)) }];
+  });
+  return { entries, formalPackage: formalPackage.binding };
 }
 
 export function sanitizedCoreReferenceProjection(bundle) {

@@ -8,6 +8,7 @@ import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 
 import {
   FRAMEWORK_VERSION,
@@ -36,13 +37,18 @@ import {
   moveStaleReleaseArtifacts,
   p8ArtifactRecords,
   p8FailureTerminal,
+  p8FormalPackagePrivacyEntries,
   p8ReleaseArtifactSetMatches,
+  p8ReleasePrivacyEntries,
   rebuildP8SourceArchiveInIndependentRoots,
   sanitizedCoreReferenceProjection,
   staleReleaseArtifactMoves,
   validateP8ReleaseDocuments,
 } from "../scripts/lib/p8-workflow-rc.mjs";
+import { ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
+import { scanPrivacyEntries } from "../scripts/lib/privacy.mjs";
 import { withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
+import { writeUstar } from "../scripts/lib/tar.mjs";
 
 function releaseArchiveInputs(bytes = Buffer.from(`formal package ${P8_VERSION}\n`, "utf8")) {
   const digest = createHash("sha256").update(bytes).digest("hex");
@@ -321,4 +327,142 @@ test("P8 dogfood completes one disposable local_primary initiative with Knowledg
   // family (TCRN-CROSS-STORY-467 R2). What the loop still proves: the metadata read never
   // carries the body.
   assert.equal(canonicalJson(selected).includes("Disposable P8 body"), false);
+});
+
+// TCRN-CROSS-INIT-053 R48-01 (R47-REG-1). verifyP8 and the P8 face of verifyPrivacy scan the
+// release set through p8ReleasePrivacyEntries: the formal package by its content, its compressed
+// bytes bound by digest only. The package below is stored as its bytes, not regenerated, because
+// deflate output differs between zlib builds: one member of plain lowercase text whose deflate
+// stream, read as UTF-8, spells an address at stream byte 96, as the 1.2.1 package's did.
+const EMAIL_SHAPED_DEFLATE_PACKAGE = Buffer.from([
+  "1f8b08000000000002ffedcf3d0ec2300c05e0cc3d454e00ae5ae03c51e5fc94b481c4695c4e8fd4818101168440cab7",
+  "3cebbdc9da31e588fb3910a61d3189cf030038f6fd9600f09cd076a7c7bdf56dd7760721417c414ea4a2008821bcfcfd",
+  "ddfea7a277aa71ded8097940476c2e65586d99c6880bad21eb3507736e92c62653b4469353d9ebf9a246a96e57b22a97",
+  "c962e6127d498b3485117958d86a745254555555bfe90eb4baf58f00080000",
+].join(""), "hex");
+const PACKAGE_LABEL = `dist/release/${P8_RELEASE_ARCHIVE}`;
+const inPackage = (label) => label.startsWith(`${PACKAGE_LABEL}#`) || label.startsWith(`${PACKAGE_LABEL}/`);
+const joinParts = (parts, separator) => parts.join(separator);
+const scanOwner = LEGACY_REPOSITORY_NAMES.owner;
+const releaseScan = (entries) => scanPrivacyEntries(entries, { owner: scanOwner, repositories: ENGINE_REPOSITORY_NAMES });
+
+function formalPackage(records, { flags = 0, fields = [] } = {}) {
+  const compressed = gzipSync(writeUstar(records));
+  return Buffer.concat([Buffer.from([0x1f, 0x8b, 8, flags, 0, 0, 0, 0, 2, 0xff]), ...fields, compressed.subarray(10)]);
+}
+
+function releaseSet(releaseArchive) {
+  return buildP8ReleaseArtifacts({
+    sourceArchive: writeUstar([{ path: "README.md", bytes: Buffer.from("P8 source fixture\n", "utf8") }]),
+    sbom: Buffer.from('{"bomFormat":"CycloneDX"}\n', "utf8"),
+    ...releaseArchiveInputs(releaseArchive),
+  });
+}
+
+function withHeader(tar, edit) {
+  const archive = Buffer.from(tar);
+  const header = archive.subarray(0, 512);
+  edit(header);
+  header.fill(0x20, 148, 156);
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "latin1");
+  return archive;
+}
+
+test("R48-01 (R47-REG-1): P8 scans the formal package by content, so address-shaped compressed bytes are no finding", () => {
+  const wholeArchiveText = scanPrivacyEntries([{ label: PACKAGE_LABEL, kind: "release", content: EMAIL_SHAPED_DEFLATE_PACKAGE.toString("utf8") }], { owner: scanOwner });
+  assert.deepEqual(wholeArchiveText, [`EMAIL_IDENTIFIER:release:${PACKAGE_LABEL}`], "the stored package reproduces the pre-R48 false finding");
+  const { entries, formalPackage: binding } = p8ReleasePrivacyEntries(releaseSet(EMAIL_SHAPED_DEFLATE_PACKAGE));
+  assert.deepEqual(releaseScan(entries), []);
+  assert.deepEqual(binding, {
+    path: PACKAGE_LABEL,
+    size: EMAIL_SHAPED_DEFLATE_PACKAGE.length,
+    sha256: createHash("sha256").update(EMAIL_SHAPED_DEFLATE_PACKAGE).digest("hex"),
+    inflatedBytes: 2048,
+    members: 1,
+  });
+  assert.equal(entries.some((entry) => entry.label === PACKAGE_LABEL), false, "the compressed bytes are no entry");
+  const packageEntries = entries.filter((entry) => inPackage(entry.label));
+  assert.deepEqual(packageEntries.map((entry) => [entry.label.slice(PACKAGE_LABEL.length), entry.kind, entry.releaseArchiveMember ?? null]), [
+    ["#header:fixture/notes.txt", "release", null],
+    ["/fixture/notes.txt", "filename", null],
+    ["/fixture/notes.txt", "release", true],
+    ["#padding:fixture/notes.txt", "release", null],
+    ["#trailer", "release", null],
+  ]);
+  assert.deepEqual(entries.map((entry) => entry.label).filter((label) => !inPackage(label)), P8_RELEASE_ARTIFACTS.filter((name) => name !== P8_RELEASE_ARCHIVE).map((name) => `dist/release/${name}`).sort(compareCanonicalText));
+  assert.ok(Buffer.isBuffer(entries.find((entry) => entry.label === `dist/release/${P8_RELEASE_ARTIFACTS[0]}`).content), "privacy.mjs still expands the source archive");
+});
+
+test("R48-01 (R47-REG-1): an address or local path in a member, a header path or a gzip text field is still a finding, and an unknown member still fails", async () => {
+  const address = joinParts(["person", "@", "example.invalid"], "");
+  const localPath = joinParts(["", "Users", "someone", "notes.txt"], "/");
+  const clean = { path: "fixture/notes.txt", bytes: Buffer.from("plain text\n", "utf8") };
+  const findings = (archive) => releaseScan(p8ReleasePrivacyEntries(releaseSet(archive)).entries);
+  assert.deepEqual(findings(formalPackage([{ ...clean, bytes: Buffer.from(`write to ${address}\n`, "utf8") }])), [`EMAIL_IDENTIFIER:release:${PACKAGE_LABEL}/fixture/notes.txt`]);
+  assert.deepEqual(findings(formalPackage([{ ...clean, bytes: Buffer.from(`read ${localPath}\n`, "utf8") }])), [`LOCAL_ABSOLUTE_PATH:release:${PACKAGE_LABEL}/fixture/notes.txt`]);
+  const privatePath = `fixture/${address}.txt`;
+  assert.deepEqual(findings(formalPackage([{ ...clean, path: privatePath }])), [
+    `EMAIL_IDENTIFIER:release:${PACKAGE_LABEL}#header:${privatePath}`,
+    `EMAIL_IDENTIFIER:filename:${PACKAGE_LABEL}/${privatePath}`,
+  ]);
+  const field = (text) => Buffer.from(`${text}\0`, "utf8");
+  assert.deepEqual(findings(formalPackage([clean], { flags: 0x08, fields: [field(address)] })), [`EMAIL_IDENTIFIER:release:${PACKAGE_LABEL}#gzip-name`]);
+  assert.deepEqual(findings(formalPackage([clean], { flags: 0x10, fields: [field(localPath)] })), [`LOCAL_ABSOLUTE_PATH:release:${PACKAGE_LABEL}#gzip-comment`]);
+  const extra = Buffer.from(`ex${address}`, "utf8");
+  const extraLength = Buffer.alloc(2);
+  extraLength.writeUInt16LE(extra.length);
+  assert.deepEqual(findings(formalPackage([clean], { flags: 0x04, fields: [extraLength, extra] })), [`EMAIL_IDENTIFIER:release:${PACKAGE_LABEL}#gzip-extra`]);
+
+  // The reviewed owner line passes only under its exact member label; the same line in any
+  // other member of the package is a finding.
+  const names = await readFile(new URL("../dist/build/packages/core/src/names.js", import.meta.url), "utf8");
+  const ownerLine = names.split("\n").find((line) => line.includes(scanOwner) && /\bowner\s*:/u.test(line));
+  const reviewed = `einzbern-${P8_VERSION}/atelier/portal.mjs`;
+  const unknown = `einzbern-${P8_VERSION}/atelier/other.mjs`;
+  assert.deepEqual(findings(formalPackage([{ path: reviewed, bytes: Buffer.from(`${ownerLine}\n`, "utf8") }])), []);
+  assert.deepEqual(findings(formalPackage([{ path: unknown, bytes: Buffer.from(`${ownerLine}\n`, "utf8") }])), [`OWNER_PRIVATE_IDENTIFIER:release:${PACKAGE_LABEL}/${unknown}`]);
+
+  // An entry this walk cannot label, and a package another reader would unpack differently, are refused.
+  const layout = (archive) => assert.throws(() => p8FormalPackagePrivacyEntries(archive), (error) => error.reasonCode === "P8_RELEASE_ARCHIVE_LAYOUT_INVALID");
+  const tar = writeUstar([clean]);
+  const gzipOf = (bytes) => Buffer.concat([Buffer.from([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 2, 0xff]), gzipSync(bytes).subarray(10)]);
+  layout(gzipOf(withHeader(tar, (header) => { header[156] = 0x32; })));
+  const directory = withHeader(tar.subarray(0, 512), (header) => {
+    header.fill(0, 0, 100);
+    header.write("fixture/", 0, "utf8");
+    header.write("00000000000\0", 124, "latin1");
+    header[156] = 0x35;
+  });
+  layout(gzipOf(Buffer.concat([directory, tar])));
+  const valid = formalPackage([clean]);
+  layout(Buffer.concat([valid, Buffer.from(address, "utf8")]));
+  layout(Buffer.concat([valid, valid]));
+  layout(Buffer.concat([valid.subarray(0, 3), Buffer.from([0x20]), valid.subarray(4)]));
+  const badCrc = Buffer.from(valid);
+  badCrc[badCrc.length - 8] ^= 0xff;
+  layout(badCrc);
+  layout(valid.subarray(0, valid.length - 12));
+
+  const set = releaseSet(valid);
+  const wrongSidecar = new Map(set);
+  wrongSidecar.set(P8_RELEASE_ARCHIVE_SHA256, Buffer.from(`${"0".repeat(64)}  ${P8_RELEASE_ARCHIVE}\n`, "utf8"));
+  assert.throws(() => p8ReleasePrivacyEntries(wrongSidecar), (error) => error.reasonCode === "P8_RELEASE_ARCHIVE_CHECKSUM_MISMATCH");
+  const extraArtifact = new Map(set);
+  extraArtifact.set("unexpected.txt", Buffer.from("x\n", "utf8"));
+  assert.throws(() => p8ReleasePrivacyEntries(extraArtifact), (error) => error.reasonCode === "P8_PRIVACY_RELEASE_ARTIFACT_SET");
+});
+
+test("R48-01 (R47-REG-1): verifyP8 and the P8 face of verifyPrivacy both scan the release set through p8ReleasePrivacyEntries", async () => {
+  const task = await readFile(new URL("../scripts/task.mjs", import.meta.url), "utf8");
+  const verifyP8 = task.slice(task.indexOf("async function verifyP8() {"), task.indexOf("async function verifyReleaseTagPreflight() {"));
+  const p8Face = task.slice(task.indexOf("  if (requireP8Surfaces) {"), task.indexOf("    p8Surfaces.aggregateAlgorithm ="));
+  assert.ok(verifyP8.length > 0 && p8Face.length > 0);
+  assert.ok(verifyP8.includes("p8ReleasePrivacyEntries(artifacts)") && verifyP8.includes("scanPrivacyEntries(releasePrivacyEntries,"));
+  assert.ok(p8Face.includes("entries.push(...p8ReleasePrivacyEntries(new Map(releaseRecords.map("));
+  for (const body of [verifyP8, p8Face]) {
+    assert.equal(/\.toString\("utf8"\)/u.test(body.replaceAll('record.content.toString("utf8") })));', "")), false, "no release artifact is read as text outside the builder");
+    assert.equal(body.includes("gunzipSync") || body.includes("readUstar"), false);
+  }
 });

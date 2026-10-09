@@ -28,7 +28,6 @@ import {
   decodeGitMetadataBytes,
   decodePrivacyScanBytes,
   parseGitObjectBatch,
-  p8ReleasePrivacySourcePaths,
   scanPrivacyEntries,
   walkHistoricalCommitPaths,
 } from "./lib/privacy.mjs";
@@ -659,6 +658,7 @@ async function verifyP8() {
     buildP8ReleaseArtifacts,
     moveStaleReleaseArtifacts,
     p8ArtifactRecords,
+    p8ReleasePrivacyEntries,
     rebuildP8SourceArchiveInIndependentRoots,
   } = await p8Release();
   assertCleanExclusiveSourceBasis(run("git", ["status", "--porcelain=v1", "--untracked-files=all"]));
@@ -695,31 +695,13 @@ async function verifyP8() {
   assertion(packed.sha256 === createHash("sha256").update(releaseArchive).digest("hex"), "P8_RELEASE_PACK_DIGEST_MISMATCH");
   const artifacts = buildP8ReleaseArtifacts({ sourceArchive: sourceBytes, sbom: sbomBytes, releaseArchive, releaseArchiveSha256 });
   for (const [name, content] of artifacts) await safeWriteOutput(repositoryRoot, `dist/release/${name}`, content);
-  const { gunzipSync } = await import("node:zlib");
-  const { readUstar } = await import("./lib/tar.mjs");
-  const packagedEntries = readUstar(gunzipSync(releaseArchive));
-  const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {
-    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;
-    return [
-      { label, kind: "filename", content: path },
-      {
-        label,
-        kind: "release",
-        releaseArchiveMember: true,
-        sourcePaths: p8ReleasePrivacySourcePaths(label),
-        content: decodePrivacyScanBytes(bytes),
-      },
-    ];
-  });
+  // TCRN-CROSS-INIT-053 R48-01 (R47-REG-1): the seven artifacts and the formal package's content
+  // (gzip text fields, every ustar header, padding and end block, each member's path and body)
+  // come from the one builder the P8 face of verifyPrivacy also scans; the compressed bytes are
+  // bound by digest there and are not read as text.
+  const { entries: releasePrivacyEntries } = p8ReleasePrivacyEntries(artifacts);
   const owner = await remoteOwner();
-  const privacyFindings = scanPrivacyEntries(
-    [...artifacts.entries()].map(([path, content]) => ({
-      label: `dist/release/${path}`,
-      kind: "release",
-      content: path.endsWith("-source.tar") ? content : content.toString("utf8"),
-    })).concat(packagedPrivacyEntries),
-    { owner, repositories: await engineRepositoryNames() },
-  );
+  const privacyFindings = scanPrivacyEntries(releasePrivacyEntries, { owner, repositories: await engineRepositoryNames() });
   assertion(privacyFindings.length === 0, "P8_RELEASE_PRIVACY_FINDINGS", privacyFindings.join(","));
   const privacy = await verifyPrivacy({ requireP8Surfaces: true });
   const p8BasisCommit = run("git", ["rev-parse", "HEAD"]);
@@ -1065,15 +1047,13 @@ async function verifyPrivacyScan(options = {}, writePrivacyProgress) {
     });
     const buildRecords = await filesForPrivacySurface(buildRoot, "dist/build/");
     const releaseRecords = await filesForPrivacySurface(releaseRoot, "dist/release/");
-    const { p8ReleaseArtifactSetMatches } = await p8Release();
+    const { p8ReleaseArtifactSetMatches, p8ReleasePrivacyEntries } = await p8Release();
     assertion(p8ReleaseArtifactSetMatches(releaseRecords.map((record) => record.path.slice("dist/release/".length))), "P8_PRIVACY_RELEASE_ARTIFACT_SET");
     entries.push(...buildRecords.map((record) => ({ label: record.path, kind: "build", content: record.content.toString("utf8") })));
     entries.push({ label: "dist/source/einzbern-source.tar", kind: "archive", content: sourceArchive.content });
-    entries.push(...releaseRecords.map((record) => ({
-      label: record.path,
-      kind: "release",
-      content: record.path.endsWith("-source.tar") ? record.content : record.content.toString("utf8"),
-    })));
+    // TCRN-CROSS-INIT-053 R48-01 (R47-REG-1): the same entries verifyP8 scans, from the same
+    // builder: the formal package by its content, its compressed bytes bound by digest only.
+    entries.push(...p8ReleasePrivacyEntries(new Map(releaseRecords.map((record) => [record.path.slice("dist/release/".length), record.content]))).entries);
     p8Surfaces.aggregateAlgorithm = "sha256(path-NUL-byteLength-NUL-bytes over canonical path order)";
     p8Surfaces.trackedSource = aggregatePrivacySurface(trackedSourceRecords);
     p8Surfaces.fullHistory = aggregatePrivacySurface(historyRecords);

@@ -126,6 +126,40 @@ Atelier consumes the design system at `d53f2305` (TCRN-CROSS-INIT-053 R46 and R4
 component family, its documentation stories and a static Clipboard bridge that Atelier can use;
 Atelier does not use the bridge yet (post-MVP backlog item BL-04).
 
+The release privacy scan reads the formal package by its content (TCRN-CROSS-INIT-053 R48). Both
+release privacy scans of `verify:p8` (its artifact scan and the P8 surface of its privacy scan) take
+their entries from one builder: the gzip header's text fields, every ustar header, padding and end
+block of the inflated archive, and each member's path and body under the reviewed member labels. The
+compressed bytes are bound by digest only (the sidecar, the release manifest and the aggregate
+surface digest) and are no longer read as text, so a deflate stream that happens to spell an address
+is no finding, while an address or a local path in a member, a member path or a gzip text field
+still is. A package another reader would unpack to something the scan does not label (reserved gzip
+flags, a second gzip member, bytes after the trailer, a CRC or length that does not match, an entry
+other than a regular file) is refused with `P8_RELEASE_ARCHIVE_LAYOUT_INVALID`.
+
+A migration no longer records the catalog default as the coordination chain's language
+(TCRN-CROSS-INIT-053 R48). When the old coordination chain declares no `artifact.language`, its
+`coordinationSettings` row is still listed as `legacy-default`, now with `action: "default"`, and the
+apply writes nothing: the coordination library reads the catalog default and records no language, so
+a card written there needs no language bundle, as before the migration. A recorded default had turned
+on the library's write language policy, after which every card write there needed the economy-tier
+model and `--language-bundle` or was refused with `KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE`. A language
+or an orchestration limit the old chain declares is carried or written as before, and written again
+when the library no longer holds it. The `SETUP_RECALL_SMOKE_MISSED` refusal of the shipped entry now
+carries `cardId` and `query` as fields as well as in its message. `scripts/platform-doctor.mjs`'s
+`engineFloorSatisfied` is now red when the chains' `engine.requiredVersion` declarations cannot be
+read (`PLATFORM_ENGINE_REQUIREMENT_UNREADABLE`, still with `requirementAsserted: false`); chains that
+read and declare nothing stay green as `PLATFORM_ENGINE_REQUIREMENT_UNDECLARED`. The engine capability
+surface tests hand the doctor a home directory of their own instead of reading the real one.
+
+The built-in batch processing v3 text carries the Owner's fifth round (TCRN-CROSS-INIT-053 R48,
+MIN-242 D10): clause 8, knowledge is captured per round (each round's judgment produces
+`lessons.json`, and the main thread records each lesson as a card with `knowledge-capture` and reads
+it back). The Chinese text equals the Owner's archived wording; the English of clause 8 is an agent's
+translation that awaits the Owner's correction. The version stays at 3: an unchanged enabled section
+takes the revised text at the next `agents-render` with its section revision raised by one, and a
+section the user changed keeps its `user-modified`/`pending` protection.
+
 The root `package.json` drops `pg:schema` and `pg:test`, whose target files were removed with the PostgreSQL backend in TCRN-CROSS-INC-275 (TCRN-CROSS-SUB-357 S2).
 
 Release preparation can now run in two phases around one local release commit per repository

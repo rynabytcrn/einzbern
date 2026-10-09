@@ -42,7 +42,8 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // coordination chain keeps for itself (coordinationSettings): its artifact language always, and the
 // orchestration limits only when the old chain declares them. Each is carried by the import or written
 // once, at the coordination library's library level, by the last step of the apply; none is ever
-// written into a project chain.
+// written into a project chain. R48 (J-2): a language the old chain does not declare is listed as the
+// catalog default and written nowhere (action default), as the old chain never recorded one.
 //
 // applyMigration (TCRN-CROSS-STORY-489 R1, R2, R4; TCRN-CROSS-SUB-365) runs a confirmed plan in the
 // plan's order: each partition's library, imported as its first stream and its events and head
@@ -193,12 +194,18 @@ export interface MigrationPartitionPlan {
  * old chain is imported (for a partition migrated before, as it stands), and value is what it
  * declares; write: the apply writes value there, signed by the setup actor. A project chain never
  * gets one of these values.
+ *
+ * R48 (J-2): default: neither the old chain nor the coordination library declares the key, so the
+ * library reads the catalog default (value) and the apply writes nothing. Only a legacy-default
+ * artifact.language takes it. A recorded artifact.language turns on a library's fail-closed write
+ * language policy (knowledge-language.ts: a card write then needs the economy-tier model and a
+ * language bundle), which the old chain never had; the catalog default is never written as if declared.
  */
 export interface MigrationCoordinationSetting {
   readonly key: SettingKey;
   readonly value: string;
   readonly source: "legacy-declared" | "legacy-default";
-  readonly action: "carried" | "write";
+  readonly action: "carried" | "write" | "default";
 }
 
 /** The entry this device's registry gets for a partition's library. */
@@ -509,6 +516,8 @@ function libraryLevelSetting(state: WorkspaceState, key: SettingKey): string | n
 // TCRN-CROSS-INIT-053 R47 (R47-04): the coordination partition's own settings (MigrationCoordinationSetting).
 // `legacy` is the old chain; `held` is what the coordination library holds once the old chain is
 // imported: the old chain itself, or, for a partition migrated before, the library as it stands.
+// R48 (J-2): a key neither declares is listed with the catalog default and written nowhere (action
+// default): writing it would record a language the old chain never declared.
 function plannedCoordinationSettings(legacy: WorkspaceState, held: WorkspaceState): readonly MigrationCoordinationSetting[] {
   const rows: MigrationCoordinationSetting[] = [];
   for (const key of [COORDINATION_LANGUAGE_KEY, ...COORDINATION_LIMIT_KEYS]) {
@@ -519,7 +528,7 @@ function plannedCoordinationSettings(legacy: WorkspaceState, held: WorkspaceStat
       key,
       value: kept ?? declared ?? defaultLanguage(),
       source: declared === null ? "legacy-default" : "legacy-declared",
-      action: kept === null ? "write" : "carried",
+      action: kept !== null ? "carried" : declared === null ? "default" : "write",
     });
   }
   return rows;

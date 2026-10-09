@@ -35,12 +35,17 @@ function syntheticRoster(count = 7) {
   };
 }
 
-// Complete platform fixture following the existing test pattern.
+// Complete platform fixture following the existing test pattern. TCRN-CROSS-INIT-053 R48 (PB-3): it
+// carries its own empty home beside the platform root, and every case hands it to inspectPlatform as
+// homeRoot, so the install-surface legs (the hooks leg among them, which since R47-06 reads the
+// user-level host files) read this directory and never the real home of whoever runs the suite.
 async function minimalFixture(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc270-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const root = join(base, "platform");
+  const home = join(base, "home");
   await mkdir(root, { recursive: true });
+  await mkdir(home, { recursive: true });
   await writeFile(join(root, "AGENTS.md"), "fixture\n");
   await writeFile(join(root, "CLAUDE.md"), "@AGENTS.md\n");
   await mkdir(join(root, ".tcrn-workspace", "cross-project", "workspace"), { recursive: true });
@@ -55,7 +60,7 @@ async function minimalFixture(context) {
       verdicts: Object.fromEntries(roster.groups.map((group) => [group.id, { verdict: "green", recordedAt, commit: FIXTURE_COMMIT }])),
     }, null, 2)}\n`
   );
-  return root;
+  return { root, home };
 }
 
 // Helper: create a synthetic command catalog.
@@ -74,10 +79,11 @@ function createCatalog(verbNames, flagCounts = {}) {
 
 test("INC-270 case 1: identical catalogs -> green with IDENTICAL", async (context) => {
   const catalog = createCatalog(["verb-a", "verb-b"], { "verb-a": 2, "verb-b": 3 });
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   // Test the full platform with synthetic catalogs. Even though other checks may fail,
   // we verify the engineCapabilitySurface check itself.
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCommandCatalogs: { installed: catalog, worktree: catalog },
   });
@@ -91,8 +97,9 @@ test("INC-270 case 1: identical catalogs -> green with IDENTICAL", async (contex
 test("INC-270 case 2: worktree has extra verb -> green with WORKTREE_AHEAD", async (context) => {
   const installed = createCatalog(["verb-a", "verb-b"], { "verb-a": 2, "verb-b": 3 });
   const worktree = createCatalog(["verb-a", "verb-b", "verb-c"], { "verb-a": 2, "verb-b": 3, "verb-c": 2 });
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCommandCatalogs: { installed, worktree },
   });
@@ -106,8 +113,9 @@ test("INC-270 case 2: worktree has extra verb -> green with WORKTREE_AHEAD", asy
 test("INC-270 case 3: installed has extra verb -> RED PLATFORM_ENGINE_INSTALLED_AHEAD", async (context) => {
   const installed = createCatalog(["verb-a", "verb-b", "verb-extra"], { "verb-a": 2, "verb-b": 3, "verb-extra": 1 });
   const worktree = createCatalog(["verb-a", "verb-b"], { "verb-a": 2, "verb-b": 3 });
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCommandCatalogs: { installed, worktree },
   });
@@ -126,8 +134,9 @@ test("INC-270 case 3: installed has extra verb -> RED PLATFORM_ENGINE_INSTALLED_
 test("INC-270 case 3b: both differ -> RED, both listed", async (context) => {
   const installed = createCatalog(["verb-a", "verb-extra"], { "verb-a": 2, "verb-extra": 1 });
   const worktree = createCatalog(["verb-a", "verb-new"], { "verb-a": 2, "verb-new": 2 });
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCommandCatalogs: { installed, worktree },
   });
@@ -140,8 +149,9 @@ test("INC-270 case 3b: both differ -> RED, both listed", async (context) => {
 
 test("INC-270 case 4a: unreadable installed -> uncomparable", async (context) => {
   const worktree = createCatalog(["verb-a", "verb-b"]);
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCommandCatalogs: { installed: null, worktree },
   });
@@ -154,8 +164,9 @@ test("INC-270 case 4a: unreadable installed -> uncomparable", async (context) =>
 });
 
 test("INC-270 case 4b: both unreadable -> uncomparable", async (context) => {
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCommandCatalogs: { installed: null, worktree: null },
   });
@@ -166,8 +177,9 @@ test("INC-270 case 4b: both unreadable -> uncomparable", async (context) => {
 });
 
 test("engineFloorSatisfied renamed from engineAlignment", async (context) => {
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCopyVersions: { installed: "0.11.15", worktree: "0.11.15" },
     engineRequiredVersions: { "cross-project": "0.11.15" },
@@ -179,9 +191,10 @@ test("engineFloorSatisfied renamed from engineAlignment", async (context) => {
 });
 
 test("both engineFloorSatisfied and engineCapabilitySurface in checks", async (context) => {
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const catalog = createCatalog(["verb-a"]);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCopyVersions: { installed: "0.11.15", worktree: "0.11.15" },
     engineRequiredVersions: { "cross-project": null },
@@ -205,8 +218,9 @@ test("INC-270 case 5a: worktree has extra flag on a verb -> green WORKTREE_AHEAD
     }
     return cmd;
   });
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCommandCatalogs: { installed, worktree },
   });
@@ -229,8 +243,9 @@ test("INC-270 case 5b: installed has extra flag on a verb -> RED PLATFORM_ENGINE
     }
     return cmd;
   });
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCommandCatalogs: { installed, worktree },
   });
@@ -259,8 +274,9 @@ test("INC-270 case 6: same verbs and flags, but valueKind differs -> green ATTRI
       valueKind: i === 0 ? "number" : "string",
     })),
   }));
-  const root = await minimalFixture(context);
+  const { root, home } = await minimalFixture(context);
   const result = await inspectPlatform(root, {
+    homeRoot: home,
     includeInstallSurface: true,
     engineCommandCatalogs: { installed, worktree },
   });

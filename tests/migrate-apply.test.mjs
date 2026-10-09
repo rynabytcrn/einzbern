@@ -34,6 +34,7 @@ import {
   listKnowledgeMetadata,
   removeWorkspaceSetting,
   resolveProjectTarget,
+  setWorkspaceSetting,
   LEGACY_CONTROL_DIRECTORY,
   LEGACY_DEVICE_DIRECTORY,
   MACHINE_SETTINGS_LAYER_KIND,
@@ -707,10 +708,11 @@ test("R46 I07 (fixture): --project at the coordination partition's root is refus
   const plannedForProject = receipt(migrate(projectRoot));
   assert.deepEqual(plannedForProject.blockers, []);
   // TCRN-CROSS-INIT-053 R47 (R47-04): the old coordination chain declares no language, so its own row is
-  // the default, written by the apply; it declares no orchestration limit, so none is listed.
+  // the catalog default; it declares no orchestration limit, so none is listed. R48 (J-2): that row is
+  // listed with action default and written nowhere, so the coordination library records no language.
   const ownLanguage = { key: "artifact.language", value: "en", source: "legacy-default" };
-  assert.deepEqual(plannedForProject.migration.partitions[0].coordinationSettings, [{ ...ownLanguage, action: "write" }]);
-  assert.deepEqual(refusedPlan.migration.partitions[0].coordinationSettings, [{ ...ownLanguage, action: "write" }], "the refused plan shows the same row");
+  assert.deepEqual(plannedForProject.migration.partitions[0].coordinationSettings, [{ ...ownLanguage, action: "default" }]);
+  assert.deepEqual(refusedPlan.migration.partitions[0].coordinationSettings, [{ ...ownLanguage, action: "default" }], "the refused plan shows the same row");
   for (const entry of plannedForProject.migration.partitions.slice(1)) assert.equal(Object.hasOwn(entry, "coordinationSettings"), false, entry.partition);
   const applied = receipt(migrate(projectRoot, ["--yes", "true"]));
   assert.deepEqual([applied.reasonCode, applied.mode], ["SETUP_APPLIED", "migrate"]);
@@ -720,25 +722,43 @@ test("R46 I07 (fixture): --project at the coordination partition's root is refus
     const identity = chainIdentity(await materializeWorkspace(targets[index]));
     assert.deepEqual([identity.role, identity.coordinationLibraryId], [row.chainRole, crossProject.workspaceId], row.partition);
   }
-  // The coordination chain holds the old chain, its identity and, since R47-04, its own language at the
-  // library level, signed by the setup actor; no project language (none names a project).
+  // The coordination chain holds the old chain and its identity. R48 (J-2): no language is written into
+  // it (the old chain declared none), and no project language either (none names a project).
   const coordinationEvents = (await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events);
-  assert.equal(coordinationEvents.length, expected.events + 2, "the old chain, its identity, then its own language");
+  assert.equal(coordinationEvents.length, expected.events + 1, "the old chain, then its identity; no language");
   assert.equal(coordinationEvents[expected.events].payload.record?.key, "identity");
-  const own = coordinationEvents.at(-1).payload;
-  assert.deepEqual([own.operation, own.record.key, own.record.value, Object.hasOwn(own.record, "projectId"), own.actor], ["settings.updated", "artifact.language", "en", false, "agent:setup"]);
+  assert.equal(coordinationEvents.slice(expected.events).some((event) => event.payload.record?.key === "artifact.language"), false, "no artifact.language in the coordination chain");
   assert.equal(coordinationEvents.slice(expected.events).some((event) => event.payload.record?.projectId !== undefined), false, "no project language in the coordination chain");
+  // The coordination library reads the catalog default and records no language, so its write language
+  // policy stays off: a card is written there without a language bundle.
+  const coordinationLanguage = receipt(run(m, ["settings-catalog", "--workspace", targets[0]])).settings.find((entry) => entry.key === "artifact.language");
+  assert.deepEqual([coordinationLanguage.currentValue, coordinationLanguage.source?.kind ?? null], ["en", "default"], "the catalog default, not a library record");
+  receipt(run(m, ["knowledge-init", "--workspace", targets[0], "--acknowledge-disposable", "true"]));
+  const card = receipt(run(m, ["knowledge-capture", "--workspace", targets[0], "--at", at(), "--subject", "Coordination card after the migration",
+    "--summary", "A card the coordination library takes without a language bundle", "--snippet", "no language bundle needed", "--tags", "lesson",
+    "--accountable-owner-id", deriveStableId("owner", "MIGRATE-APPLY-OWNER"), "--body", "Written without a language bundle.", "--allow-trailing", "true"]));
+  assert.equal(typeof card.reasonCode, "string", JSON.stringify(card));
+  const coordinationAfterCard = (await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events).length;
   assert.equal((await materializeWorkspace(targets[1])).settings.some((setting) => setting.key === "artifact.language" && setting.value === applied.answers.language), true, "the project chain records the language");
   for (const file of ["AGENTS.md", "CLAUDE.md"]) assert.ok((await lstat(join(projectRoot, file))).isFile(), `${file} is wired into the project`);
   await assert.rejects(lstat(join(m.container, "AGENTS.md")), { code: "ENOENT" }, "the coordination root gets no project wiring");
 
-  // The same mapping again: the row is carried now, and nothing is written into any library.
+  // The same mapping again: the row is still the default, and nothing is written into any library.
   const replanned = receipt(migrate(projectRoot));
-  assert.deepEqual(replanned.migration.partitions[0].coordinationSettings, [{ ...ownLanguage, action: "carried" }]);
+  assert.deepEqual(replanned.migration.partitions[0].coordinationSettings, [{ ...ownLanguage, action: "default" }]);
   assert.deepEqual(replanned.writes.filter((entry) => entry.step === "library"), []);
   const again = receipt(migrate(projectRoot, ["--yes", "true"]));
   assert.deepEqual(again.written.filter((entry) => entry.step === "library"), []);
-  assert.equal((await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events).length, expected.events + 2, "the coordination chain is as it was");
+  assert.equal((await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events).length, coordinationAfterCard, "the coordination chain is as it was");
+
+  // The control: once the coordination library records the same en at its library level, its write
+  // language policy is on, and the same kind of write without a language bundle is refused. Writing the
+  // default as a record (the apply before R48) did this to every migrated coordination library.
+  await asDevice(m, () => setWorkspaceSetting(targets[0], { key: "artifact.language", value: "en", occurredAt: at(), actorId: "agent:setup" }));
+  const refusedCard = refusal(run(m, ["knowledge-capture", "--workspace", targets[0], "--at", at(), "--subject", "Coordination card once a language is recorded",
+    "--summary", "The same write once the library records its language", "--snippet", "language bundle needed now", "--tags", "lesson",
+    "--accountable-owner-id", deriveStableId("owner", "MIGRATE-APPLY-OWNER"), "--body", "Refused without a language bundle.", "--allow-trailing", "true"]));
+  assert.equal(refusedCard.reasonCode, "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE");
 });
 
 // TCRN-CROSS-INIT-053 R47 (R47-04; Owner 2026-10-09 round 7, c1-B; audit P6): the coordination chain keeps
@@ -803,6 +823,22 @@ test("R47-04 (fixture): the coordination partition's own language and orchestrat
   assert.deepEqual(again.migration.partitions.map((entry) => entry.action), rows.map(() => "skipped"));
   assert.deepEqual(again.written.filter((entry) => entry.step === "library"), [], "the same mapping writes nothing into a library");
   assert.equal((await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events).length, coordinationEvents.length);
+
+  // TCRN-CROSS-INIT-053 R48 (J-2): a key the old chain declares and the coordination library no longer
+  // holds (removed after the import) is a write row again; the apply writes the old chain's value at the
+  // library level, signed agent:setup, and the next plan reads it carried.
+  for (const key of ["artifact.language", "execution.maxConcurrentSubagents"]) {
+    await asDevice(m, () => removeWorkspaceSetting(targets[0], { key, occurredAt: at(), actorId: "agent:setup" }));
+  }
+  const removed = (await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events).length;
+  const rewrite = receipt(migrate(projectRoot));
+  assert.deepEqual(rewrite.migration.partitions[0].coordinationSettings, carried.map((row) => ({ ...row, action: "write" })));
+  const rewritten = receipt(migrate(projectRoot, ["--yes", "true"]));
+  assert.deepEqual(rewritten.written.filter((entry) => entry.step === "library").map((entry) => [entry.path, entry.action]), [[targets[0], "update"]], "one library entry: the coordination library, updated");
+  const written = (await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events).slice(removed).map((event) => event.payload);
+  assert.deepEqual(written.map((payload) => [payload.operation, payload.record?.key, payload.record?.value, Object.hasOwn(payload.record ?? {}, "projectId"), payload.actor]),
+    [["settings.updated", "artifact.language", "fr", false, "agent:setup"], ["settings.updated", "execution.maxConcurrentSubagents", "3", false, "agent:setup"]]);
+  assert.deepEqual(receipt(migrate(projectRoot)).migration.partitions[0].coordinationSettings, carried);
 });
 
 // TCRN-CROSS-INIT-053 R47 (R47-05; audit P1): after the import, before the cleanup and the wiring, the
@@ -836,6 +872,8 @@ test("R47-05 (fixture): a forced miss stops before the cleanup and the wiring, a
   const missed = refusal(apply());
   assert.deepEqual([missed.reasonCode, missed.target], ["SETUP_RECALL_SMOKE_MISSED", library]);
   assert.ok(missed.error.includes(old.newest.id), "the refusal names the card it asked for");
+  // TCRN-CROSS-INIT-053 R48 (PA2-3): the shipped entry passes the card and the query on as fields.
+  assert.deepEqual([missed.cardId, missed.query], [old.newest.id, old.newest.subject], "the refusal carries cardId and query");
   assert.ok((await readRegistry(m.deviceHome)).entries.some((entry) => entry.libraryPath === library), "the import and the registry entry stay");
   assert.deepEqual(await treeDigest(m.home), homeBefore, "no cleanup and no host wiring: the home is as it was");
   for (const file of ["AGENTS.md", "CLAUDE.md"]) await assert.rejects(lstat(join(alphaProject, file)), { code: "ENOENT" }, `${file}: not wired`);

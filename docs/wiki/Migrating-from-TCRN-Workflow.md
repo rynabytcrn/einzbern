@@ -52,7 +52,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 核对计划后，用同一条命令加 `--yes true`，依次：
 
 1. 逐分区导入，并把事件数与头哈希同计划比对。不等即停，返回 `LEGACY_IMPORT_MISMATCH` 并点名分区；此时注册表尚未写入。
-2. 写入各库的注册表条目（带 `migratedFrom`），以及本机还没有的门户设置；协调库再写入计划标为 `write` 的自身设置。
+2. 写入各库的注册表条目（带 `migratedFrom`），以及本机还没有的门户设置；协调库再写入计划标为 `write` 的自身设置（标为 `default` 的行不写）。
 3. 在项目自己的库里写入语言。
 4. 召回冒烟：取项目自己的库里最新的一张有效卡（按 `updatedAt`，同刻按 id），以它的标题经提示钩子的同一路径召回。命中记为 `recallSmoke` 的 `hit`（带卡 id 与查询），库里没有有效卡记为 `no-card`；未命中返回 `SETUP_RECALL_SMOKE_MISSED` 并停下，此时库已导入并登记，旧安装未清理，也未接线。查明原因（例如库的 `retrieval.tau`）后，用同一映射再运行，已迁移的分区跳过，从冒烟处继续。
 5. 清理旧安装：
@@ -201,7 +201,12 @@ carries `coordinationSettings`, rows `{ key, value, source, action }` for
 `execution.maxConcurrentSubagents` and the four `quota.*` keys when the old chain
 declares them. `action: "carried"` means the import already holds the value at the
 coordination library's library level; a `"write"` row is written there by the
-apply, signed `agent:setup`, once. These values are never written into a project
+apply, signed `agent:setup`, once. An `artifact.language` the old chain does not
+declare is listed as `"legacy-default"` with `action: "default"` and is written
+nowhere: the coordination library reads the catalog default and records no
+language, so its card writes need no language bundle, as before the migration (a
+recorded `artifact.language` turns on the write language policy, after which a
+card write needs the economy-tier model and `--language-bundle`). These values are never written into a project
 chain, and no project chain reads them. Never infer a coordination role from a Cross Project label,
 a partition name or a path, or copy its old development settings into a newly
 created product as implicit consent. The real Einzbern/Mana product identity and

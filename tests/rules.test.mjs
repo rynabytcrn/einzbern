@@ -669,9 +669,11 @@ test("INIT-053 AC3: modified v2 remains protected through render, upgrade, keep,
 // v1, recorded as rev 2 of their sections) changes the text and nothing else, as rules-catalog.ts
 // says of a correction. A section enabled with the earlier text and left unchanged takes the revised
 // text at the next agents-render, its revision raised by one; a section the user changed waits.
+// R48 (MIN-242 D10): the second revision (clause 8) holds the same way for a section enabled with the
+// R40 text, which batch-v3-rev2 keeps.
 test("INIT-053 R40: a same-version revision replaces an unchanged rule section at the next render and leaves a changed one pending", async (context) => {
-  for (const [language, suffix] of [["zh-CN", "zh"], ["en", "en"]]) {
-    const previous = await readFile(join(fixtures, `batch-v3-rev1.${suffix}.md`), "utf8");
+  for (const [language, suffix, earlier] of [["zh-CN", "zh", "batch-v3-rev1"], ["en", "en", "batch-v3-rev1"], ["zh-CN", "zh", "batch-v3-rev2"], ["en", "en", "batch-v3-rev2"]]) {
+    const previous = await readFile(join(fixtures, `${earlier}.${suffix}.md`), "utf8");
     const current = builtInRule("batch").body[suffix];
     assert.notEqual(previous, current, "the fixture is the v3 text before the revision");
     assert.equal(previous.split("\n")[0], current.split("\n")[0], "the revision keeps the heading and its version");

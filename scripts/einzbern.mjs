@@ -24,8 +24,10 @@ try {
   // a numeric limit. A Story refused at done names every
   // red required gate or missing required coverage, the Stories held back and the run and tree it
   // was judged on (TCRN-CROSS-STORY-485 R4, MIN-235 D8, TCRN-CROSS-SUB-345). A restore stopped
-  // by one of its eight checks names the check (TCRN-CROSS-STORY-480 R3, TCRN-CROSS-SUB-327).
-  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest", "check", "workId"];
+  // by one of its eight checks names the check (TCRN-CROSS-STORY-480 R3, TCRN-CROSS-SUB-327). A
+  // migration whose recall smoke missed names the card it asked for and the query it asked with
+  // (SETUP_RECALL_SMOKE_MISSED, TCRN-CROSS-INIT-053 R48).
+  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest", "check", "workId", "cardId", "query"];
   const numberDetails = ["bodyBytes", "limit"];
   const listDetails = ["allowedValues", "conflicts", "reds", "stories"];
   const details = error?.details !== null && typeof error?.details === "object"

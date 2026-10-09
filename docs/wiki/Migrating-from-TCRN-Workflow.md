@@ -46,7 +46,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 
 不加 `--yes true` 时命令只读，返回 `SETUP_PLAN_READY`。`migration` 字段列出：
 
-- `partitions`：逐分区给出目标库 `target` 与目标现状 `targetState`，以及动作 `action`：导入 `import`、已迁移跳过 `skip` 或被阻断 `blocked`。另有旧链的事件数与头哈希、在途工作数，以及全部未满足的 gate；`chainIdentity` 是映射给出的链身份，未给角色时为 `null`。gate 逐项列出，不计为零；`knowledge` 列出将携带的知识，`knowledgeOmission` 列出显式不带的选择、原因与旧文件事实。协调分区另有 `coordinationSettings`，即协调链自己的设置，见下文「Project roles after import」。每个分区另有 `projectId`，即映射行写的项目，没写时为 `null`；还有 `projectCandidates`，即旧链里未删除的项目，每项 `{id, name, externalKey, work}`，`work` 是该项目未删除的工单数，按旧链里的顺序列出，旧链读不出时为 `null`。project 行写了 `projectId` 时，`chainIdentity` 另带 `primaryProjectId`。
+- `partitions`：逐分区给出目标库 `target` 与目标现状 `targetState`，以及动作 `action`：导入 `import`、已迁移跳过 `skip` 或被阻断 `blocked`。另有旧链的事件数与头哈希、在途工作数，以及全部未满足的 gate；`chainIdentity` 是映射给出的链身份，未给角色时为 `null`。gate 逐项列出，不计为零；`knowledge` 列出将携带的知识，`knowledgeOmission` 列出显式不带的选择、原因与旧文件事实。协调分区另有 `coordinationSettings`，即协调链自己的设置，见下文「Project roles after import」。每个分区另有 `projectId`，即映射行写的项目，没写时为 `null`；还有 `projectCandidates`，即旧链里未删除的项目，每项 `{id, name, externalKey, work}`，`work` 是该项目未删除的工单数，按项目 id 排序，旧链读不出时为 `null`。project 行写了 `projectId` 时，`chainIdentity` 另带 `primaryProjectId`。
 - `registry`：每个库将得到的注册表条目，`migratedFrom` 记旧工作区；行里写了 `projectId` 的，条目另带 `projectId`。
 - `deviceSettings`：随迁的门户设置。
 - `hostCleanup`：每一项清理，含类别 `kind`、路径、动作（改写 `update` 或移走 `move`）与去向 `into`。
@@ -78,7 +78,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
    - 用户级设置里每个宿主一条 Einzbern 钩子；
    - `CLAUDE.md` 的导入段，以及按 `--navigation` 写入的 `AGENTS.md` 导航段；
    - 注册表已在第 2 步写好，不再重复。
-7. 计划有 `projectBinding`、且要删除原项目时，再核对一次，然后删除 setup 自己建的配置项目，见下文「迁移新建了第二个项目时」。
+7. 计划有 `projectBinding`、且要删除原项目时，再核对一次，条件仍都成立才删除 setup 自己建的配置项目，否则只移绑定，见下文「迁移新建了第二个项目时」。
 8. 以 `doctor` 的八项检查作自检。
 
 成功返回 `SETUP_APPLIED`：

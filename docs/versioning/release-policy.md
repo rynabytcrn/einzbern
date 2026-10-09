@@ -153,6 +153,14 @@ node scripts/release.mjs --version <version> --helper <helper-working-tree> --ex
 node scripts/release.mjs --version <version> --helper <helper-working-tree> --wiki-dir <wiki-working-tree> --execute wiki
 ```
 
+Tag by hand rather than with `--execute tag` or the tag commands the plan prints:
+in each repository, create an annotated tag `v<version>` (`git tag -a`) on that
+repository's release commit. Every action builds the plan first and so needs
+`docs/wiki/Release-Notes-<version>.md` in the engine tree, and that page comes in
+a documentation commit after the engine's release commit; the tag action tags HEAD
+with a lightweight tag, which would put the engine's tag on that documentation
+commit. `--execute push` pushes the tags made by hand.
+
 The release action requires the matching version tag at both repositories' origins.
 The Wiki action delegates to `scripts/push-wiki.mjs`, which rehearses and commits
 the local Wiki sync before pushing it.
@@ -171,12 +179,18 @@ shortening, extending or rewording them, and that file at the version's tag rema
 the complete release notes. Like every Wiki page they are edited in `docs/wiki/`
 and reach the Wiki through the Wiki action above.
 
+The version's CHANGELOG section is organized by the same functional modules: the
+notes under `## Unreleased` stand in `###` sub-sections, one per module, so the
+section that preparation cuts from them, and `docs/releases/<version>.md`, carry
+the release summary followed by the module sub-sections.
+
 The GitHub Release body carries only a short description of the version and a link
 to the version's page in the Wiki's Release Notes chapter (the Wiki page
 `Release-Notes-<version>`); it never carries the full release notes. The release
 command that `publish-plan` prints and `--execute release` runs builds this body as
 its `--notes` value, in three paragraphs: the first sentence of the release summary
-that preparation writes at the top of the version's CHANGELOG section, the line
+in the release script (the same paragraph that preparation writes at the top of the
+version's CHANGELOG section), the line
 `Release notes, by functional module:` followed by the page's address, and a line
 naming the two attachments. The script composes the address when it builds the
 plan, from the repository owner and the engine name in the core names module. The

@@ -61,7 +61,7 @@ gates-run [--project <目录>] [--base <提交>] [--work-id <work-id,...>] [--re
 
 运行必须同树、同门声明并绑定同一组 Story id；树、声明或目标 Story 组一变，之前的运行就不再算数，要按新的 `--base` 或 `--release` 和 `--work-id` 重新 `gates-run`。直接出生、单项转换和批量转换遵守相同拒绝与零写入规则。
 
-门声明与运行都按 Story 所在的项目区分：判据只读 Story 项目作用域里的门声明，只认记录了同一 `projectId` 的运行。所以在项目库上，门要用 `gates-config-set --project-id <Story 的项目>` 声明，带 `--work-id` 的 `gates-run` 也要带同一个 `--project-id`；不带时这次运行不记项目，判据找不到它，Story 转完成时仍报 `WORK_DONE_GATES_NOT_RUN`。协调库上的 `gates-run` 不必带 `--project-id`：门同样声明在 Story 的项目里，只要其中有启用门以精确 work id 覆盖这张 Story，`gates-run --work-id <Story id>` 就按 Story 自己的项目在协调库的项目根运行并记下项目（TCRN-CROSS-STORY-519，见「Target boundaries」），之后 `work-transition` 与 `work-batch` 读的就是这次运行；判据与三种拒绝和项目库相同。
+门声明与运行都按 Story 所在的项目区分：判据只读 Story 项目作用域里的门声明，只认记录了同一 `projectId` 的运行。所以在项目库上，门要用 `gates-config-set --project-id <Story 的项目>` 声明，带 `--work-id` 的 `gates-run` 也要带同一个 `--project-id`。不带时有两种结果：不带 `--project` 时，只要注册项记着这个项目，命令就以 `GATES_PROJECT_UNKNOWN` 拒绝，不会运行；带 `--project` 时，得到一次 0 道门、`ok` 为 `true`、不记项目的空运行，它不说明门是绿的。两种情况下 Story 转完成时都报 `WORK_DONE_GATES_NOT_RUN`，要等运行带上 `--project-id` 才能转完成。协调库上的 `gates-run` 不必带 `--project-id`：门同样声明在 Story 的项目里，只要其中有启用门以精确 work id 覆盖这张 Story，`gates-run --work-id <Story id>` 就按 Story 自己的项目在协调库的项目根运行并记下项目（TCRN-CROSS-STORY-519，见「Target boundaries」），之后 `work-transition` 与 `work-batch` 读的就是这次运行；判据与三种拒绝和项目库相同。
 
 门的顺序只决定何时运行，不决定运行证明了什么，所以不计入门声明的摘要：只改顺序，之前的运行照样算数。改 `command`、`covers`、`required` 等其余字段，之前的运行仍然作废。
 

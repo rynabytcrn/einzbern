@@ -189,7 +189,7 @@ dry-run、计划的分区项和执行回执都列出 `knowledgeOmission`：
   - 可用 `chain-validate --workspace <库>` 核对。
 - 写入者（事件 `payload` 里的 `actor`）只记在已启用署名的库里：
   - 旧链启用过署名（链上有 `attestation.actor.enabled` 事件）的库，从那条事件起，每条事件的 `payload` 都带 `actor`：迁移写入的语言、受管段、链身份与设置记录带 `agent:setup`；Atelier 的写入带 `TCRN_PORTAL_ACTOR` 的值，缺省为 `agent:portal`，见 [Atelier](Atelier.md)；CLI 的写入带 `--actor` 的值。cross-project 迁移出的协调库就是这样。
-  - 旧链从未启用署名的库（例如 TCRN-TMS 与 dsh-tcrn-workflow-plugin），整条链都不记写入者：setup 写入的链身份与设置记录（项目自己的库还有语言与受管段记录）都不带 `actor`，事件 `payload` 只有 `operation` 与 `record`；Atelier 与 CLI 的写入也一样，`TCRN_PORTAL_ACTOR` 与 `--actor` 照常接受，但不写进事件。记录内容本身要写明操作者的，例如 `work-gate-release` 写下的解除记录，照旧记在记录里。
+  - 旧链从未启用署名的库（例如 TCRN-TMS），整条链都不记写入者：setup 写入的链身份与设置记录（项目自己的库还有语言与受管段记录）都不带 `actor`，事件 `payload` 只有 `operation` 与 `record`；Atelier 与 CLI 的写入也一样，`TCRN_PORTAL_ACTOR` 与 `--actor` 照常接受，但不写进事件。记录内容本身要写明操作者的，例如 `work-gate-release` 写下的解除记录，照旧记在记录里。
   - 引擎没有为已有的库启用署名的命令，也不给旧事件补写写入者。
   - 读法：`event-list --workspace <库>` 分页列出事件，每页缺省 64 条，用 `--offset` 与 `--limit` 翻页；看各事件的 `payload` 里有没有 `actor`。
   - 写入者只说明经哪个入口写入，不证明身份。

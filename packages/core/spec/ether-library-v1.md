@@ -164,6 +164,12 @@ language gates. A repeated apply skips an already imported library and retains o
 changing a declaration cannot clear old metadata already carried into an existing library
 (`LEGACY_IMPORT_MISMATCH`).
 
+A partition may also name `projectId` (`project:` and 24 lowercase hexadecimal digits), a live
+project of its old chain, to which `setup --mode migrate` binds the partition's registry entry, a
+project chain's `primaryProjectId` and the `--project` partition's language and managed sections
+instead of creating a project of setup's own; a malformed value, or one on a
+`chainRole: "coordination"` row, refuses with `SETUP_ANSWER_INVALID`.
+
 ## The device cache
 
 What a replay derives stays on the device that derived it, in `cache/<library>/` of the

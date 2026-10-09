@@ -44,7 +44,7 @@
 
 项目有启用的必需门以精确 work id 覆盖这张 Story，但本设备还没有在当前这棵树与当前这组门声明上为它跑过这些门。先运行 `gates-run --base <提交> --work-id <Story id> --at <时刻>`：非 release 运行必须给 `--base`，发布时改用 `--release true`；`--work-id` 把这次运行绑定到这张 Story，没有绑定的运行不能证明覆盖。全部必需门为绿之后再转换。之后又改了文件、门声明或目标 Story，要重新跑。
 
-在项目库上，这条 `gates-run` 还要带 `--project-id <Story 的项目>`：判据只认记录了 Story 项目的运行，不带时跑过也一样报这个错。在协调库上不必带：协调库在 Story 的项目里以精确 work id 覆盖它的门，会在协调库为它登记的项目根按 Story 的项目运行（TCRN-CROSS-STORY-519），协调库的注册项不带 `projectId` 也找得到这个根。细节见「门」页。
+在项目库上，这条 `gates-run` 还要带 `--project-id <Story 的项目>`：判据只认记录了 Story 项目的运行。不带时，不带 `--project` 的调用只要注册项记着这个项目，就以 `GATES_PROJECT_UNKNOWN` 拒绝，不会运行；带 `--project` 的调用得到一次 0 道门、`ok` 为 `true`、不记项目的空运行。两种都过不了完成判据，转换仍报这个错，要等运行带上 `--project-id` 才能转完成。在协调库上不必带：协调库在 Story 的项目里以精确 work id 覆盖它的门，会在协调库为它登记的项目根按 Story 的项目运行（TCRN-CROSS-STORY-519），协调库的注册项不带 `projectId` 也找得到这个根。细节见「门」页。
 
 ## gates-run 的结果存在哪里？
 

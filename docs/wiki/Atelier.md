@@ -18,7 +18,7 @@ node ~/.einzbern/engine/<版本>/atelier/portal.mjs [--library <库>] [--port <�
 - 写入者：Atelier 的每次写入都经引擎 CLI，以 `--actor` 带上环境变量 `TCRN_PORTAL_ACTOR` 的值；没设时是 `agent:portal`，看不出是谁操作的，所以宜在启动时设成实际操作者，例如 `TCRN_PORTAL_ACTOR=<操作者> node ~/.einzbern/engine/<版本>/atelier/portal.mjs`。这个值只说明经哪个入口写入，不证明身份。未启用署名的库（链上没有 `attestation.actor.enabled`）不记写入者，事件里不会留下这个值，见[从 TCRN Workflow 迁移](Migrating-from-TCRN-Workflow.md)。
 - 页面令牌：Atelier 每次启动随机生成一个令牌，写进它发给浏览器的页面。页面发往 Atelier 接口的请求都在请求头 `x-portal-token` 里带上它，缺少或不符时以 `PORTAL_TOKEN_REQUIRED` 拒绝；所以 Atelier 重启后，已打开的页面要重新载入。通过令牌检查的回答都带 `x-portal-served-target`，写明它服务的是哪个库和配置目标；除切换库、切换配置作用域和本机设置外，写请求另在 `x-configuration-target` 里写明它针对的目标，选择已变时以 `PORTAL_CONFIGURATION_TARGET_CHANGED` 拒绝（见下文「切换知识库」）。
 
-启动成功时，Atelier 在标准输出打印一行 JSON，`reasonCode` 为 `PORTAL_LISTENING`：`url` 是在浏览器里打开的地址 `http://127.0.0.1:<端口>/`，另有打开的库（`library`、`workspace`）、选库依据（`selectedBy`：`argument`、`working-directory`、`machine-default` 或 `first-registered`）、已登记的库数（`libraries`）、AGENTS.md 所在的项目目录（`proseRoot`）、写入者（`actor`）和所用的 CLI（`cli`）。启动失败时在标准错误打印一行 `ok` 为 `false` 的 JSON 并以退出码 2 结束，例如注册表里没有库（`PORTAL_LIBRARY_REGISTRY_EMPTY`，先用 `library-register` 登记），或 `--library` 不是已登记的库（`PORTAL_LIBRARY_UNKNOWN`）。
+启动成功时，Atelier 在标准输出打印一行 JSON，`reasonCode` 为 `PORTAL_LISTENING`：`url` 是在浏览器里打开的地址 `http://127.0.0.1:<端口>/`，另有打开的库（`library`、`workspace`）、选库依据（`selectedBy`：`argument`、`working-directory`、`machine-default` 或 `first-registered`）、已登记的库数（`libraries`）、AGENTS.md 所在的项目目录（`proseRoot`）、写入者（`actor`）和所用的 CLI（`cli`）。选库与注册表类的启动失败时，在标准错误打印一行 `ok` 为 `false` 的 JSON 并以退出码 2 结束，例如注册表里没有库（`PORTAL_LIBRARY_REGISTRY_EMPTY`，先用 `library-register` 登记），或 `--library` 不是已登记的库（`PORTAL_LIBRARY_UNKNOWN`）。端口已被占用时，Node 直接报 `EADDRINUSE`，退出码 1。
 
 Atelier 在前台运行，没有停止命令：在启动它的终端按 Ctrl-C；在后台启动的，结束这个 node 进程。
 

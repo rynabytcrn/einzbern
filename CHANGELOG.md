@@ -5,6 +5,8 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Cross-Project
+
 A coordination library's Stories can reach done through their gates (TCRN-CROSS-STORY-519, INIT-053
 R50; fixes TCRN-CROSS-STORY-485). On a coordination chain, `gates-plan` and `gates-run` with
 `--work-id` also plan and run a Story that an enabled gate of the library's own project scope covers
@@ -20,6 +22,17 @@ done check, now comes from the library's registry entry even when that entry rec
 setup and migration write it, as long as no entry records the project itself; a project chain still
 needs an entry for the project, or the root is `GATES_PROJECT_UNKNOWN`. The done criteria and their
 refusals are unchanged.
+
+### Atelier
+
+`docs/wiki/Atelier.md` gains a section on starting Atelier: the command, `--library` and `--port`
+with `TCRN_PORTAL_LIBRARY` and `TCRN_PORTAL_PORT`, the order in which a library is chosen,
+`portal.port` and the default 4319, the listener on 127.0.0.1 only, the writer `TCRN_PORTAL_ACTOR`
+(default `agent:portal`; a library without actor attestation records no writer), the page token and
+the target each answer names, the `PORTAL_LISTENING` line and how to stop it (TCRN-CROSS-STORY-521,
+INIT-053 R50; fixes TCRN-CROSS-STORY-487).
+
+### Migration
 
 A migration binds a project's configuration to the old chain's project its mapping row names,
 instead of creating a project of setup's own beside it (TCRN-CROSS-STORY-517, INIT-053 R50; fixes
@@ -49,12 +62,14 @@ actor attestation (its old chain carries `attestation.actor.enabled`), from that
 language, managed-section, chain-identity and settings records a migration writes carry
 `agent:setup`, Atelier's writes carry `TCRN_PORTAL_ACTOR` (default `agent:portal`) and the CLI's
 carry `--actor`; the coordination library migrated from cross-project is one. A library whose old
-chain never enabled it, such as TCRN-TMS and dsh-tcrn-workflow-plugin, records no writer: the chain
-identity and settings records setup writes there hold only `operation` and `record`, and Atelier and
-the CLI take their actor without writing it into the event; a record that names its operator in its
-own value, such as a gate release, still does. `event-list` shows whether a library's event payloads
-carry `actor`. The engine is unchanged: it writes no actor before attestation is enabled, has no
-verb that enables it for an existing library, and leaves old events' bytes as they are.
+chain never enabled it, such as TCRN-TMS, records no writer: the chain identity and settings records
+setup writes there hold only `operation` and `record`, and Atelier and the CLI take their actor
+without writing it into the event; a record that names its operator in its own value, such as a gate
+release, still does. `event-list` shows whether a library's event payloads carry `actor`. The engine
+is unchanged: it writes no actor before attestation is enabled, has no verb that enables it for an
+existing library, and leaves old events' bytes as they are.
+
+### Release and Repository Tooling
 
 The GitHub Release body that `scripts/release.mjs publish-plan` prints and `--execute release`
 passes to `gh release create` as `--notes` is a short description of the version and a link to its
@@ -76,12 +91,7 @@ file with its inline links to the source's top-level pages by page name: `](<pag
 `](<page>.md#<anchor>)` become `](<page>)` and `](<page>#<anchor>)`. Fenced code blocks, code spans,
 images, other links and links to a page the source does not have keep their bytes; `docs/wiki` keeps
 its `.md` links for the repository's rendering and the link gate, putting `.md` back gives the
-source again, and the receipt counts the rewritten links in `linksRewritten`. `docs/wiki/Atelier.md`
-gains a section on starting Atelier: the command, `--library` and `--port` with
-`TCRN_PORTAL_LIBRARY` and `TCRN_PORTAL_PORT`, the order in which a library is chosen, `portal.port`
-and the default 4319, the listener on 127.0.0.1 only, the writer `TCRN_PORTAL_ACTOR` (default
-`agent:portal`; a library without actor attestation records no writer), the page token and the
-target each answer names, the `PORTAL_LISTENING` line and how to stop it.
+source again, and the receipt counts the rewritten links in `linksRewritten`.
 
 ## 2.0.0
 

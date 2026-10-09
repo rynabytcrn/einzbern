@@ -3214,6 +3214,45 @@ test("the controller child policy preserves exec and execFile callbacks across o
   ]);
 });
 
+// TCRN-CROSS-INIT-053 R48 (R48-INT-1): node's exec and execFile carry util.promisify.custom, so
+// promisify(execFile) resolves { stdout, stderr }, rejects with an error that carries stdout and stderr,
+// and holds the child as .child. The policy's replacements keep that form; without it platform-doctor's
+// promisify(execFile) read stdout as undefined under the controller only. The same program runs with no
+// preload and with the policy preloaded, and both answer what node defines. (Run under the controller
+// itself, the first run inherits the policy through NODE_OPTIONS; the expected answer is node's either way.)
+test("the controller child policy keeps promisify(exec) and promisify(execFile) as node defines them", () => {
+  const policy = new URL("../scripts/test-controller-child-policy.mjs", import.meta.url).href;
+  const source = [
+    'import { exec, execFile } from "node:child_process";',
+    'import { promisify } from "node:util";',
+    'const execFileAsync = promisify(execFile);',
+    'const execAsync = promisify(exec);',
+    'const shape = (error) => ({ isError: error instanceof Error, code: error.code, killed: error.killed, signal: error.signal, stdout: error.stdout, stderr: error.stderr, cmd: typeof error.cmd });',
+    'const out = { custom: [typeof execFile[promisify.custom], typeof exec[promisify.custom]] };',
+    'const running = execFileAsync(process.execPath, ["-e", "process.stdout.write(String(1)); process.stderr.write(String(2))"]);',
+    'out.child = typeof running.child?.pid;',
+    'out.execFile = await running;',
+    'out.execFileFailure = await execFileAsync(process.execPath, ["-e", "process.stdout.write(String(3)); process.stderr.write(String(4)); process.exit(3)"]).then(() => "resolved", shape);',
+    'out.exec = await execAsync("printf x; printf y 1>&2");',
+    'out.execFailure = await execAsync("printf o; printf e 1>&2; exit 4").then(() => "resolved", shape);',
+    'process.stdout.write(JSON.stringify(out));',
+  ].join("\n");
+  const expected = {
+    custom: ["function", "function"],
+    child: "number",
+    execFile: { stdout: "1", stderr: "2" },
+    execFileFailure: { isError: true, code: 3, killed: false, signal: null, stdout: "3", stderr: "4", cmd: "string" },
+    exec: { stdout: "x", stderr: "y" },
+    execFailure: { isError: true, code: 4, killed: false, signal: null, stdout: "o", stderr: "e", cmd: "string" },
+  };
+  for (const [label, preload] of [["no preload", []], ["policy preloaded", ["--import", policy]]]) {
+    const result = spawnSync(process.execPath, [...preload, "--input-type=module", "--eval", source], { encoding: "utf8", timeout: 20_000 });
+    assert.equal(result.status, 0, `${label}: ${result.stderr}`);
+    assert.equal(result.stderr, "", label);
+    assert.deepEqual(JSON.parse(result.stdout), expected, label);
+  }
+});
+
 test("a real task entrypoint completes exec and execFile undefined optional callbacks before TESTS_VERIFIED", async (context) => {
   const root = await taskEntrypointFixture(context, [
     'import assert from "node:assert/strict";',

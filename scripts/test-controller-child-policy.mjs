@@ -12,6 +12,7 @@ import { closeSync, fsyncSync, lstatSync, openSync, readFileSync, readdirSync, u
 import { syncBuiltinESMExports } from "node:module";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const policyNodeOption = `--import=${import.meta.url}`;
 const childBootstrapPath = fileURLToPath(new URL("./test-controller-child-bootstrap.mjs", import.meta.url));
@@ -361,9 +362,30 @@ function inheritsStdioForCall(name, options) {
   return inheritsStdio(options?.stdio);
 }
 
+// TCRN-CROSS-INIT-053 R48 (R48-INT-1): node gives exec and execFile a util.promisify.custom whose promise
+// resolves { stdout, stderr }, rejects with the error carrying stdout and stderr, and holds the child as
+// .child. A replacement without it promisifies to a bare stdout string, so promisify(execFile) callers
+// (platform-doctor among them) read stdout as undefined under the controller only. The replacement keeps
+// node's custom form, built over the guarded function so every call still passes the policy.
+function promisifiedExec(run) {
+  return (...arguments_) => {
+    const { promise, resolve: settle, reject } = Promise.withResolvers();
+    promise.child = run(...arguments_, (error, stdout, stderr) => {
+      if (error !== null) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+      } else {
+        settle({ stdout, stderr });
+      }
+    });
+    return promise;
+  };
+}
+
 for (const name of ["spawn", "spawnSync", "exec", "execFile", "execSync", "execFileSync", "fork"]) {
   const original = childProcess[name];
-  childProcess[name] = function guardedChildProcess(...arguments_) {
+  const guarded = function guardedChildProcess(...arguments_) {
     const options = optionsFor(name, arguments_);
     const gateRunnerSpawn = isGateRunnerSpawn(name, arguments_, options);
     const bootstrapRelay = isBootstrapRelay(name, arguments_, options);
@@ -374,6 +396,10 @@ for (const name of ["spawn", "spawnSync", "exec", "execFile", "execSync", "execF
     if (!bootstrapRelay) rejectInheritedStdio(name, options);
     return original.apply(this, propagatePolicyToNodeChild(name, arguments_));
   };
+  if (Object.hasOwn(original, promisify.custom)) {
+    Object.defineProperty(guarded, promisify.custom, { enumerable: false, value: promisifiedExec(guarded) });
+  }
+  childProcess[name] = guarded;
 }
 
 syncBuiltinESMExports();

@@ -7,6 +7,17 @@
 // including Home.md when present, and removing every tracked file the source no longer has. It
 // commits the result there.
 //
+// TCRN-CROSS-STORY-521 (TCRN-CROSS-SUB-439): the copy differs from the source in one respect. A
+// GitHub Wiki opens a link written `](Page.md)` as the page's raw Markdown, not as the page, so in
+// every Markdown file it copies, a link `](<page>.md)` or `](<page>.md#<anchor>)` whose <page>.md
+// is a top-level file of the source becomes `](<page>)` or `](<page>#<anchor>)`. Text in ``` and
+// ~~~ fenced code blocks and in code spans is left as it is, and so are links to a page the source
+// does not have, images and every other link. The source keeps its `.md` links, which are what the
+// repository's own rendering and its link gate read; the source writes no `](<page>)` link of its
+// own (the link gate refuses one), so putting `.md` back after the page name in every such link of
+// the copy gives the source again, byte for byte. linksRewritten in the receipt counts the links
+// rewritten across the source.
+//
 // That is all it does unless it is told otherwise. By default it is a rehearsal: it syncs, commits
 // in the local working tree and prints the commits a push would send, and it pushes nothing. Only
 // `--execute push` runs git push, to the branch the working tree tracks; a push is a publication,
@@ -21,7 +32,8 @@
 // branch. The source must hold at least one file, regular files only; names that begin with a
 // dot are not pages and are skipped. Every git call is `git -C <Wiki working tree> ...`, run
 // without a shell, and the commit takes the identity git is configured with there. The receipt
-// is one JSON line on stdout; a refusal is one JSON line on stderr and exit code 1.
+// is one JSON line on stdout, with linksRewritten beside added, updated and removed; a refusal is
+// one JSON line on stderr and exit code 1.
 
 import { execFileSync } from "node:child_process";
 import { lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
@@ -115,6 +127,124 @@ function sameBytes(path, bytes) {
   }
 }
 
+// TCRN-CROSS-STORY-521 (TCRN-CROSS-SUB-439): the links between pages, as the Wiki opens them. A
+// fence opens on ``` or ~~~ (a backtick fence's info string holds no backtick) after any indent
+// and blockquote markers, and closes on a line of the same character at least as long; it runs to
+// the end of the file when nothing closes it. A heading or a table row is a block of its own and a
+// list item starts one, so a code span never runs across them.
+const FENCE_OPENING = /^(?:[ \t]*>)*[ \t]*(`{3,}|~{3,})(.*)$/u;
+const FENCE_CLOSING = /^(?:[ \t]*>)*[ \t]*(`{3,}|~{3,})[ \t]*\r?$/u;
+const OWN_BLOCK = /^(?:[ \t]*>)*[ \t]{0,3}(?:#{1,6}(?:[ \t]|\r?$)|\|)/u;
+const ITEM_START = /^(?:[ \t]*>)*[ \t]*(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]|\r?$)/u;
+const PAGE_TARGET = /^([^\s()<>`]+)\.md(#[^\s()<>`]*)?$/u;
+
+// Whether the character at `index` follows an odd number of backslashes.
+function escapedAt(text, index) {
+  let backslashes = 0;
+  for (let at = index - 1; at >= 0 && text[at] === "\\"; at -= 1) backslashes += 1;
+  return backslashes % 2 === 1;
+}
+
+// The [start, end) ranges of the code spans in one block: a run of backticks opens a span that the
+// next run of the same length closes, and a run nothing closes is plain text.
+function codeSpans(text) {
+  const spans = [];
+  let index = text.indexOf("`");
+  while (index !== -1) {
+    let end = index;
+    while (text[end] === "`") end += 1;
+    const start = escapedAt(text, index) ? index + 1 : index;
+    let close = -1;
+    for (let at = end > start ? text.indexOf("`", end) : -1; at !== -1;) {
+      let after = at;
+      while (text[after] === "`") after += 1;
+      if (after - at === end - start) {
+        close = after;
+        break;
+      }
+      at = text.indexOf("`", after);
+    }
+    if (close !== -1) spans.push([start, close]);
+    index = text.indexOf("`", close === -1 ? end : close);
+  }
+  return spans;
+}
+
+// Where the `[` that the `]` at `index` closes stands, or -1 when no bracket opens it.
+function linkOpening(text, index, inCode) {
+  let depth = 0;
+  for (let at = index - 1; at >= 0; at -= 1) {
+    if ((text[at] !== "[" && text[at] !== "]") || inCode(at) || escapedAt(text, at)) continue;
+    if (text[at] === "]") depth += 1;
+    else if (depth === 0) return at;
+    else depth -= 1;
+  }
+  return -1;
+}
+
+// One block with `.md` dropped from each inline link to a page outside its code spans.
+function rewriteBlock(text, pages) {
+  const spans = codeSpans(text);
+  const inCode = (at) => spans.some(([start, end]) => at >= start && at < end);
+  let output = "";
+  let copied = 0;
+  let count = 0;
+  for (let at = text.indexOf("]("); at !== -1; at = text.indexOf("](", at + 2)) {
+    if (inCode(at) || escapedAt(text, at)) continue;
+    const close = text.indexOf(")", at + 2);
+    if (close === -1) break;
+    const target = PAGE_TARGET.exec(text.slice(at + 2, close));
+    if (target === null || !pages.has(target[1])) continue;
+    const opening = linkOpening(text, at, inCode);
+    if (opening === -1 || (text[opening - 1] === "!" && !escapedAt(text, opening - 1))) continue;
+    const extension = at + 2 + target[1].length;
+    output += text.slice(copied, extension);
+    copied = extension + ".md".length;
+    count += 1;
+  }
+  return { text: output + text.slice(copied), count };
+}
+
+// A Markdown file as the Wiki is given it, and how many links were rewritten. Bytes that are not
+// UTF-8 are copied as they are.
+function rewritePageLinks(bytes, pages) {
+  const text = bytes.toString("utf8");
+  if (!Buffer.from(text, "utf8").equals(bytes)) return { bytes, count: 0 };
+  const lines = text.split("\n");
+  let count = 0;
+  let block = [];
+  const flush = () => {
+    if (block.length === 0) return;
+    const rewritten = rewriteBlock(block.map((index) => lines[index]).join("\n"), pages);
+    rewritten.text.split("\n").forEach((line, offset) => {
+      lines[block[offset]] = line;
+    });
+    count += rewritten.count;
+    block = [];
+  };
+  let fence = null;
+  for (const [index, line] of lines.entries()) {
+    if (fence !== null) {
+      const closing = FENCE_CLOSING.exec(line);
+      if (closing !== null && closing[1][0] === fence[0] && closing[1].length >= fence.length) fence = null;
+      continue;
+    }
+    const opening = FENCE_OPENING.exec(line);
+    if (opening !== null && !(opening[1][0] === "`" && opening[2].includes("`"))) {
+      flush();
+      fence = opening[1];
+      continue;
+    }
+    const blank = line.trim() === "";
+    if (blank || OWN_BLOCK.test(line) || ITEM_START.test(line)) flush();
+    if (blank) continue;
+    block.push(index);
+    if (OWN_BLOCK.test(line)) flush();
+  }
+  flush();
+  return count === 0 ? { bytes, count } : { bytes: Buffer.from(lines.join("\n"), "utf8"), count };
+}
+
 function main() {
   const options = parseFlags(process.argv.slice(2));
   const files = sourceFiles(options.source);
@@ -144,12 +274,20 @@ function main() {
     throw error;
   }
 
-  // Mirror the source into the working tree.
+  // Mirror the source into the working tree, each Markdown file with its links to the source's
+  // top-level pages rewritten before it is compared and written.
+  const pages = new Set(files.filter((file) => !file.includes("/") && file.endsWith(".md")).map((file) => file.slice(0, -".md".length)));
   const tracked = git(top, ["ls-files", "-z"]).split("\0").filter((path) => path !== "");
   const added = [];
   const updated = [];
+  let linksRewritten = 0;
   for (const file of files) {
-    const bytes = readFileSync(join(source, ...file.split("/")));
+    let bytes = readFileSync(join(source, ...file.split("/")));
+    if (file.endsWith(".md")) {
+      const rewritten = rewritePageLinks(bytes, pages);
+      bytes = rewritten.bytes;
+      linksRewritten += rewritten.count;
+    }
     const target = join(top, ...file.split("/"));
     if (sameBytes(target, bytes)) continue;
     mkdirSync(dirname(target), { recursive: true });
@@ -188,6 +326,7 @@ function main() {
     added,
     updated,
     removed,
+    linksRewritten,
     commit,
     pending,
     pushed,

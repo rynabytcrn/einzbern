@@ -459,9 +459,56 @@ test("P8 classifies only the exact reviewed 2.0.0 package members", async () => 
 
   const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
     .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
-  const nextVersion = joinParts(["2", "0", "1"], ".");
+  // 2.0.1 has its own reviewed rules (the test below); the version after it has none.
+  const nextVersion = joinParts(["2", "0", "2"], ".");
   for (const path of memberPaths) {
-    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.0.1 is not covered");
+    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.0.2 is not covered");
+    assert.ok(ownerFinding({ ...entries[0], label: member(path, nextVersion), sourcePaths: p8ReleasePrivacySourcePaths(member(path, nextVersion)) }));
+  }
+  const adjacent = member("launchers/einzbern.mjs");
+  assert.deepEqual(p8ReleasePrivacySourcePaths(adjacent), [], "an adjacent member has no source mapping");
+  assert.ok(ownerFinding({ ...entries[0], label: adjacent, sourcePaths: p8ReleasePrivacySourcePaths(adjacent) }));
+  for (const entry of entries) {
+    assert.ok(ownerFinding({ ...entry, content: `${ownerLine} // changed` }), "a changed whole line remains a finding");
+    const changedOwner = publicIdentity.login;
+    assert.ok(ownerFinding({ ...entry, content: ownerLine.replaceAll(owner, changedOwner) }, changedOwner), "a changed metadata value remains a finding");
+    assert.ok(ownerFinding({ ...entry, releaseArchiveMember: undefined }), "a source path alone does not exempt a release entry");
+  }
+});
+
+// TCRN-CROSS-INIT-053 U23 P-F: the reviewed 2.0.1 package members carry the same compiled owner line
+// and are classified by their own exact labels. The other owner occurrence the review found, in
+// scripts/einzbern.mjs, is the complete helper address, public on its own; nothing else of 2.0.1 or
+// another version is classified.
+test("P8 classifies only the exact reviewed 2.0.1 package members", async () => {
+  const repositoryRoot = resolve(import.meta.dirname, "..");
+  const owner = LEGACY_REPOSITORY_NAMES.owner;
+  const buildPath = "dist/build/packages/core/src/names.js";
+  const buildContent = await readFile(join(repositoryRoot, buildPath), "utf8");
+  const ownerLine = buildContent.split("\n").find((line) => line.includes(owner) && /\bowner\s*:/u.test(line));
+  assert.equal(createHash("sha256").update(ownerLine, "utf8").digest("hex"), "3861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56");
+  const version = joinParts(["2", "0", "1"], ".");
+  const member = (path, packageVersion = version) => joinParts(["dist", "release", `${BRAND.engine.id}-${packageVersion}.tar.gz`, `${BRAND.engine.id}-${packageVersion}`, path], "/");
+  const memberPaths = ["atelier/portal.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern.mjs"];
+  const entries = memberPaths.map((path) => ({
+    label: member(path),
+    kind: "release",
+    releaseArchiveMember: true,
+    sourcePaths: p8ReleasePrivacySourcePaths(member(path)),
+    content: ownerLine,
+  }));
+  assert.deepEqual(entries.map((entry) => entry.sourcePaths), memberPaths.map(() => [buildPath]));
+  assert.deepEqual(scanPrivacyEntries(entries, { owner }), []);
+
+  const installLine = `        \`1. Install this skill: \\\`npx skills add ${owner}/${BRAND.helper.id}\\\`, or ask the host to find the skill.`;
+  assert.deepEqual(scanPrivacyEntries([{ ...entries[2], content: `${ownerLine}\n${installLine}\n` }], { owner }), []);
+  assert.deepEqual(scanPrivacyEntries([{ ...entries[2], sourcePaths: [], content: installLine }], { owner }), [], "the helper address needs no member rule");
+
+  const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
+    .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
+  const nextVersion = joinParts(["2", "0", "2"], ".");
+  for (const path of memberPaths) {
+    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.0.2 is not covered");
     assert.ok(ownerFinding({ ...entries[0], label: member(path, nextVersion), sourcePaths: p8ReleasePrivacySourcePaths(member(path, nextVersion)) }));
   }
   const adjacent = member("launchers/einzbern.mjs");

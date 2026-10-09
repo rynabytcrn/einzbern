@@ -81,7 +81,9 @@ and never guess an answer.
      `{key, value, source, action}`: `artifact.language` always (`source` `legacy-declared` when the
      old chain declares it, else `legacy-default` with the catalog default) and
      `execution.maxConcurrentSubagents` and the `quota.*` keys the old chain declares; `action` is
-     `carried` (the import brings it) or `write` (the apply writes it into the coordination library);
+     `carried` (the import brings it), `write` (the apply writes it into the coordination library)
+     or `default` (a `legacy-default` language: written nowhere, so the coordination library records
+     no language and its card writes need no language bundle);
    - `registry`, the entry each library gets, and `deviceSettings`, the portal keys that move;
    - `hostCleanup`, each item `{kind, path, action, into}`: `kind` is `host-file` (updated, its
      original copied first), `template`, `injection-state`, `launcher`, `skill-copy` or `marker`

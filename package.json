@@ -1,6 +1,6 @@
 {
   "name": "einzbern",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "private": true,
   "description": "The Grail grants wishes. Einzbern remembers the wishes you made, the decisions you took, and the traps you fell into, and puts them in front of the model right before the prompt that needs them. For Claude Code and Codex.",
   "license": "Apache-2.0",

@@ -26,6 +26,14 @@
 // text equals the Owner's archived wording again; the English of clause 8 is an agent's translation
 // that awaits the Owner's correction. The version stays at 3, with the same consequences as above.
 //
+// INIT-053 R52 (MIN-246 D11): batch v3 gains the merging of small rounds at the end of clause 6 (a
+// round with at most two implementation packages or one acceptance slice has one main-tier agent
+// do acceptance and judgment, and a round without an implementation package dispatches no
+// decomposition or acceptance agent) and clause 9 (evidence is read in excerpts), recorded as rev 4
+// of its section in the Owner's own AGENTS.md. The Chinese text equals the Owner's archived wording
+// again; the English of both additions is an agent's translation that awaits the Owner's
+// correction. The version stays at 3, with the same consequences as above.
+//
 // Every text is a constant in this file, and this module reads no file: a packaged engine is one
 // script, and a text kept anywhere else would not travel with it. A body is the whole rule as it
 // is written into a project file: a heading that names the rule and its version, the text, and
@@ -72,9 +80,10 @@ const BATCH_ZH = `## 批量处理原则 v3
 3. 见红只记不修。批内跑门、跑测试、做验收，每一条红与缺陷只记入本批问题清单，不停下来修，不为它重跑门，不逐条开工单。合并完成后批末一次门、一次验收，把清单一次处置，处置完再跑一次相关的门。同一根因的多条算一条。可以打断批的只有两种情况：安全拒绝，以及让后续工作无法进行的硬阻塞。
 4. 生成物批末再生。覆盖基线、证明物、钩子渲染、预算抬线这类工具生成的东西，批末各做一次，作为固定收尾步骤，不随单条修改重做。
 5. 一批一次链写、一次汇报。转态与注解用批量入口一次写完。待 Owner 决定的事项在收口汇报里成批列出，每项附建议。不阻塞工作的事项按建议先做，汇报里回显所做的选择，由 Owner 事后更正。
-6. 派工按批段。拆分一个代理，实施每包一个代理，集成一个代理，验收一个代理，验收可按 Epic 分片同批并行。不为单步派代理，不为确认读数派代理。
+6. 派工按批段。拆分一个代理，实施每包一个代理，集成一个代理，验收一个代理，验收可按 Epic 分片同批并行。不为单步派代理，不为确认读数派代理。小轮合并：本轮实施包不超过 2 个或验收只有一片时，验收与判断由一个主力档代理一次完成，仍按原格式写验收、判断与 lessons 三份文件，并顺带写出下一轮的拆分文件，不另派拆分代理；验收两片以上的轮维持验收分片并行、判断单独、拆分单独。没有实施包、只有链写或文档动作的轮，不派拆分与验收代理，主线程完成动作后派一个主力档代理读回并判断。
 7. 「一次」按轮计，不是整个会话只做一轮。一轮（一个批次）内，拆分、每包实施、集成、名册、验收、判断各做一遍，不逐红重复；一轮做完，判断列出的问题清单与排队项就是下一轮的输入，loop 立即开下一轮（R41、R42……），直到 goal 写明的终态达成，或剩余工作全部阻塞于只有 Owner 能做的决定。轮与轮之间不等 Owner 答复、不换会话、不汇报。
 8. 知识采集按轮。每轮的单名判断代理在判断报告旁产出 lessons.json：每条含 subject、summary、snippet、body、tags 与来源证据路径，只写本轮新确立的事实与教训，不超过 5 条；主线程在同一轮的链写里用引擎 knowledge-capture 逐条落卡并读回，卡被预算拒绝就记阻塞、迁移后补写。不依赖 Stop 钩子的标记行采集。
+9. 证据按摘录读。治理代理与主线程只读派工指明的摘录文件、节号或行号范围，不整读拆分、计划、判断、台账与 routing 文件；工具输出先写进文件再按需读入，每次不超过 200 行；超过 32 KB 的文件不整读，宿主的读取守卫会拒绝并给出改法。
 
 修完一条又红一条的循环，本身就是违反本原则的信号：停下，把清单列全，再动手。
 
@@ -86,8 +95,9 @@ const BATCH_ZH = `## 批量处理原则 v3
 4. 等待避免空轮询。使用宿主支持的完成通知与阻塞等待；连续没有新状态时延长查询间隔，遵守宿主等待上限和用户中断要求；有独立可做的工作时继续该工作。
 `;
 
-// Translated when this module was written, clause 7 with the Owner's revision (INIT-053 R40) and
-// clause 8 with the Owner's fifth round (INIT-053 R48, MIN-242 D10); awaits the Owner's correction.
+// Translated when this module was written, clause 7 with the Owner's revision (INIT-053 R40),
+// clause 8 with the Owner's fifth round (INIT-053 R48, MIN-242 D10), and the end of clause 6 and
+// clause 9 with MIN-246 D11 (INIT-053 R52); awaits the Owner's correction.
 const BATCH_EN = `## Batch Processing Principle v3
 
 This applies to all work in this workspace: decomposition, implementation, running gates, testing, acceptance, chain writes, reporting and dispatch.
@@ -97,9 +107,10 @@ This applies to all work in this workspace: decomposition, implementation, runni
 3. Record red results; do not fix them. When gates, tests or acceptance within a batch turn up a red result or a defect, it only goes on this batch's problem list: do not stop to fix it, do not rerun gates for it, and do not open a work item for each one. Once the merge is done, run the gates once and acceptance once at the end of the batch, dispose of the whole list in one pass, and after that run the relevant gates once more. Several findings with one root cause count as one. Only two things may interrupt a batch: a safety refusal, and a hard blocker that makes further work impossible.
 4. Generated output is regenerated at the end of the batch. Tool-generated things such as coverage baselines, proof artifacts, hook renderings and budget-ceiling raises are each done once at the end of the batch as a fixed closing step, not redone with every individual change.
 5. One chain write and one report per batch. Status transitions and annotations are written in one pass through the batch entry point. Items awaiting the Owner's decision are listed together in the closing report, each with a recommendation. Items that do not block the work are done first as recommended; the report echoes the choices made, and the Owner corrects them afterwards.
-6. Dispatch follows the batch stages. One agent for decomposition, one agent per package for implementation, one agent for integration and one agent for acceptance; acceptance may be split by Epic and run in parallel within the same batch. Do not dispatch an agent for a single step, and do not dispatch an agent to confirm a reading.
+6. Dispatch follows the batch stages. One agent for decomposition, one agent per package for implementation, one agent for integration and one agent for acceptance; acceptance may be split by Epic and run in parallel within the same batch. Do not dispatch an agent for a single step, and do not dispatch an agent to confirm a reading. Merging small rounds: when a round has no more than 2 implementation packages or only one acceptance slice, one main-tier agent does acceptance and judgment in one pass, still writes the three files of acceptance, judgment and lessons in their usual format, and writes the next round's decomposition file along the way, so no separate decomposition agent is dispatched; a round with two or more acceptance slices keeps acceptance split and run in parallel, with judgment and decomposition each done on their own. A round with no implementation package, only chain writes or documentation actions, dispatches no decomposition or acceptance agent: once the main thread has completed the actions, it dispatches one main-tier agent to read them back and judge.
 7. "Once" counts per round, not once for the whole session. Within a round (one batch), decomposition, the implementation of each package, integration, the gate roster, acceptance and judgment are each done once, not repeated for every red result. When a round is done, the problem list and the queued items that the judgment lists are the input to the next round, and the loop starts the next round at once (R41, R42 and so on), until the end state written in the goal is reached or all remaining work is blocked on decisions only the Owner can make. Between rounds, do not wait for the Owner's reply, do not change sessions, and do not report.
 8. Knowledge is captured per round. Beside its judgment report, each round's one judgment agent produces lessons.json with at most 5 entries, each carrying subject, summary, snippet, body, tags and the paths of its source evidence, and holding only facts and lessons newly established in that round. In the same round's chain write, the main thread records the entries one by one as cards with the engine's knowledge-capture and reads each one back; a card the budget refuses is recorded as blocked and written after the migration. Capture does not rely on the Stop hook's marker lines.
+9. Evidence is read in excerpts. Governance agents and the main thread read only the excerpt files, section numbers or line ranges that the dispatch names, and do not read decomposition, plan, judgment, ledger or routing files whole; tool output is first written to a file and then read in as needed, no more than 200 lines at a time; a file larger than 32 KB is not read whole, and the host's read guard refuses such a read and says how to read it instead.
 
 A cycle in which fixing one red result turns up another is itself a sign that this principle is being broken: stop, list everything, then act.
 

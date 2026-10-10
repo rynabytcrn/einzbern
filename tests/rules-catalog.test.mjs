@@ -11,6 +11,10 @@
 // INIT-053 R48 (MIN-242 D10, the Owner's fifth round): batch v3 gains clause 8 (knowledge is captured
 // per round) at the same version; the Chinese fixture is the archive again, byte for byte, and the
 // English of clause 8 is an agent's translation that awaits the Owner's correction.
+// INIT-053 R52 (MIN-246 D11): batch v3 gains the merging of small rounds at the end of clause 6 and
+// clause 9 (evidence is read in excerpts) at the same version; the Chinese fixture is the archive
+// again, byte for byte, batch-v3-rev3 keeps the R48 text in both languages, and the English of both
+// additions is an agent's translation that awaits the Owner's correction.
 
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -95,21 +99,34 @@ test("ruleBody gives the Chinese body when artifact.language is zh-CN and the En
 });
 
 // The old bodies remain applicable to enabled v2 projects until an explicit upgrade. The Owner's
-// revisions of v3 add clause 7 (INIT-053 R40) and clause 8 (INIT-053 R48, MIN-242 D10) to the six
-// principles at the same version.
-test("INIT-053 R1-R5, R40, R48: v3 preserves the six principles in both languages, adds clauses 7 and 8, and adds communication and waiting", async () => {
+// revisions of v3 add clause 7 (INIT-053 R40), clause 8 (INIT-053 R48, MIN-242 D10), and the merging
+// of small rounds at the end of clause 6 with clause 9 (INIT-053 R52, MIN-246 D11) to the six
+// principles at the same version. Clause 6 is compared as it stood before its addition, the text
+// batch-v3-rev3 keeps.
+test("INIT-053 R1-R5, R40, R48, R52: v3 preserves the six principles in both languages, adds clauses 7, 8 and 9 and the end of clause 6, and adds communication and waiting", async () => {
   for (const language of LANGUAGES) {
     const previous = await readFile(join(fixtures, `batch-v2.${language}.md`), "utf8");
+    const rev3 = await readFile(join(fixtures, `batch-v3-rev3.${language}.md`), "utf8");
     const current = builtInRule("batch").body[language];
     const heading = language === "zh" ? "### 代理通信与等待" : "### Agent communication and waiting";
     const principles = current.split(heading)[0].split("\n");
+    const clause6 = principles.filter((line) => line.startsWith("6. "));
     const clause7 = principles.filter((line) => line.startsWith("7. "));
     const clause8 = principles.filter((line) => line.startsWith("8. "));
+    const clause9 = principles.filter((line) => line.startsWith("9. "));
+    assert.equal(clause6.length, 1, `${language}: one clause 6`);
     assert.equal(clause7.length, 1, `${language}: one clause 7`);
     assert.equal(clause8.length, 1, `${language}: one clause 8`);
-    assert.equal(principles.indexOf(clause7[0]), principles.findIndex((line) => line.startsWith("6. ")) + 1, `${language}: clause 7 follows clause 6`);
+    assert.equal(clause9.length, 1, `${language}: one clause 9`);
+    assert.equal(principles.indexOf(clause7[0]), principles.indexOf(clause6[0]) + 1, `${language}: clause 7 follows clause 6`);
     assert.equal(principles.indexOf(clause8[0]), principles.indexOf(clause7[0]) + 1, `${language}: clause 8 follows clause 7`);
-    assert.equal(principles.filter((line) => line !== clause7[0] && line !== clause8[0]).join("\n").trimEnd(), previous.replace("v2", "v3").trimEnd());
+    assert.equal(principles.indexOf(clause9[0]), principles.indexOf(clause8[0]) + 1, `${language}: clause 9 follows clause 8`);
+    const clause6Before = rev3.split("\n").find((line) => line.startsWith("6. "));
+    assert.ok(clause6[0].startsWith(clause6Before) && clause6[0].length > clause6Before.length, `${language}: clause 6 keeps its rev 3 text and adds to its end`);
+    const clause6Addition = clause6[0].slice(clause6Before.length);
+    const asBefore = (line) => (line === clause6[0] ? clause6Before : line);
+    assert.equal(current.split("\n").filter((line) => line !== clause9[0]).map(asBefore).join("\n"), rev3, `${language}: R52 changes the end of clause 6 and adds clause 9, and nothing else`);
+    assert.equal(principles.filter((line) => line !== clause7[0] && line !== clause8[0] && line !== clause9[0]).map(asBefore).join("\n").trimEnd(), previous.replace("v2", "v3").trimEnd());
     for (const fragment of language === "zh"
       ? ["「一次」按轮计", "不是整个会话只做一轮", "各做一遍", "不逐红重复", "下一轮的输入", "立即开下一轮", "goal 写明的终态", "只有 Owner 能做的决定", "不等 Owner 答复", "不换会话", "不汇报"]
       : ["\"Once\" counts per round", "not once for the whole session", "each done once", "not repeated for every red result", "input to the next round", "starts the next round at once", "end state written in the goal", "decisions only the Owner can make", "do not wait for the Owner's reply", "do not change sessions", "do not report"]) {
@@ -119,6 +136,16 @@ test("INIT-053 R1-R5, R40, R48: v3 preserves the six principles in both language
       ? ["知识采集按轮", "单名判断代理", "lessons.json", "subject、summary、snippet、body、tags", "来源证据路径", "本轮新确立的事实与教训", "不超过 5 条", "同一轮的链写", "knowledge-capture", "逐条落卡并读回", "被预算拒绝就记阻塞", "迁移后补写", "不依赖 Stop 钩子的标记行"]
       : ["Knowledge is captured per round", "one judgment agent", "lessons.json", "subject, summary, snippet, body, tags", "paths of its source evidence", "newly established in that round", "at most 5 entries", "same round's chain write", "knowledge-capture", "reads each one back", "budget refuses is recorded as blocked", "written after the migration", "does not rely on the Stop hook's marker lines"]) {
       assert.ok(clause8[0].includes(fragment), `${language} clause 8: ${fragment}`);
+    }
+    for (const fragment of language === "zh"
+      ? ["小轮合并", "实施包不超过 2 个", "验收只有一片", "验收与判断由一个主力档代理一次完成", "仍按原格式写验收、判断与 lessons 三份文件", "下一轮的拆分文件", "不另派拆分代理", "验收两片以上的轮维持验收分片并行、判断单独、拆分单独", "没有实施包、只有链写或文档动作的轮", "不派拆分与验收代理", "主线程完成动作后派一个主力档代理读回并判断"]
+      : ["Merging small rounds", "no more than 2 implementation packages", "only one acceptance slice", "one main-tier agent does acceptance and judgment in one pass", "three files of acceptance, judgment and lessons in their usual format", "next round's decomposition file", "no separate decomposition agent is dispatched", "two or more acceptance slices keeps acceptance split and run in parallel", "no implementation package, only chain writes or documentation actions", "no decomposition or acceptance agent", "one main-tier agent to read them back and judge"]) {
+      assert.ok(clause6Addition.includes(fragment), `${language} end of clause 6: ${fragment}`);
+    }
+    for (const fragment of language === "zh"
+      ? ["证据按摘录读", "治理代理与主线程", "派工指明的摘录文件、节号或行号范围", "不整读拆分、计划、判断、台账与 routing 文件", "工具输出先写进文件再按需读入", "每次不超过 200 行", "超过 32 KB 的文件不整读", "宿主的读取守卫会拒绝并给出改法"]
+      : ["Evidence is read in excerpts", "Governance agents and the main thread", "excerpt files, section numbers or line ranges that the dispatch names", "decomposition, plan, judgment, ledger or routing files whole", "first written to a file and then read in as needed", "no more than 200 lines at a time", "larger than 32 KB is not read whole", "host's read guard refuses"]) {
+      assert.ok(clause9[0].includes(fragment), `${language} clause 9: ${fragment}`);
     }
     const clauses = current.split(heading)[1];
     for (const fragment of language === "zh"

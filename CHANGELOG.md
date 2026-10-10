@@ -5,6 +5,14 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Release and Repository Tooling
+
+The CI workflow's `verify` job may run for 45 minutes instead of 15, because `Verify P1 offline` and
+`Verify portal remediation train` together take longer than 15 minutes (TCRN-CROSS-MIN-254 D6,
+INIT-053 R55). The runs for the four pushes to `main` after 2.0.0 were each cancelled at the
+15-minute limit before the job finished. The job's steps, their commands and their names are
+unchanged, and the `lessons` job keeps its 5 minutes.
+
 ## 2.0.2
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.0.2. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

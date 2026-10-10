@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import nodeTest from "node:test";
@@ -19,21 +19,7 @@ function test(name, optionsOrBody, maybeBody) {
 import { inspectPlatform } from "../scripts/platform-doctor.mjs";
 import { INSTALL_MANIFEST } from "../dist/build/packages/core/src/index.js";
 
-const FIXTURE_COMMIT = "f".repeat(40);
 const launchdLabel = "com.tcrn.platform.local-snapshot";
-
-function syntheticRoster(count = 7) {
-  return {
-    schemaVersion: "tcrn.acceptance-gate-groups.v1",
-    groups: Array.from({ length: count }, (_, index) => ({
-      id: `group-${index}`,
-      title: `Group ${index}`,
-      repository: "fixture",
-      command: "pnpm fixture",
-      proves: "fixture",
-    })),
-  };
-}
 
 // Complete platform fixture following the existing test pattern. TCRN-CROSS-INIT-053 R48 (PB-3): it
 // carries its own empty home beside the platform root, and every case hands it to inspectPlatform as
@@ -49,17 +35,6 @@ async function minimalFixture(context) {
   await writeFile(join(root, "AGENTS.md"), "fixture\n");
   await writeFile(join(root, "CLAUDE.md"), "@AGENTS.md\n");
   await mkdir(join(root, ".tcrn-workspace", "cross-project", "workspace"), { recursive: true });
-  const roster = syntheticRoster(7);
-  await mkdir(join(root, "platform-docs"), { recursive: true });
-  await writeFile(join(root, "platform-docs", "acceptance-gate-groups.json"), `${JSON.stringify(roster, null, 2)}\n`);
-  const recordedAt = new Date((await stat(join(root, "platform-docs", "acceptance-gate-groups.json"))).mtimeMs).toISOString();
-  await writeFile(
-    join(root, "platform-docs", "acceptance-verdicts.json"),
-    `${JSON.stringify({
-      schemaVersion: "tcrn.acceptance-verdicts.v1",
-      verdicts: Object.fromEntries(roster.groups.map((group) => [group.id, { verdict: "green", recordedAt, commit: FIXTURE_COMMIT }])),
-    }, null, 2)}\n`
-  );
   return { root, home };
 }
 

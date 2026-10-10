@@ -55,7 +55,12 @@ describe("STORY-209 source to new-rule conservation", () => {
     assert.deepEqual(rule.supersededBy, [
       "TCRN-CROSS-MIN-ACCEPTANCE-LANES",
       "TCRN-CROSS-MIN-172",
+      "TCRN-CROSS-MIN-227",
     ]);
+    // TCRN-CROSS-SUB-373: the roster left the platform documents; the retirement lands on the
+    // gate declarations and the gates-run done criterion (TCRN-CROSS-STORY-485).
+    assert.match(rule.landing, /gates-done\.ts/u);
+    assert.doesNotMatch(`${rule.landing} ${rule.strictnessProof}`, /acceptance-verdicts\.json|platform-docs\/acceptance-gate-groups/u);
     assert.ok(registry.sourceInventory.some((entry) =>
       entry.source === "chain:cross-project:TCRN-CROSS-MIN-172"
       && entry.rules.includes("STORY-COMPLETION-LINKS")));

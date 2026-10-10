@@ -26,7 +26,6 @@ export const GATE_PLAN_INTEGRITY_VERSION = "tcrn.gate-plan-integrity.v1";
 export const NATIVE_IMPLEMENTATION_RESULT_VERSION = "tcrn.native-implementation-result.v1";
 export const BATCH_PHASES = Object.freeze(["development", "candidate-final", "publication", "merge-sensitive"]);
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const defaultRosterPath = resolve(repositoryRoot, "../../platform-docs/acceptance-gate-groups.json");
 const containmentPath = resolve(repositoryRoot, "scripts/policy/gate-containment.json");
 
 export const GATE_RECEIPT_AUTHORITY_VERSION = "tcrn.gate-receipt-authority.v1";
@@ -200,10 +199,10 @@ function runnerGovernanceNotices(result) {
  * group's acceptedExceptions. It passes only when its JSON result names failing checks and
  * every one of them carries a reason code that group accepts; any other red, an unreadable
  * result, or another group's exception fails it. The accepted codes are returned so the
- * receipt says what was accepted. The roster is the checked-in acceptance-gate-groups.json
- * unless a caller passes one explicitly (tests).
+ * receipt says what was accepted. The roster is an explicit input of the caller: the platform
+ * documents no longer carry one (TCRN-CROSS-SUB-373), and with none no exception is accepted.
  */
-export function applyRosterExceptions(gateId, result, roster = readRosterForExceptions()) {
+export function applyRosterExceptions(gateId, result, roster = null) {
   if (result?.ok === true) return { result, acceptedExceptions: [] };
   const accepted = rosterAcceptedCodes(roster, gateId);
   if (accepted.size === 0) return { result, acceptedExceptions: [] };
@@ -214,10 +213,6 @@ export function applyRosterExceptions(gateId, result, roster = readRosterForExce
   return { result: { ...result, ok: true }, acceptedExceptions: [...new Set(failing.map((check) => check.reasonCode))].sort() };
 }
 
-function readRosterForExceptions() {
-  try { return JSON.parse(readFileSync(defaultRosterPath, "utf8")); } catch { return null; }
-}
-
 function rosterAcceptedCodes(roster, gateId) {
   return new Set((roster?.groups?.find((group) => group?.id === gateId)?.acceptedExceptions ?? []).map((exception) => exception?.reasonCode).filter((code) => typeof code === "string" && code.length > 0));
 }
@@ -225,16 +220,19 @@ function rosterAcceptedCodes(roster, gateId) {
 /**
  * TCRN-CROSS-INC-383 (STORY-460 AC3, #240 B2): a receipt completed by a roster exception.
  * It is completed and ok with a non-zero exit code, names the codes it accepted, and every
- * one of them is accepted for its gate by the roster re-read here from the checked-in path;
- * neither the receipt nor a caller decides what was accepted. The trusted terminal artifact,
- * the measured runner row and evidence reuse all ask this one predicate.
+ * one of them is accepted for its gate by the roster re-read here from the path the executing
+ * call names; neither the receipt nor the issuing call decides what was accepted. The trusted
+ * terminal artifact, the measured runner row and evidence reuse all ask this one predicate.
+ * The path is an explicit input (TCRN-CROSS-SUB-373): where none is named, no exception is
+ * accepted and such a receipt is not trusted.
  */
-function completedByRosterException(receipt, gateId, rosterPath = defaultRosterPath) {
+function completedByRosterException(receipt, gateId, rosterPath = null) {
   if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) return false;
   if (String(receipt.status ?? "").toLowerCase() !== "completed" || receipt.ok !== true) return false;
   if (!Number.isSafeInteger(receipt.exitCode) || receipt.exitCode === 0) return false;
   const claimed = receipt.acceptedExceptions;
   if (typeof gateId !== "string" || !Array.isArray(claimed) || claimed.length === 0) return false;
+  if (typeof rosterPath !== "string" || rosterPath.length === 0) return false;
   let roster;
   try { roster = JSON.parse(readFileSync(rosterPath, "utf8")); } catch { return false; }
   const accepted = rosterAcceptedCodes(roster, gateId);
@@ -242,7 +240,7 @@ function completedByRosterException(receipt, gateId, rosterPath = defaultRosterP
 }
 
 export function issueGateReceipt(authority, { entry, result: rawResult, inputs, invocation, roster } = {}) {
-  const { result, acceptedExceptions } = rawResult && typeof rawResult === "object" && entry && typeof entry.id === "string" ? applyRosterExceptions(entry.id, rawResult, roster === undefined ? readRosterForExceptions() : roster) : { result: rawResult, acceptedExceptions: [] };
+  const { result, acceptedExceptions } = rawResult && typeof rawResult === "object" && entry && typeof entry.id === "string" ? applyRosterExceptions(entry.id, rawResult, roster ?? null) : { result: rawResult, acceptedExceptions: [] };
   const state = receiptAuthorityState(authority);
   if (state === null) throw planError("GATE_RECEIPT_AUTHORITY_REQUIRED", "a code-owned receipt authority is required");
   if (!entry || typeof entry.id !== "string" || entry.id.trim().length === 0) throw planError("GATE_RECEIPT_ENTRY_INVALID", "gate entry id");
@@ -759,7 +757,7 @@ function evidenceValue(evidence, key) {
   return evidence?.[key] ?? evidence?.result?.[key];
 }
 
-function trustedArtifactIdentity(candidate, { expectedInputs = null, gateId = null, expectedCommand = null, expectedInvocation = null, expectedPhase = null, authority = null, rosterPath = defaultRosterPath } = {}) {
+function trustedArtifactIdentity(candidate, { expectedInputs = null, gateId = null, expectedCommand = null, expectedInvocation = null, expectedPhase = null, authority = null, rosterPath = null } = {}) {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
   const artifactPath = batchString(candidate.path ?? candidate.file ?? candidate.storePath ?? candidate.artifactPath);
   const digest = batchString(candidate.sha256 ?? candidate.digest ?? candidate.hash);
@@ -816,7 +814,7 @@ function trustedArtifactIdentity(candidate, { expectedInputs = null, gateId = nu
   }
 }
 
-function terminalEvidenceIdentity(evidence, { requireTrusted = false, expectedCommand = null, expectedInvocation = null, expectedPhase = null, authority = null, rosterPath = defaultRosterPath } = {}) {
+function terminalEvidenceIdentity(evidence, { requireTrusted = false, expectedCommand = null, expectedInvocation = null, expectedPhase = null, authority = null, rosterPath = null } = {}) {
   const candidates = [evidence?.terminalEvidence, evidence?.runnerEvidence, evidence?.receipt, evidence?.artifact, evidence?.result?.terminalEvidence, evidence?.result?.receipt];
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
@@ -2564,7 +2562,7 @@ export function recordExecution(plan, results, { blocked: blockedOverride, roste
   return next;
 }
 
-function executionPlanProblems(plan, { rosterPath = defaultRosterPath } = {}) {
+function executionPlanProblems(plan, { rosterPath = null } = {}) {
   const problems = [];
   const integrity = plan?.integrity;
   if (!integrity || integrity.schemaVersion !== GATE_PLAN_INTEGRITY_VERSION) return ["execution integrity envelope is missing"];
@@ -2582,10 +2580,14 @@ function executionPlanProblems(plan, { rosterPath = defaultRosterPath } = {}) {
     if (JSON.stringify(integrity.coveredChildren ?? []) !== JSON.stringify(context.coveredChildren ?? [])) problems.push("containment coverage authority changed after planning");
   }
   // The integrity envelope is evidence, not authority.  Re-derive the root
-  // command bindings from the checked-in roster and containment declaration so
-  // a caller cannot edit selected/gates/bindings together and then reseal the
-  // public plan digest around an unrelated command.
+  // command bindings from the roster the caller names and the checked-in
+  // containment declaration so a caller cannot edit selected/gates/bindings
+  // together and then reseal the public plan digest around an unrelated command.
+  // The roster is an explicit input (TCRN-CROSS-SUB-373): the platform documents
+  // no longer carry one, so without a path the plan is refused rather than read
+  // from a default location.
   try {
+    if (typeof rosterPath !== "string" || rosterPath.length === 0) throw planError("GATE_PLAN_ROSTER_REQUIRED", "the acceptance roster path is an explicit input");
     const roster = JSON.parse(readFileSync(rosterPath, "utf8"));
     const containment = JSON.parse(readFileSync(containmentPath, "utf8"));
     const authority = validateRoster(roster, containment);
@@ -2632,7 +2634,7 @@ function executionPlanProblems(plan, { rosterPath = defaultRosterPath } = {}) {
   return problems;
 }
 
-function measuredResultProblems(row, expectedInputs, { requireTrusted = false, expectedCommand = null, expectedInvocation = null, expectedGateId = null, authority = null, rosterPath = defaultRosterPath } = {}) {
+function measuredResultProblems(row, expectedInputs, { requireTrusted = false, expectedCommand = null, expectedInvocation = null, expectedGateId = null, authority = null, rosterPath = null } = {}) {
   const problems = [];
   const rowInputs = row?.inputs ?? row?.inputDigests;
   if (!hasCompleteInputKey(rowInputs) || JSON.stringify(completeInputKey(rowInputs)) !== JSON.stringify(completeInputKey(expectedInputs))) problems.push("runner did not return the planned four input digests");
@@ -2761,11 +2763,17 @@ async function main() {
   const phaseIndex = process.argv.indexOf("--phase");
   const phase = phaseIndex >= 0 ? process.argv[phaseIndex + 1] : "candidate-final";
   const rosterIndex = process.argv.indexOf("--roster");
-  const rosterPath = rosterIndex >= 0 ? resolve(process.argv[rosterIndex + 1]) : defaultRosterPath;
+  const rosterArgument = rosterIndex >= 0 ? process.argv[rosterIndex + 1] : undefined;
   const changedIndex = process.argv.indexOf("--changed-files");
   const changedFiles = changedIndex >= 0 ? process.argv[changedIndex + 1].split(",") : undefined;
-  const [roster, containment] = await Promise.all([JSON.parse(await readFile(rosterPath, "utf8")), JSON.parse(await readFile(containmentPath, "utf8"))]);
-  const result = phase === "development"
+  const development = phase === "development";
+  // The acceptance roster is an explicit input (TCRN-CROSS-SUB-373): the platform documents no
+  // longer carry one, so a final plan without --roster is refused instead of read from a default.
+  if (!development && (typeof rosterArgument !== "string" || rosterArgument.length === 0 || rosterArgument.startsWith("--"))) {
+    throw planError("GATE_PLAN_ROSTER_REQUIRED", "--roster <path> is required for a final gate plan");
+  }
+  const [roster, containment] = await Promise.all([development ? null : JSON.parse(await readFile(resolve(rosterArgument), "utf8")), JSON.parse(await readFile(containmentPath, "utf8"))]);
+  const result = development
     ? buildDevelopmentPlan({ changedFiles: changedFiles ?? [] })
     : buildFinalGatePlan({ roster, containment, phase, changedFiles });
   const executable = result.executable !== false && (result.blocked ?? []).length === 0;

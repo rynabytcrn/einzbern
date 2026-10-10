@@ -5,6 +5,9 @@
 // Hooks only qualify or notify.  This entry acquires fresh native work, process,
 // dependency and candidate observations, builds the same dynamic gate plan used
 // by the planner API, and executes only its selected top-level roots serially.
+// The acceptance roster is an explicit input of the request (`rosterPath`): the
+// platform documents no longer carry one (TCRN-CROSS-SUB-373), so without it the
+// entry answers BATCH_ROSTER_REQUIRED instead of reading a default location.
 
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
@@ -30,7 +33,6 @@ const repositoryRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const platformRoot = resolve(repositoryRoot, "../..");
 const chainContainer = [".tcrn", "workspace"].join("-");
 const workspaceDefault = resolve(platformRoot, chainContainer, "cross-project/workspace");
-const rosterPath = resolve(platformRoot, "platform-docs/acceptance-gate-groups.json");
 const containmentPath = resolve(repositoryRoot, "scripts/policy/gate-containment.json");
 const sourceArchivePath = resolve(repositoryRoot, "dist/source/einzbern-source.tar");
 const node = process.execPath;
@@ -346,7 +348,7 @@ async function observeHostRuntime({ nativeState } = {}) {
   };
 }
 
-function codeOwnedImpact({ baselineCommit = PACK_SOURCE_BASELINE_COMMIT } = {}) {
+function codeOwnedImpact({ baselineCommit = PACK_SOURCE_BASELINE_COMMIT, rosterPath = null } = {}) {
   const sourceDelta = sourceDeltaFiles(baselineCommit);
   const changedFiles = sourceDelta.files;
   const source = currentSourceDigest(changedFiles, { baselineCommit, baseline: sourceDelta.baseline, head: sourceDelta.head });
@@ -364,8 +366,9 @@ function codeOwnedImpact({ baselineCommit = PACK_SOURCE_BASELINE_COMMIT } = {}) 
   const crossRepoChanges = [];
   let baselineBytes = Buffer.alloc(0);
   try {
+    if (typeof rosterPath !== "string" || rosterPath.length === 0) throw new Error("roster path not supplied");
     baselineBytes = Buffer.concat([
-      readFileSync(resolve(platformRoot, "platform-docs/acceptance-gate-groups.json")),
+      readFileSync(rosterPath),
       readFileSync(containmentPath),
     ]);
   } catch {
@@ -399,7 +402,7 @@ function codeOwnedImpact({ baselineCommit = PACK_SOURCE_BASELINE_COMMIT } = {}) 
   };
 }
 
-function loadGateDeclarations() {
+function loadGateDeclarations(rosterPath) {
   const roster = JSON.parse(readFileSync(rosterPath, "utf8"));
   const containment = JSON.parse(readFileSync(containmentPath, "utf8"));
   const contained = buildContainedExecutionPlan(containment);
@@ -413,14 +416,17 @@ function rootInvocation(id, command) {
   return null;
 }
 
-function writeRunnerReceipt(authority, entry, result, inputs, invocation) {
-  return issueGateReceipt(authority, { entry, result, inputs, invocation });
+function writeRunnerReceipt(authority, entry, result, inputs, invocation, roster = null) {
+  return issueGateReceipt(authority, { entry, result, inputs, invocation, roster });
 }
 
-async function executeDynamicRoots(qualification) {
-  const { roster, containment, contained } = loadGateDeclarations();
+async function executeDynamicRoots(qualification, { rosterPath = null } = {}) {
+  if (typeof rosterPath !== "string" || rosterPath.length === 0) {
+    return { ok: false, status: "not-verifiable", reasonCode: "BATCH_ROSTER_REQUIRED", executed: [] };
+  }
+  const { roster, containment, contained } = loadGateDeclarations(rosterPath);
   const baselineCommit = typeof PACK_SOURCE_BASELINE_COMMIT === "undefined" ? undefined : PACK_SOURCE_BASELINE_COMMIT;
-  const impact = codeOwnedImpact(baselineCommit === undefined ? {} : { baselineCommit });
+  const impact = codeOwnedImpact(baselineCommit === undefined ? { rosterPath } : { baselineCommit, rosterPath });
   const receiptAuthority = getProductionReceiptAuthority();
   const priorEvidence = receiptAuthority === null || typeof gateReceiptEvidence === "undefined" ? [] : gateReceiptEvidence(receiptAuthority);
   const phase = ["candidate-final", "publication", "merge-sensitive"].includes(qualification.stage) ? qualification.stage : "candidate-final";
@@ -453,8 +459,8 @@ async function executeDynamicRoots(qualification) {
     const invocation = entry.invocation ?? rootInvocation(entry.id, entry.command);
     if (invocation === null || entry.rootId !== entry.id) return { id: entry.id, status: "failed", ok: false, exitCode: null, reasonCode: "BATCH_ROOT_NOT_REGISTERED" };
     const result = run(invocation.executable, invocation.argv ?? invocation.args, { cwd: invocation.cwd, timeout: 30 * 60_000, maxBuffer: 64 * 1024 * 1024 });
-    return writeRunnerReceipt(receiptAuthority, entry, result, entry.inputs ?? impact.inputs, invocation);
-  }, { getInputs: async () => codeOwnedImpact(baselineCommit === undefined ? {} : { baselineCommit }).inputs });
+    return writeRunnerReceipt(receiptAuthority, entry, result, entry.inputs ?? impact.inputs, invocation, roster);
+  }, { getInputs: async () => codeOwnedImpact(baselineCommit === undefined ? { rosterPath } : { baselineCommit, rosterPath }).inputs, rosterPath });
   const completed = execution.executable === true && execution.blocked?.length === 0;
   const governanceNotices = execution.executed?.flatMap((row) => row.governanceNotices ?? row.terminalEvidence?.governanceNotices ?? []) ?? [];
   return {
@@ -490,7 +496,8 @@ export async function executeProductionBatch(request = {}) {
     securityVeto: boundRequest.securityVeto,
     permissionDenied: boundRequest.permissionDenied,
   };
-  return executeOperationalBatch(input, executeDynamicRoots, { readNative: readNativeBatchState, observeRuntime: observeHostRuntime });
+  const rosterPath = typeof boundRequest.rosterPath === "string" && boundRequest.rosterPath.length > 0 ? resolve(boundRequest.rosterPath) : null;
+  return executeOperationalBatch(input, (qualification) => executeDynamicRoots(qualification, { rosterPath }), { readNative: readNativeBatchState, observeRuntime: observeHostRuntime });
 }
 
 function readStdin() {

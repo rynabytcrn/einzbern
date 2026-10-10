@@ -23,10 +23,7 @@ import {
   compareEngineVersions,
   WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
 } from "../dist/build/packages/core/src/index.js";
-// Digests are computed by the engine's own canonicaliser rather than reproduced here. A
-// second implementation of a digest is a second answer waiting to disagree with the first
-// (TCRN-CROSS-INC-219).
-import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
+import { PROTOCOL_LIMITS } from "../dist/build/packages/protocol/src/index.js";
 // Which hook commands are Einzbern's launcher or a script of the old harness: the engine's own
 // answer, read from the module that renders and reconciles host hooks (scripts/host-render.mjs
 // imports it the same way).
@@ -34,44 +31,9 @@ import { HOST_HOOK_FILES, isEinzbernHookCommand, isLegacyHookCommand } from "../
 import { toPosixPath, walkFiles } from "./lib/files.mjs";
 
 const execFileAsync = promisify(execFile);
-const PLATFORM_DOCS_RELATIVE = "platform-docs";
-const ACCEPTANCE_GROUP_IDS = [
-  "engine-suite",
-  "engine-p1",
-  "engine-release",
-  "platform-layout",
-  "chain-validate",
-  "product-gates",
-];
-const ACCEPTANCE_TOP_LEVEL_GROUP_IDS = ["engine-release", "platform-layout", "product-gates"];
-const ACCEPTANCE_BATCH_STATUS = Object.freeze({
-  "engine-suite": { firstBatch: "required", secondBatch: "required" },
-  "engine-p1": { firstBatch: "required", secondBatch: "required" },
-  "engine-release": { firstBatch: "required", secondBatch: "required" },
-  "platform-layout": { firstBatch: "required", secondBatch: "required" },
-  "chain-validate": { firstBatch: "baseline-only", secondBatch: "required" },
-  "product-gates": { firstBatch: "conditional", secondBatch: "conditional" },
-});
-const PLATFORM_LAYOUT_SUBCHECKS = Object.freeze({
-  helperCopies: ["record-raw", "required-after-real-migration-and-installation"],
-  acceptanceVerdicts: ["preserve-stale-red", "require-candidate-bound-verdicts"],
-  installWiring: ["record-raw", "required-after-real-installation"],
-  hooks: ["record-raw", "required-after-real-host-wiring"],
-  deploymentFreshness: ["record-raw", "required-after-real-installation"],
-  launchd: ["accepted-existing-exception-only", "accepted-existing-exception-only"],
-  harnessSurface: ["record-host-specific-raw-state", "unresolved-host-specific-reconciliation"],
-});
 
 function check(name, ok, details = {}) {
   return { name, ok, ...details };
-}
-
-function hasExactKeys(value, expected) {
-  return value !== null
-    && typeof value === "object"
-    && !Array.isArray(value)
-    && Object.keys(value).length === expected.length
-    && expected.every((key) => Object.hasOwn(value, key));
 }
 
 async function existingPath(path) {
@@ -81,13 +43,6 @@ async function existingPath(path) {
     if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return null;
     throw error;
   }
-}
-
-// INC-247: platform-level documents live at the container root. The classification
-// folder is deliberately not a fallback: a future move must fail visibly rather than
-// silently reintroduce a second authority.
-async function platformDocsRoot(root) {
-  return { relativePath: PLATFORM_DOCS_RELATIVE, path: join(root, PLATFORM_DOCS_RELATIVE) };
 }
 
 function expandTemplate(template, platformRoot, homeRoot) {
@@ -101,97 +56,10 @@ function manifestPath(manifest, id, platformRoot, homeRoot) {
   return entry === undefined ? null : expandTemplate(entry.pathTemplate, platformRoot, homeRoot);
 }
 
-const CHAIN_CONTAINER_REPOSITORY = "chain container";
 const CHAIN_CONTAINER_DIRECTORY = [".tcrn", "workspace"].join("-");
 const WORKFLOW_DIRECTORY = LEGACY_CONTROL_DIRECTORY;
 // An installed Helper names the engine it was pinned to, under the old or the new product name.
 const HELPER_PIN_PATTERN = new RegExp(`\\b(?:Supports|Targets|Targets the) (?:${LEGACY_BRAND_NAME}|${BRAND.engine.name}) \`v([^\`\\s]+)\``, "gu");
-const ACCEPTANCE_BINDING_SCHEMA = "tcrn.acceptance-binding.v1";
-const CHAIN_VALIDATE_GROUP_ID = "chain-validate";
-
-function pathInside(root, candidate) {
-  const relativePath = relative(root, candidate);
-  return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !parse(relativePath).root);
-}
-
-async function resolveGitAcceptanceBinding(root, repository) {
-  if (typeof repository !== "string" || repository.trim().length === 0 || repository.startsWith("/")) {
-    return { ok: false, reasonCode: "PLATFORM_ACCEPTANCE_REPOSITORY_UNRESOLVED", repository, reason: "repository must be a relative path" };
-  }
-  const requested = resolve(root, repository);
-  if (!pathInside(root, requested)) {
-    return { ok: false, reasonCode: "PLATFORM_ACCEPTANCE_REPOSITORY_UNRESOLVED", repository, reason: "repository escapes platform root" };
-  }
-  let repositoryRoot;
-  try {
-    repositoryRoot = await realpath(requested);
-  } catch (error) {
-    return { ok: false, reasonCode: "PLATFORM_ACCEPTANCE_REPOSITORY_UNRESOLVED", repository, reason: error?.code ?? "repository path is unreadable" };
-  }
-  const stats = await existingPath(repositoryRoot);
-  if (!stats?.isDirectory()) {
-    return { ok: false, reasonCode: "PLATFORM_ACCEPTANCE_REPOSITORY_UNRESOLVED", repository, reason: "repository is not a directory" };
-  }
-  if (!pathInside(root, repositoryRoot)) {
-    return { ok: false, reasonCode: "PLATFORM_ACCEPTANCE_REPOSITORY_UNRESOLVED", repository, reason: "resolved repository escapes platform root" };
-  }
-  try {
-    const commit = (await execFileAsync("git", ["-C", repositoryRoot, "rev-parse", "--verify", "HEAD"], { timeout: 30_000 })).stdout.trim();
-    if (!/^[0-9a-f]{40}$/iu.test(commit)) throw new Error("git HEAD is not a full object id");
-    return { ok: true, binding: { schemaVersion: ACCEPTANCE_BINDING_SCHEMA, kind: "git", repository, commit } };
-  } catch (error) {
-    return { ok: false, reasonCode: "PLATFORM_ACCEPTANCE_REPOSITORY_UNRESOLVED", repository, reason: error?.code ?? error?.message ?? "git HEAD is unreadable" };
-  }
-}
-
-async function readChainPartitionBinding(root, partition) {
-  const workspaceRoot = join(root, CHAIN_CONTAINER_DIRECTORY, partition, "workspace");
-  const eventsRoot = join(workspaceRoot, WORKFLOW_DIRECTORY, "events");
-  try {
-    const workspace = JSON.parse(await readFile(join(workspaceRoot, WORKFLOW_DIRECTORY, "workspace.json"), "utf8"));
-    const eventFiles = (await readdir(eventsRoot)).filter((name) => /^\d+\.json$/u.test(name)).sort();
-    if (eventFiles.length === 0) throw new Error("chain has no event segments");
-    const segment = JSON.parse(await readFile(join(eventsRoot, eventFiles[eventFiles.length - 1]), "utf8"));
-    const events = Array.isArray(segment) ? segment : [segment];
-    const event = events.at(-1);
-    if (typeof workspace.workspaceId !== "string" || !/^[0-9a-f]{64}$/iu.test(event?.eventHash ?? "")) {
-      throw new Error("chain head identity is malformed");
-    }
-    return { partition, workspaceId: workspace.workspaceId, headEventHash: event.eventHash };
-  } catch (error) {
-    return { error: error?.code ?? error?.message ?? "chain partition is unreadable", partition };
-  }
-}
-
-async function resolveChainAcceptanceBinding(root, repository) {
-  const chainRoot = join(root, CHAIN_CONTAINER_DIRECTORY);
-  try {
-    const entries = await readdir(chainRoot, { withFileTypes: true });
-    const partitions = [];
-    for (const entry of entries.filter((candidate) => candidate.isDirectory()).sort((left, right) => left.name.localeCompare(right.name))) {
-      const workspacePath = join(chainRoot, entry.name, "workspace");
-      const workspaceStats = await existingPath(workspacePath);
-      if (!workspaceStats?.isDirectory()) continue;
-      const identity = await readChainPartitionBinding(root, entry.name);
-      if (identity.error) return { ok: false, reasonCode: "PLATFORM_ACCEPTANCE_REPOSITORY_UNRESOLVED", repository, reason: `${identity.partition}: ${identity.error}` };
-      partitions.push(identity);
-    }
-    if (partitions.length === 0) throw new Error("chain container has no partition workspaces");
-    const bindingParts = partitions.map(({ partition, workspaceId, headEventHash }) => ({ partition, workspaceId, headEventHash }));
-    return {
-      ok: true,
-      binding: {
-        schemaVersion: ACCEPTANCE_BINDING_SCHEMA,
-        kind: "chain",
-        repository,
-        partitions: bindingParts,
-        digest: canonicalSha256(bindingParts),
-      },
-    };
-  } catch (error) {
-    return { ok: false, reasonCode: "PLATFORM_ACCEPTANCE_REPOSITORY_UNRESOLVED", repository, reason: error?.code ?? error?.message ?? "chain container is unreadable" };
-  }
-}
 
 // TCRN-CROSS-INC-251: chain validation measures the current event log and its
 // projections. It is cheap enough to run at doctor time, and unlike a recorded
@@ -299,79 +167,6 @@ export async function inspectChainValidation(root, options = {}) {
     source: "live engine validate",
   });
 }
-
-async function resolveAcceptanceBinding(root, group, options) {
-  // Test fixtures may inject the observed tree identity without creating real
-  // repositories. This is an explicit observation override, never a production
-  // fallback; the live path below always resolves group.repository itself.
-  const override = options.acceptanceBindings?.[group.id] ?? options.acceptanceBindings?.[group.repository];
-  if (override !== undefined) return { ok: true, binding: override };
-  // Retain the old synthetic-test hook so existing platform fixtures stay hermetic.
-  // It is only reachable when the caller explicitly supplies acceptanceHeadCommit.
-  if (options.acceptanceHeadCommit !== undefined) {
-    return { ok: true, binding: { schemaVersion: ACCEPTANCE_BINDING_SCHEMA, kind: "git", repository: group.repository, commit: options.acceptanceHeadCommit } };
-  }
-  if (group.repository === CHAIN_CONTAINER_REPOSITORY) return resolveChainAcceptanceBinding(root, group.repository);
-  return resolveGitAcceptanceBinding(root, group.repository);
-}
-
-function recordedAcceptanceBinding(entry, group, options) {
-  if (entry?.binding && typeof entry.binding === "object") return entry.binding;
-  // Legacy shape is accepted only by explicit synthetic fixtures. A real platform
-  // verdict without the machine-readable binding is unbound and must go red.
-  if (options.acceptanceHeadCommit !== undefined && typeof entry?.commit === "string") {
-    return { schemaVersion: ACCEPTANCE_BINDING_SCHEMA, kind: "git", repository: group.repository, commit: entry.commit };
-  }
-  return null;
-}
-
-function bindingIdentity(binding) {
-  if (binding?.kind === "git") return `git:${binding.repository}@${binding.commit ?? "<missing>"}`;
-  if (binding?.kind === "chain") return `chain:${binding.repository}@${binding.digest ?? "<missing>"}`;
-  return `<unbound:${typeof binding?.kind === "string" ? binding.kind : "missing"}>`;
-}
-
-function compareAcceptanceBindings(recorded, current) {
-  if (!recorded || !current || recorded.kind !== current.kind || recorded.repository !== current.repository) {
-    return { equal: false, changed: [] };
-  }
-  if (recorded.kind === "git") {
-    return { equal: recorded.commit === current.commit, changed: [{ recorded: recorded.commit, current: current.commit }] };
-  }
-  if (recorded.kind !== "chain" || !Array.isArray(recorded.partitions) || !Array.isArray(current.partitions)) {
-    return { equal: false, changed: [{ recorded: recorded.digest ?? null, current: current.digest ?? null }] };
-  }
-  const recordedByPartition = new Map(recorded.partitions.map((part) => [part.partition, part]));
-  const currentByPartition = new Map(current.partitions.map((part) => [part.partition, part]));
-  const changed = [];
-  for (const partition of new Set([...recordedByPartition.keys(), ...currentByPartition.keys()])) {
-    const before = recordedByPartition.get(partition);
-    const after = currentByPartition.get(partition);
-    if (!before || !after || before.workspaceId !== after.workspaceId || before.headEventHash !== after.headEventHash) {
-      changed.push({
-        partition,
-        recorded: before ? { workspaceId: before.workspaceId, headEventHash: before.headEventHash } : null,
-        current: after ? { workspaceId: after.workspaceId, headEventHash: after.headEventHash } : null,
-      });
-    }
-  }
-  if (changed.length === 0 && recorded.digest !== current.digest) changed.push({ partition: "<chain-digest>", recorded: recorded.digest ?? null, current: current.digest ?? null });
-  return { equal: changed.length === 0, changed };
-}
-
-// STORY-300 / TCRN-CROSS-MIN-ACCEPTANCE-LANES. The machine-checked acceptance lane
-// releases a work item to done on the groups this roster lists all being green, and
-// until 2026-08-19 that roster existed nowhere -- not in a repository, not in
-// the platform documents, not on the chain -- while forty-four records had already
-// landed against it. A criterion whose members are remembered rather than written is
-// the executor choosing which tests count, which is the thing that criterion exists
-// to replace.
-//
-// This checks the roster's shape, not that each command passes. Running another
-// repository's gates from here would be the engine reaching into a sibling's tree,
-// which the platform forbids outright; what this can settle is that the roster is
-// present, complete, and says for every group which repository proves it and how.
-// The rest is the operator's to run and the record's to cite.
 
 // TCRN-CROSS-STORY-361: the charter rule "no consumer, isolate it", with a leg that can
 // see whether it is being followed. `packages/core/src/index.ts` is this engine's public
@@ -598,324 +393,6 @@ async function chainEventCounts(root, options) {
     }
   }
   return counts;
-}
-
-// TCRN-CROSS-INC-234: the acceptance lane could not tell "green" from "nobody looked".
-//
-// TCRN-CROSS-MIN-ACCEPTANCE-LANES makes the groups this roster lists all being green
-// the criterion that releases machine-checkable work to done, and INC-232 wrote the roster
-// down because until then it existed nowhere. Both left the same hole: nothing consults
-// the roster at the moment it is supposed to bind. On 2026-08-19 the product-gates group
-// had been failing since the 17th -- AOS importing an engine module retired in v0.11.18 --
-// and six records landed done in that window against a criterion one of whose members was
-// red, because the criterion is honoured by the executor choosing to run it.
-//
-// This leg cannot verify a group is green; only running it can. What it can do is refuse
-// to let "not run" look like "passed", which is the failure that actually happened. Every
-// roster group needs a recorded verdict, recorded verdicts go stale, and a red one stays
-// visible, and the same honesty holds: the record is evidence that someone looked, never
-// proof they were right.
-//
-// STORY-304 replaced the staleness reference. It was 26 hours measured from the roster
-// file's mtime, which could never fire and varied by host; it is now the engine commit the
-// verdict names, compared against the commit being inspected. "Stale" therefore means
-// "recorded against a different tree" -- a question with one answer everywhere.
-
-async function inspectAcceptanceVerdicts(root, options) {
-  const docsRoot = await platformDocsRoot(root);
-  const rosterPath = join(docsRoot.path, "acceptance-gate-groups.json");
-  const verdictPath = join(docsRoot.path, "acceptance-verdicts.json");
-  let roster;
-  try {
-    roster = JSON.parse(await readFile(rosterPath, "utf8"));
-  } catch {
-    // acceptanceGateGroups already owns "the roster is missing or malformed"; reporting it
-    // twice would give one defect two owners and two arguments about who fixes it.
-    return check("acceptanceVerdicts", true, { comparable: false, reason: "no roster to check verdicts against" });
-  }
-  const allGroups = Array.isArray(roster?.groups) ? roster.groups.map((group) => group?.id).filter((id) => typeof id === "string") : [];
-  const groups = allGroups.filter((id) => id !== CHAIN_VALIDATE_GROUP_ID);
-  if (allGroups.length === 0) {
-    return check("acceptanceVerdicts", true, { comparable: false, reason: "no roster to check verdicts against" });
-  }
-  let document = options.acceptanceVerdicts;
-  if (document === undefined) {
-    try {
-      document = JSON.parse(await readFile(verdictPath, "utf8"));
-    } catch {
-      return check("acceptanceVerdicts", false, {
-        reasonCode: "PLATFORM_ACCEPTANCE_VERDICTS_MISSING",
-        groups: groups.length,
-        remedy: "run the groups this roster lists and record each verdict in platform-docs/acceptance-verdicts.json; an unrecorded run cannot be told from an unrun one",
-      });
-    }
-  }
-  // TCRN-CROSS-INC-250: a verdict is bound to the tree named by its roster entry.
-  // Git repositories use their full HEAD object id. The chain container has no git
-  // commit, so its binding is a content digest over every partition's workspace id
-  // and event-chain head hash. The chain version is deliberately not the identity:
-  // it is a counter that changes whenever the workflow records another fact.
-  const verdictsPresent = document?.verdicts && typeof document.verdicts === "object" && Object.keys(document.verdicts).length > 0;
-  const verdicts = document?.verdicts && typeof document.verdicts === "object" ? document.verdicts : {};
-  const groupsById = new Map((Array.isArray(roster?.groups) ? roster.groups : []).map((group) => [group?.id, group]));
-  const currentBindings = new Map();
-  const unresolved = [];
-  const liveGroupRecorded = Object.hasOwn(verdicts, CHAIN_VALIDATE_GROUP_ID);
-  if (verdictsPresent) {
-    for (const group of (Array.isArray(roster?.groups) ? roster.groups : []).filter((candidate) => candidate?.id !== CHAIN_VALIDATE_GROUP_ID)) {
-      const resolved = await resolveAcceptanceBinding(root, group, options);
-      if (!resolved.ok) {
-        unresolved.push({ group: group.id, repository: group.repository, reasonCode: resolved.reasonCode, reason: resolved.reason });
-      } else {
-        currentBindings.set(group.id, resolved.binding);
-      }
-    }
-  }
-  const missing = [];
-  const stale = [];
-  const failing = [];
-  const acceptedExceptions = [];
-  for (const id of groups) {
-    const entry = verdicts[id];
-    if (!entry || typeof entry.recordedAt !== "string" || typeof entry.verdict !== "string") {
-      missing.push(id);
-      continue;
-    }
-    if (entry.verdict !== "green") {
-      const reasonCode = typeof entry.detail === "string"
-        ? /(?:^|\s)reasonCode=([A-Z0-9_:-]+)(?:$|[\s;])/u.exec(entry.detail)?.[1]
-        : null;
-      const accepted = entry.verdict === "red"
-        && reasonCode !== null
-        && (Array.isArray(groupsById.get(id)?.acceptedExceptions)
-          ? groupsById.get(id).acceptedExceptions.find((candidate) => candidate?.reasonCode === reasonCode)
-          : null);
-      if (accepted) {
-        acceptedExceptions.push({ group: id, ...accepted });
-        continue;
-      }
-      failing.push({ group: id, verdict: entry.verdict, ...(typeof entry.detail === "string" ? { detail: entry.detail } : {}) });
-      continue;
-    }
-    const group = groupsById.get(id) ?? { id, repository: null };
-    const recordedBinding = recordedAcceptanceBinding(entry, group, options);
-    if (recordedBinding === null) {
-      stale.push({
-        group: id,
-        recordedAt: entry.recordedAt,
-        reason: options.acceptanceHeadCommit !== undefined
-          ? "verdict names no commit"
-          : "verdict names no machine-readable tree binding",
-      });
-      continue;
-    }
-    const currentBinding = currentBindings.get(id);
-    if (!currentBinding) continue;
-    const comparison = compareAcceptanceBindings(recordedBinding, currentBinding);
-    if (!comparison.equal) {
-      const staleEntry = {
-        group: id,
-        repository: group.repository,
-        recordedAt: entry.recordedAt,
-        recordedAgainst: options.acceptanceHeadCommit !== undefined && recordedBinding.kind === "git"
-          ? recordedBinding.commit?.slice(0, 12)
-          : bindingIdentity(recordedBinding),
-        current: options.acceptanceHeadCommit !== undefined && currentBinding.kind === "git"
-          ? currentBinding.commit?.slice(0, 12)
-          : bindingIdentity(currentBinding),
-        ...(comparison.changed.length > 0 ? { changed: comparison.changed } : {}),
-      };
-      if (options.acceptanceHeadCommit !== undefined && currentBinding.kind === "git") staleEntry.head = currentBinding.commit.slice(0, 12);
-      stale.push(staleEntry);
-    }
-  }
-  if (liveGroupRecorded || unresolved.length > 0 || missing.length > 0 || stale.length > 0 || failing.length > 0) {
-    return check("acceptanceVerdicts", false, {
-      reasonCode: "PLATFORM_ACCEPTANCE_LANE_UNPROVEN",
-      ...(liveGroupRecorded ? { liveGroupRecorded: CHAIN_VALIDATE_GROUP_ID } : {}),
-      ...(unresolved.length > 0 ? { unresolved } : {}),
-      ...(missing.length > 0 ? { missing } : {}),
-      ...(stale.length > 0 ? { stale } : {}),
-      ...(failing.length > 0 ? { failing } : {}),
-      ...(acceptedExceptions.length > 0 ? { acceptedExceptions } : {}),
-      remedy: "the machine-checked lane is not satisfied: a group is unrecorded, stale, or red, and a record of a run is not proof the run passed",
-    });
-  }
-  return check("acceptanceVerdicts", true, {
-    groups: groups.length,
-    liveGroups: [CHAIN_VALIDATE_GROUP_ID],
-    ...(acceptedExceptions.length > 0 ? { acceptedExceptions } : {}),
-    bindings: [...currentBindings.entries()].map(([group, binding]) => ({ group, kind: binding.kind, repository: binding.repository, identity: bindingIdentity(binding) })),
-    ...(options.acceptanceHeadCommit !== undefined ? { head: options.acceptanceHeadCommit.slice(0, 12) } : {}),
-  });
-}
-
-async function inspectAcceptanceGateGroups(root) {
-  const docsRoot = await platformDocsRoot(root);
-  const path = join(docsRoot.path, "acceptance-gate-groups.json");
-  let roster;
-  try {
-    roster = JSON.parse(await readFile(path, "utf8"));
-  } catch {
-    return check("acceptanceGateGroups", false, { reasonCode: "PLATFORM_ACCEPTANCE_ROSTER_MISSING", path: join(docsRoot.relativePath, "acceptance-gate-groups.json") });
-  }
-  if (roster?.schemaVersion !== "tcrn.acceptance-gate-groups.v1" || !Array.isArray(roster.groups)) {
-    return check("acceptanceGateGroups", false, { reasonCode: "PLATFORM_ACCEPTANCE_ROSTER_INVALID", detail: "schemaVersion or groups" });
-  }
-  const incomplete = roster.groups
-    .filter((group) => !["id", "title", "repository", "command", "proves"].every((field) => typeof group?.[field] === "string" && group[field].length > 0))
-    .map((group, index) => (typeof group?.id === "string" ? group.id : `#${index}`));
-  const ids = roster.groups.map((group) => group?.id);
-  const duplicated = ids.filter((id, index) => ids.indexOf(id) !== index);
-  const unexpectedGroups = ids.filter((id) => !ACCEPTANCE_GROUP_IDS.includes(id));
-  const missingGroups = ACCEPTANCE_GROUP_IDS.filter((id) => !ids.includes(id));
-  const orderedGroupMismatch = ids.length === ACCEPTANCE_GROUP_IDS.length && ids.some((id, index) => id !== ACCEPTANCE_GROUP_IDS[index]);
-  const invalidBatchApplicability = [];
-  for (const group of roster.groups) {
-    const expected = ACCEPTANCE_BATCH_STATUS[group?.id];
-    const applicability = group?.batchApplicability;
-    if (!expected || !applicability || typeof applicability !== "object" || Array.isArray(applicability)) {
-      invalidBatchApplicability.push(group?.id ?? "#unknown");
-      continue;
-    }
-    if (!hasExactKeys(applicability, ["firstBatch", "secondBatch"])) {
-      invalidBatchApplicability.push(`${group.id}.phaseKeys`);
-    }
-    for (const batch of ["firstBatch", "secondBatch"]) {
-      const entry = applicability[batch];
-      const expectedPhaseKeys = group.id === "platform-layout" && batch === "firstBatch"
-        ? ["status", "criteria", "subchecks"]
-        : ["status", "criteria"];
-      if (!hasExactKeys(entry, expectedPhaseKeys)
-        || entry?.status !== expected[batch]
-        || !Array.isArray(entry?.criteria)
-        || entry.criteria.length === 0
-        || entry.criteria.some((criterion) => typeof criterion !== "string" || criterion.trim().length === 0)) {
-        invalidBatchApplicability.push(`${group.id}.${batch}`);
-      }
-    }
-    if (group.id === "platform-layout") {
-      const subchecks = applicability.firstBatch?.subchecks;
-      const subcheckIds = Array.isArray(subchecks) ? subchecks.map((subcheck) => subcheck?.id) : [];
-      const expectedSubcheckIds = Object.keys(PLATFORM_LAYOUT_SUBCHECKS);
-      if (subcheckIds.length !== expectedSubcheckIds.length
-        || subcheckIds.some((id, index) => id !== expectedSubcheckIds[index])) {
-        invalidBatchApplicability.push("platform-layout.subchecks");
-      } else {
-        for (const subcheck of subchecks) {
-          const [firstBatch, secondBatch] = PLATFORM_LAYOUT_SUBCHECKS[subcheck.id];
-          if (!hasExactKeys(subcheck, ["id", "firstBatch", "secondBatch", "criteria"])
-            || subcheck.firstBatch !== firstBatch || subcheck.secondBatch !== secondBatch
-            || typeof subcheck.criteria !== "string" || subcheck.criteria.trim().length === 0) {
-            invalidBatchApplicability.push(`platform-layout.subchecks.${subcheck.id}`);
-          }
-        }
-      }
-    } else if (Object.hasOwn(applicability, "subchecks") || Object.hasOwn(applicability.firstBatch ?? {}, "subchecks")) {
-      invalidBatchApplicability.push(`${group.id}.subchecks`);
-    }
-  }
-  const containmentProblems = [];
-  let topLevel = null;
-  if (roster.topLevel !== undefined) {
-    topLevel = roster.topLevel;
-    if (!Array.isArray(topLevel) || topLevel.length === 0 || new Set(topLevel).size !== topLevel.length) {
-      containmentProblems.push("topLevel must be a non-empty unique array");
-    }
-    const known = new Set(ids);
-    const parents = new Map();
-    for (const group of roster.groups) {
-      if (!Array.isArray(group?.contains)) {
-        containmentProblems.push(`${String(group?.id)}.contains must be an array`);
-        continue;
-      }
-      for (const child of group.contains) {
-        if (!known.has(child)) containmentProblems.push(`${String(group?.id)} contains unknown ${String(child)}`);
-        const existing = parents.get(child);
-        if (existing !== undefined) containmentProblems.push(`${String(child)} has parents ${existing} and ${String(group?.id)}`);
-        else parents.set(child, group.id);
-      }
-    }
-    if (Array.isArray(topLevel)) {
-      if (topLevel.length !== ACCEPTANCE_TOP_LEVEL_GROUP_IDS.length
-        || topLevel.some((id, index) => id !== ACCEPTANCE_TOP_LEVEL_GROUP_IDS[index])) {
-        containmentProblems.push("topLevel must retain engine-release, platform-layout, product-gates in order");
-      }
-      for (const id of topLevel) {
-        if (!known.has(id)) containmentProblems.push(`topLevel contains unknown ${String(id)}`);
-        if (parents.has(id)) containmentProblems.push(`topLevel group ${String(id)} is also contained`);
-      }
-      for (const id of ids) {
-        if (known.has(id) && !topLevel.includes(id) && !parents.has(id)) containmentProblems.push(`non-top-level group ${String(id)} has no parent`);
-      }
-    }
-  } else {
-    containmentProblems.push("topLevel is required");
-  }
-  const invalidAcceptedExceptions = [];
-  const acceptedExceptionKeys = new Set();
-  for (const group of roster.groups) {
-    if (group?.acceptedExceptions === undefined) continue;
-    if (!Array.isArray(group.acceptedExceptions) || group.acceptedExceptions.length === 0) {
-      invalidAcceptedExceptions.push(group?.id ?? "#unknown");
-      continue;
-    }
-    for (const exception of group.acceptedExceptions) {
-      const valid = exception
-        && typeof exception.reasonCode === "string"
-        && /^[A-Z0-9_:-]+$/u.test(exception.reasonCode)
-        && typeof exception.acceptedAt === "string"
-        && /^\d{4}-\d{2}-\d{2}$/u.test(exception.acceptedAt)
-        && typeof exception.reason === "string"
-        && /^[A-Z0-9_:-]+$/u.test(exception.reason);
-      const key = `${group?.id}:${exception?.reasonCode}`;
-      if (!valid || acceptedExceptionKeys.has(key)) invalidAcceptedExceptions.push(group?.id ?? "#unknown");
-      acceptedExceptionKeys.add(key);
-    }
-  }
-  const actualAcceptedExceptions = roster.groups.flatMap((group) => (Array.isArray(group?.acceptedExceptions)
-    ? group.acceptedExceptions.map((exception) => ({ group: group?.id, exception }))
-    : []));
-  const launchdException = actualAcceptedExceptions[0];
-  if (actualAcceptedExceptions.length !== 1
-    || launchdException?.group !== "platform-layout"
-    || launchdException.exception?.acceptedAt !== "2026-08-15"
-    || launchdException.exception?.reasonCode !== "PLATFORM_LAUNCHD_NOT_ON_DUTY"
-    || launchdException.exception?.reason !== "OWNER_RULING_BACKUP_LAYERS_STOPPED") {
-    invalidAcceptedExceptions.push("only the existing platform-layout launchd exception is accepted");
-  }
-  // TCRN-CROSS-MIN-149 removed the two helper groups; MIN-235 D3 now removes the
-  // retired engine-guards call and records the existing two-batch applicability. Pin
-  // the resulting identities and applicability so a phase note cannot drop a live
-  // obligation or silently turn a doctor finding green.
-  if (ids.length !== ACCEPTANCE_GROUP_IDS.length
-    || missingGroups.length > 0
-    || unexpectedGroups.length > 0
-    || orderedGroupMismatch
-    || incomplete.length > 0
-    || duplicated.length > 0
-    || invalidBatchApplicability.length > 0
-    || invalidAcceptedExceptions.length > 0
-    || containmentProblems.length > 0) {
-    return check("acceptanceGateGroups", false, {
-      reasonCode: "PLATFORM_ACCEPTANCE_ROSTER_INVALID",
-      declaredGroups: roster.groups.length,
-      incomplete,
-      duplicated,
-      missingGroups,
-      unexpectedGroups,
-      orderedGroupMismatch,
-      invalidBatchApplicability,
-      invalidAcceptedExceptions,
-      containmentProblems,
-    });
-  }
-  return check("acceptanceGateGroups", true, {
-    declaredGroups: roster.groups.length,
-    acceptedExceptionCount: acceptedExceptionKeys.size,
-    batchApplicability: Object.fromEntries(Object.entries(ACCEPTANCE_BATCH_STATUS).map(([id, phases]) => [id, phases])),
-    ...(topLevel === null ? {} : { topLevel, containedGroups: roster.groups.length - topLevel.length }),
-  });
 }
 
 async function inspectWorkspaceContainer(root) {
@@ -2253,7 +1730,7 @@ async function declaredBackupCadences(options, platformRoot) {
 const HARNESS_DIRECTORY_NAMES = Object.freeze([".claude", ".codex"]);
 
 // TCRN-CROSS-SUB-274 (MIN-235 D3, R14 revision): the lawful declaration, in this source tree, of
-// the one host-specific state the acceptance roster records for this leg. A host keeps settings of
+// the one host-specific state the acceptance roster recorded for this leg (archived with STORY-490 R3). A host keeps settings of
 // its own in a per-host local file that git ignores (Claude Code's `.claude/settings.local.json`).
 // A harness root that holds nothing but such files is not an undeclared managed harness, and it
 // is not something every host must have either: the doctor reports it as a raw result of its own,
@@ -2412,7 +1889,10 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
   assertInstallManifestComplete(manifest);
   const checks = [
     check("platformRoot", true, { path: root }),
-    await inspectAcceptanceGateGroups(root),
+    // The acceptance roster leg and the recorded-verdict leg retire with the roster itself
+    // (TCRN-CROSS-STORY-490 R3, TCRN-CROSS-SUB-373): machine-judged work is decided by the gates
+    // its project declares in the library and the gates-run results that cover it
+    // (TCRN-CROSS-STORY-485), so this doctor reads neither platform-docs file any more.
     // The container AGENTS.md's topology-marker leg and the leg holding it byte-equal to a tracked
     // copy in the platform documents retire with the layout rendering pipeline
     // (TCRN-CROSS-STORY-491 R2); the Claude bridge legs below still name a bridge target that is gone.
@@ -2428,7 +1908,6 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
       await inspectUnusedExports(root, options),
       await inspectChainHeadroom(root, options),
       await inspectChainValidation(root, options),
-      await inspectAcceptanceVerdicts(root, options),
       await inspectInstallWiring(root, homeRoot, manifest),
       await inspectHookExecutability(root, homeRoot, manifest),
       await inspectDeploymentFreshness(homeRoot, manifest),

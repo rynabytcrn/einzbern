@@ -99,13 +99,14 @@ test("STORY-460 AC3: a doctor root red only for a roster exception passes and na
 // still required the root to exit 0: recordExecution threw GATE_PLAN_TERMINAL_EVIDENCE_INVALID
 // for a platform-layout root red only on the launchd exception. A receipt completed by a
 // roster exception now passes the runner with its real exit code and accepted codes, which
-// are re-read from the tracked roster; a receipt issued against another roster does not pass.
+// are re-read from the roster path the run names (an explicit input since TCRN-CROSS-SUB-373);
+// a receipt issued against another roster does not pass.
 // Red leg: take the exception allowance out of the trusted-receipt checks.
 const FIXTURE_ROSTER_PATH = resolve(REPOSITORY_ROOT, "tests/fixtures/acceptance-gate-groups.json");
 const FIXTURE_ROSTER = JSON.parse(readFileSync(FIXTURE_ROSTER_PATH, "utf8"));
 const LAYOUT_INVOCATION = { executable: "node", argv: ["scripts/platform-doctor.mjs", "--platform-root", resolve(REPOSITORY_ROOT, "../..")], cwd: REPOSITORY_ROOT, command: "node scripts/platform-doctor.mjs --platform-root <container>" };
 
-async function runLayoutRoot(doctorResult, issuingRoster = FIXTURE_ROSTER) {
+async function runLayoutRoot(doctorResult, issuingRoster = FIXTURE_ROSTER, rosterPath = FIXTURE_ROSTER_PATH) {
   const inputs = { sourceDigest: "source-383", environmentDigest: "environment-383", commandDigest: "command-383", baselineDigest: "baseline-383" };
   const authority = createGateReceiptAuthority();
   const plan = finalGatePlan.buildDynamicGatePlan({ roster: FIXTURE_ROSTER, containment: CONTAINMENT, inputs, changedFiles: ["docs/platform-container-layout.md"], dependencies: [], configuration: [], generated: [], environment: [], crossRepoChanges: [], candidateReady: true, executionPermission: true, operational: true, requireCompleteImpact: true, gateInvocations: { "platform-layout": LAYOUT_INVOCATION }, receiptAuthority: authority });
@@ -117,7 +118,7 @@ async function runLayoutRoot(doctorResult, issuingRoster = FIXTURE_ROSTER) {
       const receipt = issueGateReceipt(authority, { entry, invocation: entry.invocation, inputs: entry.inputs ?? inputs, result: doctorResult, roster: issuingRoster });
       receipts.push(receipt);
       return receipt;
-    }, { getInputs: async () => inputs, rosterPath: FIXTURE_ROSTER_PATH });
+    }, { getInputs: async () => inputs, rosterPath });
   } catch (error) {
     thrown = error.reasonCode ?? String(error.message);
   }
@@ -138,7 +139,7 @@ test("INC-383: the operational runner accepts a receipt completed by a roster ex
 });
 
 test("INC-383: another red, or an exception the tracked roster does not accept, still fails the runner", async () => {
-  const withOtherRed = doctor([{ name: "launchd", ok: false, reasonCode: "PLATFORM_LAUNCHD_NOT_ON_DUTY" }, { name: "acceptanceVerdicts", ok: false, reasonCode: "PLATFORM_ACCEPTANCE_LANE_UNPROVEN" }]);
+  const withOtherRed = doctor([{ name: "launchd", ok: false, reasonCode: "PLATFORM_LAUNCHD_NOT_ON_DUTY" }, { name: "installWiring", ok: false, reasonCode: "PLATFORM_INSTALL_WIRING_INCOMPLETE" }]);
   const other = await runLayoutRoot(withOtherRed);
   assert.equal(other.receipts[0].status, "failed");
   assert.match(other.outcome, /^failed/u);
@@ -147,7 +148,37 @@ test("INC-383: another red, or an exception the tracked roster does not accept, 
   const forgedRoster = { groups: FIXTURE_ROSTER.groups.map((group) => group.id === "platform-layout" ? { ...group, acceptedExceptions: [{ acceptedAt: "2026-09-24", reasonCode: "PLATFORM_HOOK_TARGET_UNAVAILABLE", reason: "NOT_IN_THE_TRACKED_ROSTER" }] } : group) };
   const forged = await runLayoutRoot(hooksOnly, forgedRoster);
   assert.deepEqual([forged.receipts[0].status, forged.receipts[0].acceptedExceptions], ["completed", ["PLATFORM_HOOK_TARGET_UNAVAILABLE"]], "the issuing call was handed a roster that accepts the code");
-  assert.equal(forged.outcome, "failed:GATE_PLAN_TERMINAL_EVIDENCE_INVALID", "the runner re-reads the tracked roster and refuses a self-reported exception");
+  assert.equal(forged.outcome, "failed:GATE_PLAN_TERMINAL_EVIDENCE_INVALID", "the runner re-reads the roster it was given and refuses a self-reported exception");
+});
+
+// TCRN-CROSS-SUB-373 (STORY-490 R3). The roster left the platform documents, so nothing here reads
+// one from a default location: it is an explicit input. Without one no exception is accepted,
+// the runner refuses to execute a plan before any root runs, and the CLI refuses a final plan.
+// Red leg: restore a default roster path and the launchd-only root passes with no roster named.
+test("SUB-373: without an explicit roster no exception is accepted and execution is refused", async () => {
+  const launchdOnly = doctor([{ name: "launchd", ok: false, reasonCode: "PLATFORM_LAUNCHD_NOT_ON_DUTY" }, { name: "hooks", ok: true }]);
+  assert.equal(finalGatePlan.applyRosterExceptions("platform-layout", launchdOnly).result.ok, false);
+  const inputs = { sourceDigest: "source-373", environmentDigest: "environment-373", commandDigest: "command-373", baselineDigest: "baseline-373" };
+  const entry = { id: "platform-layout", command: LAYOUT_INVOCATION.command };
+  assert.equal(issueGateReceipt(createGateReceiptAuthority(), { entry, invocation: LAYOUT_INVOCATION, inputs, result: launchdOnly }).status, "failed");
+
+  const unnamed = await runLayoutRoot(launchdOnly, FIXTURE_ROSTER, null);
+  assert.deepEqual(unnamed.receipts, [], "no root runs without a roster");
+  assert.equal(unnamed.executed.reasonCode, "GATE_PLAN_ROSTER_UNAVAILABLE");
+  assert.match(JSON.stringify(unnamed.executed.blocked), /GATE_PLAN_ROSTER_REQUIRED/u);
+});
+
+test("SUB-373: the CLI plans a final phase only with an explicit --roster", () => {
+  const run = (...args) => {
+    const result = spawnSync(process.execPath, ["scripts/final-gate-plan.mjs", ...args], { cwd: REPOSITORY_ROOT, encoding: "utf8" });
+    return { exit: result.status, output: JSON.parse(result.stdout.trim()) };
+  };
+  const unnamed = run("--phase", "candidate-final");
+  assert.deepEqual([unnamed.exit, unnamed.output.ok, unnamed.output.reasonCode], [1, false, "GATE_PLAN_ROSTER_REQUIRED"]);
+  const named = run("--phase", "candidate-final", "--roster", FIXTURE_ROSTER_PATH);
+  assert.deepEqual([named.exit, named.output.ok], [0, true]);
+  const development = run("--phase", "development");
+  assert.deepEqual([development.exit, development.output.ok], [0, true], "a development plan needs no roster");
 });
 
 // TCRN-CROSS-SUB-376 (STORY-491, Q12). Every receipt authority made its store with mkdtemp and

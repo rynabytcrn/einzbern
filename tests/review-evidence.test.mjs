@@ -460,6 +460,15 @@ test("EPIC135 R1: private plan registration rejects public discriminator and res
   assert.equal(unavailableCalls, 0);
   assert.equal(rosterUnavailable.reasonCode, "GATE_PLAN_ROSTER_UNAVAILABLE");
   assert.equal(rosterUnavailable.executable, false);
+  // TCRN-CROSS-SUB-373: the roster is an explicit input, never read from the platform documents;
+  // naming none is refused the same way, before any runner call.
+  const rosterUnnamed = await executeSelectedRoots(buildDynamicGatePlan(options), async () => {
+    unavailableCalls += 1;
+    return { ok: true };
+  }, { getInputs: async () => inputs });
+  assert.equal(unavailableCalls, 0);
+  assert.equal(rosterUnnamed.reasonCode, "GATE_PLAN_ROSTER_UNAVAILABLE");
+  assert.equal(rosterUnnamed.executable, false);
   const downgraded = buildDynamicGatePlan(options);
   downgraded.dynamic = false;
   delete downgraded.integrity;

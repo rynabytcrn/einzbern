@@ -2,14 +2,14 @@
 // TCRN-CROSS-INC-274: platform-doctor storage shape and snapshot read checks.
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { realpath } from "node:fs/promises";
 import test from "node:test";
 
 import { inspectPlatform } from "../scripts/platform-doctor.mjs";
-import { LOCAL_DIRECTORY_NAMES, WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES } from "../dist/build/packages/core/src/index.js";
+import { WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES } from "../dist/build/packages/core/src/index.js";
 
 const FIXTURE_COMMIT = "f".repeat(40);
 
@@ -20,26 +20,6 @@ async function createMinimalFixture(context) {
   const home = join(base, "home");
   await mkdir(join(root, ".tcrn-workspace", "cross-project", "workspace"), { recursive: true });
   await mkdir(home, { recursive: true });
-
-  // Create platform-docs directory with minimal acceptance gate groups
-  const docsDirectory = "platform-docs";
-  await mkdir(join(root, docsDirectory), { recursive: true });
-
-  const rosterPath = join(root, docsDirectory, "acceptance-gate-groups.json");
-  const roster = {
-    schemaVersion: "tcrn.acceptance-gate-groups.v1",
-    groups: [
-      { id: "engine-suite", title: "engine-suite", repository: LOCAL_DIRECTORY_NAMES.engine, command: "fixture", proves: "fixture" },
-    ],
-  };
-  await writeFile(rosterPath, `${JSON.stringify(roster, null, 2)}\n`);
-  const rosterRecordedAt = new Date((await stat(rosterPath)).mtimeMs).toISOString();
-
-  const verdictPath = join(root, docsDirectory, "acceptance-verdicts.json");
-  await writeFile(verdictPath, `${JSON.stringify({
-    schemaVersion: "tcrn.acceptance-verdicts.v1",
-    verdicts: { "engine-suite": { verdict: "green", recordedAt: rosterRecordedAt, commit: FIXTURE_COMMIT } },
-  }, null, 2)}\n`);
 
   return { root, home };
 }

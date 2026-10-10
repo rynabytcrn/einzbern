@@ -109,7 +109,7 @@ const LAYOUT_INVOCATION = { executable: "node", argv: ["scripts/platform-doctor.
 async function runLayoutRoot(doctorResult, issuingRoster = FIXTURE_ROSTER, rosterPath = FIXTURE_ROSTER_PATH) {
   const inputs = { sourceDigest: "source-383", environmentDigest: "environment-383", commandDigest: "command-383", baselineDigest: "baseline-383" };
   const authority = createGateReceiptAuthority();
-  const plan = finalGatePlan.buildDynamicGatePlan({ roster: FIXTURE_ROSTER, containment: CONTAINMENT, inputs, changedFiles: ["docs/platform-container-layout.md"], dependencies: [], configuration: [], generated: [], environment: [], crossRepoChanges: [], candidateReady: true, executionPermission: true, operational: true, requireCompleteImpact: true, gateInvocations: { "platform-layout": LAYOUT_INVOCATION }, receiptAuthority: authority });
+  const plan = finalGatePlan.buildDynamicGatePlan({ roster: FIXTURE_ROSTER, containment: CONTAINMENT, inputs, changedFiles: ["AGENTS.md"], dependencies: [], configuration: [], generated: [], environment: [], crossRepoChanges: [], candidateReady: true, executionPermission: true, operational: true, requireCompleteImpact: true, gateInvocations: { "platform-layout": LAYOUT_INVOCATION }, receiptAuthority: authority });
   const receipts = [];
   let executed = null;
   let thrown = null;

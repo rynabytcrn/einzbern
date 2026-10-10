@@ -613,7 +613,7 @@ function defaultGateForEntry(entry) {
   const path = entry.path ?? "";
   const repository = entry.repository;
   if (productRepositoryName(repository) || path.startsWith("TCRN-Design-System/") || path.startsWith("product/")) return "product-gates";
-  if (platformRepositoryName(repository) || path === "AGENTS.md" || path.startsWith("platform-docs/") || path.startsWith(".tcrn" + "-workspace/") || path.startsWith(".tcrn" + "-artifacts/") || path === "docs/platform-container-layout.md") return "platform-layout";
+  if (platformRepositoryName(repository) || path === "AGENTS.md" || path.startsWith("platform-docs/") || path.startsWith(".tcrn" + "-workspace/") || path.startsWith(".tcrn" + "-artifacts/")) return "platform-layout";
   if (entry.category === "environment") {
     const name = String(entry.name ?? "").toLowerCase();
     if (/^(?:host|container|partition|chain|platform)(?:[-_:].*)?$/u.test(name)) return "platform-layout";

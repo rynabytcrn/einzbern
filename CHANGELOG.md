@@ -21,6 +21,12 @@ still reads `enabled`, an unchanged section takes the revised text at the next `
 its section revision raised by one, and a section the user changed keeps its
 `user-modified`/`pending` protection.
 
+### Release and Repository Tooling
+
+The repository root no longer has `AGENTS.md` or `CLAUDE.md` (TCRN-CROSS-SUB-442, INIT-053 R52), and
+the source archive, which holds what git tracks, no longer carries them. Rules for agents are kept
+only in the platform root's `AGENTS.md`; `CONTRIBUTING.md` remains the contributor manual.
+
 ## 2.0.1
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.0.1. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

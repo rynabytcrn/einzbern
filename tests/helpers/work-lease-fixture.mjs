@@ -31,13 +31,16 @@ export const STORY_SCOPE = [
   "", "## Implementation Notes", "新增 the lease collection.",
 ].join("\n");
 
-/** A library under a scratch directory removed after the test, with the tree above; its ids by name. */
-export async function leaseLibrary(context, key) {
+/**
+ * A library under a scratch directory removed after the test, with the tree above written ten to
+ * eight minutes before `clock()`'s zero; its ids by name.
+ */
+export async function leaseLibrary(context, key, clock = at) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-work-lease-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const root = join(base, "library");
-  await initializeLibrary({ root, createdAt: at(-10) });
-  const project = await createProject(root, { occurredAt: at(-9), externalKey: `${key}-P`, name: key });
+  await initializeLibrary({ root, createdAt: clock(-10) });
+  const project = await createProject(root, { occurredAt: clock(-9), externalKey: `${key}-P`, name: key });
   const projectId = project.projects[0].id;
   const keys = { initiative: `${key}-INIT`, epic: `${key}-EPIC`, story: `${key}-STORY`, sibling: `${key}-SIBLING`, subtask: `${key}-SUB` };
   await applyWorkBatch(root, {
@@ -49,7 +52,7 @@ export async function leaseLibrary(context, key) {
       { verb: "work-create", projectId, externalKey: keys.sibling, kind: "Story", parentExternalKey: keys.epic, status: "planned", scope: STORY_SCOPE, title: keys.sibling },
       { verb: "work-create", projectId, externalKey: keys.subtask, kind: "Subtask", parentExternalKey: keys.story, status: "planned", title: keys.subtask },
     ],
-  }, { occurredAt: at(-8) });
+  }, { occurredAt: clock(-8) });
   const ids = Object.fromEntries(Object.entries(keys).map(([name, externalKey]) => [name, deriveStableId("work", externalKey)]));
   return { base, root, projectId, keys, ids };
 }

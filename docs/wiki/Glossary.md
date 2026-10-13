@@ -62,6 +62,17 @@
 
 写卡前，卡片与工单正文和有效决策比对，重复即拒写（`KNOWLEDGE_ALREADY_RECORDED`），内容应写进工单或纪要。新纪要的决策与某条有效决策主题相近而未声明取代、撤回或并存（`--coexists`）时拒写（`MINUTES_POSSIBLE_CONFLICT`），并点名候选。工单 decided-by 或卡片关联的决策已过时，`work-show` 与召回提示已被哪条取代。完整规则见 `specs/minutes-v1.md`。
 
+## 工单租约
+
+租约是一个行动者对一张工单的占用（TCRN-CROSS-STORY-528，MIN-256），记在库的 `lease` 配置记录里：键是工单 id，作用域是工单所属的项目，值是持有者 `holder`、申领时刻 `claimedAt` 与到期时刻 `expiresAt`。租约随库同步，不写进 `config/project.json`。
+
+| 动作 | 命令 | 规则 |
+| --- | --- | --- |
+| 申领 | `work-claim --id <工单> --actor <行动者> --at <时刻>`，可加 `--ttl <n>m` 或 `--ttl <n>h` | 默认 2h，可设 1m 至 24h；持有者再次申领即续期。他人在这张工单、它的上级或下级持有未到期的租约时，申领回 `WORK_LEASED`。 |
+| 受约束的写入 | `work-transition`、`work-annotate`，以及 `work-batch` 里的这两类成员 | 他人的租约未到期时，对这张工单及其下级的写入回 `WORK_LEASED`，并给出 `holder`、`expiresAt` 与租约所在的 `leasedWorkId`；不带 `--actor` 的写入按他人处理；批量写入整批不写。`work-create`、`work-delete` 不受约束。 |
+| 释放 | `work-release --id <工单> --actor <行动者> --at <时刻>` | 持有者随时可以释放；已到期的租约不再约束任何人，谁都可以释放；他人的租约未到期时只能在 Atelier 强制释放（`--force true` 只在 `EINZBERN_SURFACE=atelier` 下可用，否则 `MODEL_WRITE_REFUSED`）。Atelier 自己的写入也受租约约束，要先强制释放。 |
+| 显示 | `work-show` 的 `lease`、`work-list` 每条的 `lease`、Atelier 工单页 | 工单自己的租约，没有时为 `null`。`active` 按读取时的本机时钟计算，只供阅读；写入是否受约束按写入自己的 `--at` 判断，引擎不读时钟。 |
+
 ## Command Spell 四原则
 
 Command Spell 默认全部关闭，可按项目逐条启用。完整正文与启用方式见[受管段与 Command Spell](Managed-Sections-and-Command-Spell.md)。

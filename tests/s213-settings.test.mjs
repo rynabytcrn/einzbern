@@ -92,7 +92,7 @@ test("INIT-022 S213: unknown keys fail closed and registered writes receipt plus
   // only. Run as a model's shell (no EINZBERN_SURFACE) the same write is refused with the remedy, and
   // appends nothing; an unregistered key above keeps its own refusal either way.
   const refused = await withSurface(undefined, () => runCli([...baseArgs, "--key", "artifact.language", "--value", "zh-CN"], { write() {} }).then(() => null, (error) => error));
-  assert.deepEqual([refused?.reasonCode, refused?.details?.key, refused?.details?.remedy], ["MODEL_WRITE_REFUSED", "artifact.language", "change it in Atelier"]);
+  assert.deepEqual([refused?.reasonCode, refused?.details?.key, refused?.details?.remedy], ["MODEL_WRITE_REFUSED", "artifact.language", "change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>"]);
   assert.equal((await materializeWorkspace(workspace)).version, 0, "a refused model write must not append an event");
 
   const receipt = await withSurface(ATELIER_SURFACE, () => runRaw([...baseArgs, "--key", "artifact.language", "--value", "zh-CN"]));

@@ -872,7 +872,7 @@ test("SUB-422 (STORY-513 AC2): Atelier switches a rule and saves and deletes a g
     ["gates-config-remove", "--workspace", fixture.workspace, "--name", "unit", ...common],
   ]) {
     const refused = await cliRefusal(args, model);
-    assert.deepEqual([refused.reasonCode, refused.remedy], ["MODEL_WRITE_REFUSED", "change it in Atelier"], args[0]);
+    assert.deepEqual([refused.reasonCode, refused.remedy], ["MODEL_WRITE_REFUSED", "change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>"], args[0]);
   }
   assert.equal(await libraryVersion(), before, "no refused write appended an event");
 

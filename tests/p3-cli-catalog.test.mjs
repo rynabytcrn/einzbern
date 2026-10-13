@@ -341,13 +341,14 @@ test("STORY-484 R1, R4: variable-list reads; variable-set and variable-remove wr
   assert.deepEqual(flags("variable-set"), [
     ["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["type", true, "string"],
     ["value", true, "string"], ["description", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"],
+    ["decided-in", false, "string"],
   ]);
   assert.equal(entry("variable-remove").mutates, true);
-  assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"], ["project-id", false, "string"]]);
+  assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"], ["project-id", false, "string"], ["decided-in", false, "string"]]);
   // The refusal of a model's write (MODEL_WRITE_REFUSED) is the dispatcher's, not a flag: the settings
-  // writes keep their flags.
-  assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor", "project-id"]);
-  assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor", "project-id"]);
+  // writes keep their flags, and take --decided-in to cite an Owner decision (TCRN-CROSS-SUB-453).
+  assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor", "project-id", "decided-in"]);
+  assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor", "project-id", "decided-in"]);
 });
 
 test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --id and --at, and resolve the project from --project or the current directory", () => {
@@ -356,10 +357,11 @@ test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --
   assert.equal(entry("rule-list").mutates, false);
   assert.deepEqual(flags("rule-list"), [["workspace", false, "string"], ["project", false, "string"], ["project-id", false, "string"]]);
   assert.equal(entry("rule-enable").mutates, true);
-  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"]]);
+  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"], ["decided-in", false, "string"]]);
   assert.equal(entry("rule-disable").mutates, true);
   assert.deepEqual(flags("rule-disable"), [
     ["id", true, "string"], ["force", false, "boolean"], ["at", true, "instant"], ["project", false, "string"], ["actor", false, "string"], ["project-id", false, "string"],
+    ["decided-in", false, "string"],
   ]);
   // Managed writes resolve their stable project through the registry or explicit project-id.
   // rule-list additionally permits an explicit library-only read.

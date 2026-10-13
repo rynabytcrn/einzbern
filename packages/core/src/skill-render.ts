@@ -144,6 +144,11 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     `Run a verb as \`node "<device directory>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb> --<flag> <value>\`. The device directory is \`~/${DIRECTORY.device}\`, or the directory \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\` names when it is set; if that file does not exist, ${BRAND.engine.name} is not installed on this device yet, so treat the request as an install. Each verb prints one JSON object with a \`reasonCode\`; \`commands\` lists every verb, and \`<verb> --help\` lists one verb's flags. Give \`--at\` the current UTC instant, \`YYYY-MM-DDTHH:MM:SSZ\`, wherever a verb takes it. Inside a registered project the library is found from the current directory; pass \`--workspace <library>\` only elsewhere.`,
     "",
+    // TCRN-CROSS-STORY-532 (MIN-256 D6): the engine's file lock queues concurrent writes to one
+    // library, so sessions share it without making way, and outside a migration the user is never
+    // asked to stop one.
+    "Several sessions can work in one library at the same time: the engine queues their writes, so no session has to stop or step aside for another. Except for a migration, never ask the user to stop the other sessions.",
+    "",
     "| Moment | Verb | What to do |",
     "| --- | --- | --- |",
     ...SKILL_NAVIGATION.map(navigationRow),

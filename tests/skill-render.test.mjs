@@ -128,6 +128,21 @@ test("U10: the full-text row passes each target's handoff to the native host dis
   }
 });
 
+// TCRN-CROSS-STORY-532 (MIN-256 D6): several sessions write to one library at once; the engine queues
+// their writes, so none steps aside for another, and only a migration may ask the user to stop the others.
+test("532 (MIN-256 D6): the navigation says the engine queues concurrent writes, so no session steps aside", () => {
+  const markdown = render();
+  const lines = markdown.split("\n");
+  const navigation = lines.indexOf("## Navigation");
+  const table = lines.indexOf("| Moment | Verb | What to do |");
+  const note = lines.findIndex((line) => line.startsWith("Several sessions can work in one library at the same time:"));
+  assert.ok(navigation > 0 && navigation < note && note < table, "the note stands in the Navigation section, before the table");
+  for (const phrase of ["the engine queues their writes", "no session has to stop or step aside for another", "Except for a migration, never ask the user to stop the other sessions."]) {
+    assert.ok(lines[note].includes(phrase), phrase);
+  }
+  assert.ok(Buffer.byteLength(markdown, "utf8") < 6000, `${Buffer.byteLength(markdown, "utf8")} bytes`);
+});
+
 test("479-AC1: a verb the command catalog does not carry refuses the rendering", () => {
   for (const verb of skillNamedVerbs()) {
     const without = catalogNames.filter((name) => name !== verb);

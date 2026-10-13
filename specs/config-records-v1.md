@@ -41,6 +41,14 @@ Every record meets one common shape, and each collection may add its own check o
 A record of any other shape is `CONFIG_RECORD_EVENT_INVALID`. The payload is the common
 `{operation, record}` (plus `actor` once attestation is enabled).
 
+TCRN-CROSS-STORY-526: the payload may also carry how the write was let through (see
+actor-attestation-v1, optional authorization extras): `surface` (`cli` or `atelier`) and
+`decidedIn` (`minutes:<id>#D<n>`) with `decidedInLibraryId`. `setConfigRecord`,
+`removeConfigRecord` and their deltas take them as `authorization`; the gate, variable and
+rule writes pass theirs through, a rule change on each event it appends. Without one the
+payload is exactly `{operation, record}`. A surface, decision number or library id that is
+not one is `WORKSPACE_EVENT_CORRUPT` on replay.
+
 ## Merge
 
 Events are replayed in merge order: clock, then device id, then sequence. The set applied last

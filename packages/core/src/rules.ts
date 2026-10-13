@@ -263,6 +263,8 @@ export interface RuleChange {
   readonly state: WorkspaceState;
 }
 
+// TCRN-CROSS-STORY-526 (TCRN-CROSS-SUB-452): every delta of a rule change carries the change's
+// authorization (input.authorization), so each event it appends records how the change was let through.
 async function commit(root: string, state: WorkspaceState, deltas: readonly ((state: WorkspaceState) => MutationDelta)[], options: WorkspaceMutationOptions): Promise<WorkspaceState> {
   if (deltas.length === 0) return state;
   const committed = await appendEvents(root, deltas, options);
@@ -290,7 +292,7 @@ async function changeCoordinationRule(root: string, nativeState: WorkspaceState,
   const state = await effectiveProjectState(nativeState, input.configurationProjectId);
   const previous = recordedRule(state, input.id);
   const value = { enabled, version, ...(order === undefined ? {} : { order }) };
-  const deltas = previous?.enabled === enabled && previous.version === version && previous.order === order ? [] : [setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "rule", key: input.id, value })];
+  const deltas = previous?.enabled === enabled && previous.version === version && previous.order === order ? [] : [setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), ...(input.authorization === undefined ? {} : { authorization: input.authorization }), collection: "rule", key: input.id, value })];
   const committed = await commit(root, nativeState, deltas, input);
   return { id: input.id, section: ruleSectionId(input.id), file: AGENTS_FILE, action: enabled ? "enable" : "disable", result: "unchanged", written: false, backupPath: null, recorded: deltas.length, status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), new Map(), input.catalog ?? BUILT_IN_RULES, input.id), state: committed };
 }
@@ -338,11 +340,11 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
     const decision = plan.sections.find((entry) => entry.id === section);
     const deltas: ((state: WorkspaceState) => MutationDelta)[] = [];
     if (recorded === null || !recorded.enabled || recorded.version !== rule.version || recorded.order !== order) {
-      deltas.push(setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "rule", key: rule.id, value }));
+      deltas.push(setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), ...(input.authorization === undefined ? {} : { authorization: input.authorization }), collection: "rule", key: rule.id, value }));
     }
     // Only this section's record: the other sections of the file are agents-render's to record.
     if (decision?.recordChanged === true) {
-      deltas.push(setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "managed-section", key: managedSectionRecordKey(AGENTS_FILE, section), value: decision.record }));
+      deltas.push(setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), ...(input.authorization === undefined ? {} : { authorization: input.authorization }), collection: "managed-section", key: managedSectionRecordKey(AGENTS_FILE, section), value: decision.record }));
     }
     let committed: WorkspaceState;
     try {
@@ -406,12 +408,12 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
     });
     const deltas: ((state: WorkspaceState) => MutationDelta)[] = [];
     if (change.recordChanged && records.some((record) => record.id === section)) {
-      deltas.push(removeConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "managed-section", key: managedSectionRecordKey(AGENTS_FILE, section) }));
+      deltas.push(removeConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), ...(input.authorization === undefined ? {} : { authorization: input.authorization }), collection: "managed-section", key: managedSectionRecordKey(AGENTS_FILE, section) }));
     }
     if (recorded !== null && recorded.enabled) {
       // The order stays with the record (TCRN-CROSS-STORY-508 R7).
       const value: ConfigRecordValue = { enabled: false, version: recorded.version, ...(recorded.order === undefined ? {} : { order: recorded.order }) };
-      deltas.push(setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "rule", key: input.id, value }));
+      deltas.push(setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), ...(input.authorization === undefined ? {} : { authorization: input.authorization }), collection: "rule", key: input.id, value }));
     }
     let committed: WorkspaceState;
     try {

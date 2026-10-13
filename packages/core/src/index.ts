@@ -472,12 +472,18 @@ export {
   ACTOR_PREFIXES,
   ActorAttestationError,
   EVENT_PAYLOAD_OPERATION_EXTRAS,
+  EVENT_PAYLOAD_OPTIONAL_EXTRAS,
+  WRITE_AUTHORIZATION_EXTRAS,
+  WRITE_SURFACES,
   assertActorId,
   buildEventPayload,
   buildActorAttestationEnableRecord,
   validateActorAttestationEnableRecord,
   buildActorAttestationRegistration,
+  writeAuthorizationExtras,
+  writeAuthorizationProblem,
 } from "./actor-attestation.js";
+export type { WriteAuthorization, WriteSurface } from "./actor-attestation.js";
 export type {
   DependencyRecord,
   DependencyWorkReference,

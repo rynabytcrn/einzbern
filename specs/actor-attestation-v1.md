@@ -17,6 +17,22 @@ non-stableId value fails closed with `ACTOR_ID_INVALID`. Every event-appending
 operation constructs its payload through the one shared constructor so no
 operation can carry an unvalidated or absent actor once enforcement is on.
 
+## Optional authorization extras (TCRN-CROSS-STORY-526)
+
+Beside the extras a registered operation must carry (`conference.closed` carries
+`minutes`), four operations may carry optional extras that record how a configuration
+write was let through: `config.record.set`, `config.record.removed`, `settings.updated`
+and `settings.removed`. They are `surface`, the surface the write came from (`cli` or
+`atelier`), and `decidedIn`, the Owner decision the write cites (`minutes:<id>#D<n>`),
+with `decidedInLibraryId`, the library whose minutes hold that decision; the last two are
+recorded together. A payload of one of these operations may carry any of them and of no
+other key; a payload of any other operation carries none. The constructor refuses a
+surface, decision number or library id that is not one, or a decision without its
+library, with `EVENT_PAYLOAD_EXTRA_INVALID`, and replay refuses the same shapes as
+`WORKSPACE_EVENT_CORRUPT`. A write that records no authorization appends exactly the
+payload it appended before. The extras say what the write cited; they do not prove who
+took the decision.
+
 ## Enablement
 
 The write entrance for enablement is retired (TCRN-CROSS-STORY-467 R2): no verb appends

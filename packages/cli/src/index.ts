@@ -120,7 +120,9 @@ import {
   relationFilter,
   workRelations,
   effectiveWorkGates,
+  workAncestorIds,
   workGates,
+  gateAppliesTo,
   minutesById,
   minutesView,
   recordMinutes,
@@ -159,6 +161,7 @@ import type { DecisionStatusFilter, KnowledgeLanguageBundle, KnowledgeLanguagePr
 import type { DoctorCheck, SetupApplied, SetupOptions, SetupPlan } from "../../core/src/index.js";
 import type {
   DoneGatesVerdict,
+  GateSubject,
   KnowledgeCategory,
   KnowledgeFreshnessState,
   KnowledgeHint,
@@ -915,24 +918,36 @@ function optionalBoolean(value: string | undefined, name: string): boolean | und
   return value === undefined ? undefined : booleanValue(value, name);
 }
 
+// TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-447): what binds each target Story to gates besides a
+// required declaration, read from the library's work records: the ids of its ancestors, whose work
+// covers cover it, and the gate names its gates field and its ancestors' give. A target the library
+// does not hold has neither.
+function gateSubjects(work: readonly WorkRecord[], workIds: readonly string[]): readonly GateSubject[] {
+  return [...new Set(workIds)].map((workId) => ({ workId, ancestorIds: workAncestorIds(work, workId), gates: effectiveWorkGates({ work }, workId) }));
+}
+
 // TCRN-CROSS-STORY-519 (D-519-1, D-519-2): the work a coordination library's own gates cover. A work
-// item that an enabled gate of its own project's scope in this library covers by exact work id is
-// planned and run in this library, in the scope of that project, and the run records the project;
-// a cover is the declaration itself, so no target is inferred. The items are grouped by project, in
-// the order they were given, one plan and one run per project. A --project-id given names the project
-// of every one of them, or the operation is refused before anything runs.
+// item that an enabled gate of its own project's scope in this library applies to is planned and run
+// in this library, in the scope of that project, and the run records the project; the declarations
+// and the work records say so, so no target is inferred. TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-447):
+// a gate applies as gates-plan.ts says (gateAppliesTo): a required gate to every Story, another one
+// to the Stories whose gates field or an ancestor's names it or whose covers name the Story or an
+// ancestor; a release-only gate only for a release. The items are grouped by project, in the order
+// they were given, one plan and one run per project. A --project-id given names the project of every
+// one of them, or the operation is refused before anything runs.
 interface LibraryGateGroup {
   readonly projectId: string | undefined;
   readonly workIds: string[];
 }
 
-function libraryCoveredWork(state: Awaited<ReturnType<typeof materializeWorkspace>>, workIds: readonly string[], projectId: string | undefined): { readonly ids: ReadonlySet<string>; readonly groups: readonly LibraryGateGroup[] } {
+function libraryCoveredWork(state: Awaited<ReturnType<typeof materializeWorkspace>>, workIds: readonly string[], projectId: string | undefined, release: boolean): { readonly ids: ReadonlySet<string>; readonly groups: readonly LibraryGateGroup[] } {
   const ids = new Set<string>();
   const groups = new Map<string, LibraryGateGroup>();
   for (const workId of workIds) {
     const record = state.work.find((entry) => entry.id === workId && !entry.tombstone);
     if (record === undefined || ids.has(workId)) continue;
-    if (!listGates(scopedWorkspaceState(state, record.projectId)).some((gate) => gate.enabled && gate.covers.includes(workId))) continue;
+    const [subject] = gateSubjects(state.work, [workId]);
+    if (!listGates(scopedWorkspaceState(state, record.projectId)).some((gate) => gate.enabled && (release || !gate.releaseOnly) && gateAppliesTo(gate, workId, subject))) continue;
     if (projectId !== undefined && record.projectId !== projectId) {
       throw new WorkflowCliError("GATES_PROJECT_MISMATCH", `--project-id names ${projectId}, but ${workId} belongs to ${record.projectId ?? "no project"}, the scope its gates in this library are declared in`, {
         field: "project-id",
@@ -963,6 +978,7 @@ async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWor
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
       workIds: group.workIds,
+      subjects: gateSubjects(state.work, group.workIds),
     });
     if (!execute) return { ...binding, projectRoot, ok: true, plan };
     const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(group.projectId === undefined ? {} : { projectId: group.projectId }), at: values.at ?? "" });
@@ -985,7 +1001,7 @@ async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWor
 async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean): Promise<Record<string, unknown> | null> {
   if (chainIdentity(state)?.role !== "coordination" || values["work-id"] === undefined) return null;
   const workIds = listValue(values["work-id"]);
-  const covered = libraryCoveredWork(state, workIds, values["project-id"]);
+  const covered = libraryCoveredWork(state, workIds, values["project-id"], booleanValue(values.release, "release"));
   const results: Record<string, unknown>[] = [];
   for (const workId of workIds) {
     const resolved = await workProjectContexts(state, workId);
@@ -1014,7 +1030,7 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
           const currentWork = (await materializeWorkspace(values.workspace!)).work.find(record => record.id === workId && !record.tombstone);
           if (currentWork?.revision !== resolved.workRevision) throw new Error("work revision changed; resolve again");
           const projectRoot = await gatesProjectRoot(reference.libraryId, repository.projectPath, reference.projectId);
-          const plan = await planGates({ projectRoot, gates: listGates(target), release: booleanValue(values.release, "release"), ...(values.base === undefined ? {} : { base: values.base }), workIds: [workId] });
+          const plan = await planGates({ projectRoot, gates: listGates(target), release: booleanValue(values.release, "release"), ...(values.base === undefined ? {} : { base: values.base }), workIds: [workId], subjects: gateSubjects(state.work, [workId]) });
           // This handoff is bound to the very target whose gates execute: the target's own handoff
           // (project-chain.ts, the object the native host dispatch passes for it), with the
           // repository and root the gates run in. No global first-target setting applies.
@@ -3648,6 +3664,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   // TCRN-CROSS-STORY-485 R2 (MIN-235 D8): the gates a change and optional Story need. Non-release
   // plans name their Git base, and --work-id binds exact Story coverage alongside path coverage.
+  // TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-447): with --work-id the plan holds every gate that applies to
+  // the Stories (gateAppliesTo): each required gate, each one their gates field or an ancestor's names,
+  // and each one whose covers name the Story or an ancestor; unknownGates lists a named gate the
+  // project does not declare.
   if (command === "gates-plan") {
     const values = parseArguments(rest, ["project-id", "workspace", "project", "base", "release", "work-id"]);
     required(values, ["workspace"]);
@@ -3655,12 +3675,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const targets = await workGateTargets(native, values, false);
     if (targets !== null) { io.write(canonicalJson(targets)); return; }
     const state = await effectiveProjectState(native, values["project-id"]);
+    const workIds = values["work-id"] === undefined ? [] : listValue(values["work-id"]);
     const plan = await planGates({
       projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"], native),
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
-      workIds: values["work-id"] === undefined ? [] : listValue(values["work-id"]),
+      workIds,
+      subjects: gateSubjects(native.work, workIds),
     });
     io.write(canonicalJson({
       reasonCode: "GATES_PLAN_READY",
@@ -3681,12 +3703,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const targets = await workGateTargets(native, values, true);
     if (targets !== null) { io.write(canonicalJson(targets)); return; }
     const state = await effectiveProjectState(native, values["project-id"]);
+    const workIds = values["work-id"] === undefined ? [] : listValue(values["work-id"]);
     const plan = await planGates({
       projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"], native),
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
-      workIds: values["work-id"] === undefined ? [] : listValue(values["work-id"]),
+      workIds,
+      subjects: gateSubjects(native.work, workIds),
     });
     const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), at: values.at ?? "" });
     io.write(canonicalJson({

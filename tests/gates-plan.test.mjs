@@ -123,23 +123,25 @@ test("485-R2: a release-only gate is not planned for an ordinary change, even wh
     "a release-only declaration cannot bypass non-release base validation");
 });
 
-test("D8: exact Story covers are distinct from path globs and an unrelated work id does not select a gate", async (context) => {
+test("D8: a Story's work cover is distinct from a path glob, and an unrelated work id does not select an optional gate", async (context) => {
   const root = await project(await scratch(context));
   const base = head(root);
   const story = `work:${"1".repeat(24)}`;
   const other = `work:${"2".repeat(24)}`;
+  // Optional gates: only a cover, a gates field or a path selects one (TCRN-CROSS-STORY-525).
   const gates = [
-    { name: "path", ...gate(["portal/**"]) },
-    { name: "story", ...gate([story]) },
-    { name: "other-story", ...gate([other]) },
+    { name: "path", ...gate(["portal/**"], { required: false }) },
+    { name: "story", ...gate([story], { required: false }) },
+    { name: "other-story", ...gate([other], { required: false }) },
   ];
 
   const byId = await planGates({ projectRoot: root, gates, base, workIds: [story] });
   assert.deepEqual(names(byId), ["story"]);
   assert.deepEqual(byId.gates[0], {
-    name: "story", root: ".", command: ["node", "--version"], required: true, releaseOnly: false,
+    name: "story", root: ".", command: ["node", "--version"], required: false, releaseOnly: false,
     reason: "work-id", matched: [], matchedWorkIds: [story],
   });
+  assert.equal(Object.hasOwn(byId, "unknownGates"), false, "no gates field, no unknown gate");
   assert.deepEqual(names(await planGates({ projectRoot: root, gates: [gates[2]], base, workIds: [story] })), [], "a different Story id is not coverage");
 
   await put(root, "portal/index.html", "<p>changed</p>\n");
@@ -149,6 +151,74 @@ test("D8: exact Story covers are distinct from path globs and an unrelated work 
   assert.deepEqual(byPath.gates.find((entry) => entry.name === "path")?.matchedWorkIds, [], "path matching is not rewritten as an id match");
 
   await assert.rejects(planGates({ projectRoot: root, gates, base, workIds: ["work:not-an-id"] }), { reasonCode: "GATES_WORK_ID_INVALID" });
+});
+
+// TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-447): a plan made for Stories holds every gate that
+// applies to them. A plan made for no Story is what it was.
+test("525: a plan made for a Story holds every enabled required gate that is not release-only, each with every target among its matchedWorkIds", async (context) => {
+  const root = await project(await scratch(context));
+  const base = head(root);
+  const story = `work:${"1".repeat(24)}`;
+  const second = `work:${"2".repeat(24)}`;
+  const forStories = await planGates({ projectRoot: root, gates: GATES, base, workIds: [second, story] });
+  assert.deepEqual(forStories.gates.map((entry) => [entry.name, entry.reason, entry.matched, entry.matchedWorkIds]), [
+    ["engine", "required", [], [story, second]],
+    ["portal", "required", [], [story, second]],
+  ], "the required gates, nothing changed; links is optional, release-pack release-only and off disabled");
+  assert.deepEqual(names(await planGates({ projectRoot: root, gates: GATES, base })), [], "a plan made for no Story is unchanged: nothing changed, nothing planned");
+
+  await put(root, "README.md", "# Changed\n");
+  const changed = await planGates({ projectRoot: root, gates: GATES, base, workIds: [story] });
+  assert.deepEqual(changed.gates.map((entry) => [entry.name, entry.reason, entry.matched, entry.matchedWorkIds]), [
+    ["engine", "required", [], [story]],
+    ["links", "changed", ["README.md"], []],
+    ["portal", "required", [], [story]],
+  ], "a path match selects an optional gate without binding the Story");
+  const release = await planGates({ projectRoot: root, gates: GATES, release: true, workIds: [story] });
+  assert.deepEqual(release.gates.map((entry) => [entry.name, entry.reason, entry.matchedWorkIds]), [
+    ["engine", "release", [story]],
+    ["links", "release", []],
+    ["portal", "release", [story]],
+    ["release-pack", "release", [story]],
+  ], "a release plan lists every enabled gate and binds the Story to those that apply to it");
+});
+
+test("525-GWT2 (plan): a work cover naming an Epic or an Initiative reaches each Story under it", async (context) => {
+  const root = await project(await scratch(context));
+  const base = head(root);
+  const [initiative, epic, story, sibling] = ["a", "b", "c", "d"].map((digit) => `work:${digit.repeat(24)}`);
+  const gates = [
+    { name: "epic-suite", ...gate([epic], { required: false }) },
+    { name: "init-suite", ...gate([initiative], { required: false }) },
+    { name: "story-suite", ...gate([sibling], { required: false }) },
+  ];
+  const subjects = [{ workId: story, ancestorIds: [epic, initiative], gates: [] }, { workId: sibling, ancestorIds: [initiative], gates: [] }];
+  const plan = await planGates({ projectRoot: root, gates, base, workIds: [story, sibling], subjects });
+  assert.deepEqual(plan.gates.map((entry) => [entry.name, entry.reason, entry.matchedWorkIds]), [
+    ["epic-suite", "work-id", [story]],
+    ["init-suite", "work-id", [story, sibling]],
+    ["story-suite", "work-id", [sibling]],
+  ]);
+  assert.deepEqual(names(await planGates({ projectRoot: root, gates, base, workIds: [story] })), [],
+    "a plan given no subject for the Story knows no ancestor of it");
+});
+
+test("525-GWT3 (plan): a gate a Story's gates field names is planned for it; a name the project does not declare is listed in unknownGates", async (context) => {
+  const root = await project(await scratch(context));
+  const base = head(root);
+  const story = `work:${"1".repeat(24)}`;
+  const gates = [
+    { name: "links", ...gate(["**/*.md"], { required: false }) },
+    { name: "release-pack", ...gate(["**"], { required: false, releaseOnly: true }) },
+  ];
+  const subjects = [{ workId: story, ancestorIds: [], gates: ["links", "missing-gate", "release-pack"] }];
+  const plan = await planGates({ projectRoot: root, gates, base, workIds: [story], subjects });
+  assert.deepEqual(plan.gates.map((entry) => [entry.name, entry.reason, entry.matched, entry.matchedWorkIds]), [["links", "work-field", [], [story]]],
+    "the named optional gate runs with nothing changed; a release-only one only in a release");
+  assert.deepEqual(plan.unknownGates, ["missing-gate"]);
+  const release = await planGates({ projectRoot: root, gates, release: true, workIds: [story], subjects });
+  assert.deepEqual(release.gates.map((entry) => [entry.name, entry.matchedWorkIds]), [["links", [story]], ["release-pack", [story]]]);
+  assert.deepEqual(release.unknownGates, ["missing-gate"]);
 });
 
 test("485-R2: the changes are the base's difference plus staged, unstaged, deleted, renamed and untracked files", async (context) => {

@@ -7,9 +7,10 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // (stdout and stderr in the order they arrive, cut at a bound) goes to a file, and the run is
 // recorded in this device's cache of the library, at cache/<library>/gate-runs/<runId>.json
 // (einzbern.gate-run.v1), with its exact target work ids, path/id matches, declaration digest and
-// tree digest. The done check (gates-done.ts) accepts a run only for the same target set, tree and
-// declarations. A gate that outlives its timeout is stopped with its whole process group, and
-// whatever a gate left running in its group is stopped when it ends.
+// tree digest. The done check (gates-done.ts) accepts a run only for the same tree and declarations
+// and, since TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-448), one whose target work ids include the Story.
+// A gate that outlives its timeout is stopped with its whole process group, and whatever a gate left
+// running in its group is stopped when it ends.
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -330,7 +331,8 @@ function instant(value: string): bigint | null {
 /**
  * The latest run this device recorded for the library, by its instant, optionally only among
  * runs made on one tree under one set of declarations; null when there is none. A record that
- * does not read as a run is skipped.
+ * does not read as a run is skipped. `workIds` keeps only runs made for exactly those target work
+ * ids; `includesWorkIds` (TCRN-CROSS-STORY-525) only runs whose targets include each of them.
  */
 export async function latestGateRun(input: {
   readonly libraryId: string;
@@ -339,6 +341,7 @@ export async function latestGateRun(input: {
   readonly treeDigest?: string;
   readonly declarationsDigest?: string;
   readonly workIds?: readonly string[];
+  readonly includesWorkIds?: readonly string[];
 }): Promise<GateRun | null> {
   const directory = gateRunsDirectory(input.libraryId, input.deviceHome);
   let names: readonly string[];
@@ -363,6 +366,7 @@ export async function latestGateRun(input: {
       const expected = [...new Set(input.workIds)].sort(compareCanonicalText);
       if (run.workIds.length !== expected.length || run.workIds.some((workId, index) => workId !== expected[index])) continue;
     }
+    if (input.includesWorkIds !== undefined && !input.includesWorkIds.every((workId) => run.workIds.includes(workId))) continue;
     const at = instant(run.at);
     if (at === null) continue;
     if (latest === null || at > latest.at || (at === latest.at && compareCanonicalText(run.runId, latest.run.runId) > 0)) latest = { run, at };

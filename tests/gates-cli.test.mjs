@@ -234,7 +234,7 @@ test("485-AC4 (CLI): required exact Story covers guard transition, birth-done, a
 
   const notRun = await refusal(done());
   assert.equal(notRun?.reasonCode, "WORK_DONE_GATES_NOT_RUN");
-  assert.equal(notRun.details.remedy, "gates-run");
+  assert.match(notRun.details.remedy, /gates-run --work-id <Story id> with --base <commit> or --release/u);
   assert.deepEqual(notRun.details.stories, [storyId]);
 
   const red = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
@@ -350,10 +350,8 @@ test("D8, 525 (CLI): a plan for a Story holds every required gate with the Story
   const uncoveredRun = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
   assert.deepEqual(uncoveredRun.run.workIds, [storyId]);
   assert.deepEqual(uncoveredRun.run.gates.map((gate) => [gate.name, gate.matchedWorkIds]), [["optional", []], ["path", [storyId]], ["subject", [storyId]]]);
-  const refused = await refusal(["work-transition", "--workspace", library, "--at", at(), "--id", storyId, "--status", "done", "--project", project]);
-  assert.equal(refused?.reasonCode, "WORK_DONE_GATES_NOT_COVERED");
-  assert.equal((await cli(["work-show", "--workspace", library, "--id", storyId])).record.status, "active");
-
+  // TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-448): that run binds the Story to every gate that applies to it, so
+  // its covers need not name it; a changed declaration below makes it another set of gates.
   await declare(library, "subject", null, ["--covers", storyId]);
   const coveredPlan = await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit, "--work-id", storyId]);
   assert.deepEqual(coveredPlan.gates.map((gate) => [gate.name, gate.reason, gate.matchedWorkIds]), [
@@ -407,6 +405,47 @@ test("525-GWT2, GWT3 (CLI): covers work:<Epic id> binds the Story under it in th
   await cli(["work-annotate", "--workspace", library, "--at", at(), "--id", epicId, "--gates", "e2e"]);
   const inherited = await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit, "--work-id", storyId]);
   assert.deepEqual(inherited.gates.map((gate) => [gate.name, gate.reason]), [["e2e", "work-field"], ["epic-suite", "work-id"], ["unit", "required"]]);
+});
+
+// TCRN-CROSS-STORY-525 GWT1 (MIN-256; TCRN-CROSS-SUB-448; Q8): the covers need not list the Story. A library
+// with no enabled gate, or none that applies to the Story, holds it back from nothing, and needs no root.
+test("525-GWT1 (CLI): one required gate covering **, and a Story the covers do not list goes to done after a green gates-run --work-id; no run is NOT_RUN and red is RED", async (context) => {
+  const { project, library, baseCommit } = await setup(context);
+  const projectId = (await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "GC-GWT1-PROJECT", "--name", "Gates GWT1"])).record.id;
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-GWT1-INIT", "--kind", "Initiative", "--title", "Gated work"]);
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-GWT1-EPIC", "--kind", "Epic", "--status", "active", "--parent-id", workId("GC-GWT1-INIT"), "--title", "Gated epic"]);
+  const story = async (key) => (await cli([
+    "work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", key, "--kind", "Story", "--status", "active",
+    "--parent-id", workId("GC-GWT1-EPIC"), "--title", key, "--goal", "Pass the gates", "--acceptance", "GIVEN the gates WHEN green THEN done",
+  ])).record.id;
+  const done = (id) => ["work-transition", "--workspace", library, "--at", at(), "--id", id, "--status", "done", "--project", project];
+
+  // No enabled gate: nothing holds the Story back, and no project root is needed (none is registered yet).
+  const free = await cli(done(await story("GC-GWT1-FREE")));
+  assert.deepEqual([free.record.status, free.doneGates.reason, free.doneGates.checked], ["done", "no-gates", false]);
+  await declare(library, "optional", [node, "-e", "process.exit(0)"], ["--covers", "src/**", "--required", "false"]);
+  const unbound = await cli(["work-transition", "--workspace", library, "--at", at(), "--id", await story("GC-GWT1-UNBOUND"), "--status", "done"]);
+  assert.deepEqual([unbound.record.status, unbound.doneGates.reason], ["done", "no-applicable-gates"], "an optional path gate applies to no Story");
+
+  const storyId = await story("GC-GWT1-STORY");
+  await declare(library, "all", [node, "-e", "process.exit(require('node:fs').existsSync('src/ok') ? 0 : 1)"], ["--covers", "**"]);
+  await cli(["library-register", "--project", project, "--library", library, "--at", at()]);
+  const notRun = await refusal(done(storyId));
+  assert.deepEqual([notRun?.reasonCode, notRun?.details.stories], ["WORK_DONE_GATES_NOT_RUN", [storyId]]);
+  assert.match(notRun.details.remedy, /gates-run --work-id <Story id> with --base <commit> or --release/u);
+
+  const red = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
+  assert.deepEqual([red.reds, red.requiredReds], [["all"], ["all"]], gateDiagnostic(red.run, red.recordPath));
+  const refused = await refusal(done(storyId));
+  assert.deepEqual([refused?.reasonCode, refused?.details.reds, refused?.details.runId], ["WORK_DONE_GATES_RED", ["all"], red.run.runId]);
+  assert.equal((await cli(["work-show", "--workspace", library, "--id", storyId])).record.status, "active", "nothing was written");
+
+  await put(project, "src/ok", "");
+  const green = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
+  assert.deepEqual([green.ok, green.run.gates.map((gate) => [gate.name, gate.matchedWorkIds])], [true, [["all", [storyId]], ["optional", []]]], gateDiagnostic(green.run, green.recordPath));
+  const passed = await cli(done(storyId));
+  assert.equal(passed.record.status, "done");
+  assert.deepEqual(passed.doneGates, { checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest, projectId, targets: [{ checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest, projectId }] });
 });
 
 // TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): gates-config-set --order places a gate in
@@ -690,7 +729,7 @@ test("519-GWT3 (CLI): uncovered work keeps its results; a selected Story still r
 // it to done through work-transition and work-batch, with the run in the receipt. No run, a red
 // required gate and no required cover are refused with the codes of 2.0.0. Stories of two projects
 // run once per project, each in its own scope.
-test("519-GWT2 (CLI): a green run in the coordination library takes its Story to done through work-transition and work-batch; red, no run and no required cover are refused", async (context) => {
+test("519-GWT2 (CLI): a green run in the coordination library takes its Story to done through work-transition and work-batch; red and no run are refused", async (context) => {
   const { base, project, library, projectId, addProject, story, gate } = await coordination(context);
   const secondProjectId = await addProject("CO-SECOND", "Second project");
   const storyId = await story("CO-DONE-1");
@@ -714,11 +753,12 @@ test("519-GWT2 (CLI): a green run in the coordination library takes its Story to
   const refused = await refusal(done(storyId));
   assert.deepEqual([refused?.reasonCode, refused?.details.reds, refused?.details.runId], ["WORK_DONE_GATES_RED", ["unit"], red.library[0].run.runId]);
 
-  // An optional gate's cover runs the Story here, but only a required cover takes it to done.
+  // An optional gate's cover runs the Story here, and the required gate of its project applies to it as
+  // well (TCRN-CROSS-STORY-525): red, it holds the Story back.
   const optional = await runFor([optionalOnly]);
-  assert.deepEqual(optional.library.map((entry) => [entry.workIds, entry.run.gates.find((result) => result.name === "lint").matchedWorkIds]), [[[optionalOnly], [optionalOnly]]]);
+  assert.deepEqual(optional.library.map((entry) => [entry.workIds, entry.run.gates.find((result) => result.name === "lint").matchedWorkIds, entry.run.gates.find((result) => result.name === "unit").matchedWorkIds]), [[[optionalOnly], [optionalOnly], [optionalOnly]]]);
   const uncovered = await refusal(done(optionalOnly));
-  assert.deepEqual([uncovered?.reasonCode, uncovered?.details.stories], ["WORK_DONE_GATES_NOT_COVERED", [optionalOnly]]);
+  assert.deepEqual([uncovered?.reasonCode, uncovered?.details.stories, uncovered?.details.reds], ["WORK_DONE_GATES_RED", [optionalOnly], ["unit"]]);
   assert.equal((await raw(["work-show", "--workspace", library, "--id", storyId])).record.status, "active", "no refusal wrote anything");
 
   // Green on the tree as it is: one run per project, each in its own scope and the same root.

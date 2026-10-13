@@ -3,6 +3,7 @@ import { setConfigRecord, removeConfigRecord } from "../../core/src/config-recor
 import { coordinationCatalogRows } from "../../core/src/project-scope.js";
 import { chainIdentity, declareChainIdentity, resolveProjectTarget, workProjectContexts, effectiveProjectState, ensureProjectCoordination, settingsCatalogState, markUnresolvedCommonDefault } from "../../core/src/project-chain.js";
 import { normalizeInvolvedProjects, involvedProjectsOf, projectReference, hasInvolvedProject } from "../../core/src/involved-projects.js";
+import { normalizedWorkGates } from "../../core/src/work-gates.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -122,6 +123,7 @@ import {
   effectiveWorkGates,
   workAncestorIds,
   workGates,
+  WORK_GATES_KEY,
   gateAppliesTo,
   minutesById,
   minutesView,
@@ -1120,22 +1122,37 @@ async function gatesProjectRoot(libraryId: string, project: string | undefined, 
   );
 }
 
-// TCRN-CROSS-STORY-485 R4 (TCRN-CROSS-SUB-345): before a Story goes to done, the required gates of its
-// change must be green on the tree as it is (gates-done.ts). The records going to done are judged
-// against the library as it stands before the write, and a Story the same batch creates counts as
-// one; a project is looked up only when a Story is among them and an enabled required declaration
-// could cover it. No enabled required coverage is itself a refusal, before a project lookup.
+// TCRN-CROSS-STORY-485 R4 (TCRN-CROSS-SUB-345): before a Story goes to done, the gates that apply to it
+// must be green on the tree as it is (gates-done.ts). The records going to done are judged against the
+// library as it stands before the write, and a record the same write creates counts as one, with its
+// parent and its gates field, so a Story it creates is bound through its parent chain as a written one
+// is. TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-448): a project with an enabled gate is gated; its
+// root is looked up only when a Story needs a run read, so a Story no gate applies to never needs one.
 // TCRN-CROSS-STORY-519 (D-519-3): the lookup reads the library, so a coordination library registered
-// with no project finds its root for each of its projects; the verdict and its refusals are unchanged.
+// with no project finds its root for each of its projects.
+interface CreatedWork {
+  readonly id: string;
+  readonly kind: string;
+  readonly projectId?: string;
+  readonly parentId?: string | null;
+  readonly gates?: readonly string[];
+}
+
 async function doneGates(
   state: Awaited<ReturnType<typeof materializeWorkspace>>,
   workIds: readonly string[],
-  created: readonly { readonly id: string; readonly kind: string; readonly projectId?: string }[],
+  created: readonly CreatedWork[],
   project: string | undefined,
 ): Promise<DoneGatesVerdict & { readonly targets?: readonly (DoneGatesVerdict & { readonly projectId: string | null })[] }> {
   const known = new Set(state.work.map((record) => record.id));
-  const createdStories = created.filter((entry) => entry.kind === "Story" && !known.has(entry.id)) as unknown as readonly WorkRecord[];
-  const work = [...state.work, ...createdStories];
+  const createdRecords = created.filter((entry) => !known.has(entry.id)).map((entry) => {
+    const gates = normalizedWorkGates(entry.gates ?? []) ?? [];
+    return {
+      id: entry.id, kind: entry.kind, projectId: entry.projectId, parentId: entry.parentId ?? null, tombstone: false,
+      extensions: gates.length === 0 ? {} : { [WORK_GATES_KEY]: { required: false, value: gates } },
+    };
+  }) as unknown as readonly WorkRecord[];
+  const work = [...state.work, ...createdRecords];
   const stories = workIds.map((id) => work.find((record) => record.id === id)).filter((record): record is WorkRecord => record?.kind === "Story");
   if (stories.length === 0) return { checked: false, reason: "no-story", runId: null, treeDigest: null };
   const targets = [...new Set(stories.map((record) => record.projectId))];
@@ -1143,9 +1160,9 @@ async function doneGates(
   for (const projectId of targets) {
     const view = scopedWorkspaceState(state, projectId);
     const ids = stories.filter((record) => record.projectId === projectId).map((record) => record.id);
-    const gated = listGates(view).some((gate) => gate.enabled && gate.required && gate.covers.length > 0);
+    const gated = listGates(view).some((gate) => gate.enabled);
     const verdict = await assertDoneGates({
-      projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project, projectId, state) : "",
+      projectRoot: gated ? () => gatesProjectRoot(state.metadata.workspaceId, project, projectId, state) : "",
       library: { ...view, work }, workIds: ids,
       ...(projectId === undefined ? {} : { configurationProjectId: projectId }),
     });
@@ -1154,16 +1171,24 @@ async function doneGates(
   return { ...verdicts[0]!, targets: verdicts };
 }
 
-// The records a work-batch document creates, with their kinds, by the id their external key derives.
-function batchCreatedKinds(document: unknown): readonly { readonly id: string; readonly kind: string; readonly projectId?: string }[] {
+// The records a work-batch document creates, with their kinds, parents and gates fields, by the id
+// their external key derives.
+function batchCreatedKinds(document: unknown): readonly CreatedWork[] {
   const members = (document as { readonly members?: unknown } | null)?.members;
   if (!Array.isArray(members)) return [];
-  const created: { readonly id: string; readonly kind: string; readonly projectId?: string }[] = [];
+  const created: CreatedWork[] = [];
   for (const member of members as readonly unknown[]) {
     if (member === null || typeof member !== "object") continue;
     const entry = member as Readonly<Record<string, unknown>>;
     if (entry.verb !== "work-create" || typeof entry.externalKey !== "string" || entry.externalKey.length === 0 || typeof entry.kind !== "string") continue;
-    created.push({ id: deriveStableId("work", canonicalExternalKey(entry.externalKey)), kind: entry.kind, ...(typeof entry.projectId === "string" ? { projectId: entry.projectId } : {}) });
+    const parentId = typeof entry.parentId === "string" && entry.parentId.length > 0
+      ? entry.parentId
+      : typeof entry.parentExternalKey === "string" && entry.parentExternalKey.length > 0 ? deriveStableId("work", canonicalExternalKey(entry.parentExternalKey)) : null;
+    created.push({
+      id: deriveStableId("work", canonicalExternalKey(entry.externalKey)), kind: entry.kind, parentId,
+      ...(typeof entry.projectId === "string" ? { projectId: entry.projectId } : {}),
+      ...(Array.isArray(entry.gates) && entry.gates.every((name) => typeof name === "string") ? { gates: entry.gates as readonly string[] } : {}),
+    });
   }
   return created;
 }
@@ -3176,7 +3201,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const { state, gates } = await withWriteLock(workspace, at, async () => {
       const before = await materializeWorkspace(workspace);
       const verdict: DoneGatesVerdict | null = values.kind === "Story" && values.status === "done"
-        ? await doneGates(before, [id], [{ id, kind: "Story", projectId: values["project-id"] ?? "" }], undefined)
+        ? await doneGates(before, [id], [{ id, kind: "Story", projectId: values["project-id"] ?? "", parentId: nullableValue(values["parent-id"]), ...gatesInput(values) }], undefined)
         : null;
       return {
         state: await createWork(workspace, {

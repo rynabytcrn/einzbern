@@ -1,6 +1,6 @@
 # 命令行参考
 
-本页由 `scripts/wiki-cli-reference.mjs` 根据 `COMMAND_CATALOG` 生成。每个动词均列出可用范围、是否写入，以及旗标是否必填和取值类型；`programmatic-only` 表示只能由程序调用。
+本页由 `scripts/wiki-cli-reference.mjs` 根据 `COMMAND_CATALOG` 生成。每个动词均列出可用范围、是否写入，以及旗标是否必填和取值类型；旗标的值有固定写法时另列「写法」；`programmatic-only` 表示只能由程序调用。
 
 ## `agents-render`
 
@@ -154,33 +154,35 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--name` | 必填 | `string` |
-| `--actor` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--name` | 必填 | `string` |  |
+| `--actor` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
 
 ## `gates-config-set`
 
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--name` | 必填 | `string` |
-| `--command` | 可选 | `string` |
-| `--root` | 可选 | `string` |
-| `--covers` | 可选 | `list` |
-| `--required` | 可选 | `boolean` |
-| `--enabled` | 可选 | `boolean` |
-| `--release-only` | 可选 | `boolean` |
-| `--order` | 可选 | `integer` |
-| `--actor` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--name` | 必填 | `string` |  |
+| `--command` | 可选 | `string` |  |
+| `--root` | 可选 | `string` |  |
+| `--covers` | 可选 | `list` |  |
+| `--required` | 可选 | `boolean` |  |
+| `--enabled` | 可选 | `boolean` |  |
+| `--release-only` | 可选 | `boolean` |  |
+| `--order` | 可选 | `integer` |  |
+| `--actor` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
 
 ## `gates-plan`
 
@@ -761,28 +763,30 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--id` | 必填 | `string` |
-| `--force` | 可选 | `boolean` |
-| `--at` | 必填 | `instant` |
-| `--project` | 可选 | `string` |
-| `--actor` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--id` | 必填 | `string` |  |
+| `--force` | 可选 | `boolean` |  |
+| `--at` | 必填 | `instant` |  |
+| `--project` | 可选 | `string` |  |
+| `--actor` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
 
 ## `rule-enable`
 
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--id` | 必填 | `string` |
-| `--at` | 必填 | `instant` |
-| `--project` | 可选 | `string` |
-| `--order` | 可选 | `integer` |
-| `--actor` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--id` | 必填 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--project` | 可选 | `string` |  |
+| `--order` | 可选 | `integer` |  |
+| `--actor` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
 
 ## `rule-list`
 
@@ -825,27 +829,29 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--key` | 必填 | `string` |
-| `--actor` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--key` | 必填 | `string` |  |
+| `--actor` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
 
 ## `settings-set`
 
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--key` | 必填 | `string` |
-| `--value` | 必填 | `string` |
-| `--actor` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--key` | 必填 | `string` |  |
+| `--value` | 必填 | `string` |  |
+| `--actor` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
 
 ## `setup`
 
@@ -953,30 +959,32 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--name` | 必填 | `string` |
-| `--actor` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--name` | 必填 | `string` |  |
+| `--actor` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
 
 ## `variable-set`
 
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--name` | 必填 | `string` |
-| `--type` | 必填 | `string` |
-| `--value` | 必填 | `string` |
-| `--description` | 可选 | `string` |
-| `--order` | 可选 | `integer` |
-| `--actor` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--name` | 必填 | `string` |  |
+| `--type` | 必填 | `string` |  |
+| `--value` | 必填 | `string` |  |
+| `--description` | 可选 | `string` |  |
+| `--order` | 可选 | `integer` |  |
+| `--actor` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
 
 ## `vocabulary`
 
@@ -1001,6 +1009,7 @@
 | `--goal` | 可选 | `string` |
 | `--acceptance` | 可选 | `string` |
 | `--body` | 可选 | `string` |
+| `--gates` | 可选 | `list` |
 | `--decided-by` | 可选 | `list` |
 | `--blocked-by` | 可选 | `list` |
 | `--implements` | 可选 | `list` |
@@ -1028,6 +1037,19 @@
 | `--project` | 可选 | `string` |
 | `--actor` | 可选 | `string` |
 
+## `work-claim`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--at` | 必填 | `instant` |
+| `--id` | 必填 | `string` |
+| `--actor` | 必填 | `string` |
+| `--ttl` | 可选 | `string` |
+
 ## `work-create`
 
 - 可用范围：`cli`。
@@ -1047,6 +1069,7 @@
 | `--goal` | 可选 | `string` |
 | `--acceptance` | 可选 | `string` |
 | `--body` | 可选 | `string` |
+| `--gates` | 可选 | `list` |
 | `--decided-by` | 可选 | `list` |
 | `--blocked-by` | 可选 | `list` |
 | `--implements` | 可选 | `list` |
@@ -1137,6 +1160,19 @@
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
 | `--id` | 必填 | `string` |
+
+## `work-release`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--at` | 必填 | `instant` |
+| `--id` | 必填 | `string` |
+| `--actor` | 必填 | `string` |
+| `--force` | 可选 | `boolean` |
 
 ## `work-show`
 

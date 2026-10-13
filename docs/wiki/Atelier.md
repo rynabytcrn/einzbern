@@ -114,3 +114,9 @@ action. Saving reads the work list again through the work view's own read, so a
 library left in the meantime is not shown. Switching while a target write is in
 flight is refused, and stale form revisions require reloading. Coordination
 chains do not expose development settings.
+
+## 工单租约
+
+工作视图的工单树里，持有租约的工单在自己那一行（Initiative 与 Epic 在分组标题上）显示持有者与到期时刻，取自 `work-list` 每条的 `lease`（TCRN-CROSS-STORY-528，MIN-256）。是否仍在租期内按读取时的本机时钟判断，已到期的租约写明已到期。下级工单的行不重复显示上级的租约，但同样受它约束。
+
+旁边的「释放租约」按钮在 Atelier 里强制释放这张工单的租约：门户以 `TCRN_PORTAL_ACTOR` 为行动者运行 `work-release --force true`（`--force` 只在 `EINZBERN_SURFACE=atelier` 下可用），回执照常显示，工单树随即重新读取，`work-show` 的 `lease` 变为 `null`。Atelier 自己的写入同样受他人租约约束：要改他人租用的工单，先在这里释放。约束一张工单的若是上级的租约，到上级那一行释放。

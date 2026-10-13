@@ -12,20 +12,26 @@ import { COMMAND_CATALOG } from "../dist/build/packages/cli/src/index.js";
 export const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const CLI_REFERENCE_PATH = join(REPOSITORY_ROOT, "docs/wiki/CLI-Reference.md");
 
-function renderFlag(flag) {
+// TCRN-CROSS-STORY-526 (Q15; TCRN-CROSS-SUB-455): a flag may say how its value is written
+// (valueShape, e.g. minutes:<id>#D<n> for --decided-in). A verb with such a flag gets a fourth
+// column, 写法; every other verb's table is as it was.
+function renderFlag(flag, shapes) {
   const required = flag.required ? "必填" : "可选";
-  return `| \`--${flag.name}\` | ${required} | \`${flag.valueKind}\` |`;
+  const row = `| \`--${flag.name}\` | ${required} | \`${flag.valueKind}\` |`;
+  if (!shapes) return row;
+  return `${row} ${flag.valueShape === undefined ? "" : `\`${flag.valueShape}\``} |`;
 }
 
 /** Render every catalog entry in catalog order, including verbs that are not exposed by the CLI. */
 export function renderCliReference(catalog = COMMAND_CATALOG) {
   const commands = catalog.map((command) => {
+    const shapes = command.flags.some((flag) => flag.valueShape !== undefined);
     const flags = command.flags.length === 0
       ? "无旗标。"
       : [
-        "| 旗标 | 必填 | 取值类型 |",
-        "| --- | --- | --- |",
-        ...command.flags.map(renderFlag),
+        shapes ? "| 旗标 | 必填 | 取值类型 | 写法 |" : "| 旗标 | 必填 | 取值类型 |",
+        shapes ? "| --- | --- | --- | --- |" : "| --- | --- | --- |",
+        ...command.flags.map((flag) => renderFlag(flag, shapes)),
       ].join("\n");
     return [
       `## \`${command.name}\``,
@@ -40,7 +46,7 @@ export function renderCliReference(catalog = COMMAND_CATALOG) {
   return [
     "# 命令行参考",
     "",
-    "本页由 `scripts/wiki-cli-reference.mjs` 根据 `COMMAND_CATALOG` 生成。每个动词均列出可用范围、是否写入，以及旗标是否必填和取值类型；`programmatic-only` 表示只能由程序调用。",
+    "本页由 `scripts/wiki-cli-reference.mjs` 根据 `COMMAND_CATALOG` 生成。每个动词均列出可用范围、是否写入，以及旗标是否必填和取值类型；旗标的值有固定写法时另列「写法」；`programmatic-only` 表示只能由程序调用。",
     "",
     ...commands.flatMap((command, index) => index === 0 ? [command] : ["", command]),
     "",

@@ -53,8 +53,10 @@ export class WriteAuthorizationError extends Error {
   }
 }
 
+// The reason is in the text as well as in the details, since the CLI entry prints only some details on
+// stderr (TCRN-CROSS-SUB-455: the Wiki tells a reader to look for it there).
 function refuse(decidedIn: string, target: string, reason: WriteAuthorizationReason, message: string): never {
-  throw new WriteAuthorizationError(`${decidedIn} does not authorize ${target}: ${message}`, { decidedIn, target, reason });
+  throw new WriteAuthorizationError(`${decidedIn} does not authorize ${target} (${reason}): ${message}`, { decidedIn, target, reason });
 }
 
 /** The decision a --decided-in value cites; MODEL_WRITE_AUTHORIZATION_INVALID (malformed) when it is not a decision number. */

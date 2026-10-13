@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r54-pf-init053",
+  "pack": "epic149-r2-pf-init053",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "680918eb93e2c0d6411ab2a63573b524ea0b9e0270636128f0b8861087709ae5"
+      "sha256": "067a5cbf6c1a05ce760e1623c7151a96cfa79ab82a2fffedf207a3813c380c71"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -15,7 +15,7 @@
     },
     {
       "path": "packages/core/src/actor-attestation.ts",
-      "sha256": "be20f8567235098fad33a6f4c61d39aa4dc65a90631d20acb196f240e44e44be"
+      "sha256": "637e295ca7052a7edb5b5e419aa7d3160b7c1a61a55e6cde3d48aafd20db2ea9"
     },
     {
       "path": "packages/core/src/agents-sections.ts",
@@ -59,7 +59,7 @@
     },
     {
       "path": "packages/core/src/config-records.ts",
-      "sha256": "8d25502891bd0a1cd446a9a422b0d31d770aa2caee23c12e00e599419b3da0d5"
+      "sha256": "be5abb74216db4a1fc0414a5a8398f3e625e6e108d177d9a3cc252a32994b428"
     },
     {
       "path": "packages/core/src/dependency.ts",
@@ -107,7 +107,7 @@
     },
     {
       "path": "packages/core/src/framework-version.ts",
-      "sha256": "4a21063f4e1e693d65e33ca1c1962fed1e77c92dcbbc34f0baf0dde51a615e84"
+      "sha256": "12c5312ec9ec798f3f4634a5d4491d64845a0079095f192ba8551622543ab869"
     },
     {
       "path": "packages/core/src/gate-identity.ts",
@@ -119,15 +119,15 @@
     },
     {
       "path": "packages/core/src/gates-done.ts",
-      "sha256": "111e2103505cb1b8dfdead7811343413453d71b2ea27ab88ad1a4946f2c2c5ef"
+      "sha256": "6637cbe2847e96f14d7afbb330fcd35d1d56bd6a2de96fae9c33c3c6c424fb9f"
     },
     {
       "path": "packages/core/src/gates-plan.ts",
-      "sha256": "beb29017931b92d9a9caa94d982c01bcf43588e558d20d0e104e5c12e32600bd"
+      "sha256": "34446503a1c56fea0a2888d0d0b935a4fc4499eaa746ff7951587004eb4d5051"
     },
     {
       "path": "packages/core/src/gates-run.ts",
-      "sha256": "ecb50421cfa45870f488126c7cc5f10bea54d930355f49c225e4d9d1d5d09682"
+      "sha256": "f01050f6c3647434b80a5b802c6c3df52aaa746428b3833391190e9e946e5a3d"
     },
     {
       "path": "packages/core/src/hook-recall.ts",
@@ -147,7 +147,7 @@
     },
     {
       "path": "packages/core/src/index.ts",
-      "sha256": "bc22a6c407652788829a5f571786819eebed6afb245953be14e1c5c55ce853b4"
+      "sha256": "e8f91f768698cbfe444058ac52d7684a4e3e943a333ea6b3b856e1782a8ea38f"
     },
     {
       "path": "packages/core/src/install-manifest.ts",
@@ -199,7 +199,7 @@
     },
     {
       "path": "packages/core/src/library-config.ts",
-      "sha256": "72d8e9acd4555ba294573af85342955961a41269557d1864f26c1a8f313108e4"
+      "sha256": "c2fcd87be0911f77cb17b3dd449a15dc05041edb051ded9f9b7adebab129226c"
     },
     {
       "path": "packages/core/src/machine-settings.ts",
@@ -287,7 +287,7 @@
     },
     {
       "path": "packages/core/src/rules.ts",
-      "sha256": "350de809f7f0c8dea71dd598e3023415dfae1ed81d6c96cc17ced15ba844f464"
+      "sha256": "1d1b196f22551b9a5fbfed81d13ef70f8f643ca944030bb56c82b27a79b30308"
     },
     {
       "path": "packages/core/src/settings.ts",
@@ -315,7 +315,7 @@
     },
     {
       "path": "packages/core/src/skill-render.ts",
-      "sha256": "0f53741f59e84ef56fcfac940c0b39317593df634557df2d4a46d06ccf59f106"
+      "sha256": "79042f089a341e2657bf4491c212524ba2b2aa718f4cffcf646bbf359d13da05"
     },
     {
       "path": "packages/core/src/store-backend.ts",
@@ -351,7 +351,15 @@
     },
     {
       "path": "packages/core/src/work-batch.ts",
-      "sha256": "b056769b564f6c188f245d47e8545ba0a368fb69cdb3d4ab5bd6b57b45c9821e"
+      "sha256": "a54672844e40887c6cedb51bd5e18725b105feef18dffdf89cc5a8d5031d3929"
+    },
+    {
+      "path": "packages/core/src/work-gates.ts",
+      "sha256": "ac8e0c5a0fcf17ad5e7809939f3ea73420a6e9b6c1b4774c47218b1f2b36e042"
+    },
+    {
+      "path": "packages/core/src/work-lease.ts",
+      "sha256": "87fdddac08a6c4b9ba2e4c724cb659978236507ee216d9c0ce85ddafe1dad265"
     },
     {
       "path": "packages/core/src/work-relations.ts",
@@ -367,7 +375,11 @@
     },
     {
       "path": "packages/core/src/workspace.ts",
-      "sha256": "b95921464ddb7505b0c3fe24247bb40eb496aa007f74dd1712392c63d857328f"
+      "sha256": "f07c2daef877ea7fa4caa98b348eeea7efbd44d9e02196fc71f79d294f705035"
+    },
+    {
+      "path": "packages/core/src/write-authorization.ts",
+      "sha256": "26c8d927595a35ac9261b67e38b7c60b7bd6fdf3b6296a39b086e148132db5dc"
     },
     {
       "path": "packages/protocol/src/index.ts",
@@ -375,7 +387,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "2d7faf1dcec053fb31fd066848275c5139a3ebd02a850047fc8dcaacd6c9809a"
+      "sha256": "02c89a6f1bed3ae64f22353fcab58a20b6fb8d0c3d9d2f94ce0d60e1aa845da9"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -383,11 +395,11 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "b237be0313027a385755af19e1f092df1904a5ea08d501c4de70f24d98cf1ff0"
+      "sha256": "c9345310f94772ed385b7f972f06b94d184d0f51b3fb831dadb9f7fbf27abeed"
     },
     {
       "path": "portal/portal.mjs",
-      "sha256": "622e2606cc933037c1499c6b015bbe31097f7f0e6daa583b816f3f885c62640f"
+      "sha256": "02c3c48bef195cb12b89133459cc571cfa8586c91e7442112169bf3859c83571"
     },
     {
       "path": "portal/scripts/dependency-audit.mjs",
@@ -403,7 +415,7 @@
     },
     {
       "path": "portal/scripts/generate-launchers.mjs",
-      "sha256": "6f05898dbe7803a64de9307a5388068cde21c93bb251104d9a7e3573c7b3dd6e"
+      "sha256": "838d679a5e1cc579077e2e676322d1d498c175f59b0d711c47f5f21022958ef6"
     },
     {
       "path": "portal/scripts/i18n-proof.mjs",
@@ -487,7 +499,7 @@
     },
     {
       "path": "scripts/einzbern.mjs",
-      "sha256": "04a39cc72dfbbe1bcf27c760785742cc386efde188e6be84b6fb1b961f537883"
+      "sha256": "5fb82c465d1fa4def1cae817b15ac2867f3d966e37b52c0e64b639c5f05932b1"
     },
     {
       "path": "scripts/embed-ds-component-css-snapshot.mjs",
@@ -579,7 +591,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "68cb605bcfd14e7d81227f27c49389c80e27deda606cddb4bd59cbecb8392eb2"
+      "sha256": "eff92331f56ff6fd313149373d6c11a569ed1a2d0f8217990cb18f584d2d0a91"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -791,14 +803,14 @@
     },
     {
       "path": "scripts/wiki-cli-reference.mjs",
-      "sha256": "0ad124404ff2e0e21a33e8e947bf8b5846af2847f55ca8082ff294685fed51d1"
+      "sha256": "d62e0b1b8d48701cd22f8bc86fa56fa1c39fbbddbd27c133211032af635a71c7"
     },
     {
       "path": "skill/mana-orchestrate/scripts/install.mjs",
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R54 PF package regeneration (TCRN-CROSS-INIT-053 R54 PF, MIN-236 D2 and MIN-246 D8: the reviewed 2.0.2 package members are classified and the privacy boundary test gains the 2.0.2 case (75676ebf), on E main 1da478c0 in the package worktree before any merge; since the U23 P-F regeneration (70009f50) the 2.0.1 release and R52/R53 also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at 75676ebf in a clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1769 of 1769 tests in 191 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "EPIC-149 R2 PF package regeneration (TCRN-CROSS-EPIC-149 R2 PF, MIN-236 D2 and MIN-246 D8: the CHANGELOG gains the 2.0.3 module sections and the upgrade notes (476d7897), and the reviewed 2.0.3 package members are classified and the privacy boundary test gains the 2.0.3 case (a6391fad), on E main 2dfa5b8e in the package worktree before any merge; since the R54 PF regeneration (cdb97173) the 2.0.2 release, the CI time limit, EPIC-149 R1 (TCRN-CROSS-STORY-525, TCRN-CROSS-STORY-526, TCRN-CROSS-STORY-528, TCRN-CROSS-STORY-530 and TCRN-CROSS-STORY-532) and the R2 fixes (TCRN-CROSS-SUB-465 to TCRN-CROSS-SUB-468 and the regenerated portal proof block) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at a6391fad in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1818 of 1818 tests in 197 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -932,9 +944,9 @@
   "inputProjections": [
     {
       "input": "inventory-values.json",
-      "sha256": "e3445121904daa3e7b785161106372a76dea38e99b3b8803691051610b203423",
+      "sha256": "4c108a1a90b27da38602d02fc5147b0181ca6ff36cf1e5026bbb04bf58955988",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r54-pf-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -950,9 +962,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "41c82a0417befe934cf6e815bef7222188199232f1bb173554e8b83381a77df2",
+      "sha256": "24eb4568e4e1ea52d05fc58c3eba279bdee516a5edf5eca071088ca84d557473",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r54-pf-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -962,15 +974,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "40c3011414aec1a7688a3dd7d9d0a1137dee045bfdaf504ea92a79bd38b19bbf",
+      "sha256": "ee221c7b71795ea254d700696b53ba8cb4ca315e553054f4e4bc47bb97c4ba48",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r54-pf-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "2b3da0f849c16c081ed2ccfce15ecd28f05d31bbae776622b6e2e380179ee762",
+      "sha256": "058dce53a509699d21899daa4fd55c4d65d7855fc41f9335c584df48d4875dda",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r54-pf-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -982,7 +994,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r54-pf-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1012,13 +1024,13 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1769,
-      "pass": 1769,
+      "tests": 1818,
+      "pass": 1818,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 191,
+    "wholeFiles": 197,
     "original61Retained": false,
     "necessaryAddedWholeFiles": [
       "tests/act11-adapter-acceptance.test.mjs",
@@ -1037,6 +1049,7 @@
       "tests/conference.test.mjs",
       "tests/config-records.test.mjs",
       "tests/cross-repo-privacy.test.mjs",
+      "tests/decided-in-cli.test.mjs",
       "tests/dependency-materialization.test.mjs",
       "tests/dependency-policy.test.mjs",
       "tests/device-home.test.mjs",
@@ -1150,16 +1163,21 @@
       "tests/token-attribution.test.mjs",
       "tests/variables.test.mjs",
       "tests/wiki-pages.test.mjs",
+      "tests/work-gates-field.test.mjs",
       "tests/work-index-ceiling.test.mjs",
+      "tests/work-lease-batch.test.mjs",
+      "tests/work-lease-cli.test.mjs",
+      "tests/work-lease.test.mjs",
       "tests/work-relations-cli.test.mjs",
-      "tests/workspace-extension-records.test.mjs"
+      "tests/workspace-extension-records.test.mjs",
+      "tests/write-authorization.test.mjs"
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/r54-pf-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-10T09:31:12.238504+00:00",
+  "generationTimeUtc": "2026-10-13T21:17:09.983493+00:00",
   "currentApplicationCaseResults": [
     {
       "name": "target switch settles on matching response, UI authority and native inheritance",
@@ -2611,17 +2629,17 @@
         5539,
         5554,
         5563,
-        5731,
-        5755,
-        5808,
-        5820,
-        5830,
-        5840,
-        5944,
+        5735,
+        5759,
+        5812,
+        5824,
+        5834,
+        5844,
         5948,
-        6040,
-        6086,
-        6399
+        5952,
+        6044,
+        6090,
+        6416
       ],
       "publishedStyleSites": [
         {
@@ -2751,10 +2769,10 @@
         4583,
         4587,
         4602,
-        5808,
-        5820,
-        5830,
-        5840
+        5812,
+        5824,
+        5834,
+        5844
       ],
       "publishedStyleSites": [
         {
@@ -2785,13 +2803,13 @@
         4587,
         4602,
         5554,
-        5808,
-        5820,
-        5830,
-        5840,
-        5944,
-        6086,
-        6399
+        5812,
+        5824,
+        5834,
+        5844,
+        5948,
+        6090,
+        6416
       ],
       "publishedStyleSites": [
         {
@@ -2821,7 +2839,7 @@
       "variant": "modifier",
       "consumerLines": [
         5218,
-        6086
+        6090
       ],
       "publishedStyleSites": [
         {
@@ -2902,15 +2920,16 @@
         5479,
         5480,
         5618,
-        5753,
-        5795,
-        5797,
-        6028,
-        6039,
-        6087,
-        6292,
-        6346,
-        6433
+        5701,
+        5757,
+        5799,
+        5801,
+        6032,
+        6043,
+        6091,
+        6309,
+        6363,
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -3048,11 +3067,11 @@
         5479,
         5480,
         5618,
-        5753,
-        6028,
-        6039,
-        6087,
-        6292
+        5757,
+        6032,
+        6043,
+        6091,
+        6309
       ],
       "publishedStyleSites": [
         {
@@ -3096,7 +3115,7 @@
         5302,
         5479,
         5618,
-        6433
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -3144,12 +3163,12 @@
         5303,
         5480,
         5618,
-        5753,
-        5795,
-        5797,
-        6087,
-        6292,
-        6346
+        5757,
+        5799,
+        5801,
+        6091,
+        6309,
+        6363
       ],
       "publishedStyleSites": [
         {
@@ -3197,10 +3216,11 @@
         5202,
         5480,
         5618,
-        5795,
-        6028,
-        6039,
-        6433
+        5701,
+        5799,
+        6032,
+        6043,
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -3228,7 +3248,8 @@
         4815,
         4989,
         5014,
-        6433
+        5701,
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -3307,8 +3328,8 @@
         5571,
         5573,
         5575,
-        5808,
-        5848
+        5812,
+        5852
       ],
       "publishedStyleSites": [
         {
@@ -3358,7 +3379,7 @@
         5221,
         5573,
         5575,
-        5808
+        5812
       ],
       "publishedStyleSites": [
         {
@@ -3382,7 +3403,7 @@
         5565,
         5571,
         5573,
-        5848
+        5852
       ],
       "publishedStyleSites": [
         {
@@ -3405,8 +3426,8 @@
         5565,
         5571,
         5573,
-        5808,
-        5848
+        5812,
+        5852
       ],
       "publishedStyleSites": [
         {
@@ -3440,7 +3461,7 @@
         5565,
         5571,
         5573,
-        5848
+        5852
       ],
       "publishedStyleSites": [
         {
@@ -3528,9 +3549,9 @@
       "class": "tcrn-document-canvas",
       "variant": "family root/alias",
       "consumerLines": [
-        5705,
-        5716,
-        5755
+        5709,
+        5720,
+        5759
       ],
       "publishedStyleSites": [
         {
@@ -3592,8 +3613,8 @@
       "class": "tcrn-document-canvas__section",
       "variant": "component part",
       "consumerLines": [
-        5716,
-        5755
+        5720,
+        5759
       ],
       "publishedStyleSites": [
         {
@@ -3633,12 +3654,12 @@
         5470,
         5591,
         5618,
-        5735,
-        5736,
-        5790,
-        5792,
-        5793,
-        6029
+        5739,
+        5740,
+        5794,
+        5796,
+        5797,
+        6033
       ],
       "publishedStyleSites": [
         {
@@ -3837,11 +3858,11 @@
         5015,
         5591,
         5618,
-        5735,
-        5736,
-        5792,
-        5793,
-        6029
+        5739,
+        5740,
+        5796,
+        5797,
+        6033
       ],
       "publishedStyleSites": [
         {
@@ -3877,9 +3898,9 @@
         4356,
         5015,
         5591,
-        5731,
-        5741,
-        6040
+        5735,
+        5745,
+        6044
       ],
       "publishedStyleSites": [
         {
@@ -3973,9 +3994,9 @@
         4356,
         5015,
         5591,
-        5731,
-        5741,
-        6040
+        5735,
+        5745,
+        6044
       ],
       "publishedStyleSites": [
         {
@@ -4025,7 +4046,7 @@
         5149,
         5194,
         5634,
-        6433
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -4093,7 +4114,7 @@
       "consumerLines": [
         4879,
         5014,
-        6433
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -4124,11 +4145,11 @@
         5160,
         5465,
         5470,
-        5736,
-        5792,
-        5793,
+        5740,
+        5796,
         5797,
-        6345
+        5801,
+        6362
       ],
       "publishedStyleSites": [
         {
@@ -4180,8 +4201,8 @@
       "variant": "family root/alias",
       "consumerLines": [
         5563,
-        5716,
-        5755
+        5720,
+        5759
       ],
       "publishedStyleSites": [
         {
@@ -4200,8 +4221,8 @@
       "variant": "family root/alias",
       "consumerLines": [
         4333,
-        6080,
-        6087
+        6084,
+        6091
       ],
       "publishedStyleSites": [
         {
@@ -4347,7 +4368,7 @@
       "class": "tcrn-link",
       "variant": "family root/alias",
       "consumerLines": [
-        5962
+        5966
       ],
       "publishedStyleSites": [
         {
@@ -4418,8 +4439,8 @@
       "variant": "family root/alias",
       "consumerLines": [
         5571,
-        5965,
-        6087
+        5969,
+        6091
       ],
       "publishedStyleSites": [
         {
@@ -4476,7 +4497,7 @@
       "class": "tcrn-machine-token--compact",
       "variant": "modifier",
       "consumerLines": [
-        6087
+        6091
       ],
       "publishedStyleSites": [
         {
@@ -4501,7 +4522,7 @@
       "variant": "component part",
       "consumerLines": [
         5571,
-        6087
+        6091
       ],
       "publishedStyleSites": [
         {
@@ -4590,8 +4611,8 @@
         5617,
         5618,
         5619,
-        6119,
-        6133
+        6123,
+        6137
       ],
       "publishedStyleSites": [
         {
@@ -4724,8 +4745,8 @@
       "consumerLines": [
         4798,
         5618,
-        6119,
-        6133
+        6123,
+        6137
       ],
       "publishedStyleSites": [
         {
@@ -4760,8 +4781,8 @@
         4188,
         4189,
         5040,
-        5979,
-        6209
+        5983,
+        6213
       ],
       "publishedStyleSites": [
         {
@@ -4878,7 +4899,7 @@
         4187,
         4188,
         4189,
-        6209
+        6213
       ],
       "publishedStyleSites": [
         {
@@ -4960,7 +4981,7 @@
         4583,
         4602,
         4611,
-        5830
+        5834
       ],
       "publishedStyleSites": [
         {
@@ -5030,7 +5051,7 @@
       "consumerLines": [
         4356,
         4484,
-        5830
+        5834
       ],
       "publishedStyleSites": [
         {
@@ -5069,7 +5090,7 @@
       "consumerLines": [
         4356,
         4484,
-        5830
+        5834
       ],
       "publishedStyleSites": [
         {
@@ -5095,7 +5116,7 @@
       "variant": "component part",
       "consumerLines": [
         4356,
-        5830
+        5834
       ],
       "publishedStyleSites": [
         {
@@ -5118,7 +5139,7 @@
       "consumerLines": [
         4356,
         4611,
-        5830
+        5834
       ],
       "publishedStyleSites": [
         {
@@ -5149,7 +5170,7 @@
       "variant": "component part",
       "consumerLines": [
         4611,
-        5830
+        5834
       ],
       "publishedStyleSites": [
         {
@@ -5169,7 +5190,7 @@
         4356,
         4583,
         4602,
-        5830
+        5834
       ],
       "publishedStyleSites": [
         {
@@ -5189,7 +5210,7 @@
       "variant": "component part",
       "consumerLines": [
         4356,
-        5830
+        5834
       ],
       "publishedStyleSites": [
         {
@@ -5783,8 +5804,8 @@
         4324,
         4337,
         4355,
-        6292,
-        6608
+        6309,
+        6625
       ],
       "publishedStyleSites": [
         {
@@ -6100,7 +6121,7 @@
       "variant": "component part",
       "consumerLines": [
         4355,
-        6292
+        6309
       ],
       "publishedStyleSites": [
         {
@@ -6319,9 +6340,9 @@
       "class": "tcrn-record-row",
       "variant": "family root/alias",
       "consumerLines": [
-        5698,
-        5704,
-        5705
+        5702,
+        5708,
+        5709
       ],
       "publishedStyleSites": [
         {
@@ -6467,7 +6488,7 @@
       "class": "tcrn-record-row--dense",
       "variant": "modifier",
       "consumerLines": [
-        5698
+        5702
       ],
       "publishedStyleSites": [
         {
@@ -6489,9 +6510,9 @@
       "class": "tcrn-record-row__id",
       "variant": "component part",
       "consumerLines": [
-        5698,
-        5704,
-        5705
+        5702,
+        5708,
+        5709
       ],
       "publishedStyleSites": [
         {
@@ -6509,7 +6530,7 @@
       "class": "tcrn-record-row__meta",
       "variant": "component part",
       "consumerLines": [
-        5698
+        5702
       ],
       "publishedStyleSites": [
         {
@@ -6539,7 +6560,7 @@
       "class": "tcrn-record-row__summary",
       "variant": "component part",
       "consumerLines": [
-        5698
+        5702
       ],
       "publishedStyleSites": [
         {
@@ -6569,9 +6590,9 @@
       "class": "tcrn-record-table",
       "variant": "family root/alias",
       "consumerLines": [
-        5701,
-        5704,
-        5705
+        5705,
+        5708,
+        5709
       ],
       "publishedStyleSites": [
         {
@@ -6601,8 +6622,8 @@
       "class": "tcrn-row-group",
       "variant": "family root/alias",
       "consumerLines": [
-        5704,
-        5705
+        5708,
+        5709
       ],
       "publishedStyleSites": [
         {
@@ -6656,8 +6677,8 @@
       "class": "tcrn-row-group--dense",
       "variant": "modifier",
       "consumerLines": [
-        5704,
-        5705
+        5708,
+        5709
       ],
       "publishedStyleSites": [
         {
@@ -6671,8 +6692,8 @@
       "class": "tcrn-row-group__head",
       "variant": "component part",
       "consumerLines": [
-        5704,
-        5705
+        5708,
+        5709
       ],
       "publishedStyleSites": [
         {
@@ -6852,9 +6873,9 @@
       "class": "tcrn-search-result-list",
       "variant": "family root/alias",
       "consumerLines": [
-        5716,
-        5745,
-        5755
+        5720,
+        5749,
+        5759
       ],
       "publishedStyleSites": [
         {
@@ -6912,8 +6933,8 @@
       "class": "tcrn-search-result-list__item",
       "variant": "component part",
       "consumerLines": [
-        5716,
-        5755
+        5720,
+        5759
       ],
       "publishedStyleSites": [
         {
@@ -6995,7 +7016,7 @@
         5469,
         5591,
         5618,
-        5735
+        5739
       ],
       "publishedStyleSites": [
         {
@@ -8067,7 +8088,7 @@
       "variant": "family root/alias",
       "consumerLines": [
         4178,
-        6606
+        6623
       ],
       "publishedStyleSites": [
         {
@@ -8290,7 +8311,7 @@
         4844,
         4989,
         5618,
-        5790
+        5794
       ],
       "publishedStyleSites": [
         {
@@ -8431,15 +8452,15 @@
         5556,
         5666,
         5681,
-        5729,
-        5732,
-        5741,
-        5743,
-        5803,
-        5808,
-        5831,
-        5988,
-        6041
+        5733,
+        5736,
+        5745,
+        5747,
+        5807,
+        5812,
+        5835,
+        5992,
+        6045
       ],
       "publishedStyleSites": [
         {
@@ -8530,7 +8551,7 @@
         5191,
         5253,
         5300,
-        5741
+        5745
       ],
       "publishedStyleSites": [
         {
@@ -8547,7 +8568,7 @@
       "variant": "component part",
       "consumerLines": [
         5191,
-        5741
+        5745
       ],
       "publishedStyleSites": [
         {
@@ -8589,11 +8610,11 @@
         5221,
         5493,
         5618,
-        5729,
-        5731,
-        5732,
-        6040,
-        6433
+        5733,
+        5735,
+        5736,
+        6044,
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -8666,11 +8687,11 @@
         5221,
         5493,
         5618,
-        5729,
-        5731,
-        5732,
-        6040,
-        6433
+        5733,
+        5735,
+        5736,
+        6044,
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -8720,7 +8741,7 @@
         5194,
         5202,
         5618,
-        6433
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -8748,7 +8769,7 @@
         5202,
         5221,
         5493,
-        5731
+        5735
       ],
       "publishedStyleSites": [
         {
@@ -8779,8 +8800,8 @@
         4310,
         4311,
         4839,
-        5794,
-        6040
+        5798,
+        6044
       ],
       "publishedStyleSites": [
         {
@@ -8843,8 +8864,8 @@
         4310,
         4311,
         4839,
-        5794,
-        6040
+        5798,
+        6044
       ],
       "publishedStyleSites": [
         {
@@ -8891,8 +8912,8 @@
         4310,
         4311,
         4839,
-        5794,
-        6040
+        5798,
+        6044
       ],
       "publishedStyleSites": [
         {
@@ -8930,13 +8951,13 @@
         5478,
         5489,
         5493,
-        5789,
-        5790,
-        5791,
-        5797,
-        5989,
-        5990,
-        5991
+        5793,
+        5794,
+        5795,
+        5801,
+        5993,
+        5994,
+        5995
       ],
       "publishedStyleSites": [
         {
@@ -9038,10 +9059,10 @@
         5469,
         5470,
         5478,
-        5790,
-        5791,
-        5797,
-        5991
+        5794,
+        5795,
+        5801,
+        5995
       ],
       "publishedStyleSites": [
         {
@@ -9126,7 +9147,7 @@
         4317,
         5177,
         5493,
-        5990
+        5994
       ],
       "publishedStyleSites": [
         {
@@ -9161,8 +9182,8 @@
         5179,
         5472,
         5489,
-        5789,
-        5991
+        5793,
+        5995
       ],
       "publishedStyleSites": [
         {
@@ -9229,25 +9250,26 @@
         5574,
         5591,
         5618,
-        5698,
-        5703,
-        5704,
-        5715,
-        5716,
-        5731,
+        5701,
+        5702,
+        5707,
+        5708,
+        5719,
+        5720,
         5735,
-        5741,
-        5755,
-        5792,
-        5808,
-        5943,
-        5948,
+        5739,
+        5745,
+        5759,
+        5796,
+        5812,
+        5947,
         5952,
-        5953,
-        5959,
-        5986,
-        6040,
-        6087
+        5956,
+        5957,
+        5963,
+        5990,
+        6044,
+        6091
       ],
       "publishedStyleSites": [
         {
@@ -9325,7 +9347,7 @@
         4305,
         4306,
         4333,
-        5792
+        5796
       ],
       "publishedStyleSites": [
         {
@@ -9655,13 +9677,13 @@
         5539,
         5554,
         5563,
-        5808,
-        5820,
-        5830,
-        5840,
-        5944,
-        6086,
-        6399
+        5812,
+        5824,
+        5834,
+        5844,
+        5948,
+        6090,
+        6416
       ],
       "publishedStyleSites": [
         {
@@ -9712,7 +9734,7 @@
       "class": "tcrn-checkbox",
       "variant": "family root/alias",
       "consumerLines": [
-        6040
+        6044
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9781,7 +9803,7 @@
       "consumerLines": [
         4352,
         4922,
-        6087
+        6091
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9827,7 +9849,7 @@
       "class": "tcrn-finding-link",
       "variant": "family root/alias",
       "consumerLines": [
-        6087
+        6091
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9927,7 +9949,7 @@
         5149,
         5194,
         5634,
-        6433
+        6450
       ],
       "publishedStyleSites": [
         {
@@ -9957,7 +9979,7 @@
       "class": "tcrn-line-numbered-editor__finding--",
       "variant": "modifier",
       "consumerLines": [
-        6087
+        6091
       ],
       "publishedStyleSites": [
         {
@@ -9981,7 +10003,7 @@
       "class": "tcrn-line-numbered-editor__line--",
       "variant": "modifier",
       "consumerLines": [
-        6080
+        6084
       ],
       "publishedStyleSites": [
         {
@@ -9997,7 +10019,7 @@
       "class": "tcrn-machine-token--key",
       "variant": "modifier",
       "consumerLines": [
-        6087
+        6091
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10413,7 +10435,7 @@
       "class": "tcrn-state-surface--neutral",
       "variant": "modifier",
       "consumerLines": [
-        5741
+        5745
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -10425,7 +10447,7 @@
         4257,
         4343,
         5040,
-        5979
+        5983
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10440,7 +10462,7 @@
       "variant": "component part",
       "consumerLines": [
         5040,
-        5979
+        5983
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10452,7 +10474,7 @@
       "class": "tcrn-subnav__row",
       "variant": "component part",
       "consumerLines": [
-        5979
+        5983
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10495,9 +10517,9 @@
       "variant": "family root/alias",
       "consumerLines": [
         4346,
-        5953,
-        5962,
-        5986
+        5957,
+        5966,
+        5990
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10511,7 +10533,7 @@
       "class": "tcrn-vocabulary__category-description",
       "variant": "component part",
       "consumerLines": [
-        5986
+        5990
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10522,7 +10544,7 @@
       "class": "tcrn-vocabulary__semantic",
       "variant": "component part",
       "consumerLines": [
-        5953
+        5957
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10533,7 +10555,7 @@
       "class": "tcrn-vocabulary__source",
       "variant": "component part",
       "consumerLines": [
-        5962
+        5966
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10555,10 +10577,10 @@
       "class": "tcrn-work-tree",
       "variant": "family root/alias",
       "consumerLines": [
-        5698,
-        5701,
-        5704,
-        5705
+        5702,
+        5705,
+        5708,
+        5709
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10571,9 +10593,9 @@
       "class": "tcrn-work-tree__children",
       "variant": "component part",
       "consumerLines": [
-        5701,
-        5704,
-        5705
+        5705,
+        5708,
+        5709
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10585,8 +10607,8 @@
       "class": "tcrn-work-tree__epic",
       "variant": "component part",
       "consumerLines": [
-        5704,
-        5705
+        5708,
+        5709
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10598,9 +10620,9 @@
       "class": "tcrn-work-tree__key",
       "variant": "component part",
       "consumerLines": [
-        5698,
-        5704,
-        5705
+        5702,
+        5708,
+        5709
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10613,7 +10635,7 @@
       "class": "tcrn-work-tree__missing",
       "variant": "component part",
       "consumerLines": [
-        5698
+        5702
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10624,7 +10646,7 @@
       "class": "tcrn-work-tree__story",
       "variant": "component part",
       "consumerLines": [
-        5698
+        5702
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10635,8 +10657,8 @@
       "class": "tcrn-work-tree__summary",
       "variant": "component part",
       "consumerLines": [
-        5704,
-        5705
+        5708,
+        5709
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10648,7 +10670,7 @@
       "class": "tcrn-work-tree__text",
       "variant": "component part",
       "consumerLines": [
-        5698
+        5702
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10659,7 +10681,7 @@
       "class": "tcrn-work-tree__title",
       "variant": "component part",
       "consumerLines": [
-        5698
+        5702
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -11777,7 +11799,7 @@
     }
   },
   "actualBounds": [
-    "R54 PF reuses in place the R46 browser probe result (integration-r46-init053-raw/u18, run once on ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 with Playwright from the DS main checkout at the published merge d53f2305); between fbc3a073 and the R54 PF head 75676ebf5baba737505a36db5f32c06d78ab5417 only Portal test files changed under portal/ (index.html, locales.js, portal.mjs, styles and snapshots unchanged); every case and failure is recorded individually in that application evidence; no canonical integration claim",
+    "EPIC-149 R2 PF reuses in place the R46 browser probe result (integration-r46-init053-raw/u18, run once on ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 with Playwright from the DS main checkout at the published merge d53f2305); between fbc3a073 and the EPIC-149 R2 PF head a6391fad66ab42ab28a80466e893a736e9dc3e87 Portal source files outside portal/tests changed under portal/ (README.md, index.html, locales.js, portal.mjs and scripts/generate-launchers.mjs: EPIC-149 R1 TCRN-CROSS-SUB-454 and TCRN-CROSS-SUB-459, R2 TCRN-CROSS-SUB-467; styles and snapshots unchanged), and the R46 probe was not run again, so it does not cover those changes; every case and failure is recorded individually in that application evidence; no canonical integration claim",
     "actual wide/narrow/column and lifecycle outcomes are recorded individually in that application evidence; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
   ]

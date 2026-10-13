@@ -9,6 +9,13 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // path or target id. A release plan lists every enabled gate, the release-only ones included, and
 // needs no Git at all; without Git a project can only run that one. The engine derives the
 // selection from the declarations; nobody picks gates by hand.
+//
+// TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-447): a plan made for Stories (--work-id) selects every
+// gate that applies to them: each enabled required gate, for every Story; each gate a Story's gates
+// field or an ancestor's names (work-gates.ts); and each gate whose covers name the Story or one of
+// its ancestors, so a work:<Initiative or Epic id> cover reaches every Story under it. Each such gate
+// records the Stories it applies to as its matchedWorkIds. A path match still selects a gate and
+// records the files, without binding a Story. A plan made for no Story is what it was.
 
 import { execFileSync } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
@@ -175,18 +182,72 @@ export function changedFiles(root: string, options: { readonly base?: string } =
   return [...new Set([...paths(tracked), ...paths(untracked)])].sort(compareCanonicalText);
 }
 
+// TCRN-CROSS-STORY-530 (MIN-256; TCRN-CROSS-SUB-450; Q13): a key names a commit when the message holds
+// it followed by anything but a digit, so STORY-52 does not name a commit of STORY-525.
+function namesKey(message: string, key: string): boolean {
+  let from = message.indexOf(key);
+  while (from !== -1) {
+    const next = message.charCodeAt(from + key.length);
+    if (!(next >= 48 && next <= 57)) return true;
+    from = message.indexOf(key, from + 1);
+  }
+  return false;
+}
+
+/**
+ * TCRN-CROSS-STORY-530 (MIN-256; TCRN-CROSS-SUB-450; Q13): the files under `root` that a Story's
+ * commits touched, relative to it with forward slashes, sorted: every commit HEAD reaches whose
+ * message names one of `keys` (the external keys of the Story and its Subtasks) followed by anything
+ * but a digit, deletions included, renames as a deletion and an addition. None without a key or
+ * without a commit; GATES_GIT_UNAVAILABLE when git cannot read the history.
+ */
+export function storyCommitPaths(root: string, keys: readonly string[]): readonly string[] {
+  const named = [...new Set(keys)].filter((key) => key.length > 0 && !key.includes("\u0000")).sort(compareCanonicalText);
+  if (named.length === 0 || gitHead(root) === null) return [];
+  const log = git(root, ["log", "HEAD", "--fixed-strings", ...named.map((key) => `--grep=${key}`), "--format=%H%x00%B%x00"]);
+  if (log === null) fail("GATES_GIT_UNAVAILABLE", `git could not read the history under ${root}`, { root, remedy: "--release" });
+  const fields = log.split("\0");
+  const commits: string[] = [];
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    const commit = (fields[index] ?? "").trim();
+    if (/^[0-9a-f]{40,64}$/u.test(commit) && named.some((key) => namesKey(fields[index + 1] ?? "", key))) commits.push(commit);
+  }
+  const files = new Set<string>();
+  // A bounded number of commits per call keeps the argument list within the platform's limit.
+  for (let start = 0; start < commits.length; start += 256) {
+    const listed = git(root, ["log", "--no-walk=unsorted", "--format=", "--name-only", "--no-renames", "--relative", "-z", ...commits.slice(start, start + 256)]);
+    if (listed === null) fail("GATES_GIT_UNAVAILABLE", `git could not list the files of the Story's commits under ${root}`, { root, remedy: "--release" });
+    for (const file of paths(listed)) files.add(file);
+  }
+  return [...files].sort(compareCanonicalText);
+}
+
 export interface PlannedGate {
   readonly name: string;
   readonly root: string;
   readonly command: readonly string[];
   readonly required: boolean;
   readonly releaseOnly: boolean;
-  // "release" for a full run, "changed" for path coverage, or "work-id" for an exact subject cover.
-  readonly reason: "changed" | "release" | "work-id";
+  // "release" for a full run; otherwise the first of these that selected the gate: "changed" for path
+  // coverage, "work-id" for a cover naming a target Story or one of its ancestors, "work-field" for a
+  // gate a target's gates field names, "required" for a required gate of a plan made for Stories.
+  readonly reason: "changed" | "release" | "work-id" | "work-field" | "required";
   // The changed files under the gate's root that its covers match (none in a release plan).
   readonly matched: readonly string[];
-  // Exact Story subjects matched by this declaration.
+  // The target Stories the gate applies to: all of them for a required gate, else those whose gates
+  // field names it or that its covers name, the Story itself or an ancestor.
   readonly matchedWorkIds: readonly string[];
+}
+
+/**
+ * TCRN-CROSS-STORY-525: what binds one target Story to gates besides a required declaration: the ids
+ * of its ancestors (workAncestorIds), whose work covers cover it, and the gate names its gates field
+ * and its ancestors' name (effectiveWorkGates). A target the plan has no subject for has neither.
+ */
+export interface GateSubject {
+  readonly workId: string;
+  readonly ancestorIds: readonly string[];
+  readonly gates: readonly string[];
 }
 
 export interface GatesPlan {
@@ -203,6 +264,13 @@ export interface GatesPlan {
   // digest of every enabled gate's declaration. A run records both; the done check compares them.
   readonly roots: readonly string[];
   readonly declarationsDigest: string;
+  // TCRN-CROSS-STORY-525 (Q10): the names a target's gates field gives that the project declares no
+  // gate by, sorted; present only when there is one. Such a gate never runs, so its Story is not done.
+  readonly unknownGates?: readonly string[];
+  // TCRN-CROSS-STORY-530 (TCRN-CROSS-SUB-450): the external keys of the target Stories and their
+  // Subtasks, sorted, when there is one: the run's tree digest then counts only the files their
+  // commits touched (gateTreeState).
+  readonly subjectKeys?: readonly string[];
 }
 
 function inside(parent: string, candidate: string): boolean {
@@ -267,11 +335,25 @@ function normalizedWorkIds(workIds: readonly string[] | undefined): readonly str
 }
 
 /**
+ * Whether `gate` applies to the Story `workId` (TCRN-CROSS-STORY-525): it is required, the Story's
+ * gates field or an ancestor's names it, or its covers name the Story or an ancestor. Whether it is
+ * enabled, and whether a release-only gate counts, is the caller's question.
+ */
+export function gateAppliesTo(gate: NamedGate, workId: string, subject: GateSubject | undefined): boolean {
+  return gate.required || gateBindsByWork(gate, workId, subject) || (subject?.gates.includes(gate.name) ?? false);
+}
+
+// A cover naming the Story or one of its ancestors.
+function gateBindsByWork(gate: NamedGate, workId: string, subject: GateSubject | undefined): boolean {
+  return gate.covers.includes(workId) || (subject?.ancestorIds.some((ancestorId) => gate.covers.includes(ancestorId)) ?? false);
+}
+
+/**
  * The gates a change or Story needs: every enabled, non-release-only gate whose path covers match
- * changed files under its root or whose exact work-id cover matches a target id; or, for a release,
- * every enabled gate. Non-release plans require an explicit valid Git base. Disabled gates are
- * never listed. The gates are listed in their planning order (planningOrder): by name while no gate
- * holds an order.
+ * changed files under its root, and, when the plan is made for Stories, every such gate that applies
+ * to one of them (gateAppliesTo); or, for a release, every enabled gate. Non-release plans require an
+ * explicit valid Git base. Disabled gates are never listed. The gates are listed in their planning
+ * order (planningOrder): by name while no gate holds an order.
  */
 export async function planGates(input: {
   readonly projectRoot: string;
@@ -279,6 +361,10 @@ export async function planGates(input: {
   readonly release?: boolean;
   readonly base?: string;
   readonly workIds?: readonly string[];
+  // TCRN-CROSS-STORY-525: each target's ancestors and the gate names that bind it.
+  readonly subjects?: readonly GateSubject[];
+  // TCRN-CROSS-STORY-530: the external keys of the targets and their Subtasks.
+  readonly subjectKeys?: readonly string[];
 }): Promise<GatesPlan> {
   let projectRoot: string;
   try {
@@ -300,10 +386,21 @@ export async function planGates(input: {
     if (!roots.has(gate.root)) roots.set(gate.root, await resolveGateRoot(projectRoot, gate.root));
   }
   const base = input.base ?? null;
-  const declared = { roots: [...roots.keys()].sort(compareCanonicalText), declarationsDigest: gateDeclarationsDigest(enabled) };
+  const subjects = new Map((input.subjects ?? []).map((subject) => [subject.workId, subject]));
+  const unknownGates = [...new Set(workIds.flatMap((workId) => subjects.get(workId)?.gates ?? []))]
+    .filter((name) => !input.gates.some((gate) => gate.name === name))
+    .sort(compareCanonicalText);
+  const subjectKeys = [...new Set(input.subjectKeys ?? [])].sort(compareCanonicalText);
+  const declared = {
+    roots: [...roots.keys()].sort(compareCanonicalText),
+    declarationsDigest: gateDeclarationsDigest(enabled),
+    ...(unknownGates.length === 0 ? {} : { unknownGates }),
+    ...(subjectKeys.length === 0 ? {} : { subjectKeys }),
+  };
+  const appliesTo = (gate: NamedGate): readonly string[] => workIds.filter((workId) => gateAppliesTo(gate, workId, subjects.get(workId)));
   if (release) return {
     projectRoot, release, base, workIds, changed: null,
-    gates: gates.map((gate) => planned(gate, "release", [], workIds.filter((workId) => gate.covers.includes(workId)))),
+    gates: gates.map((gate) => planned(gate, "release", [], appliesTo(gate))),
     ...declared,
   };
   const changed = new Map<string, readonly string[]>();
@@ -320,9 +417,14 @@ export async function planGates(input: {
   for (const gate of gates) {
     const covers = gate.covers.filter((cover) => !cover.startsWith("work:")).map((glob) => compileGlob(glob));
     const matched = (changed.get(gate.root) ?? []).filter((file) => covers.some((glob) => glob.test(file)));
-    const matchedWorkIds = workIds.filter((workId) => gate.covers.includes(workId));
+    const matchedWorkIds = appliesTo(gate);
     if (matched.length > 0 || matchedWorkIds.length > 0) {
-      selected.push(planned(gate, matched.length > 0 ? "changed" : "work-id", matched, matchedWorkIds));
+      const reason: PlannedGate["reason"] = matched.length > 0
+        ? "changed"
+        : matchedWorkIds.some((workId) => gateBindsByWork(gate, workId, subjects.get(workId)))
+          ? "work-id"
+          : matchedWorkIds.some((workId) => subjects.get(workId)?.gates.includes(gate.name) === true) ? "work-field" : "required";
+      selected.push(planned(gate, reason, matched, matchedWorkIds));
     }
   }
   return {

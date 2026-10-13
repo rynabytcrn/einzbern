@@ -61,6 +61,26 @@ the record is read and never stored: once the target arrives, from a later write
 or a merged device stream, the next read no longer lists it, and the stored
 relation is unchanged.
 
+## Gates
+
+An Initiative, an Epic or a Story may name the gates it is held to in the
+`required:false` extension `advisory:gates` (TCRN-CROSS-STORY-525, MIN-256): a
+non-empty list of gate names (`gates-config-set` names: letters, digits, dots,
+colons, underscores and hyphens, starting with a letter or a digit), sorted in
+`utf8-byte-order-v1` without repeats. `work-create --gates`, `work-annotate
+--gates` and a `work-batch` member's `gates` write it: the writer deduplicates and
+sorts the names, refuses one that is not a gate name, and refuses a non-empty list
+on any other kind; on an annotation the list replaces the stored one whole, and an
+empty list (`--gates -`) removes the extension. A record that never names a gate
+carries no such extension, so its record and its events keep the bytes they had
+before the field existed. Replay checks the stored shape only and never asks
+whether the library declares a gate.
+
+The gates that bind a Story are the names it carries and those of every ancestor
+on its parent chain, its Epic and its Initiative: `work-show` reports the record's
+own list as `fields.gates` when it carries one, and the union as `effectiveGates`.
+The gate plan and the done check read them (`docs/wiki/Gates.md`).
+
 ## Involved projects (format 2)
 
 `involvedProjects` is a canonical work field, independent of the work item's owning

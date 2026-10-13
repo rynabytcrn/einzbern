@@ -3,6 +3,7 @@ import { setConfigRecord, removeConfigRecord } from "../../core/src/config-recor
 import { coordinationCatalogRows } from "../../core/src/project-scope.js";
 import { chainIdentity, declareChainIdentity, resolveProjectTarget, workProjectContexts, effectiveProjectState, ensureProjectCoordination, settingsCatalogState, markUnresolvedCommonDefault } from "../../core/src/project-chain.js";
 import { normalizeInvolvedProjects, involvedProjectsOf, projectReference, hasInvolvedProject } from "../../core/src/involved-projects.js";
+import { normalizedWorkGates } from "../../core/src/work-gates.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -119,6 +120,12 @@ import {
   REVERSE_RELATION_NAMES,
   relationFilter,
   workRelations,
+  effectiveWorkGates,
+  workAncestorIds,
+  workGates,
+  workSubjectKeys,
+  WORK_GATES_KEY,
+  gateAppliesTo,
   minutesById,
   minutesView,
   recordMinutes,
@@ -157,6 +164,7 @@ import type { DecisionStatusFilter, KnowledgeLanguageBundle, KnowledgeLanguagePr
 import type { DoctorCheck, SetupApplied, SetupOptions, SetupPlan } from "../../core/src/index.js";
 import type {
   DoneGatesVerdict,
+  GateSubject,
   KnowledgeCategory,
   KnowledgeFreshnessState,
   KnowledgeHint,
@@ -369,6 +377,13 @@ function storyFieldsInput(values: Readonly<Record<string, string>>): { readonly 
     ...(values.acceptance === undefined ? {} : { acceptance: values.acceptance }),
     ...(values.body === undefined ? {} : { body: values.body }),
   };
+}
+
+// TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-446): --gates on work-create and work-annotate names the
+// gates an Initiative, an Epic or a Story is held to, as a comma list of gate names; "-" is the empty
+// list, which on an annotation removes them. The engine checks each name and the record's kind.
+function gatesInput(values: Readonly<Record<string, string>>): { readonly gates?: readonly string[] } {
+  return values.gates === undefined ? {} : { gates: listValue(values.gates) };
 }
 
 // Unified nullable-flag spelling: "-" is the canonical null sentinel and an omitted
@@ -906,24 +921,36 @@ function optionalBoolean(value: string | undefined, name: string): boolean | und
   return value === undefined ? undefined : booleanValue(value, name);
 }
 
+// TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-447): what binds each target Story to gates besides a
+// required declaration, read from the library's work records: the ids of its ancestors, whose work
+// covers cover it, and the gate names its gates field and its ancestors' give. A target the library
+// does not hold has neither.
+function gateSubjects(work: readonly WorkRecord[], workIds: readonly string[]): readonly GateSubject[] {
+  return [...new Set(workIds)].map((workId) => ({ workId, ancestorIds: workAncestorIds(work, workId), gates: effectiveWorkGates({ work }, workId) }));
+}
+
 // TCRN-CROSS-STORY-519 (D-519-1, D-519-2): the work a coordination library's own gates cover. A work
-// item that an enabled gate of its own project's scope in this library covers by exact work id is
-// planned and run in this library, in the scope of that project, and the run records the project;
-// a cover is the declaration itself, so no target is inferred. The items are grouped by project, in
-// the order they were given, one plan and one run per project. A --project-id given names the project
-// of every one of them, or the operation is refused before anything runs.
+// item that an enabled gate of its own project's scope in this library applies to is planned and run
+// in this library, in the scope of that project, and the run records the project; the declarations
+// and the work records say so, so no target is inferred. TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-447):
+// a gate applies as gates-plan.ts says (gateAppliesTo): a required gate to every Story, another one
+// to the Stories whose gates field or an ancestor's names it or whose covers name the Story or an
+// ancestor; a release-only gate only for a release. The items are grouped by project, in the order
+// they were given, one plan and one run per project. A --project-id given names the project of every
+// one of them, or the operation is refused before anything runs.
 interface LibraryGateGroup {
   readonly projectId: string | undefined;
   readonly workIds: string[];
 }
 
-function libraryCoveredWork(state: Awaited<ReturnType<typeof materializeWorkspace>>, workIds: readonly string[], projectId: string | undefined): { readonly ids: ReadonlySet<string>; readonly groups: readonly LibraryGateGroup[] } {
+function libraryCoveredWork(state: Awaited<ReturnType<typeof materializeWorkspace>>, workIds: readonly string[], projectId: string | undefined, release: boolean): { readonly ids: ReadonlySet<string>; readonly groups: readonly LibraryGateGroup[] } {
   const ids = new Set<string>();
   const groups = new Map<string, LibraryGateGroup>();
   for (const workId of workIds) {
     const record = state.work.find((entry) => entry.id === workId && !entry.tombstone);
     if (record === undefined || ids.has(workId)) continue;
-    if (!listGates(scopedWorkspaceState(state, record.projectId)).some((gate) => gate.enabled && gate.covers.includes(workId))) continue;
+    const [subject] = gateSubjects(state.work, [workId]);
+    if (!listGates(scopedWorkspaceState(state, record.projectId)).some((gate) => gate.enabled && (release || !gate.releaseOnly) && gateAppliesTo(gate, workId, subject))) continue;
     if (projectId !== undefined && record.projectId !== projectId) {
       throw new WorkflowCliError("GATES_PROJECT_MISMATCH", `--project-id names ${projectId}, but ${workId} belongs to ${record.projectId ?? "no project"}, the scope its gates in this library are declared in`, {
         field: "project-id",
@@ -954,6 +981,8 @@ async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWor
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
       workIds: group.workIds,
+      subjects: gateSubjects(state.work, group.workIds),
+      subjectKeys: workSubjectKeys(state.work, group.workIds),
     });
     if (!execute) return { ...binding, projectRoot, ok: true, plan };
     const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(group.projectId === undefined ? {} : { projectId: group.projectId }), at: values.at ?? "" });
@@ -976,7 +1005,7 @@ async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWor
 async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean): Promise<Record<string, unknown> | null> {
   if (chainIdentity(state)?.role !== "coordination" || values["work-id"] === undefined) return null;
   const workIds = listValue(values["work-id"]);
-  const covered = libraryCoveredWork(state, workIds, values["project-id"]);
+  const covered = libraryCoveredWork(state, workIds, values["project-id"], booleanValue(values.release, "release"));
   const results: Record<string, unknown>[] = [];
   for (const workId of workIds) {
     const resolved = await workProjectContexts(state, workId);
@@ -1005,7 +1034,7 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
           const currentWork = (await materializeWorkspace(values.workspace!)).work.find(record => record.id === workId && !record.tombstone);
           if (currentWork?.revision !== resolved.workRevision) throw new Error("work revision changed; resolve again");
           const projectRoot = await gatesProjectRoot(reference.libraryId, repository.projectPath, reference.projectId);
-          const plan = await planGates({ projectRoot, gates: listGates(target), release: booleanValue(values.release, "release"), ...(values.base === undefined ? {} : { base: values.base }), workIds: [workId] });
+          const plan = await planGates({ projectRoot, gates: listGates(target), release: booleanValue(values.release, "release"), ...(values.base === undefined ? {} : { base: values.base }), workIds: [workId], subjects: gateSubjects(state.work, [workId]), subjectKeys: workSubjectKeys(state.work, [workId]) });
           // This handoff is bound to the very target whose gates execute: the target's own handoff
           // (project-chain.ts, the object the native host dispatch passes for it), with the
           // repository and root the gates run in. No global first-target setting applies.
@@ -1095,22 +1124,41 @@ async function gatesProjectRoot(libraryId: string, project: string | undefined, 
   );
 }
 
-// TCRN-CROSS-STORY-485 R4 (TCRN-CROSS-SUB-345): before a Story goes to done, the required gates of its
-// change must be green on the tree as it is (gates-done.ts). The records going to done are judged
-// against the library as it stands before the write, and a Story the same batch creates counts as
-// one; a project is looked up only when a Story is among them and an enabled required declaration
-// could cover it. No enabled required coverage is itself a refusal, before a project lookup.
+// TCRN-CROSS-STORY-485 R4 (TCRN-CROSS-SUB-345): before a Story goes to done, the gates that apply to it
+// must be green on the tree as it is (gates-done.ts). The records going to done are judged against the
+// library as it stands before the write, and a record the same write creates counts as one, with its
+// parent and its gates field, so a Story it creates is bound through its parent chain as a written one
+// is. TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-448): a project with an enabled gate is gated; its
+// root is looked up only when a Story needs a run read, so a Story no gate applies to never needs one.
+// TCRN-CROSS-STORY-530 (TCRN-CROSS-SUB-450): a created record keeps its external key, which names the
+// Story's commits; gates-plan and gates-run take the keys of the Stories and their Subtasks from the
+// work records (workSubjectKeys) for the run's tree digest.
 // TCRN-CROSS-STORY-519 (D-519-3): the lookup reads the library, so a coordination library registered
-// with no project finds its root for each of its projects; the verdict and its refusals are unchanged.
+// with no project finds its root for each of its projects.
+interface CreatedWork {
+  readonly id: string;
+  readonly externalKey?: string;
+  readonly kind: string;
+  readonly projectId?: string;
+  readonly parentId?: string | null;
+  readonly gates?: readonly string[];
+}
+
 async function doneGates(
   state: Awaited<ReturnType<typeof materializeWorkspace>>,
   workIds: readonly string[],
-  created: readonly { readonly id: string; readonly kind: string; readonly projectId?: string }[],
+  created: readonly CreatedWork[],
   project: string | undefined,
 ): Promise<DoneGatesVerdict & { readonly targets?: readonly (DoneGatesVerdict & { readonly projectId: string | null })[] }> {
   const known = new Set(state.work.map((record) => record.id));
-  const createdStories = created.filter((entry) => entry.kind === "Story" && !known.has(entry.id)) as unknown as readonly WorkRecord[];
-  const work = [...state.work, ...createdStories];
+  const createdRecords = created.filter((entry) => !known.has(entry.id)).map((entry) => {
+    const gates = normalizedWorkGates(entry.gates ?? []) ?? [];
+    return {
+      id: entry.id, externalKey: entry.externalKey, kind: entry.kind, projectId: entry.projectId, parentId: entry.parentId ?? null, tombstone: false,
+      extensions: gates.length === 0 ? {} : { [WORK_GATES_KEY]: { required: false, value: gates } },
+    };
+  }) as unknown as readonly WorkRecord[];
+  const work = [...state.work, ...createdRecords];
   const stories = workIds.map((id) => work.find((record) => record.id === id)).filter((record): record is WorkRecord => record?.kind === "Story");
   if (stories.length === 0) return { checked: false, reason: "no-story", runId: null, treeDigest: null };
   const targets = [...new Set(stories.map((record) => record.projectId))];
@@ -1118,9 +1166,9 @@ async function doneGates(
   for (const projectId of targets) {
     const view = scopedWorkspaceState(state, projectId);
     const ids = stories.filter((record) => record.projectId === projectId).map((record) => record.id);
-    const gated = listGates(view).some((gate) => gate.enabled && gate.required && gate.covers.length > 0);
+    const gated = listGates(view).some((gate) => gate.enabled);
     const verdict = await assertDoneGates({
-      projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project, projectId, state) : "",
+      projectRoot: gated ? () => gatesProjectRoot(state.metadata.workspaceId, project, projectId, state) : "",
       library: { ...view, work }, workIds: ids,
       ...(projectId === undefined ? {} : { configurationProjectId: projectId }),
     });
@@ -1129,16 +1177,25 @@ async function doneGates(
   return { ...verdicts[0]!, targets: verdicts };
 }
 
-// The records a work-batch document creates, with their kinds, by the id their external key derives.
-function batchCreatedKinds(document: unknown): readonly { readonly id: string; readonly kind: string; readonly projectId?: string }[] {
+// The records a work-batch document creates, with their kinds, parents and gates fields, by the id
+// their external key derives.
+function batchCreatedKinds(document: unknown): readonly CreatedWork[] {
   const members = (document as { readonly members?: unknown } | null)?.members;
   if (!Array.isArray(members)) return [];
-  const created: { readonly id: string; readonly kind: string; readonly projectId?: string }[] = [];
+  const created: CreatedWork[] = [];
   for (const member of members as readonly unknown[]) {
     if (member === null || typeof member !== "object") continue;
     const entry = member as Readonly<Record<string, unknown>>;
     if (entry.verb !== "work-create" || typeof entry.externalKey !== "string" || entry.externalKey.length === 0 || typeof entry.kind !== "string") continue;
-    created.push({ id: deriveStableId("work", canonicalExternalKey(entry.externalKey)), kind: entry.kind, ...(typeof entry.projectId === "string" ? { projectId: entry.projectId } : {}) });
+    const parentId = typeof entry.parentId === "string" && entry.parentId.length > 0
+      ? entry.parentId
+      : typeof entry.parentExternalKey === "string" && entry.parentExternalKey.length > 0 ? deriveStableId("work", canonicalExternalKey(entry.parentExternalKey)) : null;
+    const externalKey = canonicalExternalKey(entry.externalKey);
+    created.push({
+      id: deriveStableId("work", externalKey), externalKey, kind: entry.kind, parentId,
+      ...(typeof entry.projectId === "string" ? { projectId: entry.projectId } : {}),
+      ...(Array.isArray(entry.gates) && entry.gates.every((name) => typeof name === "string") ? { gates: entry.gates as readonly string[] } : {}),
+    });
   }
   return created;
 }
@@ -1470,9 +1527,9 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "vocabulary", availability: "cli", mutates: false, flags: [] },
   // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
   // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
-  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "expected-revision", required: false, valueKind: "integer" }, { name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "expected-revision", required: false, valueKind: "integer" }, { name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
   // TCRN-CROSS-STORY-489 (MIN-235 D17, D11, MIN-238 D4): the gates a migration carried over. work-gate-list
@@ -3132,7 +3189,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson(await resolveProjectTarget(projectReference(jsonValue(values.reference!, "reference"))))); return;
   }
   if (command === "work-create") {
-    const values = parseArguments(rest, [...shared, "project-id", "external-key", "kind", "parent-id", "status", "scope", ...STORY_FIELD_FLAGS, "decided-by", ...RELATION_FLAGS, "involved-projects", "title", "summary", "labels", "template-receipt", "actor"]);
+    const values = parseArguments(rest, [...shared, "project-id", "external-key", "kind", "parent-id", "status", "scope", ...STORY_FIELD_FLAGS, "gates", "decided-by", ...RELATION_FLAGS, "involved-projects", "title", "summary", "labels", "template-receipt", "actor"]);
     // TCRN-CROSS-STORY-363: --title is required on the create path. Measured on the
     // cross-project chain on 2026-09-07, 50 of its 843 live work records carried a
     // title; the other 793 were addressable only by external key, so a listing could
@@ -3151,7 +3208,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const { state, gates } = await withWriteLock(workspace, at, async () => {
       const before = await materializeWorkspace(workspace);
       const verdict: DoneGatesVerdict | null = values.kind === "Story" && values.status === "done"
-        ? await doneGates(before, [id], [{ id, kind: "Story", projectId: values["project-id"] ?? "" }], undefined)
+        ? await doneGates(before, [id], [{ id, externalKey: canonicalExternalKey(values["external-key"] ?? ""), kind: "Story", projectId: values["project-id"] ?? "", parentId: nullableValue(values["parent-id"]), ...gatesInput(values) }], undefined)
         : null;
       return {
         state: await createWork(workspace, {
@@ -3163,6 +3220,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
           ...(values.status ? { status: values.status as WorkStatus } : {}),
           ...(values.scope !== undefined ? { scope: values.scope } : {}),
           ...storyFieldsInput(values),
+          ...gatesInput(values),
           ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
           ...relationsInput(values),
           ...(values["involved-projects"] === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(jsonValue(values["involved-projects"], "involved-projects")) }),
@@ -3265,11 +3323,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // right since TCRN-CROSS-STORY-363, so what the core still refuses is an annotation
     // that moves nothing at all: it is WORKSPACE_INPUT_INVALID here rather than an
     // appended event no later read can replay (TCRN-CROSS-INC-269).
-    const values = parseArguments(rest, [...shared, "id", "expected-revision", "scope", ...STORY_FIELD_FLAGS, "decided-by", ...RELATION_FLAGS, "involved-projects", "verify", "result", "sprint", "title", "summary", "labels", "actor"]);
+    const values = parseArguments(rest, [...shared, "id", "expected-revision", "scope", ...STORY_FIELD_FLAGS, "gates", "decided-by", ...RELATION_FLAGS, "involved-projects", "verify", "result", "sprint", "title", "summary", "labels", "actor"]);
     required(values, [...requiredShared, "id"]);
     const relations = relationsInput(values);
     const fields = storyFieldsInput(values);
-    if (values["involved-projects"] === undefined && values.scope === undefined && Object.keys(fields).length === 0 && values["decided-by"] === undefined && relations.relations === undefined && values.verify === undefined && values.result === undefined && values.sprint === undefined && values.title === undefined && values.summary === undefined && values.labels === undefined) fail("CLI_ARGUMENT_MALFORMED", "annotation-field");
+    if (values["involved-projects"] === undefined && values.scope === undefined && Object.keys(fields).length === 0 && values.gates === undefined && values["decided-by"] === undefined && relations.relations === undefined && values.verify === undefined && values.result === undefined && values.sprint === undefined && values.title === undefined && values.summary === undefined && values.labels === undefined) fail("CLI_ARGUMENT_MALFORMED", "annotation-field");
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     const state = await withWriteLock(workspace, at, async () => annotateWork(workspace, {
@@ -3277,6 +3335,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values["expected-revision"] === undefined ? {} : { expectedRevision: integerValue(values, "expected-revision") }),
       ...(values.scope !== undefined ? { scope: values.scope } : {}),
       ...fields,
+      ...gatesInput(values),
       ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
       ...relations,
       ...(values["involved-projects"] === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(jsonValue(values["involved-projects"], "involved-projects")) }),
@@ -3403,7 +3462,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       projectContexts: await workProjectContexts(state, record.id),
       // TCRN-CROSS-STORY-473 R2, AC3: the goal, acceptance and body whole, with where they come
       // from -- the record's own fields, or the blocks of an old scope mapped on this read.
-      fields: storyFields(record),
+      // TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-446): with the gate names the record carries, when it
+      // carries any, and beside them the names that bind it from it and its ancestors.
+      fields: { ...storyFields(record), ...(workGates(record).length === 0 ? {} : { gates: workGates(record) }) },
+      effectiveGates: effectiveWorkGates(state, record.id),
       ...(advisory !== null ? { advisory } : {}),
       ...(obsoleteDecisions.length === 0 ? {} : { obsoleteDecisions }),
       relations: { forward: relations.forward, reverse: relations.reverse, missing: relations.missing },
@@ -3633,7 +3695,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   // TCRN-CROSS-STORY-485 R2 (MIN-235 D8): the gates a change and optional Story need. Non-release
-  // plans name their Git base, and --work-id binds exact Story coverage alongside path coverage.
+  // plans name their Git base, and --work-id binds the Stories alongside path coverage.
+  // TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-447): with --work-id the plan holds every gate that applies to
+  // the Stories (gateAppliesTo): each required gate, each one their gates field or an ancestor's names,
+  // and each one whose covers name the Story or an ancestor; unknownGates lists a named gate the
+  // project does not declare.
   if (command === "gates-plan") {
     const values = parseArguments(rest, ["project-id", "workspace", "project", "base", "release", "work-id"]);
     required(values, ["workspace"]);
@@ -3641,12 +3707,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const targets = await workGateTargets(native, values, false);
     if (targets !== null) { io.write(canonicalJson(targets)); return; }
     const state = await effectiveProjectState(native, values["project-id"]);
+    const workIds = values["work-id"] === undefined ? [] : listValue(values["work-id"]);
     const plan = await planGates({
       projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"], native),
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
-      workIds: values["work-id"] === undefined ? [] : listValue(values["work-id"]),
+      workIds,
+      subjects: gateSubjects(native.work, workIds),
+      subjectKeys: workSubjectKeys(native.work, workIds),
     });
     io.write(canonicalJson({
       reasonCode: "GATES_PLAN_READY",
@@ -3667,12 +3736,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const targets = await workGateTargets(native, values, true);
     if (targets !== null) { io.write(canonicalJson(targets)); return; }
     const state = await effectiveProjectState(native, values["project-id"]);
+    const workIds = values["work-id"] === undefined ? [] : listValue(values["work-id"]);
     const plan = await planGates({
       projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"], native),
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
-      workIds: values["work-id"] === undefined ? [] : listValue(values["work-id"]),
+      workIds,
+      subjects: gateSubjects(native.work, workIds),
+      subjectKeys: workSubjectKeys(native.work, workIds),
     });
     const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), at: values.at ?? "" });
     io.write(canonicalJson({

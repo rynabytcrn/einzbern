@@ -272,8 +272,8 @@ test("489 (TCRN-CROSS-SUB-365): work-transition and work-batch name a gate that 
   const common = ["--workspace", library];
   const story = expected.records.story.id;
   const before = (await materializeWorkspace(library)).version;
-  // The library declares no code gate, so without the pending gate the Story would be refused as
-  // not covered (TCRN-CROSS-STORY-485 R4); the gate is named first.
+  // The library declares no code gate, so without the pending gate nothing would hold the Story back
+  // (TCRN-CROSS-STORY-525 Q8, no-gates); the gate is named first.
   const single = await refusalOf(["work-transition", ...common, "--at", at(), "--id", story, "--status", "done", "--actor", actor]);
   assert.deepEqual([single.reasonCode, single.details.workId, single.details.gates], ["WORKSPACE_GATE_PENDING", story, FIXTURE_GATE_ID]);
   const batchFile = join(base, "batch.json");
@@ -282,10 +282,11 @@ test("489 (TCRN-CROSS-SUB-365): work-transition and work-batch name a gate that 
   assert.deepEqual([batch.reasonCode, batch.details.gates], ["WORKSPACE_GATE_PENDING", FIXTURE_GATE_ID]);
   assert.equal((await materializeWorkspace(library)).version, before, "nothing was written");
 
-  // Released, the Story meets the code gates' own refusal instead.
+  // Released, the Story passes the code gates, which hold nothing back in a library that declares none
+  // (TCRN-CROSS-STORY-525 Q8), and meets the next check on its way to done instead.
   await withSurface(ATELIER_SURFACE, () => cli(["work-gate-release", ...common, "--at", at(), "--id", FIXTURE_GATE_ID, "--reason", "decided", "--actor", RELEASER]));
-  const covered = await refusalOf(["work-transition", ...common, "--at", at(), "--id", story, "--status", "done", "--actor", actor]);
-  assert.equal(covered.reasonCode, "WORK_DONE_GATES_NOT_COVERED");
+  const next = await refusalOf(["work-transition", ...common, "--at", at(), "--id", story, "--status", "done", "--actor", actor]);
+  assert.equal(next.reasonCode, "WORKSPACE_OWNER_ACCEPTANCE_REQUIRED");
 });
 
 test("489 (TCRN-CROSS-SUB-365): the two gate verbs are cataloged, neither starts with gate- or minutes-, and only the release writes", () => {

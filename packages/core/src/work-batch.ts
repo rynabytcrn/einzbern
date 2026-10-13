@@ -92,6 +92,12 @@ function relationsProblem(value: unknown): string | null {
   return null;
 }
 
+// TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-446): a member's gates are a list of names; whether each is a
+// gate name, and whether its kind may carry them, is the delta's question, as for the single verbs.
+function gatesProblem(value: unknown): string | null {
+  return Array.isArray(value) && value.every((entry) => isNonEmptyString(entry)) ? null : "gates is a list of gate names";
+}
+
 // The shape pass. Every member is judged against the same rules the single verbs apply at
 // their CLI boundary, with no workspace state involved -- which is precisely why every
 // verdict here belongs to the member that earned it.
@@ -124,6 +130,10 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
         const problem = relationsProblem(member.relations);
         if (problem !== null) problems.push({ index, verb, rule: "relations-shape", detail: problem });
       }
+      if (member.gates !== undefined) {
+        const problem = gatesProblem(member.gates);
+        if (problem !== null) problems.push({ index, verb, rule: "gates-shape", detail: problem });
+      }
       if (member.status !== undefined && !WORK_STATUSES.includes(member.status as string)) {
         problems.push({ index, verb, rule: "status-known", detail: `status=${String(member.status)}` });
       }
@@ -145,12 +155,16 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
       return;
     }
     if (member.involvedProjects === undefined && member.scope === undefined && member.decidedBy === undefined && member.sprint === undefined && member.summary === undefined && member.relations === undefined &&
-      member.goal === undefined && member.acceptance === undefined && member.body === undefined) {
-      problems.push({ index, verb, rule: "advisory-required", detail: "an annotation carries at least one of scope, decidedBy, sprint, summary, relations, goal, acceptance, body" });
+      member.goal === undefined && member.acceptance === undefined && member.body === undefined && member.gates === undefined) {
+      problems.push({ index, verb, rule: "advisory-required", detail: "an annotation carries at least one of scope, decidedBy, sprint, summary, relations, goal, acceptance, body, gates" });
     }
     if (member.relations !== undefined) {
       const problem = relationsProblem(member.relations);
       if (problem !== null) problems.push({ index, verb, rule: "relations-shape", detail: problem });
+    }
+    if (member.gates !== undefined) {
+      const problem = gatesProblem(member.gates);
+      if (problem !== null) problems.push({ index, verb, rule: "gates-shape", detail: problem });
     }
   });
   return problems;
@@ -158,6 +172,11 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
 
 function relationsOf(member: Readonly<Record<string, unknown>>): { readonly relations?: WorkRelationsInput } {
   return member.relations === undefined ? {} : { relations: member.relations as WorkRelationsInput };
+}
+
+// TCRN-CROSS-STORY-525: a member's gate names, passed through for the engine to judge.
+function gatesOf(member: Readonly<Record<string, unknown>>): { readonly gates?: readonly string[] } {
+  return member.gates === undefined ? {} : { gates: member.gates as readonly string[] };
 }
 
 // TCRN-CROSS-STORY-473 R2: a member's Story fields, passed through for the engine to judge.
@@ -186,6 +205,7 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
       ...relationsOf(member),
       ...(member.involvedProjects === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(member.involvedProjects) }),
       ...storyFieldsOf(member),
+      ...gatesOf(member),
       title: member.title as string,
       ...(member.summary === undefined ? {} : { summary: member.summary as string }),
       occurredAt,
@@ -209,6 +229,7 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
     ...relationsOf(member),
       ...(member.involvedProjects === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(member.involvedProjects) }),
     ...storyFieldsOf(member),
+    ...gatesOf(member),
     ...(member.summary === undefined ? {} : { summary: member.summary as string }),
     occurredAt,
   });

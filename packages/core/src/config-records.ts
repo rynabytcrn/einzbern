@@ -20,6 +20,7 @@ import { checkGateRecordValue } from "./gates-config.js";
 import { checkManagedSectionRecordValue } from "./managed-sections.js";
 import { checkRuleRecordValue } from "./rules.js";
 import { checkVariableRecordValue } from "./variables.js";
+import { checkLeaseRecordValue } from "./work-lease.js";
 import { appendEvents, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 import { projectLineage } from "./project-scope.js";
@@ -53,7 +54,7 @@ function fail(reasonCode: ConfigRecordReasonCode, message: string, details?: Rea
   throw new ConfigRecordError(reasonCode, message, details);
 }
 
-export type ConfigRecordCollection = "gate" | "managed-section" | "rule" | "variable" | "chain";
+export type ConfigRecordCollection = "gate" | "managed-section" | "rule" | "variable" | "chain" | "lease";
 export type ConfigRecordValue = Readonly<Record<string, JsonValue>>;
 
 /** The check a collection adds on top of the shape every record meets. It throws to refuse. */
@@ -84,6 +85,11 @@ const CONFIG_RECORD_VALUE_CHECKS: Readonly<Record<ConfigRecordCollection, Config
 
   // TCRN-CROSS-STORY-485: a gate declaration, keyed by the gate's name (SUB-343, gates-config.ts).
   gate: checkGateRecordValue,
+
+  // TCRN-CROSS-STORY-528 (MIN-256): a work lease, {holder, claimedAt, expiresAt}, keyed by the work
+  // item's id and scoped to the item's project (SUB-456, work-lease.ts). config/project.json does
+  // not show it.
+  lease: checkLeaseRecordValue,
 });
 
 /** The collections of the closed table, sorted. */
@@ -170,6 +176,7 @@ export function readConfigRecordEvent(operation: string, record: Readonly<Record
   const expected = [...(operation === CONFIG_RECORD_SET_OPERATION ? ["collection", "key", "value"] : ["collection", "key"]), ...(Object.hasOwn(record, "projectId") ? ["projectId"] : [])].sort(compareCanonicalText);
   if (Object.hasOwn(record, "projectId") && (typeof record.projectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(record.projectId))) fail("CONFIG_RECORD_EVENT_INVALID", "invalid project scope");
   if (record.collection === "chain" && ((record.key === "identity" && record.projectId !== undefined) || (record.key !== "identity" && record.projectId === undefined))) fail("CONFIG_RECORD_EVENT_INVALID", "invalid chain record scope");
+  if (record.collection === "lease" && record.projectId === undefined) fail("CONFIG_RECORD_EVENT_INVALID", "a lease is scoped to its work item's project");
   const scope = typeof record.projectId === "string" ? { projectId: record.projectId } : {};
   const actual = Object.keys(record).sort(compareCanonicalText);
   if (!isConfigRecordOperation(operation) || actual.join(",") !== expected.join(",")) {
@@ -230,6 +237,7 @@ export function setConfigRecordDelta(input: ConfigRecordSetInput): (state: Works
     if (input.collection === "chain" && input.key === "identity" && "value" in input && typeof (input.value as Record<string, unknown>)?.primaryProjectId === "string") projectLineage(state, (input.value as Record<string, unknown>).primaryProjectId as string);
     if (input.collection === "chain" && input.key === "identity" && "value" in input && (input.value as Record<string, unknown>)?.role === "coordination" && (input.value as Record<string, unknown>)?.coordinationLibraryId !== state.metadata.workspaceId) fail("CONFIG_RECORD_VALUE_INVALID", "coordination identity must refer to this library");
     if (input.collection === "chain" && ((input.key === "identity" && input.projectId !== undefined) || (input.key !== "identity" && input.projectId === undefined))) fail("CONFIG_RECORD_VALUE_INVALID", "chain identity is library scoped; common defaults require an explicit project");
+    if (input.collection === "lease" && input.projectId === undefined) fail("CONFIG_RECORD_VALUE_INVALID", "a lease is scoped to its work item's project");
     return {
     payload: buildEventPayload(CONFIG_RECORD_SET_OPERATION, { collection: record.collection, key: record.key, value: record.value, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) }),
     projects: state.projects,

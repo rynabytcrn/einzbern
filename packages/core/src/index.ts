@@ -720,6 +720,9 @@ export { hookEventName, hookHost, navigationPointerAnswer, promptRecallContext }
 // and removed as events and merged like its settings.
 export { configRecord, configRecords, removeConfigRecord, setConfigRecord } from "./config-records.js";
 export type { ConfigRecord } from "./config-records.js";
+// TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-456): work leases, records of the library's lease
+// collection. work-claim and work-release write them; work-show, work-list and Atelier show them.
+export { claimWork, releaseWork, workLeaseView } from "./work-lease.js";
 // TCRN-CROSS-STORY-478 R1, R2, R6 (TCRN-CROSS-SUB-316): the managed-section writer.
 export { applyManagedWrite, managedSectionRecordsFor, parseManagedFile, planManagedWrite } from "./managed-sections.js";
 export type { ManagedSectionRecord } from "./managed-sections.js";

@@ -7,6 +7,8 @@ import { forgeOwnStream } from "../../tests/helpers/library-forge.mjs";
 // Another process on the device unregistering a library or bringing up the coordination chain is
 // stood in for through the helper, outside the portal tree (TCRN-CROSS-INIT-053 R45 PP-1).
 import { ensureProjectCoordination, unregisterLibrary } from "../../tests/helpers/registry-control.mjs";
+import { appendHistoricalAttestationEnable } from "../../tests/helpers/workspace-fixture.mjs";
+import { materializeWorkspace } from "../../dist/build/packages/core/src/index.js";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -22,6 +24,9 @@ const withoutSource = ({ source, declaredHere, ...record }) => record;
 const execFileAsync = promisify(execFile);
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
+// TCRN-CROSS-STORY-526 (TCRN-CROSS-SUB-454): Atelier starts only with TCRN_PORTAL_ACTOR set, so every
+// portal and launcher child here writes as this test actor unless a test says otherwise.
+const TEST_ACTOR = "agent:test-portal";
 const RETIRED_PERSONA_ACTIONS = Object.freeze({
   override: ["persona", "-preset-override"].join(""),
   restore: ["persona", "-preset-restore"].join(""),
@@ -82,7 +87,7 @@ async function startPortal({ workspace, home, deviceEnv = {}, env = {}, library 
   if (library !== null) args.push("--library", library);
   args.push("--port", "0");
   const child = spawn(process.execPath, args, {
-    env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...deviceEnv, ...env, HOME: home },
+    env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...deviceEnv, ...env, HOME: home },
     ...(cwd === undefined ? {} : { cwd }),
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -102,10 +107,10 @@ async function startPortal({ workspace, home, deviceEnv = {}, env = {}, library 
 // A portal that refuses to start answers on stderr with one JSON line and exits 2.
 async function startupRefusal(args, env, cwd) {
   return new Promise((resolveSpawn) => {
-    const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), ...args, "--port", "0"], { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...env }, ...(cwd === undefined ? {} : { cwd }), stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), ...args, "--port", "0"], { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...env }, ...(cwd === undefined ? {} : { cwd }), stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
     child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("exit", (code) => resolveSpawn({ status: code, report: JSON.parse(stderr.trim().split("\n").at(-1) || "{}") }));
+    child.on("exit", (code) => resolveSpawn({ status: code, report: JSON.parse(stderr.trim().split("\n").at(-1) || "{}"), lines: stderr.trim() === "" ? 0 : stderr.trim().split("\n").length }));
   });
 }
 
@@ -1385,7 +1390,7 @@ test("launcher generation emits regular files that carry only --library, starts 
   }
   const command = report.files.find((file) => file.endsWith(".command"));
   assert.match(await readFile(command, "utf8"), /^#!\/bin\/sh/u);
-  const launcher = spawn(command, [], { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...fixture.deviceEnv, HOME: fixture.home }, stdio: ["ignore", "pipe", "pipe"] });
+  const launcher = spawn(command, [], { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...fixture.deviceEnv, HOME: fixture.home }, stdio: ["ignore", "pipe", "pipe"] });
   t.after(() => launcher.kill());
   const url = await new Promise((resolve, reject) => { let buffer = ""; const timer = setTimeout(() => reject(new Error(`launcher timeout: ${buffer}`)), 15000); launcher.stdout.on("data", (chunk) => { buffer += chunk; const line = buffer.split("\n").find((entry) => entry.includes("PORTAL_LISTENING")); if (line) { clearTimeout(timer); resolve(JSON.parse(line).url); } }); launcher.on("exit", (code) => { clearTimeout(timer); reject(new Error(`launcher exited ${code}: ${buffer}`)); }); });
   const { boot: launcherBoot } = await readBoot(url);
@@ -1404,7 +1409,7 @@ test("launcher generation emits regular files that carry only --library, starts 
   await mkdir(badOutput);
   await execFileAsync(process.execPath, [generator, "--library", vanished, "--output-dir", badOutput, "--port", "0"], { encoding: "utf8" });
   let failure;
-  try { await execFileAsync(join(badOutput, "atelier.sh"), [], { encoding: "utf8", env: { ...process.env, ...fixture.deviceEnv, HOME: fixture.home } }); } catch (error) { failure = error; }
+  try { await execFileAsync(join(badOutput, "atelier.sh"), [], { encoding: "utf8", env: { ...process.env, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...fixture.deviceEnv, HOME: fixture.home } }); } catch (error) { failure = error; }
   assert.ok(failure);
   assert.match(String(failure.stderr), /PORTAL_LIBRARY_UNKNOWN/u);
 });
@@ -1973,4 +1978,59 @@ test("INIT-053 R47 c1-B: a coordination chain's /api/settings lists its runtime 
   assert.match(JSON.stringify(refused.body), /coordination chains expose runtime settings only/u);
   const after = await cli(["settings-catalog", "--workspace", fixture.workspace, "--project-id", fixture.projectId], fixture.deviceEnv);
   assert.deepEqual(after.settings.map((entry) => entry.key), R47_COORDINATION_KEYS, "models.tiers is not listed and was not written");
+});
+
+// TCRN-CROSS-STORY-526 GWT4 (MIN-256; TCRN-CROSS-SUB-454): Atelier writes as the actor it is started
+// with. Started with TCRN_PORTAL_ACTOR, a gate it saves is recorded with surface atelier and, on a
+// library that records its writers, that actor; started without it, or with it empty, it refuses to
+// start with one JSON line and exit code 2, and so does a generated launcher run without it.
+async function asDevice(fixture, operation) {
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = fixture.deviceEnv.EINZBERN_HOME;
+  try {
+    return await operation();
+  } finally {
+    process.env.EINZBERN_HOME = previous;
+  }
+}
+
+test("526 GWT4: Atelier started with TCRN_PORTAL_ACTOR saves a gate whose event records surface atelier and that actor", async (t) => {
+  const fixture = await scratch("tcrn-portal-actor-", "TCRN-PORTAL-ACTOR");
+  // A library that records its writers (attestation enabled), so the event names the actor.
+  await asDevice(fixture, () => appendHistoricalAttestationEnable(fixture.workspace, { occurredAt: "2026-08-11T15:00:30Z", actorId: "owner:governance" }));
+  const actor = "agent:test-atelier-writer";
+  const { child, url, listening } = await startPortal({ ...fixture, env: { TCRN_PORTAL_ACTOR: actor } });
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  assert.equal(listening.actor, actor);
+  const { boot } = await readBoot(url);
+  const saved = await request(url, "/api/gates", writeOptions(boot.token, "POST", { name: "unit", command: ["node", "--version"], root: ".", covers: ["**"], enabled: true, required: true, releaseOnly: false }));
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  const event = (await asDevice(fixture, () => materializeWorkspace(fixture.workspace))).events.at(-1).payload;
+  assert.deepEqual([event.operation, event.record.collection, event.record.key, event.surface, event.actor], ["config.record.set", "gate", "unit", "atelier", actor]);
+  assert.equal(Object.hasOwn(event, "decidedIn"), false, "a run for Atelier cites no decision");
+});
+
+test("526 GWT4: without TCRN_PORTAL_ACTOR, or with it empty, Atelier and its generated launcher refuse to start with exit code 2 and one JSON line", async (t) => {
+  const fixture = await scratch("tcrn-portal-no-actor-", "TCRN-PORTAL-NO-ACTOR");
+  t.after(() => rm(fixture.base, { recursive: true, force: true }));
+  for (const value of [undefined, "", "   "]) {
+    const refused = await startupRefusal(["--library", fixture.workspace], { ...fixture.deviceEnv, HOME: fixture.home, TCRN_PORTAL_ACTOR: value });
+    assert.deepEqual([refused.status, refused.lines, refused.report.ok, refused.report.reasonCode, refused.report.variable], [2, 1, false, "PORTAL_ACTOR_REQUIRED", "TCRN_PORTAL_ACTOR"], JSON.stringify(value));
+  }
+  // A generated launcher carries no actor: it passes on the one its environment holds, and without one Atelier refuses.
+  const outputDir = join(fixture.base, "launchers");
+  await mkdir(outputDir);
+  const generator = join(portalRoot, "scripts", "generate-launchers.mjs");
+  const report = JSON.parse((await execFileAsync(process.execPath, [generator, "--library", fixture.workspace, "--output-dir", outputDir, "--port", "0"], { encoding: "utf8" })).stdout);
+  for (const file of report.files) assert.doesNotMatch(await readFile(file, "utf8"), /agent:|owner:|profile:/u, `${file} names no actor`);
+  const command = report.files.find((file) => file.endsWith(".command"));
+  const env = { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...fixture.deviceEnv, HOME: fixture.home };
+  delete env.TCRN_PORTAL_ACTOR;
+  const launched = await new Promise((resolveRun) => {
+    const child = spawn(command, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("exit", (code) => resolveRun({ status: code, lines: stderr.trim().split("\n") }));
+  });
+  assert.deepEqual([launched.status, launched.lines.length, JSON.parse(launched.lines[0]).reasonCode], [2, 1, "PORTAL_ACTOR_REQUIRED"]);
 });

@@ -80,7 +80,9 @@ async function environment(name) {
   const root = join(base, name);
   await mkdir(join(root, "home"), { recursive: true });
   await mkdir(join(root, "work"), { recursive: true });
-  const env = { ...process.env, HOME: join(root, "home"), EINZBERN_HOME: join(root, "home", "einzbern") };
+  // TCRN-CROSS-STORY-526 (TCRN-CROSS-SUB-454): Atelier starts only with TCRN_PORTAL_ACTOR set, so the
+  // release's Atelier runs here as agent:test-portal and reaches the registry check it is asked about.
+  const env = { ...process.env, HOME: join(root, "home"), EINZBERN_HOME: join(root, "home", "einzbern"), TCRN_PORTAL_ACTOR: "agent:test-portal" };
   for (const key of ["TCRN_WORKFLOW_CLI", "TCRN_PORTAL_LIBRARY", "TCRN_PORTAL_PORT"]) delete env[key];
   return { root, env, cwd: join(root, "work") };
 }

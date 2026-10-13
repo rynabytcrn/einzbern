@@ -61,8 +61,11 @@ cannot supply the first.
 The server binds `127.0.0.1` only. Each run mints a token, injects it into the
 page, and refuses any mutating request without it, so another page in the same
 browser cannot post to it. The acting identity is declared at startup
-(`TCRN_PORTAL_ACTOR`, default `agent:portal`); a browser payload can never
-nominate who wrote to a chain.
+(`TCRN_PORTAL_ACTOR`, which has no default: started without it, or with it empty,
+Atelier refuses to start with `PORTAL_ACTOR_REQUIRED` on one line of stderr and exit
+code 2); a browser payload can never nominate who wrote to a chain. Every write Atelier
+makes runs the engine with `EINZBERN_SURFACE=atelier`, so the configuration events it
+appends record `surface: atelier` beside that actor.
 
 ## Languages
 
@@ -100,7 +103,7 @@ The side navigation opens these pages, in this order:
 | --- | --- | --- |
 | `--library` | `TCRN_PORTAL_LIBRARY`, else the working directory's library | A registered library (its path or id, or its project's path) to open first |
 | `--port` | `TCRN_PORTAL_PORT`, else the `portal.port` machine setting, else `4319` | Loopback port (`0` picks a free one) |
-| `TCRN_PORTAL_ACTOR` | `agent:portal` | Actor recorded on governed writes |
+| `TCRN_PORTAL_ACTOR` | none: required | Actor recorded on governed writes; unset or empty, Atelier refuses to start (`PORTAL_ACTOR_REQUIRED`, exit 2) |
 | `TCRN_WORKFLOW_CLI` | `scripts/einzbern.mjs` beside the portal | CLI entry point |
 
 ## Launchers

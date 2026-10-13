@@ -13,14 +13,19 @@
 // run does not hold bound to the Story, or a gate name the Story is bound to that the project does not
 // declare, is WORK_DONE_GATES_NOT_COVERED; an applicable gate that is red is WORK_DONE_GATES_RED. The
 // check does not run gates itself.
+//
+// TCRN-CROSS-STORY-530 (TCRN-CROSS-SUB-450): "the project as it is now" is judged for each run against
+// the paths the run recorded: a run made for Stories whose commits are known by key took its tree
+// digest over the files those commits touched, and the check takes the digest again over the same
+// files, so what another process changes elsewhere in the project leaves the run standing.
 
-import { compareCanonicalText } from "../../protocol/src/index.js";
+import { canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { listGates } from "./gates-config.js";
 import type { NamedGate } from "./gates-config.js";
 import { gateAppliesTo, gateDeclarationsDigest } from "./gates-plan.js";
 import { gateTreeState, latestGateRun } from "./gates-run.js";
-import type { GateRun } from "./gates-run.js";
-import { effectiveWorkGates, workAncestorIds } from "./work-gates.js";
+import type { GateRun, GateTreeState } from "./gates-run.js";
+import { effectiveWorkGates, workAncestorIds, workSubjectKeys } from "./work-gates.js";
 import type { WorkspaceState } from "./workspace.js";
 
 export const GATES_DONE_REASON_CODES = Object.freeze([
@@ -101,25 +106,41 @@ export async function assertDoneGates(input: {
     });
   }
   const projectRoot = typeof input.projectRoot === "string" ? input.projectRoot : await input.projectRoot();
-  const tree = await gateTreeState(projectRoot, [...new Set(gates.map((gate) => gate.root))].sort(compareCanonicalText));
+  const roots = [...new Set(gates.map((gate) => gate.root))].sort(compareCanonicalText);
   const declarationsDigest = gateDeclarationsDigest(gates);
+  // The tree as each run saw it, taken again over the paths the run recorded; runs that recorded the
+  // same paths share one reading.
+  const readings = new Map<string, Promise<GateTreeState>>();
+  const treeOf = (run: GateRun): Promise<GateTreeState> => {
+    const paths: Record<string, readonly string[]> = {};
+    for (const tree of run.trees) if (tree.paths !== undefined) paths[tree.root] = tree.paths;
+    const key = canonicalJson(paths);
+    let reading = readings.get(key);
+    if (reading === undefined) {
+      reading = gateTreeState(projectRoot, roots, { paths });
+      readings.set(key, reading);
+    }
+    return reading;
+  };
   const runs = new Map<string, GateRun>();
   for (const entry of bound) {
     const run = await latestGateRun({
       libraryId: input.library.metadata.workspaceId,
       ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }),
-      treeDigest: tree.treeDigest,
       declarationsDigest,
       includesWorkIds: [entry.id],
+      accept: async (candidate) => (await treeOf(candidate)).treeDigest === candidate.treeDigest,
       ...(input.deviceHome === undefined ? {} : { deviceHome: input.deviceHome }),
     });
     if (run !== null) runs.set(entry.id, run);
   }
   const notRun = bound.filter((entry) => !runs.has(entry.id)).map((entry) => entry.id);
   if (notRun.length > 0) {
+    // The digest a run made now for these Stories would record.
+    const now = await gateTreeState(projectRoot, roots, { keys: workSubjectKeys(input.library.work, notRun) });
     throw new GatesDoneError("WORK_DONE_GATES_NOT_RUN", "no gate run bound to the Story was made on the project as it is now; run gates-run --work-id <Story id>, then move the Story to done", {
       remedy: GATES_DONE_REMEDY,
-      treeDigest: tree.treeDigest,
+      treeDigest: now.treeDigest,
       stories: notRun,
     });
   }
@@ -152,5 +173,5 @@ export async function assertDoneGates(input: {
     });
   }
   const runIds = [...new Set(results.map((result) => result.run.runId))];
-  return { checked: true, reason: "green", runId: runIds[0]!, treeDigest: tree.treeDigest, ...(runIds.length > 1 ? { runIds } : {}) };
+  return { checked: true, reason: "green", runId: runIds[0]!, treeDigest: results[0]!.run.treeDigest, ...(runIds.length > 1 ? { runIds } : {}) };
 }

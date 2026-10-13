@@ -182,6 +182,46 @@ export function changedFiles(root: string, options: { readonly base?: string } =
   return [...new Set([...paths(tracked), ...paths(untracked)])].sort(compareCanonicalText);
 }
 
+// TCRN-CROSS-STORY-530 (MIN-256; TCRN-CROSS-SUB-450; Q13): a key names a commit when the message holds
+// it followed by anything but a digit, so STORY-52 does not name a commit of STORY-525.
+function namesKey(message: string, key: string): boolean {
+  let from = message.indexOf(key);
+  while (from !== -1) {
+    const next = message.charCodeAt(from + key.length);
+    if (!(next >= 48 && next <= 57)) return true;
+    from = message.indexOf(key, from + 1);
+  }
+  return false;
+}
+
+/**
+ * TCRN-CROSS-STORY-530 (MIN-256; TCRN-CROSS-SUB-450; Q13): the files under `root` that a Story's
+ * commits touched, relative to it with forward slashes, sorted: every commit HEAD reaches whose
+ * message names one of `keys` (the external keys of the Story and its Subtasks) followed by anything
+ * but a digit, deletions included, renames as a deletion and an addition. None without a key or
+ * without a commit; GATES_GIT_UNAVAILABLE when git cannot read the history.
+ */
+export function storyCommitPaths(root: string, keys: readonly string[]): readonly string[] {
+  const named = [...new Set(keys)].filter((key) => key.length > 0 && !key.includes("\u0000")).sort(compareCanonicalText);
+  if (named.length === 0 || gitHead(root) === null) return [];
+  const log = git(root, ["log", "HEAD", "--fixed-strings", ...named.map((key) => `--grep=${key}`), "--format=%H%x00%B%x00"]);
+  if (log === null) fail("GATES_GIT_UNAVAILABLE", `git could not read the history under ${root}`, { root, remedy: "--release" });
+  const fields = log.split("\0");
+  const commits: string[] = [];
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    const commit = (fields[index] ?? "").trim();
+    if (/^[0-9a-f]{40,64}$/u.test(commit) && named.some((key) => namesKey(fields[index + 1] ?? "", key))) commits.push(commit);
+  }
+  const files = new Set<string>();
+  // A bounded number of commits per call keeps the argument list within the platform's limit.
+  for (let start = 0; start < commits.length; start += 256) {
+    const listed = git(root, ["log", "--no-walk=unsorted", "--format=", "--name-only", "--no-renames", "--relative", "-z", ...commits.slice(start, start + 256)]);
+    if (listed === null) fail("GATES_GIT_UNAVAILABLE", `git could not list the files of the Story's commits under ${root}`, { root, remedy: "--release" });
+    for (const file of paths(listed)) files.add(file);
+  }
+  return [...files].sort(compareCanonicalText);
+}
+
 export interface PlannedGate {
   readonly name: string;
   readonly root: string;
@@ -227,6 +267,10 @@ export interface GatesPlan {
   // TCRN-CROSS-STORY-525 (Q10): the names a target's gates field gives that the project declares no
   // gate by, sorted; present only when there is one. Such a gate never runs, so its Story is not done.
   readonly unknownGates?: readonly string[];
+  // TCRN-CROSS-STORY-530 (TCRN-CROSS-SUB-450): the external keys of the target Stories and their
+  // Subtasks, sorted, when there is one: the run's tree digest then counts only the files their
+  // commits touched (gateTreeState).
+  readonly subjectKeys?: readonly string[];
 }
 
 function inside(parent: string, candidate: string): boolean {
@@ -319,6 +363,8 @@ export async function planGates(input: {
   readonly workIds?: readonly string[];
   // TCRN-CROSS-STORY-525: each target's ancestors and the gate names that bind it.
   readonly subjects?: readonly GateSubject[];
+  // TCRN-CROSS-STORY-530: the external keys of the targets and their Subtasks.
+  readonly subjectKeys?: readonly string[];
 }): Promise<GatesPlan> {
   let projectRoot: string;
   try {
@@ -344,10 +390,12 @@ export async function planGates(input: {
   const unknownGates = [...new Set(workIds.flatMap((workId) => subjects.get(workId)?.gates ?? []))]
     .filter((name) => !input.gates.some((gate) => gate.name === name))
     .sort(compareCanonicalText);
+  const subjectKeys = [...new Set(input.subjectKeys ?? [])].sort(compareCanonicalText);
   const declared = {
     roots: [...roots.keys()].sort(compareCanonicalText),
     declarationsDigest: gateDeclarationsDigest(enabled),
     ...(unknownGates.length === 0 ? {} : { unknownGates }),
+    ...(subjectKeys.length === 0 ? {} : { subjectKeys }),
   };
   const appliesTo = (gate: NamedGate): readonly string[] => workIds.filter((workId) => gateAppliesTo(gate, workId, subjects.get(workId)));
   if (release) return {

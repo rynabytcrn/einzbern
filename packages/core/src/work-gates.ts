@@ -93,3 +93,20 @@ export function effectiveWorkGates(state: Pick<WorkspaceState, "work">, workId: 
   }
   return [...names].sort(compareCanonicalText);
 }
+
+/**
+ * TCRN-CROSS-STORY-530 (MIN-256; TCRN-CROSS-SUB-450; Q13): the external keys a Story's commits are
+ * known by: each Story's own and those of all its Subtasks, sorted, each once. A record `work` does not
+ * hold, or one without an external key, adds none.
+ */
+export function workSubjectKeys(work: readonly Pick<WorkRecord, "id" | "externalKey" | "kind" | "parentId">[], workIds: readonly string[]): readonly string[] {
+  const keys = new Set<string>();
+  for (const workId of new Set(workIds)) {
+    for (const record of work) {
+      const key = (record as { readonly externalKey?: unknown }).externalKey;
+      if (typeof key !== "string" || key.length === 0) continue;
+      if (record.id === workId || (record.parentId === workId && record.kind === "Subtask")) keys.add(key);
+    }
+  }
+  return [...keys].sort(compareCanonicalText);
+}

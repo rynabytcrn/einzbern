@@ -123,6 +123,7 @@ import {
   effectiveWorkGates,
   workAncestorIds,
   workGates,
+  workSubjectKeys,
   WORK_GATES_KEY,
   gateAppliesTo,
   minutesById,
@@ -981,6 +982,7 @@ async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWor
       ...(values.base === undefined ? {} : { base: values.base }),
       workIds: group.workIds,
       subjects: gateSubjects(state.work, group.workIds),
+      subjectKeys: workSubjectKeys(state.work, group.workIds),
     });
     if (!execute) return { ...binding, projectRoot, ok: true, plan };
     const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(group.projectId === undefined ? {} : { projectId: group.projectId }), at: values.at ?? "" });
@@ -1032,7 +1034,7 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
           const currentWork = (await materializeWorkspace(values.workspace!)).work.find(record => record.id === workId && !record.tombstone);
           if (currentWork?.revision !== resolved.workRevision) throw new Error("work revision changed; resolve again");
           const projectRoot = await gatesProjectRoot(reference.libraryId, repository.projectPath, reference.projectId);
-          const plan = await planGates({ projectRoot, gates: listGates(target), release: booleanValue(values.release, "release"), ...(values.base === undefined ? {} : { base: values.base }), workIds: [workId], subjects: gateSubjects(state.work, [workId]) });
+          const plan = await planGates({ projectRoot, gates: listGates(target), release: booleanValue(values.release, "release"), ...(values.base === undefined ? {} : { base: values.base }), workIds: [workId], subjects: gateSubjects(state.work, [workId]), subjectKeys: workSubjectKeys(state.work, [workId]) });
           // This handoff is bound to the very target whose gates execute: the target's own handoff
           // (project-chain.ts, the object the native host dispatch passes for it), with the
           // repository and root the gates run in. No global first-target setting applies.
@@ -1128,10 +1130,14 @@ async function gatesProjectRoot(libraryId: string, project: string | undefined, 
 // parent and its gates field, so a Story it creates is bound through its parent chain as a written one
 // is. TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-448): a project with an enabled gate is gated; its
 // root is looked up only when a Story needs a run read, so a Story no gate applies to never needs one.
+// TCRN-CROSS-STORY-530 (TCRN-CROSS-SUB-450): a created record keeps its external key, which names the
+// Story's commits; gates-plan and gates-run take the keys of the Stories and their Subtasks from the
+// work records (workSubjectKeys) for the run's tree digest.
 // TCRN-CROSS-STORY-519 (D-519-3): the lookup reads the library, so a coordination library registered
 // with no project finds its root for each of its projects.
 interface CreatedWork {
   readonly id: string;
+  readonly externalKey?: string;
   readonly kind: string;
   readonly projectId?: string;
   readonly parentId?: string | null;
@@ -1148,7 +1154,7 @@ async function doneGates(
   const createdRecords = created.filter((entry) => !known.has(entry.id)).map((entry) => {
     const gates = normalizedWorkGates(entry.gates ?? []) ?? [];
     return {
-      id: entry.id, kind: entry.kind, projectId: entry.projectId, parentId: entry.parentId ?? null, tombstone: false,
+      id: entry.id, externalKey: entry.externalKey, kind: entry.kind, projectId: entry.projectId, parentId: entry.parentId ?? null, tombstone: false,
       extensions: gates.length === 0 ? {} : { [WORK_GATES_KEY]: { required: false, value: gates } },
     };
   }) as unknown as readonly WorkRecord[];
@@ -1184,8 +1190,9 @@ function batchCreatedKinds(document: unknown): readonly CreatedWork[] {
     const parentId = typeof entry.parentId === "string" && entry.parentId.length > 0
       ? entry.parentId
       : typeof entry.parentExternalKey === "string" && entry.parentExternalKey.length > 0 ? deriveStableId("work", canonicalExternalKey(entry.parentExternalKey)) : null;
+    const externalKey = canonicalExternalKey(entry.externalKey);
     created.push({
-      id: deriveStableId("work", canonicalExternalKey(entry.externalKey)), kind: entry.kind, parentId,
+      id: deriveStableId("work", externalKey), externalKey, kind: entry.kind, parentId,
       ...(typeof entry.projectId === "string" ? { projectId: entry.projectId } : {}),
       ...(Array.isArray(entry.gates) && entry.gates.every((name) => typeof name === "string") ? { gates: entry.gates as readonly string[] } : {}),
     });
@@ -3201,7 +3208,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const { state, gates } = await withWriteLock(workspace, at, async () => {
       const before = await materializeWorkspace(workspace);
       const verdict: DoneGatesVerdict | null = values.kind === "Story" && values.status === "done"
-        ? await doneGates(before, [id], [{ id, kind: "Story", projectId: values["project-id"] ?? "", parentId: nullableValue(values["parent-id"]), ...gatesInput(values) }], undefined)
+        ? await doneGates(before, [id], [{ id, externalKey: canonicalExternalKey(values["external-key"] ?? ""), kind: "Story", projectId: values["project-id"] ?? "", parentId: nullableValue(values["parent-id"]), ...gatesInput(values) }], undefined)
         : null;
       return {
         state: await createWork(workspace, {
@@ -3708,6 +3715,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values.base === undefined ? {} : { base: values.base }),
       workIds,
       subjects: gateSubjects(native.work, workIds),
+      subjectKeys: workSubjectKeys(native.work, workIds),
     });
     io.write(canonicalJson({
       reasonCode: "GATES_PLAN_READY",
@@ -3736,6 +3744,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values.base === undefined ? {} : { base: values.base }),
       workIds,
       subjects: gateSubjects(native.work, workIds),
+      subjectKeys: workSubjectKeys(native.work, workIds),
     });
     const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), at: values.at ?? "" });
     io.write(canonicalJson({

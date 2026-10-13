@@ -448,6 +448,39 @@ test("525-GWT1 (CLI): one required gate covering **, and a Story the covers do n
   assert.deepEqual(passed.doneGates, { checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest, projectId, targets: [{ checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest, projectId }] });
 });
 
+// TCRN-CROSS-STORY-530 (MIN-256; TCRN-CROSS-SUB-450): gates-run takes the keys of the Story and its
+// Subtasks from the work records, and the run's digest counts the files their commits touched.
+test("530 (CLI): gates-run --work-id records the files the commits of the Story and its Subtasks touched; an untracked file elsewhere leaves the run standing for done, a change to the Story's file does not", async (context) => {
+  const { project, library, baseCommit } = await setup(context);
+  const projectId = (await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "GC-530-PROJECT", "--name", "Gates 530"])).record.id;
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-530-INIT", "--kind", "Initiative", "--title", "Gated work"]);
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-530-EPIC", "--kind", "Epic", "--status", "active", "--parent-id", workId("GC-530-INIT"), "--title", "Gated epic"]);
+  const storyId = (await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-530-STORY", "--kind", "Story", "--status", "active",
+    "--parent-id", workId("GC-530-EPIC"), "--title", "Story with commits", "--goal", "Pass the gates", "--acceptance", "GIVEN the gates WHEN green THEN done"])).record.id;
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-530-SUB", "--kind", "Subtask", "--parent-id", storyId, "--title", "Subtask"]);
+  await put(project, "src/a.ts", "export const a = 530;\n");
+  git(project, ["commit", "-q", "-am", "GC-530-STORY: change a"]);
+  await put(project, "portal/index.html", "<p>530</p>\n");
+  git(project, ["commit", "-q", "-am", "GC-530-SUB (GC-530-STORY): change the page"]);
+  await declare(library, "all", [node, "-e", "process.exit(0)"], ["--covers", "**"]);
+  await cli(["library-register", "--project", project, "--library", library, "--at", at()]);
+
+  const plan = await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit, "--work-id", storyId]);
+  assert.deepEqual(plan.subjectKeys, ["GC-530-STORY", "GC-530-SUB"]);
+  const ran = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
+  assert.deepEqual(ran.run.trees.map((tree) => [tree.root, tree.paths]), [[".", ["portal/index.html", "src/a.ts"]]], gateDiagnostic(ran.run, ran.recordPath));
+  const unbound = await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit]);
+  assert.equal(Object.hasOwn(unbound, "subjectKeys"), false, "a plan made for no Story names no key");
+
+  await put(project, "elsewhere.txt", "another process\n");
+  await put(project, "src/a.ts", "export const a = 531;\n");
+  const changed = await refusal(["work-transition", "--workspace", library, "--at", at(), "--id", storyId, "--status", "done", "--project", project]);
+  assert.equal(changed?.reasonCode, "WORK_DONE_GATES_NOT_RUN", "the Story's own file changed after the run");
+  await put(project, "src/a.ts", "export const a = 530;\n");
+  const passed = await cli(["work-transition", "--workspace", library, "--at", at(), "--id", storyId, "--status", "done", "--project", project]);
+  assert.deepEqual([passed.record.status, passed.doneGates.runId, passed.doneGates.treeDigest], ["done", ran.run.runId, ran.run.treeDigest], "the untracked file elsewhere leaves the run standing");
+});
+
 // TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): gates-config-set --order places a gate in
 // the plan; the order is not part of what a run proves (STORY-485 D8 unchanged).
 test("508-R7 (CLI): gates-config-set --order orders the plan and the run; only the order changed, the last run still takes the Story to done; a changed command, covers or required does not", async (context) => {

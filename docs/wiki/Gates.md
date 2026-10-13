@@ -48,7 +48,7 @@ gates-run [--project <目录>] [--base <提交>] [--work-id <work-id,...>] [--re
 - 退出码为 0 且没有超时的门是绿的，其余都是红的。
 - 一道门红了不会中断后面的门；全部跑完之后一次报出所有红门：`reds` 列出全部红门，`requiredReds` 列出其中的必需门。
 - 每道门的输出（stdout 与 stderr 按到达顺序）写进文件，超过上限的部分截断。超时的门连同它的整个进程组一起停止，门结束时它留在进程组里的进程也会被停止。
-- 每次运行都记在设备目录的 `cache/<库 id>/gate-runs/<运行 id>.json`（`einzbern.gate-run.v1`），并记录目标 Story id、各门匹配的路径与它适用的 Story id，以及运行时那棵树的摘要：每个启用门 `root` 的 `HEAD` 提交，加上每个改动文件与未跟踪文件的内容。
+- 每次运行都记在设备目录的 `cache/<库 id>/gate-runs/<运行 id>.json`（`einzbern.gate-run.v1`），并记录目标 Story id、各门匹配的路径与它适用的 Story id，以及运行时那棵树的摘要（`einzbern.gate-tree.v2`）：每个启用门 `root` 的 `HEAD` 提交，加上每个改动文件与未跟踪文件的内容。带 `--work-id` 的运行只计 Story 提交涉及的文件（TCRN-CROSS-STORY-530）：引擎从工单记录取 Story 与它全部 Subtask 的键号（计划的 `subjectKeys`），在 `HEAD` 可达的提交里找说明写了其中一个键号、且键号后面不是数字的提交（`STORY-52` 不算 `STORY-525` 的提交），这些提交涉及的文件才进摘要，运行记录在 `trees[].paths` 列出它们。
 
 ## 工单字段 gates 与继承
 
@@ -67,7 +67,7 @@ Story 继承上级：适用于 Story 的点名门是它自己、它的 Epic 与 
 - 有适用门是红的：拒绝，报 `WORK_DONE_GATES_RED`，列出每一道红的适用门（stderr 上还有 `stories` 与 `runId`）。只由路径匹配选中的 optional 门红了不拦。
 - 通过的转换在回执的 `doneGates` 里给出放行它的那次运行；几张 Story 由不同的运行放行时，`runIds` 列出全部。
 
-运行必须同树、同门声明，并以 `--work-id` 绑定这张 Story；一次 `--work-id A,B` 的运行可以分别放行 A 与 B。树或声明一变，之前的运行就不再算数，要按新的 `--base` 或 `--release` 和 `--work-id` 重新 `gates-run`。直接出生、单项转换和批量转换遵守相同拒绝与零写入规则。
+运行必须同树、同门声明，并以 `--work-id` 绑定这张 Story；一次 `--work-id A,B` 的运行可以分别放行 A 与 B。「同树」按运行记下的 `paths` 判断（TCRN-CROSS-STORY-530）：判据在这些文件上重算摘要，与运行记下的摘要比对，从最近的运行往前找第一份对得上的。所以另一个进程在项目里新增无关的未跟踪文件、改别的 Story 的文件，都不影响这次运行；Story 提交涉及的文件运行后又被改，或有了新提交（`HEAD` 变了），就报 `WORK_DONE_GATES_NOT_RUN`。Story 还没提交的新文件不进摘要，运行后再改它们，判据看不到。树或声明一变，之前的运行就不再算数，要按新的 `--base` 或 `--release` 和 `--work-id` 重新 `gates-run`。直接出生、单项转换和批量转换遵守相同拒绝与零写入规则。
 
 门声明与运行都按 Story 所在的项目区分：判据只读 Story 项目作用域里的门声明，只认记录了同一 `projectId` 的运行。所以在项目库上，门要用 `gates-config-set --project-id <Story 的项目>` 声明，带 `--work-id` 的 `gates-run` 也要带同一个 `--project-id`。不带时有两种结果：不带 `--project` 时，只要注册项记着这个项目，命令就以 `GATES_PROJECT_UNKNOWN` 拒绝，不会运行；带 `--project` 时，得到一次 0 道门、`ok` 为 `true`、不记项目的空运行，它不说明门是绿的。两种情况下 Story 转完成时都报 `WORK_DONE_GATES_NOT_RUN`，要等运行带上 `--project-id` 才能转完成。协调库上的 `gates-run` 不必带 `--project-id`：门同样声明在 Story 的项目里，只要其中有启用门适用于这张 Story，`gates-run --work-id <Story id>` 就按 Story 自己的项目在协调库的项目根运行并记下项目（TCRN-CROSS-STORY-519，见「Target boundaries」），之后 `work-transition` 与 `work-batch` 读的就是这次运行；判据与拒绝和项目库相同。
 

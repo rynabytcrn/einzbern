@@ -11,6 +11,13 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // and, since TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-448), one whose target work ids include the Story.
 // A gate that outlives its timeout is stopped with its whole process group, and whatever a gate left
 // running in its group is stopped when it ends.
+//
+// TCRN-CROSS-STORY-530 (MIN-256; TCRN-CROSS-SUB-450): a run made for Stories whose commits are known by
+// key (the plan's subjectKeys: the external keys of the Stories and their Subtasks) takes its tree
+// digest over the files those commits touched only (storyCommitPaths in gates-plan.ts), and records
+// them as each root's `paths` (einzbern.gate-tree.v2). A file another process writes elsewhere in the
+// project leaves such a run standing; a change to one of the Story's files does not. The done check
+// takes the digest again over the paths the run recorded and compares the two.
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -21,11 +28,11 @@ import { join } from "node:path";
 import { assertStrictInstant, canonicalJson, canonicalSha256, compareCanonicalText, parseStrictInstant } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { cachePath } from "./device-home.js";
-import { GatesPlanError, changedFiles, gitHead, resolveGateRoot } from "./gates-plan.js";
+import { GatesPlanError, changedFiles, gitHead, resolveGateRoot, storyCommitPaths } from "./gates-plan.js";
 import type { GatesPlan } from "./gates-plan.js";
 
 export const GATE_RUN_SCHEMA_VERSION = "einzbern.gate-run.v1" as const;
-export const GATE_TREE_SCHEMA_VERSION = "einzbern.gate-tree.v1" as const;
+export const GATE_TREE_SCHEMA_VERSION = "einzbern.gate-tree.v2" as const;
 export const GATE_RUNS_DIRECTORY = "gate-runs" as const;
 export const GATE_RUN_DEFAULT_TIMEOUT_MS = 1_800_000 as const;
 export const GATE_RUN_DEFAULT_OUTPUT_BYTES = 1_048_576 as const;
@@ -57,7 +64,22 @@ export interface GateRootTree {
   readonly git: boolean;
   readonly head: string | null;
   // The digest of every changed and untracked file under the root, path and content; null without Git.
+  // With `paths`, only the changed files among them count.
   readonly changes: string | null;
+  // TCRN-CROSS-STORY-530: present when the digest is limited to the files the Story's commits touched:
+  // those under the root, relative to it with forward slashes, sorted.
+  readonly paths?: readonly string[];
+}
+
+/**
+ * TCRN-CROSS-STORY-530: what a tree digest is limited to. `keys` names the Stories and Subtasks whose
+ * commits give each root's files (storyCommitPaths); `paths` gives them per root as a run recorded
+ * them, for the digest to be taken again. A root `paths` does not name, and every root when neither
+ * is given or `keys` is empty, counts every changed and untracked file.
+ */
+export interface GateTreeScope {
+  readonly keys?: readonly string[];
+  readonly paths?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface GateTreeState {
@@ -121,11 +143,13 @@ async function contentDigest(path: string): Promise<string> {
 
 /**
  * The state of the project a run is made on: for each root, the commit HEAD names and the digest
- * of the path and content of every file changed against HEAD or untracked. A root outside Git
- * records neither, so every state of it looks the same.
+ * of the path and content of every file changed against HEAD or untracked, or, within `scope`, of
+ * those among the Story's files (GateTreeScope), which the root then records as `paths`. A root
+ * outside Git records neither, so every state of it looks the same.
  */
-export async function gateTreeState(projectRoot: string, roots: readonly string[]): Promise<GateTreeState> {
+export async function gateTreeState(projectRoot: string, roots: readonly string[], scope: GateTreeScope = {}): Promise<GateTreeState> {
   const project = await realpath(projectRoot);
+  const keys = [...new Set(scope.keys ?? [])];
   const trees: GateRootTree[] = [];
   for (const root of [...new Set(roots)].sort(compareCanonicalText)) {
     const directory = await resolveGateRoot(project, root);
@@ -139,9 +163,16 @@ export async function gateTreeState(projectRoot: string, roots: readonly string[
       }
       throw error;
     }
+    const recorded = scope.paths === undefined || !Object.hasOwn(scope.paths, root) ? undefined : scope.paths[root];
+    const paths = recorded !== undefined ? [...recorded] : scope.paths === undefined && keys.length > 0 ? storyCommitPaths(directory, keys) : undefined;
+    const allowed = paths === undefined ? null : new Set(paths);
+    const counted = allowed === null ? files : files.filter((file) => allowed.has(file));
     const entries: string[] = [];
-    for (const file of files) entries.push(`${file}\u0000${await contentDigest(join(directory, ...file.split("/")))}`);
-    trees.push({ root, git: true, head: gitHead(directory), changes: createHash("sha256").update(entries.join("\u0000"), "utf8").digest("hex") });
+    for (const file of counted) entries.push(`${file}\u0000${await contentDigest(join(directory, ...file.split("/")))}`);
+    trees.push({
+      root, git: true, head: gitHead(directory), changes: createHash("sha256").update(entries.join("\u0000"), "utf8").digest("hex"),
+      ...(paths === undefined ? {} : { paths }),
+    });
   }
   return { treeDigest: canonicalSha256({ schemaVersion: GATE_TREE_SCHEMA_VERSION, trees }), trees };
 }
@@ -246,7 +277,7 @@ export async function runGates(plan: GatesPlan, options: {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > RUNTIME_CAPACITY.timerMilliseconds) fail("a gate timeout must fit the native timer and be at least 100 milliseconds", { timeoutMs: String(timeoutMs) });
   if (!Number.isSafeInteger(outputBytes) || outputBytes < 1_024 || outputBytes > RUNTIME_CAPACITY.bufferBytes) fail("a gate's output budget must fit the runtime buffer and be at least 1024 bytes", { outputBytes: String(outputBytes) });
   const directory = gateRunsDirectory(options.libraryId, options.deviceHome);
-  const tree = await gateTreeState(plan.projectRoot, plan.roots);
+  const tree = await gateTreeState(plan.projectRoot, plan.roots, plan.subjectKeys === undefined ? {} : { keys: plan.subjectKeys });
   const runId = `${utcStamp(options.at)}-${canonicalSha256({
     projectRoot: plan.projectRoot,
     at: options.at,
@@ -305,7 +336,14 @@ function isGateRun(value: unknown): value is GateRun {
   const record = value as Readonly<Record<string, unknown>>;
   const workIds = record.workIds;
   const gates = record.gates;
+  const trees = record.trees;
   return record.schemaVersion === GATE_RUN_SCHEMA_VERSION && typeof record.runId === "string" && typeof record.libraryId === "string" &&
+    // TCRN-CROSS-STORY-530: each root's state, with the paths its digest was limited to when it was.
+    Array.isArray(trees) && trees.every((tree: unknown) => {
+      if (tree === null || typeof tree !== "object" || Array.isArray(tree)) return false;
+      const entry = tree as Readonly<Record<string, unknown>>;
+      return typeof entry.root === "string" && (entry.paths === undefined || (Array.isArray(entry.paths) && entry.paths.every((path: unknown) => typeof path === "string")));
+    }) &&
     (record.projectId === undefined || (typeof record.projectId === "string" && /^project:[a-f0-9]{24}$/u.test(record.projectId))) &&
     typeof record.at === "string" && typeof record.treeDigest === "string" && typeof record.declarationsDigest === "string" &&
     Array.isArray(workIds) && workIds.every((workId: unknown) => typeof workId === "string" && /^work:[0-9a-f]{24}$/u.test(workId)) &&
@@ -333,6 +371,9 @@ function instant(value: string): bigint | null {
  * runs made on one tree under one set of declarations; null when there is none. A record that
  * does not read as a run is skipped. `workIds` keeps only runs made for exactly those target work
  * ids; `includesWorkIds` (TCRN-CROSS-STORY-525) only runs whose targets include each of them.
+ * `accept` (TCRN-CROSS-STORY-530), given, is asked of the remaining runs from the latest back, and
+ * the first it accepts is the answer: the done check takes each run's tree digest again over the
+ * paths the run recorded.
  */
 export async function latestGateRun(input: {
   readonly libraryId: string;
@@ -342,6 +383,7 @@ export async function latestGateRun(input: {
   readonly declarationsDigest?: string;
   readonly workIds?: readonly string[];
   readonly includesWorkIds?: readonly string[];
+  readonly accept?: (run: GateRun) => Promise<boolean>;
 }): Promise<GateRun | null> {
   const directory = gateRunsDirectory(input.libraryId, input.deviceHome);
   let names: readonly string[];
@@ -351,7 +393,7 @@ export async function latestGateRun(input: {
     if ((error as { code?: string }).code === "ENOENT") return null;
     throw error;
   }
-  let latest: { readonly run: GateRun; readonly at: bigint } | null = null;
+  const candidates: { readonly run: GateRun; readonly at: bigint }[] = [];
   for (const name of names.filter((entry) => entry.endsWith(".json")).sort(compareCanonicalText)) {
     let run: unknown;
     try {
@@ -369,7 +411,11 @@ export async function latestGateRun(input: {
     if (input.includesWorkIds !== undefined && !input.includesWorkIds.every((workId) => run.workIds.includes(workId))) continue;
     const at = instant(run.at);
     if (at === null) continue;
-    if (latest === null || at > latest.at || (at === latest.at && compareCanonicalText(run.runId, latest.run.runId) > 0)) latest = { run, at };
+    candidates.push({ run, at });
   }
-  return latest?.run ?? null;
+  candidates.sort((left, right) => (left.at === right.at ? compareCanonicalText(right.run.runId, left.run.runId) : left.at > right.at ? -1 : 1));
+  for (const candidate of candidates) {
+    if (input.accept === undefined || await input.accept(candidate.run)) return candidate.run;
+  }
+  return null;
 }

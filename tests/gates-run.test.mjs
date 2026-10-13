@@ -19,9 +19,9 @@ import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { listGates, setGate } from "../dist/build/packages/core/src/gates-config.js";
 import { assertDoneGates } from "../dist/build/packages/core/src/gates-done.js";
-import { planGates } from "../dist/build/packages/core/src/gates-plan.js";
+import { planGates, storyCommitPaths } from "../dist/build/packages/core/src/gates-plan.js";
 import { gateRunsDirectory, gateTreeState, latestGateRun, runGates } from "../dist/build/packages/core/src/gates-run.js";
-import { WORK_GATES_KEY, effectiveWorkGates, workAncestorIds } from "../dist/build/packages/core/src/work-gates.js";
+import { WORK_GATES_KEY, effectiveWorkGates, workAncestorIds, workSubjectKeys } from "../dist/build/packages/core/src/work-gates.js";
 
 let second = 0;
 const at = () => {
@@ -408,4 +408,61 @@ test("485-R4: a run counts only for the tree and declarations it was made on, an
   // A commit moves HEAD, so the run no longer describes the tree.
   git(project, ["commit", "-q", "-am", "change"]);
   assert.equal((await refusal(() => done())).reasonCode, "WORK_DONE_GATES_NOT_RUN");
+});
+
+// TCRN-CROSS-STORY-530 GWT1-GWT3 (MIN-256; TCRN-CROSS-SUB-450; Q13): a run made for a Story takes its
+// tree digest over the files the commits of the Story and its Subtasks touched, and records them.
+test("530-GWT1, GWT2, GWT3: a run for a Story records the files its commits touched; another process's files leave it standing, a change to one of the Story's files does not", async (context) => {
+  const { project, desk, library } = await setup(context);
+  await put(project, "src/a.ts", "export const a = 2;\n");
+  git(project, ["commit", "-q", "-am", "TCRN-TEST-STORY-1: change a"]);
+  await put(project, "docs/sub.md", "sub\n");
+  git(project, ["add", "-A"]);
+  git(project, ["commit", "-q", "-m", "TCRN-TEST-SUB-7 (TCRN-TEST-STORY-1): add the sub page"]);
+  await put(project, "README.md", "# Another Story\n");
+  git(project, ["commit", "-q", "-am", "TCRN-TEST-STORY-10: another Story whose key starts with the first one's"]);
+  const SUBTASK = `work:${"5".repeat(24)}`;
+  const declared = await declareAll(library, { unit: declare([node, "-e", "process.exit(0)"], ["**"]) });
+  const libraryId = declared.metadata.workspaceId;
+  const state = { ...declared, work: [...declared.work,
+    { id: STORY, externalKey: "TCRN-TEST-STORY-1", kind: "Story", parentId: null, tombstone: false, extensions: {} },
+    { id: SUBTASK, externalKey: "TCRN-TEST-SUB-7", kind: "Subtask", parentId: STORY, tombstone: false, extensions: {} },
+  ] };
+  const keys = workSubjectKeys(state.work, [STORY]);
+  assert.deepEqual(keys, ["TCRN-TEST-STORY-1", "TCRN-TEST-SUB-7"], "the Story's key and its Subtask's");
+  assert.deepEqual(storyCommitPaths(project, keys), ["docs/sub.md", "src/a.ts"], "TCRN-TEST-STORY-10 does not name a commit of TCRN-TEST-STORY-1");
+  assert.deepEqual(storyCommitPaths(project, []), [], "no key, no commit");
+
+  const plan = await planGates({ projectRoot: project, gates: listGates(declared), base: "HEAD", workIds: [STORY], subjectKeys: keys });
+  assert.deepEqual(plan.subjectKeys, keys);
+  const { run, recordPath } = await runGates(plan, { libraryId, at: at(), deviceHome: desk });
+  // GWT3: the record names the files its digest took in.
+  assert.deepEqual(run.trees.map((tree) => [tree.root, tree.paths]), [[".", ["docs/sub.md", "src/a.ts"]]]);
+  assert.deepEqual(JSON.parse(await readFile(recordPath, "utf8")).trees, run.trees);
+  const done = () => assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk });
+  assert.equal((await done()).runId, run.runId);
+
+  // GWT1: another process adds an untracked file to the project root and edits another Story's file.
+  execFileSync(process.execPath, ["-e", "require('node:fs').writeFileSync(process.argv[1], 'elsewhere\\n')", join(project, "another-process.txt")]);
+  await put(project, "README.md", "# Edited by another Story\n");
+  const standing = await done();
+  assert.deepEqual([standing.runId, standing.treeDigest], [run.runId, run.treeDigest], "the run still describes the Story's files");
+
+  // GWT2: a file the Story's commits touched changes after the run.
+  await put(project, "src/a.ts", "export const a = 3;\n");
+  const changed = await refusal(() => done());
+  assert.deepEqual([changed.reasonCode, changed.details.stories], ["WORK_DONE_GATES_NOT_RUN", [STORY]]);
+  assert.notEqual(changed.details.treeDigest, run.treeDigest, "the refusal names the digest a run made now would record");
+  await put(project, "src/a.ts", "export const a = 2;\n");
+  assert.equal((await done()).runId, run.runId, "the same content brings the run back");
+  await put(project, "docs/sub.md", "changed\n");
+  assert.equal((await refusal(() => done())).reasonCode, "WORK_DONE_GATES_NOT_RUN", "a Subtask's file is the Story's too");
+  await put(project, "docs/sub.md", "sub\n");
+
+  // A run made without the keys takes every change in, as before: the untracked file is part of its tree.
+  const whole = await runGates(await planGates({ projectRoot: project, gates: listGates(declared), base: "HEAD", workIds: [STORY] }), { libraryId, at: at(), deviceHome: desk });
+  assert.equal(Object.hasOwn(whole.run.trees[0], "paths"), false);
+  assert.equal((await done()).runId, whole.run.runId, "the latest run that still describes the project decides");
+  await put(project, "another-process.txt", "again\n");
+  assert.equal((await done()).runId, run.runId, "once the whole tree moved, the run limited to the Story's files is the latest that stands");
 });

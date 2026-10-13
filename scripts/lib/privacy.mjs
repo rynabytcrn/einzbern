@@ -131,6 +131,10 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
 // end-to-end release dry run at the 2.0.2 release base. The same three members carry the same
 // compiled owner line once each and get their own exact labels; the other owner occurrence, in
 // scripts/einzbern.mjs, is again the complete public helper repository address and is no finding.
+// TCRN-CROSS-EPIC-149 R2 PF: the 2.0.3 package was reviewed the same way, from an isolated
+// end-to-end release dry run at the 2.0.3 release base. The same three members carry the same
+// compiled owner line once each and get their own exact labels; the other owner occurrence, in
+// scripts/einzbern.mjs, is again the complete public helper repository address and is no finding.
 const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
@@ -144,6 +148,9 @@ const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-2.0.2.tar.gz/einzbern-2.0.2/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-2.0.2.tar.gz/einzbern-2.0.2/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-2.0.2.tar.gz/einzbern-2.0.2/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.0.3.tar.gz/einzbern-2.0.3/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.0.3.tar.gz/einzbern-2.0.3/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.0.3.tar.gz/einzbern-2.0.3/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
 ]);
 const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
   [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [

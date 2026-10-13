@@ -86,24 +86,36 @@ targets keep theirs. `work-project-context` gives each resolved context the same
 `handoff` (reference, work revision, version, library, repositories, effective
 settings, design, readiness, output places, enabled rules and variables) for a
 native host dispatch to pass per target; a target that does not resolve has a
-null `handoff`. Undecided work that the coordination library does not cover
-refuses this operation; explicit coordination-only work needs no project run.
+null `handoff`. Undecided work that no gate of the coordination library applies
+to refuses this operation; explicit coordination-only work needs no project run.
 Without a Cross Project work subject the existing single-library form remains.
 
-A work item that an enabled gate of the coordination library itself covers by
-exact work id, in the scope of the item's own project, is planned and run in that
-library as well (TCRN-CROSS-STORY-519): in the project root this device
-registered for the library, under that project's declarations, one plan or run
-per project, and the run records the project and the exact work ids, so the done
-check of `work-transition` and `work-batch` reads it. These results are listed
+With `--work-id`, a plan holds every gate that applies to the given Stories
+(TCRN-CROSS-STORY-525, MIN-256): each enabled required gate, each gate the
+Story's or an ancestor's `gates` field names (`work-create` / `work-annotate
+--gates`, a `work-batch` member's `gates`), and each gate whose covers name the
+Story or an ancestor, so a cover naming an Epic or an Initiative reaches every
+Story under it. Each such gate lists the Stories it applies to as
+`matchedWorkIds`; a path match selects a gate without binding a Story, and a
+named gate the project does not declare is listed in `unknownGates`. A Story's
+done check asks every gate that applies to it to be green in the latest run on
+the same tree and declarations whose target work ids include it; the covers need
+not list the Story, and no enabled gate, or none that applies, holds nothing back.
+
+A work item that an enabled gate of the coordination library itself applies to,
+in the scope of the item's own project, is planned and run in that library as
+well (TCRN-CROSS-STORY-519): in the project root this device registered for the
+library, under that project's declarations, one plan or run per project, and the
+run records the project and the target work ids, so the done check of
+`work-transition` and `work-batch` reads it. These results are listed
 apart under `library`: `projectId`, `workIds`, `projectRoot`, `ok`, and the
 `plan`, or the run's `reds`, `requiredReds`, `run` and `recordPath`; a refused
 one carries its `reasonCode` and the others stand. `targets` keeps its shape,
-and `library` is absent when no item is covered. A covered item needs no decided
-relation and gets no `PROJECT_SCOPE_UNDECIDED` or `COORDINATION_ONLY` result; a
+and `library` is absent when no gate applies to any item. Such an item needs no
+decided relation and gets no `PROJECT_SCOPE_UNDECIDED` or `COORDINATION_ONLY` result; a
 selected one also runs per target, and the coordination library is never made a
 development target. `--project-id`, when given, must name the project of every
-covered item, or the operation refuses with `GATES_PROJECT_MISMATCH` before
+such item, or the operation refuses with `GATES_PROJECT_MISMATCH` before
 anything runs; left out, each item's own project applies.
 
 The gate root of a project in a coordination library, for these runs, for

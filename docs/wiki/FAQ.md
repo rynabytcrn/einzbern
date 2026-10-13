@@ -42,9 +42,9 @@
 
 ## Story 转为完成时报 WORK_DONE_GATES_NOT_RUN，该怎么办？
 
-项目有启用的必需门以精确 work id 覆盖这张 Story，但本设备还没有在当前这棵树与当前这组门声明上为它跑过这些门。先运行 `gates-run --base <提交> --work-id <Story id> --at <时刻>`：非 release 运行必须给 `--base`，发布时改用 `--release true`；`--work-id` 把这次运行绑定到这张 Story，没有绑定的运行不能证明覆盖。全部必需门为绿之后再转换。之后又改了文件、门声明或目标 Story，要重新跑。
+项目有门适用于这张 Story（启用的必需门，Story 或其祖先 `gates` 字段点名的门，或覆盖写了它或其祖先 work id 的门；TCRN-CROSS-STORY-525），但本设备还没有在当前这棵树与当前这组门声明上以带它的 `--work-id` 跑过这些门。先运行 `gates-run --base <提交> --work-id <Story id> --at <时刻>`：非 release 运行必须给 `--base`，发布时改用 `--release true`；`--work-id` 把这次运行绑定到这张 Story，没有绑定的运行不能放行它，一次 `--work-id A,B` 的运行可以分别放行 A 与 B。适用门全部为绿之后再转换。之后又改了文件或门声明，要重新跑。
 
-在项目库上，这条 `gates-run` 还要带 `--project-id <Story 的项目>`：判据只认记录了 Story 项目的运行。不带时，不带 `--project` 的调用只要注册项记着这个项目，就以 `GATES_PROJECT_UNKNOWN` 拒绝，不会运行；带 `--project` 的调用得到一次 0 道门、`ok` 为 `true`、不记项目的空运行。两种都过不了完成判据，转换仍报这个错，要等运行带上 `--project-id` 才能转完成。在协调库上不必带：协调库在 Story 的项目里以精确 work id 覆盖它的门，会在协调库为它登记的项目根按 Story 的项目运行（TCRN-CROSS-STORY-519），协调库的注册项不带 `projectId` 也找得到这个根。细节见「门」页。
+在项目库上，这条 `gates-run` 还要带 `--project-id <Story 的项目>`：判据只认记录了 Story 项目的运行。不带时，不带 `--project` 的调用只要注册项记着这个项目，就以 `GATES_PROJECT_UNKNOWN` 拒绝，不会运行；带 `--project` 的调用得到一次 0 道门、`ok` 为 `true`、不记项目的空运行。两种都过不了完成判据，转换仍报这个错，要等运行带上 `--project-id` 才能转完成。在协调库上不必带：协调库在 Story 的项目里适用于它的门，会在协调库为它登记的项目根按 Story 的项目运行（TCRN-CROSS-STORY-519），协调库的注册项不带 `projectId` 也找得到这个根。细节见「门」页。
 
 ## gates-run 的结果存在哪里？
 
@@ -52,7 +52,7 @@
 
 ## 一次已经提交的改动，gates-plan 为什么什么都没选？
 
-非 release 计划必须给有效的 Git 提交 `--base`，不会隐式使用 `HEAD`，不给就报 `GATES_BASE_REQUIRED`。已经提交的改动相对 `HEAD` 没有差别，所以 `--base HEAD` 选不中按路径 glob 覆盖的门；用 `--base` 指向这次改动的分叉点，例如 `--base main`。以精确 work id 覆盖的门另由 `--work-id` 选中，与改动无关。
+非 release 计划必须给有效的 Git 提交 `--base`，不会隐式使用 `HEAD`，不给就报 `GATES_BASE_REQUIRED`。已经提交的改动相对 `HEAD` 没有差别，所以 `--base HEAD` 选不中按路径 glob 覆盖的门；用 `--base` 指向这次改动的分叉点，例如 `--base main`。带 `--work-id` 时，适用于 Story 的门（必需门、`gates` 字段点名的门、覆盖写了它或其祖先 work id 的门）另被选中，与改动无关。
 
 ## 钩子看起来没反应，怎么知道它有没有运行？
 

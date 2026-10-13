@@ -3688,7 +3688,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   // TCRN-CROSS-STORY-485 R2 (MIN-235 D8): the gates a change and optional Story need. Non-release
-  // plans name their Git base, and --work-id binds exact Story coverage alongside path coverage.
+  // plans name their Git base, and --work-id binds the Stories alongside path coverage.
   // TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-447): with --work-id the plan holds every gate that applies to
   // the Stories (gateAppliesTo): each required gate, each one their gates field or an ancestor's names,
   // and each one whose covers name the Story or an ancestor; unknownGates lists a named gate the

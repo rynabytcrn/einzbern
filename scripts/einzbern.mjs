@@ -28,8 +28,11 @@ try {
   // migration whose recall smoke missed names the card it asked for and the query it asked with
   // (SETUP_RECALL_SMOKE_MISSED, TCRN-CROSS-INIT-053 R48). A write refused under another actor's
   // work lease names the holder, when the lease runs out and the item it is held on (WORK_LEASED,
-  // TCRN-CROSS-STORY-528, TCRN-CROSS-SUB-457).
-  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest", "check", "workId", "cardId", "query", "holder", "expiresAt", "leasedWorkId"];
+  // TCRN-CROSS-STORY-528, TCRN-CROSS-SUB-457). A model's write refused for the decision it cites
+  // names that decision and the check it failed (MODEL_WRITE_AUTHORIZATION_INVALID,
+  // TCRN-CROSS-STORY-526, TCRN-CROSS-SUB-466); a gate declaration refused for one of its covers now
+  // names that reason too (GATES_CONFIG_INVALID).
+  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest", "check", "workId", "cardId", "query", "holder", "expiresAt", "leasedWorkId", "decidedIn", "reason"];
   const numberDetails = ["bodyBytes", "limit"];
   const listDetails = ["allowedValues", "conflicts", "reds", "stories"];
   const details = error?.details !== null && typeof error?.details === "object"

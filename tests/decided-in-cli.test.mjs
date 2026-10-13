@@ -119,9 +119,12 @@ test("526 GWT1 to GWT3 (SUB-453): gates-config-set and gates-config-remove write
   await assertInvalid(fx, set("unit", "--decided-in", "DECIDED-MIN-1#D1"), "DECIDED-MIN-1#D1", "unit", "malformed");
   assert.equal((await stateOf(fx.library)).version, before.version, "no refused write appended an event");
 
-  // Through the shipped entry the refusal reaches stderr and exits 1.
+  // Through the shipped entry the refusal reaches stderr and exits 1, its last line naming the decision
+  // cited and the check it failed (TCRN-CROSS-SUB-466: the entry prints the decidedIn and reason details).
   const shipped = spawnSync(process.execPath, [ENTRY, ...set("unit", "--decided-in", fx.owner(2))], { encoding: "utf8", env: { ...process.env, EINZBERN_SURFACE: "", EINZBERN_HOME: fx.device } });
-  assert.deepEqual([shipped.status, shipped.stdout, JSON.parse(shipped.stderr.trim().split("\n").at(-1)).reasonCode], [1, "", "MODEL_WRITE_AUTHORIZATION_INVALID"]);
+  const shippedLine = JSON.parse(shipped.stderr.trim().split("\n").at(-1));
+  assert.deepEqual([shipped.status, shipped.stdout, shippedLine.reasonCode], [1, "", "MODEL_WRITE_AUTHORIZATION_INVALID"]);
+  assert.deepEqual([shippedLine.decidedIn, shippedLine.reason], [fx.owner(2), "target-not-named"], "stderr names the decision cited and why it does not authorize the write");
 
   // GWT2: a qualifying decision lets the model's run write; the event records it with surface cli.
   const written = await stateOf(fx.library);

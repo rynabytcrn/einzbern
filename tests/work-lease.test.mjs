@@ -4,21 +4,23 @@
 // it, a claim is refused while another actor's unexpired lease binds the item, an item above it or
 // an item below it, and whether a lease runs is judged against the write's --at. The holder releases
 // at any time, another actor needs force while it runs, and config/project.json never shows one.
+// SUB-457: a transition or an annotation under another actor's unexpired lease -- on the item or
+// above it -- is refused with WORK_LEASED naming the holder and when the lease runs out.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import {
-  applyWorkBatch,
+  annotateWork,
   configProjectionStatus,
-  createProject,
-  initializeLibrary,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
+  transitionWork,
 } from "../dist/build/packages/core/src/index.js";
 import { CONFIG_RECORD_COLLECTIONS, setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { projectConfigPath } from "../dist/build/packages/core/src/library-config.js";
@@ -33,49 +35,10 @@ import {
 } from "../dist/build/packages/core/src/work-lease.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { forgeOwnStream } from "./helpers/library-forge.mjs";
+import { A, B, at, leaseLibrary as library, leaseRecords } from "./helpers/work-lease-fixture.mjs";
 
-const A = "agent:alpha";
-const B = "agent:bravo";
-const T0 = Date.UTC(2026, 9, 14, 8, 0, 0);
-/** The instant `minutes` and `seconds` after 08:00 UTC on 2026-10-14. */
-const at = (minutes = 0, seconds = 0) => new Date(T0 + minutes * 60_000 + seconds * 1000).toISOString().replace(".000Z", "Z");
-
-const STORY_SCOPE = [
-  "## Goal",
-  "为谁:the operator. 目的锚:STORY-528. 符合性判据:one writer per Story. 判定人:machine-checked lane.",
-  "", "## Requirements", "- 实现 the work lease.",
-  "", "## Acceptance Criteria", "GIVEN a lease WHEN another actor writes THEN the write is refused",
-  "", "## Business Background", "实测 two sessions wrote one Story.",
-  "", "## Preconditions", "- None.",
-  "", "## Assumptions", "- None.",
-  "", "## Use Cases & Examples", "- Claim a Story before working on it.",
-  "", "## Feature Toggle & Setting", "None.",
-  "", "## Permissions", "None.",
-  "", "## Implementation Notes", "新增 the lease collection.",
-].join("\n");
-
-/** A library with one project and INIT > EPIC > STORY > SUB, and a SIBLING Story under the Epic. */
-async function library(context, key) {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-work-lease-")));
-  context.after(() => rm(base, { recursive: true, force: true }));
-  const root = join(base, "library");
-  await initializeLibrary({ root, createdAt: at(-10) });
-  const project = await createProject(root, { occurredAt: at(-9), externalKey: `${key}-P`, name: key });
-  const projectId = project.projects[0].id;
-  const keys = { initiative: `${key}-INIT`, epic: `${key}-EPIC`, story: `${key}-STORY`, sibling: `${key}-SIBLING`, subtask: `${key}-SUB` };
-  await applyWorkBatch(root, {
-    schemaVersion: "tcrn.work-batch.v1",
-    members: [
-      { verb: "work-create", projectId, externalKey: keys.initiative, kind: "Initiative", parentId: null, status: "active", title: keys.initiative },
-      { verb: "work-create", projectId, externalKey: keys.epic, kind: "Epic", parentExternalKey: keys.initiative, status: "active", title: keys.epic },
-      { verb: "work-create", projectId, externalKey: keys.story, kind: "Story", parentExternalKey: keys.epic, status: "planned", scope: STORY_SCOPE, title: keys.story },
-      { verb: "work-create", projectId, externalKey: keys.sibling, kind: "Story", parentExternalKey: keys.epic, status: "planned", scope: STORY_SCOPE, title: keys.sibling },
-      { verb: "work-create", projectId, externalKey: keys.subtask, kind: "Subtask", parentExternalKey: keys.story, status: "planned", title: keys.subtask },
-    ],
-  }, { occurredAt: at(-8) });
-  const ids = Object.fromEntries(Object.entries(keys).map(([name, externalKey]) => [name, deriveStableId("work", externalKey)]));
-  return { base, root, projectId, ids };
-}
+const execFileAsync = promisify(execFile);
+const CLI = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
 
 /** Assert that `operation` is refused with WORK_LEASED naming A's lease on `leasedWorkId`, running until `expiresAt`. */
 async function refusedAsLeased(operation, { leasedWorkId, holder = A, expiresAt = at(120) }) {
@@ -85,8 +48,6 @@ async function refusedAsLeased(operation, { leasedWorkId, holder = A, expiresAt 
     return true;
   });
 }
-
-const leaseRecords = (state) => state.configRecords.filter((record) => record.collection === "lease");
 
 test("528 SUB-456: --ttl is <n>m or <n>h, 2h when left out, from one minute to 24 hours", () => {
   assert.equal(WORK_LEASE_TTL_DEFAULT, "2h");
@@ -242,4 +203,74 @@ test("528 SUB-456: config/project.json leaves leases out, so a claim and a relea
   const released = await releaseWork(f.root, { id: f.ids.story, actorId: A, occurredAt: at(5) });
   assert.equal(await readFile(path, "utf8"), during, "a release writes no projection either");
   assert.equal(await configProjectionStatus(f.root, released.settings, released.configRecords), "current");
+});
+
+test("528 SUB-457 GWT1, GWT2: under A's lease B's transition is refused with the holder and expiresAt, and A's own goes through", async (context) => {
+  const f = await library(context, "LEASE-TRANSITION");
+  await claimWork(f.root, { id: f.ids.story, actorId: A, ttl: "2h", occurredAt: at(0) });
+  const before = await materializeWorkspace(f.root);
+  await refusedAsLeased(() => transitionWork(f.root, { id: f.ids.story, status: "ready", actorId: B, occurredAt: at(1) }), { leasedWorkId: f.ids.story });
+  await refusedAsLeased(() => transitionWork(f.root, { id: f.ids.story, status: "ready", occurredAt: at(2) }), { leasedWorkId: f.ids.story });
+  await refusedAsLeased(() => transitionWork(f.root, { id: f.ids.subtask, status: "ready", actorId: B, occurredAt: at(3) }), { leasedWorkId: f.ids.story });
+  const after = await materializeWorkspace(f.root);
+  assert.equal(after.version, before.version, "a refused write writes nothing");
+  assert.equal(after.headEventHash, before.headEventHash);
+
+  const moved = await transitionWork(f.root, { id: f.ids.story, status: "ready", actorId: A, occurredAt: at(4) });
+  assert.equal(moved.work.find((record) => record.id === f.ids.story).status, "ready", "the holder writes");
+  assert.deepEqual(workLease(moved, f.ids.story), { workId: f.ids.story, holder: A, claimedAt: at(0), expiresAt: at(120) }, "and the write leaves the lease as it was");
+  const epic = await transitionWork(f.root, { id: f.ids.epic, status: "blocked", actorId: B, occurredAt: at(5) });
+  assert.equal(epic.work.find((record) => record.id === f.ids.epic).status, "blocked", "a lease below an item does not hold the item");
+  const later = await transitionWork(f.root, { id: f.ids.story, status: "active", actorId: B, occurredAt: at(120) });
+  assert.equal(later.work.find((record) => record.id === f.ids.story).status, "active", "once the lease has run out by the write's --at, another actor writes");
+});
+
+test("528 SUB-457 GWT4: under A's lease on an Epic, B's annotation of a Story below it is refused", async (context) => {
+  const f = await library(context, "LEASE-ANNOTATE");
+  await claimWork(f.root, { id: f.ids.epic, actorId: A, occurredAt: at(0) });
+  await refusedAsLeased(() => annotateWork(f.root, { id: f.ids.story, summary: "B was here", actorId: B, occurredAt: at(1) }), { leasedWorkId: f.ids.epic });
+  await refusedAsLeased(() => annotateWork(f.root, { id: f.ids.subtask, summary: "B was here", actorId: B, occurredAt: at(2) }), { leasedWorkId: f.ids.epic });
+  await refusedAsLeased(() => annotateWork(f.root, { id: f.ids.sibling, summary: "nobody was here", occurredAt: at(3) }), { leasedWorkId: f.ids.epic });
+  const annotated = await annotateWork(f.root, { id: f.ids.story, summary: "A was here", actorId: A, occurredAt: at(4) });
+  assert.equal(annotated.work.find((record) => record.id === f.ids.story).summary, "A was here");
+  const above = await annotateWork(f.root, { id: f.ids.initiative, summary: "B above the lease", actorId: B, occurredAt: at(5) });
+  assert.equal(above.work.find((record) => record.id === f.ids.initiative).summary, "B above the lease");
+});
+
+test("528 SUB-457 GWT6: without a lease a transition and an annotation write what they wrote before", async (context) => {
+  const f = await library(context, "LEASE-NONE");
+  const before = await materializeWorkspace(f.root);
+  await transitionWork(f.root, { id: f.ids.story, status: "ready", actorId: B, occurredAt: at(1) });
+  await annotateWork(f.root, { id: f.ids.story, summary: "no lease", occurredAt: at(2) });
+  const after = await materializeWorkspace(f.root);
+  const appended = after.events.slice(before.events.length).map((event) => event.payload);
+  assert.deepEqual(appended.map((payload) => [payload.operation, Object.keys(payload).sort().join(",")]), [
+    ["work.updated", "operation,record"],
+    ["work.annotated", "operation,record"],
+  ], "the same events, nothing added for leases");
+  assert.deepEqual(leaseRecords(after), []);
+  assert.deepEqual(await materializeWorkspaceFromGenesis(f.root), after);
+
+  // A lease that has run out is no lease.
+  await claimWork(f.root, { id: f.ids.sibling, actorId: A, ttl: "1m", occurredAt: at(3) });
+  const moved = await transitionWork(f.root, { id: f.ids.sibling, status: "ready", actorId: B, occurredAt: at(4) });
+  assert.equal(moved.work.find((record) => record.id === f.ids.sibling).status, "ready");
+});
+
+test("528 SUB-457: the CLI prints the holder, expiresAt and leased item of a refused work-transition and work-annotate", async (context) => {
+  const f = await library(context, "LEASE-CLI-OUT");
+  await claimWork(f.root, { id: f.ids.epic, actorId: A, occurredAt: at(0) });
+  for (const args of [
+    ["work-transition", "--workspace", f.root, "--at", at(1), "--id", f.ids.story, "--status", "ready", "--actor", B],
+    ["work-annotate", "--workspace", f.root, "--at", at(2), "--id", f.ids.story, "--summary", "B was here", "--actor", B],
+    ["work-annotate", "--workspace", f.root, "--at", at(3), "--id", f.ids.story, "--summary", "nobody was here"],
+  ]) {
+    const failure = await execFileAsync(process.execPath, [CLI, ...args], { encoding: "utf8" }).then(() => null, (error) => error);
+    assert.notEqual(failure, null, `${args.join(" ")} is refused`);
+    const output = JSON.parse(failure.stderr.trim().split("\n").at(-1));
+    assert.deepEqual(
+      { ok: output.ok, reasonCode: output.reasonCode, workId: output.workId, holder: output.holder, expiresAt: output.expiresAt, leasedWorkId: output.leasedWorkId },
+      { ok: false, reasonCode: "WORK_LEASED", workId: f.ids.story, holder: A, expiresAt: at(120), leasedWorkId: f.ids.epic },
+    );
+  }
 });

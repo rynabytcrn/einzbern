@@ -508,6 +508,24 @@ export {
 // decisions unless asked for the obsolete ones or all of them.
 export { DECISION_STATUS_FILTERS, minutesById, minutesView } from "./minutes.js";
 export type { DecisionStatusFilter } from "./minutes.js";
+// TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-451): a refused configuration write that cites an
+// Owner decision (--decided-in minutes:<id>#D<n>) is checked against the minutes before it goes through.
+export {
+  DECIDED_IN_VALUE_SHAPE,
+  WRITE_AUTHORIZATION_DECIDER,
+  WRITE_AUTHORIZATION_INVALID,
+  WRITE_AUTHORIZATION_REASONS,
+  WriteAuthorizationError,
+  decisionNamesTarget,
+  parseDecidedIn,
+  verifyWriteAuthorization,
+} from "./write-authorization.js";
+export type {
+  VerifiedWriteAuthorization,
+  VerifyWriteAuthorizationInput,
+  WriteAuthorizationErrorDetails,
+  WriteAuthorizationReason,
+} from "./write-authorization.js";
 export type {
   ConferenceRequest,
   ConferencePosition,

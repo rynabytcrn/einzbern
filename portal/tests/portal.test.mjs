@@ -8,7 +8,6 @@ import { forgeOwnStream } from "../../tests/helpers/library-forge.mjs";
 // stood in for through the helper, outside the portal tree (TCRN-CROSS-INIT-053 R45 PP-1).
 import { ensureProjectCoordination, unregisterLibrary } from "../../tests/helpers/registry-control.mjs";
 import { appendHistoricalAttestationEnable } from "../../tests/helpers/workspace-fixture.mjs";
-import { materializeWorkspace } from "../../dist/build/packages/core/src/index.js";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -2055,7 +2054,10 @@ test("526 GWT4: Atelier started with TCRN_PORTAL_ACTOR saves a gate whose event 
   const { boot } = await readBoot(url);
   const saved = await request(url, "/api/gates", writeOptions(boot.token, "POST", { name: "unit", command: ["node", "--version"], root: ".", covers: ["**"], enabled: true, required: true, releaseOnly: false }));
   assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
-  const event = (await asDevice(fixture, () => materializeWorkspace(fixture.workspace))).events.at(-1).payload;
+  // The last event is read back through the CLI's event page, the route the portal's dependency
+  // audit sanctions, not from an engine package (TCRN-CROSS-SUB-468).
+  const { total } = await cli(["event-list", "--workspace", fixture.workspace, "--limit", "1"], fixture.deviceEnv);
+  const event = (await cli(["event-list", "--workspace", fixture.workspace, "--offset", String(total - 1)], fixture.deviceEnv)).records.at(-1).payload;
   assert.deepEqual([event.operation, event.record.collection, event.record.key, event.surface, event.actor], ["config.record.set", "gate", "unit", "atelier", actor]);
   assert.equal(Object.hasOwn(event, "decidedIn"), false, "a run for Atelier cites no decision");
 });

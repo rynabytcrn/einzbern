@@ -472,16 +472,11 @@ export {
   ACTOR_PREFIXES,
   ActorAttestationError,
   EVENT_PAYLOAD_OPERATION_EXTRAS,
-  EVENT_PAYLOAD_OPTIONAL_EXTRAS,
-  WRITE_AUTHORIZATION_EXTRAS,
-  WRITE_SURFACES,
   assertActorId,
   buildEventPayload,
   buildActorAttestationEnableRecord,
   validateActorAttestationEnableRecord,
   buildActorAttestationRegistration,
-  writeAuthorizationExtras,
-  writeAuthorizationProblem,
 } from "./actor-attestation.js";
 export type { WriteAuthorization, WriteSurface } from "./actor-attestation.js";
 export type {
@@ -516,21 +511,13 @@ export { DECISION_STATUS_FILTERS, minutesById, minutesView } from "./minutes.js"
 export type { DecisionStatusFilter } from "./minutes.js";
 // TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-451): a refused configuration write that cites an
 // Owner decision (--decided-in minutes:<id>#D<n>) is checked against the minutes before it goes through.
+// TCRN-CROSS-SUB-465: the barrel carries only what the CLI calls. The decider, the reasons, the error
+// and the target match stay in the module, and so do the write-authorization extras, surfaces and
+// problem check of actor-attestation.ts; core reads them inside core and their tests import the modules.
 export {
   DECIDED_IN_VALUE_SHAPE,
-  WRITE_AUTHORIZATION_DECIDER,
-  WRITE_AUTHORIZATION_INVALID,
-  WRITE_AUTHORIZATION_REASONS,
-  WriteAuthorizationError,
-  decisionNamesTarget,
   parseDecidedIn,
   verifyWriteAuthorization,
-} from "./write-authorization.js";
-export type {
-  VerifiedWriteAuthorization,
-  VerifyWriteAuthorizationInput,
-  WriteAuthorizationErrorDetails,
-  WriteAuthorizationReason,
 } from "./write-authorization.js";
 export type {
   ConferenceRequest,

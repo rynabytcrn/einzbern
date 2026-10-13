@@ -16,11 +16,8 @@ import test from "node:test";
 
 import {
   DECIDED_IN_VALUE_SHAPE,
-  WRITE_AUTHORIZATION_DECIDER,
-  WRITE_AUTHORIZATION_REASONS,
   createProject,
   declareChainIdentity,
-  decisionNamesTarget,
   initializeLibrary,
   materializeWorkspace,
   parseDecidedIn,
@@ -28,6 +25,12 @@ import {
   registerLibrary,
   verifyWriteAuthorization,
 } from "../dist/build/packages/core/src/index.js";
+// TCRN-CROSS-SUB-465: the barrel exports only what the CLI calls; the rest is read from the module.
+import {
+  WRITE_AUTHORIZATION_DECIDER,
+  WRITE_AUTHORIZATION_REASONS,
+  decisionNamesTarget,
+} from "../dist/build/packages/core/src/write-authorization.js";
 
 const at = (second) => `2026-10-14T09:00:${String(second).padStart(2, "0")}Z`;
 const OWNER = WRITE_AUTHORIZATION_DECIDER;

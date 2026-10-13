@@ -14,8 +14,6 @@ import {
   ACTOR_ATTESTATION_SCHEMA_VERSION,
   ACTOR_PREFIXES,
   EVENT_PAYLOAD_OPERATION_EXTRAS,
-  EVENT_PAYLOAD_OPTIONAL_EXTRAS,
-  WRITE_SURFACES,
   assertActorId,
   buildActorAttestationEnableRecord,
   buildActorAttestationRegistration,
@@ -26,8 +24,13 @@ import {
   initializeLibrary,
   materializeWorkspace,
   validateActorAttestationEnableRecord,
-  writeAuthorizationExtras,
 } from "../dist/build/packages/core/src/index.js";
+// TCRN-CROSS-SUB-465: the barrel exports only what the CLI calls; the rest is read from the module.
+import {
+  EVENT_PAYLOAD_OPTIONAL_EXTRAS,
+  WRITE_SURFACES,
+  writeAuthorizationExtras,
+} from "../dist/build/packages/core/src/actor-attestation.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
 import { validateExtensionRegistration } from "../dist/build/packages/protocol/src/index.js";

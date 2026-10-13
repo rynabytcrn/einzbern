@@ -15,7 +15,8 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 
 import { ProtocolError, canonicalByteLength, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
-import { buildEventPayload } from "./actor-attestation.js";
+import { buildEventPayload, writeAuthorizationExtras } from "./actor-attestation.js";
+import type { WriteAuthorization } from "./actor-attestation.js";
 import { checkGateRecordValue } from "./gates-config.js";
 import { checkManagedSectionRecordValue } from "./managed-sections.js";
 import { checkRuleRecordValue } from "./rules.js";
@@ -219,12 +220,16 @@ export interface ConfigRecordSetInput {
   readonly key: string;
   readonly projectId?: string;
   readonly value: unknown;
+  // TCRN-CROSS-STORY-526 (TCRN-CROSS-SUB-452): how the write was let through, recorded in its event
+  // beside the record (surface, decidedIn, decidedInLibraryId); left out, the event is as it was.
+  readonly authorization?: WriteAuthorization;
 }
 
 export interface ConfigRecordRemoveInput {
   readonly collection: string;
   readonly key: string;
   readonly projectId?: string;
+  readonly authorization?: WriteAuthorization;
 }
 
 /** The delta that sets one record, for appendEvents; the input is checked before any lock is taken. */
@@ -239,7 +244,7 @@ export function setConfigRecordDelta(input: ConfigRecordSetInput): (state: Works
     if (input.collection === "chain" && ((input.key === "identity" && input.projectId !== undefined) || (input.key !== "identity" && input.projectId === undefined))) fail("CONFIG_RECORD_VALUE_INVALID", "chain identity is library scoped; common defaults require an explicit project");
     if (input.collection === "lease" && input.projectId === undefined) fail("CONFIG_RECORD_VALUE_INVALID", "a lease is scoped to its work item's project");
     return {
-    payload: buildEventPayload(CONFIG_RECORD_SET_OPERATION, { collection: record.collection, key: record.key, value: record.value, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) }),
+    payload: buildEventPayload(CONFIG_RECORD_SET_OPERATION, { collection: record.collection, key: record.key, value: record.value, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) }, undefined, writeAuthorizationExtras(input.authorization)),
     projects: state.projects,
     work: state.work,
     configRecords: sortConfigRecords([
@@ -265,7 +270,7 @@ export function removeConfigRecordDelta(input: ConfigRecordRemoveInput): (state:
       fail("CONFIG_RECORD_NOT_FOUND", `${collection} ${key} is not set`, { collection, key });
     }
     return {
-      payload: buildEventPayload(CONFIG_RECORD_REMOVED_OPERATION, { collection, key, ...(input.projectId === undefined ? {} : { projectId: input.projectId }) }),
+      payload: buildEventPayload(CONFIG_RECORD_REMOVED_OPERATION, { collection, key, ...(input.projectId === undefined ? {} : { projectId: input.projectId }) }, undefined, writeAuthorizationExtras(input.authorization)),
       projects: state.projects,
       work: state.work,
       configRecords: state.configRecords.filter((entry) => entry.collection !== collection || entry.key !== key || entry.projectId !== input.projectId),

@@ -7,6 +7,7 @@
 
 import type { JsonValue } from "../../protocol/src/index.js";
 import { assertProtocolId } from "../../protocol/src/index.js";
+import { parseDecisionAddress } from "./minutes.js";
 
 export const ACTOR_ATTESTATION_SCHEMA_VERSION = "tcrn.actor-attestation.v1" as const;
 export const ACTOR_ATTESTATION_ENABLE_OPERATION = "attestation.actor.enabled" as const;
@@ -61,15 +62,68 @@ export const EVENT_PAYLOAD_OPERATION_EXTRAS: Readonly<Record<string, readonly st
   "conference.closed": Object.freeze(["minutes"]),
 });
 
+// TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-452): the optional per-operation extras. A
+// configuration write may record how it was let through: the surface it came from (`surface`, cli
+// or atelier) and the Owner decision it cites (`decidedIn`, minutes:<id>#D<n>, with
+// `decidedInLibraryId`, the library whose minutes hold that decision; the two travel together). A
+// payload may carry any of them for the operations this table names and none for any other; an event
+// written without them is byte for byte what it was before.
+export const WRITE_SURFACES = Object.freeze(["atelier", "cli"] as const);
+export type WriteSurface = typeof WRITE_SURFACES[number];
+export const WRITE_AUTHORIZATION_EXTRAS = Object.freeze(["decidedIn", "decidedInLibraryId", "surface"] as const);
+export const EVENT_PAYLOAD_OPTIONAL_EXTRAS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  "config.record.set": WRITE_AUTHORIZATION_EXTRAS,
+  "config.record.removed": WRITE_AUTHORIZATION_EXTRAS,
+  "settings.updated": WRITE_AUTHORIZATION_EXTRAS,
+  "settings.removed": WRITE_AUTHORIZATION_EXTRAS,
+});
+
+/** How a configuration write was let through, as its event records it (TCRN-CROSS-SUB-452). */
+export interface WriteAuthorization {
+  readonly surface?: WriteSurface;
+  readonly decidedIn?: string;
+  readonly decidedInLibraryId?: string;
+}
+
+const LIBRARY_ID = /^(library|workspace):[a-f0-9]{24}$/u;
+
+/** The payload extras a write's authorization adds: none when there is none. */
+export function writeAuthorizationExtras(authorization: WriteAuthorization | undefined): Readonly<Record<string, JsonValue>> {
+  if (authorization === undefined) return {};
+  return {
+    ...(authorization.decidedIn === undefined ? {} : { decidedIn: authorization.decidedIn }),
+    ...(authorization.decidedInLibraryId === undefined ? {} : { decidedInLibraryId: authorization.decidedInLibraryId }),
+    ...(authorization.surface === undefined ? {} : { surface: authorization.surface }),
+  };
+}
+
+/**
+ * What is wrong with the authorization extras `fields` holds, or null when they are well formed:
+ * surface is cli or atelier, decidedIn is a decision number and decidedInLibraryId a library id, and
+ * the last two come together. The write path and replay ask the same question.
+ */
+export function writeAuthorizationProblem(fields: Readonly<Record<string, unknown>>): string | null {
+  const present = (key: string): boolean => Object.hasOwn(fields, key);
+  if (present("surface") && !WRITE_SURFACES.includes(fields.surface as WriteSurface)) return "surface is cli or atelier";
+  if (present("decidedIn") !== present("decidedInLibraryId")) return "decidedIn and decidedInLibraryId are recorded together";
+  if (present("decidedIn") && parseDecisionAddress(fields.decidedIn) === null) return "decidedIn is a decision number, minutes:<id>#D<n>";
+  if (present("decidedInLibraryId") && (typeof fields.decidedInLibraryId !== "string" || !LIBRARY_ID.test(fields.decidedInLibraryId))) {
+    return "decidedInLibraryId is a library id";
+  }
+  return null;
+}
+
 const reservedPayloadKeys = new Set(["operation", "record", "actor"]);
 
 // The single event-payload constructor WS-D operations must reuse: {operation,
 // record} before attestation is enabled, {operation, record, actor} after, plus
-// exactly the extras the table above registers for the operation. The actor,
-// when present, is validated here so no operation can bypass it.
+// exactly the extras the table above registers for the operation and any of the
+// optional extras the second table allows it. The actor, when present, is
+// validated here so no operation can bypass it.
 export function buildEventPayload(operation: string, record: JsonValue, actor?: string, extras?: Readonly<Record<string, JsonValue>>): Readonly<Record<string, JsonValue>> {
   const registered = EVENT_PAYLOAD_OPERATION_EXTRAS[operation] ?? [];
-  const supplied = Object.keys(extras ?? {}).sort();
+  const optional = EVENT_PAYLOAD_OPTIONAL_EXTRAS[operation] ?? [];
+  const supplied = Object.keys(extras ?? {}).filter((key) => !optional.includes(key)).sort();
   if (JSON.stringify(supplied) !== JSON.stringify([...registered].sort())) {
     fail("EVENT_PAYLOAD_EXTRA_INVALID", `${operation} extras must be exactly [${registered.join(",")}]`);
   }
@@ -81,6 +135,14 @@ export function buildEventPayload(operation: string, record: JsonValue, actor?: 
     }
     payload[key] = value;
   }
+  const chosen: Record<string, JsonValue> = {};
+  for (const key of optional) {
+    const value = extras?.[key];
+    if (value !== undefined) chosen[key] = value;
+  }
+  const problem = writeAuthorizationProblem(chosen);
+  if (problem !== null) fail("EVENT_PAYLOAD_EXTRA_INVALID", `${operation} ${problem}`);
+  Object.assign(payload, chosen);
   if (actor === undefined) {
     return payload;
   }

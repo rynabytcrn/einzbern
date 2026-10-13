@@ -53,3 +53,16 @@ test("STORY-300: --help returns the verb's own argument surface without reading 
   assert.equal(unknown.ok, false);
   assert.equal(unknown.reasonCode, "CLI_COMMAND_UNKNOWN");
 });
+
+// TCRN-CROSS-STORY-526 GWT5 (TCRN-CROSS-SUB-455): --help on each of the eight writes that may cite an
+// Owner decision names --decided-in and how a decision is cited.
+test("526 GWT5: --help on the eight writes names decided-in and its written form minutes:<id>#D<n>", async () => {
+  for (const name of ["gates-config-set", "gates-config-remove", "rule-enable", "rule-disable", "settings-set", "settings-remove", "variable-set", "variable-remove"]) {
+    const result = await capture([name, "--help"]);
+    assert.equal(result.ok, true, `${name} --help must not refuse: ${result.reasonCode ?? ""}`);
+    assert.match(result.output, /"decided-in"/u, name);
+    assert.match(result.output, /minutes:<id>#D<n>/u, name);
+    const flag = JSON.parse(result.output).commands[0].flags.find((entry) => entry.name === "decided-in");
+    assert.deepEqual([flag.required, flag.valueKind, flag.valueShape], [false, "string", "minutes:<id>#D<n>"], name);
+  }
+});

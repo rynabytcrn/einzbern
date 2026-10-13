@@ -49,6 +49,13 @@ Each entry is `{name, availability, mutates, flags}`, optionally plus
     are exactly the flags whose dispatcher accepts the `"null"` alias, so a caller
     can decide from the catalog alone which spellings a flag admits, and `work-list`
     `parent-id` resolves both spellings identically when filtering.
+  - `valueShape` — how a value is written where its kind alone does not say
+    (TCRN-CROSS-STORY-526, Q15). Optional and descriptive, so the catalog stays v1: a
+    reader that does not know the field reads every other one as before. Carried by
+    `decided-in` on the eight writes that may cite an Owner decision —
+    `gates-config-set`, `gates-config-remove`, `rule-enable`, `rule-disable`,
+    `settings-set`, `settings-remove`, `variable-set` and `variable-remove` — as
+    `minutes:<id>#D<n>`, so `--help` on any of them shows how to cite one.
 
 ## Parity and stability
 

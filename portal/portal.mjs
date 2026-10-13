@@ -39,7 +39,9 @@ function execFileAsync(file, args, options) {
 }
 
 const portalRoot = dirname(fileURLToPath(import.meta.url));
-const ACTOR = (process.env.TCRN_PORTAL_ACTOR ?? "agent:portal").trim();
+// TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-454): the actor Atelier's writes are recorded under.
+// It has no default; without it Atelier refuses to start (PORTAL_ACTOR_REQUIRED, below).
+const ACTOR = (process.env.TCRN_PORTAL_ACTOR ?? "").trim();
 const BUNDLED_CLI = join(portalRoot, "..", "scripts", "einzbern.mjs");
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? BUNDLED_CLI;
 const ATELIER_SURFACE = Object.freeze({ EINZBERN_SURFACE: "atelier" });
@@ -65,6 +67,13 @@ function failStartup(error) {
     error: String(error?.message ?? error),
   })}\n`);
   process.exit(2);
+}
+
+// TCRN-CROSS-STORY-526 (TCRN-CROSS-SUB-454): Atelier starts only with TCRN_PORTAL_ACTOR naming who its
+// writes are recorded under. Unset or empty, it refuses before it reads a library: exit code 2 and one
+// JSON line on stderr. A launcher passes the variable through from the environment it runs in.
+if (!ACTOR) {
+  failStartup(startupError("PORTAL_ACTOR_REQUIRED", { variable: "TCRN_PORTAL_ACTOR" }, "Atelier starts with TCRN_PORTAL_ACTOR set to the actor its writes are recorded under"));
 }
 
 // TCRN-CROSS-STORY-482 R3, AC1: Atelier opens the libraries this device has registered, read
@@ -466,7 +475,6 @@ async function targetWrite(selected, operation) {
 
 async function governedWrite(build, environment = {}, selected = currentLibrary()) {
   return targetWrite(selected, async () => {
-    if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
     const common = ["--workspace", selected.libraryPath, "--at", nextOccurredAt(), "--actor", ACTOR, ...scopeArguments(selected)];
     return cliResult(build(common), environment);
   });
@@ -474,7 +482,6 @@ async function governedWrite(build, environment = {}, selected = currentLibrary(
 
 async function projectWrite(build, environment = {}, selected = currentLibrary(), runtimeRule = false) {
   return targetWrite(selected, async () => {
-    if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
     const coordinationRule = runtimeRule && selected.chain?.role === "coordination";
     // A coordination chain's runtime rule is written through its registration, by the same rule as
     // a project's prose (TCRN-CROSS-INIT-053 R46 I06).

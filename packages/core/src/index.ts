@@ -472,12 +472,18 @@ export {
   ACTOR_PREFIXES,
   ActorAttestationError,
   EVENT_PAYLOAD_OPERATION_EXTRAS,
+  EVENT_PAYLOAD_OPTIONAL_EXTRAS,
+  WRITE_AUTHORIZATION_EXTRAS,
+  WRITE_SURFACES,
   assertActorId,
   buildEventPayload,
   buildActorAttestationEnableRecord,
   validateActorAttestationEnableRecord,
   buildActorAttestationRegistration,
+  writeAuthorizationExtras,
+  writeAuthorizationProblem,
 } from "./actor-attestation.js";
+export type { WriteAuthorization, WriteSurface } from "./actor-attestation.js";
 export type {
   DependencyRecord,
   DependencyWorkReference,
@@ -508,6 +514,24 @@ export {
 // decisions unless asked for the obsolete ones or all of them.
 export { DECISION_STATUS_FILTERS, minutesById, minutesView } from "./minutes.js";
 export type { DecisionStatusFilter } from "./minutes.js";
+// TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-451): a refused configuration write that cites an
+// Owner decision (--decided-in minutes:<id>#D<n>) is checked against the minutes before it goes through.
+export {
+  DECIDED_IN_VALUE_SHAPE,
+  WRITE_AUTHORIZATION_DECIDER,
+  WRITE_AUTHORIZATION_INVALID,
+  WRITE_AUTHORIZATION_REASONS,
+  WriteAuthorizationError,
+  decisionNamesTarget,
+  parseDecidedIn,
+  verifyWriteAuthorization,
+} from "./write-authorization.js";
+export type {
+  VerifiedWriteAuthorization,
+  VerifyWriteAuthorizationInput,
+  WriteAuthorizationErrorDetails,
+  WriteAuthorizationReason,
+} from "./write-authorization.js";
 export type {
   ConferenceRequest,
   ConferencePosition,

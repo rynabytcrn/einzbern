@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { COMMAND_CATALOG, MODEL_WRITE_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, runCli } from "../dist/build/packages/cli/src/index.js";
+import { COMMAND_CATALOG, MODEL_WRITE_DECISION_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, runCli } from "../dist/build/packages/cli/src/index.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import { BUILT_IN_RULES, builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
@@ -334,19 +334,19 @@ test("513-AC1 via rule-enable and rule-disable: a model's run is refused with th
       const args = argv();
       const error = await withSurface(surface, () => refusal(args));
       assert.equal(error.reasonCode, "MODEL_WRITE_REFUSED", `${args.join(" ")} with EINZBERN_SURFACE=${String(surface)}`);
-      assert.deepEqual({ ...error.details }, { rule, remedy: MODEL_WRITE_REMEDY });
+      assert.deepEqual({ ...error.details }, { rule, remedy: MODEL_WRITE_DECISION_REMEDY });
       assert.equal(error.message, `rule ${rule} is changed in Atelier; a model does not write it through the CLI`);
     }
   }
   // The refusal comes before the rule is looked up: an unknown rule is refused the same way.
   const unknown = await asModel(() => refusal(["rule-enable", "--project", project, "--id", "nothing", "--at", at()]));
-  assert.deepEqual([unknown.reasonCode, { ...unknown.details }], ["MODEL_WRITE_REFUSED", { rule: "nothing", remedy: MODEL_WRITE_REMEDY }]);
+  assert.deepEqual([unknown.reasonCode, { ...unknown.details }], ["MODEL_WRITE_REFUSED", { rule: "nothing", remedy: MODEL_WRITE_DECISION_REMEDY }]);
 
   // Through the shipped entry the refusal reaches stderr with its remedy, and a run carrying
   // EINZBERN_SURFACE=atelier, as Atelier's does, commits.
   const model = await asModel(async () => shipped(["rule-enable", "--project", project, "--id", "silent-reporting", "--at", at()], { device }));
   assert.deepEqual([model.status, model.stdout], [1, ""]);
-  assert.deepEqual(model.refusal, { ok: false, reasonCode: "MODEL_WRITE_REFUSED", remedy: MODEL_WRITE_REMEDY, error: "rule silent-reporting is changed in Atelier; a model does not write it through the CLI" });
+  assert.deepEqual(model.refusal, { ok: false, reasonCode: "MODEL_WRITE_REFUSED", remedy: MODEL_WRITE_DECISION_REMEDY, error: "rule silent-reporting is changed in Atelier; a model does not write it through the CLI" });
   assert.equal(await versionOf(), before.version, "no refused write appended an event");
   assert.equal(await readFile(agents, "utf8"), before.text, "no refused write touched AGENTS.md");
   assert.deepEqual(await backups(), before.backups, "no refused write backed a file up");

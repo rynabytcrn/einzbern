@@ -34,7 +34,7 @@
 
 ## 为什么 settings-set、variable-set、rule-enable 或 gates-config-set 报 MODEL_WRITE_REFUSED？
 
-项目配置由人在 Atelier 里改：设置、变量、Command Spell 原则的启停和门声明都是。环境变量 `EINZBERN_SURFACE` 不为 `atelier` 时，`settings-set`、`settings-remove`、`variable-set`、`variable-remove`、`rule-enable`、`rule-disable`、`gates-config-set` 与 `gates-config-remove` 一律拒绝，补救提示是 `change it in Atelier`，库里不追加任何事件。在 Atelier 里改，或以 `EINZBERN_SURFACE=atelier` 运行同一条命令，写入照常进行。这是约定，不是身份保证：CLI 分辨不了是谁在运行它，这道软屏障挡的是模型在工作途中顺手改配置，不是蓄意绕过。读取从不拒绝。
+项目配置由人在 Atelier 里改：设置、变量、Command Spell 原则的启停和门声明都是。环境变量 `EINZBERN_SURFACE` 不为 `atelier`、也没有以 `--decided-in` 引用 Owner 决定时，`settings-set`、`settings-remove`、`variable-set`、`variable-remove`、`rule-enable`、`rule-disable`、`gates-config-set` 与 `gates-config-remove` 一律拒绝，补救提示是 `change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>`，库里不追加任何事件。补救有两条：在 Atelier 里改（或以 `EINZBERN_SURFACE=atelier` 运行同一条命令），或者给同一条命令加 `--decided-in minutes:<id>#D<n>`，引用 Owner 的一条决定。引用的决定要满足四条：纪要能在本库或本库链身份指向的协调库里找到，纪要的 `decidedBy` 含 `owner:governance`，决定仍有效，决定正文写出被改对象的名字（或写出 `<前缀>.*` 而名字以 `<前缀>.` 开头）。不满足时报 `MODEL_WRITE_AUTHORIZATION_INVALID`，`reason` 说明哪一条没过，库里不追加事件；满足时写入，事件记下 `decidedIn`、`decidedInLibraryId` 与 `surface: cli`。细节见「变量」页的「引用 Owner 的决定」。这是约定，不是身份保证：CLI 分辨不了是谁在运行它，这道软屏障挡的是模型在工作途中顺手改配置，不是蓄意绕过。读取从不拒绝。
 
 ## 变量里能放 API 密钥吗？
 

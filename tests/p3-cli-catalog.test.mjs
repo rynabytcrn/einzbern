@@ -341,13 +341,14 @@ test("STORY-484 R1, R4: variable-list reads; variable-set and variable-remove wr
   assert.deepEqual(flags("variable-set"), [
     ["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["type", true, "string"],
     ["value", true, "string"], ["description", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"],
+    ["decided-in", false, "string"],
   ]);
   assert.equal(entry("variable-remove").mutates, true);
-  assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"], ["project-id", false, "string"]]);
+  assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"], ["project-id", false, "string"], ["decided-in", false, "string"]]);
   // The refusal of a model's write (MODEL_WRITE_REFUSED) is the dispatcher's, not a flag: the settings
-  // writes keep their flags.
-  assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor", "project-id"]);
-  assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor", "project-id"]);
+  // writes keep their flags, and take --decided-in to cite an Owner decision (TCRN-CROSS-SUB-453).
+  assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor", "project-id", "decided-in"]);
+  assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor", "project-id", "decided-in"]);
 });
 
 test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --id and --at, and resolve the project from --project or the current directory", () => {
@@ -356,10 +357,11 @@ test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --
   assert.equal(entry("rule-list").mutates, false);
   assert.deepEqual(flags("rule-list"), [["workspace", false, "string"], ["project", false, "string"], ["project-id", false, "string"]]);
   assert.equal(entry("rule-enable").mutates, true);
-  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"]]);
+  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"], ["decided-in", false, "string"]]);
   assert.equal(entry("rule-disable").mutates, true);
   assert.deepEqual(flags("rule-disable"), [
     ["id", true, "string"], ["force", false, "boolean"], ["at", true, "instant"], ["project", false, "string"], ["actor", false, "string"], ["project-id", false, "string"],
+    ["decided-in", false, "string"],
   ]);
   // Managed writes resolve their stable project through the registry or explicit project-id.
   // rule-list additionally permits an explicit library-only read.
@@ -382,4 +384,17 @@ test("STORY-480: setup writes and takes the wizard's flags; doctor reads and tak
   assert.deepEqual(flags("doctor"), [["project", false, "string"]]);
   // Neither takes --workspace: the project's library is the one this device's registry names.
   assert.equal(["setup", "doctor"].some((name) => entry(name).flags.some((flag) => flag.name === "workspace")), false);
+});
+
+// TCRN-CROSS-STORY-526 GWT5 (Q15; TCRN-CROSS-SUB-455): the eight writes that may cite an Owner decision
+// take --decided-in, a string whose valueShape says how a decision is cited; no other flag carries a
+// valueShape, and the catalog stays schema-valid with it (the schema test above).
+test("526 GWT5: the eight decided-in flags carry valueShape minutes:<id>#D<n>, and no other flag carries one", () => {
+  const writes = ["gates-config-remove", "gates-config-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set"];
+  const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags.filter((flag) => flag.valueShape !== undefined).map((flag) => [entry.name, flag.name]));
+  assert.deepEqual(shaped, writes.map((name) => [name, "decided-in"]));
+  for (const name of writes) {
+    const flag = COMMAND_CATALOG.find((entry) => entry.name === name).flags.find((candidate) => candidate.name === "decided-in");
+    assert.deepEqual({ ...flag }, { name: "decided-in", required: false, valueKind: "string", valueShape: "minutes:<id>#D<n>" }, name);
+  }
 });

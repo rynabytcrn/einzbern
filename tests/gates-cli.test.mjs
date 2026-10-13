@@ -22,7 +22,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { COMMAND_CATALOG, MODEL_WRITE_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, runCli } from "../dist/build/packages/cli/src/index.js";
+import { COMMAND_CATALOG, MODEL_WRITE_DECISION_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, runCli } from "../dist/build/packages/cli/src/index.js";
 import { materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
@@ -573,7 +573,7 @@ test("513-AC1 (CLI): a model's gates-config-set and gates-config-remove are refu
       const args = argv();
       const error = await withSurface(surface, () => refusal(args));
       assert.equal(error?.reasonCode, "MODEL_WRITE_REFUSED", `${args[0]} ${gate} with EINZBERN_SURFACE=${String(surface)}`);
-      assert.deepEqual({ ...error.details }, { gate, remedy: MODEL_WRITE_REMEDY });
+      assert.deepEqual({ ...error.details }, { gate, remedy: MODEL_WRITE_DECISION_REMEDY });
       assert.equal(error.message, `gate ${gate} is changed in Atelier; a model does not write it through the CLI`);
     }
   }
@@ -581,7 +581,7 @@ test("513-AC1 (CLI): a model's gates-config-set and gates-config-remove are refu
   const bin = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
   const shipped = await asModel(async () => spawnSync(process.execPath, [bin, ...writes[0][0]()], { encoding: "utf8", env: process.env }));
   assert.deepEqual([shipped.status, shipped.stdout], [1, ""]);
-  assert.deepEqual(JSON.parse(shipped.stderr.trim().split("\n").at(-1)), { ok: false, reasonCode: "MODEL_WRITE_REFUSED", remedy: MODEL_WRITE_REMEDY, error: "gate self-check is changed in Atelier; a model does not write it through the CLI" });
+  assert.deepEqual(JSON.parse(shipped.stderr.trim().split("\n").at(-1)), { ok: false, reasonCode: "MODEL_WRITE_REFUSED", remedy: MODEL_WRITE_DECISION_REMEDY, error: "gate self-check is changed in Atelier; a model does not write it through the CLI" });
   assert.equal(await versionOf(), before.version, "no refused write appended an event");
   assert.deepEqual(await listed(), before.gates, "a model reads the gates, unchanged");
 

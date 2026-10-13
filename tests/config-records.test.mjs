@@ -366,3 +366,61 @@ test("R47 c1-B: a coordination chain's runtime settings are written, projected a
   const refused = await refusal(() => cli(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "design.authority", "--value", "https://example.test"]));
   assert.deepEqual([refused.reasonCode, refused.message], ["WORKSPACE_INPUT_INVALID", "coordination chains expose runtime settings only"]);
 });
+
+// TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-452): a config.record.* or settings.* write may
+// record how it was let through -- the surface it came from and the Owner decision it cites, with the
+// library whose minutes hold it. Written so, the event replays; written without, it is exactly the
+// {operation, record} it always was; a surface, decision number or library id that is not one, or a
+// decision without its library, is WORKSPACE_EVENT_CORRUPT on replay.
+test("526 (SUB-452): configuration and settings writes record their authorization, replay it, and stay unchanged without it", async (context) => {
+  const base = await scratch(context);
+  const desk = await device(base, "desk", DESK_ID);
+  const library = join(base, ".ether");
+  await cli(desk, ["init", "--workspace", library, "--at", at()]);
+  const libraryId = (await as(desk, () => materializeWorkspace(library))).metadata.workspaceId;
+  const decided = { surface: "cli", decidedIn: "minutes:0123456789abcdef01234567#D8", decidedInLibraryId: libraryId };
+  const lastPayload = async () => (await as(desk, () => materializeWorkspace(library))).events.at(-1).payload;
+
+  await as(desk, () => setConfigRecord(library, { collection: "gate", key: "plain", value: gate("plain", ["node", "--version"]), occurredAt: at() }));
+  assert.deepEqual(await lastPayload(), { operation: "config.record.set", record: { collection: "gate", key: "plain", value: gate("plain", ["node", "--version"]) } }, "no authorization: the payload is as it was");
+  await as(desk, () => setConfigRecord(library, { collection: "gate", key: "unit", value: gate("unit", ["node", "--version"]), occurredAt: at(), authorization: decided }));
+  assert.deepEqual(await lastPayload(), { operation: "config.record.set", record: { collection: "gate", key: "unit", value: gate("unit", ["node", "--version"]) }, ...decided });
+  await as(desk, () => removeConfigRecord(library, { collection: "gate", key: "plain", occurredAt: at(), authorization: { surface: "atelier" } }));
+  assert.deepEqual(await lastPayload(), { operation: "config.record.removed", record: { collection: "gate", key: "plain" }, surface: "atelier" });
+  const { removeWorkspaceSetting, setWorkspaceSetting } = await import("../dist/build/packages/core/src/index.js");
+  await as(desk, () => setWorkspaceSetting(library, { key: "models.escalation.threshold", value: "2", occurredAt: at(), authorization: { surface: "atelier" } }));
+  assert.equal((await lastPayload()).surface, "atelier");
+  await as(desk, () => removeWorkspaceSetting(library, { key: "models.escalation.threshold", occurredAt: at(), authorization: decided }));
+  const removal = await lastPayload();
+  assert.deepEqual([removal.operation, removal.surface, removal.decidedIn, removal.decidedInLibraryId], ["settings.removed", "cli", decided.decidedIn, libraryId]);
+
+  const replay = await as(desk, () => materializeWorkspaceFromGenesis(library));
+  assert.deepEqual(replay.library.rejectedEvents, [], "every authorized event replays");
+  assert.deepEqual(replay.configRecords.map((record) => record.key), ["unit"]);
+  assert.deepEqual(replay.settings.filter((setting) => setting.key === "models.escalation.threshold"), []);
+
+  // An authorization the write path would refuse, and the same shapes forged into the stream.
+  await assert.rejects(as(desk, () => setConfigRecord(library, { collection: "gate", key: "web", value: gate("web", ["node", "--version"]), occurredAt: at(), authorization: { surface: "web" } })),
+    (error) => error.reasonCode === "EVENT_PAYLOAD_EXTRA_INVALID");
+  const before = (await as(desk, () => materializeWorkspace(library))).configRecords;
+  const forgedAt = at();
+  const record = (key) => ({ collection: "gate", key, value: gate(key, ["node", "--version"]) });
+  await forgeOwnStream(library, (events) => [
+    ...events.map((event) => ({ occurredAt: event.occurredAt, payload: event.payload, clock: event.clock })),
+    { occurredAt: forgedAt, payload: { operation: "config.record.set", record: record("surface"), surface: "web" } },
+    { occurredAt: forgedAt, payload: { operation: "config.record.set", record: record("number"), decidedIn: "TCRN-CROSS-MIN-256#D8", decidedInLibraryId: libraryId } },
+    { occurredAt: forgedAt, payload: { operation: "config.record.set", record: record("alone"), decidedIn: decided.decidedIn } },
+    { occurredAt: forgedAt, payload: { operation: "config.record.set", record: record("library"), decidedIn: decided.decidedIn, decidedInLibraryId: "library:not-an-id" } },
+    { occurredAt: forgedAt, payload: { operation: "config.record.set", record: record("other"), approvedBy: "owner:governance" } },
+  ]);
+  const forged = await as(desk, () => materializeWorkspace(library));
+  assert.deepEqual(forged.configRecords, before, "no forged authorization applies");
+  assert.deepEqual(forged.library.rejectedEvents.map((entry) => [entry.recordId, entry.reasonCode]), [
+    ["surface", "WORKSPACE_EVENT_CORRUPT"],
+    ["number", "WORKSPACE_EVENT_CORRUPT"],
+    ["alone", "WORKSPACE_EVENT_CORRUPT"],
+    ["library", "WORKSPACE_EVENT_CORRUPT"],
+    ["other", "WORKSPACE_EVENT_CORRUPT"],
+  ]);
+  assert.deepEqual((await as(desk, () => materializeWorkspaceFromGenesis(library))).library.rejectedEvents.length, 5);
+});

@@ -65,10 +65,14 @@ import {
   ACTOR_ATTESTATION_ENABLE_OPERATION,
   ActorAttestationError,
   EVENT_PAYLOAD_OPERATION_EXTRAS,
+  EVENT_PAYLOAD_OPTIONAL_EXTRAS,
   assertActorId,
   buildEventPayload,
   validateActorAttestationEnableRecord,
+  writeAuthorizationExtras,
+  writeAuthorizationProblem,
 } from "./actor-attestation.js";
+import type { WriteAuthorization } from "./actor-attestation.js";
 import {
   ConferenceError,
   openConference,
@@ -486,6 +490,10 @@ export interface WorkspaceMutationOptions {
   // attestation is enabled it is mandatory (WORKSPACE_ACTOR_REQUIRED) and
   // validated (WORKSPACE_ACTOR_INVALID); the enabling event carries it too.
   readonly actorId?: string;
+  // TCRN-CROSS-STORY-526 (TCRN-CROSS-SUB-452): how a configuration write was let through -- the
+  // surface it came from and the Owner decision it cites -- recorded beside the record by the
+  // writes whose operations allow it (config.record.*, settings.*); left out, nothing is recorded.
+  readonly authorization?: WriteAuthorization;
   readonly crashAt?: WorkspaceCrashPoint;
   // Runs inside the write lock, before the state is read: a test seam that holds the lock
   // open so a concurrent writer can be observed waiting for it.
@@ -932,7 +940,12 @@ function payloadRecord(payload: JsonValue, operation: string, actorRequired: boo
   // actor joins the exact field set and is validated here, so the replay reducer
   // enforces the same mandatory attestation as the live append path — a
   // hand-tampered log that drops or forges actor after enable fails closed.
-  const extras = EVENT_PAYLOAD_OPERATION_EXTRAS[operation] ?? [];
+  // TCRN-CROSS-SUB-452: an operation the optional table names may also carry any of its optional
+  // extras, each checked the way the write path checks it (surface, decidedIn, decidedInLibraryId).
+  const optional = payload !== null && typeof payload === "object" && !Array.isArray(payload)
+    ? (EVENT_PAYLOAD_OPTIONAL_EXTRAS[operation] ?? []).filter((key) => Object.hasOwn(payload, key))
+    : [];
+  const extras = [...(EVENT_PAYLOAD_OPERATION_EXTRAS[operation] ?? []), ...optional];
   if (actorRequired) {
     const carriesActor = payload !== null && typeof payload === "object" && !Array.isArray(payload) && "actor" in payload;
     if (!carriesActor) {
@@ -952,6 +965,10 @@ function payloadRecord(payload: JsonValue, operation: string, actorRequired: boo
   }
   if (payload.operation !== operation) {
     fail("WORKSPACE_EVENT_CORRUPT", `expected ${operation}`);
+  }
+  if (optional.length > 0) {
+    const problem = writeAuthorizationProblem(payload);
+    if (problem !== null) fail("WORKSPACE_EVENT_CORRUPT", `${operation} ${problem}`);
   }
   const record = payload.record;
   if (!isJsonObject(record)) {
@@ -4505,7 +4522,7 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
       );
       assertScopedSettingWriteConsistent(state, record.key, record.value, input.configurationProjectId);
       return {
-        payload: buildEventPayload("settings.updated", record as unknown as JsonValue),
+        payload: buildEventPayload("settings.updated", record as unknown as JsonValue, undefined, writeAuthorizationExtras(input.authorization)),
         projects: state.projects,
         work: state.work,
         settings: sortWorkspaceSettings([
@@ -4529,7 +4546,7 @@ export async function removeWorkspaceSetting(workspaceRoot: string, input: {
       if (current === undefined) fail("WORKSPACE_INPUT_INVALID", `setting ${input.key} is not set`);
       assertScopedSettingWriteConsistent(state, input.key, null, input.configurationProjectId);
       return {
-        payload: buildEventPayload("settings.removed", { key: input.key, updatedAt: input.occurredAt, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }) } as unknown as JsonValue),
+        payload: buildEventPayload("settings.removed", { key: input.key, updatedAt: input.occurredAt, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }) } as unknown as JsonValue, undefined, writeAuthorizationExtras(input.authorization)),
         projects: state.projects,
         work: state.work,
         settings: sortWorkspaceSettings(state.settings.filter((entry) => entry.key !== input.key || entry.projectId !== input.configurationProjectId)),

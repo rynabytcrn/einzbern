@@ -14,6 +14,8 @@ import {
   ACTOR_ATTESTATION_SCHEMA_VERSION,
   ACTOR_PREFIXES,
   EVENT_PAYLOAD_OPERATION_EXTRAS,
+  EVENT_PAYLOAD_OPTIONAL_EXTRAS,
+  WRITE_SURFACES,
   assertActorId,
   buildActorAttestationEnableRecord,
   buildActorAttestationRegistration,
@@ -24,7 +26,9 @@ import {
   initializeLibrary,
   materializeWorkspace,
   validateActorAttestationEnableRecord,
+  writeAuthorizationExtras,
 } from "../dist/build/packages/core/src/index.js";
+import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
 import { validateExtensionRegistration } from "../dist/build/packages/protocol/src/index.js";
 import { forgeOwnStream } from "./helpers/library-forge.mjs";
@@ -282,5 +286,53 @@ test("WSE-2 replay: a duplicate enable event and a pre-enable actor are both ref
     assert.deepEqual(state.projects, [], "the forged create did not apply");
   } finally {
     await early.close();
+  }
+});
+
+// TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-452): beside the registered extras, the four
+// configuration operations may carry the optional authorization extras -- surface (cli or atelier)
+// and decidedIn with decidedInLibraryId -- and no other operation may. Without them a payload is
+// exactly what it was.
+test("SUB-452: buildEventPayload admits the optional authorization extras for the configuration writes only", () => {
+  assert.deepEqual(Object.keys(EVENT_PAYLOAD_OPTIONAL_EXTRAS).sort(), ["config.record.removed", "config.record.set", "settings.removed", "settings.updated"]);
+  for (const extras of Object.values(EVENT_PAYLOAD_OPTIONAL_EXTRAS)) assert.deepEqual([...extras], ["decidedIn", "decidedInLibraryId", "surface"]);
+  assert.deepEqual([...WRITE_SURFACES], ["atelier", "cli"]);
+  const record = { collection: "gate", key: "unit" };
+  const decided = { decidedIn: "minutes:abc123#D8", decidedInLibraryId: `library:${"a".repeat(24)}` };
+  assert.deepEqual(buildEventPayload("config.record.set", record), { operation: "config.record.set", record });
+  assert.deepEqual(buildEventPayload("config.record.set", record, undefined, {}), { operation: "config.record.set", record });
+  assert.deepEqual(buildEventPayload("config.record.set", record, undefined, writeAuthorizationExtras(undefined)), { operation: "config.record.set", record });
+  assert.deepEqual(buildEventPayload("settings.updated", record, undefined, { surface: "atelier" }), { operation: "settings.updated", record, surface: "atelier" });
+  assert.deepEqual(buildEventPayload("config.record.removed", record, "owner:alpha", writeAuthorizationExtras({ surface: "cli", ...decided })),
+    { operation: "config.record.removed", record, surface: "cli", ...decided, actor: "owner:alpha" });
+  for (const extras of [
+    { surface: "web" },
+    { surface: "" },
+    { decidedIn: decided.decidedIn },
+    { decidedInLibraryId: decided.decidedInLibraryId },
+    { decidedIn: "TCRN-CROSS-MIN-256#D8", decidedInLibraryId: decided.decidedInLibraryId },
+    { decidedIn: decided.decidedIn, decidedInLibraryId: "library:short" },
+    { approvedBy: "owner:governance" },
+  ]) {
+    reason("EVENT_PAYLOAD_EXTRA_INVALID", () => buildEventPayload("settings.removed", record, undefined, extras));
+  }
+  reason("EVENT_PAYLOAD_EXTRA_INVALID", () => buildEventPayload("work.created", { id: "x" }, undefined, { surface: "cli" }));
+  reason("EVENT_PAYLOAD_EXTRA_INVALID", () => buildEventPayload("conference.closed", { id: "x" }, undefined, { minutes: { id: "m" }, surface: "cli" }));
+});
+
+test("SUB-452: on an attested chain the authorization extras travel beside the actor and replay; a forged surface does not apply", async () => {
+  const fixture = await workspaceFixture();
+  try {
+    await appendHistoricalAttestationEnable(fixture.workspace, { occurredAt: instant(1), actorId: "owner:release-gate" });
+    const gate = { command: ["node", "--version"], root: ".", covers: ["**"], required: true, enabled: true, releaseOnly: false };
+    await setConfigRecord(fixture.workspace, { collection: "gate", key: "unit", value: gate, occurredAt: instant(2), actorId: "agent:test-portal", authorization: { surface: "atelier" } });
+    const state = await materializeWorkspace(fixture.workspace);
+    assert.deepEqual(state.events.at(-1).payload, { operation: "config.record.set", record: { collection: "gate", key: "unit", value: gate }, surface: "atelier", actor: "agent:test-portal" });
+    assert.deepEqual(state.library.rejectedEvents, []);
+    await rehashLastEvent(fixture.workspace, (payload) => ({ ...payload, surface: "browser" }));
+    const forged = await rejectedAs(fixture.workspace, "WORKSPACE_EVENT_CORRUPT");
+    assert.deepEqual(forged.configRecords, [], "the forged write did not apply");
+  } finally {
+    await fixture.close();
   }
 });

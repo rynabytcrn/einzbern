@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { COMMAND_CATALOG, MODEL_WRITE_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, assertModelWriteAllowed, runCli } from "../dist/build/packages/cli/src/index.js";
+import { COMMAND_CATALOG, MODEL_WRITE_DECISION_REMEDY, MODEL_WRITE_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, assertModelWriteAllowed, runCli } from "../dist/build/packages/cli/src/index.js";
 import { SETTINGS_CATALOG, initializeLibrary, materializeWorkspace, writeVariablesSections } from "../dist/build/packages/core/src/index.js";
 import { parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import { VARIABLES_CUSTOM_SECTION_ID } from "../dist/build/packages/core/src/variables-sections.js";
@@ -147,7 +147,7 @@ test("484-R4: a model's write of a setting or a variable through the CLI is refu
       const args = argv();
       const error = await withSurface(surface, () => refusal(args));
       assert.equal(error.reasonCode, "MODEL_WRITE_REFUSED", `${args[0]} with EINZBERN_SURFACE=${String(surface)}`);
-      assert.deepEqual({ ...error.details }, { ...subject, remedy: MODEL_WRITE_REMEDY });
+      assert.deepEqual({ ...error.details }, { ...subject, remedy: MODEL_WRITE_DECISION_REMEDY });
     }
   }
   assert.equal(await versionOf(fx.workspace), before, "no refused write appended an event");
@@ -177,7 +177,7 @@ test("484-R4: through the shipped entry a model's settings-set is refused on std
   const model = await asModel(() => cliProcess(argv()));
   assert.equal(model.status, 1, model.stderr);
   const refused = lastLine(model.stderr);
-  assert.deepEqual([refused.ok, refused.reasonCode, refused.remedy], [false, "MODEL_WRITE_REFUSED", MODEL_WRITE_REMEDY]);
+  assert.deepEqual([refused.ok, refused.reasonCode, refused.remedy], [false, "MODEL_WRITE_REFUSED", MODEL_WRITE_DECISION_REMEDY]);
   assert.equal(await versionOf(fx.workspace), 0);
 
   const atelier = await asModel(() => cliProcess(argv(), { env: { [SURFACE_ENVIRONMENT_VARIABLE]: ATELIER_SURFACE } }));
@@ -190,7 +190,8 @@ test("484-R4: a key whose catalog entry is modelWritable is written for a model;
   assert.equal(assertModelWriteAllowed({ key: "fixture.writable" }, true, {}), undefined, "the per-key exception");
   assert.throws(() => assertModelWriteAllowed({ key: "fixture.decision" }, false, {}),
     (error) => error.reasonCode === "MODEL_WRITE_REFUSED" && error.details.key === "fixture.decision" && error.details.remedy === MODEL_WRITE_REMEDY);
-  assert.equal(assertModelWriteAllowed({ name: "deploy.host" }, false, { [SURFACE_ENVIRONMENT_VARIABLE]: ATELIER_SURFACE }), undefined);
+  // TCRN-CROSS-SUB-453: a run for Atelier is let through with the surface its event records.
+  assert.deepEqual(assertModelWriteAllowed({ name: "deploy.host" }, false, { [SURFACE_ENVIRONMENT_VARIABLE]: ATELIER_SURFACE }), { surface: "atelier", target: "deploy.host" });
   assert.throws(() => assertModelWriteAllowed({ name: "deploy.host" }, false, { [SURFACE_ENVIRONMENT_VARIABLE]: "portal" }),
     (error) => error.reasonCode === "MODEL_WRITE_REFUSED" && error.details.name === "deploy.host");
   // The exceptions are declared in the settings catalog, one entry at a time; none is declared yet.

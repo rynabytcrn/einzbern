@@ -161,7 +161,7 @@ test("508-R3: GIVEN the CLI run from a model's shell WHEN it writes a models.esc
   for (const argv of writes) {
     const args = argv();
     const refused = await withSurface(undefined, () => refusalOf(args));
-    assert.deepEqual([refused.reasonCode, { ...refused.details }], ["MODEL_WRITE_REFUSED", { key: args[args.indexOf("--key") + 1], remedy: "change it in Atelier" }]);
+    assert.deepEqual([refused.reasonCode, { ...refused.details }], ["MODEL_WRITE_REFUSED", { key: args[args.indexOf("--key") + 1], remedy: "change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>" }]);
   }
   assert.equal(await versionOf(workspace), 0, "no refused write appended an event");
   // Run for Atelier the same writes commit, and a model may not remove them either.

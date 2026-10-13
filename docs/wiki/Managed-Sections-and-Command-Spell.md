@@ -67,7 +67,9 @@ rule-resolve --section <段 id> --action overwrite|keep|unmanage [--force true] 
   - `--order` 不是正整数时报 `CLI_ARGUMENT_MALFORMED`，什么也不写。
 - `rule-disable --id <规则 id> [--force true] [--project <目录>] --at <时刻>`：连同标记把这一段从 AGENTS.md 拿掉，并记下 `{enabled: false, version}`，已记的顺序保留，重新启用时回到原来的位置。你改过的段要加 `--force true`。回执 `RULE_DISABLED`。
 
-原则的启停由人在 Atelier 的规则页里做（TCRN-CROSS-STORY-513 R1）。环境变量 `EINZBERN_SURFACE` 不为 `atelier` 时，`rule-enable` 与 `rule-disable` 一律拒绝，只带 `--order` 的调整也一样：报 `MODEL_WRITE_REFUSED`，补救提示为 `change it in Atelier`，details 的 `rule` 是原则 id，库与 AGENTS.md 都不动。在 Atelier 里启停，或以 `EINZBERN_SURFACE=atelier` 运行同一条命令，照常写入。这是约定，不是身份保证：CLI 分辨不了是谁在运行它，自己带上这个变量的调用同样放行（见「变量」页的模型写保护）。`rule-list`、`rule-resolve` 与 `agents-render` 不受限。下文「怎么办」一栏里的 `rule-enable` 与 `rule-disable` 也照此在 Atelier 里做。
+原则的启停由人在 Atelier 的规则页里做（TCRN-CROSS-STORY-513 R1）。环境变量 `EINZBERN_SURFACE` 不为 `atelier`、也没有以 `--decided-in` 引用 Owner 决定时，`rule-enable` 与 `rule-disable` 一律拒绝，只带 `--order` 的调整也一样：报 `MODEL_WRITE_REFUSED`，补救提示为 `change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>`，details 的 `rule` 是原则 id，库与 AGENTS.md 都不动。在 Atelier 里启停，或以 `EINZBERN_SURFACE=atelier` 运行同一条命令，照常写入。这是约定，不是身份保证：CLI 分辨不了是谁在运行它，自己带上这个变量的调用同样放行（见「变量」页的模型写保护）。`rule-list`、`rule-resolve` 与 `agents-render` 不受限。下文「怎么办」一栏里的 `rule-enable` 与 `rule-disable` 也照此在 Atelier 里做。
+
+模型也可以引用 Owner 的决定来启停原则（TCRN-CROSS-STORY-526）：加 `--decided-in minutes:<id>#D<n>`，`<id>` 是纪要 id，`<n>` 是决定序号，外部键号写法不认。引擎在写锁内核对这条决定，四条都满足才写入：纪要能找到（先在本库找，本库没有时按本库链身份里的协调库 id，到本设备注册表登记的协调库里只读查找）；这份纪要的 `decidedBy` 含 `owner:governance`；这条决定仍有效（被取代或撤回的不算）；决定正文写出了这条原则的 id，前后不紧接字母、数字或 `._:-`，或者写出 `<前缀>.*` 而原则 id以 `<前缀>.` 开头。核对在动 AGENTS.md 之前完成。核对通过时照常写入，这次启停追加的每条事件（原则记录与受管段记录）另记 `decidedIn`（完整的决定编号）、`decidedInLibraryId`（纪要所在库的 id）与 `surface: cli`；核对不通过报 `MODEL_WRITE_AUTHORIZATION_INVALID`，错误带 `decidedIn`、`target` 与 `reason`（`malformed`、`not-found`、`not-owner-decided`、`obsolete`、`target-not-named`，也写在错误文本里），库里不追加任何事件。Atelier 的写入记 `surface: atelier`。引用只让写入可追溯，不证明 Owner 真的做了这个决定。
 
 `agents-render` 也渲染已启用原则的段：项目换了 `artifact.language`，下一次渲染就换成对应语言的正文。
 

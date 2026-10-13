@@ -88,6 +88,10 @@
                 "nullSentinel": {
                   "const": "-"
                 },
+                "valueShape": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "deprecatedAliases": {
                   "type": "array",
                   "minItems": 1,

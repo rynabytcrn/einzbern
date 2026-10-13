@@ -3440,3 +3440,46 @@ if (!MUTATION) test("R45 U15: the side navigation collapses and expands through 
     assert.match(css, /\.tcrn-product-shell\[data-product-shell-collapsed="true"\] \.tcrn-rail__mark,\s*\.tcrn-product-shell\[data-product-shell-collapsed="true"\] \.tcrn-rail__footer \{\s*display: none;/u, "the rail's library name and footer leave the icon rail");
   } finally { await page.cleanup(); }
 });
+
+// TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-459): the work tree names each leased item's holder and
+// when the lease runs out, on the item's own row or group head, beside a DS button that releases it by
+// force; a released lease leaves the row, and work-show reads no lease. The portal runs with an
+// explicit TCRN_PORTAL_ACTOR.
+if (!MUTATION) test("528 SUB-459: the work tree shows a lease with its holder and expiry, and its button releases it by force", async () => {
+  const fixture = await scratch("tcrn-528-lease-");
+  const holder = "agent:alpha";
+  const create = async (externalKey, kind, extra) => (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", externalKey, "--kind", kind, ...extra], fixture.deviceEnv)).record;
+  const initiative = await create("LEASE-UI-INIT", "Initiative", ["--title", "Leased initiative"]);
+  const epic = await create("LEASE-UI-EPIC", "Epic", ["--parent-id", initiative.id, "--title", "Leased epic"]);
+  const story = await create("LEASE-UI-STORY", "Story", ["--parent-id", epic.id, "--title", "Leased story", "--goal", "One writer at a time.", "--acceptance", "Given a lease When another actor writes Then it is refused."]);
+  // The page judges whether a lease runs by the clock, so the claims are taken at this moment.
+  const claimedAt = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString().replace(".000Z", "Z");
+  const expiresAt = new Date(Date.parse(claimedAt) + 2 * 3_600_000).toISOString().replace(".000Z", "Z");
+  for (const id of [story.id, epic.id]) await cli(["work-claim", "--workspace", fixture.workspace, "--at", claimedAt, "--id", id, "--actor", holder], fixture.deviceEnv);
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture, { TCRN_PORTAL_ACTOR: "agent:test-portal" });
+  try {
+    const { document } = page;
+    await openWorkEditor(page);
+    const held = locales.en["dashboard.leaseHeld"].replace("{holder}", holder).replace("{expiresAt}", expiresAt);
+    const storyRow = await waitFor(() => document.querySelector(`#work-tree-content [data-work-id="${story.id}"]`), "the leased Story's row");
+    const lease = storyRow.querySelector("[data-work-lease]");
+    assert.equal(lease?.dataset.workLease, "active");
+    assert.equal(lease.textContent, held, "the row names the holder and when the lease runs out");
+    const button = storyRow.querySelector(`[data-work-lease-release="${story.id}"]`);
+    assert.equal(button?.getAttribute("type"), "button");
+    assert.deepEqual([...button.classList], ["tcrn-button", "tcrn-button--secondary", "tcrn-button--sm"], "the release is the published DS button");
+    assert.equal(button.textContent, locales.en["dashboard.leaseRelease"]);
+    const epicHead = document.querySelector(`#work-tree-content [data-work-id="${epic.id}"] > summary`);
+    assert.equal(epicHead.querySelector("[data-work-lease]")?.textContent, held, "an Epic's lease shows on its group head");
+    assert.equal(document.querySelector(`#work-tree-content [data-work-id="${initiative.id}"] > summary [data-work-lease]`), null, "an item without a lease shows none");
+
+    button.click();
+    await waitFor(() => {
+      const row = document.querySelector(`#work-tree-content [data-work-id="${story.id}"]`);
+      return row !== null && row.querySelector("[data-work-lease]") === null ? row : null;
+    }, "the Story's row without its lease");
+    assert.equal((await cli(["work-show", "--workspace", fixture.workspace, "--id", story.id], fixture.deviceEnv)).lease, null, "work-show reads no lease after the forced release");
+    assert.equal(document.querySelector(`#work-tree-content [data-work-id="${epic.id}"] > summary [data-work-lease]`)?.textContent, held, "the Epic keeps its own lease");
+  } finally { await closePage(page, fixture); }
+});

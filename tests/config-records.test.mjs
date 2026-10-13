@@ -154,12 +154,12 @@ test("478-R1: unknown collections, malformed keys and invalid collection values 
   const desk = await device(base, "desk", DESK_ID);
   const library = join(base, ".ether");
   await cli(desk, ["init", "--workspace", library, "--at", at()]);
-  assert.deepEqual(CONFIG_RECORD_COLLECTIONS, ["chain", "gate", "managed-section", "rule", "variable"], "the typed collections, closed");
+  assert.deepEqual(CONFIG_RECORD_COLLECTIONS, ["chain", "gate", "lease", "managed-section", "rule", "variable"], "the typed collections, closed");
   const before = await treeDigest(library);
 
   const unknown = await refusal(() => as(desk, () => setConfigRecord(library, { collection: "settings", key: "x", value: {}, occurredAt: at() })));
   assert.equal(unknown.reasonCode, "CONFIG_RECORD_COLLECTION_UNKNOWN");
-  assert.equal(unknown.details.known, "chain,gate,managed-section,rule,variable");
+  assert.equal(unknown.details.known, "chain,gate,lease,managed-section,rule,variable");
   for (const [input, reasonCode] of [
     [{ collection: "gate", key: "", value: {} }, "CONFIG_RECORD_KEY_INVALID"],
     [{ collection: "gate", key: "line\nbreak", value: {} }, "CONFIG_RECORD_KEY_INVALID"],

@@ -392,7 +392,10 @@ async function workProjection() {
     };
   }
   const { identity, records } = outcome;
-  return { ok: true, reasonCode: "PORTAL_WORK_READY", workspaceId: identity.workspaceId, version: identity.version, headEventHash: identity.headEventHash, total: identity.total, records };
+  // TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-459): each record carries its own work lease as
+  // work-list reads it ({holder, claimedAt, expiresAt, active}, active by the reader's clock), null
+  // when it holds none.
+  return { ok: true, reasonCode: "PORTAL_WORK_READY", workspaceId: identity.workspaceId, version: identity.version, headEventHash: identity.headEventHash, total: identity.total, records: records.map((record) => ({ ...record, lease: record.lease ?? null })) };
 }
 
 // TCRN-CROSS-SUB-425 (MIN-239 D6): the knowledge list answers valid cards unless the viewer picks
@@ -1024,6 +1027,17 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       const selected = currentLibrary();
       const body = await readJsonBody(request);
       const result = await governedWrite(common => ["work-annotate", ...common, "--id", String(body.id ?? ""), "--expected-revision", String(body.revision), "--involved-projects", JSON.stringify(body.involvedProjects)], {}, { ...selected, configurationProjectId: null });
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok }); return;
+    }
+    // TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-459): Atelier releases a work item's lease by
+    // force, another actor's running one included: work-release --force true, which runs for Atelier
+    // only, written as TCRN_PORTAL_ACTOR. Atelier's own writes are held by a lease like any other
+    // actor's, so this is how it frees an item (MIN-256 R1 Q7). A lease is scoped to its work item's
+    // project, so the release names no configuration scope.
+    if (request.method === "POST" && pathname === "/api/work/lease-release") {
+      const selected = currentLibrary();
+      const body = await readJsonBody(request);
+      const result = await governedWrite(common => ["work-release", ...common, "--id", String(body.id ?? ""), "--force", "true"], ATELIER_SURFACE, { ...selected, configurationProjectId: null });
       send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok }); return;
     }
     if (request.method === "GET" && pathname === "/api/work") {

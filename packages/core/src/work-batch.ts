@@ -188,7 +188,10 @@ function storyFieldsOf(member: Readonly<Record<string, unknown>>): { readonly go
   };
 }
 
-function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string): (state: WorkspaceState) => MutationDelta {
+// TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-457): a transition or an annotation member writes as
+// the batch's actor, so another actor's lease refuses it as it refuses the single verb, and the
+// batch writes nothing.
+function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string, actorId: string | undefined): (state: WorkspaceState) => MutationDelta {
   if (member.verb === "work-create") {
     return createWorkDelta({
       projectId: member.projectId as string,
@@ -218,6 +221,7 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
       status: member.status as never,
       ...(member.summary === undefined ? {} : { summary: member.summary as string }),
       occurredAt,
+      ...(actorId === undefined ? {} : { actorId }),
     });
   }
   return annotateWorkDelta({
@@ -232,6 +236,7 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
     ...gatesOf(member),
     ...(member.summary === undefined ? {} : { summary: member.summary as string }),
     occurredAt,
+    ...(actorId === undefined ? {} : { actorId }),
   });
 }
 
@@ -263,7 +268,7 @@ export async function applyWorkBatch(
     // because of a neighbour, so there is nothing consequential to separate out.
     throw new WorkspaceError("WORK_BATCH_REFUSED", JSON.stringify({ stage: "shape", problems }));
   }
-  const deltas = members.map((member) => deltaFor(member as Readonly<Record<string, unknown>>, options.occurredAt));
+  const deltas = members.map((member) => deltaFor(member as Readonly<Record<string, unknown>>, options.occurredAt, options.actorId));
   try {
     return await appendEvents(workspaceRoot, deltas, options);
   } catch (error) {

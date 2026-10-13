@@ -5695,14 +5695,18 @@ const BOOT = __PORTAL_BOOT__;
       });
       return distinctLabels(named).join(", ");
     };
-    const recordRow = (entry) => `<div class="tcrn-record-row tcrn-record-row--dense${entry.kind === "Story" ? " tcrn-work-tree__story" : ""}" role="treeitem" data-work-id="${esc(entry.id)}" data-work-kind="${esc(entry.kind)}"${entry.kind === "Story" && records.some((child) => child.parentId === entry.id && child.kind === "Subtask") ? ` aria-owns="work-subtasks-${esc(tabIdPart(entry.id))}" aria-expanded="true"` : ""}><code class="tcrn-record-row__id tcrn-work-tree__key">${esc(entry.externalKey)}</code><div class="tcrn-record-row__summary tcrn-work-tree__text"><span class="tcrn-text tcrn-work-tree__title ${entry.summary || entry.title ? "" : "tcrn-work-tree__missing"}">${esc(summaryFor(entry))}</span></div><div class="tcrn-record-row__meta">${statusBadge(entry.status, statusTone(entry.status))}<span class="tcrn-text" data-work-involved>${esc(t("projects.title"))}: ${esc(involvedLabel(entry))}</span></div></div>`;
+    // TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-459): an item that holds a work lease names its holder
+    // and when the lease runs out, or ran out, as work-list reads it, with the button that releases it by
+    // force (work-release --force true, as TCRN_PORTAL_ACTOR). Atelier's own writes are held by a lease too.
+    const leaseMeta = (entry) => entry.lease ? `<span class="tcrn-text" data-work-lease="${entry.lease.active ? "active" : "expired"}">${esc(t(entry.lease.active ? "dashboard.leaseHeld" : "dashboard.leaseExpired", { holder: entry.lease.holder, expiresAt: entry.lease.expiresAt }))}</span><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-work-lease-release="${esc(entry.id)}">${esc(t("dashboard.leaseRelease"))}</button>` : "";
+    const recordRow = (entry) => `<div class="tcrn-record-row tcrn-record-row--dense${entry.kind === "Story" ? " tcrn-work-tree__story" : ""}" role="treeitem" data-work-id="${esc(entry.id)}" data-work-kind="${esc(entry.kind)}"${entry.kind === "Story" && records.some((child) => child.parentId === entry.id && child.kind === "Subtask") ? ` aria-owns="work-subtasks-${esc(tabIdPart(entry.id))}" aria-expanded="true"` : ""}><code class="tcrn-record-row__id tcrn-work-tree__key">${esc(entry.externalKey)}</code><div class="tcrn-record-row__summary tcrn-work-tree__text"><span class="tcrn-text tcrn-work-tree__title ${entry.summary || entry.title ? "" : "tcrn-work-tree__missing"}">${esc(summaryFor(entry))}</span></div><div class="tcrn-record-row__meta">${statusBadge(entry.status, statusTone(entry.status))}<span class="tcrn-text" data-work-involved>${esc(t("projects.title"))}: ${esc(involvedLabel(entry))}</span>${leaseMeta(entry)}</div></div>`;
     const subtaskRows = (story) => {
       const subtasks = records.filter((entry) => entry.parentId === story.id && entry.kind === "Subtask").sort(byKey);
       return subtasks.length === 0 ? "" : `<div class="tcrn-record-table tcrn-work-tree__children" role="group" id="work-subtasks-${esc(tabIdPart(story.id))}" data-work-subtasks="${esc(story.id)}">${subtasks.map(recordRow).join("")}</div>`;
     };
     const storyRows = (epic) => records.filter((entry) => entry.parentId === epic.id && entry.kind === "Story").sort(byKey).map((entry) => `${recordRow(entry)}${subtaskRows(entry)}`).join("") || `<div class="tcrn-text">${esc(t("dashboard.noStories"))}</div>`;
-    const epicRows = (initiative) => epicsFor(initiative).map((epic) => `<details class="tcrn-row-group tcrn-row-group--dense tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(epic.id)}"><summary class="tcrn-row-group__head tcrn-work-tree__summary"><span><code class="tcrn-record-row__id tcrn-work-tree__key">${esc(epic.externalKey)}</code><strong>${esc(summaryFor(epic))}</strong></span>${statusBadge(epic.status, statusTone(epic.status))}</summary><div class="tcrn-record-table tcrn-work-tree__children" role="group">${storyRows(epic)}</div></details>`).join("") || `<div class="tcrn-text">${esc(t("dashboard.noEpics"))}</div>`;
-    $("#work-tree-content").innerHTML = `<div class="tcrn-document-canvas tcrn-work-tree" role="tree" aria-label="${esc(t("dashboard.workTreeLabel"))}">${initiatives.map((initiative) => `<details class="tcrn-row-group tcrn-row-group--dense tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(initiative.id)}"><summary class="tcrn-row-group__head tcrn-work-tree__summary"><span><code class="tcrn-record-row__id tcrn-work-tree__key">${esc(initiative.externalKey)}</code><strong>${esc(summaryFor(initiative))}</strong></span>${statusBadge(initiative.status, statusTone(initiative.status))}</summary><div class="tcrn-record-table tcrn-work-tree__children" role="group">${epicRows(initiative)}</div></details>`).join("")}</div>`;
+    const epicRows = (initiative) => epicsFor(initiative).map((epic) => `<details class="tcrn-row-group tcrn-row-group--dense tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(epic.id)}"><summary class="tcrn-row-group__head tcrn-work-tree__summary"><span><code class="tcrn-record-row__id tcrn-work-tree__key">${esc(epic.externalKey)}</code><strong>${esc(summaryFor(epic))}</strong></span>${statusBadge(epic.status, statusTone(epic.status))}${leaseMeta(epic)}</summary><div class="tcrn-record-table tcrn-work-tree__children" role="group">${storyRows(epic)}</div></details>`).join("") || `<div class="tcrn-text">${esc(t("dashboard.noEpics"))}</div>`;
+    $("#work-tree-content").innerHTML = `<div class="tcrn-document-canvas tcrn-work-tree" role="tree" aria-label="${esc(t("dashboard.workTreeLabel"))}">${initiatives.map((initiative) => `<details class="tcrn-row-group tcrn-row-group--dense tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(initiative.id)}"><summary class="tcrn-row-group__head tcrn-work-tree__summary"><span><code class="tcrn-record-row__id tcrn-work-tree__key">${esc(initiative.externalKey)}</code><strong>${esc(summaryFor(initiative))}</strong></span>${statusBadge(initiative.status, statusTone(initiative.status))}${leaseMeta(initiative)}</summary><div class="tcrn-record-table tcrn-work-tree__children" role="group">${epicRows(initiative)}</div></details>`).join("")}</div>`;
   };
   // TCRN-CROSS-SUB-425 (MIN-239 D6): the list reads valid cards unless the viewer picks another status.
   // A removed card is shown as it is kept -- its subject, the removal's reason, basis, actor and
@@ -6257,6 +6261,19 @@ const BOOT = __PORTAL_BOOT__;
   };
   // A library switch leaves the work the page showed behind: the view is empty until the new library's read returns.
   const leaveWork = () => { state.work = null; state.workRead.library += 1; };
+  // TCRN-CROSS-STORY-528 (SUB-459): a lease button in the work tree releases that item's lease by force. The
+  // release is a write like the others: its receipt shows, and the tree reads the library again.
+  $("#work-tree-content").addEventListener("click", async (event) => {
+    const button = event.target.closest?.("[data-work-lease-release]");
+    if (!button) return;
+    event.preventDefault();
+    const id = button.dataset.workLeaseRelease;
+    echo("work-release", ["--id", id, "--force", "true"]);
+    button.disabled = true;
+    const result = await api("/api/work/lease-release", { method: "POST", body: JSON.stringify({ id }) });
+    showReceipt(result);
+    await refreshWork();
+  });
   const refresh = async () => {
     clearTransientTarget();
     state.promptLanguageDraft = null;

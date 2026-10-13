@@ -5,7 +5,7 @@
 Project-level configuration records (TCRN-CROSS-STORY-478 R1, MIN-227 D13) are the part of a
 project's configuration that is not a setting: what the engine recorded about the managed
 sections it wrote into the project's files, which Command Spell rules are enabled, the custom
-variables, and the gate declarations. They travel with the library, so every device that
+variables, the gate declarations, and the leases actors hold on work items. They travel with the library, so every device that
 merges the library reads the same records. `packages/core/src/config-records.ts` owns the
 collections, the checks and the write functions; the replay arm in
 `packages/core/src/workspace.ts` applies the events.
@@ -22,6 +22,7 @@ replay.
 | `rule` | a Command Spell rule's state, keyed by rule id | TCRN-CROSS-STORY-483 |
 | `variable` | a custom variable, keyed by name | TCRN-CROSS-STORY-484 |
 | `gate` | a gate declaration, keyed by gate name | TCRN-CROSS-STORY-485 |
+| `lease` | a work lease, keyed by work id and scoped to the work item's project | TCRN-CROSS-STORY-528 |
 
 Every record meets one common shape, and each collection may add its own check on top of it:
 
@@ -88,6 +89,35 @@ project-level write rewrites it, settings writes included, so neither kind of wr
 other's part. No read trusts it. `configProjectionStatus(libraryRoot, settings, records)` judges
 the records as well as the values when the records are passed; a projection written before
 records existed carries no `records` and reads as holding none.
+
+## Work leases
+
+The `lease` collection (TCRN-CROSS-STORY-528, MIN-256) holds the leases actors take on work
+items. `packages/core/src/work-lease.ts` writes it; nothing else does.
+
+- The key is the work item's id, and the record is scoped to the item's project: a `lease` record
+  or event without `projectId` is refused (`CONFIG_RECORD_VALUE_INVALID` on write,
+  `CONFIG_RECORD_EVENT_INVALID` on replay).
+- The value is exactly `{holder, claimedAt, expiresAt}`: the holder an actor id, both instants in
+  UTC, and the lease running from one minute to 24 hours. Anything else is refused with
+  `CONFIG_RECORD_VALUE_INVALID`, `details.refusedBy` `WORK_LEASE_INVALID`.
+- A claim sets the record and a release removes it, one event each, through the same
+  `config.record.set` and `config.record.removed` events as every other record. A claim by the
+  holder renews the lease. A claim is refused with `WORK_LEASED` while another actor holds an
+  unexpired lease on the item, on an item above it or on an item below it; `details` name the
+  holder, `expiresAt` and the `leasedWorkId`.
+- The holder releases at any time; another actor needs force while the lease runs (the CLI grants
+  it to Atelier only), and a lease that has run out binds no one, so anyone may clear it. Releasing
+  an item that holds no lease is `WORK_LEASE_NOT_FOUND`.
+- Whether a lease runs is judged against the instant of the write (`--at`); the engine reads no
+  clock. A display may judge it against the reader's present instant, for reading only.
+- Leases are not projected: `config/project.json` and `configProjectionStatus` leave the
+  collection out, so a claim or a release writes no projection and a library without leases
+  projects exactly as before.
+
+An engine that predates the collection rejects its events on replay like any unknown collection's
+(they are recorded among the rejected events and skipped), so every device that reads a library
+needs an engine that knows `lease` before leases are written to it.
 
 ## Explicit chain configuration
 

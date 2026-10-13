@@ -9,6 +9,9 @@
 // the truth and status says when the projection does not match them.
 // TCRN-CROSS-STORY-478 R1 (SUB-315): the project-level configuration records (config-records.ts)
 // are projected beside the settings, grouped by collection, by the same writes and on the same terms.
+// TCRN-CROSS-STORY-528 (MIN-256 R1 Q4; SUB-456): except the work leases. A lease is not
+// configuration a person reads off the file; it comes and goes with the work, so the projection
+// skips the collection and a claim or a release leaves the file as it was.
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -58,17 +61,25 @@ export function projectConfigValues(settings: readonly { readonly key: string; r
   return values;
 }
 
+// The collections a projection leaves out.
+const UNPROJECTED_COLLECTIONS: ReadonlySet<string> = new Set(["lease"]);
+
+function projectedRecords<T extends ProjectedConfigRecord>(records: readonly T[]): readonly T[] {
+  return records.filter((entry) => !UNPROJECTED_COLLECTIONS.has(entry.collection));
+}
+
 /** The configuration records of a merged state, grouped by collection and keyed by record key. */
 export function projectConfigRecords(records: readonly ProjectedConfigRecord[]): ProjectConfigRecords {
   const grouped: Record<string, Record<string, JsonValue>> = {};
-  for (const record of records.filter((entry) => entry.projectId === undefined)) {
+  for (const record of projectedRecords(records).filter((entry) => entry.projectId === undefined)) {
     (grouped[record.collection] ??= {})[record.key] = record.value;
   }
   return grouped;
 }
 
 /** Raw overrides by stable project identity; effective values are resolved by the engine, not stored here. */
-export function projectConfigScopes(settings: readonly { readonly key: string; readonly value: string; readonly projectId?: string }[], records: readonly ProjectedConfigRecord[]): NonNullable<ProjectConfigProjection["projects"]> {
+export function projectConfigScopes(settings: readonly { readonly key: string; readonly value: string; readonly projectId?: string }[], allRecords: readonly ProjectedConfigRecord[]): NonNullable<ProjectConfigProjection["projects"]> {
+  const records = projectedRecords(allRecords);
   const ids = [...new Set([...settings, ...records].flatMap((entry) => entry.projectId === undefined ? [] : [entry.projectId]))].sort();
   return Object.fromEntries(ids.map((id) => [id, {
     values: projectConfigValues(settings.filter((entry) => entry.projectId === id).map(({ projectId: _scope, ...entry }) => entry)),
@@ -149,7 +160,7 @@ export async function configProjectionStatus(
   const stored = await readConfigProjection(libraryRoot);
   if (stored === "absent" || stored === "invalid") {
     // A library that never set a project-level key or record has nothing to project.
-    return stored === "absent" && settings.length === 0 && (records?.length ?? 0) === 0 ? "current" : stored;
+    return stored === "absent" && settings.length === 0 && projectedRecords(records ?? []).length === 0 ? "current" : stored;
   }
   if (canonicalJson(stored.values) !== canonicalJson(projectConfigValues(settings))) return "stale";
   if (canonicalJson(stored.projects ?? {}) !== canonicalJson(projectConfigScopes(settings, records ?? []))) return "stale";

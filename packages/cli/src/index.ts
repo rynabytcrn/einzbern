@@ -47,6 +47,9 @@ import {
   assertWorkGatesClear,
   releaseGate,
   annotateWork,
+  claimWork,
+  releaseWork,
+  workLeaseView,
   updateProject,
   validateKnowledgeStore,
   validateWorkspace,
@@ -1529,6 +1532,10 @@ export const COMMAND_CATALOG = Object.freeze([
   // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
   { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "expected-revision", required: false, valueKind: "integer" }, { name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-528 (MIN-256): work leases. work-claim claims a work item for --actor from --at
+  // for --ttl (<n>m or <n>h, 2h when left out) or renews the claim; work-release releases it, and
+  // another actor's running lease only with --force true for Atelier (MODEL_WRITE_REFUSED otherwise).
+  { name: "work-claim", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "ttl", required: false, valueKind: "string" }] },
   { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
@@ -1539,6 +1546,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "work-gate-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "reason", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "involved-project", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }] },
+  { name: "work-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R4: work-transition and work-batch take --project, the project the gates of a
   // Story going to done run in.
@@ -3362,6 +3370,49 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     writeState(io, state, workSummary(state.work.find((entry) => entry.id === (values.id ?? ""))!));
     return;
   }
+  // TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-458): claim a work item for --actor from --at for
+  // --ttl, or renew the claim --actor holds. Another actor's unexpired lease on the item, an item
+  // above it or an item below it refuses the claim with WORK_LEASED, naming the holder, when that
+  // lease runs out and the item it is held on. The receipt shows the lease, judged at --at.
+  if (command === "work-claim") {
+    const values = parseArguments(rest, [...shared, "id", "actor", "ttl"]);
+    required(values, [...requiredShared, "id", "actor"]);
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const id = values.id ?? "";
+    const state = await withWriteLock(workspace, at, async () => claimWork(workspace, {
+      occurredAt: at, id, actorId: values.actor ?? "",
+      ...(values.ttl === undefined ? {} : { ttl: values.ttl }),
+    }));
+    writeState(io, state, workSummary(state.work.find((entry) => entry.id === id)!), undefined, { lease: workLeaseView(state, id, at) });
+    return;
+  }
+  // TCRN-CROSS-STORY-528 (SUB-458): release the lease a work item holds. The holder releases at any
+  // time, and anyone releases a lease that has run out. Another actor's running lease is released
+  // with --force true, which runs for Atelier only: without EINZBERN_SURFACE=atelier it is refused
+  // with MODEL_WRITE_REFUSED before the library is opened, as work-gate-release decides for itself
+  // (MIN-256 R1 Q7); assertModelWriteAllowed keeps its own subjects.
+  if (command === "work-release") {
+    const values = parseArguments(rest, [...shared, "id", "actor", "force"]);
+    required(values, [...requiredShared, "id", "actor"]);
+    const id = values.id ?? "";
+    const force = optionalBoolean(values.force, "force") === true;
+    if (force && process.env[SURFACE_ENVIRONMENT_VARIABLE] !== ATELIER_SURFACE) {
+      throw new WorkflowCliError("MODEL_WRITE_REFUSED", `the lease on ${id} is released by force in Atelier; a model does not force it through the CLI`, {
+        workId: id,
+        remedy: MODEL_WRITE_REMEDY,
+      });
+    }
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const state = await withWriteLock(workspace, at, async () => releaseWork(workspace, {
+      occurredAt: at, id, actorId: values.actor ?? "",
+      ...(force ? { force } : {}),
+    }));
+    const released = state.work.find((entry) => entry.id === id);
+    writeState(io, state, released === undefined ? undefined : workSummary(released), undefined, { lease: null });
+    return;
+  }
   if (command === "project-list") {
     const values = parseArguments(rest, ["workspace", "limit", "offset"]);
     required(values, ["workspace"]);
@@ -3385,6 +3436,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // against the stored advisory:sprint value by canonical bytes so the round trip is closed.
     const sprintFilter = values.sprint === undefined ? undefined : canonicalJson(sprintReference(values.sprint));
     const state = await validateWorkspace(values.workspace ?? "");
+    const now = new Date().toISOString();
     const configuredScopeBytes = scopedWorkspaceState(state, values["project-id"]).settings.find((entry) => entry.key === "retrieval.scopeExcerptBytes")?.value;
     const scopeBytes = values["scope-bytes"] === undefined ? Number(configuredScopeBytes ?? "512") : integerValue(values, "scope-bytes");
     if (scopeBytes < 1 || scopeBytes > Number.MAX_SAFE_INTEGER) fail("CLI_ARGUMENT_MALFORMED", "scope-bytes");
@@ -3413,7 +3465,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // silent wrong answer (total=0), not a cosmetic inconsistency. Sharing nullableValue
       // makes the round trip closed for every spelling the writer accepts, by construction.
       (values["parent-id"] === undefined || (nullableValue(values["parent-id"]) === null ? entry.parentId === null : entry.parentId === values["parent-id"])))
-      .map((entry) => search === undefined ? workListSummary(entry) : workSearchSummary(entry, scopeBytes));
+      .map((entry) => search === undefined ? workListSummary(entry) : workSearchSummary(entry, scopeBytes))
+      // TCRN-CROSS-STORY-528 (SUB-458): each record's own lease, null when it holds none; active is
+      // judged by this machine's clock as it reads, for reading only (MIN-256 R1 Q6).
+      .map((summary) => ({ ...summary, lease: workLeaseView(state, String(summary.id), now) }));
     io.write(workListPageJson(state, records, values));
     return;
   }
@@ -3452,6 +3507,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-SUB-426 (MIN-239 D5): the decisions of the minutes the record was decided in that are
     // obsolete now, each with the decision that superseded it (null when withdrawn).
     const obsoleteDecisions = workObsoleteDecisions(state, record);
+    // TCRN-CROSS-STORY-528 (SUB-458): the record's own lease, null when it holds none; active is judged
+    // by this machine's clock as it reads, for reading only (MIN-256 R1 Q6).
+    const lease = workLeaseView(state, record.id, new Date().toISOString());
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_RECORD_READY",
       workspaceId: state.metadata.workspaceId,
@@ -3469,6 +3527,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(advisory !== null ? { advisory } : {}),
       ...(obsoleteDecisions.length === 0 ? {} : { obsoleteDecisions }),
       relations: { forward: relations.forward, reverse: relations.reverse, missing: relations.missing },
+      lease,
       ...(aliases.aliases.length === 0 ? {} : { aliases: aliases.aliases.map((entry) => ({ externalKey: entry.externalKey, id: entry.id, deviceId: entry.deviceId })) }),
       ...(aliases.aliasedBy.length === 0 ? {} : { aliasedBy: aliases.aliasedBy.map((entry) => ({ externalKey: entry.aliasExternalKey, id: entry.aliasId, deviceId: entry.deviceId })) }),
       ...(rejectedEvents.length === 0 ? {} : { rejectedEvents }),

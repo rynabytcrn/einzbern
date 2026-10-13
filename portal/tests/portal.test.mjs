@@ -1974,3 +1974,53 @@ test("INIT-053 R47 c1-B: a coordination chain's /api/settings lists its runtime 
   const after = await cli(["settings-catalog", "--workspace", fixture.workspace, "--project-id", fixture.projectId], fixture.deviceEnv);
   assert.deepEqual(after.settings.map((entry) => entry.key), R47_COORDINATION_KEYS, "models.tiers is not listed and was not written");
 });
+
+// TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-459), GWT5's Atelier part: the work read carries each
+// item's lease, and Atelier's forced release frees another actor's running lease, written as
+// TCRN_PORTAL_ACTOR; afterwards work-show shows no lease. The library signs its events, so the
+// release's actor can be read off its event.
+test("528 SUB-459: the work read carries each item's lease, and Atelier releases one by force as TCRN_PORTAL_ACTOR", async t => {
+  const { appendHistoricalAttestationEnable } = await import("../../tests/helpers/workspace-fixture.mjs");
+  const { readOwnStream } = await import("../../tests/helpers/library-forge.mjs");
+  const fixture = await scratch("portal-work-lease-", "WORK-LEASE");
+  const portalActor = "agent:test-portal";
+  const holder = "agent:alpha";
+  const previousHome = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = fixture.deviceEnv.EINZBERN_HOME;
+  try {
+    await appendHistoricalAttestationEnable(fixture.workspace, { occurredAt: "2026-08-11T15:00:02Z", actorId: holder });
+  } finally {
+    process.env.EINZBERN_HOME = previousHome;
+  }
+  let second = 2;
+  const at = () => `2026-08-11T15:00:${String(second += 1).padStart(2, "0")}Z`;
+  const create = async (externalKey, kind, extra) => (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", at(), "--actor", holder, "--external-key", externalKey, "--kind", kind, ...extra], fixture.deviceEnv)).record;
+  const initiative = await create("WORK-LEASE-INIT", "Initiative", ["--title", "Leased initiative"]);
+  const epic = await create("WORK-LEASE-EPIC", "Epic", ["--parent-id", initiative.id, "--title", "Leased epic"]);
+  const story = await create("WORK-LEASE-STORY", "Story", ["--parent-id", epic.id, "--title", "Leased story", "--goal", "One writer at a time.", "--acceptance", "Given a lease When another actor writes Then it is refused."]);
+  // The read judges whether a lease runs by the clock, so the claim is taken at this moment.
+  const claimedAt = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString().replace(".000Z", "Z");
+  const expiresAt = new Date(Date.parse(claimedAt) + 2 * 3_600_000).toISOString().replace(".000Z", "Z");
+  await cli(["work-claim", "--workspace", fixture.workspace, "--at", claimedAt, "--id", story.id, "--actor", holder], fixture.deviceEnv);
+
+  const { child, url } = await startPortal({ ...fixture, env: { TCRN_PORTAL_ACTOR: portalActor } });
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const work = await request(url, "/api/work", readOptions(boot.token));
+  assert.equal(work.body.ok, true);
+  const leases = Object.fromEntries(work.body.records.map((record) => [record.id, record.lease]));
+  assert.deepEqual(leases, { [initiative.id]: null, [epic.id]: null, [story.id]: { holder, claimedAt, expiresAt, active: true } });
+
+  const released = await request(url, "/api/work/lease-release", writeOptions(boot.token, "POST", { id: story.id }));
+  assert.equal(released.body.ok, true, JSON.stringify(released.body));
+  assert.equal(released.body.lease, null);
+  assert.equal((await cli(["work-show", "--workspace", fixture.workspace, "--id", story.id], fixture.deviceEnv)).lease, null, "after the forced release work-show shows no lease");
+  const last = (await readOwnStream(fixture.workspace)).events.at(-1);
+  assert.deepEqual([last.payload.operation, last.payload.record.collection, last.payload.record.key, last.payload.actor], ["config.record.removed", "lease", story.id, portalActor], "the release's event names TCRN_PORTAL_ACTOR");
+  const reread = await request(url, "/api/work", readOptions(boot.token));
+  assert.equal(reread.body.records.find((record) => record.id === story.id).lease, null);
+
+  const nothing = await request(url, "/api/work/lease-release", writeOptions(boot.token, "POST", { id: story.id }));
+  assert.equal(nothing.body.ok, false);
+  assert.equal(nothing.body.reasonCode, "WORK_LEASE_NOT_FOUND", "an item without a lease has nothing to release");
+});

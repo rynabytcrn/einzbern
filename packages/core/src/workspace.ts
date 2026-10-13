@@ -164,6 +164,7 @@ import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relatio
 import { WORK_GATES_KINDS, normalizedWorkGates, workGatesShapeProblem } from "./work-gates.js";
 import { projectLineage, workspaceSettingIdentity, assertScopedSettingWriteConsistent } from "./project-scope.js";
 import { ConfigRecordError, configRecordId, configRecordIdentity, isConfigRecordCollection, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
+import { assertWorkLeaseAdmits } from "./work-lease.js";
 import type { ConfigRecord } from "./config-records.js";
 
 export const WORKSPACE_SCHEMA_VERSION = "tcrn.workspace.v1" as const;
@@ -3948,8 +3949,14 @@ function assertTransitionAdmission(state: WorkspaceState, input: { readonly id: 
   }
 }
 
-export function transitionWorkDelta(input: { readonly id: string; readonly status: WorkStatus; readonly summary?: string | null; readonly occurredAt: string }): (state: WorkspaceState) => MutationDelta {
+// TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-457): a transition or an annotation names the actor
+// that writes it, and while another actor's unexpired lease binds the item -- its own or one above
+// it -- the write is refused with WORK_LEASED, judged at the write's own instant (work-lease.ts). A
+// write that names no actor is another actor's. Like the admission rules above, this is write-path
+// only: replay never asks about leases.
+export function transitionWorkDelta(input: { readonly id: string; readonly status: WorkStatus; readonly summary?: string | null; readonly occurredAt: string; readonly actorId?: string }): (state: WorkspaceState) => MutationDelta {
   return (state) => {
+    assertWorkLeaseAdmits(state, input.id, input.actorId, input.occurredAt);
     assertTransitionAdmission(state, input);
     return transitionWorkReducerDelta(state, input);
   };
@@ -3964,6 +3971,7 @@ export async function transitionWork(workspaceRoot: string, input: {
   readonly summary?: string | null;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   return appendEvent(workspaceRoot, (state) => {
+    assertWorkLeaseAdmits(state, input.id, input.actorId, input.occurredAt);
     assertTransitionAdmission(state, input);
     return transitionWorkReducerDelta(state, input);
   }, input);
@@ -4056,12 +4064,20 @@ function releaseGateDelta(state: WorkspaceState, input: ReleaseGateInput & { rea
 // STORY-300 slice 3: annotateWork's delta, exposed so a batch can compose it. Like
 // createWork and unlike transitionWork, all of its validation already lived inside the
 // closure, so nothing moves across the replay boundary here.
-export function annotateWorkDelta(input: WorkAnnotationInput): (state: WorkspaceState) => MutationDelta {
-  return (state) => annotateWorkReducerDelta(state, input);
+// TCRN-CROSS-STORY-528 (SUB-457): an annotation is refused under another actor's lease like a
+// transition (see transitionWorkDelta).
+export function annotateWorkDelta(input: WorkAnnotationInput & { readonly actorId?: string }): (state: WorkspaceState) => MutationDelta {
+  return (state) => {
+    assertWorkLeaseAdmits(state, input.id, input.actorId, input.occurredAt);
+    return annotateWorkReducerDelta(state, input);
+  };
 }
 
 export async function annotateWork(workspaceRoot: string, input: WorkAnnotationInput & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, (state) => annotateWorkReducerDelta(state, input), input);
+  return appendEvent(workspaceRoot, (state) => {
+    assertWorkLeaseAdmits(state, input.id, input.actorId, input.occurredAt);
+    return annotateWorkReducerDelta(state, input);
+  }, input);
 }
 
 function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationInput): MutationDelta {

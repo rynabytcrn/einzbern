@@ -159,6 +159,9 @@ import type { TelemetryEvidenceSnapshot } from "./telemetry.js";
 // this module, so nothing here may read one of its bindings while the module is being evaluated.
 import { mergeStoredRelations, relationsShapeProblem, storedRelationsOf, validateRelationsInput } from "./work-relations.js";
 import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relations.js";
+// TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-446): used only inside functions, like work-relations.js above:
+// work-gates.ts reaches this module again through gates-config.js and config-records.js.
+import { WORK_GATES_KINDS, normalizedWorkGates, workGatesShapeProblem } from "./work-gates.js";
 import { projectLineage, workspaceSettingIdentity, assertScopedSettingWriteConsistent } from "./project-scope.js";
 import { ConfigRecordError, configRecordId, configRecordIdentity, isConfigRecordCollection, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
 import type { ConfigRecord } from "./config-records.js";
@@ -1270,6 +1273,10 @@ const ADVISORY_RELATIONS_KEY = "advisory:relations";
 const ADVISORY_GOAL_KEY = "advisory:goal";
 const ADVISORY_ACCEPTANCE_KEY = "advisory:acceptance";
 const ADVISORY_BODY_KEY = "advisory:body";
+// TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-446): the gate names an Initiative, an Epic or a Story
+// carries (work-gates.ts), sorted without repeats; an empty list on a write removes it. The literal is
+// repeated rather than imported, for the reason given for advisory:relations above.
+const ADVISORY_GATES_KEY = "advisory:gates";
 const ADVISORY_KEYS: readonly string[] = [
   ADVISORY_SCOPE_KEY,
   ADVISORY_DECIDED_BY_KEY,
@@ -1282,6 +1289,7 @@ const ADVISORY_KEYS: readonly string[] = [
   ADVISORY_GOAL_KEY,
   ADVISORY_ACCEPTANCE_KEY,
   ADVISORY_BODY_KEY,
+  ADVISORY_GATES_KEY,
 ];
 
 // TCRN-CROSS-STORY-472 R1: the kinds no write creates any more. Records of these kinds on a chain
@@ -1312,6 +1320,8 @@ type WorkAdvisoryInput = {
   readonly goal?: string;
   readonly acceptance?: string;
   readonly body?: string;
+  // TCRN-CROSS-STORY-525: gate names, stored deduplicated and sorted as advisory:gates; [] removes them.
+  readonly gates?: readonly string[];
 };
 
 type WorkAnnotationInput = WorkAdvisoryInput & {
@@ -1344,7 +1354,7 @@ function isSprintReference(value: unknown): value is SprintReference {
   return true;
 }
 
-const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY, relations: ADVISORY_RELATIONS_KEY, goal: ADVISORY_GOAL_KEY, acceptance: ADVISORY_ACCEPTANCE_KEY, body: ADVISORY_BODY_KEY });
+const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY, relations: ADVISORY_RELATIONS_KEY, goal: ADVISORY_GOAL_KEY, acceptance: ADVISORY_ACCEPTANCE_KEY, body: ADVISORY_BODY_KEY, gates: ADVISORY_GATES_KEY });
 
 // `relations` is the validated form of advisory.relations (validateRelationsInput), never the raw
 // input: each stored list it names replaces that list of advisory:relations whole (an empty one
@@ -1353,11 +1363,18 @@ const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy
 function workAdvisoryExtensions(base: Readonly<Record<string, unknown>>, advisory: WorkAdvisoryInput, relations?: NormalizedWorkRelations): Readonly<Record<string, unknown>> {
   const next: Record<string, unknown> = { ...base };
   for (const field of Object.keys(ADVISORY_FIELD_KEYS) as Array<keyof WorkAdvisoryInput>) {
-    if (field === "relations") continue;
+    // relations and gates are normalized below: a list given empty removes what is stored.
+    if (field === "relations" || field === "gates") continue;
     const value = advisory[field];
     if (value === undefined) continue;
     const copied = field === "decidedBy" ? [...(value as readonly string[])] : field === "sprint" ? { workspaceId: (value as SprintReference).workspaceId, workId: (value as SprintReference).workId } : value;
     next[ADVISORY_FIELD_KEYS[field]] = { required: false, value: copied };
+  }
+  if (advisory.gates !== undefined) {
+    // TCRN-CROSS-STORY-525: validateWorkAdvisoryInput has already refused a list that is not gate names.
+    const gates = normalizedWorkGates(advisory.gates) ?? [];
+    if (gates.length === 0) delete next[ADVISORY_GATES_KEY];
+    else next[ADVISORY_GATES_KEY] = { required: false, value: [...gates] };
   }
   if (relations !== undefined) {
     if (relations.decidedIn !== undefined) next[ADVISORY_DECIDED_BY_KEY] = { required: false, value: [...relations.decidedIn] };
@@ -1563,6 +1580,7 @@ function validateWorkAdvisoryInput(input: WorkAdvisoryInput, id: string, reasonC
     ["goal", isStoryFieldText, "advisory goal must be non-empty text"],
     ["acceptance", isStoryFieldText, "advisory acceptance must be non-empty text"],
     ["body", isStoryFieldText, "advisory body must be non-empty text"],
+    ["gates", (value) => normalizedWorkGates(value) !== null, "advisory gates must be a list of gate names: letters, digits, dots, colons, underscores and hyphens, starting with a letter or a digit"],
   ];
   for (const [field, valid, message] of checks) {
     if (input[field] !== undefined && !valid(input[field])) fail(reasonCode, message);
@@ -1571,6 +1589,15 @@ function validateWorkAdvisoryInput(input: WorkAdvisoryInput, id: string, reasonC
   if (input.evidence !== undefined) assertAdvisoryEntryShape(ADVISORY_EVIDENCE_KEY, { required: false, value: input.evidence }, id, reasonCode);
   if (input.evidenceSnapshot !== undefined) assertAdvisoryEntryShape(ADVISORY_EVIDENCE_SNAPSHOT_KEY, { required: false, value: input.evidenceSnapshot }, id, reasonCode);
   if (input.result !== undefined) assertAdvisoryEntryShape(ADVISORY_RESULT_KEY, { required: false, value: input.result }, id, reasonCode);
+}
+
+// TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-446): gate names bind a Story from the Story itself or from
+// above it, so only an Initiative, an Epic or a Story is given any; on another kind they would bind
+// nothing. The write path refuses them there, and an empty list, which removes nothing such a record
+// should hold, stays open to every kind. Replay checks the stored shape only.
+function assertWorkGatesKind(kind: string, id: string, gates: readonly string[] | undefined): void {
+  if (gates === undefined || gates.length === 0 || (WORK_GATES_KINDS as readonly string[]).includes(kind)) return;
+  fail("WORKSPACE_INPUT_INVALID", `work ${id} is a ${kind}; gate names are carried by an Initiative, an Epic or a Story`);
 }
 
 // Defence in depth on the advisory value shape. The terminal validateWorkGraph over the
@@ -1597,6 +1624,12 @@ function assertAdvisoryEntryShape(key: string, entry: unknown, id: string, reaso
   }
   if (key === ADVISORY_GOAL_KEY || key === ADVISORY_ACCEPTANCE_KEY || key === ADVISORY_BODY_KEY) {
     if (!isStoryFieldText(value)) fail(reasonCode, `work ${id} ${key} must be non-empty text`);
+    return;
+  }
+  if (key === ADVISORY_GATES_KEY) {
+    // Shape only: replay never asks whether the library declares a gate (TCRN-CROSS-STORY-525).
+    const problem = workGatesShapeProblem(value);
+    if (problem !== null) fail(reasonCode, `work ${id} advisory gates ${problem}`);
     return;
   }
   if (key === ADVISORY_RELATIONS_KEY) {
@@ -3704,6 +3737,7 @@ export function createWorkDelta(input: {
   readonly goal?: string;
   readonly acceptance?: string;
   readonly body?: string;
+  readonly gates?: readonly string[];
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3726,6 +3760,7 @@ export async function createWork(workspaceRoot: string, input: {
   readonly goal?: string;
   readonly acceptance?: string;
   readonly body?: string;
+  readonly gates?: readonly string[];
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3747,6 +3782,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
   readonly goal?: string;
   readonly acceptance?: string;
   readonly body?: string;
+  readonly gates?: readonly string[];
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3789,6 +3825,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
       }
     }
     validateWorkAdvisoryInput(input, id, "WORKSPACE_INPUT_INVALID");
+    assertWorkGatesKind(input.kind, id, input.gates);
     const relations = workRelationsForWrite(state, id, input);
     const title = normalizeWorkTitle(input.title);
     const labels = normalizeWorkLabels(input.labels ?? []);
@@ -4033,10 +4070,11 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   if (current.tombstone) {
     fail("WORKSPACE_INPUT_INVALID", `work ${input.id} is deleted`);
   }
-  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.goal === undefined && input.acceptance === undefined && input.body === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined && input.involvedProjects === undefined) {
-    fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, relations, goal, acceptance, body, title, summary, or labels");
+  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.goal === undefined && input.acceptance === undefined && input.body === undefined && input.gates === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined && input.involvedProjects === undefined) {
+    fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, relations, goal, acceptance, body, gates, title, summary, or labels");
   }
   validateWorkAdvisoryInput(input, input.id, "WORKSPACE_INPUT_INVALID");
+  assertWorkGatesKind(current.kind, input.id, input.gates);
   // TCRN-CROSS-STORY-472: each relation list an annotation names is replaced whole.
   const relations = workRelationsForWrite(state, input.id, input);
   const title = input.title === undefined ? current.title ?? null : normalizeWorkTitle(input.title);

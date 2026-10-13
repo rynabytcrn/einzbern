@@ -580,6 +580,9 @@ export type { WorkBatchOptions, WorkBatchProblem } from "./work-batch.js";
 // the reverse projected when read.
 export { RELATION_NAMES, REVERSE_RELATION_NAMES, relationFilter, workRelations } from "./work-relations.js";
 export type { WorkRelationsInput } from "./work-relations.js";
+// TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-446): the gate names a work record carries, and those
+// that bind it from it and its ancestors.
+export { WORK_GATES_KEY, effectiveWorkGates, workAncestorIds, workGates } from "./work-gates.js";
 export { KNOWLEDGE_BATCH_SCHEMA_VERSION, KNOWLEDGE_BATCH_VERBS, applyKnowledgeBatch } from "./knowledge-batch.js";
 export type { KnowledgeBatchOptions, KnowledgeBatchProblem } from "./knowledge-batch.js";
 // TCRN-CROSS-STORY-362: the recall core's public face is the verb's face. The index,

@@ -119,6 +119,8 @@ import {
   REVERSE_RELATION_NAMES,
   relationFilter,
   workRelations,
+  effectiveWorkGates,
+  workGates,
   minutesById,
   minutesView,
   recordMinutes,
@@ -369,6 +371,13 @@ function storyFieldsInput(values: Readonly<Record<string, string>>): { readonly 
     ...(values.acceptance === undefined ? {} : { acceptance: values.acceptance }),
     ...(values.body === undefined ? {} : { body: values.body }),
   };
+}
+
+// TCRN-CROSS-STORY-525 (MIN-256; TCRN-CROSS-SUB-446): --gates on work-create and work-annotate names the
+// gates an Initiative, an Epic or a Story is held to, as a comma list of gate names; "-" is the empty
+// list, which on an annotation removes them. The engine checks each name and the record's kind.
+function gatesInput(values: Readonly<Record<string, string>>): { readonly gates?: readonly string[] } {
+  return values.gates === undefined ? {} : { gates: listValue(values.gates) };
 }
 
 // Unified nullable-flag spelling: "-" is the canonical null sentinel and an omitted
@@ -1470,9 +1479,9 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "vocabulary", availability: "cli", mutates: false, flags: [] },
   // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
   // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
-  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "expected-revision", required: false, valueKind: "integer" }, { name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "expected-revision", required: false, valueKind: "integer" }, { name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
   // TCRN-CROSS-STORY-489 (MIN-235 D17, D11, MIN-238 D4): the gates a migration carried over. work-gate-list
@@ -3132,7 +3141,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson(await resolveProjectTarget(projectReference(jsonValue(values.reference!, "reference"))))); return;
   }
   if (command === "work-create") {
-    const values = parseArguments(rest, [...shared, "project-id", "external-key", "kind", "parent-id", "status", "scope", ...STORY_FIELD_FLAGS, "decided-by", ...RELATION_FLAGS, "involved-projects", "title", "summary", "labels", "template-receipt", "actor"]);
+    const values = parseArguments(rest, [...shared, "project-id", "external-key", "kind", "parent-id", "status", "scope", ...STORY_FIELD_FLAGS, "gates", "decided-by", ...RELATION_FLAGS, "involved-projects", "title", "summary", "labels", "template-receipt", "actor"]);
     // TCRN-CROSS-STORY-363: --title is required on the create path. Measured on the
     // cross-project chain on 2026-09-07, 50 of its 843 live work records carried a
     // title; the other 793 were addressable only by external key, so a listing could
@@ -3163,6 +3172,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
           ...(values.status ? { status: values.status as WorkStatus } : {}),
           ...(values.scope !== undefined ? { scope: values.scope } : {}),
           ...storyFieldsInput(values),
+          ...gatesInput(values),
           ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
           ...relationsInput(values),
           ...(values["involved-projects"] === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(jsonValue(values["involved-projects"], "involved-projects")) }),
@@ -3265,11 +3275,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // right since TCRN-CROSS-STORY-363, so what the core still refuses is an annotation
     // that moves nothing at all: it is WORKSPACE_INPUT_INVALID here rather than an
     // appended event no later read can replay (TCRN-CROSS-INC-269).
-    const values = parseArguments(rest, [...shared, "id", "expected-revision", "scope", ...STORY_FIELD_FLAGS, "decided-by", ...RELATION_FLAGS, "involved-projects", "verify", "result", "sprint", "title", "summary", "labels", "actor"]);
+    const values = parseArguments(rest, [...shared, "id", "expected-revision", "scope", ...STORY_FIELD_FLAGS, "gates", "decided-by", ...RELATION_FLAGS, "involved-projects", "verify", "result", "sprint", "title", "summary", "labels", "actor"]);
     required(values, [...requiredShared, "id"]);
     const relations = relationsInput(values);
     const fields = storyFieldsInput(values);
-    if (values["involved-projects"] === undefined && values.scope === undefined && Object.keys(fields).length === 0 && values["decided-by"] === undefined && relations.relations === undefined && values.verify === undefined && values.result === undefined && values.sprint === undefined && values.title === undefined && values.summary === undefined && values.labels === undefined) fail("CLI_ARGUMENT_MALFORMED", "annotation-field");
+    if (values["involved-projects"] === undefined && values.scope === undefined && Object.keys(fields).length === 0 && values.gates === undefined && values["decided-by"] === undefined && relations.relations === undefined && values.verify === undefined && values.result === undefined && values.sprint === undefined && values.title === undefined && values.summary === undefined && values.labels === undefined) fail("CLI_ARGUMENT_MALFORMED", "annotation-field");
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     const state = await withWriteLock(workspace, at, async () => annotateWork(workspace, {
@@ -3277,6 +3287,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values["expected-revision"] === undefined ? {} : { expectedRevision: integerValue(values, "expected-revision") }),
       ...(values.scope !== undefined ? { scope: values.scope } : {}),
       ...fields,
+      ...gatesInput(values),
       ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
       ...relations,
       ...(values["involved-projects"] === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(jsonValue(values["involved-projects"], "involved-projects")) }),
@@ -3403,7 +3414,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       projectContexts: await workProjectContexts(state, record.id),
       // TCRN-CROSS-STORY-473 R2, AC3: the goal, acceptance and body whole, with where they come
       // from -- the record's own fields, or the blocks of an old scope mapped on this read.
-      fields: storyFields(record),
+      // TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-446): with the gate names the record carries, when it
+      // carries any, and beside them the names that bind it from it and its ancestors.
+      fields: { ...storyFields(record), ...(workGates(record).length === 0 ? {} : { gates: workGates(record) }) },
+      effectiveGates: effectiveWorkGates(state, record.id),
       ...(advisory !== null ? { advisory } : {}),
       ...(obsoleteDecisions.length === 0 ? {} : { obsoleteDecisions }),
       relations: { forward: relations.forward, reverse: relations.reverse, missing: relations.missing },

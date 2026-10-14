@@ -18,6 +18,7 @@ import { INLINE_MARKER, reconcile } from "../scripts/ds-component-css-reconcile.
 import { CANDIDATE_SOURCE_PATH, readCandidateSource } from "../scripts/lib/ds-candidate-source.mjs";
 
 const RECONCILE = resolve(import.meta.dirname, "../scripts/ds-component-css-reconcile.mjs");
+const GENERATE = resolve(import.meta.dirname, "../scripts/generate-ds-component-css-snapshot.mjs");
 const CSS = ":root { --tcrn-probe: #246f80; }\n";
 const ABSENT_COMMIT = "1234567890abcdef1234567890abcdef12345678";
 
@@ -207,6 +208,46 @@ test("STORY-533 GWT3 one byte off in the snapshot or in the inline copy is still
   const unreadable = await reconcile(fromCandidate(inlineOff, { designSystemRoot: join(inlineOff.base, "absent") }));
   assert.equal(unreadable.ok, false);
   assert.equal(unreadable.reasonCode, "DS_COMPONENT_CSS_INLINE_DRIFT");
+});
+
+test("STORY-533 GWT4 a readable bound candidate is what the snapshot is generated from", async (context) => {
+  const fixture = await designSystem(context, { snapshotCss: "stale\n" });
+  const written = runScript(GENERATE, fixture);
+  assert.equal(written.status, 0);
+  assert.equal(written.stderr, "");
+  assert.equal(written.report.reasonCode, "DS_COMPONENT_CSS_SNAPSHOT_WRITTEN");
+  assert.equal(written.report.candidate, fixture.candidate);
+  assert.equal(written.report.source, `${fixture.candidate}:${CANDIDATE_SOURCE_PATH}`);
+  assert.equal(await readFile(fixture.snapshotPath, "utf8"), CSS, "the candidate's export, not the working tree's split");
+
+  const checked = runScript(GENERATE, fixture, { arguments_: ["--check"] });
+  assert.equal(checked.status, 0);
+  assert.equal(checked.report.reasonCode, "DS_COMPONENT_CSS_SNAPSHOT_MATCHES_SOURCE");
+  assert.equal(checked.report.candidate, fixture.candidate);
+});
+
+test("STORY-533 GWT4 an unreadable bound candidate refuses generation, says why, and leaves the snapshot's bytes", async (context) => {
+  const fixture = await designSystem(context, { snapshotCss: "stale\n" });
+  await writeFile(fixture.contractPath, `${JSON.stringify({ candidate: ABSENT_COMMIT, candidateTree: ABSENT_COMMIT })}\n`, "utf8");
+  const before = await readFile(fixture.snapshotPath);
+  for (const arguments_ of [[], ["--check"]]) {
+    const refused = runScript(GENERATE, fixture, { arguments_ });
+    assert.equal(refused.status, 1);
+    assert.equal(refused.stderr, "");
+    assert.equal(refused.report.ok, false);
+    assert.equal(refused.report.reasonCode, "DS_COMPONENT_CSS_SOURCE_UNAVAILABLE");
+    assert.equal(refused.report.reason, "candidate-absent");
+    assert.equal(refused.report.candidate, ABSENT_COMMIT);
+  }
+  assert.deepEqual(await readFile(fixture.snapshotPath), before);
+
+  // A candidate that is there but carries no export is refused the same way.
+  const split = await designSystem(context, { candidateSource: SPLIT_SOURCE, snapshotCss: "stale\n" });
+  const refused = runScript(GENERATE, split);
+  assert.equal(refused.status, 1);
+  assert.equal(refused.report.reasonCode, "DS_COMPONENT_CSS_SOURCE_UNAVAILABLE");
+  assert.equal(refused.report.reason, "export-not-found");
+  assert.equal(await readFile(split.snapshotPath, "utf8"), "stale\n");
 });
 
 test("STORY-533 an explicit source file is read as given, ahead of the bound candidate", async (context) => {

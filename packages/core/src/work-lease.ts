@@ -18,6 +18,10 @@
 // unexpired lease on the item, on any item above it or on any item below it. The holder releases at
 // any time; another actor needs force (Atelier only, decided at the CLI) while the lease runs, and
 // a lease that has run out binds no one, so anyone may clear it.
+//
+// TCRN-CROSS-STORY-535 (MIN-257 D6): a lease does not outlive its item. Deleting a work item is not a
+// write a lease guards, so any actor deletes a leased item, and its lease is removed in the same
+// append (leaseRemovalDelta, SUB-475).
 
 import { ProtocolError, assertProtocolId, parseStrictInstant } from "../../protocol/src/index.js";
 import type { JsonValue, WorkRecord } from "../../protocol/src/index.js";
@@ -263,6 +267,11 @@ export function claimWorkDelta(input: ClaimWorkInput): (state: WorkspaceState) =
   };
 }
 
+// The config.record.removed delta of one lease record, in the scope it was recorded in.
+function leaseRecordRemoval(record: ConfigRecord): (state: WorkspaceState) => MutationDelta {
+  return removeConfigRecordDelta({ collection: WORK_LEASE_COLLECTION, key: record.key, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) });
+}
+
 /** The delta that releases the lease a work item holds; the input is checked before any lock is taken. */
 export function releaseWorkDelta(input: ReleaseWorkInput): (state: WorkspaceState) => MutationDelta {
   assertActorId(input.actorId);
@@ -272,8 +281,19 @@ export function releaseWorkDelta(input: ReleaseWorkInput): (state: WorkspaceStat
     if (record === undefined) fail("WORK_LEASE_NOT_FOUND", `work ${input.id} holds no lease`, { workId: input.id });
     const lease = heldLease(record);
     if (lease.holder !== input.actorId && runsAt(lease, at) && input.force !== true) throw leasedError(input.id, lease);
-    return removeConfigRecordDelta({ collection: WORK_LEASE_COLLECTION, key: record.key, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) })(state);
+    return leaseRecordRemoval(record)(state);
   };
+}
+
+/**
+ * TCRN-CROSS-STORY-535 (TCRN-CROSS-SUB-475): the delta that removes the lease `workId` holds -- the
+ * record workLease reads -- for the write that deletes the item, appended just before its
+ * work.deleted event; null when the item holds none, so such a delete stays one event. Whoever
+ * holds the lease and whether it still runs make no difference.
+ */
+export function leaseRemovalDelta(state: Pick<WorkspaceState, "configRecords">, workId: string): ((state: WorkspaceState) => MutationDelta) | null {
+  const record = leaseRecords(state).find((entry) => entry.key === workId);
+  return record === undefined ? null : leaseRecordRemoval(record);
 }
 
 /** Claim a work item, or renew the claim its holder has: one event in this device's stream. */

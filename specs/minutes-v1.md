@@ -100,6 +100,26 @@ recorded cross-project corpus (1,618 decisions), 68 pairs of decisions of
 different records reach it; replaying the 263 historical records of the
 cross-project library in order, 38 would have met a candidate.
 
+The refusal is split by INIT family, as the card guard's
+(`KNOWLEDGE_POSSIBLE_CONFLICT`) is (TCRN-CROSS-STORY-531, TCRN-CROSS-STORY-539;
+the whole rule is in "Conflict retirement" of
+`packages/core/spec/knowledge-core-v1.md`). A family is the Initiative at the
+top of a work record's parent chain, and both guards read it through the same
+references: a work id names its own, a minutes id those of the work the minutes
+link (a conference's minutes, the conference's), and the external key of a work
+record this library holds that record's. A record's families are those of the
+work it links (`linkedWorkIds`, work ids only); a valid decision's, those of the
+work its minutes link. A side has no known family when it links no work, or
+when any work it links is one this library does not hold or one whose chain
+ends at no Initiative. A close decision whose families and the record's are
+both known and share none refuses nothing: the record is written beside it, the
+decision added to the record's `declarations.coexists` as `--coexists` would
+add it, and the `minutes-record` answer names it under `warnings` (`reasonCode`
+`MINUTES_POSSIBLE_CONFLICT`, `decision`, `text`, `families`, `message`). A close
+decision of a shared family, or of no known family on either side, refuses as
+before; the refusal's `conflicts` names those alone and `otherFamilyConflicts`
+the others.
+
 ## Operation
 
 `minutes.recorded` carries `{operation, record}` (and `actor` once attestation is

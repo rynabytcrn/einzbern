@@ -96,9 +96,14 @@ the engine takes the next number after the latest key recorded in the library, s
 the first minutes of a library need one. `minutes-list` pages every minutes record —
 those a retired conference close wrote included — and `--work-id` keeps the ones that
 bear on one work record. The receipt also carries `knowledgeHint`: one line asking
-whether the decision holds knowledge worth a card (`是否有可提取的知识；可能冲突的卡：…`),
-and under `conflictCandidateIds` the cards a card about the minutes' summary could
-conflict with — here none, since this library holds no card yet.
+whether the decision holds knowledge worth a card (`是否有可提取的知识；可能冲突的卡：…`,
+ending `；按族滤掉 n 张`), under `conflictCandidateIds` the cards a card about the
+minutes' summary could conflict with, and under `filteredByFamily` that `n`: how many
+cards that scored were left out for sharing no INIT family with the minutes. A family is
+the initiative at the top of a work record's parent chain, minutes take that of the work
+they link, and when either side's family is not known the card stays. Here the line
+reads `是否有可提取的知识；可能冲突的卡：无；按族滤掉 0 张` and `filteredByFamily` is 0, since
+this library holds no card yet.
 
 ## 4. Name the minutes on the story and finish it
 
@@ -112,10 +117,12 @@ $ einzbern work-transition --workspace ./flagship/.ether --at 2026-07-11T00:00:1
 ```
 
 The transition to `done` answers the same `knowledgeHint`, scored against the story's
-title and goal. A lesson worth keeping is written with `knowledge-create` (or the thinner
-`knowledge-capture`): the card is active and retrievable the moment it is written, with no
-lifecycle flag and no promotion step, and a card that replaces an older one names it with
-`--supersedes`. `--scope user` files it in your own crest, which every project recalls.
+title and goal and split by the story's own family, the initiative above its epic: the
+line ends `；按族滤掉 n 张` and `filteredByFamily` counts the cards left out. A lesson worth
+keeping is written with `knowledge-create` (or the thinner `knowledge-capture`): the card
+is active and retrievable the moment it is written, with no lifecycle flag and no
+promotion step, and a card that replaces an older one names it with `--supersedes`.
+`--scope user` files it in your own crest, which every project recalls.
 
 ## 5. Trace the chain
 

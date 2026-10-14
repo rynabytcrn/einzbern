@@ -66,6 +66,7 @@ gates-run [--project <目录>] [--base <提交>] [--work-id <work-id,...>] [--re
 - 退出码为 0 且没有超时的门是绿的，其余都是红的。
 - 一道门红了不会中断后面的门；全部跑完之后一次报出所有红门：`reds` 列出全部红门，`requiredReds` 列出其中的必需门。
 - 每道门的输出（stdout 与 stderr 按到达顺序）写进文件，超过上限的部分截断。超时的门连同它的整个进程组一起停止，门结束时它留在进程组里的进程也会被停止。
+- 门进程能读到同次运行里在它之前结束的门（TCRN-CROSS-STORY-537）：环境变量 `EINZBERN_GATE_RUN_PRIOR` 是 canonical JSON，`runId` 为这次运行的 id，`gates` 按运行顺序列出每道门的 `name`、声明的 `root`、实际运行的目录 `directory`、`command`、`ok`、输出是否截断的 `truncated` 与输出文件的绝对路径 `outputFile`，第一道门读到的 `gates` 是空列表；它覆盖调用方环境里的同名变量，不写进运行记录。
 - 每次运行都记在设备目录的 `cache/<库 id>/gate-runs/<运行 id>.json`（`einzbern.gate-run.v1`），并记录目标 Story id、各门匹配的路径与它适用的 Story id，以及运行时那棵树的摘要（`einzbern.gate-tree.v3`）。不带 `--work-id` 的运行（含 `--release`）记每个启用门 `root` 的 `HEAD` 提交，加上每个改动文件与未跟踪文件的内容。带 `--work-id` 的运行只计 Story 提交涉及的文件，不含 `HEAD`（TCRN-CROSS-STORY-530、534）：引擎从工单记录取 Story 与它全部 Subtask 的键号（计划的 `subjectKeys`），在 `HEAD` 可达的提交里找说明写了其中一个键号、且键号后面不是数字的提交（`STORY-52` 不算 `STORY-525` 的提交），按这些提交涉及的路径逐条读当前内容，不论 Git 看它改没改；运行记录在 `trees[].paths` 列出这些路径，在 `trees[].files` 给出每条路径与它的内容摘要（文件为 `sha256:…`，符号链接为 `link:…`，目录为 `directory`，其他类型为 `other`，已删除为 `deleted`）。还没有提交的 `root` 照旧记 `HEAD` 与全部改动；这些键号在任何 `root` 下都还没有提交时，整次运行按不带 `--work-id` 的取法记，摘要不会是一个常量。
 
 ## 工单字段 gates 与继承

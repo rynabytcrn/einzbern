@@ -38,9 +38,19 @@
 // is not release provenance.
 //
 // Warnings are failures here. There is no --force.
+//
+// One run of the P1 legs is enough (TCRN-CROSS-STORY-537, MIN-252 D3 BL-43, MIN-257 D6, Q10). In a
+// run of the engine's gates (gates-run --release, finish's among them) this gate is engine:release,
+// and P1's twelve legs are among the gates that ran before it on the same tree. gates-run hands it
+// those gates in EINZBERN_GATE_RUN_PRIOR; when each leg of scripts/p1-sequence.mjs has a gate there that ran its
+// own script in this repository, passed, kept its whole output and printed nothing P1's zero-warning
+// rule rejects (scripts/lib/push-gate-p1-coverage.mjs), verify:p1 is not started, and its entry in
+// the receipt says so, with the run id and each leg's gate. Anything short of that, and every run of
+// this gate on its own, runs verify:p1 in full as before. The checks here and verify:p8 always run.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { dirname, relative, resolve } from "node:path";
@@ -50,6 +60,7 @@ import { P8_VERSION } from "./lib/p8-workflow-rc.mjs";
 import { inspectP8FailureTerminal, pushGateChildConclusion, pushGateExecutionPlan, ENGINE_PUSH_GATE_CHILDREN } from "./lib/push-gate-children.mjs";
 import { requiredFailurePatternProblems } from "./preflight.mjs";
 import { hasWarningOrError, inspectStructuredChildOutput, validateHostEvidenceProvenance, validateStructuredChildExpectations } from "./lib/push-gate-output.mjs";
+import { GATE_RUN_PRIOR_VARIABLE, assessP1Coverage } from "./lib/push-gate-p1-coverage.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -431,6 +442,46 @@ try {
   fail("PUSH_GATE_CHILD_SCHEMA_EXPECTATIONS_UNREADABLE", "source preflight failed before the P8 child", childExpectationsFailure);
 }
 
+// 5a. TCRN-CROSS-STORY-537 (Q10): verify:p1 is left out when the gate run this gate is part of has
+//     already carried every P1 leg (scripts/lib/push-gate-p1-coverage.mjs). The decision is made
+//     inside verify:p1's stage, so the time it takes is that stage's. The child's entry then names
+//     the run and the gate of each leg (coveredBy) in place of the child's output. When a run was
+//     handed but does not carry every leg, verify:p1 runs in full and its entry says why in
+//     p1Coverage. Run on its own, this gate has no run to read, and nothing changes.
+function realRepositoryRoot() {
+  try {
+    return realpathSync(repositoryRoot);
+  } catch {
+    return repositoryRoot;
+  }
+}
+
+function readGateOutput(path) {
+  try {
+    return readFileSync(path);
+  } catch {
+    return null;
+  }
+}
+
+function p1CoveredChildResult(script, coverage) {
+  return {
+    script,
+    command: ["pnpm", "run", "--silent", script],
+    cwd: repositoryRoot,
+    exit: { status: null, signal: null, error: null },
+    stdout: { path: null, bytes: 0, sha256: null },
+    stderr: { path: null, bytes: 0, sha256: null },
+    notStarted: true,
+    coveredBy: {
+      runId: coverage.runId,
+      gates: coverage.legs.map(({ leg, gate, outputFile, sha256 }) => ({ leg, gate, outputFile, sha256 })),
+    },
+    assessment: { ok: true, reasonCode: coverage.reasonCode, findings: [] },
+  };
+}
+
+let p1Coverage = null;
 for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {
   if (script !== "verify:p1" && childExpectationsFailure !== null) {
     childResults.push({
@@ -447,10 +498,25 @@ for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {
   }
   const result = await timedStage(
     `child:${script}`,
-    async () => (timingProbe
-      ? { ok: true, command: ["pnpm", "run", "--silent", script], cwd: repositoryRoot, exitCode: 0, signal: null, error: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), output: "" }
-      : runChild("pnpm", ["run", "--silent", script])),
+    async () => {
+      if (script === "verify:p1") {
+        p1Coverage = assessP1Coverage({
+          prior: process.env[GATE_RUN_PRIOR_VARIABLE],
+          repositoryRoot: realRepositoryRoot(),
+          readOutput: readGateOutput,
+          injection: process.env.EINZBERN_P1_INJECT,
+        });
+        if (p1Coverage?.covered === true) return null;
+      }
+      return timingProbe
+        ? { ok: true, command: ["pnpm", "run", "--silent", script], cwd: repositoryRoot, exitCode: 0, signal: null, error: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), output: "" }
+        : runChild("pnpm", ["run", "--silent", script]);
+    },
   );
+  if (result === null) {
+    childResults.push(p1CoveredChildResult(script, p1Coverage));
+    continue;
+  }
   const p1Diagnostic = script === "verify:p1" && hasWarningOrError(result.output, script);
   const assessment = timingProbe
     ? { ok: true, reasonCode: "TIMING_PROBE_SYNTHETIC_OUTPUT", findings: [] }
@@ -460,7 +526,7 @@ for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {
         ? inspectP8FailureTerminal({ stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode, signal: result.signal, error: result.error })
       : inspectStructuredChildOutput({ stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode, signal: result.signal }, script, childExpectations);
   const retained = await retainChildOutput(script, result, assessment);
-  childResults.push(retained);
+  childResults.push(script === "verify:p1" && p1Coverage !== null ? { ...retained, p1Coverage } : retained);
   const childConclusion = pushGateChildConclusion(result);
   if (childConclusion === "not-verifiable") childNotVerifiable = true;
   if (!result.ok) fail(reasonCode, `child exit ${result.exitCode}${result.signal ? ` signal ${result.signal}` : ""}`, {

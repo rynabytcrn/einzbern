@@ -4236,7 +4236,7 @@ button:disabled { cursor: not-allowed; }
             <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.dashboard">Workspace status</h1><p class="tcrn-text tcrn-page__lede" data-i18n="dashboard.lede">Doctor's eight checks and the selected library state.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge tcrn-badge--positive" id="health-chip"><span id="health-chip-text" data-i18n="health.healthy">healthy</span></span></div></div></header>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
-            <div class="tcrn-section-tabs" role="tablist" data-ui="workspace-tabs" aria-label="Workspace views"><button class="tcrn-button" role="tab" aria-selected="true" data-selected="true" data-workspace-tab="overview" data-i18n="dashboard.overview">Status</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="work" data-i18n="dashboard.work">Work</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="knowledge" data-i18n="dashboard.knowledge">Knowledge</button></div>
+            <div class="tcrn-section-tabs" role="tablist" data-ui="workspace-tabs" aria-label="Workspace views"><button class="tcrn-button" role="tab" aria-selected="true" data-selected="true" data-workspace-tab="overview" data-i18n="dashboard.overview">Status</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="work" data-i18n="dashboard.work">Work</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="knowledge" data-i18n="dashboard.knowledge">Knowledge</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="library" data-i18n="dashboard.libraryTab">Library</button></div>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
         <div data-workspace-panel="overview">
@@ -4248,6 +4248,20 @@ button:disabled { cursor: not-allowed; }
         </div>
         <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-text" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div class="tcrn-state-surface" id="work-loading" role="status" data-i18n="dashboard.workLoading" hidden>Reading work records through the engine…</div><div id="work-tree-content"></div><div id="work-target-editor" class="tcrn-surface"></div></div></div>
         <div data-workspace-panel="knowledge" hidden><div class="tcrn-surface" data-ui="knowledge-view"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.knowledgeTitle">Knowledge inventory</h2><p class="tcrn-text" data-i18n="dashboard.knowledgeNote">Cards and article indexes, metadata only.</p></div><span class="tcrn-badge" id="knowledge-count">—</span></div><div id="knowledge-view-content"></div></div></div>
+        <div data-workspace-panel="library" hidden>
+          <article class="tcrn-surface" data-ui="chain-identity" aria-labelledby="chain-identity-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="chain-identity-title" data-i18n="chainIdentity.title">Chain identity</h2><p class="tcrn-text" data-i18n="chainIdentity.note">The library's role and the coordination library it belongs to.</p></div><span class="tcrn-badge" id="chain-identity-current" data-ui="chain-identity-current">—</span></div>
+            <form id="chain-declare-form" data-ui="chain-declare-form">
+              <div class="tcrn-grid tcrn-grid--2">
+                <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="chainIdentity.role">Role</span><select class="tcrn-select" name="role" data-chain-role><option value="project" data-i18n="chainIdentity.roleProject">Project library</option><option value="coordination" data-i18n="chainIdentity.roleCoordination">Coordination library</option></select></label>
+                <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="chainIdentity.coordinationLibrary">Coordination library it belongs to</span><select class="tcrn-select" name="coordinationLibraryId" data-chain-coordination></select></label>
+              </div>
+              <p class="tcrn-text" data-chain-no-coordination data-i18n="chainIdentity.noCoordination" hidden>No coordination library is registered on this device.</p>
+              <button class="tcrn-button tcrn-button--primary" type="submit" data-cli-action="chain-declare" data-i18n="chainIdentity.review">Review the declaration</button>
+            </form>
+            <div class="tcrn-surface" data-ui="chain-declare-confirm" hidden><p class="tcrn-text" id="chain-declare-summary"></p><button type="button" class="tcrn-button tcrn-button--primary" data-chain-declare-confirm data-cli-action="chain-declare" data-i18n="chainIdentity.confirm">Declare</button><button type="button" class="tcrn-button tcrn-button--secondary" data-chain-declare-cancel data-i18n="action.cancel">Cancel</button></div>
+          </article>
+          <article class="tcrn-surface" data-ui="library-registry" aria-labelledby="library-registry-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="library-registry-title" data-i18n="registry.title">Registered libraries</h2><p class="tcrn-text" data-i18n="registry.note">The libraries this device has registered.</p></div></div><div id="library-registry-list" data-ui="library-registry-list"></div></article>
+        </div>
           </div>
         </div>
       </section>
@@ -4321,6 +4335,7 @@ button:disabled { cursor: not-allowed; }
                 <div class="tcrn-table-shell" role="table" aria-label="Gates" data-i18n-aria-label="gates.title" data-ui="gate-config-table" data-mobile-layout="stacked-cards"><div class="tcrn-table-shell__head" role="row"><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="collection.order">Order</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnGate">Gate</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnCovers">Covers (path glob or work id)</span></div><div id="gates-rows" role="rowgroup"></div></div>
                 <div id="gates-empty" class="tcrn-state-surface" data-ui="gates-empty" hidden></div>
               </article>
+              <article class="tcrn-surface" data-ui="migrated-gates" aria-labelledby="migrated-gates-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="migrated-gates-title" data-i18n="migratedGates.title">Migrated gates</h2><p class="tcrn-text" data-i18n="migratedGates.note">Gates a migration carried over hold their work item back until they are released.</p></div><span class="tcrn-badge" id="migrated-gates-count">—</span></div><div id="migrated-gates-list" data-ui="migrated-gates-list"></div></article>
             </div>
           </div>
         </div>
@@ -4332,6 +4347,7 @@ button:disabled { cursor: not-allowed; }
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
             <div id="rules-pending" class="tcrn-surface" data-ui="rules-pending" aria-label="Pending rule changes"><strong data-i18n="rule.pendingTitle">Pending</strong><label class="tcrn-sr-only" for="pending-section" data-i18n="rule.pendingSelect">Pending section</label><select class="tcrn-select" id="pending-section" data-ui="pending-section"></select><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="keep" data-i18n="rule.keep">Keep my text</button><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="overwrite" data-i18n="rule.overwrite">Overwrite</button><button class="tcrn-button tcrn-button--quiet" type="button" data-pending-action="unmanage" data-i18n="rule.unmanage">Unmanage</button></div>
+            <p class="tcrn-text" id="prose-binding-note" data-ui="prose-binding-note" hidden></p>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
             <div data-ui="rules-layout"><section id="prose-directory" data-ui="rule-list" aria-label="Built-in rules"></section><div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-text" id="agents-file">AGENTS.md</span><details class="tcrn-disclosure-panel" id="agents-path-details" data-identity-details="agents-path" hidden><summary class="tcrn-disclosure-panel__title" data-i18n="prose.fullPath">Full path</summary><code id="agents-path"></code> <button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-copy-identity="" data-clipboard-copy-state="idle" aria-label="Copy the full path of AGENTS.md"><span data-copy-label>Copy</span><span class="tcrn-sr-only" role="status" aria-live="polite" data-copy-status></span></button></details><span class="tcrn-text tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">AGENTS.md</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div></div>
@@ -5857,6 +5873,7 @@ const BOOT = __PORTAL_BOOT__;
     $("#library-state").innerHTML = libraryFields.map(([field, key, label, value]) => `<div class="tcrn-definition-list__item"><dt class="tcrn-definition-list__term" data-i18n="${esc(key)}">${esc(label)}</dt><dd class="tcrn-definition-list__definition" data-library-field="${esc(field)}"><code>${esc(JSON.stringify(value ?? null))}</code></dd></div>`).join("");
     renderWorkView();
     renderKnowledgeView();
+    renderLibraryView();
     bindTabList($('[data-ui="workspace-tabs"]'), {
       selected: state.dashboardTab,
       onSelect: (tab) => { state.dashboardTab = tab.dataset.workspaceTab; },
@@ -6151,11 +6168,23 @@ const BOOT = __PORTAL_BOOT__;
     copy.setAttribute("data-copy-identity", path);
     copy.setAttribute("aria-label", t("prose.copyPath", { file }));
     if (copy.dataset.clipboardCopyState === "idle") setText("#agents-path-details [data-copy-label]", t("copy.idle"));
+    // TCRN-CROSS-STORY-540 GWT5 (MIN-258 D3(c); TCRN-CROSS-SUB-508): a coordination library's rules and variables
+    // are rendered into the AGENTS.md of the directory it is registered for, the container it coordinates.
+    const note = $("#prose-binding-note");
+    const coordination = (state.settings?.chain?.role ?? BOOT.library?.chain?.role) === "coordination";
+    note.hidden = !coordination;
+    note.dataset.bindingStatus = coordination ? (path === "" ? "unconfigured" : "bound") : "";
+    note.textContent = !coordination ? "" : path === "" ? t("prose.coordinationUnconfigured") : t("prose.coordinationBound", { path: path.replace(/[\\/][^\\/]+$/u, "") });
   };
   const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); if (unkept(documentResult, reconciliation, rules)) return; state.agentsText = documentResult.text || ""; state.agentsDocument = documentResult; state.rules = rules; $("#agents-md").value = state.agentsText; renderAgentsFile(documentResult); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
   // TCRN-CROSS-STORY-508 R8 (C-R14-6): a write of a key the system variables section shows renders
   // AGENTS.md again (portal.mjs), so the Rules page reads the file back after it.
-  const rendersSystemVariables = (key) => ["models.category", "models.tiers"].includes(key) || String(key).startsWith("models.escalation.") || String(key).startsWith("design.");
+  // TCRN-CROSS-STORY-540 GWT2 (Q4, Q5; TCRN-CROSS-SUB-508): on a coordination library its orchestration limits
+  // take the model tables' place, and the artifact language picks the sections' language on every library.
+  const COORDINATION_SYSTEM_VARIABLE_KEYS = ["execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent"];
+  const rendersSystemVariables = (key) => String(key) === "artifact.language" || String(key).startsWith("design.") || (state.settings?.chain?.role === "coordination"
+    ? COORDINATION_SYSTEM_VARIABLE_KEYS.includes(key)
+    : ["models.category", "models.tiers"].includes(key) || String(key).startsWith("models.escalation."));
   // An empty selection means "unset this key": the engine refuses an empty --value as a
   // missing argument, and the honest verb for clearing a setting is settings-remove.
   const saveSetting = async (key, value) => {
@@ -6321,6 +6350,7 @@ const BOOT = __PORTAL_BOOT__;
     const read = (state.settingsRead || 0) + 1;
     state.settingsRead = read;
     refreshWork();
+    refreshRegistry();
     try {
       const [settings, vocabularyResult, status, commandsResult, machine, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api(knowledgePath()), api("/api/variables")]);
       if ((state.libraryEpoch || 0) !== epoch || state.settingsRead !== read) return;
@@ -6345,7 +6375,152 @@ const BOOT = __PORTAL_BOOT__;
     for (const category of vocabularyCategories()) for (const term of vocabularyRows(category)) rows.push({ text: `${termValue(term)} ${vocabularyDefinition(category, term)}`, label: termValue(term), meta: t("search.vocabulary"), page: "vocabulary", vocabulary: category });
     state.searchIndex = rows;
   };
-  const refreshGates = async () => { const [response, lastRun] = await Promise.all([api("/api/gates"), api("/api/gates/last-run")]); if (unkept(response, lastRun)) return; state.gateResponse = response; state.gates = Array.isArray(response.gates) ? response.gates : []; state.gateProposals = Array.isArray(response.proposals) ? response.proposals : []; state.lastGateRun = lastRun; renderGates(); };
+  // TCRN-CROSS-STORY-541 GWT2, GWT3 (MIN-258 D3; TCRN-CROSS-SUB-513): what only a terminal did before. The Library
+  // tab declares the selected library's chain identity (chain-declare, which a model's run is refused) after a
+  // confirmation, and lists this device's registry with whether each entry's paths exist; an entry is taken out
+  // after its plan (library-unregister) is shown and confirmed. The Gates page lists the gates a migration carried
+  // over and releases one with the reason it requires, after a confirmation; a released gate shows who released it,
+  // when and why. Every write goes through Atelier's routes and comes back as a receipt.
+  const chainRoleLabel = (role) => role === "coordination" ? t("chainIdentity.roleCoordination") : role === "project" ? t("chainIdentity.roleProject") : t("chainIdentity.undeclared");
+  const libraryNameOf = (libraryId) => { const entry = (BOOT.libraries || []).find((library) => library.libraryId === libraryId); return entry ? libraryLabel(entry) : String(libraryId ?? ""); };
+  const coordinationChoices = (role) => {
+    const own = BOOT.library?.libraryId;
+    if (role === "coordination") return own ? [own] : [];
+    const declared = BOOT.library?.chain?.role === "project" ? BOOT.library.chain.coordinationLibraryId : null;
+    const registered = (BOOT.libraries || []).filter((library) => library.chain?.role === "coordination" && library.libraryId !== own).map((library) => library.libraryId);
+    return [...new Set([...(declared ? [declared] : []), ...registered])];
+  };
+  const fillCoordinationChoices = () => {
+    const form = $("#chain-declare-form");
+    const role = $("[data-chain-role]", form).value;
+    const select = $("[data-chain-coordination]", form);
+    const choices = coordinationChoices(role);
+    const current = BOOT.library?.chain?.coordinationLibraryId;
+    select.innerHTML = choices.map((id) => `<option value="${esc(id)}" ${id === current ? "selected" : ""}>${esc(libraryNameOf(id))}</option>`).join("");
+    select.disabled = role === "coordination" || choices.length === 0;
+    $("[data-chain-no-coordination]", form).hidden = choices.length > 0;
+    $('button[type="submit"]', form).disabled = choices.length === 0;
+  };
+  const renderChainIdentity = () => {
+    const identity = BOOT.library?.chain ?? null;
+    setText("#chain-identity-current", identity === null ? t("chainIdentity.undeclared") : `${chainRoleLabel(identity.role)} · ${libraryNameOf(identity.coordinationLibraryId)}`);
+    const form = $("#chain-declare-form");
+    if (!state.chainDeclarePending) $("[data-chain-role]", form).value = identity?.role === "coordination" ? "coordination" : "project";
+    fillCoordinationChoices();
+  };
+  const presenceBadge = (exists) => exists === true ? `<span class="tcrn-badge tcrn-badge--positive" data-path-exists="true">${esc(t("registry.present"))}</span>` : exists === false ? `<span class="tcrn-badge tcrn-badge--danger" data-path-exists="false">${esc(t("registry.missing"))}</span>` : "";
+  const renderRegistry = () => {
+    const libraries = state.registry || BOOT.libraries || [];
+    const paths = new Map((state.registryPaths || []).map((entry) => [entry.projectPath, entry]));
+    const plan = state.unregisterPlan;
+    $("#library-registry-list").innerHTML = libraries.map((library) => {
+      const present = paths.get(library.projectPath) ?? {};
+      const selected = library.projectPath === BOOT.library?.projectPath;
+      const planned = plan?.entry?.projectPath === library.projectPath;
+      const action = selected ? `<p class="tcrn-text" data-registry-selected>${esc(t("registry.selectedNote"))}</p>`
+        : planned ? `<div class="tcrn-surface" data-registry-plan="${esc(library.projectPath)}"><p class="tcrn-text">${esc(t("registry.planText", { project: plan.entry.projectPath, backup: plan.backupDirectory, remaining: plan.remaining }))}</p>${Array.isArray(plan.sameLibraryEntries) && plan.sameLibraryEntries.length > 0 ? `<p class="tcrn-text">${esc(t("registry.sameLibrary", { paths: plan.sameLibraryEntries.join(", ") }))}</p>` : ""}<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--sm" data-library-unregister-confirm="${esc(library.projectPath)}" data-cli-action="library-unregister">${esc(t("registry.confirm"))}</button><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-library-unregister-cancel>${esc(t("action.cancel"))}</button></div>`
+        : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-library-unregister="${esc(library.projectPath)}" data-cli-action="library-unregister">${esc(t("registry.unregister"))}</button>`;
+      return `<div class="tcrn-surface" data-registry-entry="${esc(library.projectPath)}"><strong>${esc(libraryLabel(library))}</strong><dl class="tcrn-definition-list"><div class="tcrn-definition-list__item"><dt class="tcrn-definition-list__term">${esc(t("registry.projectPath"))}</dt><dd class="tcrn-definition-list__definition" data-registry-project><code>${esc(library.projectPath)}</code>${presenceBadge(present.projectPathExists)}</dd></div><div class="tcrn-definition-list__item"><dt class="tcrn-definition-list__term">${esc(t("registry.libraryPath"))}</dt><dd class="tcrn-definition-list__definition" data-registry-library><code>${esc(library.libraryPath)}</code>${presenceBadge(present.libraryPathExists)}</dd></div></dl>${action}</div>`;
+    }).join("");
+    $$("[data-library-unregister]").forEach((button) => button.addEventListener("click", async () => {
+      const projectPath = button.dataset.libraryUnregister;
+      button.disabled = true;
+      echo("library-unregister", ["--project", projectPath]);
+      const result = await api("/api/libraries/unregister", { method: "POST", body: JSON.stringify({ projectPath }) });
+      showReceipt(result);
+      state.unregisterPlan = result.ok ? result : null;
+      renderRegistry();
+    }));
+    $$("[data-library-unregister-confirm]").forEach((button) => button.addEventListener("click", async () => {
+      const projectPath = button.dataset.libraryUnregisterConfirm;
+      button.disabled = true;
+      echo("library-unregister", ["--project", projectPath, "--yes", "true"]);
+      const result = await api("/api/libraries/unregister", { method: "POST", body: JSON.stringify({ projectPath, confirm: true }) });
+      showReceipt(result);
+      state.unregisterPlan = null;
+      if (result.ok) { state.registry = result.libraries || []; state.registryPaths = result.paths || []; loadLibraries(state.registry); }
+      renderLibraryView();
+    }));
+    $$("[data-library-unregister-cancel]").forEach((button) => button.addEventListener("click", () => { state.unregisterPlan = null; renderRegistry(); }));
+  };
+  const renderLibraryView = () => { renderChainIdentity(); renderRegistry(); };
+  const refreshRegistry = async () => {
+    const result = await api("/api/libraries");
+    if (unkept(result) || result.ok !== true) return;
+    state.registry = Array.isArray(result.libraries) ? result.libraries : [];
+    state.registryPaths = Array.isArray(result.paths) ? result.paths : [];
+    if (state.unregisterPlan && !state.registry.some((library) => library.projectPath === state.unregisterPlan.entry?.projectPath)) state.unregisterPlan = null;
+    renderLibraryView();
+  };
+  $("#chain-declare-form").addEventListener("change", (event) => { if (event.target.matches("[data-chain-role]")) fillCoordinationChoices(); });
+  $("#chain-declare-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = $("#chain-declare-form");
+    const role = $("[data-chain-role]", form).value;
+    const library = $("[data-chain-coordination]", form).value;
+    if (!library) return;
+    state.chainDeclarePending = { role, coordinationLibraryId: library };
+    setText("#chain-declare-summary", t("chainIdentity.confirmText", { role: chainRoleLabel(role), library: libraryNameOf(library) }));
+    $('[data-ui="chain-declare-confirm"]').hidden = false;
+  });
+  $("[data-chain-declare-cancel]").addEventListener("click", () => { state.chainDeclarePending = null; $('[data-ui="chain-declare-confirm"]').hidden = true; renderChainIdentity(); });
+  $("[data-chain-declare-confirm]").addEventListener("click", async () => {
+    const pending = state.chainDeclarePending;
+    if (!pending) return;
+    const button = $("[data-chain-declare-confirm]");
+    button.disabled = true;
+    echo("chain-declare", ["--role", pending.role, "--coordination-library-id", pending.coordinationLibraryId]);
+    const result = await api("/api/chain-identity", { method: "POST", body: JSON.stringify(pending) });
+    button.disabled = false;
+    showReceipt(result);
+    state.chainDeclarePending = null;
+    $('[data-ui="chain-declare-confirm"]').hidden = true;
+    if (result.ok && result.library) { BOOT.library = result.library; BOOT.libraries = result.libraries || BOOT.libraries; loadLibraries(BOOT.libraries); await refresh(); }
+    renderLibraryView();
+  });
+  const releaseEntryOf = (gate) => gate?.extensions?.["gate-evidence:atelier-release"]?.value ?? null;
+  const renderMigratedGates = () => {
+    const listing = state.migratedGates || {};
+    const gates = Array.isArray(listing.gates) ? listing.gates : [];
+    const released = Array.isArray(listing.released) ? listing.released : [];
+    setText("#migrated-gates-count", String(gates.length));
+    const statusLabel = (status) => status === "blocked" ? t("migratedGates.blocked") : t("migratedGates.pending");
+    const confirming = state.gateReleaseConfirm;
+    const reasons = state.gateReleaseReasons || (state.gateReleaseReasons = {});
+    const row = (gate) => `<div class="tcrn-surface" data-migrated-gate="${esc(gate.id)}"><div class="tcrn-surface__head"><strong>${esc(gate.title ?? gate.id)}</strong><span class="tcrn-badge" data-migrated-gate-status="${esc(gate.status)}">${esc(statusLabel(gate.status))}</span></div><p class="tcrn-text"><code>${esc(gate.id)}</code>${gate.workId ? ` · ${esc(t("migratedGates.work", { id: gate.workId }))}` : ""}</p><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("migratedGates.reason"))}</span><textarea class="tcrn-input tcrn-textarea" rows="2" data-gate-release-reason="${esc(gate.id)}">${esc(reasons[gate.id] ?? "")}</textarea></label><p class="tcrn-text" data-gate-release-error="${esc(gate.id)}" role="alert" hidden>${esc(t("migratedGates.reasonRequired"))}</p>${confirming === gate.id
+      ? `<div class="tcrn-surface" data-gate-release-confirming="${esc(gate.id)}"><p class="tcrn-text">${esc(t("migratedGates.confirmText", { gate: gate.title ?? gate.id }))}</p><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--sm" data-gate-release-confirm="${esc(gate.id)}" data-cli-action="work-gate-release">${esc(t("migratedGates.confirm"))}</button><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-gate-release-cancel>${esc(t("action.cancel"))}</button></div>`
+      : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-gate-release="${esc(gate.id)}" data-cli-action="work-gate-release">${esc(t("migratedGates.release"))}</button>`}</div>`;
+    const releasedRow = (gate) => { const entry = releaseEntryOf(gate) ?? {}; return `<div class="tcrn-surface" data-released-gate="${esc(gate.id)}"><strong>${esc(gate.title ?? gate.id)}</strong><p class="tcrn-text" data-gate-release-record>${esc(t("migratedGates.releasedBy", { actor: entry.actor ?? "", at: entry.releasedAt ?? "", reason: entry.reason ?? "" }))}</p></div>`; };
+    $("#migrated-gates-list").innerHTML = (gates.length === 0 ? `<div class="tcrn-state-surface" data-migrated-gates-empty>${esc(t("migratedGates.empty"))}</div>` : gates.map(row).join("")) + released.map(releasedRow).join("");
+    $$("[data-gate-release-reason]").forEach((field) => field.addEventListener("input", () => { reasons[field.dataset.gateReleaseReason] = field.value; field.removeAttribute("aria-invalid"); }));
+    $$("[data-gate-release]").forEach((button) => button.addEventListener("click", () => {
+      const id = button.dataset.gateRelease;
+      const field = $(`[data-gate-release-reason="${CSS.escape(id)}"]`);
+      reasons[id] = field.value;
+      if (field.value.trim() === "") { field.setAttribute("aria-invalid", "true"); $(`[data-gate-release-error="${CSS.escape(id)}"]`).hidden = false; field.focus(); return; }
+      state.gateReleaseConfirm = id;
+      renderMigratedGates();
+    }));
+    $$("[data-gate-release-cancel]").forEach((button) => button.addEventListener("click", () => { state.gateReleaseConfirm = null; renderMigratedGates(); }));
+    $$("[data-gate-release-confirm]").forEach((button) => button.addEventListener("click", async () => {
+      const id = button.dataset.gateReleaseConfirm;
+      const reason = reasons[id] ?? "";
+      button.disabled = true;
+      echo("work-gate-release", ["--id", id, "--reason", reason]);
+      const result = await api("/api/migrated-gates/release", { method: "POST", body: JSON.stringify({ id, reason }) });
+      showReceipt(result);
+      state.gateReleaseConfirm = null;
+      if (result.ok) { delete reasons[id]; await refreshMigratedGates(); } else renderMigratedGates();
+    }));
+  };
+  const refreshMigratedGates = async () => {
+    const result = await api("/api/migrated-gates");
+    if (unkept(result)) return;
+    state.migratedGates = result.ok ? result : { gates: [], released: [] };
+    if (!state.migratedGates.gates?.some((gate) => gate.id === state.gateReleaseConfirm)) state.gateReleaseConfirm = null;
+    renderMigratedGates();
+  };
+  const refreshGates = async () => { refreshMigratedGates(); const [response, lastRun] = await Promise.all([api("/api/gates"), api("/api/gates/last-run")]); if (unkept(response, lastRun)) return; state.gateResponse = response; state.gates = Array.isArray(response.gates) ? response.gates : []; state.gateProposals = Array.isArray(response.proposals) ? response.proposals : []; state.lastGateRun = lastRun; renderGates(); };
   const renderSearchResults = () => { const target = $("#search-results"); target.hidden = state.searchResults.length === 0; target.innerHTML = state.searchResults.map((result, index) => `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-product-shell-search__result" data-selected="${index === state.searchSelection ? "true" : "false"}" aria-current="${index === state.searchSelection ? "true" : "false"}" data-search-index="${index}"><strong>${esc(result.label)}</strong><span >${esc(result.meta)} · ${esc(result.page)}</span></button>`).join(""); $$('[data-search-index]').forEach((button) => button.addEventListener("click", () => chooseSearch(Number(button.dataset.searchIndex)))); };
   const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)) : []; state.searchSelection = 0; renderSearchResults(); };
   const chooseSearch = (index = 0) => {
@@ -6611,7 +6786,7 @@ const BOOT = __PORTAL_BOOT__;
       tcrnWritePreference("locale", state.locale);
       setLocaleMenuOpen(false);
       localeTrigger.focus();
-      applyLocale(); loadLibraries(); applyRailIdentity(); renderWorkspaceLabel(); applySideNavCollapsed(state.sideNavCollapsed); renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); renderGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] }); renderAgentsFile(state.agentsDocument); renderTargetNotice();
+      applyLocale(); loadLibraries(); applyRailIdentity(); renderWorkspaceLabel(); applySideNavCollapsed(state.sideNavCollapsed); renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); renderGates(); renderMigratedGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] }); renderAgentsFile(state.agentsDocument); renderTargetNotice();
     });
   });
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });

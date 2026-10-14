@@ -72,13 +72,19 @@ Atelier 在前台运行，没有停止命令：在启动它的终端按 Ctrl-C�
 
 每条规则有「顺序」，页头写明它的用途：决定规则段在 AGENTS.md 中的渲染顺序。有顺序的规则排在前面，从小到大；其余按目录顺序。规则卡片也按这个顺序排列。已启用的规则改好顺序后点「保存顺序」，经 `rule-enable --order` 写入，并重读 AGENTS.md；未启用的规则在启用时带上所填的顺序。处于其他状态的规则（例如 `user-modified`、`update-available`、`pending`）要先处理状态再改顺序，因为经 `rule-enable` 改顺序会连带改动它的版本或段落。
 
+协调库同样在规则页与变量页管理（TCRN-CROSS-STORY-540，MIN-258 D3(c)）。选中协调库时，规则页可以启用、停用规则并调整顺序，变量页可以改变量，编辑器显示的是本机为协调库登记的目录（它协调的容器，不在任何库内）里的 AGENTS.md；规则段与变量段写进这个文件，库里记下各段的受管段记录。启停规则与改变量都经 Atelier 运行，事件记 `surface: atelier`。页首写明写入的是哪个文件。协调库只登记为库自身的路径、没有库外目录时，启停规则只记进库里、不写文件，页首写明原因，先用 `library-register` 登记它协调的目录。
+
 ## 变量
 
-变量页管理自定义变量：每个变量记录顺序、类型、值和说明，写入后渲染进 AGENTS.md 的自定义变量段。第一列「顺序」的用途写在页头：它决定变量在自定义变量段中的渲染顺序，有顺序的变量排在前面，从小到大，其余按名称；表格也按这个顺序排列。保存经 `variable-set --order` 写入，顺序留空就是不设顺序。值或说明形如凭据时以 `VARIABLE_SECRET_SHAPED` 拒绝。系统变量段由引擎渲染，内容来自模型分类、模型档位与 `design.authority` 等系统变量；它们只能经 Atelier 修改，在设置页和两张模型页里改。
+变量页管理自定义变量：每个变量记录顺序、类型、值和说明，写入后渲染进 AGENTS.md 的自定义变量段。第一列「顺序」的用途写在页头：它决定变量在自定义变量段中的渲染顺序，有顺序的变量排在前面，从小到大，其余按名称；表格也按这个顺序排列。保存经 `variable-set --order` 写入，顺序留空就是不设顺序。值或说明形如凭据时以 `VARIABLE_SECRET_SHAPED` 拒绝。系统变量段由引擎渲染，内容来自模型分类、模型档位与 `design.authority` 等系统变量；它们只能经 Atelier 修改，在设置页和两张模型页里改。协调库的系统变量段改列 `execution.maxConcurrentSubagents`、四个 `quota.*` 与 `design.*`，不列 `models.*`。在设置页改这些键或 `artifact.language`（决定两段的语言）后，Atelier 随即重新渲染 AGENTS.md 并重读规则页。
 
 ## 门
 
 门记录由命令 argv、项目内根目录、覆盖（路径 glob 或精确 work id）、是否必需、是否启用以及是否仅发布时运行组成，另可带一个顺序。门表分三列：顺序、门与覆盖。每道门的启用、必需与仅发布时运行三个开关，同命令、根目录和保存、移除操作一起放在「门」一列；覆盖一列能完整显示一个 work id。门表、两张模型表与变量表在 1024 像素宽时也不需横向滚动，每一列和每行的操作都在表内；窄宽下放不下的字段值在输入框内滚动显示。门表第一列「顺序」的用途写在页头：它决定门的计划、运行与显示顺序，有顺序的门排在前面，从小到大，其余按名称。保存经 `gates-config-set --order` 写入；顺序留空时保留已记的顺序。顺序不进入门声明摘要，只改顺序不会让已有的运行记录失效。计划门时，引擎按各根目录相对 `--base` 的 Git 变更与覆盖中的路径 glob 求交；带 `--work-id` 时，适用于这些 Story 的门也被选中：全部启用的必需门、Story 或其祖先 `gates` 字段点名的门，以及覆盖中写了 Story 或其祖先 work id 的门；发布计划会列出所有启用的门。运行会收集所有结果。Story 完成之前，适用于它的每一道门都须在当前树与当前门声明下、以带它的 `--work-id` 运行并为绿，覆盖不必列出 Story（TCRN-CROSS-STORY-525，MIN-256）：项目没有启用的门，或没有一道门适用于这张 Story 时不拦；没有绑定该 Story 的运行记录报 `WORK_DONE_GATES_NOT_RUN`，适用门缺结果报 `WORK_DONE_GATES_NOT_COVERED`，适用门失败报 `WORK_DONE_GATES_RED`。路径 glob 只选择和运行门，不把门绑定到 Story。
+
+### 迁移来的门
+
+门页的「迁移来的门」一区就是迁移门页（TCRN-CROSS-STORY-541，MIN-258 D3）：它列出迁移从旧链带过来、仍挡住工单转 done 的门（`work-gate-list`，待处理与已阻塞的），每道门写明标题、id 与所属工单；已经放行的门列在后面，写明谁放行、何时与原因。放行一道门：先在它下面写明原因，再点「放行这道门」，核对确认提示后点「放行」。门户以 `TCRN_PORTAL_ACTOR` 为行动者、在 `EINZBERN_SURFACE=atelier` 下运行 `work-gate-release --id <门> --reason <原因>`，事件记 `surface: atelier`，门里记下放行者、时刻与原因。原因留空或只有空白时不运行，页面提示先写原因（`PORTAL_GATE_RELEASE_REASON_REQUIRED`）。模型手里有点名这道门的 Owner 决定时，也可以自己加 `--decided-in` 运行同一条命令。
 
 ## 待批准的门与规则改动
 
@@ -87,6 +93,13 @@ Atelier 在前台运行，没有停止命令：在启动它的终端按 Ctrl-C�
 - 「批准」就是写入：门页经 `proposal-approve` 声明或删除这道门，规则页经 `proposal-approve` 启用或禁用这条规则并写 AGENTS.md；两者都以 `TCRN_PORTAL_ACTOR` 为行动者，事件记 `surface: atelier` 与 `decidedIn: proposal:<键>@<提交时刻>`。批准后页面重读列表：门表或规则卡片出现这项改动，待批准区随之清空。
 - 「拒绝」经 `proposal-reject` 把这一项改为已拒绝，事件同样记 `surface: atelier`。已拒绝的项留在区里，只读显示拒绝者与时刻，不再有「批准」按钮；模型重新提出后才能再批准。
 - 按钮带着页面显示的提交时刻。其间有人重新提出过同一项时，批准或拒绝报 `PROPOSAL_STALE`，重读页面后按新内容处理；已拒绝的项报 `PROPOSAL_NOT_PENDING`。
+
+## 库：链身份与注册表
+
+状态页的「库」页签就是库页（TCRN-CROSS-STORY-541，MIN-258 D3），管两件以前只能在终端做的事。
+
+- **链身份。** 「链身份」一区显示所选库的角色与所属协调库。改它：选角色（项目库或协调库）与所属协调库（协调库只能属于它自己；项目库从本机登记的协调库中选），点「核对声明」，确认提示写明声明后的角色与协调库，再点「声明」。门户以 `TCRN_PORTAL_ACTOR` 为行动者、在 `EINZBERN_SURFACE=atelier` 下按库级运行 `chain-declare --role <角色> --coordination-library-id <协调库 id>`，之后页面按新角色重读。`chain-declare` 是唯一保留硬约束的写入：模型经命令行运行一律被拒（`MODEL_WRITE_REFUSED`，补救提示指向这里），引用决定也不行，所以只在这里声明。
+- **注册表登记。** 「已登记的库」列出本机注册表的每条登记，写明项目路径与库路径是否仍然存在。库已删掉、路径不存在的登记（`doctor` 以 `REGISTRY_LIBRARY_MISSING` 提示）可以在这里移除：点「从注册表移除」，门户先运行 `library-unregister --project <项目路径>` 只出计划，页面显示要移除的登记、同一库保留的其他登记、剩余条数和备份位置；点「移除登记」才加 `--yes true` 执行，先把 `registry.json` 复制到设备目录的 `backups/<UTC>-library-unregister/`，再移除这一条。当前所选的登记不能移除，先切换到别的库（`PORTAL_LIBRARY_UNREGISTER_SELECTED`）。
 
 ## 切换知识库
 

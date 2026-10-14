@@ -9,7 +9,7 @@ import { RUNTIME_CAPACITY } from "../scripts/lib/runtime-capacity.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -45,6 +45,8 @@ const ACTOR = (process.env.TCRN_PORTAL_ACTOR ?? "").trim();
 const BUNDLED_CLI = join(portalRoot, "..", "scripts", "einzbern.mjs");
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? BUNDLED_CLI;
 const ATELIER_SURFACE = Object.freeze({ EINZBERN_SURFACE: "atelier" });
+// The entry a gate released through work-gate-release carries: who, when and why (specs/gate-v1.md, Release).
+const GATE_RELEASE_ENTRY = "gate-evidence:atelier-release";
 const PROSE_FILES = Object.freeze(["AGENTS.md"]);
 
 function argument(name, fallback) {
@@ -139,6 +141,11 @@ async function readLibraryCatalog() {
   }));
 }
 
+// TCRN-CROSS-STORY-541 GWT3 (MIN-258 D3; TCRN-CROSS-SUB-513): whether each registered entry's project and
+// library paths still exist, so the Library tab can show an entry whose library is gone.
+const pathExists = (path) => stat(path).then(() => true, () => false);
+const registryPaths = (libraries) => Promise.all(libraries.map(async ({ projectPath, libraryPath }) => ({ projectPath, projectPathExists: await pathExists(projectPath), libraryPathExists: await pathExists(libraryPath) })));
+
 let libraryCatalog;
 try { libraryCatalog = await readLibraryCatalog(); } catch (error) { failStartup(error); }
 if (libraryCatalog.length === 0) {
@@ -226,11 +233,21 @@ function registrationBinding(library) {
   if (candidates.length === 1) return { status: "bound", entry: candidates[0], candidates: [] };
   return { status: candidates.length === 0 ? "unconfigured" : "ambiguous", entry: null, candidates: candidates.map((entry) => entry.projectPath) };
 }
-// The prose and managed output of a target: none for a coordination chain or a target without a
-// project. /api/library, /api/configuration-scope and /api/agents-md all name the root this gives.
-const proseBinding = (library = currentLibrary()) => library.chain?.role === "coordination" || library.configurationProjectId == null
-  ? { status: "unconfigured", entry: null, candidates: [] }
-  : registrationBinding(library);
+// The prose and managed output of a target: none for a target without a project. /api/library,
+// /api/configuration-scope and /api/agents-md all name the root this gives.
+// TCRN-CROSS-STORY-540 GWT5 (MIN-258 D3(c), which replaces MIN-245 D6; TCRN-CROSS-SUB-508): a coordination
+// chain's are its registration's, as its runtime rules are (projectWrite): the project root this device
+// registered for it, the container it coordinates. A registration whose root is the library, or lies within
+// it or an old chain container, has none: the engine then records a rule change alone and refuses a render
+// (MANAGED_SECTION_OUTPUT_UNREGISTERED), and the Rules page says so.
+const UNCONFIGURED_BINDING = Object.freeze({ status: "unconfigured", entry: null, candidates: [] });
+function proseBinding(library = currentLibrary()) {
+  if (library.chain?.role !== "coordination") return library.configurationProjectId == null ? UNCONFIGURED_BINDING : registrationBinding(library);
+  const binding = registrationBinding(library);
+  if (binding.entry === null) return binding;
+  try { proseRootFor(binding.entry); } catch { return UNCONFIGURED_BINDING; }
+  return binding;
+}
 const boundProseLibrary = (library = currentLibrary()) => proseBinding(library).entry;
 const currentProseRoot = () => { const bound = boundProseLibrary(); return bound === null ? null : proseRootFor(bound); };
 const AMBIGUOUS_BINDING = "PORTAL_PROJECT_BINDING_AMBIGUOUS";
@@ -528,8 +545,14 @@ const removeSetting = (key, library) => governedWrite((common) => ["settings-rem
 // TCRN-CROSS-STORY-508 R8 (TCRN-CROSS-SUB-409, contract C-R14-6): the keys the system variables
 // section of AGENTS.md shows. A write of one, or its removal, renders the managed sections again, so
 // AGENTS.md follows the value; the escalation keys join the section under their prefix.
+// TCRN-CROSS-STORY-540 GWT2 (Q4, Q5; TCRN-CROSS-SUB-508): a coordination library's section shows its
+// orchestration limits and the design bindings instead of the model tables, and both variable sections are
+// written in the library's artifact language, so a write of one of those renders them again as well.
 const SYSTEM_VARIABLE_KEYS = Object.freeze(["design.authority", "models.category", "models.tiers"]);
-const rendersSystemVariables = (key) => SYSTEM_VARIABLE_KEYS.includes(key) || key.startsWith("models.escalation.") || key.startsWith("design.");
+const COORDINATION_SYSTEM_VARIABLE_KEYS = Object.freeze(["execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent"]);
+const rendersSystemVariables = (key, library = currentLibrary()) => key === "artifact.language" || key.startsWith("design.") || (library.chain?.role === "coordination"
+  ? COORDINATION_SYSTEM_VARIABLE_KEYS.includes(key)
+  : SYSTEM_VARIABLE_KEYS.includes(key) || key.startsWith("models.escalation."));
 
 // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5, R6; contracts C-R14-2, C-R14-6): a collection key is
 // a table of records, written whole, so the engine judges the whole table and refuses it with one
@@ -1165,7 +1188,62 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     }
     if (request.method === "GET" && pathname === "/api/libraries") {
       const libraries = await refreshLibraryCatalog();
-      send(response, 200, { ok: true, reasonCode: "PORTAL_LIBRARIES_READY", libraries: libraries.map(publicLibrary), selected: publicLibrary(currentLibrary()) });
+      send(response, 200, { ok: true, reasonCode: "PORTAL_LIBRARIES_READY", libraries: libraries.map(publicLibrary), selected: publicLibrary(currentLibrary()), paths: await registryPaths(libraries) });
+      return;
+    }
+    // TCRN-CROSS-STORY-541 GWT3 (MIN-258 D3; TCRN-CROSS-SUB-513): the Library tab takes an entry out of this
+    // device's registry as library-unregister does: its plan first, and the removal once the page confirms it
+    // (--yes true), which copies registry.json into the device's backups first. The command takes the registry
+    // lock itself and names no library, so it runs outside the governed write of the selection, whose registry
+    // lock it would wait on. The selected entry is refused: the page's every later read and write would be.
+    if (request.method === "POST" && pathname === "/api/libraries/unregister") {
+      const body = await readJsonBody(request);
+      const projectPath = String(body.projectPath ?? "");
+      const confirmed = body.confirm === true;
+      if (projectPath === currentLibrary().projectPath) { send(response, 409, { ok: false, reasonCode: "PORTAL_LIBRARY_UNREGISTER_SELECTED", projectPath }); return; }
+      const result = await cliResult(["library-unregister", "--project", projectPath, "--at", nextOccurredAt(), ...(confirmed ? ["--yes", "true"] : [])], ATELIER_SURFACE);
+      const libraries = result.ok && confirmed ? await refreshLibraryCatalog() : libraryCatalog;
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok, confirmed, libraries: libraries.map(publicLibrary), paths: await registryPaths(libraries) });
+      return;
+    }
+    // TCRN-CROSS-STORY-541 GWT2 (MIN-258 D3; TCRN-CROSS-SUB-513): the Library tab declares the selected library's
+    // chain identity, its role and the coordination library it belongs to: chain-declare, which runs for Atelier
+    // only (a model's run is refused, citing a decision or not), at the library level and written as
+    // TCRN_PORTAL_ACTOR. The selection keeps its registration and takes the role the library now has.
+    if (request.method === "POST" && pathname === "/api/chain-identity") {
+      const selected = currentLibrary();
+      const body = await readJsonBody(request);
+      const result = await governedWrite((common) => ["chain-declare", ...common, "--role", String(body.role ?? ""), "--coordination-library-id", String(body.coordinationLibraryId ?? "")], ATELIER_SURFACE, { ...selected, configurationProjectId: null });
+      if (!result.ok) { send(response, 409, { ...result.body, ok: false }); return; }
+      const declared = (await refreshLibraryCatalog()).find((entry) => entry.libraryId === selected.libraryId && entry.projectPath === selected.projectPath);
+      if (declared !== undefined && selectedLibrary.libraryId === selected.libraryId && selectedLibrary.projectPath === selected.projectPath) {
+        selectedLibrary = { ...selectedLibrary, chain: declared.chain };
+        const context = requestContext.getStore();
+        context.library = { ...context.library, chain: declared.chain };
+      }
+      send(response, 200, { ...result.body, ok: true, library: publicLibrary(currentLibrary()), libraries: libraryCatalog.map(publicLibrary) });
+      return;
+    }
+    // TCRN-CROSS-STORY-541 GWT2 (MIN-258 D3; TCRN-CROSS-SUB-513): the Gates page lists the gates a migration
+    // carried over that still hold their work item back (work-gate-list), and the ones released through
+    // work-gate-release with who, when and why; and it releases one: work-gate-release for Atelier, written as
+    // TCRN_PORTAL_ACTOR, with the reason the page requires. A gate is the library's, so neither names a
+    // configuration project.
+    if (request.method === "GET" && pathname === "/api/migrated-gates") {
+      const listing = ["work-gate-list", "--workspace", currentLibrary().libraryPath];
+      const [holding, satisfied] = await Promise.all([cliResult(listing), cliResult([...listing, "--status", "satisfied"])]);
+      if (!holding.ok || !satisfied.ok) { send(response, 502, { ...(holding.ok ? satisfied.body : holding.body), ok: false, gates: [], released: [] }); return; }
+      send(response, 200, { ok: true, reasonCode: "PORTAL_MIGRATED_GATES_READY", gates: holding.body.records ?? [], released: (satisfied.body.records ?? []).filter((gate) => gate.extensions?.[GATE_RELEASE_ENTRY] !== undefined) });
+      return;
+    }
+    if (request.method === "POST" && pathname === "/api/migrated-gates/release") {
+      const selected = currentLibrary();
+      const body = await readJsonBody(request);
+      const id = String(body.id ?? "");
+      const reason = String(body.reason ?? "");
+      if (reason.trim() === "") { send(response, 400, { ok: false, reasonCode: "PORTAL_GATE_RELEASE_REASON_REQUIRED", id }); return; }
+      const result = await governedWrite((common) => ["work-gate-release", ...common, "--id", id, "--reason", reason], ATELIER_SURFACE, { ...selected, configurationProjectId: null });
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok });
       return;
     }
     // The switch reads the registry afresh, so a library registered after boot can be chosen and
@@ -1207,7 +1285,7 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       const declaredScope = (await settingsCatalog(library)).settings.find((entry) => entry.key === key)?.scope;
       const writeTarget = declaredScope === "library" ? { ...library, configurationProjectId: null } : library;
       const result = reset ? await removeSetting(key, writeTarget) : await writeSetting(key, value, writeTarget);
-      const render = result.ok && rendersSystemVariables(key) ? await renderManagedAgents(library) : null;
+      const render = result.ok && rendersSystemVariables(key, library) ? await renderManagedAgents(library) : null;
       const collection = COLLECTION_KEYS.includes(key);
       const catalog = result.ok || collection ? await settingsCatalog(library) : null;
       const readback = result.ok ? catalog?.settings.find((entry) => entry.key === key) ?? null : null;

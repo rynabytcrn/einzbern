@@ -52,6 +52,19 @@ const HISTORICAL_EVIDENCE = new Map([
     outputSha256: "6d5b7fe9a7e8b44981e84ea2e544b7ed104697faf2a631bf62a6642933e168ec",
     typescriptVersion: "5.9.3",
   }],
+  // TCRN-CROSS-STORY-533. SUB-473 (dc77e6d6) added observedReasonCodes and unreconciledReasons
+  // to the absent-source leg of this proof. The block records the proof as it stood before that
+  // change, so it replays in a snapshot from before it whose proof printed the block byte for
+  // byte; the current proof keeps the new fields.
+  ["docs/reports/init-029-component-loop/evidence/STORY-252-ds-css-snapshot.md", {
+    commit: "f58a238b2df55bd9c55144ea718cf807dc1dc5f1",
+    committedAt: "2026-10-14T06:51:28+08:00",
+    bytes: 5188,
+    sha256: "677ccd503004af2fb26370e2f5317082b913f10f5799667d27c26f16309a27c0",
+    command: "node scripts/ds-component-css-proof.mjs",
+    outputBytes: 1167,
+    outputSha256: "34649dc46d51fee1367a96f20515f7d186cbac0391c8250cb48019abf477cca9",
+  }],
 ]);
 const CURRENT_PORTAL_PROOF_FILES = [
   "portal/index.html",

@@ -45,6 +45,7 @@ import {
   verifySnapshotManifest,
   transitionWork,
   assertWorkGatesClear,
+  assertWorkLeaseAdmits,
   releaseGate,
   annotateWork,
   claimWork,
@@ -3368,8 +3369,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // are green on the tree as it is; the refusal names every red required gate.
       // TCRN-CROSS-STORY-489: before those, a gate a migration carried over that still holds the work
       // item is named (WORKSPACE_GATE_PENDING, with work-gate-release).
+      // TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-471): before either, the item is held to the leases as the
+      // write itself would hold it: while another actor's unexpired lease binds the item, the
+      // transition is refused with WORK_LEASED and no gate is judged.
       const before = values.status === "done" ? await materializeWorkspace(workspace) : null;
-      if (before !== null) assertWorkGatesClear(before, [values.id ?? ""]);
+      if (before !== null) {
+        assertWorkLeaseAdmits(before, values.id ?? "", values.actor ? values.actor : undefined, at);
+        assertWorkGatesClear(before, [values.id ?? ""]);
+      }
       const verdict: DoneGatesVerdict | null = before === null
         ? null
         : await doneGates(before, [values.id ?? ""], [], values.project);

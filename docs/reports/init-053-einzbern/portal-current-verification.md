@@ -40,18 +40,18 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "currentSources": [
     {
       "path": "portal/index.html",
-      "bytes": 410269,
-      "sha256": "5949fd9c4456bed29903407e60288f0a1de389bff66ce5ed9148bb16bd363a3d"
+      "bytes": 428639,
+      "sha256": "5f88db446bc9250643481505afeac3cc7fd7a4355a7ffa0117f1777dd49c42e4"
     },
     {
       "path": "portal/locales.js",
-      "bytes": 215530,
-      "sha256": "5b2dc49b61739be19b2c94c8d4b53417cd0258e136317d50697fd2eea5f92dfa"
+      "bytes": 232886,
+      "sha256": "d7ab9e2057d26c20a4f4d399e86b309000e51979da5c337d2b427eb97a13742f"
     },
     {
       "path": "portal/portal.mjs",
-      "bytes": 77738,
-      "sha256": "7bb743e0273c79a0ff9a9007d72de076e3ebf30d02f3a08378f01708e87b98e8"
+      "bytes": 84751,
+      "sha256": "3a71440f605d77eb083747868fee6fdb2ea3aee26096e25d43065ccf763fc660"
     },
     {
       "path": "portal/scripts/i18n-proof.mjs",
@@ -70,18 +70,18 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/ui-presence.test.mjs",
-      "bytes": 269489,
-      "sha256": "2d70fbadf1c00deffc137180284d08a414880bef99b9dc8442544f064d8ef7c9"
+      "bytes": 280415,
+      "sha256": "79bb163027106a07e09028f1aec27c79e110c4d667f478c69ebb83198eb40f59"
     },
     {
       "path": "packages/core/src/doctor.ts",
-      "bytes": 30986,
-      "sha256": "17fa586350ff27e30016a3758de0568690e189d7cd194c90d29c2729bb037cc2"
+      "bytes": 33434,
+      "sha256": "f2ff6a580e629813b69895ccb162c930772ed1684a17b68bab291a6e20737cc6"
     },
     {
       "path": "tests/doctor.test.mjs",
-      "bytes": 17001,
-      "sha256": "d0aa085e459d97f3c3e9f55d419a4004073958524caa1c072338f501ceed550e"
+      "bytes": 21307,
+      "sha256": "68e58cdba1460e7021c6fc4fc1573e841dcbb8e3c297a9b15391c5abda50b597"
     },
     {
       "path": "scripts/verify-portal.mjs",
@@ -102,11 +102,18 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "hostRoleScan": {
     "scan": "rg --no-line-number 'claude-code|codex|reviewer|role ===|host ===|host \\?' portal/index.html | sed 's/^ *//' | sort -u",
     "exitCode": 0,
-    "matchCount": 4,
+    "matchCount": 11,
     "matches": [
       "$(\"#design-authority\").hidden = state.settings?.chain?.role === \"coordination\" || state.settingGroup !== authorityGroup || designAuthorityState.status === \"unset\";",
       ": target?.chain?.role === \"coordination\" ? t(\"projects.coordination\") : t(\"projects.unnamed\");",
+      "const chainRoleLabel = (role) => role === \"coordination\" ? t(\"chainIdentity.roleCoordination\") : role === \"project\" ? t(\"chainIdentity.roleProject\") : t(\"chainIdentity.undeclared\");",
       "const collectionReadOnly = (key) => state.settings?.chain?.role === \"coordination\" && Array.isArray(state.settings?.settings) && currentSetting(key) === undefined;",
+      "const declared = BOOT.library?.chain?.role === \"project\" ? BOOT.library.chain.coordinationLibraryId : null;",
+      "const registered = (BOOT.libraries || []).filter((library) => library.chain?.role === \"coordination\" && library.libraryId !== own).map((library) => library.libraryId);",
+      "const rendersSystemVariables = (key) => String(key) === \"artifact.language\" || String(key).startsWith(\"design.\") || (state.settings?.chain?.role === \"coordination\"",
+      "if (!state.chainDeclarePending) $(\"[data-chain-role]\", form).value = identity?.role === \"coordination\" ? \"coordination\" : \"project\";",
+      "if (role === \"coordination\") return own ? [own] : [];",
+      "select.disabled = role === \"coordination\" || choices.length === 0;",
       "select.hidden = state.settings?.chain?.role === \"coordination\";"
     ]
   },
@@ -132,9 +139,9 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
         "leg": "key-coverage",
         "ok": true,
         "reasonCode": "EVERY_KEY_TRANSLATED",
-        "keyCount": 503,
+        "keyCount": 543,
         "localeCount": 5,
-        "expectedStrings": 2515,
+        "expectedStrings": 2715,
         "gaps": []
       },
       {

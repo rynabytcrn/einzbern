@@ -22,6 +22,9 @@ const execFileAsync = promisify(execFile);
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
 const ACTOR = "agent:test-portal";
+// The portal is a loopback server on this machine; the offline boundary allows the page's requests to
+// it, made as the page makes them, through the platform's request function.
+const loopback = globalThis.fetch;
 
 let second = 0;
 const at = () => { second += 1; return new Date(Date.UTC(2026, 9, 15, 3, 0, second)).toISOString().replace(".000Z", "Z"); };
@@ -78,7 +81,7 @@ async function fixture(context, prefix) {
     });
     child.on("exit", (code) => { clearTimeout(timer); reject(new Error(`portal exited ${code}: ${buffer}`)); });
   });
-  const page = await (await fetch(url)).text();
+  const page = await (await loopback(url)).text();
   const boot = JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]);
   // The target the page names, as the page keeps it: taken again from every switch it makes.
   let target = { epoch: boot.epoch, libraryId: boot.library.libraryId, projectId: boot.library.configurationProjectId ?? null };
@@ -86,7 +89,7 @@ async function fixture(context, prefix) {
     const options = method === "GET"
       ? { headers: { "x-portal-token": boot.token } }
       : { method, headers: { "content-type": "application/json", "x-portal-token": boot.token, "x-configuration-target": JSON.stringify(target) }, body: JSON.stringify(body) };
-    const response = await fetch(new URL(path, url), options);
+    const response = await loopback(new URL(path, url), options);
     const answer = await response.json();
     if (path === "/api/library" && answer.ok) target = { epoch: answer.epoch, libraryId: answer.library.libraryId, projectId: answer.library.configurationProjectId ?? null };
     return { status: response.status, body: answer };

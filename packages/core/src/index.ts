@@ -585,7 +585,9 @@ export {
   validateCorePersonaProfileShape,
 } from "./reference-profiles.js";
 export type { CorePersonaBundle, CorePersonaProfile, CorePersonaReasonCode } from "./reference-profiles.js";
-export { WORK_BATCH_SCHEMA_VERSION, WORK_BATCH_VERBS, applyWorkBatch, workBatchReceipt } from "./work-batch.js";
+// TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-472): work-batch holds its transition and annotation members to
+// the leases before it judges the gates.
+export { WORK_BATCH_SCHEMA_VERSION, WORK_BATCH_VERBS, applyWorkBatch, assertWorkBatchLeases, workBatchReceipt } from "./work-batch.js";
 export type { WorkBatchOptions, WorkBatchProblem } from "./work-batch.js";
 // TCRN-CROSS-STORY-472 R2, R3: relations between work records; the forward direction is stored,
 // the reverse projected when read.

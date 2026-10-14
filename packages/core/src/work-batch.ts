@@ -30,10 +30,11 @@ import { normalizeInvolvedProjects } from "./involved-projects.js";
 
 import {
   PROTOCOL_LIMITS,
+  ProtocolError,
   canonicalExternalKey,
   deriveStableId,
 } from "../../protocol/src/index.js";
-import type { JsonValue } from "../../protocol/src/index.js";
+import type { JsonValue, WorkRecord } from "../../protocol/src/index.js";
 import {
   WorkspaceError,
   appendEvents,
@@ -42,6 +43,7 @@ import {
   transitionWorkDelta,
 } from "./workspace.js";
 import type { MutationDelta, WorkspaceState } from "./workspace.js";
+import { WorkLeaseError, assertWorkLeaseAdmits } from "./work-lease.js";
 import type { WorkRelationsInput } from "./work-relations.js";
 
 export const WORK_BATCH_SCHEMA_VERSION = "tcrn.work-batch.v1" as const;
@@ -78,6 +80,16 @@ function referencedId(member: Readonly<Record<string, unknown>>): string | null 
   if (isNonEmptyString(member.id)) return member.id;
   if (isNonEmptyString(member.externalKey)) return deriveStableId("work", canonicalExternalKey(member.externalKey));
   return null;
+}
+
+// The parent a work-create member puts the record it creates under: `parentId`, else the record
+// `parentExternalKey` derives, else none.
+function createdParentId(member: Readonly<Record<string, unknown>>): string | null {
+  return isNonEmptyString(member.parentId)
+    ? member.parentId
+    : isNonEmptyString(member.parentExternalKey)
+      ? deriveStableId("work", canonicalExternalKey(member.parentExternalKey))
+      : null;
 }
 
 // The shape of a member's relations: an object of the five known fields, each a list of strings.
@@ -197,11 +209,7 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string,
       projectId: member.projectId as string,
       externalKey: member.externalKey as string,
       kind: member.kind as never,
-      parentId: isNonEmptyString(member.parentId)
-        ? member.parentId
-        : isNonEmptyString(member.parentExternalKey)
-          ? deriveStableId("work", canonicalExternalKey(member.parentExternalKey))
-          : null,
+      parentId: createdParentId(member),
       ...(member.status === undefined ? {} : { status: member.status as never }),
       ...(member.scope === undefined ? {} : { scope: member.scope as string }),
       ...(member.decidedBy === undefined ? {} : { decidedBy: member.decidedBy as readonly string[] }),
@@ -283,25 +291,80 @@ export async function applyWorkBatch(
     const reason = typeof carried === "string" && carried.length > 0 ? carried : "WORKSPACE_ERROR";
     const detail = error instanceof Error ? error.message : String(error);
     const phase = (error as { memberPhase?: unknown }).memberPhase;
-    const member = members[failing] as Readonly<Record<string, unknown>>;
-    // The apply pass is ordered and all-or-nothing, so exactly one member is ever
-    // evaluated-and-failed and everything after it is unevaluated. Reporting the second
-    // group as its own list is the structural distinction: those members are not being
-    // called invalid, they are being called unjudged.
-    throw new WorkspaceError("WORK_BATCH_REFUSED", JSON.stringify({
-      stage: "apply",
-      failed: {
-        index: failing,
-        verb: isObject(member) ? member.verb ?? null : null,
-        // "the closure refused this member" and "the event this member produced could not
-        // be built" are different facts about the same index, and a caller deciding what
-        // to fix needs to know which.
-        phase: typeof phase === "string" ? phase : "delta",
-        reasonCode: reason,
-        detail,
-      },
-      notEvaluated: Array.from({ length: members.length - failing - 1 }, (_, offset) => failing + offset + 1),
-    }));
+    // "the closure refused this member" and "the event this member produced could not be
+    // built" are different facts about the same index, and a caller deciding what to fix
+    // needs to know which.
+    throw applyRefusal(members, failing, typeof phase === "string" ? phase : "delta", reason, detail);
+  }
+}
+
+// The refusal of the apply pass. The apply pass is ordered and all-or-nothing, so exactly one
+// member is ever evaluated-and-failed and everything after it is unevaluated. Reporting the second
+// group as its own list is the structural distinction: those members are not being called invalid,
+// they are being called unjudged.
+function applyRefusal(members: readonly unknown[], failing: number, phase: string, reasonCode: string, detail: string): WorkspaceError {
+  const member = members[failing];
+  return new WorkspaceError("WORK_BATCH_REFUSED", JSON.stringify({
+    stage: "apply",
+    failed: {
+      index: failing,
+      verb: isObject(member) ? member.verb ?? null : null,
+      phase,
+      reasonCode,
+      detail,
+    },
+    notEvaluated: Array.from({ length: members.length - failing - 1 }, (_, offset) => failing + offset + 1),
+  }));
+}
+
+// A key that does not canonicalize is for the shape or the apply pass to refuse, not for the lease check.
+function resolvedOrNull<T>(resolve: () => T): T | null {
+  try {
+    return resolve();
+  } catch (error) {
+    if (error instanceof ProtocolError) return null;
+    throw error;
+  }
+}
+
+/**
+ * TCRN-CROSS-STORY-536 (MIN-257 D6; TCRN-CROSS-SUB-472): hold every transition and annotation member
+ * of a batch to the leases at `occurredAt`, as the apply pass would hold it, before anything else
+ * judges the batch -- the gates of a Story it takes to done above all. Members are judged in order,
+ * and a record an earlier member creates sits under the parent that member names, so a member that
+ * acts on it is bound by a lease above it. The first member another actor's unexpired lease binds
+ * refuses the whole batch with the WORK_BATCH_REFUSED of the apply pass (EPIC-149 R4 Q3): failed
+ * names the member, WORK_LEASED, and in its detail the holder and when the lease runs out; the
+ * members after it are not evaluated. A work-create member is not held by a lease (MIN-256 R1 Q7),
+ * and a document that is not a batch is left for applyWorkBatch to refuse.
+ */
+export function assertWorkBatchLeases(state: Pick<WorkspaceState, "configRecords" | "work">, document: unknown, options: WorkBatchOptions): void {
+  if (!isObject(document) || document.schemaVersion !== WORK_BATCH_SCHEMA_VERSION || !Array.isArray(document.members)) return;
+  const members = document.members as readonly unknown[];
+  // The lease walk reads only a record's id and parentId, so a record a member creates joins the
+  // view as those two; a later entry for an id takes the place of an earlier one.
+  const work: WorkRecord[] = [...state.work];
+  const view = { configRecords: state.configRecords, work };
+  for (const [index, member] of members.entries()) {
+    if (!isObject(member)) continue;
+    if (member.verb === "work-create") {
+      const created = resolvedOrNull(() => isNonEmptyString(member.externalKey)
+        ? { id: deriveStableId("work", canonicalExternalKey(member.externalKey)), parentId: createdParentId(member) }
+        : null);
+      if (created !== null) work.push(created as unknown as WorkRecord);
+      continue;
+    }
+    if (member.verb !== "work-transition" && member.verb !== "work-annotate") continue;
+    const id = resolvedOrNull(() => referencedId(member));
+    if (id === null) continue;
+    try {
+      assertWorkLeaseAdmits(view, id, options.actorId, options.occurredAt);
+    } catch (error) {
+      // Only a lease that binds the member is the member's; an instant that does not parse is the
+      // write's, refused as work-transition refuses it.
+      if (error instanceof WorkLeaseError && error.reasonCode === "WORK_LEASED") throw applyRefusal(members, index, "delta", error.reasonCode, error.message);
+      throw error;
+    }
   }
 }
 

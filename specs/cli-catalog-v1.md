@@ -246,11 +246,23 @@ current and the previous version, the stagings whose unpacked release (`einzbern
 current version, and any other entry of `trash/`; `remove` holds every other staging and
 pre-update backup, with `removeBytes`; `refused` holds a symbolic link, or an area whose real path
 is not in the device directory, which is never touched. Any other entry of `backups/` is judged by
-its contents (TCRN-CROSS-SUB-519): one that holds the skill copies alone, as a directory
-`skill-copies`, is in `remove` (`skill-copies-backup`), since their release places them again; one
-that holds an original a write replaced, `host-hooks`, `writable-roots`, `managed-sections`,
-`crest-bodies` or a file `registry.json`, is kept (`holds-originals`), and so is one that holds
-nothing or anything else, or is a file (`unrecognised-backup`). Without `--yes true`
+its contents (TCRN-CROSS-SUB-519): one that holds an original a write replaced, `host-hooks`,
+`writable-roots`, `managed-sections`, `crest-bodies`, `launchers`, `registry` or a file
+`registry.json`, is kept (`holds-originals`). One that holds the skill copies alone, as a directory
+`skill-copies`, is read further down (TCRN-CROSS-SUB-521), again with `lstat` alone and no link
+followed, as far as the places below and, of a copy, only whether it holds anything, while
+`contents` still names only what the entry holds one level down. It is in `remove`
+(`skill-copies-backup`) only when all it holds is each host's copy as an update replaced it, a
+directory `<host skill root>/mana-orchestrate` that is not empty, for the two roots the skill is
+placed in (`.claude/skills`, `.agents/skills`), since a release places these copies again. When it
+holds anything the migration moved there, the old helper's copy
+`<root>/<old helper name>` from any root that helper was copied into (`.claude/skills`,
+`.agents/skills`, `.codex/skills`) or an install marker under a directory named as the old device
+directory, whatever `lstat` finds each to be since it was moved whole, it is kept
+(`holds-originals`), whatever else it holds: those are the only copies there are. Anything else
+under `skill-copies`, a name on the way to none of these places, a file or a link where a directory
+belongs, or an empty directory, keeps the entry (`unrecognised-backup`), and so does an entry that
+holds nothing or anything else, or is a file. Without `--yes true`
 it answers `DEVICE_CLEAN_PLAN_READY` with that plan and writes nothing. With `--yes true` it makes
 the plan again, checks each entry of `remove` once more and deletes it with what it holds, links
 removed as links and never followed, answering `DEVICE_CLEANED` with the plan, `removed` (path and

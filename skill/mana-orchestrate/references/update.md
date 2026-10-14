@@ -91,9 +91,15 @@ with what it holds one level down (`contents`), and writes nothing. It always ke
 backups of the current and the previous version that `engine/current` names (the previous one is
 what a rollback goes back to) and the staging of the current version; any other entry of `trash/` is
 not a staging and stays too. Of the other entries of `backups/` it clears only one that holds the
-skill copies alone (`skill-copies`), which their release places again; one that holds an original a
-write replaced (`host-hooks`, `writable-roots`, `managed-sections`, `crest-bodies`,
-`registry.json`), or anything it does not know, stays. A symbolic link, or an area that leads out
+skill copies alone (`skill-copies`), and only when, read further down without following a link,
+all they hold is each host's copy as an update replaced it (`<host skill root>/mana-orchestrate`
+under `.claude/skills` or `.agents/skills`), which a release places again (`skill-copies-backup`).
+One that holds an original a write replaced (`host-hooks`, `writable-roots`, `managed-sections`,
+`crest-bodies`, `launchers`, `registry`, `registry.json`) stays (`holds-originals`), and so does
+one whose `skill-copies` holds anything the migration moved there, the old helper's copies or the
+install markers of its retired trust chain, since those are the only copies there are. Anything
+else it does not know stays too (`unrecognised-backup`): a name it does not know, a file or a link
+where a directory belongs, or an empty directory. A symbolic link, or an area that leads out
 of the device directory, is listed as refused and never touched. Show the plan with `removeBytes`,
 and run the same command with `--yes true` only once the user agreed: it deletes what the plan
 clears, each checked again, and `DEVICE_CLEANED` names each entry it deleted with its size, and any
@@ -110,7 +116,7 @@ it could not (`failed`). Without `engine/current` it judges nothing (`DEVICE_CLE
 | Cloud drive, for a repair | `--cloud true` or `--cloud false` |
 | Navigation section, for a repair | `--navigation true` or `--navigation false` |
 | Yes at the final confirmation | `--yes true` |
-| Clear old stagings and the backups that can be rebuilt after a version change | `device-clean --at <UTC>`, then `--yes true` once the user agreed |
+| Clear old stagings and the backups that can be rebuilt after a version change: older pre-update backups and the skill copies an update replaced, never originals or what the migration moved | `device-clean --at <UTC>`, then `--yes true` once the user agreed |
 
 ## Boundaries
 
@@ -118,4 +124,5 @@ The wizard never commits, pushes, edits `.gitignore`, or deletes anything, and n
 during this task. Anything it replaces is backed up first, and the result names the backup
 directory. The one deletion is `device-clean --yes true`, after the update and once the user
 agreed: only the stagings and backups its plan clears, inside the device directory; a backup that
-holds an original stays.
+holds an original stays, the `launchers` and `registry` a write replaced and the old helper's copies
+and install markers the migration moved among them, and so does a backup it does not know.

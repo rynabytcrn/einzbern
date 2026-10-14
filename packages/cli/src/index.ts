@@ -2481,10 +2481,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // device directory gathers (device-clean.ts). Without --yes true it answers the plan
   // (DEVICE_CLEAN_PLAN_READY): each staging in trash/ and each entry of backups/, kept, cleared or
   // refused, with its size and reason; the pre-update backups of the current and the previous engine
-  // version and the stagings of the current version are kept. With --yes true it deletes the entries
-  // the plan clears, each checked again, and names each (DEVICE_CLEANED). --home is the user's home
-  // whose .einzbern is cleaned, as the machine-settings verbs take it. It writes this device's
-  // directory and no library; whoever runs it with --yes true has the user's go-ahead first.
+  // version and the stagings of the current version are kept. Any other entry of backups/ is judged
+  // by what it holds, which the plan lists as its contents (TCRN-CROSS-SUB-519, TCRN-CROSS-SUB-521);
+  // the rules are in specs/cli-catalog-v1.md, "Device directory commands". With --yes true it deletes
+  // the entries the plan clears, each checked again, and names each (DEVICE_CLEANED). --home is the
+  // user's home whose .einzbern is cleaned, as the machine-settings verbs take it. It writes this
+  // device's directory and no library; whoever runs it with --yes true has the user's go-ahead first.
   if (command === "device-clean") {
     const values = parseArguments(rest, ["at", "yes", "home"]);
     required(values, ["at"]);

@@ -11,23 +11,27 @@
 // backups of the current and the previous version and the stagings of the current version; every
 // other staging and pre-update backup is cleared. Another entry of trash/ is no staging and is kept.
 // TCRN-CROSS-SUB-519 (J7-07): any other entry of backups/ is judged by what it holds one level down,
-// listed in the plan as its contents. Only one that holds the skill copies alone is cleared, since an
-// install renders them again; one that holds an original a write replaced, or anything device-clean
-// does not know, is kept. A symbolic link, or an entry whose real path is not where its name puts it
-// in the device directory, is refused and never touched. The plan writes nothing. With --yes true the
+// listed in the plan as its contents. One that holds an original a write replaced is kept. Only one
+// that holds the skill copies alone is cleared, and only when, read further down, they are laid out
+// as an update replaced them (TCRN-CROSS-SUB-521, J8-06): each host's copy of the released skill,
+// which a release places again. The old helper's copies and the install markers the migration moved
+// there are originals and kept, and so is anything device-clean does not know. A symbolic link, or
+// an entry whose real path is not where its name puts it in the device directory, is refused and
+// never touched. The plan writes nothing. With --yes true the
 // cleared entries are deleted one by one, each checked again first, and the receipt names each with
 // its size, or why it was not deleted. Nothing outside trash/ and backups/ of the device directory is
 // ever deleted, and no link is followed: a directory goes with what it holds, a link in it as a link.
 
 import { lstat, readdir, realpath, rm } from "node:fs/promises";
-import type { Dirent } from "node:fs";
+import type { Dirent, Stats } from "node:fs";
 import { join } from "node:path";
 
 import { assertStrictInstant } from "../../protocol/src/index.js";
 import { DEVICE_HOME_ENTRIES, deviceHome as currentDeviceHome } from "./device-home.js";
 import { readEngineCurrent } from "./engine-home.js";
 import { isEngineVersion } from "./format-version.js";
-import { BRAND, DIRECTORY } from "./names.js";
+import { BRAND, DIRECTORY, LEGACY_DEVICE_DIRECTORY, LEGACY_HELPER_NAME } from "./names.js";
+import { LEGACY_SKILL_ROOTS, SKILL_COPIES_FILES, SKILL_COPY_ROOTS } from "./skill-copies.js";
 
 export const DEVICE_CLEAN_PLAN_SCHEMA_VERSION = "einzbern.device-clean-plan.v1" as const;
 // The device directory's trash/, where the install script and setup --mode update leave their stagings.
@@ -109,14 +113,35 @@ const PRE_UPDATE_BACKUP = /(?:^|-)pre-update-(.+)$/u;
 const RELEASE_TREE_PREFIX = `${BRAND.engine.id}-`;
 
 // TCRN-CROSS-SUB-519 (J7-07): what a backup other than a pre-update one may hold, one level down. The
-// skill copies a new tree replaced (skill-copies.ts) are copies of a released skill tree, which its
-// release places again. The originals a write replaced are no copies of anything: a host's hook files
-// (host-hooks.ts), a host's writable roots (host-writable-roots.ts), a project's AGENTS.md and
-// CLAUDE.md (managed-sections.ts), the bodies a clearing of the knowledge store took out of the crest
-// (knowledge-core.ts) and the registry library-unregister rewrote (registry.ts).
-const SKILL_COPIES_BACKUP = "skill-copies";
-const ORIGINALS_BACKUPS: readonly string[] = Object.freeze(["crest-bodies", "host-hooks", "managed-sections", "writable-roots"]);
+// originals a write replaced are no copies of anything: a host's hook files (host-hooks.ts), a host's
+// writable roots (host-writable-roots.ts), a project's AGENTS.md and CLAUDE.md (managed-sections.ts),
+// the bodies a clearing of the knowledge store took out of the crest (knowledge-core.ts), the
+// registry library-unregister rewrote (registry.ts), and (TCRN-CROSS-SUB-521, J8-06) the launchers and
+// the registry that setup and the migration replaced, in launchers/ and registry/ (setup-fresh.ts,
+// setup-maintain.ts, migrate-cleanup.ts, migrate-legacy.ts).
+// skill-copies/ is read further down (TCRN-CROSS-SUB-521, J8-06), since more than one write puts
+// copies there. An update moves each host's copy it replaces to <host skill root>/<skill id>
+// (installSkillCopies, skill-copies.ts), as an uninstall moves the copies it takes out
+// (setup-maintain.ts): only these are copies of a released skill tree, which its release places again.
+// The migration moves the old helper's copies to <root it was copied into>/<old helper name> and the
+// install markers its retired trust chain left to <old device directory>/<marker>
+// (applyLegacySkillCleanup, skill-copies.ts): the only copies there are, which nothing places again.
+const SKILL_COPIES_BACKUP = SKILL_COPIES_FILES.backup;
+const ORIGINALS_BACKUPS: readonly string[] = Object.freeze(["crest-bodies", "host-hooks", "launchers", "managed-sections", "registry", "writable-roots"]);
 const REGISTRY_BACKUP = "registry.json";
+// Under skill-copies/, each as its path segments joined by "/": where an update puts each host's
+// copy, and where the migration puts the old helper's copies; the markers go in a directory named as
+// the old device directory (LEGACY_DEVICE_DIRECTORY).
+const UPDATE_COPIES: readonly string[] = Object.freeze(SKILL_COPY_ROOTS.map((root) => [root.root, BRAND.helper.id].join("/")));
+const MIGRATED_COPIES: readonly string[] = Object.freeze(LEGACY_SKILL_ROOTS.map((root) => [root, LEGACY_HELPER_NAME].join("/")));
+// The directories on the way to those places, the markers' directory among them.
+const SKILL_COPIES_WAYS: ReadonlySet<string> = new Set([
+  ...[...UPDATE_COPIES, ...MIGRATED_COPIES].flatMap((path) => {
+    const segments = path.split("/");
+    return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join("/"));
+  }),
+  LEGACY_DEVICE_DIRECTORY,
+]);
 
 function missing(error: unknown): boolean {
   const code = (error as { code?: string }).code;
@@ -184,17 +209,54 @@ async function heldBy(path: string): Promise<readonly Held[]> {
   return held;
 }
 
+// What one thing under skill-copies/ is, `at` its path below it, from its lstat alone: a copy an
+// update replaced (a directory), what the migration moved there (whatever it was, since it was moved
+// whole), a directory on the way to either, or something else.
+type SkillCopiesPlace = "update" | "migration" | "way" | "unknown";
+
+function skillCopiesPlace(at: readonly string[], stats: Stats): SkillCopiesPlace {
+  const path = at.join("/");
+  if (UPDATE_COPIES.includes(path)) return stats.isDirectory() ? "update" : "unknown";
+  if (MIGRATED_COPIES.includes(path) || (at.length === 2 && at[0] === LEGACY_DEVICE_DIRECTORY)) return "migration";
+  return SKILL_COPIES_WAYS.has(path) && stats.isDirectory() ? "way" : "unknown";
+}
+
+// TCRN-CROSS-SUB-521 (J8-06): the skill copies a backup holds, read down from `path` with lstat alone
+// and no link followed, only as far as the places above; of a copy, only whether it holds anything.
+// They are cleared only when all they hold is the copies an update replaced. What the migration
+// moved there keeps the backup as holding originals, whatever else it holds; anything else keeps it
+// as unrecognised: a name on no way to those places, a file or a link where a directory belongs, an
+// empty directory, a copy's among them.
+async function skillCopiesVerdict(path: string): Promise<{ readonly keep: boolean; readonly reason: string }> {
+  const found = new Set<SkillCopiesPlace>();
+  const walk = async (directory: string, at: readonly string[]): Promise<void> => {
+    const held = await children(directory);
+    if (held.length === 0) found.add("unknown");
+    for (const entry of held) {
+      const below = [...at, entry.name];
+      const place = skillCopiesPlace(below, await lstat(join(directory, entry.name)));
+      if (place === "way") await walk(join(directory, entry.name), below);
+      else if (place === "update" && (await children(join(directory, entry.name))).length === 0) found.add("unknown");
+      else found.add(place);
+    }
+  };
+  await walk(path, []);
+  if (found.has("migration")) return { keep: true, reason: "holds-originals" };
+  if (found.has("update") && !found.has("unknown")) return { keep: false, reason: "skill-copies-backup" };
+  return { keep: true, reason: "unrecognised-backup" };
+}
+
 // TCRN-CROSS-SUB-519 (J7-07): a backup other than a pre-update one is cleared only when it holds the
-// skill copies alone, as a directory. One that holds an original a write replaced (host-hooks,
-// writable-roots, managed-sections, crest-bodies, or the file registry.json) is kept, and so is one
-// that holds nothing or anything else, or is a file: what device-clean does not know, it does not
-// clear.
-function backupVerdict(held: readonly Held[]): { readonly keep: boolean; readonly reason: string } {
+// skill copies alone, as a directory, laid out as an update replaced them (TCRN-CROSS-SUB-521). One
+// that holds an original a write replaced (host-hooks, writable-roots, managed-sections,
+// crest-bodies, launchers, registry, or the file registry.json) is kept, and so is one that holds
+// nothing or anything else, or is a file: what device-clean does not know, it does not clear.
+async function backupVerdict(path: string, held: readonly Held[]): Promise<{ readonly keep: boolean; readonly reason: string }> {
   if (held.some((entry) => ORIGINALS_BACKUPS.includes(entry.name) || (entry.name === REGISTRY_BACKUP && entry.file))) {
     return { keep: true, reason: "holds-originals" };
   }
   if (held.length > 0 && held.every((entry) => entry.name === SKILL_COPIES_BACKUP && entry.directory)) {
-    return { keep: false, reason: "skill-copies-backup" };
+    return skillCopiesVerdict(join(path, SKILL_COPIES_BACKUP));
   }
   return { keep: true, reason: "unrecognised-backup" };
 }
@@ -214,7 +276,7 @@ async function judge(area: DeviceCleanArea, name: string, path: string, current:
   const contents = held.map((entry) => entry.name);
   const match = PRE_UPDATE_BACKUP.exec(name);
   const version = match !== null && isEngineVersion(match[1]) ? match[1]! : null;
-  if (version === null) return { kind: "backup", version: null, contents, ...backupVerdict(held) };
+  if (version === null) return { kind: "backup", version: null, contents, ...await backupVerdict(path, held) };
   if (version === current) return { kind: "pre-update-backup", version, keep: true, reason: "pre-update-backup-of-current", contents };
   if (version === previous) return { kind: "pre-update-backup", version, keep: true, reason: "pre-update-backup-of-previous", contents };
   return { kind: "pre-update-backup", version, keep: false, reason: "older-pre-update-backup", contents };

@@ -18,6 +18,14 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
+// TCRN-CROSS-STORY-542 (TCRN-CROSS-SUB-521): the names a backup's layout uses, as the engine names them.
+import { readlink } from "node:fs/promises";
+import { basename } from "node:path";
+import { DEVICE_HOME_ENTRIES } from "../dist/build/packages/core/src/device-home.js";
+import { LEGACY_PORTAL_LAUNCHERS, cleanupRootKey } from "../dist/build/packages/core/src/migrate-cleanup.js";
+import { BRAND, LEGACY_DEVICE_DIRECTORY, LEGACY_HELPER_NAME } from "../dist/build/packages/core/src/names.js";
+import { SetupRecorder } from "../dist/build/packages/core/src/setup-fresh.js";
+import { LEGACY_SKILL_MARKER_FILES, LEGACY_SKILL_ROOTS, SKILL_COPIES_FILES, SKILL_COPY_ROOTS } from "../dist/build/packages/core/src/skill-copies.js";
 
 const AT = "2026-10-14T15:00:00Z";
 
@@ -296,4 +304,187 @@ test("541 GWT4: without engine/current nothing is judged: DEVICE_CLEAN_ENGINE_UN
   assert.deepEqual(await tree(fx.home), before);
   assert.equal((await refusal(["device-clean", "--home", fx.home])).reasonCode, "CLI_ARGUMENT_MISSING");
   assert.equal((await refusal(clean(fx, "--yes", "sure"))).reasonCode, "CLI_ARGUMENT_MALFORMED");
+});
+
+// TCRN-CROSS-STORY-542 GWT1-GWT3 (TCRN-CROSS-SUB-521, J8-06): device-clean reads the skill copies a
+// backup holds further down, with lstat alone and no link followed. Only the copies an update
+// replaced, each host's <skill root>/<skill id>, are cleared; the old helper's copies and the install
+// markers the migration moved there are originals and kept, and so is anything else under
+// skill-copies; a backup that holds launchers or registry holds originals too. Every name a layout
+// uses here is the engine's own: its constants, and the step directories setup names.
+const SKILL_COPIES = SKILL_COPIES_FILES.backup;
+const setupBackup = (step) => basename(new SetupRecorder(tmpdir(), AT).backupDirectory(step));
+const LAUNCHERS = setupBackup("launchers");
+const REGISTRY = setupBackup("registry");
+const updateCopy = (root) => `${SKILL_COPIES}/${root.root}/${BRAND.helper.id}`;
+const migratedCopy = (root) => `${SKILL_COPIES}/${root}/${LEGACY_HELPER_NAME}`;
+const migratedMarker = (name) => `${SKILL_COPIES}/${LEGACY_DEVICE_DIRECTORY}/${name}`;
+const withEntry = (path) => `${path}/${SKILL_COPIES_FILES.entry}`;
+
+// Lay out a backup under backups/: a path that ends in "/" is an empty directory, any other a file
+// that holds its own path.
+async function lay(fx, name, paths) {
+  for (const relative of paths) {
+    const path = join(fx.deviceHome, "backups", name, ...relative.split("/"));
+    if (relative.endsWith("/")) {
+      await mkdir(path, { recursive: true });
+    } else {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, `${relative}\n`);
+    }
+  }
+}
+
+// Every path under `root` with its bytes: a file's content, a link's target, a directory as such;
+// links not followed.
+async function bytesUnder(root) {
+  const stats = await lstat(root);
+  if (stats.isSymbolicLink()) return [["", "link", await readlink(root)]];
+  if (!stats.isDirectory()) return [["", "file", (await readFile(root)).toString("base64")]];
+  const found = [["", "dir", ""]];
+  for (const name of (await readdir(root)).sort()) {
+    for (const [below, what, bytes] of await bytesUnder(join(root, name))) found.push([below === "" ? name : `${name}/${below}`, what, bytes]);
+  }
+  return found;
+}
+
+const backupsOf = (fx, names) => Promise.all(names.map((name) => bytesUnder(join(fx.deviceHome, "backups", name))));
+const judgedOf = (entries, names) => entries.filter((entry) => names.includes(entry.name)).map((entry) => [entry.name, entry.kind, entry.reason, entry.contents]);
+
+test("542 GWT1 (SUB-521): a backup whose skill-copies holds only the copies an update replaced, of one host or of both, is cleared and names its contents", async (context) => {
+  const fx = await device(context);
+  const [claude, agents] = SKILL_COPY_ROOTS;
+  const more = { first: "20261015T020000Z", second: "20261015T020001Z" };
+  await lay(fx, more.first, [withEntry(updateCopy(claude))]);
+  await lay(fx, more.second, [withEntry(updateCopy(agents))]);
+
+  const plan = await cli(clean(fx));
+  assert.deepEqual(plan.remove.filter((entry) => entry.area === "backups").map((entry) => [entry.name, entry.kind, entry.reason, entry.contents]), [
+    [BACKUPS.pre201, "pre-update-backup", "older-pre-update-backup", ["engine"]],
+    [BACKUPS.pre202, "pre-update-backup", "older-pre-update-backup", ["engine"]],
+    [BACKUPS.update210, "backup", "skill-copies-backup", [SKILL_COPIES]],
+    [more.first, "backup", "skill-copies-backup", [SKILL_COPIES]],
+    [more.second, "backup", "skill-copies-backup", [SKILL_COPIES]],
+  ]);
+
+  const done = await cli(clean(fx, "--yes", "true"));
+  assert.deepEqual(done.removed, plan.remove.map((entry) => ({ path: entry.path, bytes: entry.bytes })));
+  assert.deepEqual(done.failed, []);
+  const left = await readdir(join(fx.deviceHome, "backups"));
+  assert.deepEqual([BACKUPS.update210, more.first, more.second].filter((name) => left.includes(name)), [], "the copies an update replaced are gone");
+});
+
+test("542 GWT2 (SUB-521): the old helper's copies and the install markers the migration moved under skill-copies are originals, kept beside an update's copy too, and --yes true leaves every byte", async (context) => {
+  const fx = await device(context);
+  const [claude] = SKILL_COPY_ROOTS;
+  assert.ok(LEGACY_SKILL_ROOTS.includes(claude.root), "the old helper was copied into a root the skill is placed in");
+  const elsewhere = join(fx.base, "old-helper-elsewhere");
+  await mkdir(elsewhere);
+  await writeFile(join(elsewhere, SKILL_COPIES_FILES.entry), "# not the device's\n");
+  const copies = LEGACY_SKILL_ROOTS.map((root, index) => [root, `20261015T03000${index}Z`]);
+  const more = { marker: "20261015T030010Z", migration: "20261015T030011Z", mixed: "20261015T030012Z", linked: "20261015T030013Z" };
+  // The old helper's copy from each root it was copied into, alone.
+  for (const [root, name] of copies) await lay(fx, name, [withEntry(migratedCopy(root))]);
+  // One install marker alone.
+  await lay(fx, more.marker, [migratedMarker(LEGACY_SKILL_MARKER_FILES[0])]);
+  // What a whole migration moves: every old copy and every marker.
+  await lay(fx, more.migration, [...LEGACY_SKILL_ROOTS.map((root) => withEntry(migratedCopy(root))), ...LEGACY_SKILL_MARKER_FILES.map(migratedMarker)]);
+  // An update's copy and the old helper's copy under the same host root.
+  await lay(fx, more.mixed, [withEntry(updateCopy(claude)), withEntry(migratedCopy(claude.root))]);
+  // The old helper's copy was a link and was moved as one: kept, and what it names is never read.
+  await lay(fx, more.linked, [`${SKILL_COPIES}/${claude.root}/`]);
+  await symlink(elsewhere, join(fx.deviceHome, "backups", more.linked, ...migratedCopy(claude.root).split("/")));
+  const added = [...copies.map(([, name]) => name), ...Object.values(more)];
+  const before = await backupsOf(fx, added);
+
+  const plan = await cli(clean(fx));
+  assert.deepEqual(judgedOf(plan.keep, added), added.map((name) => [name, "backup", "holds-originals", [SKILL_COPIES]]));
+  assert.deepEqual(judgedOf(plan.remove, added), []);
+  assert.deepEqual(judgedOf(plan.remove, [BACKUPS.update210]), [[BACKUPS.update210, "backup", "skill-copies-backup", [SKILL_COPIES]]], "the copies an update replaced are still cleared");
+
+  const done = await cli(clean(fx, "--yes", "true"));
+  assert.deepEqual(done.removed, plan.remove.map((entry) => ({ path: entry.path, bytes: entry.bytes })));
+  assert.deepEqual(done.failed, []);
+  assert.deepEqual(await backupsOf(fx, added), before, "every byte of each kept backup is as it was");
+  assert.equal(await readFile(join(elsewhere, SKILL_COPIES_FILES.entry), "utf8"), "# not the device's\n", "what a link in a backup names is never touched");
+});
+
+test("542 GWT2 (SUB-521): anything else under skill-copies keeps the backup as unrecognised, and --yes true leaves every byte", async (context) => {
+  const fx = await device(context);
+  const [claude, agents] = SKILL_COPY_ROOTS;
+  // The root the old helper was copied into that the skill is never placed in.
+  const [oldOnlyRoot] = LEGACY_SKILL_ROOTS.filter((root) => !SKILL_COPY_ROOTS.some((placed) => placed.root === root));
+  assert.equal(typeof oldOnlyRoot, "string");
+  const elsewhere = join(fx.base, "copy-elsewhere");
+  await mkdir(elsewhere);
+  await writeFile(join(elsewhere, SKILL_COPIES_FILES.entry), "# not the device's\n");
+  const more = {
+    oldOnlyRoot: "20261015T040000Z",
+    strayMarker: "20261015T040001Z",
+    record: "20261015T040002Z",
+    unknownName: "20261015T040003Z",
+    fileCopy: "20261015T040004Z",
+    linkedCopy: "20261015T040005Z",
+    emptyRoot: "20261015T040006Z",
+    emptyMarkers: "20261015T040007Z",
+    emptyCopies: "20261015T040008Z",
+    emptyCopy: "20261015T040009Z",
+  };
+  // The skill's copy under the root it is never placed in.
+  await lay(fx, more.oldOnlyRoot, [withEntry(`${SKILL_COPIES}/${oldOnlyRoot}/${BRAND.helper.id}`)]);
+  // An install marker outside the directory named as the old device directory.
+  await lay(fx, more.strayMarker, [`${SKILL_COPIES}/${LEGACY_SKILL_MARKER_FILES[0]}`]);
+  // Both copies an update replaced, and skills.json beside them.
+  await lay(fx, more.record, [withEntry(updateCopy(claude)), withEntry(updateCopy(agents)), `${SKILL_COPIES}/${SKILL_COPIES_FILES.record}`]);
+  // A name no layout knows, beside an update's copy.
+  await lay(fx, more.unknownName, [withEntry(updateCopy(claude)), withEntry(`${SKILL_COPIES}/${claude.root}/${BRAND.portal.id}`)]);
+  // A file, and a link, where an update's copy, a directory, belongs.
+  await lay(fx, more.fileCopy, [updateCopy(claude)]);
+  await lay(fx, more.linkedCopy, [`${SKILL_COPIES}/${agents.root}/`]);
+  await symlink(elsewhere, join(fx.deviceHome, "backups", more.linkedCopy, ...updateCopy(agents).split("/")));
+  // Empty directories: a host root, the markers' directory, skill-copies itself, an update's copy.
+  await lay(fx, more.emptyRoot, [`${SKILL_COPIES}/${claude.root}/`]);
+  await lay(fx, more.emptyMarkers, [`${SKILL_COPIES}/${LEGACY_DEVICE_DIRECTORY}/`]);
+  await lay(fx, more.emptyCopies, [`${SKILL_COPIES}/`]);
+  await lay(fx, more.emptyCopy, [`${updateCopy(claude)}/`]);
+  const added = Object.values(more);
+  const before = await backupsOf(fx, added);
+
+  const plan = await cli(clean(fx));
+  assert.deepEqual(judgedOf(plan.keep, added), added.map((name) => [name, "backup", "unrecognised-backup", [SKILL_COPIES]]));
+  assert.deepEqual(judgedOf(plan.remove, added), []);
+  assert.deepEqual(judgedOf(plan.remove, [BACKUPS.update210]), [[BACKUPS.update210, "backup", "skill-copies-backup", [SKILL_COPIES]]], "the copies an update replaced are still cleared");
+
+  const done = await cli(clean(fx, "--yes", "true"));
+  assert.deepEqual(done.removed, plan.remove.map((entry) => ({ path: entry.path, bytes: entry.bytes })));
+  assert.deepEqual(done.failed, []);
+  assert.deepEqual(await backupsOf(fx, added), before, "every byte of each kept backup is as it was");
+  assert.equal(await readFile(join(elsewhere, SKILL_COPIES_FILES.entry), "utf8"), "# not the device's\n", "what a link in a backup names is never touched");
+});
+
+test("542 GWT3 (SUB-521): a backup that holds launchers or registry, as setup and the migration lay them out, holds originals: kept, and --yes true leaves every byte", async (context) => {
+  const fx = await device(context);
+  const rootKey = cleanupRootKey(join(fx.base, "project"));
+  const more = { launchers: "20261015T050000Z", registry: "20261015T050001Z", migration: "20261015T050002Z" };
+  // An old launcher the migration moved, under its project root's key.
+  await lay(fx, more.launchers, [`${LAUNCHERS}/${rootKey}/${LEGACY_PORTAL_LAUNCHERS[0]}`]);
+  // registry.json as a write copied it before it rewrote it.
+  await lay(fx, more.registry, [`${REGISTRY}/${DEVICE_HOME_ENTRIES.registry}`]);
+  // What the migration leaves when it moved an old launcher and the old helper's copy.
+  await lay(fx, more.migration, [`${LAUNCHERS}/${rootKey}/${LEGACY_PORTAL_LAUNCHERS[0]}`, withEntry(migratedCopy(LEGACY_SKILL_ROOTS[0]))]);
+  const added = Object.values(more);
+  const before = await backupsOf(fx, added);
+
+  const plan = await cli(clean(fx));
+  assert.deepEqual(judgedOf(plan.keep, added), [
+    [more.launchers, "backup", "holds-originals", [LAUNCHERS]],
+    [more.registry, "backup", "holds-originals", [REGISTRY]],
+    [more.migration, "backup", "holds-originals", [LAUNCHERS, SKILL_COPIES].sort()],
+  ]);
+  assert.deepEqual(judgedOf(plan.remove, added), []);
+  assert.deepEqual(judgedOf(plan.remove, [BACKUPS.update210]), [[BACKUPS.update210, "backup", "skill-copies-backup", [SKILL_COPIES]]], "the copies an update replaced are still cleared");
+
+  const done = await cli(clean(fx, "--yes", "true"));
+  assert.deepEqual(done.failed, []);
+  assert.deepEqual(await backupsOf(fx, added), before, "every byte of each kept backup is as it was");
 });

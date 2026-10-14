@@ -3,6 +3,11 @@
 // INIT-029/S252: reconcile the shipped snapshot, its inline portal copy, and
 // the Design System source when that source is available. A missing source is
 // explicit unverified state, never a green or skipped reconciliation.
+// TCRN-CROSS-STORY-533: "the Design System source" is the candidate commit that
+// portal/ds-consumer-contract.json binds, read from git objects by
+// scripts/lib/ds-candidate-source.mjs; the sibling checkout's working tree is not
+// read. A source that cannot be read, or has no usable export, is an observation
+// with its reason — beside the verdict, never inside it.
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -10,6 +15,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
 import { extractTcrnComponentCss } from "./generate-ds-component-css-snapshot.mjs";
+import { CANDIDATE_SOURCE_PATH, readCandidateSource } from "./lib/ds-candidate-source.mjs";
 
 export const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const SNAPSHOT_PATH = resolve(
@@ -21,13 +27,21 @@ export const INDEX_PATH = resolve(
 export const DESIGN_SYSTEM_ROOT = resolve(
   process.env.TCRN_DESIGN_SYSTEM_ROOT ?? join(REPOSITORY_ROOT, "..", "TCRN-Design-System"),
 );
-export const DESIGN_SYSTEM_SOURCE = resolve(
-  process.env.TCRN_DS_COMPONENT_CSS_SOURCE
-    ?? join(DESIGN_SYSTEM_ROOT, "packages/ui-react/src/components/Navigation/Navigation.tsx"),
+// An explicit source file (tests, by hand) takes precedence over the bound candidate;
+// unset, the source is the candidate's blob in the Design System repository.
+export const DESIGN_SYSTEM_SOURCE = process.env.TCRN_DS_COMPONENT_CSS_SOURCE
+  ? resolve(process.env.TCRN_DS_COMPONENT_CSS_SOURCE)
+  : null;
+export const CONSUMER_CONTRACT_PATH = resolve(
+  process.env.TCRN_DS_CONSUMER_CONTRACT ?? join(REPOSITORY_ROOT, "portal/ds-consumer-contract.json"),
 );
 export const INLINE_MARKER = '<style id="tcrn-ds-component-css" data-source="snapshot">';
 
 const digest = (text) => createHash("sha256").update(text).digest("hex");
+const EXTRACTION_REASONS = new Map([
+  ["DS_COMPONENT_CSS_EXPORT_NOT_FOUND", "export-not-found"],
+  ["DS_COMPONENT_CSS_EXPORT_HAS_INTERPOLATION", "export-has-interpolation"],
+]);
 const relativePath = (path) => relative(REPOSITORY_ROOT, path).replaceAll("\\", "/");
 
 export function extractInlineSnapshot(source) {
@@ -37,20 +51,35 @@ export function extractInlineSnapshot(source) {
   return match[1];
 }
 
-export async function reconcile({ snapshotPath = SNAPSHOT_PATH, indexPath = INDEX_PATH, sourcePath = DESIGN_SYSTEM_SOURCE } = {}) {
+export async function reconcile({
+  snapshotPath = SNAPSHOT_PATH,
+  indexPath = INDEX_PATH,
+  sourcePath = DESIGN_SYSTEM_SOURCE,
+  contractPath = CONSUMER_CONTRACT_PATH,
+  designSystemRoot = DESIGN_SYSTEM_ROOT,
+} = {}) {
   const snapshot = await readFile(snapshotPath, "utf8");
   const index = await readFile(indexPath, "utf8");
   const inline = extractInlineSnapshot(index);
   const inlineMatches = inline === snapshot;
 
+  // TCRN-CROSS-STORY-533. An export the extractor cannot find used to throw out of here,
+  // so a sibling repository's unpublished split of that export turned this gate red with
+  // this repository's bytes unchanged. Both the read and the extraction now end in a
+  // reason, and the reason is observed.
+  const read = await readCandidateSource({ contractPath, designSystemRoot, sourceFile: sourcePath });
+  const sourceName = sourcePath ? relativePath(sourcePath) : `${read.candidate ?? "unbound"}:${CANDIDATE_SOURCE_PATH}`;
   let source = null;
-  let sourceStatus = "unverified";
-  try {
-    source = extractTcrnComponentCss(await readFile(sourcePath, "utf8"));
-    sourceStatus = "verified";
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
+  let unreconciledReason = read.status === "available" ? null : read.reason;
+  if (read.status === "available") {
+    try {
+      source = extractTcrnComponentCss(read.text);
+    } catch (error) {
+      unreconciledReason = EXTRACTION_REASONS.get(error?.message) ?? null;
+      if (unreconciledReason === null) throw error;
+    }
   }
+  const sourceStatus = source === null ? "unverified" : "verified";
 
   const sourceMatches = source === null ? null : source === snapshot;
   const sourceReconciled = sourceMatches === true;
@@ -74,18 +103,32 @@ export async function reconcile({ snapshotPath = SNAPSHOT_PATH, indexPath = INDE
         ? "DS_COMPONENT_CSS_RECONCILED"
         : "DS_COMPONENT_CSS_INLINE_RECONCILED";
 
+  const observations = [];
+  if (sourceMatches === false) {
+    observations.push({
+      reasonCode: "DS_COMPONENT_CSS_SOURCE_DRIFT",
+      source: sourceName,
+      sourceSha256: digest(source),
+      snapshotSha256: digest(snapshot),
+      remedy: "node scripts/generate-ds-component-css-snapshot.mjs && node scripts/embed-ds-component-css-snapshot.mjs",
+    });
+  }
+  // A bound source that cannot be read or reconciled is seen, with its reason. The one
+  // case left out is an explicitly named file that does not exist: it binds nothing,
+  // there is nothing to compare, and absence is not drift (INC-223).
+  if (unreconciledReason !== null && unreconciledReason !== "source-absent") {
+    observations.push({
+      reasonCode: "DS_COMPONENT_CSS_SOURCE_UNRECONCILED",
+      reason: unreconciledReason,
+      source: sourceName,
+      candidate: read.candidate,
+    });
+  }
+
   return {
     ok,
     reasonCode,
-    observations: sourceMatches === false
-      ? [{
-        reasonCode: "DS_COMPONENT_CSS_SOURCE_DRIFT",
-        source: relativePath(sourcePath),
-        sourceSha256: digest(source),
-        snapshotSha256: digest(snapshot),
-        remedy: "node scripts/generate-ds-component-css-snapshot.mjs && node scripts/embed-ds-component-css-snapshot.mjs",
-      }]
-      : [],
+    observations,
     snapshot: {
       path: relativePath(snapshotPath),
       bytes: Buffer.byteLength(snapshot),
@@ -99,7 +142,8 @@ export async function reconcile({ snapshotPath = SNAPSHOT_PATH, indexPath = INDE
       matchesSnapshot: inlineReconciled,
     },
     reconciliation: {
-      source: relativePath(sourcePath),
+      source: sourceName,
+      candidate: read.candidate,
       sourceStatus,
       sourceBytes: source === null ? null : Buffer.byteLength(source),
       sourceSha256: source === null ? null : digest(source),

@@ -1199,6 +1199,65 @@ export async function withCrestWriteLock<T>(workspaceRoot: string, operation: ()
   return withWorkspaceWriteLock(workspaceRoot, () => operation());
 }
 
+// TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-481): a library crest write scans the crest, digests its sources
+// and judges the card outside the lock, and holds the lock for the append alone: under it, the crest's
+// device streams must stand where the scan found them, or the write scans again. A write another
+// writer outran CREST_OPTIMISTIC_ATTEMPTS times scans under the lock, as every write once did.
+const CREST_OPTIMISTIC_ATTEMPTS = 4;
+
+// How a crest write commits what it built from `scan`: under the lock, after the heads check.
+type CrestCommit = <T>(scan: CrestScan, commit: () => Promise<T>) => Promise<T>;
+
+class CrestMovedSinceScan extends Error {}
+
+async function optimisticCrestWrite<T>(workspaceRoot: string, write: (commitUnderLock: CrestCommit) => Promise<T>): Promise<T> {
+  const checked: CrestCommit = (scan, commit) => withCrestWriteLock(workspaceRoot, async () => {
+    if (await currentCrestHeads(scan.storeRoot) !== crestHeadsKey(scan.eventHeads)) throw new CrestMovedSinceScan();
+    return commit();
+  });
+  for (let attempt = 1; attempt <= CREST_OPTIMISTIC_ATTEMPTS; attempt += 1) {
+    try {
+      return await write(checked);
+    } catch (error) {
+      if (!(error instanceof CrestMovedSinceScan)) throw error;
+    }
+  }
+  return withCrestWriteLock(workspaceRoot, () => write((_scan, commit) => commit()));
+}
+
+function crestHeadsKey(heads: readonly CrestEventHead[]): string {
+  return JSON.stringify(heads.filter((head) => head.sequence > 0)
+    .map((head) => [head.deviceId, head.sequence, head.eventHash])
+    .sort((left, right) => compareCanonicalText(String(left[0]), String(right[0]))));
+}
+
+// The head of every device stream of a crest from its file names alone -- no event is read -- in the
+// form crestHeadsKey gives a scan's heads. An absent events/ directory has none.
+async function currentCrestHeads(storeRoot: string): Promise<string> {
+  const eventsPath = userCrestEventsPath(storeRoot);
+  let devices;
+  try {
+    devices = await readdir(eventsPath, { withFileTypes: true });
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return crestHeadsKey([]);
+    throw error;
+  }
+  const heads: CrestEventHead[] = [];
+  for (const entry of devices) {
+    if (isAtomicTemporaryName(entry.name) || !entry.isDirectory()) continue;
+    let head: CrestEventHead | null = null;
+    for (const name of await readdir(join(eventsPath, entry.name))) {
+      if (isAtomicTemporaryName(name)) continue;
+      const match = CREST_EVENT_FILE_PATTERN.exec(name);
+      if (match === null) continue;
+      const sequence = Number(match[1]);
+      if (head === null || sequence > head.sequence) head = { deviceId: entry.name, sequence, eventHash: match[2] as string };
+    }
+    if (head !== null) heads.push(head);
+  }
+  return crestHeadsKey(heads);
+}
+
 /**
  * knowledge-bodies-migrate (STORY-341): rewrite the metadata/body layout's bodies/ into segments, under
  * this machine's lock of the library. TCRN-CROSS-SUB-425 R18 (fixes STORY-341): a layout already in
@@ -4196,7 +4255,7 @@ export async function createKnowledgeUnit(workspaceRoot: string, input: CreateKn
     const location = await locateUserCrest();
     return withUserCrestLock(location, () => createUserCrestEvent(workspaceRoot, input, options, location));
   }
-  return withCrestWriteLock(workspaceRoot, () => createLibraryCrestEvent(workspaceRoot, input, options));
+  return optimisticCrestWrite(workspaceRoot, (commitUnderLock) => createLibraryCrestEvent(workspaceRoot, input, options, commitUnderLock));
 }
 
 async function createUserCrestEvent(
@@ -4431,6 +4490,7 @@ async function createLibraryCrestEvent(
   workspaceRoot: string,
   input: CreateKnowledgeUnitInput,
   options: KnowledgeMutationOptions,
+  commitUnderLock: CrestCommit,
 ): Promise<Readonly<Record<string, JsonValue>>> {
   assertBoundedString(input.body, KNOWLEDGE_LIMITS.maximumBodyBytes, "body");
   await assertKnowledgeWritable(resolve(workspaceRoot));
@@ -4491,9 +4551,11 @@ async function createLibraryCrestEvent(
   if (records.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
     fail("KNOWLEDGE_DUPLICATE", metadata.id);
   }
-  const head = await appendLibraryCrestEvent(scan, written, body, null, options.faultAt);
-  await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
-  await projectViewAfterWrite(scan, projectedMetadata, options);
+  await commitUnderLock(scan, async () => {
+    const head = await appendLibraryCrestEvent(scan, written, body, null, options.faultAt);
+    await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
+    await projectViewAfterWrite(scan, projectedMetadata, options);
+  });
   return {
     schemaVersion: "tcrn.knowledge-create-result.v1",
     reasonCode: "KNOWLEDGE_UNIT_CREATED",
@@ -4627,19 +4689,22 @@ export async function removeKnowledgeUnit(workspaceRoot: string, input: Knowledg
     if (!(await userCrestInitialized(location.root))) fail("KNOWLEDGE_NOT_FOUND", removal.id);
     return withUserCrestLock(location, () => removeUserCrestCard(location, removal, options));
   }
-  return withCrestWriteLock(workspaceRoot, () => removeLibraryCrestCard(workspaceRoot, removal, options));
+  return optimisticCrestWrite(workspaceRoot, (commitUnderLock) => removeLibraryCrestCard(workspaceRoot, removal, options, commitUnderLock));
 }
 
-async function removeLibraryCrestCard(workspaceRoot: string, removal: NormalizedRemoval, options: KnowledgeRemoveOptions): Promise<Readonly<Record<string, JsonValue>>> {
+async function removeLibraryCrestCard(workspaceRoot: string, removal: NormalizedRemoval, options: KnowledgeRemoveOptions, commitUnderLock: CrestCommit): Promise<Readonly<Record<string, JsonValue>>> {
   await assertKnowledgeWritable(resolve(workspaceRoot));
   const scan = await mutationAdmissionScan(workspaceRoot, options);
   const card = assertRemovable(scan, removal);
-  const stream = await libraryCrestStream(scan);
-  const head = await appendCrestRemovalEvent(stream.streamRoot, stream.deviceId, stream.prior, removal, options.faultAt);
-  const removed = eventRemoval(removal, head);
-  const removalsAfter = new Map<string, CrestRemoval>([...scan.removals, [removal.id, removed]]);
-  const clearedBodies = await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
-  await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((unit) => unit.metadata), removalsAfter), options);
+  const { removed, clearedBodies } = await commitUnderLock(scan, async () => {
+    const stream = await libraryCrestStream(scan);
+    const head = await appendCrestRemovalEvent(stream.streamRoot, stream.deviceId, stream.prior, removal, options.faultAt);
+    const appended = eventRemoval(removal, head);
+    const removalsAfter = new Map<string, CrestRemoval>([...scan.removals, [removal.id, appended]]);
+    const cleared = await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
+    await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((unit) => unit.metadata), removalsAfter), options);
+    return { removed: appended, clearedBodies: cleared };
+  });
   return removalAnswer(card, removed, scan.marker.version + 1, clearedBodies, {});
 }
 

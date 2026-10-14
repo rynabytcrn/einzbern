@@ -40,7 +40,7 @@ import type {
 } from "../../protocol/src/index.js";
 import { assertDistinctRootShape, rootPortableIdentity } from "./root-identity.js";
 import { FileLockError } from "./file-lock.js";
-import { AKASHA_SEGMENT_BYTES_DEFAULT, appendStreamEvents, emptyStreamManifest, readAllStreams, streamEventId, withLibraryWriteLock } from "./akasha.js";
+import { AKASHA_SEGMENT_BYTES_DEFAULT, appendStreamEvents, emptyStreamManifest, listStreamDevices, readAllStreams, readStreamManifest, streamEventId, withLibraryWriteLock } from "./akasha.js";
 import type { LibraryRead, LibraryReadOptions, MergedEvent, StreamManifest } from "./akasha.js";
 import {
   CACHE_VIEWS_SCHEMA_VERSION,
@@ -3560,21 +3560,72 @@ function committedFrom(
 }
 
 // TCRN-CROSS-STORY-469 (MIN-227 D20): a write in a library, under this machine's lock of it.
-// The merged state is read under the lock, every delta is built against it, and the events go
-// to this device's own stream with the next sequences and clocks one above the largest clock
-// this machine has seen, so they sort after everything the writer saw. An old-layout workspace
-// refuses in withWorkspaceWriteLock.
+// Every delta is built against the merged state, and the events go to this device's own stream
+// with the next sequences and clocks one above the largest clock this machine has seen, so they
+// sort after everything the writer saw. An old-layout workspace refuses.
+// TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-481): the lock covers the append alone -- the events and the
+// replacement of the stream's manifest, then `underLock` (a projection that must follow the append it
+// shows, such as config/project.json). The state is read, every delta built and the result measured
+// before the lock is taken; under it the append checks that no stream moved since that read, and one
+// that moved sends the append back to read again, so every event is still built against the latest
+// state this machine has. A writer another writer outran OPTIMISTIC_APPEND_ATTEMPTS times reads under
+// the lock, so a busy library cannot starve it.
+const OPTIMISTIC_APPEND_ATTEMPTS = 4;
+
 export async function appendEvents(
   workspaceRootInput: string,
   buildDeltas: readonly ((state: WorkspaceState) => MutationDelta)[],
   options: WorkspaceMutationOptions,
+  underLock?: (root: string, committed: WorkspaceState) => Promise<void>,
 ): Promise<WorkspaceState> {
   assertStrictInstant(options.occurredAt);
   if (buildDeltas.length === 0) {
     fail("WORKSPACE_INPUT_INVALID", "an append carries at least one event");
   }
-  return withWorkspaceWriteLock(workspaceRootInput, async (root) => {
+  const layout = await resolveLayout(workspaceRootInput);
+  if (layout.kind === "legacy") return refuseLegacyWrite(layout.root);
+  await refuseTombstonedWrite(layout.root);
+  // Built and appended under one hold of the lock: by a caller that holds it for its own sequence,
+  // and by an append another writer outran OPTIMISTIC_APPEND_ATTEMPTS times.
+  const underOneHold = (): Promise<WorkspaceState> => withWorkspaceWriteLock(layout.root, async (root) => {
     await options.insideWriteLockForTest?.();
+    const committed = await commitAppend(await prepareAppend(root, buildDeltas, options), options);
+    await underLock?.(root, committed);
+    return committed;
+  });
+  if (heldWriteLocks.getStore()?.has(layout.root) === true) return underOneHold();
+  for (let attempt = 1; attempt <= OPTIMISTIC_APPEND_ATTEMPTS; attempt += 1) {
+    const prepared = await prepareAppend(layout.root, buildDeltas, options);
+    const committed = await withWorkspaceWriteLock(layout.root, async (root) => {
+      await options.insideWriteLockForTest?.();
+      if (!(await streamsUnchangedSince(prepared.library.root, prepared.read))) return null;
+      const appended = await commitAppend(prepared, options);
+      await underLock?.(root, appended);
+      return appended;
+    });
+    if (committed !== null) return committed;
+  }
+  return underOneHold();
+}
+
+// TCRN-CROSS-SUB-481: what an append read and built, outside the lock, for the lock to commit.
+interface PreparedAppend {
+  readonly library: Library;
+  readonly deviceId: string;
+  readonly read: LibraryRead;
+  readonly state: WorkspaceState;
+  readonly own: StreamManifest;
+  readonly appended: readonly EventRecord[];
+  readonly current: WorkspaceState;
+}
+
+// Read the merged state, build every delta against it and measure the result -- nothing is written.
+async function prepareAppend(
+  root: string,
+  buildDeltas: readonly ((state: WorkspaceState) => MutationDelta)[],
+  options: WorkspaceMutationOptions,
+): Promise<PreparedAppend> {
+  {
     const library = await openLibrary(root);
     const { device } = await readOrCreateDevice();
     // WSA-1: the single full replay per mutation, read under the lock, so the state every
@@ -3643,32 +3694,78 @@ export async function appendEvents(
     // STORY-299: the view projection is measured before a byte is written, so a projection
     // over budget is a clean refusal with nothing appended.
     viewDocuments(current, options.viewBudgetBytes ?? PROTOCOL_LIMITS.maxCanonicalBytes);
-    crash("before-write", options.crashAt);
-    const committed = await appendStreamEvents(library, own, appended, { segmentBytes: segmentBytesForState(current) });
-    crash("after-event-commit", options.crashAt);
-    const streams = [...(state.library?.streams ?? []).filter((stream) => stream.deviceId !== device.deviceId), streamHead(committed)]
-      .sort((left, right) => compareCanonicalText(left.deviceId, right.deviceId));
-    return {
-      ...current,
-      version: state.version + appended.length,
-      headEventHash: libraryHeadDigest(streams),
-      library: {
-        libraryRoot: library.root,
-        versionVector: { ...(state.library?.versionVector ?? {}), [device.deviceId]: committed.sequence },
-        streams,
-        rejectedEvents: state.library?.rejectedEvents ?? [],
-        aliases: state.library?.aliases ?? [],
-      },
-    };
-  });
+    return { library, deviceId: device.deviceId, read, state, own, appended, current };
+  }
+}
+
+// Under the lock: the events go to this device's stream and its manifest is replaced. The events
+// written are given to the flow's recorder (recordAppends), which is how a verb's receipt names
+// exactly the records it wrote.
+async function commitAppend(prepared: PreparedAppend, options: WorkspaceMutationOptions): Promise<WorkspaceState> {
+  const { library, deviceId, state, own, appended, current } = prepared;
+  crash("before-write", options.crashAt);
+  const committed = await appendStreamEvents(library, own, appended, { segmentBytes: segmentBytesForState(current) });
+  crash("after-event-commit", options.crashAt);
+  appendRecorder.getStore()?.push(...appended);
+  const streams = [...(state.library?.streams ?? []).filter((stream) => stream.deviceId !== deviceId), streamHead(committed)]
+    .sort((left, right) => compareCanonicalText(left.deviceId, right.deviceId));
+  return {
+    ...current,
+    version: state.version + appended.length,
+    headEventHash: libraryHeadDigest(streams),
+    library: {
+      libraryRoot: library.root,
+      versionVector: { ...(state.library?.versionVector ?? {}), [deviceId]: committed.sequence },
+      streams,
+      rejectedEvents: state.library?.rejectedEvents ?? [],
+      aliases: state.library?.aliases ?? [],
+    },
+  };
+}
+
+// Whether every stream of the library stands where `read` found it: the same devices, each at the
+// same sequence and head. Only the stream manifests are read, so the check under the lock is short.
+async function streamsUnchangedSince(libraryRoot: string, read: LibraryRead): Promise<boolean> {
+  const heads = (entries: readonly { readonly deviceId: string; readonly manifest: StreamManifest | null }[]): string =>
+    JSON.stringify(entries.filter((entry) => entry.manifest !== null && entry.manifest.sequence > 0)
+      .map((entry) => [entry.deviceId, entry.manifest?.sequence ?? 0, entry.manifest?.headEventHash ?? null])
+      .sort((left, right) => compareCanonicalText(String(left[0]), String(right[0]))));
+  const now: { readonly deviceId: string; readonly manifest: StreamManifest | null }[] = [];
+  for (const deviceId of await listStreamDevices(libraryRoot)) now.push({ deviceId, manifest: await readStreamManifest(libraryRoot, deviceId) });
+  return heads(now) === heads(read.streams);
+}
+
+// TCRN-CROSS-SUB-481: the events the appends of one flow wrote, in the order they were written.
+const appendRecorder = new AsyncLocalStorage<EventRecord[]>();
+
+/** Run `operation` and answer, beside its result, every event the appends within it wrote. */
+export async function recordAppends<T>(operation: () => Promise<T>): Promise<{ readonly result: T; readonly events: readonly EventRecord[] }> {
+  const events: EventRecord[] = [];
+  const result = await appendRecorder.run(events, operation);
+  return { result, events };
+}
+
+/**
+ * TCRN-CROSS-SUB-481: refuse, before anything is read or judged, a write the library at `root` would
+ * refuse anyway: an old-layout workspace, or a library moved away. The lock is not taken.
+ */
+export async function assertLibraryWritable(workspaceRootInput: string): Promise<void> {
+  const layout = await resolveLayout(workspaceRootInput);
+  if (layout.kind === "legacy") await refuseLegacyWrite(layout.root);
+  await refuseTombstonedWrite(layout.root);
 }
 
 // TCRN-CROSS-STORY-467 R1: the records a write touched, for the receipt every mutating
 // verb returns: each event after the first `sinceVersion` events of the state contributes its
 // record id (and a closed conference its minutes id), in append order, without repeats.
 export function writtenRecordIds(state: WorkspaceState, sinceVersion: number): readonly string[] {
+  return recordIdsOfEvents(state.events.slice(sinceVersion));
+}
+
+/** TCRN-CROSS-SUB-481: the record ids `events` touch, in order and without repeats, as writtenRecordIds. */
+export function recordIdsOfEvents(events: readonly { readonly payload: JsonValue }[]): readonly string[] {
   const ids: string[] = [];
-  for (const event of state.events.slice(sinceVersion)) {
+  for (const event of events) {
     if (!isJsonObject(event.payload)) continue;
     const operation = event.payload.operation;
     if (typeof operation === "string" && isConfigRecordOperation(operation)) {
@@ -3694,8 +3791,13 @@ export function writtenRecordIds(state: WorkspaceState, sinceVersion: number): r
   return ids;
 }
 
-async function appendEvent(workspaceRootInput: string, buildDelta: (state: WorkspaceState) => MutationDelta, options: WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvents(workspaceRootInput, [buildDelta], options);
+async function appendEvent(
+  workspaceRootInput: string,
+  buildDelta: (state: WorkspaceState) => MutationDelta,
+  options: WorkspaceMutationOptions,
+  underLock?: (root: string, committed: WorkspaceState) => Promise<void>,
+): Promise<WorkspaceState> {
+  return appendEvents(workspaceRootInput, [buildDelta], options, underLock);
 }
 
 function sortedProjects(records: readonly ProjectRecord[]): readonly ProjectRecord[] {
@@ -4541,8 +4643,9 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
   readonly value: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertProjectSettingKey(input.key);
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const committed = await appendEvent(root, (state) => {
+  // TCRN-CROSS-SUB-481: the projection of config/project.json follows the append under the same lock;
+  // the read and the delta stay outside it.
+  return appendEvent(workspaceRoot, (state) => {
       const current = state.settings.find((record) => record.key === input.key && record.projectId === input.configurationProjectId);
       const record = createWorkspaceSettingRecord(
         input.key,
@@ -4562,18 +4665,14 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
           record,
         ]),
       };
-    }, input);
-    await projectConfiguration(root, committed);
-    return committed;
-  });
+    }, input, (root, committed) => projectConfiguration(root, committed));
 }
 
 export async function removeWorkspaceSetting(workspaceRoot: string, input: {
   readonly key: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertProjectSettingKey(input.key);
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const committed = await appendEvent(root, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
       const current = state.settings.find((record) => record.key === input.key && record.projectId === input.configurationProjectId);
       if (current === undefined) fail("WORKSPACE_INPUT_INVALID", `setting ${input.key} is not set`);
       assertScopedSettingWriteConsistent(state, input.key, null, input.configurationProjectId);
@@ -4583,10 +4682,7 @@ export async function removeWorkspaceSetting(workspaceRoot: string, input: {
         work: state.work,
         settings: sortWorkspaceSettings(state.settings.filter((entry) => entry.key !== input.key || entry.projectId !== input.configurationProjectId)),
       };
-    }, input);
-    await projectConfiguration(root, committed);
-    return committed;
-  });
+    }, input, (root, committed) => projectConfiguration(root, committed));
 }
 
 /**

@@ -10,9 +10,10 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 import {
   applyMachineSettingRemove,
   applyMachineSettingSet,
-  withWorkspaceWriteLock,
   withWriteLockOptions,
-  writtenRecordIds,
+  assertLibraryWritable,
+  recordAppends,
+  recordIdsOfEvents,
   createKnowledgeArticle,
   createKnowledgeUnit,
   checkKnowledgeSources,
@@ -525,32 +526,19 @@ function decisionStatusValue(value: string | undefined): DecisionStatusFilter {
 // withWriteLock, read once by the receipt writer, cleared at the start of every command.
 let lastWrittenIds: readonly string[] | null = null;
 
-function writtenIdsOf(result: unknown, sinceVersion: number | null): readonly string[] {
-  if (sinceVersion === null || result === null || typeof result !== "object") return [];
-  const candidate = (result as { readonly state?: unknown }).state ?? result;
-  if (candidate === null || typeof candidate !== "object" || !Array.isArray((candidate as { readonly events?: unknown }).events)) return [];
-  return writtenRecordIds(candidate as Awaited<ReturnType<typeof materializeWorkspace>>, sinceVersion);
-}
-
-// TCRN-CROSS-STORY-467 R1: a write verb holds the engine write lock for its whole sequence
-// -- the before-read and the write -- so nothing interleaves; the engine write functions take the
-// same lock again (it is re-entrant within the flow). There is no caller-supplied version: the
-// engine reads the latest state under the lock. TCRN-CROSS-SUB-414: the knowledge rebind that
-// followed the write, the one reader of the instant passed here, is gone (see above).
+// TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-481): a write verb no longer holds the library write lock for
+// its whole sequence. Its before-reads, its checks and a Story's done judgement run outside the lock,
+// so they hold up no other writer and no reader; the engine write functions take the lock for their
+// append alone and check under it that the state they built against is still the latest
+// (appendEvents). A check a verb makes before writing is made again where the write builds its event
+// -- a work lease, for one, by transitionWorkDelta (Q21). The receipt names exactly the records this
+// verb's appends wrote (recordAppends), whatever another writer appended meanwhile. A library the
+// write would refuse is refused first, before anything is read or judged.
 async function withWriteLock<T>(workspace: string, _at: string, operation: () => Promise<T>): Promise<T> {
-  return withWorkspaceWriteLock(workspace, async () => {
-    let before: { readonly version: number } | null = null;
-    try {
-      const state = await materializeWorkspace(workspace);
-      before = { version: state.version };
-    } catch {
-      // Recovery verbs deliberately repair residue that makes a pre-read fail.
-      // Their own operation remains the authority for whether repair is allowed.
-    }
-    const result = await operation();
-    lastWrittenIds = writtenIdsOf(result, before?.version ?? null);
-    return result;
-  });
+  await assertLibraryWritable(workspace);
+  const { result, events } = await recordAppends(operation);
+  lastWrittenIds = recordIdsOfEvents(events);
+  return result;
 }
 
 function consumeWrittenIds(): readonly string[] | null {

@@ -12,6 +12,11 @@
 // and an Epic, Story or Subtask has its Initiative's. A record this library does not hold, one whose
 // chain breaks off, and one whose chain does not end at an Initiative (a parentless Incident, say)
 // have none. A deleted record keeps the family of the chain it was written under.
+//
+// TCRN-CROSS-STORY-539 (MIN-256 D6 C5, MIN-258 D1; TCRN-CROSS-SUB-503): a reference names a family in
+// three ways -- a work id, a minutes id, and the external key of a work record this library holds
+// (TCRN-CROSS-STORY-529, say) -- and a card's linked work (--work-ids) names it as a work id does. Both
+// guards read them through referenceFamilies: a card's families, and a minutes record's.
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
 import type { WorkspaceState } from "./workspace.js";
@@ -20,6 +25,7 @@ import type { WorkspaceState } from "./workspace.js";
 export type WorkFamilyState = Pick<WorkspaceState, "work" | "minutes" | "conferenceMinutes" | "conferences">;
 
 const workIndexes = new WeakMap<WorkspaceState["work"], ReadonlyMap<string, WorkspaceState["work"][number]>>();
+const externalKeyIndexes = new WeakMap<WorkspaceState["work"], ReadonlyMap<string, string>>();
 
 function workIndex(work: WorkspaceState["work"]): ReadonlyMap<string, WorkspaceState["work"][number]> {
   let index = workIndexes.get(work);
@@ -29,6 +35,19 @@ function workIndex(work: WorkspaceState["work"]): ReadonlyMap<string, WorkspaceS
     for (const record of work) if (!built.has(record.id)) built.set(record.id, record);
     index = built;
     workIndexes.set(work, index);
+  }
+  return index;
+}
+
+// TCRN-CROSS-SUB-503: the ids of this library's work records by external key, the key as the record
+// stores it. First wins, as workIndex answers.
+function externalKeyIndex(work: WorkspaceState["work"]): ReadonlyMap<string, string> {
+  let index = externalKeyIndexes.get(work);
+  if (index === undefined) {
+    const built = new Map<string, string>();
+    for (const record of work) if (!built.has(record.externalKey)) built.set(record.externalKey, record.id);
+    index = built;
+    externalKeyIndexes.set(work, index);
   }
   return index;
 }
@@ -65,13 +84,16 @@ function minutesWorkIds(state: WorkFamilyState, minutesId: string): readonly str
 
 /**
  * The INIT families a list of references points at (Q11): a work id names its own family, a minutes
- * id the families of the work it links, and every other reference -- a file, a URL -- names none.
- * Null when the family is not known: no reference names one, or one of them names a work record or
- * minutes this library does not hold, minutes that link no work, or work with no family. A card the
- * user crest holds that points at another library's work is therefore of no known family. Otherwise
- * the family ids, sorted, without repeats.
+ * id the families of the work it links, the external key of a work record this library holds that
+ * record's family (TCRN-CROSS-SUB-503: the whole reference equal to the key, case and all), and every
+ * other reference -- a file, a URL, a key this library holds no work under -- names none. Each of
+ * `linkedWorkIds` -- a card's linked work -- names a family as a work id does. Null when the family
+ * is not known: nothing names one, or one of them names a work record or minutes this library does
+ * not hold, minutes that link no work, or work with no family. A card the user crest holds that
+ * points at another library's work is therefore of no known family. Otherwise the family ids,
+ * sorted, without repeats.
  */
-export function referenceFamilies(state: WorkFamilyState, references: readonly string[]): readonly string[] | null {
+export function referenceFamilies(state: WorkFamilyState, references: readonly string[], linkedWorkIds: readonly string[] = []): readonly string[] | null {
   const families = new Set<string>();
   const add = (workId: string): boolean => {
     const family = initFamilyOf(state, workId);
@@ -88,9 +110,26 @@ export function referenceFamilies(state: WorkFamilyState, references: readonly s
       const linked = minutesWorkIds(state, reference);
       if (linked === undefined || linked.length === 0) return null;
       for (const workId of linked) if (!add(workId)) return null;
+      continue;
     }
+    const keyed = externalKeyIndex(state.work).get(reference);
+    if (keyed !== undefined && !add(keyed)) return null;
   }
+  for (const workId of linkedWorkIds) if (!add(workId)) return null;
   return families.size === 0 ? null : [...families].sort(compareCanonicalText);
+}
+
+/**
+ * TCRN-CROSS-SUB-503: the INIT families of a card -- its source references and its linked work
+ * (referenceFamilies), read in `state`. What the write-time guard reads of a new card and of each
+ * version of a card it scores against, and, since TCRN-CROSS-SUB-504, what a read reads of the two
+ * cards of an unresolved pair and of a knowledge hint's candidates.
+ */
+export function cardFamilies(
+  state: WorkFamilyState,
+  card: { readonly sourceReferences: readonly string[]; readonly linkedWorkIds: readonly string[] },
+): readonly string[] | null {
+  return referenceFamilies(state, card.sourceReferences, card.linkedWorkIds);
 }
 
 /**

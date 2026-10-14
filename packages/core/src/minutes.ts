@@ -26,6 +26,10 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // -- the work the record links and the work that decision's minutes link lead to different Initiatives
 // (work-family.ts) -- is written into the record's `coexists` as the writer's own declaration would be,
 // and the minutes-record receipt warns of it.
+//
+// TCRN-CROSS-SUB-503 (TCRN-CROSS-STORY-539 GWT4): the families are read through referenceFamilies, as
+// a card's are, so a record and a card name a family by the same sources: a work id, a minutes id, and
+// the external key of a work record this library holds.
 
 import { assertProtocolId, canonicalExternalKey, compareCanonicalText, deriveStableId, parseStrictInstant } from "../../protocol/src/index.js";
 import type { ConferenceMinutes } from "./conference.js";
@@ -760,6 +764,8 @@ type TopicRecord = Pick<MinutesRecord, "id" | "projectId" | "decisions" | "decla
  */
 export function decisionTopicConflicts(state: TopicState, record: TopicRecord): readonly DecisionTopicConflict[] {
   const ledger = decisionLedger(state);
+  // The linked work is read as references (TCRN-CROSS-SUB-503): a work id names its family, and so would
+  // a work record's external key; a validated record links work ids only.
   const recordFamilies = referenceFamilies(state, record.linkedWorkIds ?? []);
   const minutesFamilies = new Map<string, readonly string[] | null>();
   const otherFamily = (minutesId: string): boolean => {

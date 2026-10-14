@@ -202,7 +202,15 @@ the card it supersedes. `knowledge-list --scope user` names the pairs as
 `unresolvedConflicts` (each pair and the list in canonical id order); its default
 selection leaves their cards out while `--selection all`, `knowledge-snippet` and
 `knowledge-body` still read them, and every other card reads, recalls and is
-written as before. A new card on the same subject is refused naming both cards; a
+written as before. A pair whose two cards are of INIT families apart, both known
+(see "Conflict retirement"; TCRN-CROSS-STORY-539), is no unresolved conflict: the
+write-time guard would have written either card beside the other. The scan that
+finds the pairs, and the cache that keeps it, reads no chain; a read sets those
+pairs aside in the chain it reads -- a library's crest in its library, the user
+crest in the library the read goes through -- so `knowledge-list`, recall and a
+checkpoint neither name such a pair nor leave its cards out. A pair of one family,
+or one either card of which has no known family, stands as before. A new card on
+the same subject is refused naming both cards; a
 write whose `--supersedes` names either card of a pair resolves it. A card that
 more than one card replaces -- two devices that each replaced it before either saw
 the other's replacement -- is removed either way: its removal's `supersededBy`
@@ -588,13 +596,17 @@ scores as a possible conflict with a valid card is refused with
 `--coexist`; `--supersedes` removes the older card, conflict superseded (see "Valid
 and removed"): it leaves every default and searched read, and its body is cleared.
 The refusal is split by INIT family (TCRN-CROSS-STORY-531, MIN-256 D6 C5). A card's
-families are read from its source references against the library the write goes
-through: a work id names the Initiative at the top of its parent chain (an
-Initiative its own), a minutes id the families of the work its minutes link (a
-conference's minutes, the conference's), and a file or URL none. A card has no known
-family when no reference names one, or when one names work or minutes this library
-does not hold -- a user-crest card that points at another library's work among them
---, minutes that link no work, or work whose chain ends at no Initiative. A conflict
+families are read from its source references and its linked work (`linkedWorkIds`,
+`--work-ids`; TCRN-CROSS-STORY-539) against the library the write goes through: a
+work id names the Initiative at the top of its parent chain (an Initiative its own), a
+minutes id the families of the work its minutes link (a conference's minutes, the
+conference's), the external key of a work record this library holds -- the whole
+reference equal to the key, case and all, `TCRN-CROSS-STORY-529` say -- that
+record's family, each linked work id the family a work id names, and a file, a URL or
+a key this library holds no work under none. A card has no known family when nothing
+names one, or when one names work or minutes this library does not hold -- a
+user-crest card that points at another library's work among them --, minutes that
+link no work, or work whose chain ends at no Initiative. A conflict
 every version of which is of families apart from the new card's, both known, refuses
 nothing: the card is written beside it, recorded in `coexistsWith` as `--coexist`
 records it, and the receipt (each member's entry of a `knowledge-batch` receipt)
@@ -602,6 +614,17 @@ names it under `warnings` (`reasonCode` `KNOWLEDGE_POSSIBLE_CONFLICT`, `id`,
 `families`, `message`). A conflict of a shared family, or of no known family on
 either side, refuses as before; the refusal's `conflicts` names those alone and
 `otherFamilyConflicts` the others. `--supersedes` and `--coexist` behave as they did.
+`minutes-record`'s guard (`MINUTES_POSSIBLE_CONFLICT`) reads families from the same
+sources: a record's from the work it links, a valid decision's from the work its
+minutes link.
+Reads are split the same way (TCRN-CROSS-STORY-539). Besides the unresolved pairs
+(see "Storage and authority"), the knowledge hint that `work-transition` to done,
+each done of a `work-batch` and `minutes-record` answer (`knowledgeHint`) names
+only the cards of the target's family or of no known family: a work record's family
+is its own, minutes' are those of the work they link. A card both of whose sides
+are known and share no family is left out; `filteredByFamily` counts the cards so
+left out, and the line ends saying how many (`；按族滤掉 n 张`). A target of no known
+family leaves none out, and its count is 0.
 `knowledge-remove` removes a card a model found invalid in use, or one that repeats a
 work item or a decision. No clock, observation day, window or store size removes a
 card: `maximumAgeDays` only marks a card `stale`, and a store has no body budget a

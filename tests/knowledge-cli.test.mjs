@@ -27,6 +27,9 @@ import { canonicalJson, deriveStableId } from "../dist/build/packages/protocol/s
 const at = (second) => `2026-09-27T09:${String(Math.floor(second / 60)).padStart(2, "0")}:${String(second % 60).padStart(2, "0")}Z`;
 const OWNER = deriveStableId("owner", "KNOWLEDGE-CLI-OWNER");
 const HINT_PREFIX = `${KNOWLEDGE_HINT_QUESTION}；可能冲突的卡：`;
+// TCRN-CROSS-SUB-504 (STORY-539): the line ends with the cards left out by INIT family; these cards name no
+// work, so none is.
+const HINT_UNFILTERED = "；按族滤掉 0 张";
 
 // A device directory of this test's own, so the user crest it writes is never another test's.
 async function device(context) {
@@ -279,7 +282,7 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
   assert.equal(done.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
   assert.equal(done.record.status, "done");
   assert.deepEqual(done.knowledgeHint.conflictCandidateIds, [card.id], "the card about the same thing is named");
-  assert.equal(done.knowledgeHint.line, `${HINT_PREFIX}${card.id}`);
+  assert.equal(done.knowledgeHint.line, `${HINT_PREFIX}${card.id}${HINT_UNFILTERED}`);
 
   // A transition that does not reach done asks nothing.
   const story2Id = deriveStableId("work", "KC-STORY-2");
@@ -296,12 +299,12 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
   ]);
   assert.equal(minutes.reasonCode, "MINUTES_RECORDED");
   assert.deepEqual(minutes.knowledgeHint.conflictCandidateIds, [minutesCard.id]);
-  assert.equal(minutes.knowledgeHint.line, `${HINT_PREFIX}${minutesCard.id}`);
+  assert.equal(minutes.knowledgeHint.line, `${HINT_PREFIX}${minutesCard.id}${HINT_UNFILTERED}`);
   const quiet = await cli([
     "minutes-record", "--workspace", workspace, "--at", at(47), "--project-id", projectId,
     "--title", "Budget", "--summary", "Printer toner reorder", "--decisions", "reorder toner quarterly",
   ]);
-  assert.deepEqual(quiet.knowledgeHint, { line: `${HINT_PREFIX}无`, conflictCandidateIds: [] }, "minutes about nothing a card holds name no card");
+  assert.deepEqual(quiet.knowledgeHint, { line: `${HINT_PREFIX}无${HINT_UNFILTERED}`, conflictCandidateIds: [], filteredByFamily: 0 }, "minutes about nothing a card holds name no card");
 
   // A batch answers one hint per record it takes to done.
   const batch = join(base, "work-batch.json");
@@ -331,7 +334,7 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
   ], "the required gate ran green with exact coverage for the batch Story");
   const applied = await cli(["work-batch", "--workspace", workspace, "--at", at(48), "--from-file", batch, "--project", projectRoot]);
   assert.equal(applied.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
-  assert.deepEqual(applied.knowledgeHints, [{ workId: story2Id, line: `${HINT_PREFIX}无`, conflictCandidateIds: [] }]);
+  assert.deepEqual(applied.knowledgeHints, [{ workId: story2Id, line: `${HINT_PREFIX}无${HINT_UNFILTERED}`, conflictCandidateIds: [], filteredByFamily: 0 }]);
 });
 
 // Problem list #11 (TCRN-CROSS-SUB-309): the bin printed only string details, so a knowledge write

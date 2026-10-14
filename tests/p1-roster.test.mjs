@@ -20,6 +20,7 @@ import { P1_GATE_SPECS as PREFLIGHT_SPECS } from "../scripts/preflight.mjs";
 import { buildRedLocatorPlan, containedGroupIds, locateContainedGates } from "../scripts/gate-red-locator.mjs";
 import { buildContainedExecutionPlan, ENGINE_PUSH_GATE_CHILDREN, inspectP8FailureTerminal, pushGateChildConclusion, pushGateExecutionPlan } from "../scripts/lib/push-gate-children.mjs";
 import { validateHostEvidenceProvenance } from "../scripts/lib/push-gate-output.mjs";
+import { GATE_RUN_PRIOR_VARIABLE } from "../scripts/lib/push-gate-p1-coverage.mjs";
 import { P8_VERSION, p8FailureTerminal } from "../scripts/lib/p8-workflow-rc.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -272,15 +273,20 @@ test("INC-266 push-gate timing accounts for every phase and keeps the success ou
   // evidence written after stdout has been emitted; no second producer reconstructs it.
   await rm(probeTimingPath, { force: true });
   await rm(probeProgressPath, { force: true });
+  // TCRN-CROSS-SUB-494: the probe is a push gate on its own. A gate run around this suite hands its
+  // gates EINZBERN_GATE_RUN_PRIOR, and a prior that carries every P1 leg would leave verify:p1 out of
+  // the probe's children; the probe is not given it, as in tests/push-gate-p1-coverage.test.mjs.
+  const probeEnvironment = {
+    ...process.env,
+    TCRN_PUSH_GATE_TIMING_PROBE: "1",
+    TCRN_PUSH_GATE_TIMING_EVIDENCE_PATH: probeTimingPath,
+    TCRN_PUSH_GATE_PROGRESS_EVIDENCE_PATH: probeProgressPath,
+  };
+  delete probeEnvironment[GATE_RUN_PRIOR_VARIABLE];
   const probe = spawnSync(process.execPath, [pushGatePath], {
     cwd: REPO_ROOT,
     encoding: "utf8",
-    env: {
-      ...process.env,
-      TCRN_PUSH_GATE_TIMING_PROBE: "1",
-      TCRN_PUSH_GATE_TIMING_EVIDENCE_PATH: probeTimingPath,
-      TCRN_PUSH_GATE_PROGRESS_EVIDENCE_PATH: probeProgressPath,
-    },
+    env: probeEnvironment,
   });
   assert.equal(probe.status, 0, `${probe.stdout ?? ""}${probe.stderr ?? ""}`);
   assert.equal(probe.stderr, "");

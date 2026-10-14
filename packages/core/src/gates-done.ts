@@ -14,15 +14,24 @@
 // declare, is WORK_DONE_GATES_NOT_COVERED; an applicable gate that is red is WORK_DONE_GATES_RED. The
 // check does not run gates itself.
 //
-// TCRN-CROSS-STORY-530 (TCRN-CROSS-SUB-450): "the project as it is now" is judged for each run against
-// the paths the run recorded: a run made for Stories whose commits are known by key took its tree
-// digest over the files those commits touched, and the check takes the digest again over the same
-// files, so what another process changes elsewhere in the project leaves the run standing.
+// TCRN-CROSS-STORY-530 (TCRN-CROSS-SUB-450), TCRN-CROSS-STORY-534 (MIN-257 D6; TCRN-CROSS-SUB-470):
+// "the project as it is now" is judged for each run against the files the run recorded. A run made
+// for Stories whose commits are known by key took its tree digest over the content of the files those
+// commits touched, without HEAD (einzbern.gate-tree.v3); the check reads the same files again and
+// compares the digests, and takes the files the commits of the Story and its Subtasks touch now
+// (Q2): a run that did not read one of them does not stand for the Story. So a commit or a file
+// another process makes elsewhere in the project leaves the run standing, and the Story goes to done
+// without its gates running again; a change to the content of one of the Story's files, committed or
+// not, or a new commit of the Story's that touches another file, does not. The refusal names those
+// files (changedPaths, addedPaths), as the latest run that read the Story's files saw them. A run made
+// without keys records HEAD and every change, and any of them moves it.
+
+import { realpath } from "node:fs/promises";
 
 import { canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { listGates } from "./gates-config.js";
 import type { NamedGate } from "./gates-config.js";
-import { gateAppliesTo, gateDeclarationsDigest } from "./gates-plan.js";
+import { gateAppliesTo, gateDeclarationsDigest, resolveGateRoot, storyCommitPaths } from "./gates-plan.js";
 import { gateTreeState, latestGateRun } from "./gates-run.js";
 import type { GateRun, GateTreeState } from "./gates-run.js";
 import { effectiveWorkGates, workAncestorIds, workSubjectKeys } from "./work-gates.js";
@@ -69,6 +78,28 @@ interface StoryGates {
   readonly unknown: readonly string[];
 }
 
+// TCRN-CROSS-STORY-534: whether a run read the Story's files, at least one root of it limited to them.
+function readsStoryFiles(run: GateRun): boolean {
+  return run.trees.some((tree) => tree.files !== undefined);
+}
+
+// A path under a gate root as the project root names it.
+function projectPath(root: string, path: string): string {
+  return root === "." ? path : `${root}/${path}`;
+}
+
+// TCRN-CROSS-STORY-534: the files a run read whose content is not what it read, named from the project
+// root; `reading` is the run's files read again (treeOf).
+function changedPathsOf(run: GateRun, reading: GateTreeState): readonly string[] {
+  const changed: string[] = [];
+  for (const tree of run.trees) {
+    if (tree.files === undefined) continue;
+    const now = new Map((reading.trees.find((entry) => entry.root === tree.root)?.files ?? []).map((file) => [file.path, file.digest]));
+    for (const file of tree.files) if (now.get(file.path) !== file.digest) changed.push(projectPath(tree.root, file.path));
+  }
+  return changed;
+}
+
 /**
  * Refuse, before any write, a transition that takes a Story to done while a gate that applies to it is
  * red, has not run bound to it, or has not run on the tree as it is. `workIds` are the records going
@@ -108,12 +139,12 @@ export async function assertDoneGates(input: {
   const projectRoot = typeof input.projectRoot === "string" ? input.projectRoot : await input.projectRoot();
   const roots = [...new Set(gates.map((gate) => gate.root))].sort(compareCanonicalText);
   const declarationsDigest = gateDeclarationsDigest(gates);
-  // The tree as each run saw it, taken again over the paths the run recorded; runs that recorded the
-  // same paths share one reading.
+  // The tree as each run saw it, read again over the files the run recorded (TCRN-CROSS-STORY-534:
+  // run.trees[].files); runs that recorded the same files share one reading.
   const readings = new Map<string, Promise<GateTreeState>>();
   const treeOf = (run: GateRun): Promise<GateTreeState> => {
     const paths: Record<string, readonly string[]> = {};
-    for (const tree of run.trees) if (tree.paths !== undefined) paths[tree.root] = tree.paths;
+    for (const tree of run.trees) if (tree.files !== undefined) paths[tree.root] = tree.files.map((file) => file.path);
     const key = canonicalJson(paths);
     let reading = readings.get(key);
     if (reading === undefined) {
@@ -122,14 +153,49 @@ export async function assertDoneGates(input: {
     }
     return reading;
   };
+  // Q2: the files under each root that the commits of a Story and its Subtasks touch now, read once
+  // per Story and only for a run that recorded the Story's files.
+  const storyFiles = new Map<string, Promise<ReadonlyMap<string, readonly string[]>>>();
+  const filesOf = (id: string): Promise<ReadonlyMap<string, readonly string[]>> => {
+    let files = storyFiles.get(id);
+    if (files === undefined) {
+      files = (async (): Promise<ReadonlyMap<string, readonly string[]>> => {
+        const project = await realpath(projectRoot);
+        const keys = workSubjectKeys(input.library.work, [id]);
+        const byRoot = new Map<string, readonly string[]>();
+        for (const root of roots) byRoot.set(root, storyCommitPaths(await resolveGateRoot(project, root), keys));
+        return byRoot;
+      })();
+      storyFiles.set(id, files);
+    }
+    return files;
+  };
+  // The files the Story's commits touch now that a run did not read, named from the project root.
+  const addedPathsOf = async (id: string, run: GateRun): Promise<readonly string[]> => {
+    if (!readsStoryFiles(run)) return [];
+    const now = await filesOf(id);
+    const added: string[] = [];
+    for (const tree of run.trees) {
+      if (tree.files === undefined) continue;
+      const recorded = new Set(tree.paths);
+      for (const path of now.get(tree.root) ?? []) if (!recorded.has(path)) added.push(projectPath(tree.root, path));
+    }
+    return added;
+  };
   const runs = new Map<string, GateRun>();
+  // For each Story, the latest run bound to it under these declarations that read its files: what a
+  // refusal reports the changed and added files against.
+  const latestReading = new Map<string, GateRun>();
   for (const entry of bound) {
     const run = await latestGateRun({
       libraryId: input.library.metadata.workspaceId,
       ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }),
       declarationsDigest,
       includesWorkIds: [entry.id],
-      accept: async (candidate) => (await treeOf(candidate)).treeDigest === candidate.treeDigest,
+      accept: async (candidate) => {
+        if (!latestReading.has(entry.id) && readsStoryFiles(candidate)) latestReading.set(entry.id, candidate);
+        return (await treeOf(candidate)).treeDigest === candidate.treeDigest && (await addedPathsOf(entry.id, candidate)).length === 0;
+      },
       ...(input.deviceHome === undefined ? {} : { deviceHome: input.deviceHome }),
     });
     if (run !== null) runs.set(entry.id, run);
@@ -138,10 +204,20 @@ export async function assertDoneGates(input: {
   if (notRun.length > 0) {
     // The digest a run made now for these Stories would record.
     const now = await gateTreeState(projectRoot, roots, { keys: workSubjectKeys(input.library.work, notRun) });
+    const changedPaths = new Set<string>();
+    const addedPaths = new Set<string>();
+    for (const id of notRun) {
+      const run = latestReading.get(id);
+      if (run === undefined) continue;
+      for (const path of changedPathsOf(run, await treeOf(run))) changedPaths.add(path);
+      for (const path of await addedPathsOf(id, run)) addedPaths.add(path);
+    }
     throw new GatesDoneError("WORK_DONE_GATES_NOT_RUN", "no gate run bound to the Story was made on the project as it is now; run gates-run --work-id <Story id>, then move the Story to done", {
       remedy: GATES_DONE_REMEDY,
       treeDigest: now.treeDigest,
       stories: notRun,
+      changedPaths: [...changedPaths].sort(compareCanonicalText),
+      addedPaths: [...addedPaths].sort(compareCanonicalText),
     });
   }
   // What each Story's run holds of the gates that apply to it: a release-only gate applies to a release run only.

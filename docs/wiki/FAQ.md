@@ -56,7 +56,7 @@
 
 ## 钩子看起来没反应，怎么知道它有没有运行？
 
-钩子只在本设备注册表登记过的项目里回答提示，其他地方照常以退出码 0 结束、什么也不输出，所以「没反应」和「没运行」看起来一样。如果提示所在的目录属于已知容器（库、旧布局工作区或旧平台容器），而注册表没有覆盖它，启动器会在设备目录的 `log/hook.ndjson` 追加一行（设备目录缺省是家目录下的 `.einzbern/`，`EINZBERN_HOME` 可以改）。每行一个 JSON 对象，`reasonCode` 说明原因：`HOOK_REGISTRY_ABSENT` 是本设备没有注册表，还没装好；`HOOK_PROJECT_UNREGISTERED` 是目录在旧布局里、没有登记的项目，按迁移办；`HOOK_LIBRARY_UNREGISTERED` 是目录里的库没有登记，按恢复办。这个文件只在提示一直落在这类地方时增长，删掉不丢任何东西。没有新行，说明目录不在已知容器里，或者钩子根本没有运行，这时看 `doctor` 的 `hooks-present`；平台容器上的 `platform-doctor` 还会把「钩子指向的脚本不存在」（`PLATFORM_HOOK_TARGET_UNAVAILABLE`）与「启动器在、但设备上没有装好引擎」（`PLATFORM_HOOK_ENGINE_NOT_INSTALLED`）分开报，家目录下用户级的 `.claude/settings.json` 与 `.codex/hooks.json` 也在它检查的范围内。
+钩子只在本设备注册表登记过的项目里回答提示，其他地方照常以退出码 0 结束、什么也不输出，所以「没反应」和「没运行」看起来一样。分辨它们看设备目录的 `log/hook.ndjson`（设备目录缺省是家目录下的 `.einzbern/`，`EINZBERN_HOME` 可以改），每行一个 JSON 对象，`reasonCode` 说明这一次提示为什么得到这样的结果。已登记项目里的每次提示都由召回追加一行，答没答都记：`HOOK_RECALL_ANSWERED` 是有强命中、已经回答；`HOOK_RECALL_NO_HITS` 是召回跑了但没有强命中；`HOOK_RECALL_PROMPT_EMPTY` 是提示为空；`HOOK_RECALL_LIBRARY_UNCONFIRMED` 是注册表不再把这个目录解析到启动器匹配的库，按恢复办；其他代码是召回失败本身的原因码，钩子的 stderr 上也是同一个。提示所在的目录属于已知容器（库、旧布局工作区或旧平台容器）而注册表没有覆盖它时，由启动器追加一行，多带 `container` 与 `marker`：`HOOK_REGISTRY_ABSENT` 是本设备没有注册表，还没装好；`HOOK_PROJECT_UNREGISTERED` 是目录在旧布局里、没有登记的项目，按迁移办；`HOOK_LIBRARY_UNREGISTERED` 是目录里的库没有登记，按恢复办。这个文件每次这样的提示长一行，不会自动轮转，删掉不丢任何东西；写不进去时直接放弃，不影响钩子的输出。提示之后没有新行，说明目录不在已知容器里，或者钩子根本没有走到引擎，这时看 `doctor` 的 `hooks-present` 和钩子 stderr 上启动器的拒绝原因；平台容器上的 `platform-doctor` 还会把「钩子指向的脚本不存在」（`PLATFORM_HOOK_TARGET_UNAVAILABLE`）与「启动器在、但设备上没有装好引擎」（`PLATFORM_HOOK_ENGINE_NOT_INSTALLED`）分开报，家目录下用户级的 `.claude/settings.json` 与 `.codex/hooks.json` 也在它检查的范围内。
 
 ## Wiki 怎么更新？
 

@@ -120,12 +120,25 @@ with `--yes true` only on a clear yes. Then run `doctor` again and report the ne
 ## A hook that answers nothing
 
 The hook answers a prompt only in a project this device's registry holds; anywhere else it ends
-with exit code 0 and prints nothing. When that directory lies in a known container the registry
-does not cover (a library, an old-layout workspace or an old platform container), the launcher
-also appends one line to `log/hook.ndjson` in the device directory, which is `.einzbern` in the
-user's home unless `EINZBERN_HOME` names another place. Each line is one JSON object with
-`schemaVersion` (`einzbern.hook-log.v1`), `at`, `event`, `cwd`, `container`, `marker` (`library`
-or `legacy`) and `reasonCode`:
+with exit code 0 and prints nothing. Either way it keeps a log: `log/hook.ndjson` in the device
+directory, which is `.einzbern` in the user's home unless `EINZBERN_HOME` names another place.
+Each line is one JSON object with `schemaVersion` (`einzbern.hook-log.v1`), `at`, `event`, `cwd`
+and `reasonCode`, and says why one prompt got what it got.
+
+Every prompt in a registered project leaves one line, written by the current engine's recall,
+whether it was answered or not:
+
+| reasonCode | What it means | Fix |
+| --- | --- | --- |
+| `HOOK_RECALL_ANSWERED` | Recall found strong hits; their lines went to the host. | none |
+| `HOOK_RECALL_NO_HITS` | Recall ran and nothing passed the strong-hit threshold, so nothing was printed. | none; a card or work item the prompt should find is missing or worded apart |
+| `HOOK_RECALL_PROMPT_EMPTY` | The prompt was empty or whitespace. | none |
+| `HOOK_RECALL_LIBRARY_UNCONFIRMED` | The registry no longer resolves this directory to the library the launcher matched, or the library no longer carries its recorded id. | `setup --mode restore` |
+| any other code | Recall failed with that code; the same code is on the hook's stderr. | the fix that code names |
+
+A prompt in a known container the registry does not cover (a library, an old-layout workspace or
+an old platform container) leaves one line from the launcher instead, with `container` and
+`marker` (`library` or `legacy`) as well:
 
 | reasonCode | What it means | Fix |
 | --- | --- | --- |
@@ -133,9 +146,11 @@ or `legacy`) and `reasonCode`:
 | `HOOK_PROJECT_UNREGISTERED` | The directory is in an old-layout workspace or platform container that no registered project holds. | `setup --mode migrate` |
 | `HOOK_LIBRARY_UNREGISTERED` | The directory's library is not in this device's registry. | `setup --mode restore` |
 
-Read the last few lines to see why the latest prompts got nothing. The file grows only while
-prompts keep landing in such a place, and deleting it loses nothing. No new line means the
-directory is in no known container, or the hook never ran: check `hooks-present`.
+Read the last few lines to see what the latest prompts got. The file grows by one line per prompt
+in a registered project or a known container, nothing rotates it, and deleting it loses nothing. A
+line that cannot be written is dropped without changing what the hook prints. No new line after a
+prompt means the directory is in no known container, or the hook never reached this engine: check
+`hooks-present`, and the hook's stderr for a launcher refusal such as `HOOK_ENGINE_CURRENT_INVALID`.
 
 ## Flags
 

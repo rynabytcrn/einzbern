@@ -169,7 +169,8 @@ import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relatio
 import { WORK_GATES_KINDS, normalizedWorkGates, workGatesShapeProblem } from "./work-gates.js";
 import { projectLineage, workspaceSettingIdentity, assertScopedSettingWriteConsistent } from "./project-scope.js";
 import { ConfigRecordError, configRecordId, configRecordIdentity, isConfigRecordCollection, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
-import { assertProjectLeasesAdmitDelete, assertWorkLeaseAdmits, leaseRemovalDelta, staleProjectLeaseRemovalDeltas } from "./work-lease.js";
+import { activeLease, assertProjectLeasesAdmitDelete, assertWorkLeaseAdmits, leaseRemovalDelta, staleProjectLeaseRemovalDeltas, workLease } from "./work-lease.js";
+import type { WorkLease } from "./work-lease.js";
 import type { ConfigRecord } from "./config-records.js";
 
 export const WORKSPACE_SCHEMA_VERSION = "tcrn.workspace.v1" as const;
@@ -3583,6 +3584,24 @@ export async function appendEvents(
   if (buildDeltas.length === 0) {
     fail("WORKSPACE_INPUT_INVALID", "an append carries at least one event");
   }
+  return appendPlannedEvents(workspaceRootInput, () => buildDeltas, options, underLock);
+}
+
+// TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-498): the deltas an append builds, planned from the state it
+// is built against. A delete's events depend on that state -- one lease removal for each lease it
+// clears, ahead of its own event -- so its plan is made again from the state every attempt reads:
+// outside the lock, again when another writer moved a stream first, and under the lock for a writer
+// outran OPTIMISTIC_APPEND_ATTEMPTS times. What it appends always matches the state it is appended
+// to. appendEvents is the plan that does not depend on the state.
+type AppendPlan = (state: WorkspaceState) => readonly ((state: WorkspaceState) => MutationDelta)[];
+
+async function appendPlannedEvents(
+  workspaceRootInput: string,
+  plan: AppendPlan,
+  options: WorkspaceMutationOptions,
+  underLock?: (root: string, committed: WorkspaceState) => Promise<void>,
+): Promise<WorkspaceState> {
+  assertStrictInstant(options.occurredAt);
   const layout = await resolveLayout(workspaceRootInput);
   if (layout.kind === "legacy") return refuseLegacyWrite(layout.root);
   await refuseTombstonedWrite(layout.root);
@@ -3590,13 +3609,13 @@ export async function appendEvents(
   // and by an append another writer outran OPTIMISTIC_APPEND_ATTEMPTS times.
   const underOneHold = (): Promise<WorkspaceState> => withWorkspaceWriteLock(layout.root, async (root) => {
     await options.insideWriteLockForTest?.();
-    const committed = await commitAppend(await prepareAppend(root, buildDeltas, options), options);
+    const committed = await commitAppend(await prepareAppend(root, plan, options), options);
     await underLock?.(root, committed);
     return committed;
   });
   if (heldWriteLocks.getStore()?.has(layout.root) === true) return underOneHold();
   for (let attempt = 1; attempt <= OPTIMISTIC_APPEND_ATTEMPTS; attempt += 1) {
-    const prepared = await prepareAppend(layout.root, buildDeltas, options);
+    const prepared = await prepareAppend(layout.root, plan, options);
     const committed = await withWorkspaceWriteLock(layout.root, async (root) => {
       await options.insideWriteLockForTest?.();
       if (!(await streamsUnchangedSince(prepared.library.root, prepared.read))) return null;
@@ -3620,10 +3639,11 @@ interface PreparedAppend {
   readonly current: WorkspaceState;
 }
 
-// Read the merged state, build every delta against it and measure the result -- nothing is written.
+// Read the merged state, plan and build every delta against it and measure the result -- nothing is
+// written.
 async function prepareAppend(
   root: string,
-  buildDeltas: readonly ((state: WorkspaceState) => MutationDelta)[],
+  plan: AppendPlan,
   options: WorkspaceMutationOptions,
 ): Promise<PreparedAppend> {
   {
@@ -3634,6 +3654,10 @@ async function prepareAppend(
     // one lock, one replay.
     const read = await readAllStreams(library.root);
     const state = await replayLibraryThroughCache(library, read);
+    const buildDeltas = plan(state);
+    if (buildDeltas.length === 0) {
+      fail("WORKSPACE_INPUT_INVALID", "an append carries at least one event");
+    }
     const own = read.streams.find((stream) => stream.deviceId === device.deviceId)?.manifest ?? emptyStreamManifest(library, device);
     const clockBase = Math.max(own.clockHighWater, ...read.streams.map((stream) => stream.manifest?.clockHighWater ?? 0));
     const appended: EventRecord[] = [];
@@ -3875,21 +3899,24 @@ function deleteProjectDelta(input: { readonly id: string; readonly occurredAt: s
 }
 
 // TCRN-CROSS-STORY-535 (MIN-257 D6; TCRN-CROSS-SUB-476): a lease that binds no one does not hold up a
-// project's delete. The latest state is read under the write lock, and the same append removes the
-// project's leases that have run out by --at or whose work item is deleted or absent (one
-// config.record.removed each) before the project.deleted event. A lease that still runs on a live
-// item refuses the delete with WORK_LEASED, whoever asks, and nothing is written (R4 Q4); the other
-// refusals are as they were.
+// project's delete. The same append removes the project's leases that have run out by --at or whose
+// work item is deleted or absent (one config.record.removed each) before the project.deleted event.
+// A lease that still runs on a live item refuses the delete with WORK_LEASED, whoever asks, and
+// nothing is written (R4 Q4); the other refusals are as they were.
+// TCRN-CROSS-STORY-538 (MIN-256 D6 C2, C3; TCRN-CROSS-SUB-498): the delete holds the library write lock
+// for its append alone. The project and its leases are read and judged outside it, so a refusal
+// waits for no other writer, and judged again from the state the append is built on, which the lease
+// removals are planned from (appendPlannedEvents): a lease claimed in between that runs on a live
+// item refuses the delete with WORK_LEASED, and one released or cleared in between is not removed.
 export async function deleteProject(workspaceRoot: string, input: {
   readonly id: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertStrictInstant(input.occurredAt);
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await materializeWorkspace(root);
+  return appendPlannedEvents(workspaceRoot, (state) => {
     const current = projectById(state, input.id);
     assertProjectLeasesAdmitDelete(state, current.id, input.occurredAt);
-    return appendEvents(root, [...staleProjectLeaseRemovalDeltas(state, current.id, input.occurredAt), deleteProjectDelta(input)], input);
-  });
+    return [...staleProjectLeaseRemovalDeltas(state, current.id, input.occurredAt), deleteProjectDelta(input)];
+  }, input);
 }
 
 // STORY-300 slice 3: createWork's delta, exposed so a batch can compose it. createWork
@@ -4323,20 +4350,43 @@ function deleteWorkDelta(input: { readonly id: string; readonly occurredAt: stri
   };
 }
 
-// TCRN-CROSS-STORY-535 (MIN-257 D6; TCRN-CROSS-SUB-475): a deleted item takes its lease with it. The
-// latest state is read under the write lock; when the item holds a lease, the same append removes
-// it (config.record.removed) just before the work.deleted event, whichever actor deletes and whether
-// the lease still runs. An item without a lease is deleted in one event, as before.
+// TCRN-CROSS-STORY-535 (MIN-257 D6; TCRN-CROSS-SUB-475): a deleted item takes its lease with it. When
+// the item holds a lease, the same append removes it (config.record.removed) just before the
+// work.deleted event, whichever actor deletes and whether the lease still runs. An item without a
+// lease is deleted in one event, as before.
+// TCRN-CROSS-STORY-538 (MIN-256 D6 C2, C3; TCRN-CROSS-SUB-498): the delete holds the library write lock
+// for its append alone. The item and its lease are read outside it, so a refusal waits for no other
+// writer, and the lease is judged again where the append builds its events, against the state it is
+// built on (deleteWorkLease): the lease the delete read goes, and so does one that has run out by
+// --at; one claimed on the item since the read that still runs at --at refuses the delete with
+// WORK_LEASED, whoever asks, and nothing is written.
 export async function deleteWork(workspaceRoot: string, input: {
   readonly id: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertStrictInstant(input.occurredAt);
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await materializeWorkspace(root);
-    workById(state, input.id);
-    const removal = leaseRemovalDelta(state, input.id);
-    return appendEvents(root, [...(removal === null ? [] : [removal]), deleteWorkDelta(input)], input);
-  });
+  // A library the append would refuse (an old layout, or one moved away) is refused before it is read.
+  await assertLibraryWritable(workspaceRoot);
+  const read = await materializeWorkspace(workspaceRoot);
+  workById(read, input.id);
+  const seen = workLease(read, input.id);
+  return appendPlannedEvents(workspaceRoot, (state) => [...deleteWorkLease(state, input, seen), deleteWorkDelta(input)], input);
+}
+
+const sameLease = (left: WorkLease, right: WorkLease | null): boolean =>
+  right !== null && left.holder === right.holder && left.claimedAt === right.claimedAt && left.expiresAt === right.expiresAt;
+
+// TCRN-CROSS-SUB-498: the removal of the lease a work item holds in the state its delete is appended
+// to, none when it holds none. A lease the delete did not read -- claimed since, or claimed again over
+// the one it read -- that runs at --at is another actor's claim the delete was not judged against: it
+// refuses the delete as it refuses any write it guards (WORK_LEASED, with the same details), whoever
+// asks. Any other lease goes with the item, as before.
+function deleteWorkLease(state: WorkspaceState, input: { readonly id: string; readonly occurredAt: string }, read: WorkLease | null): readonly ((state: WorkspaceState) => MutationDelta)[] {
+  const running = activeLease(state, input.id, input.occurredAt);
+  if (running !== null && running.workId === input.id && !sameLease(running, read)) {
+    assertWorkLeaseAdmits(state, input.id, undefined, input.occurredAt);
+  }
+  const removal = leaseRemovalDelta(state, input.id);
+  return removal === null ? [] : [removal];
 }
 
 // TCRN-CROSS-STORY-475 R1, R2 (MIN-227 D9, D10): record minutes in one write. The external key is
@@ -4727,6 +4777,17 @@ export async function removeWorkspaceSetting(workspaceRoot: string, input: {
  * Rebuild this device's cache of the library (TCRN-CROSS-STORY-469 R4): drop it, replay the
  * merged streams from genesis, and write the views and a snapshot of the result. The library
  * itself is only read.
+ *
+ * TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-498): unlike the writes that append, recover keeps holding the
+ * library write lock for its whole run. It appends no event and replaces no stream manifest, so
+ * there is no append to confine the lock to: what it writes is the cache, from a replay of every
+ * stream, strictly (a cache it cannot write is an error) and by force, over whatever the cache held.
+ * Held from the drop to that write, the lock keeps every write on this machine from committing in
+ * between, so the views and the snapshot it forces and the state it returns are of one head, the
+ * library as it stands when recover returns, and a reader replaying through the cache meanwhile
+ * writes that head's views too, not a newer one's. Narrowed like an append, it would replay from
+ * genesis again each time a write landed during its replay, the costliest read the engine makes,
+ * and on a busy library fall back to holding the lock for one replay anyway.
  */
 export async function recoverWorkspace(workspaceRoot: string): Promise<WorkspaceState> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {

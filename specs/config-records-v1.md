@@ -173,6 +173,12 @@ or to a Command Spell rule that a model proposes and Atelier approves or rejects
   `PROPOSAL_NOT_FOUND`; a rejected proposal is `PROPOSAL_NOT_PENDING` until it is proposed again; a
   proposal recorded since at another instant is `PROPOSAL_STALE` (`details.required` the recorded
   instant, `details.actual` the one named). A refusal appends nothing.
+- Proposing, rejecting and approving hold the library write lock for their append alone
+  (TCRN-CROSS-STORY-538): the proposal is read and checked before the lock is taken, so a refusal
+  does not wait for another writer, and checked again against the state the append is built on, so
+  a proposal another writer settled or proposed again in between is refused there with the codes
+  above. A rule's approval writes AGENTS.md from the proposal it read, so one proposed again since
+  at the same instant with another change is `PROPOSAL_STALE` too, and AGENTS.md is put back.
 - A proposal is not a declaration: gates, rules, plans, runs and managed sections read the `gate`
   and `rule` collections only. Proposals are not projected: `config/project.json` and
   `configProjectionStatus` leave the collection out, and a proposal or a rejection writes no

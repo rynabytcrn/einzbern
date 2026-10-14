@@ -776,6 +776,8 @@ export type { RuleChange, RuleState, RuleStatus } from "./rules.js";
 // TCRN-CROSS-STORY-471 R2, R3: the engine versions installed on this device, the pointer to the one
 // in use, and switching between them.
 export { listEngines, rollbackEngine, updateEngine } from "./engine-home.js";
+// TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-512): device-clean's plan and its run.
+export { applyDeviceClean, deviceCleanHome, planDeviceClean } from "./device-clean.js";
 // TCRN-CROSS-STORY-481 R4 (TCRN-CROSS-SUB-331): the oldest Node.js this engine runs on, and the check
 // that refuses an older one with ENGINE_NODE_TOO_OLD {required, actual}. The CLI entry and the hook
 // entry import node-floor.js itself rather than this barrel: they ask before the rest of the engine loads.

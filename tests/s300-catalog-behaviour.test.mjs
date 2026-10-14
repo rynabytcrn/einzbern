@@ -80,6 +80,16 @@ test("541 GWT1: --help on work-gate-release, project-bindings-set and -remove an
   assert.equal(declare.flags.some((entry) => entry.name === "decided-in"), false, "chain-declare takes no decision");
 });
 
+// TCRN-CROSS-STORY-541 GWT4 (MIN-258 D3; TCRN-CROSS-SUB-512): --help on device-clean answers its flags
+// without reading or clearing the device directory.
+test("541 GWT4: --help on device-clean answers --at, --yes and --home", async () => {
+  const result = await capture(["device-clean", "--help"]);
+  assert.equal(result.ok, true, `device-clean --help must not refuse: ${result.reasonCode ?? ""}`);
+  const entry = JSON.parse(result.output).commands[0];
+  assert.deepEqual([entry.name, entry.mutates], ["device-clean", true]);
+  assert.deepEqual(entry.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["at", true, "instant"], ["yes", false, "boolean"], ["home", false, "string"]]);
+});
+
 // TCRN-CROSS-STORY-527 (Q6; TCRN-CROSS-SUB-478): --help on the four proposal verbs answers their own
 // flags, and on the two lists names --status.
 test("527 Q6: --help on the proposal verbs answers their flags, and the two lists take --status", async () => {

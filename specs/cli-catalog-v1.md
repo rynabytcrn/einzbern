@@ -176,6 +176,24 @@ it with `--yes true` once the user agreed. `doctor`'s registry check lists each 
 library path no longer exists in `detail.hints` (`REGISTRY_LIBRARY_MISSING`) without changing
 its answer.
 
+## Device directory commands
+
+TCRN-CROSS-STORY-541 (MIN-258 D3): `device-clean --at <instant> [--home <home>]` clears what
+installs and updates gather in the device directory (`<home>/.einzbern` for `--home`, as the
+machine-settings verbs take it; otherwise `EINZBERN_HOME` or `~/.einzbern`). It lists each staging
+in `trash/` (`install-*`, `setup-update-*`) and each entry of `backups/`, with `kind`, `version`,
+`bytes` and `reason`, judged against `engine/current`: `keep` holds the pre-update backups
+(`…pre-update-<version>`) of the current and the previous version, the stagings whose unpacked
+release (`einzbern-<version>`) is the current version, and any other entry of `trash/`; `remove`
+holds every other staging and backup, with `removeBytes`; `refused` holds a symbolic link, or an
+area whose real path is not in the device directory, which is never touched. Without `--yes true`
+it answers `DEVICE_CLEAN_PLAN_READY` with that plan and writes nothing. With `--yes true` it makes
+the plan again, checks each entry of `remove` once more and deletes it with what it holds, links
+removed as links and never followed, answering `DEVICE_CLEANED` with the plan, `removed` (path and
+bytes of each) and `failed` (path and reason of each not deleted). Without `engine/current` it is
+`DEVICE_CLEAN_ENGINE_UNKNOWN`. It writes no library and takes no `--timeout-ms`; a caller runs it
+with `--yes true` once the user agreed.
+
 ## Proposal commands
 
 TCRN-CROSS-STORY-527 (MIN-257 D6, Q6): `gates-config-propose` and `rule-propose` record a change

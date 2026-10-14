@@ -130,6 +130,9 @@ import {
   listEngines,
   rollbackEngine,
   updateEngine,
+  applyDeviceClean,
+  deviceCleanHome,
+  planDeviceClean,
   libraryUpgradeReadiness,
   RELATION_NAMES,
   REVERSE_RELATION_NAMES,
@@ -1552,6 +1555,9 @@ export const COMMAND_CATALOG = Object.freeze([
   // name the stream, sequence and event where it stops being provable. Zero writes.
   { name: "chain-validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "commands", availability: "cli", mutates: false, flags: [] },
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-512): the stagings and backups of the device
+  // directory, the plan without --yes true and the clearing with it; --home as machine-settings take it.
+  { name: "device-clean", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }, { name: "home", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-480 R4, AC5: doctor's eight checks of this device and one project, --project or
   // the current directory. It changes nothing: device-stream's lock and probe file go again.
   { name: "doctor", availability: "cli", mutates: false, flags: [{ name: "project", required: false, valueKind: "string" }] },
@@ -2443,6 +2449,26 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values["cloud-hosted"] === undefined ? {} : { cloudHosted: booleanValue(values["cloud-hosted"], "cloud-hosted") }),
     });
     io.write(canonicalJson(report as unknown as JsonValue));
+    return;
+  }
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-512; r7 Q8): clear the stagings and backups the
+  // device directory gathers (device-clean.ts). Without --yes true it answers the plan
+  // (DEVICE_CLEAN_PLAN_READY): each staging in trash/ and each entry of backups/, kept, cleared or
+  // refused, with its size and reason; the pre-update backups of the current and the previous engine
+  // version and the stagings of the current version are kept. With --yes true it deletes the entries
+  // the plan clears, each checked again, and names each (DEVICE_CLEANED). --home is the user's home
+  // whose .einzbern is cleaned, as the machine-settings verbs take it. It writes this device's
+  // directory and no library; whoever runs it with --yes true has the user's go-ahead first.
+  if (command === "device-clean") {
+    const values = parseArguments(rest, ["at", "yes", "home"]);
+    required(values, ["at"]);
+    const confirmed = booleanValue(values.yes, "yes");
+    const input = { deviceHome: deviceCleanHome(values.home), at: values.at ?? "" };
+    if (!confirmed) {
+      io.write(canonicalJson({ reasonCode: "DEVICE_CLEAN_PLAN_READY", ...await planDeviceClean(input) } as unknown as JsonValue));
+      return;
+    }
+    io.write(canonicalJson({ reasonCode: "DEVICE_CLEANED", ...await applyDeviceClean(input) } as unknown as JsonValue));
     return;
   }
   // TCRN-CROSS-STORY-471 R2, R3 (engine-home.ts): the device's engine versions. engine-list is also

@@ -28,6 +28,12 @@ import { effectiveProjectState } from "./project-chain.js";
 // called, so an engine upgrade writes no file. An entry point that wrote a file and then cannot
 // commit the records of what it wrote puts every file it wrote back as it read it before the error
 // goes on (TCRN-CROSS-STORY-489), so no file is left holding a section the library never recorded.
+//
+// TCRN-CROSS-STORY-538 GWT3 (TCRN-CROSS-SUB-499): those entry points -- agents-render, rule-resolve,
+// rule-enable and rule-disable (rules.ts) and the variable sections (variables-sections.ts) -- read
+// the library and plan every file outside the library write lock, and hold it for the write alone:
+// under it the library must stand where they read it and each file must hold what they read
+// (filesAsPlanned), or they read and plan again (workspace.ts, appendPlannedWrite).
 
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isUtf8 } from "node:buffer";
@@ -70,7 +76,7 @@ import {
 } from "./variables-sections.js";
 import type { WithheldEntry } from "./variables-sections.js";
 import { compareRecordOrder } from "./variables.js";
-import { appendEvents, materializeWorkspace, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
+import { appendPlannedWrite, materializeWorkspace, projectConfiguration } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 
 export const AGENTS_SECTIONS_REASON_CODES = Object.freeze([
@@ -301,23 +307,77 @@ interface SectionWrite {
   readonly applied: AppliedManagedWrite;
 }
 
-async function writeSectionFile(located: SectionInFile, after: string, at: string, backupRoot: string | undefined): Promise<SectionWrite> {
-  const plan: ManagedWritePlan = {
-    filePath: located.filePath,
-    file: located.file,
-    exists: located.text !== null,
-    before: located.text,
-    after,
-    write: true,
-    sections: [],
-    pending: [],
-  };
-  return { plan, applied: await applyManagedWrite(plan, { now: at, ...(backupRoot === undefined ? {} : { backupRoot }) }) };
-}
-
 function sameRecord(left: ManagedSectionRecord | undefined, right: ManagedSectionRecord | null): boolean {
   if (left === undefined || right === null) return left === undefined && right === null;
   return left.file === right.file && left.id === right.id && left.rev === right.rev && left.digest === right.digest && left.state === right.state;
+}
+
+/**
+ * What one disposition or one disabling would do, planned without writing (TCRN-CROSS-SUB-499): the
+ * section as its file held it, the plan that writes the file (one that writes nothing when the file
+ * stays as it is; its `before` is the file as read) and the record the section would then have.
+ * writeSectionPlan carries it out; an entry point that plans outside the library write lock checks
+ * under it that the file still holds the plan's `before` (filesAsPlanned) before it does.
+ */
+export interface SectionPlan {
+  readonly located: SectionInFile;
+  readonly id: string;
+  readonly action: SectionAction | "disable";
+  readonly done: SectionChangeResult;
+  readonly plan: ManagedWritePlan;
+  readonly record: ManagedSectionRecord | null;
+  // Whether `record` differs from the record the section had: what the entry point records.
+  readonly recordChanged: boolean;
+}
+
+// The plan of one disposition or disabling: to write `after` over the file as `located` read it, or,
+// when `after` is null, to leave it as it is.
+function sectionPlan(located: SectionInFile, id: string, action: SectionAction | "disable", done: SectionChangeResult, after: string | null, record: ManagedSectionRecord | null): SectionPlan {
+  return {
+    located,
+    id,
+    action,
+    done,
+    plan: {
+      filePath: located.filePath,
+      file: located.file,
+      exists: located.text !== null,
+      before: located.text,
+      after,
+      write: after !== null,
+      sections: [],
+      pending: [],
+    },
+    record,
+    recordChanged: !sameRecord(located.record, record),
+  };
+}
+
+/** Carry out a section's plan: write its file when the plan writes one, and say what that did. */
+export async function writeSectionPlan(planned: SectionPlan, at: string, backupRoot: string | undefined): Promise<SectionOutcome> {
+  const write = planned.plan.write
+    ? { plan: planned.plan, applied: await applyManagedWrite(planned.plan, { now: at, ...(backupRoot === undefined ? {} : { backupRoot }) }) }
+    : null;
+  return change(planned.located, planned.id, planned.action, planned.done, write, planned.record);
+}
+
+/**
+ * TCRN-CROSS-STORY-538 GWT3 (TCRN-CROSS-SUB-499): whether every file `plans` read still holds what it
+ * read (ManagedWritePlan.before; no file, for one that was not there). An entry point that read and
+ * planned outside the library write lock checks this under it, beside the library's streams
+ * (workspace.ts, appendPlannedWrite), before it writes a file, so it never writes over a change made
+ * since it read: it plans again instead. A file that cannot be read now is taken to have changed, so
+ * the plan made again meets it and refuses it as the plan would have.
+ */
+export async function filesAsPlanned(plans: readonly ManagedWritePlan[]): Promise<boolean> {
+  for (const plan of plans) {
+    try {
+      if (await readSectionFile(plan.filePath, plan.file) !== plan.before) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -372,11 +432,11 @@ export interface ResolveSectionInput {
  * record to store.
  */
 export async function resolveSection(input: ResolveSectionInput): Promise<SectionChange> {
-  return (await settleSection(input)).change;
+  return (await writeSectionPlan(await planSettleSection(input), input.at, input.backupRoot)).change;
 }
 
-// resolveSection, and the plan it wrote (TCRN-CROSS-STORY-489).
-async function settleSection(input: ResolveSectionInput): Promise<SectionOutcome> {
+// resolveSection, planned without writing (TCRN-CROSS-SUB-499): what it would write and record.
+async function planSettleSection(input: ResolveSectionInput): Promise<SectionPlan> {
   if (!SECTION_ACTIONS.includes(input.action)) {
     fail("MANAGED_SECTION_ACTION_INVALID", `action must be one of ${SECTION_ACTIONS.join(", ")}`, { section: String(input.id), action: String(input.action) });
   }
@@ -385,14 +445,12 @@ async function settleSection(input: ResolveSectionInput): Promise<SectionOutcome
   if (parsed === null || section === null) {
     fail("MANAGED_SECTION_NOT_FOUND", `${file} holds no section ${input.id} to ${input.action}`, { file, section: input.id });
   }
-  const at = input.at;
   if (input.action === "keep") {
-    return change(located, input.id, "keep", "kept", null, { file, id: input.id, rev: section.rev, digest: section.bodyDigest, state: "user-owned" });
+    return sectionPlan(located, input.id, "keep", "kept", null, { file, id: input.id, rev: section.rev, digest: section.bodyDigest, state: "user-owned" });
   }
   if (input.action === "unmanage") {
     const kept: ManagedSectionRecord = { file, id: input.id, rev: record?.rev ?? section.rev, digest: record?.digest ?? section.digest, state: "unmanaged" };
-    const write = await writeSectionFile(located, replaceSection(parsed, index, section.body), at, input.backupRoot);
-    return change(located, input.id, "unmanage", "unmanaged", write, kept);
+    return sectionPlan(located, input.id, "unmanage", "unmanaged", replaceSection(parsed, index, section.body), kept);
   }
   const body = input.body;
   if (body === undefined) {
@@ -407,11 +465,10 @@ async function settleSection(input: ResolveSectionInput): Promise<SectionOutcome
   }
   const digest = sectionDigest(body);
   if (!userModified(section, record) && section.bodyDigest === digest) {
-    return change(located, input.id, "overwrite", "overwritten", null, { file, id: input.id, rev: section.rev, digest, state: "managed" });
+    return sectionPlan(located, input.id, "overwrite", "overwritten", null, { file, id: input.id, rev: section.rev, digest, state: "managed" });
   }
   const rev = Math.max(section.rev, record?.rev ?? 0) + 1;
-  const write = await writeSectionFile(located, replaceSection(parsed, index, renderSection({ id: input.id, rev, body }, parsed.eol)), at, input.backupRoot);
-  return change(located, input.id, "overwrite", "overwritten", write, { file, id: input.id, rev, digest, state: "managed" });
+  return sectionPlan(located, input.id, "overwrite", "overwritten", replaceSection(parsed, index, renderSection({ id: input.id, rev, body }, parsed.eol)), { file, id: input.id, rev, digest, state: "managed" });
 }
 
 export interface DisableSectionInput {
@@ -431,18 +488,19 @@ export interface DisableSectionInput {
  * the file only loses its record: text the user took over stays where it is.
  */
 export async function disableSection(input: DisableSectionInput): Promise<SectionChange> {
-  return (await takeSectionOut(input)).change;
+  return (await writeSectionPlan(await planSectionTakeOut(input), input.at, input.backupRoot)).change;
 }
 
 /**
- * disableSection, and the plan it wrote (TCRN-CROSS-STORY-489): for a caller that records the
- * change itself, disableAgentsSection here and disableRule in rules.ts, and puts the file back when
- * it cannot.
+ * disableSection, planned without writing (TCRN-CROSS-SUB-499): for a caller that records the change
+ * itself, disableAgentsSection here and disableRule in rules.ts. It plans outside the library write
+ * lock, writes the plan under it (writeSectionPlan) and puts the file back when it cannot record the
+ * change (TCRN-CROSS-STORY-489).
  */
-export async function takeSectionOut(input: DisableSectionInput): Promise<SectionOutcome> {
+export async function planSectionTakeOut(input: DisableSectionInput): Promise<SectionPlan> {
   const located = await locateSection(input.projectRoot, input.id, input.records);
   const { file, parsed, section, record, index } = located;
-  if (parsed === null || section === null) return change(located, input.id, "disable", "disabled", null, null);
+  if (parsed === null || section === null) return sectionPlan(located, input.id, "disable", "disabled", null, null);
   if (userModified(section, record) && input.force !== true) {
     fail("MANAGED_SECTION_FORCE_REQUIRED", `section ${input.id} of ${file} was changed by the user; disabling it needs force`, {
       file,
@@ -450,8 +508,7 @@ export async function takeSectionOut(input: DisableSectionInput): Promise<Sectio
       state: record?.state === "managed" || record === undefined ? "user-modified" : record.state,
     });
   }
-  const write = await writeSectionFile(located, replaceSection(parsed, index, ""), input.at, input.backupRoot);
-  return change(located, input.id, "disable", "disabled", write, null);
+  return sectionPlan(located, input.id, "disable", "disabled", replaceSection(parsed, index, ""), null);
 }
 
 // ---- The engine's sections and a library's records of them ----
@@ -519,20 +576,25 @@ function recordDeltas(changes: readonly { readonly file: string; readonly id: st
   });
 }
 
-async function commit(root: string, state: WorkspaceState, deltas: readonly ((state: WorkspaceState) => MutationDelta)[], options: WorkspaceMutationOptions): Promise<WorkspaceState> {
-  if (deltas.length === 0) return state;
-  const committed = await appendEvents(root, deltas, options);
-  await projectConfiguration(root, committed);
+/**
+ * TCRN-CROSS-SUB-499: under the library write lock, append the records a write planned (`append`,
+ * from workspace.ts appendPlannedWrite, which built them outside the lock) and project the library's
+ * configuration after them. A plan of `deltas` = 0 records nothing and projects nothing.
+ */
+export async function commitPlanned(root: string, append: () => Promise<WorkspaceState>, deltas: number): Promise<WorkspaceState> {
+  const committed = await append();
+  if (deltas > 0) await projectConfiguration(root, committed);
   return committed;
 }
 
 /**
  * TCRN-CROSS-STORY-489 (TCRN-CROSS-SUB-366): what an entry point does when it wrote files and then
  * cannot commit their records, before the error goes on as it was thrown. `root` and `state` are
- * the library as the entry point read it under its write lock, and the put-back runs under that
- * lock too. Each file it wrote goes back to what its plan read (ManagedWritePlan.before), the last
- * written first, and a file it created is taken away, so no file is left holding a section the
- * library never recorded, which the next render would take for the user's change. When the library
+ * the library as the entry point read it, which its write lock then found unmoved (TCRN-CROSS-SUB-499,
+ * workspace.ts appendPlannedWrite), and the put-back runs under that lock. Each file it wrote goes
+ * back to what its plan read (ManagedWritePlan.before), the last written first, and a file it
+ * created is taken away, so no file is left holding a section the library never recorded, which
+ * the next render would take for the user's change. When the library
  * shows the records went in all the same (a crash simulated after the event commit), the files
  * already agree with it and stay as written. The put-back is best effort: a file changed again
  * since it was written, or one that cannot be written, is left as it is, and a replaced file's
@@ -696,56 +758,66 @@ export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "con
  * the engine does not render (a navigation section another device wrote) is left alone. A render
  * whose records cannot be committed, or whose second file cannot be written, returns each file it
  * wrote to what it read before the error goes on (TCRN-CROSS-STORY-489).
+ *
+ * TCRN-CROSS-STORY-538 GWT3 (TCRN-CROSS-SUB-499): the library is read and both files planned outside
+ * the library write lock; under it the files are written and the records appended only while the
+ * library stands where it was read and both files hold what was read, and the render is planned
+ * again otherwise (workspace.ts, appendPlannedWrite).
  */
 export async function renderAgentsSections(workspaceRoot: string, input: {
   readonly projectRoot: string;
   readonly navigation: AgentsNavigationChoice | null;
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsRenderResult> {
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const nativeState = await materializeWorkspace(root);
-    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
-    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
-    const agents = agentsFileSections(state, input.navigation);
-    const plans = [
-      // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.
-      orderRuleSections(await planManagedWrite({
-        filePath: join(input.projectRoot, AGENTS_FILE),
-        file: AGENTS_FILE,
-        desired: agents.sections.map((section) => ({ id: section.id, body: section.body })),
-        records: managedSectionRecordsFor(state, AGENTS_FILE),
-      }), ruleOrders(state)),
-      await planClaudeImport(input.projectRoot, managedSectionRecordsFor(state, CLAUDE_FILE)),
-    ];
-    const decisions = plans.flatMap((plan) => plan.sections.map((decision) => ({ plan, decision })));
-    const deltas = recordDeltas(decisions.map(({ plan, decision }) => ({ file: plan.file, id: decision.id, record: decision.record, recordChanged: decision.recordChanged, hadRecord: true })), input.configurationProjectId);
-    const files: RenderedFile[] = [];
-    const wrote: ManagedWritePlan[] = [];
-    let committed: WorkspaceState;
-    try {
-      for (const plan of plans) {
-        const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
-        if (applied.written) wrote.push(plan);
-        files.push({ file: plan.file, written: applied.written, backupPath: applied.backupPath });
+  return appendPlannedWrite(workspaceRoot, input, {
+    plan: async (root, nativeState) => {
+      await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+      const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+      const agents = agentsFileSections(state, input.navigation);
+      const plans = [
+        // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.
+        orderRuleSections(await planManagedWrite({
+          filePath: join(input.projectRoot, AGENTS_FILE),
+          file: AGENTS_FILE,
+          desired: agents.sections.map((section) => ({ id: section.id, body: section.body })),
+          records: managedSectionRecordsFor(state, AGENTS_FILE),
+        }), ruleOrders(state)),
+        await planClaudeImport(input.projectRoot, managedSectionRecordsFor(state, CLAUDE_FILE)),
+      ];
+      const decisions = plans.flatMap((plan) => plan.sections.map((decision) => ({ plan, decision })));
+      const deltas = recordDeltas(decisions.map(({ plan, decision }) => ({ file: plan.file, id: decision.id, record: decision.record, recordChanged: decision.recordChanged, hadRecord: true })), input.configurationProjectId);
+      return { deltas, plan: { withheld: agents.withheld, plans, decisions, recorded: deltas.length } };
+    },
+    unchanged: ({ plans }) => filesAsPlanned(plans),
+    write: async (root, nativeState, { withheld, plans, decisions, recorded }, append) => {
+      const files: RenderedFile[] = [];
+      const wrote: ManagedWritePlan[] = [];
+      let committed: WorkspaceState;
+      try {
+        for (const plan of plans) {
+          const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
+          if (applied.written) wrote.push(plan);
+          files.push({ file: plan.file, written: applied.written, backupPath: applied.backupPath });
+        }
+        committed = await commitPlanned(root, append, recorded);
+      } catch (error) {
+        // TCRN-CROSS-STORY-489: this also takes back the first file when the second cannot be written.
+        await putBackUnrecorded(root, nativeState, wrote);
+        throw error;
       }
-      committed = await commit(root, nativeState, deltas, input);
-    } catch (error) {
-      // TCRN-CROSS-STORY-489: this also takes back the first file when the second cannot be written.
-      await putBackUnrecorded(root, nativeState, wrote);
-      throw error;
-    }
-    const backup = files.find((file) => file.backupPath !== null)?.backupPath ?? null;
-    return {
-      projectRoot: input.projectRoot,
-      navigation: input.navigation,
-      files,
-      sections: decisions.map(({ plan, decision }) => ({ id: decision.id, file: plan.file, result: decision.result, state: decision.record.state, line: decision.line })),
-      pending: plans.flatMap((plan) => plan.pending.map((id) => ({ id, file: plan.file }))),
-      backupDir: backup === null ? null : dirname(backup),
-      withheld: agents.withheld,
-      recorded: deltas.length,
-      state: committed,
-    };
+      const backup = files.find((file) => file.backupPath !== null)?.backupPath ?? null;
+      return {
+        projectRoot: input.projectRoot,
+        navigation: input.navigation,
+        files,
+        sections: decisions.map(({ plan, decision }) => ({ id: decision.id, file: plan.file, result: decision.result, state: decision.record.state, line: decision.line })),
+        pending: plans.flatMap((plan) => plan.pending.map((id) => ({ id, file: plan.file }))),
+        backupDir: backup === null ? null : dirname(backup),
+        withheld,
+        recorded,
+        state: committed,
+      };
+    },
   });
 }
 
@@ -754,12 +826,42 @@ export interface AgentsSectionChangeResult {
   readonly state: WorkspaceState;
 }
 
+// TCRN-CROSS-SUB-499: one section's change, planned outside the library write lock, written and
+// recorded under it, and its file put back when the record cannot be committed (TCRN-CROSS-STORY-489).
+// What resolveAgentsSection and disableAgentsSection share once each has planned its change.
+async function changeAgentsSection(workspaceRoot: string, input: { readonly projectRoot: string; readonly backupRoot?: string } & WorkspaceMutationOptions,
+  planChange: (state: WorkspaceState, records: readonly ManagedSectionRecord[], file: string) => Promise<SectionPlan>, id: string): Promise<AgentsSectionChangeResult> {
+  return appendPlannedWrite(workspaceRoot, input, {
+    plan: async (root, nativeState) => {
+      await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+      const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+      const file = managedSectionFile(id);
+      const records = managedSectionRecordsFor(state, file);
+      const planned = await planChange(state, records, file);
+      const hadRecord = records.some((record) => record.id === id);
+      const deltas = recordDeltas([{ file, id, record: planned.record, recordChanged: planned.recordChanged, hadRecord }], input.configurationProjectId);
+      return { deltas, plan: { planned, recorded: deltas.length } };
+    },
+    unchanged: ({ planned }) => filesAsPlanned([planned.plan]),
+    write: async (root, nativeState, { planned, recorded }, append) => {
+      const { change: outcome, wrote } = await writeSectionPlan(planned, input.occurredAt, input.backupRoot);
+      try {
+        return { change: outcome, state: await commitPlanned(root, append, recorded) };
+      } catch (error) {
+        await putBackUnrecorded(root, nativeState, wrote === null ? [] : [wrote]);
+        throw error;
+      }
+    },
+  });
+}
+
 /**
  * Settle one section of a project against the library (R3): resolveSection with the library's
  * records and, for overwrite, the engine's text as the library now stands; the record it leaves is
  * recorded in the library. An id the engine writes no text for cannot be overwritten. When that
  * record cannot be committed, the file returns to what it held before the error goes on
- * (TCRN-CROSS-STORY-489).
+ * (TCRN-CROSS-STORY-489). TCRN-CROSS-SUB-499: planned outside the library write lock, and written
+ * under it only while the library and the file stand as they were read.
  */
 export async function resolveAgentsSection(workspaceRoot: string, input: {
   readonly projectRoot: string;
@@ -768,12 +870,7 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
   readonly force?: boolean;
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsSectionChangeResult> {
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const nativeState = await materializeWorkspace(root);
-    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
-    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
-    const file = managedSectionFile(input.id);
-    const records = managedSectionRecordsFor(state, file);
+  return changeAgentsSection(workspaceRoot, input, async (state, records, file) => {
     let body: string | undefined;
     if (input.action === "overwrite") {
       body = engineSectionBody(state, input.id) ?? fail("MANAGED_SECTION_ACTION_INVALID", `the engine writes no section ${input.id}, so there is no text to overwrite it with`, {
@@ -782,7 +879,7 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
         action: "overwrite",
       });
     }
-    const { change: outcome, wrote } = await settleSection({
+    return planSettleSection({
       projectRoot: input.projectRoot,
       id: input.id,
       action: input.action,
@@ -792,21 +889,14 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
       ...(body === undefined ? {} : { body }),
       ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }),
     });
-    const hadRecord = records.some((record) => record.id === input.id);
-    try {
-      const committed = await commit(root, nativeState, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }], input.configurationProjectId), input);
-      return { change: outcome, state: committed };
-    } catch (error) {
-      await putBackUnrecorded(root, nativeState, wrote === null ? [] : [wrote]);
-      throw error;
-    }
-  });
+  }, input.id);
 }
 
 /**
  * Take one section out of a project's file and remove its record from the library (disableSection).
  * When the record cannot be removed, the file returns to what it held, the section in it, before
- * the error goes on (TCRN-CROSS-STORY-489).
+ * the error goes on (TCRN-CROSS-STORY-489). TCRN-CROSS-SUB-499: planned outside the library write
+ * lock, and written under it only while the library and the file stand as they were read.
  */
 export async function disableAgentsSection(workspaceRoot: string, input: {
   readonly projectRoot: string;
@@ -814,27 +904,12 @@ export async function disableAgentsSection(workspaceRoot: string, input: {
   readonly force?: boolean;
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsSectionChangeResult> {
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const nativeState = await materializeWorkspace(root);
-    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
-    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
-    const file = managedSectionFile(input.id);
-    const records = managedSectionRecordsFor(state, file);
-    const { change: outcome, wrote } = await takeSectionOut({
-      projectRoot: input.projectRoot,
-      id: input.id,
-      records,
-      at: input.occurredAt,
-      ...(input.force === undefined ? {} : { force: input.force }),
-      ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }),
-    });
-    const hadRecord = records.some((record) => record.id === input.id);
-    try {
-      const committed = await commit(root, nativeState, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }], input.configurationProjectId), input);
-      return { change: outcome, state: committed };
-    } catch (error) {
-      await putBackUnrecorded(root, nativeState, wrote === null ? [] : [wrote]);
-      throw error;
-    }
-  });
+  return changeAgentsSection(workspaceRoot, input, (_state, records) => planSectionTakeOut({
+    projectRoot: input.projectRoot,
+    id: input.id,
+    records,
+    at: input.occurredAt,
+    ...(input.force === undefined ? {} : { force: input.force }),
+    ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }),
+  }), input.id);
 }

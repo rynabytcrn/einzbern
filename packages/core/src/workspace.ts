@@ -499,6 +499,10 @@ export interface WorkspaceMutationOptions {
   // Runs inside the write lock, before the state is read: a test seam that holds the lock
   // open so a concurrent writer can be observed waiting for it.
   readonly insideWriteLockForTest?: () => Promise<void>;
+  // TCRN-CROSS-SUB-499: runs once a write that plans outside the lock (appendPlannedWrite) has read
+  // the library and made its plan, before it takes the lock: a test seam that sees the plan made while
+  // another process holds the lock, and changes the library or a file between the plan and the write.
+  readonly plannedForTest?: () => Promise<void>;
   // STORY-299: a test-facing knob for the pre-commit view budget, the same shape
   // and the same purpose as crashAt above. It only ever narrows -- a caller cannot
   // raise the protocol ceiling with it -- so the refusal it exercises is the same
@@ -3609,6 +3613,87 @@ export async function appendEvents(
   return underOneHold();
 }
 
+/**
+ * TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-499): what a write that puts files beside the library plans:
+ * the deltas that record what it writes, built like appendEvents' against the state the plan was
+ * made from once the lock found it unmoved, and the plan itself, which the write is handed under the
+ * lock.
+ */
+export interface LibraryWritePlan<P> {
+  readonly deltas: readonly ((state: WorkspaceState) => MutationDelta)[];
+  readonly plan: P;
+}
+
+/** TCRN-CROSS-SUB-499: the three steps of appendPlannedWrite. */
+export interface PlannedWriteSteps<P, R> {
+  // Outside the lock: read what the write needs beside the library's state, and decide what it
+  // writes and records. Nothing is written.
+  readonly plan: (root: string, state: WorkspaceState) => Promise<LibraryWritePlan<P>>;
+  // Under the lock: whether everything the plan read beside the library still holds what it read.
+  readonly unchanged: (plan: P) => Promise<boolean>;
+  // Under the lock: write what was planned, then call `append` once to record it. `append` builds the
+  // events against the state the plan was made from and appends them; when the plan holds no delta
+  // it answers that state and appends nothing.
+  readonly write: (root: string, state: WorkspaceState, plan: P, append: () => Promise<WorkspaceState>) => Promise<R>;
+}
+
+/**
+ * TCRN-CROSS-STORY-538 GWT3 (TCRN-CROSS-SUB-499): appendEvents for a write that also puts files beside
+ * the library and records them -- agents-render, rule-resolve, rule-enable, rule-disable and the
+ * variable sections write a project's AGENTS.md and CLAUDE.md (agents-sections.ts, rules.ts,
+ * variables-sections.ts) -- holding the lock, as appendEvents does, for the write alone. The library
+ * is read and `plan` reads the files against that state and decides what to write and record, both
+ * before the lock is taken. Under it, every stream must stand where the read found it (the check
+ * appendEvents makes) and `unchanged` must find each file as the plan read it; only then does
+ * `write` write the files and append the events, built against the state the check found unmoved,
+ * so no library is read under the lock. A plan that either check finds stale is made again from a
+ * new read, and no file is written from a plan the library or the file has moved past; one other
+ * writers outran OPTIMISTIC_APPEND_ATTEMPTS times is made under the lock, as is one whose caller holds
+ * the lock already. A refusal of the plan comes before anything is written. The events are built and
+ * measured after the files are written, as they were while the whole write held the lock, so a
+ * refusal of one of them, like any other failure of the append, finds the files written and the write
+ * puts them back (agents-sections.ts, putBackUnrecorded; TCRN-CROSS-STORY-489).
+ */
+export async function appendPlannedWrite<P, R>(workspaceRootInput: string, options: WorkspaceMutationOptions, steps: PlannedWriteSteps<P, R>): Promise<R> {
+  const layout = await resolveLayout(workspaceRootInput);
+  if (layout.kind === "legacy") return refuseLegacyWrite(layout.root);
+  await refuseTombstonedWrite(layout.root);
+  const prepare = async (root: string): Promise<PreparedPlannedWrite<P>> => {
+    const source = await readForAppend(root);
+    return { source, planned: await steps.plan(root, source.state) };
+  };
+  const write = (root: string, ready: PreparedPlannedWrite<P>): Promise<R> => {
+    const append = async (): Promise<WorkspaceState> => {
+      if (ready.planned.deltas.length === 0) return ready.source.state;
+      assertStrictInstant(options.occurredAt);
+      return commitAppend(await buildAppend(ready.source, ready.planned.deltas, options), options);
+    };
+    return steps.write(root, ready.source.state, ready.planned.plan, append);
+  };
+  const underOneHold = (): Promise<R> => withWorkspaceWriteLock(layout.root, async (root) => {
+    await options.insideWriteLockForTest?.();
+    return write(root, await prepare(root));
+  });
+  if (heldWriteLocks.getStore()?.has(layout.root) === true) return underOneHold();
+  for (let attempt = 1; attempt <= OPTIMISTIC_APPEND_ATTEMPTS; attempt += 1) {
+    const ready = await prepare(layout.root);
+    await options.plannedForTest?.();
+    const written = await withWorkspaceWriteLock(layout.root, async (root) => {
+      await options.insideWriteLockForTest?.();
+      if (!(await streamsUnchangedSince(ready.source.library.root, ready.source.read)) || !(await steps.unchanged(ready.planned.plan))) return null;
+      return { result: await write(root, ready) };
+    });
+    if (written !== null) return written.result;
+  }
+  return underOneHold();
+}
+
+// TCRN-CROSS-SUB-499: what appendPlannedWrite read and planned, outside the lock, for the lock to write.
+interface PreparedPlannedWrite<P> {
+  readonly source: LibraryReadForAppend;
+  readonly planned: LibraryWritePlan<P>;
+}
+
 // TCRN-CROSS-SUB-481: what an append read and built, outside the lock, for the lock to commit.
 interface PreparedAppend {
   readonly library: Library;
@@ -3620,20 +3705,40 @@ interface PreparedAppend {
   readonly current: WorkspaceState;
 }
 
+// TCRN-CROSS-SUB-499: what an append reads before it builds a delta: the library and the state merged
+// from every stream of it.
+interface LibraryReadForAppend {
+  readonly library: Library;
+  readonly read: LibraryRead;
+  readonly state: WorkspaceState;
+}
+
+// WSA-1: the single full replay per mutation, so the state every delta is built against is the
+// latest one this machine has, and a batch is one mutation: one replay.
+async function readForAppend(root: string): Promise<LibraryReadForAppend> {
+  const library = await openLibrary(root);
+  const read = await readAllStreams(library.root);
+  return { library, read, state: await replayLibraryThroughCache(library, read) };
+}
+
 // Read the merged state, build every delta against it and measure the result -- nothing is written.
 async function prepareAppend(
   root: string,
   buildDeltas: readonly ((state: WorkspaceState) => MutationDelta)[],
   options: WorkspaceMutationOptions,
 ): Promise<PreparedAppend> {
+  return buildAppend(await readForAppend(root), buildDeltas, options);
+}
+
+// Build every delta against the state `source` holds and measure the result -- nothing is written.
+async function buildAppend(
+  source: LibraryReadForAppend,
+  buildDeltas: readonly ((state: WorkspaceState) => MutationDelta)[],
+  options: WorkspaceMutationOptions,
+): Promise<PreparedAppend> {
   {
-    const library = await openLibrary(root);
+    const { library, read, state } = source;
     const { device } = await readOrCreateDevice();
-    // WSA-1: the single full replay per mutation, read under the lock, so the state every
-    // delta is built against is the latest one this machine has, and a batch is one mutation:
-    // one lock, one replay.
-    const read = await readAllStreams(library.root);
-    const state = await replayLibraryThroughCache(library, read);
     const own = read.streams.find((stream) => stream.deviceId === device.deviceId)?.manifest ?? emptyStreamManifest(library, device);
     const clockBase = Math.max(own.clockHighWater, ...read.streams.map((stream) => stream.manifest?.clockHighWater ?? 0));
     const appended: EventRecord[] = [];

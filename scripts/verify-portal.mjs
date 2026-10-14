@@ -2,8 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // INC-140: the portal gates are one serial train.  The engine suite and the
 // portal suite must never share an output session concurrently.
+// TCRN-CROSS-SUB-484 (MIN-257 D6): the train is a heavy run. It takes a slot of
+// execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs) before its first step, waiting
+// while every slot is held, and frees it when the train ends, red steps included; the steps it
+// starts inherit the slot through EINZBERN_HEAVY_SLOT.
 
 import { spawnSync } from "node:child_process";
+
+import { acquireHeavySlot } from "./lib/heavy-runs.mjs";
 
 // `--silent` is not cosmetic: pnpm echoes the script body it is about to run onto
 // stderr, and verify-p1 fails a command whose stderr is not empty. Without it the
@@ -18,6 +24,7 @@ const commands = [
   [process.execPath, ["scripts/verbatim-evidence-meta-proof.mjs"]],
 ];
 
+const slot = await acquireHeavySlot({ command: "verify:portal" });
 const unverified = [];
 // INC-223: what the train saw but did not judge on. Until the DS reconciliation was
 // split, this list could only ever be filled by a machine with no Design System
@@ -34,6 +41,7 @@ for (const [executable, args] of commands) {
   if (result.status !== 0) {
     if (result.stdout) process.stderr.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
+    slot.release();
     process.exit(result.status ?? 1);
   }
   if (args[0] === "scripts/ds-component-css-reconcile.mjs") {
@@ -47,4 +55,5 @@ for (const [executable, args] of commands) {
 // pasted into evidence and printed in public CI logs, and execPath carries the runner's
 // home directory. Execution above still uses the real interpreter.
 const reportedName = (executable) => (executable === process.execPath ? "node" : executable);
+slot.release();
 process.stdout.write(JSON.stringify({ ok: true, reasonCode: "PORTAL_VERIFY_TRAIN_GREEN", commands: commands.map(([executable, args]) => [reportedName(executable), ...args]), unverified, observations }) + "\n");

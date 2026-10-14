@@ -1,3 +1,4 @@
+import { HEAVY_RUNS_DEFAULT, HEAVY_RUNS_MAX, HEAVY_RUNS_MIN, HEAVY_RUNS_SETTING } from "../../../scripts/lib/heavy-runs.mjs";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-281 — the machine settings layer.
 //
@@ -6,7 +7,8 @@
 // about how this machine's portal opens — which partition, which language, which
 // theme, which port — where this user's crest lives (TCRN-CROSS-STORY-476 R5), and whether
 // this device's agents read the navigation lines from AGENTS.md or from two pointer hooks
-// (TCRN-CROSS-STORY-478 R4); none of them is a claim anyone needs to audit. Putting them
+// (TCRN-CROSS-STORY-478 R4), and how many heavy runs may run at once on this machine
+// (TCRN-CROSS-SUB-484, MIN-257 D6); none of them is a claim anyone needs to audit. Putting them
 // on a chain would mean every laptop preference became a governed event on a shared
 // ledger, and choosing a partition to open in would take the chain write lock.
 //
@@ -47,6 +49,7 @@ export type AgentsNavigationChoice = typeof AGENTS_NAVIGATION_CHOICES[number];
 export const MACHINE_SETTING_KEYS = Object.freeze([
   AGENTS_NAVIGATION_SETTING,
   USER_CREST_PATH_SETTING,
+  HEAVY_RUNS_SETTING,
   "portal.defaultLocale",
   "portal.defaultPartition",
   "portal.defaultTheme",
@@ -140,6 +143,25 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     shape: "scalar",
     group: "knowledge",
     order: 4,
+    appliesOn: "next-open",
+    valueSource: "settings-catalog",
+  }),
+  // TCRN-CROSS-SUB-484 (MIN-257 D6): how many heavy runs -- gates-run, the whole test suite, the
+  // portal proof train, release finish -- may hold a slot at once on this machine
+  // (scripts/lib/heavy-runs.mjs, which reads it without the engine and owns its bounds). Unset, one.
+  // A change applies to the next run that takes a slot.
+  Object.freeze({
+    key: HEAVY_RUNS_SETTING,
+    type: "integer",
+    controlType: "number",
+    layer: "device",
+    layerKind: MACHINE_SETTINGS_LAYER_KIND,
+    defaultValue: String(HEAVY_RUNS_DEFAULT),
+    shape: "scalar",
+    group: "execution",
+    order: 6,
+    min: HEAVY_RUNS_MIN,
+    max: HEAVY_RUNS_MAX,
     appliesOn: "next-open",
     valueSource: "settings-catalog",
   }),

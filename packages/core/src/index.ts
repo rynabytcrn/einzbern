@@ -731,8 +731,9 @@ export { applyWritableRoots, planWritableRoots } from "./host-writable-roots.js"
 // with everything of the old harness taken out.
 export { HOST_HOOK_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
 // TCRN-CROSS-STORY-477 R2, AC3: what that hook answers for a prompt in a registered project, and
-// (TCRN-CROSS-STORY-478 R4) what the two pointer hooks answer.
-export { hookEventName, hookHost, navigationPointerAnswer, promptRecallContext } from "./hook-recall.js";
+// (TCRN-CROSS-STORY-478 R4) what the two pointer hooks answer. TCRN-CROSS-SUB-483: the hook entry
+// reads the answer with the reason it carries (promptRecallOutcome), so that is what is exported.
+export { hookEventName, hookHost, navigationPointerAnswer, promptRecallOutcome } from "./hook-recall.js";
 // TCRN-CROSS-STORY-478 R1 (TCRN-CROSS-SUB-315): a library's project-level configuration records, set
 // and removed as events and merged like its settings.
 export { configRecord, configRecords, removeConfigRecord, setConfigRecord } from "./config-records.js";

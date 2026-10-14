@@ -45,6 +45,8 @@
 
 设备目录 `~/.einzbern/` 保存该机身份、库注册信息、本机设置、锁、备份、已安装引擎版本，以及按库分开的 `cache/`。缓存里有重放后的视图、索引、快照和门结果；它只服务本机，可以从同步来的事件流重建，不属于库，也不会上传到云端。
 
+重活（`gates-run`、全量测试、门户证明链与发布 `finish`）开始前先在 `locks/` 里取一个槽（`heavy.lock`，多槽时还有 `heavy-2.lock` 等），同时最多跑本机设置 `execution.maxConcurrentHeavyRuns` 个（缺省 1，可设 1–16，归在设置页「执行与限额」组）；槽满时等待，并在 stderr 报出持槽的命令与进程。重活自己启动的子重活经环境变量 `EINZBERN_HEAVY_SLOT` 沿用父进程的槽、不再另取；`EINZBERN_HEAVY_LOCK_DIR` 可以把槽放到别的目录，让几个设备目录共用一组槽。
+
 ## Coordination and concrete projects
 
 Cross Project is an explicitly declared coordination chain. Each concrete

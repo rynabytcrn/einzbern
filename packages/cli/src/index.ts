@@ -5,6 +5,7 @@ import { chainIdentity, declareChainIdentity, resolveProjectTarget, workProjectC
 import { normalizeInvolvedProjects, involvedProjectsOf, projectReference, hasInvolvedProject } from "../../core/src/involved-projects.js";
 import { normalizedWorkGates } from "../../core/src/work-gates.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
+import { acquireHeavySlot } from "../../../scripts/lib/heavy-runs.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import {
@@ -4060,6 +4061,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-485 R3: run the plan's gates, every one of them whatever the ones before it did,
   // and record the run in this device's cache of the library under the digest of the tree it ran
   // on. The answer lists every red gate, and the required ones among them apart.
+  // TCRN-CROSS-SUB-484 (MIN-257 D6): a run of gates is a heavy run. Once it is planned, it takes a
+  // slot of execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs), waiting while every slot
+  // is held, and holds it until its last gate ends; the gates it starts inherit the slot through
+  // EINZBERN_HEAVY_SLOT. gates-plan runs nothing and takes no slot.
   if (command === "gates-run") {
     const values = parseArguments(rest, ["project-id", "workspace", "at", "project", "base", "release", "work-id"]);
     required(values, ["workspace", "at"]);
@@ -4077,7 +4082,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       subjects: gateSubjects(native.work, workIds),
       subjectKeys: workSubjectKeys(native.work, workIds),
     });
-    const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), at: values.at ?? "" });
+    const slot = await acquireHeavySlot({ command: "gates-run" });
+    let ran;
+    try {
+      ran = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), at: values.at ?? "" });
+    } finally {
+      slot.release();
+    }
+    const { run, recordPath } = ran;
     io.write(canonicalJson({
       reasonCode: "GATES_RUN_COMPLETED",
       workspaceId: state.metadata.workspaceId,

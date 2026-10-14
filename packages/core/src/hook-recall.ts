@@ -26,6 +26,12 @@ import { effectiveProjectState } from "./project-chain.js";
 // section in AGENTS.md, the host also runs the launcher on SessionStart and SubagentStart. Those
 // pointer events are answered with the three navigation lines alone (navigationPointerAnswer):
 // nothing is retrieved and no library is read.
+//
+// TCRN-CROSS-SUB-483 (TCRN-CROSS-STORY-529, MIN-257 D6): every recall also says why it answered
+// what it did (promptRecallOutcome): HOOK_RECALL_ANSWERED with the hit lines, otherwise
+// HOOK_RECALL_PROMPT_EMPTY, HOOK_RECALL_LIBRARY_UNCONFIRMED or HOOK_RECALL_NO_HITS. The hook entry
+// writes that code into log/hook.ndjson in the device directory; a failure is still thrown, and
+// the entry notes the failure's own reasonCode before passing it on.
 
 import { NAVIGATION_LINES } from "./agents-sections.js";
 import { HOST_HOOK_EVENTS, HOST_HOOK_HOSTS, HOST_HOOK_POINTER_EVENTS } from "./host-hooks.js";
@@ -122,6 +128,21 @@ export interface PromptRecallAnswer {
   readonly output: string;
 }
 
+/** Why a prompt's recall gave what it gave; one code per outcome (TCRN-CROSS-SUB-483). */
+export const HOOK_RECALL_OUTCOME_CODES = Object.freeze([
+  "HOOK_RECALL_ANSWERED",
+  "HOOK_RECALL_NO_HITS",
+  "HOOK_RECALL_PROMPT_EMPTY",
+  "HOOK_RECALL_LIBRARY_UNCONFIRMED",
+] as const);
+export type HookRecallOutcomeCode = typeof HOOK_RECALL_OUTCOME_CODES[number];
+
+export interface PromptRecallOutcome {
+  // The answer promptRecallContext gives: null unless reasonCode is HOOK_RECALL_ANSWERED.
+  readonly answer: PromptRecallAnswer | null;
+  readonly reasonCode: HookRecallOutcomeCode;
+}
+
 function currentInstant(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/u, "Z");
 }
@@ -147,19 +168,22 @@ async function confirmedLibrary(cwd: string, libraryPath: string): Promise<Resol
 }
 
 /**
- * The UserPromptSubmit answer for one prompt in a registered project: the hit lines recall gives
- * for it, cut to injection.perPromptBytes, and the host protocol JSON carrying them; null when the
- * prompt is empty, when the registry does not confirm the launcher's library from `cwd`, or when
- * recall has no line to give. Reads the library and both knowledge crests; writes only this device's cache.
+ * The UserPromptSubmit answer for one prompt in a registered project and why it is what it is: the
+ * hit lines recall gives for it, cut to injection.perPromptBytes, and the host protocol JSON
+ * carrying them (HOOK_RECALL_ANSWERED); no answer when the prompt is empty
+ * (HOOK_RECALL_PROMPT_EMPTY), when the registry does not confirm the launcher's library from `cwd`
+ * (HOOK_RECALL_LIBRARY_UNCONFIRMED), or when recall has no line to give (HOOK_RECALL_NO_HITS). A
+ * request that is not one, or a library that cannot be read, throws as before. Reads the library
+ * and both knowledge crests; writes only this device's cache.
  */
-export async function promptRecallContext(request: PromptRecallRequest): Promise<PromptRecallAnswer | null> {
+export async function promptRecallOutcome(request: PromptRecallRequest): Promise<PromptRecallOutcome> {
   if (!HOST_HOOK_HOSTS.includes(request.host)) fail("HOOK_INPUT_INVALID", `host must be one of ${HOST_HOOK_HOSTS.join(", ")}`, { host: String(request.host) });
   if (typeof request.libraryPath !== "string" || request.libraryPath.length === 0) fail("HOOK_INPUT_INVALID", "libraryPath must be a path");
   if (typeof request.cwd !== "string" || request.cwd.length === 0) fail("HOOK_INPUT_INVALID", "cwd must be a path");
   const prompt = typeof request.prompt === "string" ? request.prompt.toWellFormed() : "";
-  if (prompt.trim().length === 0) return null;
+  if (prompt.trim().length === 0) return { answer: null, reasonCode: "HOOK_RECALL_PROMPT_EMPTY" };
   const library = await confirmedLibrary(request.cwd, request.libraryPath);
-  if (library === null) return null;
+  if (library === null) return { answer: null, reasonCode: "HOOK_RECALL_LIBRARY_UNCONFIRMED" };
   const at = request.at ?? currentInstant();
   const state = await effectiveProjectState(await materializeLibrary(library.libraryPath), library.entry.projectId);
   // TCRN-CROSS-SUB-425 (MIN-239 D6): the prompt hook recalls valid cards only, always; no prompt asks
@@ -179,6 +203,15 @@ export async function promptRecallContext(request: PromptRecallRequest): Promise
   // TCRN-CROSS-SUB-426 (MIN-239 D5, D6): the index holds valid decisions only, so the hook never
   // recalls an obsolete one; a work or card hit that points at one says which decision replaced it.
   const lines = recallContextLines(recallDecisionHints(state, cards, result.records), perPromptBytes);
-  if (lines.length === 0) return null;
-  return { lines, output: hookProtocolOutput(request.host, "UserPromptSubmit", lines) };
+  if (lines.length === 0) return { answer: null, reasonCode: "HOOK_RECALL_NO_HITS" };
+  return { answer: { lines, output: hookProtocolOutput(request.host, "UserPromptSubmit", lines) }, reasonCode: "HOOK_RECALL_ANSWERED" };
+}
+
+/**
+ * The UserPromptSubmit answer for one prompt in a registered project (promptRecallOutcome's
+ * answer): the hit lines and the host protocol JSON carrying them, or null when there is nothing
+ * to print.
+ */
+export async function promptRecallContext(request: PromptRecallRequest): Promise<PromptRecallAnswer | null> {
+  return (await promptRecallOutcome(request)).answer;
 }

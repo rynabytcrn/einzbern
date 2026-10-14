@@ -509,7 +509,9 @@ window.PORTAL_LOCALES = {
     "proposals.ruleEnable": "Enable this rule",
     "proposals.ruleDisable": "Disable this rule",
     "proposals.proposedBy": "Proposed by {actor} at {at}",
-    "proposals.rejectedBy": "Rejected by {actor} at {at}. It can be approved only after it is proposed again."
+    "proposals.rejectedBy": "Rejected by {actor} at {at}. It can be approved only after it is proposed again.",
+    "prose.coordinationBound": "This coordination library writes its rules and variables into the AGENTS.md of the directory it is registered for: {path}.",
+    "prose.coordinationUnconfigured": "This coordination library is registered for no directory outside a library, so a rule change is only recorded. Register the directory it coordinates with library-register."
   },
   "zh-CN": {
     "projects.bindings": "项目绑定",
@@ -1017,7 +1019,9 @@ window.PORTAL_LOCALES = {
     "proposals.ruleEnable": "启用这条原则",
     "proposals.ruleDisable": "禁用这条原则",
     "proposals.proposedBy": "{actor} 于 {at} 提出",
-    "proposals.rejectedBy": "{actor} 于 {at} 拒绝。重新提出后才能批准。"
+    "proposals.rejectedBy": "{actor} 于 {at} 拒绝。重新提出后才能批准。",
+    "prose.coordinationBound": "这个协调库把规则与变量写入它登记的目录里的 AGENTS.md：{path}。",
+    "prose.coordinationUnconfigured": "这个协调库没有登记库外的目录，规则变更只记录、不写文件。用 library-register 登记它协调的目录。"
   },
   "ja": {
     "projects.bindings": "プロジェクトの紐付け",
@@ -1525,7 +1529,9 @@ window.PORTAL_LOCALES = {
     "proposals.ruleEnable": "このルールを有効化",
     "proposals.ruleDisable": "このルールを無効化",
     "proposals.proposedBy": "{actor} が {at} に提案",
-    "proposals.rejectedBy": "{actor} が {at} に却下しました。承認するには再提案が必要です。"
+    "proposals.rejectedBy": "{actor} が {at} に却下しました。承認するには再提案が必要です。",
+    "prose.coordinationBound": "この調整ライブラリは、登録先ディレクトリの AGENTS.md にルールと変数を書き込みます：{path}。",
+    "prose.coordinationUnconfigured": "この調整ライブラリはライブラリ外のディレクトリに登録されていないため、ルールの変更は記録だけされます。調整対象のディレクトリを library-register で登録してください。"
   },
   "ko": {
     "projects.bindings": "프로젝트 연결",
@@ -2033,7 +2039,9 @@ window.PORTAL_LOCALES = {
     "proposals.ruleEnable": "이 규칙 활성화",
     "proposals.ruleDisable": "이 규칙 비활성화",
     "proposals.proposedBy": "{actor}이(가) {at}에 제안",
-    "proposals.rejectedBy": "{actor}이(가) {at}에 거부했습니다. 다시 제안해야 승인할 수 있습니다."
+    "proposals.rejectedBy": "{actor}이(가) {at}에 거부했습니다. 다시 제안해야 승인할 수 있습니다.",
+    "prose.coordinationBound": "이 조정 라이브러리는 등록된 디렉터리의 AGENTS.md에 규칙과 변수를 씁니다: {path}.",
+    "prose.coordinationUnconfigured": "이 조정 라이브러리는 라이브러리 밖의 디렉터리에 등록되어 있지 않아 규칙 변경이 기록만 됩니다. 조정하는 디렉터리를 library-register로 등록하세요."
   },
   "fr": {
     "projects.bindings": "Liaisons du projet",
@@ -2541,6 +2549,8 @@ window.PORTAL_LOCALES = {
     "proposals.ruleEnable": "Activer cette règle",
     "proposals.ruleDisable": "Désactiver cette règle",
     "proposals.proposedBy": "Proposée par {actor} le {at}",
-    "proposals.rejectedBy": "Rejetée par {actor} le {at}. Elle ne peut être approuvée qu’après une nouvelle proposition."
+    "proposals.rejectedBy": "Rejetée par {actor} le {at}. Elle ne peut être approuvée qu’après une nouvelle proposition.",
+    "prose.coordinationBound": "Cette bibliothèque de coordination écrit ses règles et ses variables dans le AGENTS.md du dossier pour lequel elle est enregistrée : {path}.",
+    "prose.coordinationUnconfigured": "Cette bibliothèque de coordination n’est enregistrée pour aucun dossier hors d’une bibliothèque : un changement de règle est seulement consigné. Enregistrez le dossier qu’elle coordonne avec library-register."
   }
 };

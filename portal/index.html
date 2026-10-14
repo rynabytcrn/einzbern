@@ -4332,6 +4332,7 @@ button:disabled { cursor: not-allowed; }
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
             <div id="rules-pending" class="tcrn-surface" data-ui="rules-pending" aria-label="Pending rule changes"><strong data-i18n="rule.pendingTitle">Pending</strong><label class="tcrn-sr-only" for="pending-section" data-i18n="rule.pendingSelect">Pending section</label><select class="tcrn-select" id="pending-section" data-ui="pending-section"></select><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="keep" data-i18n="rule.keep">Keep my text</button><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="overwrite" data-i18n="rule.overwrite">Overwrite</button><button class="tcrn-button tcrn-button--quiet" type="button" data-pending-action="unmanage" data-i18n="rule.unmanage">Unmanage</button></div>
+            <p class="tcrn-text" id="prose-binding-note" data-ui="prose-binding-note" hidden></p>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
             <div data-ui="rules-layout"><section id="prose-directory" data-ui="rule-list" aria-label="Built-in rules"></section><div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-text" id="agents-file">AGENTS.md</span><details class="tcrn-disclosure-panel" id="agents-path-details" data-identity-details="agents-path" hidden><summary class="tcrn-disclosure-panel__title" data-i18n="prose.fullPath">Full path</summary><code id="agents-path"></code> <button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-copy-identity="" data-clipboard-copy-state="idle" aria-label="Copy the full path of AGENTS.md"><span data-copy-label>Copy</span><span class="tcrn-sr-only" role="status" aria-live="polite" data-copy-status></span></button></details><span class="tcrn-text tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">AGENTS.md</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div></div>
@@ -6151,11 +6152,23 @@ const BOOT = __PORTAL_BOOT__;
     copy.setAttribute("data-copy-identity", path);
     copy.setAttribute("aria-label", t("prose.copyPath", { file }));
     if (copy.dataset.clipboardCopyState === "idle") setText("#agents-path-details [data-copy-label]", t("copy.idle"));
+    // TCRN-CROSS-STORY-540 GWT5 (MIN-258 D3(c); TCRN-CROSS-SUB-508): a coordination library's rules and variables
+    // are rendered into the AGENTS.md of the directory it is registered for, the container it coordinates.
+    const note = $("#prose-binding-note");
+    const coordination = (state.settings?.chain?.role ?? BOOT.library?.chain?.role) === "coordination";
+    note.hidden = !coordination;
+    note.dataset.bindingStatus = coordination ? (path === "" ? "unconfigured" : "bound") : "";
+    note.textContent = !coordination ? "" : path === "" ? t("prose.coordinationUnconfigured") : t("prose.coordinationBound", { path: path.replace(/[\\/][^\\/]+$/u, "") });
   };
   const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); if (unkept(documentResult, reconciliation, rules)) return; state.agentsText = documentResult.text || ""; state.agentsDocument = documentResult; state.rules = rules; $("#agents-md").value = state.agentsText; renderAgentsFile(documentResult); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
   // TCRN-CROSS-STORY-508 R8 (C-R14-6): a write of a key the system variables section shows renders
   // AGENTS.md again (portal.mjs), so the Rules page reads the file back after it.
-  const rendersSystemVariables = (key) => ["models.category", "models.tiers"].includes(key) || String(key).startsWith("models.escalation.") || String(key).startsWith("design.");
+  // TCRN-CROSS-STORY-540 GWT2 (Q4, Q5; TCRN-CROSS-SUB-508): on a coordination library its orchestration limits
+  // take the model tables' place, and the artifact language picks the sections' language on every library.
+  const COORDINATION_SYSTEM_VARIABLE_KEYS = ["execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent"];
+  const rendersSystemVariables = (key) => String(key) === "artifact.language" || String(key).startsWith("design.") || (state.settings?.chain?.role === "coordination"
+    ? COORDINATION_SYSTEM_VARIABLE_KEYS.includes(key)
+    : ["models.category", "models.tiers"].includes(key) || String(key).startsWith("models.escalation."));
   // An empty selection means "unset this key": the engine refuses an empty --value as a
   // missing argument, and the honest verb for clearing a setting is settings-remove.
   const saveSetting = async (key, value) => {

@@ -3485,3 +3485,45 @@ if (!MUTATION) test("528 SUB-459: the work tree shows a lease with its holder an
     assert.equal(document.querySelector(`#work-tree-content [data-work-id="${epic.id}"] > summary [data-work-lease]`)?.textContent, held, "the Epic keeps its own lease");
   } finally { await closePage(page, fixture); }
 });
+
+// TCRN-CROSS-STORY-540 GWT5 (MIN-258 D3(c), which replaces MIN-245 D6; TCRN-CROSS-SUB-508): a container with a
+// coordination library inside it, registered for the container, beside the fixture's two project libraries.
+async function coordinationContainerFixture(prefix) {
+  const fixture = await scratch(prefix);
+  const container = join(fixture.base, "container");
+  await mkdir(container);
+  const library = join(container, ".ether");
+  await cli(["init", "--workspace", library, "--at", nextAt()], fixture.deviceEnv);
+  const libraryId = (await cli(["status", "--workspace", library], fixture.deviceEnv)).workspaceId;
+  await cli(["chain-declare", "--workspace", library, "--role", "coordination", "--coordination-library-id", libraryId, "--at", nextAt()], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
+  await cli(["library-register", "--project", container, "--library", library, "--at", nextAt()], fixture.deviceEnv);
+  coordinationLibraries.add(library);
+  await writeFile(join(container, "AGENTS.md"), "# The container\n", "utf8");
+  return { ...fixture, container, coordination: library, coordinationId: libraryId };
+}
+
+// The Rules page of a selected coordination library names the container's AGENTS.md its rules and variables
+// are written into and shows that file; a project library's Rules page carries no such note.
+if (!MUTATION) test("540 SUB-508: a coordination library's Rules page names and shows the container's AGENTS.md, and a project's carries no such note", async () => {
+  const fixture = await coordinationContainerFixture("tcrn-540-coordination-");
+  const locales = await localeTable();
+  const page = await loadExecutedDom({ ...fixture, workspace: fixture.coordination });
+  try {
+    const { document } = page;
+    document.querySelector('[data-page-target="prose"]')?.click();
+    const note = await waitFor(() => { const node = document.querySelector('[data-ui="prose-binding-note"]'); return node !== null && !node.hidden ? node : null; }, "the coordination note on the Rules page");
+    assert.equal(note.dataset.bindingStatus, "bound");
+    assert.equal(note.textContent, locales.en["prose.coordinationBound"].replace("{path}", fixture.container));
+    assert.equal(document.querySelector("#agents-md").value, "# The container\n", "the editor shows the container's file");
+    assert.equal(document.querySelector("#agents-path").textContent, join(fixture.container, "AGENTS.md"));
+    assert.ok(document.querySelector('#prose-directory [data-rule-card="autonomy"] [data-rule-switch]'), "the rules can be switched on from the page");
+    document.querySelector('[data-page-target="variables"]')?.click();
+    assert.ok(document.querySelector('[data-ui="variables-view"]'), "the variables page is there for the coordination library");
+
+    const select = document.querySelector("#library-select");
+    select.value = fixture.proseRoot;
+    select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+    await waitFor(() => document.querySelector("#agents-path")?.textContent === join(fixture.proseRoot, "AGENTS.md"), "the page to switch to the project library");
+    assert.equal(document.querySelector('[data-ui="prose-binding-note"]').hidden, true, "a project library's Rules page carries no coordination note");
+  } finally { await closePage(page, fixture); }
+});

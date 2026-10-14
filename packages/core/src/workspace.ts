@@ -2984,26 +2984,58 @@ export function workspaceBudgets(state: WorkspaceState): WorkspaceBudgetReport {
 const heldWriteLocks = new AsyncLocalStorage<ReadonlySet<string>>();
 
 /**
+ * TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-480): how a writer takes the library write lock. `timeoutMs`
+ * bounds the wait (no bound when left out) and `command` is what the lock file records the holder
+ * runs, "einzbern <verb>" and never its arguments, so a waiter that runs out of time is told who holds
+ * the lock: WORKSPACE_LOCKED's details holderPid, holderCommand and heldSince.
+ */
+export interface WorkspaceWriteLockOptions {
+  readonly timeoutMs?: number;
+  readonly command?: string;
+}
+
+// TCRN-CROSS-SUB-480: the options every library write lock taken within one flow defaults to. The CLI
+// sets them once per verb (its --timeout-ms and the verb's name), so the locks the engine's own write
+// functions take carry them too, not only the ones a verb takes itself.
+const writeLockDefaults = new AsyncLocalStorage<WorkspaceWriteLockOptions>();
+
+/** Run `operation` with `options` as the default of every library write lock it takes. */
+export function withWriteLockOptions<T>(options: WorkspaceWriteLockOptions, operation: () => Promise<T>): Promise<T> {
+  return writeLockDefaults.run({ ...writeLockDefaults.getStore(), ...options }, operation);
+}
+
+/**
  * Run `operation` as this machine's only writer of the library, holding the library's lock in
  * the device directory (TCRN-CROSS-STORY-467 R1, 469 R3). An old-layout workspace refuses.
+ * TCRN-CROSS-SUB-480: a holder that outlasts `timeoutMs` refuses the wait with WORKSPACE_LOCKED,
+ * naming the holder.
  */
 export async function withWorkspaceWriteLock<T>(
   workspaceRootInput: string,
   operation: (workspaceRoot: string) => Promise<T>,
+  options: WorkspaceWriteLockOptions = {},
 ): Promise<T> {
   const layout = await resolveLayout(workspaceRootInput);
   if (layout.kind === "legacy") return refuseLegacyWrite(layout.root);
   await refuseTombstonedWrite(layout.root);
   const held = heldWriteLocks.getStore() ?? new Set<string>();
   if (held.has(layout.root)) return operation(layout.root);
+  const defaults = writeLockDefaults.getStore() ?? {};
+  const timeoutMs = options.timeoutMs ?? defaults.timeoutMs;
+  const command = options.command ?? defaults.command;
   try {
     return await withLibraryWriteLock(
       layout.library,
       () => heldWriteLocks.run(new Set([...held, layout.root]), () => operation(layout.root)),
+      { ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(command === undefined ? {} : { command }) },
     );
   } catch (error) {
     if (error instanceof FileLockError && error.reasonCode === "FILE_LOCK_TIMEOUT") {
-      fail("WORKSPACE_LOCKED", "another writer on this machine holds the library write lock");
+      throw new WorkspaceError("WORKSPACE_LOCKED", "another writer on this machine holds the library write lock", {
+        holderPid: error.details?.holderPid ?? "unknown",
+        holderCommand: error.details?.holderCommand ?? "unknown",
+        heldSince: error.details?.heldSince ?? "unknown",
+      });
     }
     throw error;
   }

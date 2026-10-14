@@ -42,6 +42,10 @@ export interface FileLockOptions {
   readonly timeoutMs?: number;
   // Deprecated compatibility option: age no longer authorizes ownership removal.
   readonly staleMs?: number;
+  // TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-480): what the holder runs, recorded in the lock file so a
+  // waiter that runs out of time can name it. A caller gives "einzbern <verb>", never the verb's
+  // arguments, so no path reaches a refusal through it.
+  readonly command?: string;
   // Test seams: the clock and the liveness probe.
   readonly now?: () => number;
   readonly processAlive?: (pid: number) => boolean;
@@ -59,6 +63,9 @@ interface LockOwner {
   readonly token: string;
   readonly hostname: string;
   readonly createdAt: string;
+  // TCRN-CROSS-SUB-480: optional, so einzbern.file-lock.v1 stays as it is; a reader that predates the
+  // field ignores it, as parseOwner ignores every field it does not check.
+  readonly command?: string;
 }
 
 function defaultProcessAlive(pid: number): boolean {
@@ -157,6 +164,7 @@ export async function acquireFileLock(lockPath: string, options: FileLockOptions
     token,
     hostname: hostname(),
     createdAt: new Date(now()).toISOString(),
+    ...(typeof options.command === "string" && options.command.length > 0 ? { command: options.command } : {}),
   };
   const content = `${JSON.stringify(owner)}\n`;
   const deadline = timeoutMs === undefined ? undefined : now() + timeoutMs;
@@ -188,10 +196,15 @@ export async function acquireFileLock(lockPath: string, options: FileLockOptions
       }
     }
     if (deadline !== undefined && now() >= deadline) {
+      // TCRN-CROSS-SUB-480: the holder as its lock file names it -- its process, the command it runs
+      // and since when it holds the lock; "unknown" for what an older or unreadable owner leaves out.
       const holderPid = held?.owner?.pid;
+      const holderCommand = held?.owner?.command;
       throw new FileLockError("FILE_LOCK_TIMEOUT", `${lockPath} is held by another writer`, {
         lockPath,
         holderPid: holderPid === undefined ? "unknown" : String(holderPid),
+        holderCommand: typeof holderCommand === "string" && holderCommand.length > 0 ? holderCommand : "unknown",
+        heldSince: held?.owner?.createdAt ?? "unknown",
       });
     }
     await delay(wait + Math.floor(Math.random() * wait));

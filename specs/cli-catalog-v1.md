@@ -57,6 +57,22 @@ Each entry is `{name, availability, mutates, flags}`, optionally plus
     `settings-set`, `settings-remove`, `variable-set` and `variable-remove` — as
     `minutes:<id>#D<n>`, so `--help` on any of them shows how to cite one.
 
+### `--timeout-ms` on the writes that take the library write lock
+
+Every write that takes this machine's write lock of a library (TCRN-CROSS-STORY-529,
+TCRN-CROSS-SUB-480) carries an optional `timeout-ms` flag of kind `integer`, at
+least `0`: how long the verb waits for the lock. Left out, the verb waits until
+the lock is free, as before. A verb that runs out of the time refuses with
+`WORKSPACE_LOCKED`, and the refusal names the holder in three string details:
+`holderPid`, `holderCommand` (`einzbern <verb>`, never the verb's arguments,
+so no path reaches the refusal) and `heldSince` (the instant the holder took the
+lock); each is `unknown` when the lock file does not say. The lock file stays
+`einzbern.file-lock.v1`: the holder's command is an optional `command` field that
+a reader which predates it ignores. The flag is a catalog addition, so the catalog
+stays v1. `host-probe`'s own `timeout-ms` bounds its probe and is unrelated.
+`library-import-legacy` and `init` write a library they create and do not take
+the flag.
+
 ## Parity and stability
 
 The catalog is the source of truth for the verb set: every dispatched verb has

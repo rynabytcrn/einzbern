@@ -13,6 +13,7 @@
 | `--at` | 必填 | `instant` |
 | `--actor` | 可选 | `string` |
 | `--project-id` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `artifact-list`
 
@@ -33,6 +34,7 @@
 | `--workspace` | 可选 | `string` |
 | `--file` | 必填 | `string` |
 | `--at` | 必填 | `instant` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `artifact-verify`
 
@@ -56,6 +58,7 @@
 | `--coordination-library-id` | 必填 | `string` |
 | `--at` | 必填 | `instant` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `chain-identity`
 
@@ -148,6 +151,29 @@
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
 | `--project-id` | 可选 | `string` |
+| `--status` | 可选 | `string` |
+
+## `gates-config-propose`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--at` | 必填 | `instant` |
+| `--name` | 必填 | `string` |
+| `--action` | 可选 | `string` |
+| `--command` | 可选 | `string` |
+| `--root` | 可选 | `string` |
+| `--covers` | 可选 | `list` |
+| `--required` | 可选 | `boolean` |
+| `--enabled` | 可选 | `boolean` |
+| `--release-only` | 可选 | `boolean` |
+| `--order` | 可选 | `integer` |
+| `--actor` | 必填 | `string` |
+| `--project-id` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `gates-config-remove`
 
@@ -162,6 +188,7 @@
 | `--actor` | 可选 | `string` |  |
 | `--project-id` | 可选 | `string` |  |
 | `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `gates-config-set`
 
@@ -183,6 +210,7 @@
 | `--actor` | 可选 | `string` |  |
 | `--project-id` | 可选 | `string` |  |
 | `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `gates-plan`
 
@@ -264,6 +292,7 @@
 | `--accountable-owner-id` | 必填 | `string` |
 | `--evidence-ids` | 必填 | `list` |
 | `--language-bundle` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-article-refresh`
 
@@ -280,6 +309,7 @@
 | `--path` | 必填 | `string` |
 | `--summary` | 必填 | `string` |
 | `--language-bundle` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-batch`
 
@@ -294,6 +324,7 @@
 | `--from-file` | 必填 | `string` |
 | `--align-first` | 可选 | `boolean` |
 | `--language-bundle` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-bodies-migrate`
 
@@ -306,6 +337,7 @@
 | `--segment-bytes` | 可选 | `integer` |
 | `--clear-removed` | 可选 | `boolean` |
 | `--at` | 可选 | `instant` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-body`
 
@@ -348,6 +380,7 @@
 | `--coexist` | 可选 | `boolean` |
 | `--allow-trailing` | 可选 | `boolean` |
 | `--language-bundle` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-checkpoint`
 
@@ -396,6 +429,7 @@
 | `--export` | 必填 | `string` |
 | `--body` | 必填 | `string` |
 | `--language-bundle` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-freshness`
 
@@ -417,6 +451,7 @@
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
 | `--acknowledge-disposable` | 可选 | `boolean` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-list`
 
@@ -450,6 +485,7 @@
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
 | `--at` | 必填 | `instant` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-recover`
 
@@ -460,6 +496,7 @@
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
 | `--scope` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-remove`
 
@@ -476,6 +513,7 @@
 | `--actor` | 必填 | `string` |
 | `--superseded-by` | 可选 | `string` |
 | `--scope` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-reverify`
 
@@ -488,6 +526,7 @@
 | `--expected-revision` | 必填 | `integer` |
 | `--at` | 必填 | `instant` |
 | `--id` | 必填 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `knowledge-snippet`
 
@@ -632,6 +671,7 @@
 | `--withdraws` | 可选 | `list` |
 | `--coexists` | 可选 | `list` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `minutes-show`
 
@@ -657,6 +697,7 @@
 | `--key` | 必填 | `string` |
 | `--at` | 必填 | `instant` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `project-bindings-set`
 
@@ -671,6 +712,7 @@
 | `--value` | 必填 | `json` |
 | `--at` | 必填 | `instant` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `project-context`
 
@@ -694,6 +736,7 @@
 | `--name` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
 | `--parent-project-id` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `project-delete`
 
@@ -706,6 +749,7 @@
 | `--at` | 必填 | `instant` |
 | `--id` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `project-list`
 
@@ -730,6 +774,39 @@
 | `--id` | 必填 | `string` |
 | `--name` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
+
+## `proposal-approve`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--key` | 必填 | `string` |
+| `--proposed-at` | 必填 | `instant` |
+| `--at` | 必填 | `instant` |
+| `--workspace` | 可选 | `string` |
+| `--project` | 可选 | `string` |
+| `--actor` | 必填 | `string` |
+| `--project-id` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
+
+## `proposal-reject`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--key` | 必填 | `string` |
+| `--proposed-at` | 必填 | `instant` |
+| `--at` | 必填 | `instant` |
+| `--workspace` | 可选 | `string` |
+| `--project` | 可选 | `string` |
+| `--actor` | 必填 | `string` |
+| `--project-id` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `recall`
 
@@ -757,6 +834,7 @@
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
 | `--at` | 必填 | `instant` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `rule-disable`
 
@@ -772,6 +850,7 @@
 | `--actor` | 可选 | `string` |  |
 | `--project-id` | 可选 | `string` |  |
 | `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `rule-enable`
 
@@ -787,6 +866,7 @@
 | `--actor` | 可选 | `string` |  |
 | `--project-id` | 可选 | `string` |  |
 | `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `rule-list`
 
@@ -798,6 +878,24 @@
 | `--workspace` | 可选 | `string` |
 | `--project` | 可选 | `string` |
 | `--project-id` | 可选 | `string` |
+| `--status` | 可选 | `string` |
+
+## `rule-propose`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--id` | 必填 | `string` |
+| `--action` | 可选 | `string` |
+| `--order` | 可选 | `integer` |
+| `--at` | 必填 | `instant` |
+| `--workspace` | 可选 | `string` |
+| `--project` | 可选 | `string` |
+| `--actor` | 必填 | `string` |
+| `--project-id` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `rule-resolve`
 
@@ -813,6 +911,7 @@
 | `--project` | 可选 | `string` |
 | `--actor` | 可选 | `string` |
 | `--project-id` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `settings-catalog`
 
@@ -837,6 +936,7 @@
 | `--actor` | 可选 | `string` |  |
 | `--project-id` | 可选 | `string` |  |
 | `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `settings-set`
 
@@ -852,6 +952,7 @@
 | `--actor` | 可选 | `string` |  |
 | `--project-id` | 可选 | `string` |  |
 | `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `setup`
 
@@ -925,6 +1026,7 @@
 | `--template` | 必填 | `string` |
 | `--owner` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `template-validate`
 
@@ -967,6 +1069,7 @@
 | `--actor` | 可选 | `string` |  |
 | `--project-id` | 可选 | `string` |  |
 | `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `variable-set`
 
@@ -985,6 +1088,7 @@
 | `--actor` | 可选 | `string` |  |
 | `--project-id` | 可选 | `string` |  |
 | `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `vocabulary`
 
@@ -1023,6 +1127,7 @@
 | `--summary` | 可选 | `string` |
 | `--labels` | 可选 | `list` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `work-batch`
 
@@ -1036,6 +1141,7 @@
 | `--from-file` | 必填 | `string` |
 | `--project` | 可选 | `string` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `work-claim`
 
@@ -1049,6 +1155,7 @@
 | `--id` | 必填 | `string` |
 | `--actor` | 必填 | `string` |
 | `--ttl` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `work-create`
 
@@ -1081,6 +1188,7 @@
 | `--labels` | 可选 | `list` |
 | `--template-receipt` | 可选 | `json` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `work-delete`
 
@@ -1093,6 +1201,7 @@
 | `--at` | 必填 | `instant` |
 | `--id` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `work-draft`
 
@@ -1130,6 +1239,7 @@
 | `--id` | 必填 | `string` |
 | `--reason` | 必填 | `string` |
 | `--actor` | 必填 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `work-list`
 
@@ -1173,6 +1283,7 @@
 | `--id` | 必填 | `string` |
 | `--actor` | 必填 | `string` |
 | `--force` | 可选 | `boolean` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `work-show`
 
@@ -1199,6 +1310,7 @@
 | `--summary` | 可选 | `string` |
 | `--project` | 可选 | `string` |
 | `--actor` | 可选 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
 
 ## `workspace-relocate`
 
@@ -1211,3 +1323,4 @@
 | `--to` | 必填 | `string` |
 | `--at` | 必填 | `instant` |
 | `--cloud-hosted` | 可选 | `boolean` |
+| `--timeout-ms` | 可选 | `integer` |

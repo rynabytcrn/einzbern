@@ -18,6 +18,12 @@
 // unexpired lease on the item, on any item above it or on any item below it. The holder releases at
 // any time; another actor needs force (Atelier only, decided at the CLI) while the lease runs, and
 // a lease that has run out binds no one, so anyone may clear it.
+//
+// TCRN-CROSS-STORY-535 (MIN-257 D6): a lease does not outlive its item. Deleting a work item is not a
+// write a lease guards, so any actor deletes a leased item, and its lease is removed in the same
+// append (leaseRemovalDelta, SUB-475). Deleting a project clears its leases that bind no one --
+// run out, or on an item that is gone -- in the same append, and is refused while one still runs on
+// a live item (projectLeases, SUB-476).
 
 import { ProtocolError, assertProtocolId, parseStrictInstant } from "../../protocol/src/index.js";
 import type { JsonValue, WorkRecord } from "../../protocol/src/index.js";
@@ -263,6 +269,11 @@ export function claimWorkDelta(input: ClaimWorkInput): (state: WorkspaceState) =
   };
 }
 
+// The config.record.removed delta of one lease record, in the scope it was recorded in.
+function leaseRecordRemoval(record: ConfigRecord): (state: WorkspaceState) => MutationDelta {
+  return removeConfigRecordDelta({ collection: WORK_LEASE_COLLECTION, key: record.key, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) });
+}
+
 /** The delta that releases the lease a work item holds; the input is checked before any lock is taken. */
 export function releaseWorkDelta(input: ReleaseWorkInput): (state: WorkspaceState) => MutationDelta {
   assertActorId(input.actorId);
@@ -272,8 +283,72 @@ export function releaseWorkDelta(input: ReleaseWorkInput): (state: WorkspaceStat
     if (record === undefined) fail("WORK_LEASE_NOT_FOUND", `work ${input.id} holds no lease`, { workId: input.id });
     const lease = heldLease(record);
     if (lease.holder !== input.actorId && runsAt(lease, at) && input.force !== true) throw leasedError(input.id, lease);
-    return removeConfigRecordDelta({ collection: WORK_LEASE_COLLECTION, key: record.key, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) })(state);
+    return leaseRecordRemoval(record)(state);
   };
+}
+
+/**
+ * TCRN-CROSS-STORY-535 (TCRN-CROSS-SUB-475): the delta that removes the lease `workId` holds -- the
+ * record workLease reads -- for the write that deletes the item, appended just before its
+ * work.deleted event; null when the item holds none, so such a delete stays one event. Whoever
+ * holds the lease and whether it still runs make no difference.
+ */
+export function leaseRemovalDelta(state: Pick<WorkspaceState, "configRecords">, workId: string): ((state: WorkspaceState) => MutationDelta) | null {
+  const record = leaseRecords(state).find((entry) => entry.key === workId);
+  return record === undefined ? null : leaseRecordRemoval(record);
+}
+
+/** How a lease scoped to a project stands at the instant of a project-delete. */
+export type ProjectLeaseStanding = "held" | "expired" | "orphaned";
+
+/** A lease scoped to a project, the item it is held on, and how it stands. */
+export interface ProjectLease extends HeldWorkLease {
+  readonly standing: ProjectLeaseStanding;
+}
+
+/**
+ * TCRN-CROSS-STORY-535 (TCRN-CROSS-SUB-476): the leases scoped to `projectId`, each as it stands at
+ * `at`. `held`: it runs at `at` and its work item lives. `expired`: it has run out, on a live item.
+ * `orphaned`: its item is deleted or absent -- a lease a delete written before SUB-475 left behind --
+ * whether or not it still runs.
+ */
+export function projectLeases(state: Pick<WorkspaceState, "configRecords" | "work">, projectId: string, at: string): readonly ProjectLease[] {
+  const records = leaseRecords(state).filter((record) => record.projectId === projectId);
+  if (records.length === 0) return [];
+  const instant = instantOf(at, "at");
+  const live = new Set(state.work.filter((record) => !record.tombstone).map((record) => record.id));
+  return records.map((record) => {
+    const lease = heldLease(record);
+    const standing: ProjectLeaseStanding = !live.has(lease.workId) ? "orphaned" : runsAt(lease, instant) ? "held" : "expired";
+    return { ...lease, standing };
+  });
+}
+
+/**
+ * Refuse to delete project `projectId` at `at` while one of its leases is held: WORK_LEASED, whoever
+ * asks, the details naming the leased item, its holder and when the lease runs out (MIN-257 R4 Q4).
+ */
+export function assertProjectLeasesAdmitDelete(state: Pick<WorkspaceState, "configRecords" | "work">, projectId: string, at: string): void {
+  const held = projectLeases(state, projectId, at).find((lease) => lease.standing === "held");
+  if (held === undefined) return;
+  throw new WorkLeaseError("WORK_LEASED", `project ${projectId} still holds work ${held.workId}, leased to ${held.holder} until ${held.expiresAt}`, {
+    projectId,
+    workId: held.workId,
+    holder: held.holder,
+    expiresAt: held.expiresAt,
+    leasedWorkId: held.workId,
+  });
+}
+
+/**
+ * The deltas that remove the leases of project `projectId` that bind no one at `at` -- the expired
+ * and the orphaned -- for the write that deletes the project: one config.record.removed each,
+ * appended ahead of its project.deleted event.
+ */
+export function staleProjectLeaseRemovalDeltas(state: Pick<WorkspaceState, "configRecords" | "work">, projectId: string, at: string): readonly ((state: WorkspaceState) => MutationDelta)[] {
+  return projectLeases(state, projectId, at)
+    .filter((lease) => lease.standing !== "held")
+    .map((lease) => removeConfigRecordDelta({ collection: WORK_LEASE_COLLECTION, key: lease.workId, projectId }));
 }
 
 /** Claim a work item, or renew the claim its holder has: one event in this device's stream. */

@@ -15,6 +15,7 @@ import test from "node:test";
 import vm from "node:vm";
 import { parseHTML } from "linkedom";
 import { historicalModelPlan } from "../../tests/helpers/model-plan-history.mjs";
+import { appendHistoricalGateCreate } from "../../tests/helpers/workspace-fixture.mjs";
 
 const execFileAsync = promisify(execFile);
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -1023,10 +1024,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(page.document.querySelector('[data-workspace-panel="work"]').hidden, false);
       assert.equal(page.document.querySelector('[data-workspace-panel="overview"]').hidden, true);
       keydown(work, "End");
-      const knowledge = dashboardList.querySelector('[data-workspace-tab="knowledge"]');
-      assert.equal(knowledge.getAttribute("aria-selected"), "true", "dashboard End selects the final panel");
-      assert.equal(page.document.querySelector('[data-workspace-panel="knowledge"]').hidden, false);
-      keydown(knowledge, "Home");
+      // TCRN-CROSS-SUB-513 (TCRN-CROSS-STORY-541): the Library tab is the final panel.
+      const library = dashboardList.querySelector('[data-workspace-tab="library"]');
+      assert.equal(library.getAttribute("aria-selected"), "true", "dashboard End selects the final panel");
+      assert.equal(page.document.querySelector('[data-workspace-panel="library"]').hidden, false);
+      keydown(library, "Home");
       assert.equal(overview.getAttribute("aria-selected"), "true");
 
       page.document.querySelector('[data-page-target="vocabulary"]')?.click();
@@ -2212,7 +2214,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
     const page = await preparePage();
     try {
       const tabs = [...page.document.querySelectorAll("[data-workspace-tab]")].map((tab) => tab.dataset.workspaceTab);
-      assert.deepEqual(tabs, ["overview", "work", "knowledge"]);
+      // TCRN-CROSS-SUB-513 (TCRN-CROSS-STORY-541) adds the Library tab: chain identity and the registry.
+      assert.deepEqual(tabs, ["overview", "work", "knowledge", "library"]);
       assert.deepEqual([...page.document.querySelectorAll("[data-workspace-panel]")].map((panel) => panel.dataset.workspacePanel), tabs);
       for (const selector of ['[data-ui="evolution-dashboard"]', "#evolution-retirement", "#evolution-eval", "#evolution-hosts", "#audit-button", "#dashboard-audit", "#drawer-audit", '[data-ui="dispatch-config-surface"]']) {
         assert.equal(page.document.querySelector(selector), null, `${selector} must be absent`);
@@ -3525,5 +3528,85 @@ if (!MUTATION) test("540 SUB-508: a coordination library's Rules page names and 
     select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
     await waitFor(() => document.querySelector("#agents-path")?.textContent === join(fixture.proseRoot, "AGENTS.md"), "the page to switch to the project library");
     assert.equal(document.querySelector('[data-ui="prose-binding-note"]').hidden, true, "a project library's Rules page carries no coordination note");
+  } finally { await closePage(page, fixture); }
+});
+
+// TCRN-CROSS-STORY-541 GWT2, GWT3 (MIN-258 D3; TCRN-CROSS-SUB-513): the Library tab declares the selected library's
+// chain identity after a confirmation and takes a registry entry out after its plan is shown and confirmed; the
+// Gates page lists a migrated gate and releases it only with a reason, after a confirmation, and then shows who
+// released it, when and why.
+if (!MUTATION) test("541 SUB-513: the Library tab declares the chain identity and removes a registry entry after its plan, and the Gates page releases a migrated gate with a reason", async () => {
+  const fixture = await scratch("tcrn-541-panels-");
+  await asFixtureDevice(fixture, () => appendHistoricalGateCreate(fixture.workspace, { externalKey: "TCRN-541-UI-GATE", projectId: fixture.projectId, workId: null, title: "Migrated owner gate", outcomeClass: "owner_intent_required", occurredAt: nextAt().replace(/\.\d{3}Z$/u, "Z") }));
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    const receiptAdvanced = (before) => () => receiptText(document) !== before;
+    document.querySelector('[data-page-target="dashboard"]')?.click();
+    document.querySelector('[data-workspace-tab="library"]')?.click();
+    assert.equal(document.querySelector('[data-workspace-panel="library"]')?.hidden, false, "the Library tab opens its panel");
+    const libraryId = (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).workspaceId;
+
+    // The chain identity: none yet, and no coordination library registered for a project library to belong to.
+    const form = document.querySelector('[data-ui="chain-declare-form"]');
+    await waitFor(() => document.querySelector("#chain-identity-current")?.textContent === locales.en["chainIdentity.undeclared"], "the undeclared identity");
+    assert.equal(form.querySelector("[data-chain-role]").value, "project");
+    assert.equal(form.querySelector("[data-chain-no-coordination]").hidden, false);
+    assert.equal(form.querySelector('button[type="submit"][data-cli-action="chain-declare"]').disabled, true);
+    const role = form.querySelector("[data-chain-role]");
+    role.value = "coordination";
+    role.dispatchEvent(new window.Event("change", { bubbles: true }));
+    assert.deepEqual([...form.querySelectorAll("[data-chain-coordination] option")].map((option) => option.value), [libraryId], "a coordination library belongs to itself");
+    form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    const confirm = document.querySelector('[data-ui="chain-declare-confirm"]');
+    assert.equal(confirm.hidden, false, "the declaration waits for a confirmation");
+    assert.equal(document.querySelector("#chain-declare-summary").textContent, locales.en["chainIdentity.confirmText"].replace("{role}", locales.en["chainIdentity.roleCoordination"]).replace("{library}", document.querySelector("[data-chain-coordination] option").textContent));
+    assert.equal((await cli(["chain-identity", "--workspace", fixture.workspace], fixture.deviceEnv)).identity, null, "nothing is declared before the confirmation");
+    let before = receiptText(document);
+    confirm.querySelector("[data-chain-declare-confirm]").click();
+    await waitFor(receiptAdvanced(before), "the chain-declare receipt");
+    await page.waitForSettled();
+    assert.deepEqual((await cli(["chain-identity", "--workspace", fixture.workspace], fixture.deviceEnv)).identity, { role: "coordination", coordinationLibraryId: libraryId });
+    assert.equal(confirm.hidden, true);
+    assert.ok(document.querySelector("#chain-identity-current").textContent.startsWith(locales.en["chainIdentity.roleCoordination"]), "the tab shows the declared role");
+
+    // The registry: the selected entry cannot be removed; another one is, after its plan.
+    const entry = (path) => document.querySelector(`[data-registry-entry="${path}"]`);
+    await waitFor(() => entry(fixture.second.project)?.querySelector("[data-library-unregister]"), "the registry list");
+    assert.ok(entry(fixture.proseRoot).querySelector("[data-registry-selected]"), "the selected entry says it cannot be removed");
+    assert.equal(entry(fixture.proseRoot).querySelector("[data-library-unregister]"), null);
+    assert.equal(entry(fixture.second.project).querySelectorAll('[data-path-exists="true"]').length, 2, "both paths of the entry exist");
+    before = receiptText(document);
+    entry(fixture.second.project).querySelector("[data-library-unregister]").click();
+    const plan = await waitFor(() => document.querySelector(`[data-registry-plan="${fixture.second.project}"]`), "the unregister plan");
+    assert.match(plan.textContent, /library-unregister|registry\.json/u);
+    assert.equal((await cli(["library-list"], fixture.deviceEnv)).entries.length, 2, "the plan removes nothing");
+    plan.querySelector("[data-library-unregister-confirm]").click();
+    await waitFor(() => entry(fixture.second.project) === null, "the entry to leave the list");
+    assert.deepEqual((await cli(["library-list"], fixture.deviceEnv)).entries.map((item) => item.projectPath), [fixture.proseRoot]);
+    assert.equal(document.querySelectorAll("#library-select option").length, 1, "the switcher follows the registry");
+
+    // The migrated gate: listed, refused without a reason, released after a confirmation.
+    document.querySelector('[data-page-target="gates"]')?.click();
+    const gateRow = await waitFor(() => document.querySelector("#migrated-gates-list [data-migrated-gate]"), "the migrated gate");
+    const gateId = gateRow.dataset.migratedGate;
+    assert.equal(gateRow.querySelector("[data-migrated-gate-status]").textContent, locales.en["migratedGates.pending"]);
+    gateRow.querySelector("[data-gate-release]").click();
+    assert.equal(gateRow.querySelector("[data-gate-release-error]").hidden, false, "a release without a reason is not sent");
+    assert.equal(gateRow.querySelector("[data-gate-release-reason]").getAttribute("aria-invalid"), "true");
+    const reason = gateRow.querySelector("[data-gate-release-reason]");
+    reason.value = "The Owner accepted the Story by hand.";
+    reason.dispatchEvent(new window.Event("input", { bubbles: true }));
+    gateRow.querySelector("[data-gate-release]").click();
+    const confirming = document.querySelector(`[data-gate-release-confirming="${gateId}"]`);
+    assert.ok(confirming, "the release waits for a confirmation");
+    assert.equal((await cli(["work-gate-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.length, 1, "nothing is released before the confirmation");
+    confirming.querySelector("[data-gate-release-confirm]").click();
+    const record = await waitFor(() => document.querySelector(`#migrated-gates-list [data-released-gate="${gateId}"] [data-gate-release-record]`), "the released gate");
+    assert.match(record.textContent, /agent:test-portal/u);
+    assert.match(record.textContent, /The Owner accepted the Story by hand\./u);
+    assert.ok(document.querySelector("#migrated-gates-list [data-migrated-gates-empty]"), "no migrated gate holds work back any more");
+    assert.deepEqual((await cli(["work-gate-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records, []);
   } finally { await closePage(page, fixture); }
 });

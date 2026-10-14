@@ -82,6 +82,10 @@ Atelier 在前台运行，没有停止命令：在启动它的终端按 Ctrl-C�
 
 门记录由命令 argv、项目内根目录、覆盖（路径 glob 或精确 work id）、是否必需、是否启用以及是否仅发布时运行组成，另可带一个顺序。门表分三列：顺序、门与覆盖。每道门的启用、必需与仅发布时运行三个开关，同命令、根目录和保存、移除操作一起放在「门」一列；覆盖一列能完整显示一个 work id。门表、两张模型表与变量表在 1024 像素宽时也不需横向滚动，每一列和每行的操作都在表内；窄宽下放不下的字段值在输入框内滚动显示。门表第一列「顺序」的用途写在页头：它决定门的计划、运行与显示顺序，有顺序的门排在前面，从小到大，其余按名称。保存经 `gates-config-set --order` 写入；顺序留空时保留已记的顺序。顺序不进入门声明摘要，只改顺序不会让已有的运行记录失效。计划门时，引擎按各根目录相对 `--base` 的 Git 变更与覆盖中的路径 glob 求交；带 `--work-id` 时，适用于这些 Story 的门也被选中：全部启用的必需门、Story 或其祖先 `gates` 字段点名的门，以及覆盖中写了 Story 或其祖先 work id 的门；发布计划会列出所有启用的门。运行会收集所有结果。Story 完成之前，适用于它的每一道门都须在当前树与当前门声明下、以带它的 `--work-id` 运行并为绿，覆盖不必列出 Story（TCRN-CROSS-STORY-525，MIN-256）：项目没有启用的门，或没有一道门适用于这张 Story 时不拦；没有绑定该 Story 的运行记录报 `WORK_DONE_GATES_NOT_RUN`，适用门缺结果报 `WORK_DONE_GATES_NOT_COVERED`，适用门失败报 `WORK_DONE_GATES_RED`。路径 glob 只选择和运行门，不把门绑定到 Story。
 
+### 迁移来的门
+
+门页的「迁移来的门」一区就是迁移门页（TCRN-CROSS-STORY-541，MIN-258 D3）：它列出迁移从旧链带过来、仍挡住工单转 done 的门（`work-gate-list`，待处理与已阻塞的），每道门写明标题、id 与所属工单；已经放行的门列在后面，写明谁放行、何时与原因。放行一道门：先在它下面写明原因，再点「放行这道门」，核对确认提示后点「放行」。门户以 `TCRN_PORTAL_ACTOR` 为行动者、在 `EINZBERN_SURFACE=atelier` 下运行 `work-gate-release --id <门> --reason <原因>`，事件记 `surface: atelier`，门里记下放行者、时刻与原因。原因留空或只有空白时不运行，页面提示先写原因（`PORTAL_GATE_RELEASE_REASON_REQUIRED`）。模型手里有点名这道门的 Owner 决定时，也可以自己加 `--decided-in` 运行同一条命令。
+
 ## 待批准的门与规则改动
 
 模型手里有点名对象的 Owner 决定时，直接用 `gates-config-set`、`gates-config-remove`、`rule-enable` 或 `rule-disable` 加 `--decided-in` 写入（TCRN-CROSS-STORY-526）；没有决定时，可以用 `gates-config-propose` 或 `rule-propose` 提交改动，由人在 Atelier 批准或拒绝（TCRN-CROSS-STORY-527）。有待批准项时，门页顶部出现「待批准的门改动」，规则页的规则卡片上方出现「待批准的原则改动」，没有时这一区不出现。每一行写明要改的门或规则、提出的改动、提出者与时刻，以及状态。它们与门表和规则卡片分开：待批准的门不在门表里，也不会被 `gates-plan` 或 `gates-run` 选中；待批准的规则仍是原来的状态，不渲染进 AGENTS.md。规则页原有的「Pending」指等待处置的受管段，与这里的待批准项不是一回事。
@@ -89,6 +93,13 @@ Atelier 在前台运行，没有停止命令：在启动它的终端按 Ctrl-C�
 - 「批准」就是写入：门页经 `proposal-approve` 声明或删除这道门，规则页经 `proposal-approve` 启用或禁用这条规则并写 AGENTS.md；两者都以 `TCRN_PORTAL_ACTOR` 为行动者，事件记 `surface: atelier` 与 `decidedIn: proposal:<键>@<提交时刻>`。批准后页面重读列表：门表或规则卡片出现这项改动，待批准区随之清空。
 - 「拒绝」经 `proposal-reject` 把这一项改为已拒绝，事件同样记 `surface: atelier`。已拒绝的项留在区里，只读显示拒绝者与时刻，不再有「批准」按钮；模型重新提出后才能再批准。
 - 按钮带着页面显示的提交时刻。其间有人重新提出过同一项时，批准或拒绝报 `PROPOSAL_STALE`，重读页面后按新内容处理；已拒绝的项报 `PROPOSAL_NOT_PENDING`。
+
+## 库：链身份与注册表
+
+状态页的「库」页签就是库页（TCRN-CROSS-STORY-541，MIN-258 D3），管两件以前只能在终端做的事。
+
+- **链身份。** 「链身份」一区显示所选库的角色与所属协调库。改它：选角色（项目库或协调库）与所属协调库（协调库只能属于它自己；项目库从本机登记的协调库中选），点「核对声明」，确认提示写明声明后的角色与协调库，再点「声明」。门户以 `TCRN_PORTAL_ACTOR` 为行动者、在 `EINZBERN_SURFACE=atelier` 下按库级运行 `chain-declare --role <角色> --coordination-library-id <协调库 id>`，之后页面按新角色重读。`chain-declare` 是唯一保留硬约束的写入：模型经命令行运行一律被拒（`MODEL_WRITE_REFUSED`，补救提示指向这里），引用决定也不行，所以只在这里声明。
+- **注册表登记。** 「已登记的库」列出本机注册表的每条登记，写明项目路径与库路径是否仍然存在。库已删掉、路径不存在的登记（`doctor` 以 `REGISTRY_LIBRARY_MISSING` 提示）可以在这里移除：点「从注册表移除」，门户先运行 `library-unregister --project <项目路径>` 只出计划，页面显示要移除的登记、同一库保留的其他登记、剩余条数和备份位置；点「移除登记」才加 `--yes true` 执行，先把 `registry.json` 复制到设备目录的 `backups/<UTC>-library-unregister/`，再移除这一条。当前所选的登记不能移除，先切换到别的库（`PORTAL_LIBRARY_UNREGISTER_SELECTED`）。
 
 ## 切换知识库
 

@@ -9,7 +9,7 @@ import { RUNTIME_CAPACITY } from "../scripts/lib/runtime-capacity.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -45,6 +45,8 @@ const ACTOR = (process.env.TCRN_PORTAL_ACTOR ?? "").trim();
 const BUNDLED_CLI = join(portalRoot, "..", "scripts", "einzbern.mjs");
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? BUNDLED_CLI;
 const ATELIER_SURFACE = Object.freeze({ EINZBERN_SURFACE: "atelier" });
+// The entry a gate released through work-gate-release carries: who, when and why (specs/gate-v1.md, Release).
+const GATE_RELEASE_ENTRY = "gate-evidence:atelier-release";
 const PROSE_FILES = Object.freeze(["AGENTS.md"]);
 
 function argument(name, fallback) {
@@ -138,6 +140,11 @@ async function readLibraryCatalog() {
     return { ...entry, name: project?.name ?? null, chain: identity.ok ? identity.body.identity : null };
   }));
 }
+
+// TCRN-CROSS-STORY-541 GWT3 (MIN-258 D3; TCRN-CROSS-SUB-513): whether each registered entry's project and
+// library paths still exist, so the Library tab can show an entry whose library is gone.
+const pathExists = (path) => stat(path).then(() => true, () => false);
+const registryPaths = (libraries) => Promise.all(libraries.map(async ({ projectPath, libraryPath }) => ({ projectPath, projectPathExists: await pathExists(projectPath), libraryPathExists: await pathExists(libraryPath) })));
 
 let libraryCatalog;
 try { libraryCatalog = await readLibraryCatalog(); } catch (error) { failStartup(error); }
@@ -1181,7 +1188,62 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     }
     if (request.method === "GET" && pathname === "/api/libraries") {
       const libraries = await refreshLibraryCatalog();
-      send(response, 200, { ok: true, reasonCode: "PORTAL_LIBRARIES_READY", libraries: libraries.map(publicLibrary), selected: publicLibrary(currentLibrary()) });
+      send(response, 200, { ok: true, reasonCode: "PORTAL_LIBRARIES_READY", libraries: libraries.map(publicLibrary), selected: publicLibrary(currentLibrary()), paths: await registryPaths(libraries) });
+      return;
+    }
+    // TCRN-CROSS-STORY-541 GWT3 (MIN-258 D3; TCRN-CROSS-SUB-513): the Library tab takes an entry out of this
+    // device's registry as library-unregister does: its plan first, and the removal once the page confirms it
+    // (--yes true), which copies registry.json into the device's backups first. The command takes the registry
+    // lock itself and names no library, so it runs outside the governed write of the selection, whose registry
+    // lock it would wait on. The selected entry is refused: the page's every later read and write would be.
+    if (request.method === "POST" && pathname === "/api/libraries/unregister") {
+      const body = await readJsonBody(request);
+      const projectPath = String(body.projectPath ?? "");
+      const confirmed = body.confirm === true;
+      if (projectPath === currentLibrary().projectPath) { send(response, 409, { ok: false, reasonCode: "PORTAL_LIBRARY_UNREGISTER_SELECTED", projectPath }); return; }
+      const result = await cliResult(["library-unregister", "--project", projectPath, "--at", nextOccurredAt(), ...(confirmed ? ["--yes", "true"] : [])], ATELIER_SURFACE);
+      const libraries = result.ok && confirmed ? await refreshLibraryCatalog() : libraryCatalog;
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok, confirmed, libraries: libraries.map(publicLibrary), paths: await registryPaths(libraries) });
+      return;
+    }
+    // TCRN-CROSS-STORY-541 GWT2 (MIN-258 D3; TCRN-CROSS-SUB-513): the Library tab declares the selected library's
+    // chain identity, its role and the coordination library it belongs to: chain-declare, which runs for Atelier
+    // only (a model's run is refused, citing a decision or not), at the library level and written as
+    // TCRN_PORTAL_ACTOR. The selection keeps its registration and takes the role the library now has.
+    if (request.method === "POST" && pathname === "/api/chain-identity") {
+      const selected = currentLibrary();
+      const body = await readJsonBody(request);
+      const result = await governedWrite((common) => ["chain-declare", ...common, "--role", String(body.role ?? ""), "--coordination-library-id", String(body.coordinationLibraryId ?? "")], ATELIER_SURFACE, { ...selected, configurationProjectId: null });
+      if (!result.ok) { send(response, 409, { ...result.body, ok: false }); return; }
+      const declared = (await refreshLibraryCatalog()).find((entry) => entry.libraryId === selected.libraryId && entry.projectPath === selected.projectPath);
+      if (declared !== undefined && selectedLibrary.libraryId === selected.libraryId && selectedLibrary.projectPath === selected.projectPath) {
+        selectedLibrary = { ...selectedLibrary, chain: declared.chain };
+        const context = requestContext.getStore();
+        context.library = { ...context.library, chain: declared.chain };
+      }
+      send(response, 200, { ...result.body, ok: true, library: publicLibrary(currentLibrary()), libraries: libraryCatalog.map(publicLibrary) });
+      return;
+    }
+    // TCRN-CROSS-STORY-541 GWT2 (MIN-258 D3; TCRN-CROSS-SUB-513): the Gates page lists the gates a migration
+    // carried over that still hold their work item back (work-gate-list), and the ones released through
+    // work-gate-release with who, when and why; and it releases one: work-gate-release for Atelier, written as
+    // TCRN_PORTAL_ACTOR, with the reason the page requires. A gate is the library's, so neither names a
+    // configuration project.
+    if (request.method === "GET" && pathname === "/api/migrated-gates") {
+      const listing = ["work-gate-list", "--workspace", currentLibrary().libraryPath];
+      const [holding, satisfied] = await Promise.all([cliResult(listing), cliResult([...listing, "--status", "satisfied"])]);
+      if (!holding.ok || !satisfied.ok) { send(response, 502, { ...(holding.ok ? satisfied.body : holding.body), ok: false, gates: [], released: [] }); return; }
+      send(response, 200, { ok: true, reasonCode: "PORTAL_MIGRATED_GATES_READY", gates: holding.body.records ?? [], released: (satisfied.body.records ?? []).filter((gate) => gate.extensions?.[GATE_RELEASE_ENTRY] !== undefined) });
+      return;
+    }
+    if (request.method === "POST" && pathname === "/api/migrated-gates/release") {
+      const selected = currentLibrary();
+      const body = await readJsonBody(request);
+      const id = String(body.id ?? "");
+      const reason = String(body.reason ?? "");
+      if (reason.trim() === "") { send(response, 400, { ok: false, reasonCode: "PORTAL_GATE_RELEASE_REASON_REQUIRED", id }); return; }
+      const result = await governedWrite((common) => ["work-gate-release", ...common, "--id", id, "--reason", reason], ATELIER_SURFACE, { ...selected, configurationProjectId: null });
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok });
       return;
     }
     // The switch reads the registry afresh, so a library registered after boot can be chosen and

@@ -22,6 +22,10 @@ a patch increment. Both repositories carry the same version in every package
 manifest and generated versioned document. An existing changelog section or local
 or remote tag cannot be reused.
 
+From the first release after 2.0.3, a change to a format version or to the shape
+of an event raises the minor version (TCRN-CROSS-MIN-257 D3); such a change is not
+released as a patch.
+
 `schemaVersion` identifies a protocol or document contract, independently of the
 package version. It changes when that contract's compatibility semantics change;
 a release can advance its Semantic Version while keeping every compatible schema

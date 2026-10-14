@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 2.1.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 2.1.0. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.
+
 ### Gates and Done
 
 A run made with `--work-id` now takes its tree digest over the content of the Story's own files

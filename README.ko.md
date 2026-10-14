@@ -6,7 +6,7 @@
 
 [简体中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · **한국어** · [Français](README.fr.md)
 
-![release](https://img.shields.io/badge/release-2.0.3-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+![release](https://img.shields.io/badge/release-2.1.0-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
 [수요일 오후에 일어난 일](#수요일-오후에-일어난-일) · [무엇을 기억하나](#무엇을-기억하나) · [이럴 때 필요해진다](#이럴-때-필요해진다) · [기억 플러그인이 아니라 이것을 고르는 이유](#기억-플러그인이-아니라-이것을-고르는-이유) · [설치](#설치) · [평소 쓰는 법](#평소-쓰는-법) · [여러 기기와 클라우드 폴더](#여러-기기와-클라우드-폴더) · [우리는 이렇게 쓴다](#우리는-이렇게-쓴다) · [내장 원칙이 토큰을 아끼는 방식](#내장-원칙이-토큰을-아끼는-방식) · [왜 이렇게 설계했나](#왜-이렇게-설계했나) · [용어집](#용어집)
 

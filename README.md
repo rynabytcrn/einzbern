@@ -6,7 +6,7 @@
 
 **简体中文** · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md)
 
-![release](https://img.shields.io/badge/release-2.0.3-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+![release](https://img.shields.io/badge/release-2.1.0-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
 [周三下午发生的事](#周三下午发生的事) · [它记什么](#它记什么) · [什么时候你会想要它](#什么时候你会想要它) · [为什么是它，而不是一个记忆插件](#为什么是它而不是一个记忆插件) · [安装](#安装) · [日常怎么用](#日常怎么用) · [多设备与云文件夹](#多设备与云文件夹) · [我们自己怎么用它](#我们自己怎么用它) · [预设规则怎么帮你把 token 花在刀刃上](#预设规则怎么帮你把-token-花在刀刃上) · [为什么这样设计](#为什么这样设计) · [词汇表](#词汇表)
 

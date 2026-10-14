@@ -44,7 +44,6 @@ import {
   rebaseKnowledgeStore,
   reverifyKnowledgeUnit,
   updateKnowledgeStalenessPolicy,
-  withCrestWriteLock,
 } from "./knowledge-core.js";
 import type {
   CreateKnowledgeUnitInput,
@@ -145,18 +144,16 @@ function shapeProblems(members: readonly unknown[]): readonly KnowledgeBatchProb
   return problems;
 }
 
-// TCRN-CROSS-STORY-469 R3: the whole batch holds this machine's lock of the library, so no other
-// writer on the machine lands between its members (each member takes the same lock again), and
-// the members append to this device's stream one after another (TCRN-CROSS-SUB-414).
+// The members append to this device's stream one after another (TCRN-CROSS-SUB-414).
+// TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-501): the batch takes no lock of its own. TCRN-CROSS-STORY-469
+// R3 had it hold this machine's lock of the library from its first member to its last, so every
+// member's scan and checks ran under it and a refusal waited for any other writer. Each member now takes
+// the lock as its verb does: a create, reverify or policy member scans and judges outside it and holds it
+// for its append alone (optimisticCrestWrite), and --align-first's rebase holds it for its own run, as
+// knowledge-rebase does. Another writer can land between two members; a member acting on a card that
+// writer changed is refused with KNOWLEDGE_CAS_MISMATCH, as the single verb is, and the receipt's lists
+// say which members landed.
 export async function applyKnowledgeBatch(
-  workspaceRoot: string,
-  document: unknown,
-  options: KnowledgeBatchOptions,
-): Promise<Readonly<Record<string, JsonValue>>> {
-  return withCrestWriteLock(workspaceRoot, () => applyKnowledgeBatchUnlocked(workspaceRoot, document, options));
-}
-
-async function applyKnowledgeBatchUnlocked(
   workspaceRoot: string,
   document: unknown,
   options: KnowledgeBatchOptions,

@@ -1271,6 +1271,12 @@ async function currentCrestHeads(storeRoot: string): Promise<string> {
  * not written; the answer counts the bodies the layout holds before and after the run.
  * `options.clearRemoved` (STORY-514 R4) clears the removed cards' bodies from the layout as well, and
  * takes `options.at`, the instant its backup is named by (clearRemovedKnowledgeBodies).
+ * TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-501): it holds the lock for its whole run, its read
+ * included, because what it writes is no append that a check of the stream heads could guard: it
+ * rewrites the metadata/body layout's bodies in place, into segments, or clears the removed cards'
+ * bodies from that layout after a backup. knowledge-recover writes that layout too (a retired record's
+ * body given back), and so would a second migration, so none of them may run in the middle of another
+ * on this machine; and the counts it answers, before and after, are of one layout.
  */
 export async function migrateKnowledgeBodies(
   workspaceRootInput: string,
@@ -4017,6 +4023,13 @@ export function processIsAlive(pid: number): boolean {
  * Recover a knowledge mutation left behind by a process that is no longer alive.
  * Recovery only admits a source-consistent metadata/body set; an orphan body or a
  * malformed claim remains blocked instead of being guessed away.
+ * TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-501): recovery of a library's crest holds this machine's
+ * lock of the library for its whole run. It judges what a stopped writer left -- staging files in this
+ * device's stream, the claim and bodies of a stopped write of the metadata/body layout -- and settles
+ * them in place, which no check of the stream heads could guard. Every writer of this machine publishes
+ * under that lock, so while recovery holds it nothing it finds can be a publication still under way, and
+ * the index view it projects again is of the crest as it ends. The user crest's recovery holds that
+ * crest's own lock in the same way.
  */
 export async function recoverKnowledgeStore(workspaceRoot: string, options: KnowledgeScopedReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   assertStoreScope(options.scope);
@@ -4321,6 +4334,11 @@ async function writeIndex(place: KnowledgeViewPlace, marker: KnowledgeStoreMarke
   await projectKnowledgeView(place, knowledgeIndex(marker, metadata));
 }
 
+// TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-501): initialization holds this machine's lock of the
+// library for its whole run because what it writes is the crest itself: it finds the crest's folder
+// absent or empty, makes it, and creates the root manifest exclusively. Before it there is no stream
+// whose heads a check could compare, and what it reads first is the chain, for the library's id and
+// head; it scans no card.
 export async function initializeKnowledgeStore(workspaceRootInput: string, options: { readonly disposableAcknowledged?: boolean } = {}): Promise<Readonly<Record<string, JsonValue>>> {
   return withCrestWriteLock(workspaceRootInput, () => initializeKnowledgeStoreUnlocked(workspaceRootInput, options));
 }
@@ -5216,6 +5234,13 @@ export async function captureKnowledgeUnit(
 // KNOWLEDGE_HIGH_WATER_MISMATCH for a record this device's chain does not hold yet; answered, it
 // reports the projected version and the chain head, and this device's index view is projected
 // again. knowledge-rebase and knowledge-batch --align-first stay accepted and answer the same shape.
+//
+// TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-501): it holds this machine's lock of the library for its
+// whole run, although it writes nothing but that view. It answers for one state of the chain and the
+// crest together: it replays the chain, then reads every stream of the crest, and refuses a record
+// written against chain events its replay does not hold (KNOWLEDGE_HIGH_WATER_MISMATCH). A chain write
+// of this machine, and a card written against it, landing between those two reads would make it refuse
+// a crest that is whole; both take this lock to append, so under it neither can.
 export async function rebaseKnowledgeStore(...args: Parameters<typeof rebaseKnowledgeStoreUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
   return withCrestWriteLock(args[0], () => rebaseKnowledgeStoreUnlocked(...args));
 }
@@ -5828,15 +5853,24 @@ export async function checkKnowledgeSources(workspaceRoot: string, options: Know
 // selection. Historical candidate and rejected records remain ineligible (OD-17).
 // TCRN-CROSS-SUB-414: the card is written again as a new record in this device's stream, naming the
 // record it replaces; nothing of the crest is rewritten (appendLibraryCrestEvent).
-export async function reverifyKnowledgeUnit(...args: Parameters<typeof reverifyKnowledgeUnitUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
-  return withCrestWriteLock(args[0], () => reverifyKnowledgeUnitUnlocked(...args));
+// TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-501): like a card write (TCRN-CROSS-SUB-481), it scans the
+// crest and judges the card -- its revision, its eligibility, its body -- outside this machine's lock of
+// the library, and holds the lock for the append alone (optimisticCrestWrite); a crest another writer
+// appended to meanwhile is scanned and judged again, so the expected revision is held to the card as
+// the append finds it.
+export async function reverifyKnowledgeUnit(
+  workspaceRoot: string,
+  input: Parameters<typeof reverifyLibraryCrestCard>[1],
+  options: KnowledgeMutationOptions = {},
+): Promise<Readonly<Record<string, JsonValue>>> {
+  return optimisticCrestWrite(workspaceRoot, (commitUnderLock) => reverifyLibraryCrestCard(workspaceRoot, input, options, commitUnderLock));
 }
 
-async function reverifyKnowledgeUnitUnlocked(workspaceRoot: string, input: {
+async function reverifyLibraryCrestCard(workspaceRoot: string, input: {
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
-}, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
+}, options: KnowledgeMutationOptions, commitUnderLock: CrestCommit): Promise<Readonly<Record<string, JsonValue>>> {
   try {
     assertProtocolId(input.id);
     assertStrictInstant(input.occurredAt);
@@ -5858,10 +5892,12 @@ async function reverifyKnowledgeUnitUnlocked(workspaceRoot: string, input: {
   const metadata: KnowledgeUnitMetadata = { ...unit.metadata, lastVerified: input.occurredAt, freshnessState: "fresh", revision: unit.metadata.revision + 1, updatedAt: input.occurredAt };
   const body = await crestRecordBody(scan, unit, options);
   validateMetadataBody(validateExistingMetadataShape(metadata, scan.workspace), body, scan.workspace);
-  const head = await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
-  // TCRN-CROSS-SUB-425: every write clears this device's bodies of removed cards.
-  await clearRemovedBodies(scan, head.deviceId, scan.removals.keys());
-  await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), scan.removals), options);
+  await commitUnderLock(scan, async () => {
+    const head = await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+    // TCRN-CROSS-SUB-425: every write clears this device's bodies of removed cards.
+    await clearRemovedBodies(scan, head.deviceId, scan.removals.keys());
+    await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), scan.removals), options);
+  });
   return {
     schemaVersion: "tcrn.knowledge-reverify-result.v1",
     reasonCode: "KNOWLEDGE_REVERIFIED",
@@ -5872,14 +5908,23 @@ async function reverifyKnowledgeUnitUnlocked(workspaceRoot: string, input: {
   };
 }
 
-export async function refreshKnowledgeArticle(...args: Parameters<typeof refreshKnowledgeArticleUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
-  return withCrestWriteLock(args[0], () => refreshKnowledgeArticleUnlocked(...args));
-}
-
-async function refreshKnowledgeArticleUnlocked(
+// TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-501): the scan, the article's two reads and digest, the
+// language policy and every check run outside this machine's lock of the library; the lock is held for
+// the append alone (optimisticCrestWrite), and a crest another writer appended to meanwhile sends the
+// refresh back to scan, read the article and judge again.
+export async function refreshKnowledgeArticle(
   workspaceRoot: string,
   input: KnowledgeArticleRefreshInput,
   options: KnowledgeMutationOptions = {},
+): Promise<Readonly<Record<string, JsonValue>>> {
+  return optimisticCrestWrite(workspaceRoot, (commitUnderLock) => refreshLibraryCrestArticle(workspaceRoot, input, options, commitUnderLock));
+}
+
+async function refreshLibraryCrestArticle(
+  workspaceRoot: string,
+  input: KnowledgeArticleRefreshInput,
+  options: KnowledgeMutationOptions,
+  commitUnderLock: CrestCommit,
 ): Promise<Readonly<Record<string, JsonValue>>> {
   try {
     assertProtocolId(input.id);
@@ -5937,10 +5982,12 @@ async function refreshKnowledgeArticleUnlocked(
   // The records once the refreshed card lands, which this device's index view projects after it; no
   // total of the crest's bodies is checked (TCRN-CROSS-SUB-310 R17, MIN-238 D1).
   const projectedMetadata = indexRecords(crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), scan.removals);
-  const head = await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
-  // TCRN-CROSS-SUB-425: every write clears this device's bodies of removed cards.
-  await clearRemovedBodies(scan, head.deviceId, scan.removals.keys());
-  await projectViewAfterWrite(scan, projectedMetadata, options);
+  await commitUnderLock(scan, async () => {
+    const head = await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+    // TCRN-CROSS-SUB-425: every write clears this device's bodies of removed cards.
+    await clearRemovedBodies(scan, head.deviceId, scan.removals.keys());
+    await projectViewAfterWrite(scan, projectedMetadata, options);
+  });
   return {
     schemaVersion: "tcrn.knowledge-article-refresh-result.v1",
     reasonCode: "KNOWLEDGE_ARTICLE_REFRESHED",
@@ -5967,16 +6014,23 @@ async function refreshKnowledgeArticleUnlocked(
 // record stale again when a current source actually warrants it.
 // TCRN-CROSS-SUB-414: the card is written again as a new record in this device's stream; a retired
 // record, whose body an older engine may have reclaimed, is written again without one.
-export async function updateKnowledgeStalenessPolicy(...args: Parameters<typeof updateKnowledgeStalenessPolicyUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
-  return withCrestWriteLock(args[0], () => updateKnowledgeStalenessPolicyUnlocked(...args));
+// TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-501): the scan and every check run outside this machine's
+// lock of the library, which is held for the append alone (optimisticCrestWrite); a crest another writer
+// appended to meanwhile is scanned and judged again.
+export async function updateKnowledgeStalenessPolicy(
+  workspaceRoot: string,
+  input: Parameters<typeof updateLibraryCrestPolicy>[1],
+  options: KnowledgeMutationOptions = {},
+): Promise<Readonly<Record<string, JsonValue>>> {
+  return optimisticCrestWrite(workspaceRoot, (commitUnderLock) => updateLibraryCrestPolicy(workspaceRoot, input, options, commitUnderLock));
 }
 
-async function updateKnowledgeStalenessPolicyUnlocked(workspaceRoot: string, input: {
+async function updateLibraryCrestPolicy(workspaceRoot: string, input: {
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
   readonly stalenessPolicy: KnowledgeStalenessPolicy;
-}, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
+}, options: KnowledgeMutationOptions, commitUnderLock: CrestCommit): Promise<Readonly<Record<string, JsonValue>>> {
   try {
     assertProtocolId(input.id);
     assertStrictInstant(input.occurredAt);
@@ -6008,10 +6062,12 @@ async function updateKnowledgeStalenessPolicyUnlocked(workspaceRoot: string, inp
   const validated = validateExistingMetadataShape(metadata, scan.workspace);
   const body = unit.metadata.lifecycle === "retired" ? null : await crestRecordBody(scan, unit, options);
   if (body !== null) validateMetadataBody(validated, body, scan.workspace);
-  const head = await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
-  // TCRN-CROSS-SUB-425: every write clears this device's bodies of removed cards.
-  await clearRemovedBodies(scan, head.deviceId, scan.removals.keys());
-  await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), scan.removals), options);
+  await commitUnderLock(scan, async () => {
+    const head = await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+    // TCRN-CROSS-SUB-425: every write clears this device's bodies of removed cards.
+    await clearRemovedBodies(scan, head.deviceId, scan.removals.keys());
+    await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), scan.removals), options);
+  });
   return {
     schemaVersion: "tcrn.knowledge-policy-result.v1",
     reasonCode: "KNOWLEDGE_POLICY_UPDATED",

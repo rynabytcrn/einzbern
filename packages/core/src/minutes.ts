@@ -20,10 +20,18 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // supersedes, withdraws or declares that it stands beside that decision (`coexists`). Reads give the
 // valid decisions unless asked for the obsolete ones, and an obsolete decision is read with the
 // decision that superseded it.
+//
+// TCRN-CROSS-SUB-486 (TCRN-CROSS-STORY-531, MIN-256 D6 C5): only a close decision of the record's own
+// INIT family, or of a family either side cannot name, refuses it. A close decision of another family
+// -- the work the record links and the work that decision's minutes link lead to different Initiatives
+// (work-family.ts) -- is written into the record's `coexists` as the writer's own declaration would be,
+// and the minutes-record receipt warns of it.
 
 import { assertProtocolId, canonicalExternalKey, compareCanonicalText, deriveStableId, parseStrictInstant } from "../../protocol/src/index.js";
 import type { ConferenceMinutes } from "./conference.js";
 import { recallTextTokens } from "./recall.js";
+import { familiesApart, referenceFamilies } from "./work-family.js";
+import type { WorkFamilyState } from "./work-family.js";
 import type { WorkspaceState } from "./workspace.js";
 
 export const MINUTES_RECORD_VERSION = "einzbern.minutes.v1" as const;
@@ -731,16 +739,33 @@ export interface DecisionTopicConflict {
   // The valid decision it is close to.
   readonly decision: string;
   readonly score: number;
+  // TCRN-CROSS-SUB-486 (STORY-531): true when the minutes of that decision are of INIT families apart
+  // from the record's, both known (work-family.ts); false when they share one, or either is not known.
+  readonly otherFamily: boolean;
 }
+
+/** What the topic check reads: the decisions, and the work and conferences their families come from. */
+type TopicState = LedgerState & WorkFamilyState;
+
+/** The record a topic check is about; linked work it leaves out is no work. */
+type TopicRecord = Pick<MinutesRecord, "id" | "projectId" | "decisions" | "declarations"> & { readonly linkedWorkIds?: readonly string[] };
 
 /**
  * The valid decisions of the record's project that a decision of `record` is close in topic to, and
  * that its declarations do not settle: a decision it supersedes or withdraws, the decision that
  * supersedes one, and a decision it stands beside are settled. Strongest first, then by number and
- * decision number.
+ * decision number. TCRN-CROSS-SUB-486 (STORY-531, Q11): each is classed by INIT family -- the
+ * record's families are those of the work it links, an existing decision's those of the work its
+ * minutes link (a conference's minutes, the conference's).
  */
-export function decisionTopicConflicts(state: LedgerState, record: Pick<MinutesRecord, "id" | "projectId" | "decisions" | "declarations">): readonly DecisionTopicConflict[] {
+export function decisionTopicConflicts(state: TopicState, record: TopicRecord): readonly DecisionTopicConflict[] {
   const ledger = decisionLedger(state);
+  const recordFamilies = referenceFamilies(state, record.linkedWorkIds ?? []);
+  const minutesFamilies = new Map<string, readonly string[] | null>();
+  const otherFamily = (minutesId: string): boolean => {
+    if (!minutesFamilies.has(minutesId)) minutesFamilies.set(minutesId, referenceFamilies(state, [minutesId]));
+    return familiesApart(recordFamilies, minutesFamilies.get(minutesId) ?? null);
+  };
   const settled = new Set<string>(record.declarations === undefined ? [] : [
     ...record.declarations.supersedes.flatMap((entry) => [entry.decision, entry.by]),
     ...record.declarations.withdraws,
@@ -771,7 +796,7 @@ export function decisionTopicConflicts(state: LedgerState, record: Pick<MinutesR
       }
       if (shared < DECISION_TOPIC_SHARED_TOKENS) continue;
       const score = dot / (norm(tokens) * norm(candidate.tokens));
-      if (score >= DECISION_TOPIC_THRESHOLD) conflicts.push({ number: index + 1, decision: candidate.entry.decision, score });
+      if (score >= DECISION_TOPIC_THRESHOLD) conflicts.push({ number: index + 1, decision: candidate.entry.decision, score, otherFamily: otherFamily(candidate.entry.minutesId) });
     }
   });
   return conflicts.sort((left, right) => right.score - left.score || left.number - right.number || compareCanonicalText(left.decision, right.decision));
@@ -780,15 +805,74 @@ export function decisionTopicConflicts(state: LedgerState, record: Pick<MinutesR
 /**
  * Refuse a record a decision of which is close in topic to a valid decision its declarations do not
  * settle (MINUTES_POSSIBLE_CONFLICT), naming each such decision under `conflicts`, strongest first.
+ * TCRN-CROSS-SUB-486 (STORY-531): only a decision of the record's own INIT family, or of a family
+ * either side cannot name, refuses it; the refusal names the others under `otherFamilyConflicts`.
+ * The decisions of another family are answered, strongest first, for the record to stand beside.
  */
-export function assertNoDecisionTopicConflict(state: LedgerState, record: Pick<MinutesRecord, "id" | "projectId" | "decisions" | "declarations">): void {
+export function assertNoDecisionTopicConflict(state: TopicState, record: TopicRecord): readonly DecisionTopicConflict[] {
   const conflicts = decisionTopicConflicts(state, record);
-  if (conflicts.length === 0) return;
-  const named = [...new Set(conflicts.map((entry) => entry.decision))].slice(0, MINUTES_LIST_LIMIT);
-  const pairs = conflicts.map((entry) => `D${String(entry.number)} ~ ${entry.decision} (${entry.score.toFixed(2)})`).join("; ");
-  fail("MINUTES_POSSIBLE_CONFLICT", `a decision is close in topic to a valid decision: ${pairs}; declare which it supersedes or withdraws, or that it stands beside it`, {
+  const blocking = conflicts.filter((entry) => !entry.otherFamily);
+  const apart = conflicts.filter((entry) => entry.otherFamily);
+  if (blocking.length === 0) return apart;
+  const named = [...new Set(blocking.map((entry) => entry.decision))].slice(0, MINUTES_LIST_LIMIT);
+  const others = [...new Set(apart.map((entry) => entry.decision))].slice(0, MINUTES_LIST_LIMIT);
+  const pairs = blocking.map((entry) => `D${String(entry.number)} ~ ${entry.decision} (${entry.score.toFixed(2)})`).join("; ");
+  return fail("MINUTES_POSSIBLE_CONFLICT", `a decision is close in topic to a valid decision: ${pairs}; declare which it supersedes or withdraws, or that it stands beside it`, {
     conflicts: named,
+    ...(others.length === 0 ? {} : { otherFamilyConflicts: others }),
     remedy: "for each decision named: --supersedes <decision>=D<n>, --withdraws <decision> or --coexists <decision>",
+  });
+}
+
+/**
+ * TCRN-CROSS-SUB-486 (STORY-531): `record` standing beside `decisions` as well -- the valid decisions
+ * of another INIT family that assertNoDecisionTopicConflict answered -- by adding them to its
+ * declarations' coexists, as a writer's --coexists would. The record keeps its shape and is checked
+ * again; a record with none to add is answered as it is.
+ */
+export function standBeside(record: MinutesRecord, decisions: readonly string[]): MinutesRecord {
+  const declared = record.declarations?.coexists ?? [];
+  const added = decisions.filter((decision) => !declared.includes(decision));
+  if (added.length === 0) return record;
+  return validateMinutesRecord({
+    ...record,
+    declarations: {
+      supersedes: record.declarations?.supersedes ?? [],
+      withdraws: record.declarations?.withdraws ?? [],
+      coexists: [...new Set([...declared, ...added])].sort(compareCanonicalText),
+    },
+  });
+}
+
+/** TCRN-CROSS-SUB-486: one decision a minutes-record receipt warns that the record stands beside. */
+export interface MinutesConflictWarning {
+  readonly reasonCode: "MINUTES_POSSIBLE_CONFLICT";
+  readonly decision: string;
+  readonly text: string;
+  // The Initiatives the work its minutes link leads to.
+  readonly families: readonly string[];
+  readonly message: string;
+}
+
+/**
+ * The warnings of a minutes-record receipt (TCRN-CROSS-SUB-486): every decision `record` stands
+ * beside that its writer did not declare (`declared`, as declarationsFromInput resolves --coexists) --
+ * those the write added because they are of another INIT family -- with its text and families, in
+ * `state`, the library after the write.
+ */
+export function standBesideWarnings(state: TopicState, record: Pick<MinutesViewEntry, "declarations">, declared: readonly string[]): readonly MinutesConflictWarning[] {
+  const added = (record.declarations?.coexists ?? []).filter((decision) => !declared.includes(decision));
+  if (added.length === 0) return [];
+  const ledger = decisionLedger(state);
+  return added.map((decision): MinutesConflictWarning => {
+    const families = referenceFamilies(state, [parseDecisionAddress(decision)?.minutesId ?? ""]) ?? [];
+    return {
+      reasonCode: "MINUTES_POSSIBLE_CONFLICT",
+      decision,
+      text: ledger.decisions.get(decision)?.text ?? "",
+      families,
+      message: `${decision} is close in topic but of another INIT family (${families.join(", ")}); the record stands beside it (declarations.coexists)`,
+    };
   });
 }
 

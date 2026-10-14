@@ -4,6 +4,7 @@ import { coordinationCatalogRows } from "../../core/src/project-scope.js";
 import { chainIdentity, declareChainIdentity, resolveProjectTarget, workProjectContexts, effectiveProjectState, ensureProjectCoordination, settingsCatalogState, markUnresolvedCommonDefault } from "../../core/src/project-chain.js";
 import { normalizeInvolvedProjects, involvedProjectsOf, projectReference, hasInvolvedProject } from "../../core/src/involved-projects.js";
 import { normalizedWorkGates } from "../../core/src/work-gates.js";
+import { declarationsFromInput, standBesideWarnings } from "../../core/src/minutes.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 import { acquireHeavySlot } from "../../../scripts/lib/heavy-runs.mjs";
 // SPDX-License-Identifier: Apache-2.0
@@ -864,7 +865,9 @@ function batchTransitionsOrAnnotates(document: unknown): boolean {
 // TCRN-CROSS-STORY-476 (problem list #18): every knowledge verb that writes a card answers the ids
 // it wrote beside the store's version, as a library write answers its ids beside its version: the
 // card written, the card it superseded (whose record the write rewrites), and in a batch every card
-// a member wrote or superseded.
+// a member wrote or superseded. TCRN-CROSS-SUB-485 (STORY-531): the receipt carries core's answer
+// whole, so a card written beside a conflict of another INIT family carries `warnings` naming each
+// such card (a batch member, in its entry under `applied`).
 function knowledgeWriteReceipt(result: Readonly<Record<string, JsonValue>>): string {
   const ids: string[] = [];
   const add = (value: JsonValue | undefined): void => {
@@ -3813,6 +3816,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const recorded = minutesById(state, (written.ids ?? []).find((id) => id.startsWith("minutes:")) ?? "");
     // TCRN-CROSS-STORY-476 R4: recorded minutes ask whether there is knowledge to extract.
     const [hint] = await knowledgeHints(workspace, at, state, [{ minutesId: recorded.id }]);
+    // TCRN-CROSS-SUB-486 (STORY-531): the decisions of another INIT family the record was written
+    // beside without its writer's --coexists, each named under warnings.
+    const warnings = standBesideWarnings(state, recorded, declarationsFromInput({ coexists: listValue(values.coexists) }, recorded.id)?.coexists ?? []);
     io.write(canonicalJson({
       reasonCode: "MINUTES_RECORDED",
       workspaceId: state.metadata.workspaceId,
@@ -3824,6 +3830,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       decisions: recorded.decisions,
       ...(recorded.declarations === undefined ? {} : { declarations: recorded.declarations }),
       ...(hint === undefined ? {} : { knowledgeHint: hint }),
+      ...(warnings.length === 0 ? {} : { warnings: warnings as unknown as JsonValue }),
     }));
     return;
   }

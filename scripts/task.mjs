@@ -23,6 +23,7 @@ import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
 import { DependencyGraphError, validateFrozenDependencyGraph } from "./lib/dependency-graph.mjs";
+import { HeavyRunsError, acquireHeavySlot } from "./lib/heavy-runs.mjs";
 import {
   aggregatePrivacySurface,
   decodeGitMetadataBytes,
@@ -592,6 +593,10 @@ async function build() {
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/runtime-capacity.mjs", runtimeCapacity);
   const canonicalOrder = await readSourceFile(resolve(repositoryRoot, "scripts/lib/canonical-order.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/canonical-order.mjs", canonicalOrder);
+  // TCRN-CROSS-SUB-484: the heavy-run semaphore, which the CLI's gates-run and the machine settings
+  // catalog import by relative path, as they import runtime-capacity.mjs.
+  const heavyRuns = await readSourceFile(resolve(repositoryRoot, "scripts/lib/heavy-runs.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/heavy-runs.mjs", heavyRuns);
   const dispatchConfigPath = resolve(repositoryRoot, "packages/core/src/dispatch-config.ts");
   const dispatchDefaultsPath = resolve(repositoryRoot, "packages/core/data/dispatch-defaults.json");
   if (await pathExists(dispatchConfigPath)) {
@@ -1443,7 +1448,7 @@ const handlers = {
 };
 
 function errorReason(error) {
-  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError) {
+  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError || error instanceof HeavyRunsError) {
     return error.reasonCode;
   }
   return "TASK_INTERNAL_ERROR";
@@ -1480,7 +1485,13 @@ async function invoke(name) {
   }
 }
 
+// TCRN-CROSS-SUB-484 (MIN-257 D6): the whole suite is a heavy run. `test` takes a slot of
+// execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs) before its output session, so it
+// never holds the session while it waits, and keeps it until the suite has ended; the test
+// processes it starts inherit the slot through EINZBERN_HEAVY_SLOT and take none of their own.
+let heavySlot = null;
 try {
+  if (command === "test") heavySlot = await acquireHeavySlot({ command: "test" });
   const result = await withExclusiveOutputSession(repositoryRoot, async () => invoke(command));
   process.stdout.write(`${JSON.stringify({ ok: true, command, ...result })}\n`);
 } catch (error) {
@@ -1492,4 +1503,6 @@ try {
     process.stderr.write(`${JSON.stringify({ ...details, ok: false, command, reasonCode: errorReason(error), error: error.message })}\n`);
   }
   process.exitCode = 1;
+} finally {
+  heavySlot?.release();
 }

@@ -29,8 +29,9 @@ Catalog `layer` and `scope` describe three ownership levels:
   ten in all. There `settings-catalog` lists exactly these ten, each with `scope` and
   `layer` `library`; they are read and written for the whole library (a write naming a
   `projectId` refuses as above) and never inherited as development configuration.
-- **device**: `portal.*`, `crest.userPath` and `agents.navigation` are kept in this
-  device's `machine-settings.json`, never in the library. Project setting verbs refuse
+- **device**: `portal.*`, `crest.userPath`, `agents.navigation` and
+  `execution.maxConcurrentHeavyRuns` are kept in this device's `machine-settings.json`, never in
+  the library. Project setting verbs refuse
   them with the existing device-level remedy.
 
 A registry entry binds a real filesystem project root to its stable native `projectId`;
@@ -100,6 +101,7 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `execution` | `quota.fiveHourWaitPercent` | project | scalar | 3 |
 | `execution` | `quota.weeklyParallelOffPercent` | project | scalar | 4 |
 | `execution` | `quota.weeklyWaitPercent` | project | scalar | 5 |
+| `execution` | `execution.maxConcurrentHeavyRuns` | device | scalar | 6 |
 | `knowledge` | `artifact.language` | project | scalar | 1 |
 | `knowledge` | `knowledge.articlesPath` | project | scalar | 2 |
 | `knowledge` | `crest.userPath` | device | scalar | 4 |
@@ -430,6 +432,27 @@ so a library that runs one host keeps only that host's records.
 
 Every entry of `settings-catalog` carries `modelWritable` (TCRN-CROSS-STORY-484 R4): whether a
 model may write the key through the CLI. It is `false` for every key.
+
+## Engine-consumed keys — device
+
+- **Key:** `execution.maxConcurrentHeavyRuns`
+  - **Type:** integer, 1 to 16.
+  - **Layer:** `machine_configuration` (this device's `machine-settings.json`, listed by
+    `machine-settings-catalog` in the `execution` group, order 6).
+  - **Default:** `1`.
+  - **Tier:** 1 (the Owner decides the value; it is written with `machine-settings-set` or on
+    Atelier's settings page and read back).
+  - **Meaning:** how many heavy runs may run at once on this machine. `gates-run`, the whole test
+    suite (`scripts/task.mjs test`), the portal proof train (`scripts/verify-portal.mjs`) and
+    `scripts/release.mjs finish` each take a slot before they start, a lock file in the device
+    directory's `locks/` (`heavy.lock`, then `heavy-2.lock` and on; `EINZBERN_HEAVY_LOCK_DIR`
+    names another directory), wait while every slot is held, and say on stderr which runs hold
+    them. A run started by a slot holder inherits the slot through `EINZBERN_HEAVY_SLOT` and takes
+    none of its own. `gates-plan` takes no slot. A change applies to the next run that takes one.
+  - **Mechanism:** `machine-settings-catalog` reads it; `machine-settings-set` and
+    `machine-settings-remove` write it; a value outside the bounds refuses with
+    `MACHINE_SETTING_VALUE_INVALID`. `scripts/lib/heavy-runs.mjs` reads it without the engine.
+  - **Decision record:** MIN-257 D6 (TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-484).
 
 ## Non-knob declarations
 

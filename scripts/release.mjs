@@ -10,6 +10,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { acquireHeavySlot } from "./lib/heavy-runs.mjs";
 import {
   RELEASE_ACTIONS,
   ReleaseLockstepError,
@@ -111,7 +112,16 @@ async function main() {
     return generateRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, receiptPath: options.receiptPath, keepExtra: options.keepExtra });
   }
   if (options.command === "finish") {
-    return finishRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, receiptPath: options.receiptPath });
+    // TCRN-CROSS-SUB-484 (MIN-257 D6): finish runs the release gates and packs, a heavy run. It takes
+    // a slot of execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs) before it checks
+    // anything and holds it to the end; the gates and trains it starts inherit the slot through
+    // EINZBERN_HEAVY_SLOT.
+    const slot = await acquireHeavySlot({ command: "release finish" });
+    try {
+      return await finishRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, receiptPath: options.receiptPath });
+    } finally {
+      slot.release();
+    }
   }
   if (options.execute !== null) {
     return executeReleaseAction({

@@ -158,6 +158,7 @@ import {
   storyFields,
   AGENTS_NAVIGATION_SETTING,
   readAgentsNavigation,
+  managedOutputBinding,
   renderAgentsSections,
   resolveAgentsProject,
   scopedWorkspaceState,
@@ -1414,8 +1415,16 @@ function writeVariableState(io: CliIo, rawState: Awaited<ReturnType<typeof mater
   }));
 }
 
-function outputConfigurationOptions(values: Readonly<Record<string, string>>, project: Awaited<ReturnType<typeof resolveAgentsProject>>): { readonly configurationProjectId: string } {
-  if (project.projectId === undefined) fail("WORKSPACE_INPUT_INVALID", "the project directory has no stable project binding; managed output remains pending");
+// The configuration scope a managed-section write reads: the registered project's. TCRN-CROSS-STORY-540
+// GWT1 (MIN-258 D3(c); TCRN-CROSS-SUB-505): a coordination library is registered for the container it
+// coordinates with no project, and its sections are written from the library's own configuration, so
+// such an entry, without --project-id, writes with no project scope; the core checks the root
+// (managedOutputBinding). Any other entry with no project still has no stable binding.
+async function outputConfigurationOptions(values: Readonly<Record<string, string>>, project: Awaited<ReturnType<typeof resolveAgentsProject>>): Promise<{ readonly configurationProjectId?: string }> {
+  if (project.projectId === undefined) {
+    if (values["project-id"] === undefined && chainIdentity(await materializeWorkspace(project.libraryPath))?.role === "coordination") return {};
+    fail("WORKSPACE_INPUT_INVALID", "the project directory has no stable project binding; managed output remains pending");
+  }
   return { configurationProjectId: configurationOptions(values, project.projectId).configurationProjectId! };
 }
 
@@ -1505,6 +1514,9 @@ function writeRuleChange(io: CliIo, project: { readonly projectRoot: string; rea
     backupDir: change.backupPath === null ? null : dirname(change.backupPath),
     backupPath: change.backupPath,
     recorded: change.recorded,
+    // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): unconfigured when the change had no project root to
+    // write (a coordination library this device registered none for) and recorded the rule alone.
+    outputBindingStatus: change.outputBindingStatus,
   }));
 }
 
@@ -2244,7 +2256,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const project = await resolveAgentsProject(values.project ?? process.cwd());
     const navigation = await readAgentsNavigation();
     const rendered = await namingSection(() => withWriteLock(project.libraryPath, at, async () => renderAgentsSections(project.libraryPath, {
-      projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
+      projectRoot: project.projectRoot, ...await outputConfigurationOptions(values, project),
       navigation,
       occurredAt: at,
       ...(values.actor ? { actorId: values.actor } : {}),
@@ -2282,7 +2294,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const ruleId = (values.action ?? "") === "overwrite" && section.startsWith("rule:") ? section.slice("rule:".length) : null;
     const { change, state } = await namingSection(() => withWriteLock(project.libraryPath, at, async () => {
       if (ruleId !== null) {
-        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project) })).find((rule) => rule.id === ruleId);
+        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot, ...await outputConfigurationOptions(values, project) })).find((rule) => rule.id === ruleId);
         if (status !== undefined && status.version !== null && status.recordedVersion !== null && status.recordedVersion > status.version) {
           throw new WorkflowCliError("RULE_VERSION_NEWER", `the library records rule ${ruleId} at version ${status.recordedVersion}; this engine ships version ${status.version}`, {
             id: ruleId,
@@ -2292,7 +2304,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         }
       }
       const resolved = await resolveAgentsSection(project.libraryPath, {
-        projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
+        projectRoot: project.projectRoot, ...await outputConfigurationOptions(values, project),
         id: section,
         action: (values.action ?? "") as SectionAction,
         force,
@@ -2301,11 +2313,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       });
       let state = resolved.state;
       if (ruleId !== null) {
-        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project) })).find((rule) => rule.id === ruleId);
+        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot, ...await outputConfigurationOptions(values, project) })).find((rule) => rule.id === ruleId);
         if (status !== undefined && status.recordedVersion !== null && status.state !== "disabled") {
           state = (await enableRule({
             libraryRoot: project.libraryPath,
-            projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
+            projectRoot: project.projectRoot, ...await outputConfigurationOptions(values, project),
             id: ruleId,
             occurredAt: at,
             ...(values.actor ? { actorId: values.actor } : {}),
@@ -2356,10 +2368,16 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       return;
     }
     const mapped = (await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId);
-    const projectRoot = projectId === undefined ? undefined : project?.projectRoot ?? (mapped.length === 1 ? mapped[0]!.projectPath : undefined);
+    // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): a coordination library's rules are read against the
+    // AGENTS.md of the project root this device registered for it, with no project as it is
+    // registered, and against no file while it has no such root (managedOutputBinding).
+    const coordination = chainIdentity(native)?.role === "coordination";
+    const candidate = projectId === undefined && !coordination ? undefined : project?.projectRoot ?? (mapped.length === 1 ? mapped[0]!.projectPath : undefined);
+    const projectRoot = candidate === undefined || !coordination ? candidate
+      : await managedOutputBinding(libraryRoot, candidate, native).then((binding) => binding === "bound" ? candidate : undefined, () => undefined);
     const rules = await namingSection(() => listRules({ libraryRoot, ...(projectRoot === undefined ? {} : { projectRoot }), ...(projectId === undefined ? {} : { configurationProjectId: projectId }) }));
     io.write(canonicalJson({ reasonCode: "RULE_LIST_READY", schemaVersion: "einzbern.rule-list.v1", projectPath: projectRoot ?? null, projectId: projectId ?? null, libraryPath: libraryRoot,
-      outputBindingStatus: projectId === undefined || projectRoot === undefined ? "unconfigured" : "bound",
+      outputBindingStatus: projectRoot === undefined ? "unconfigured" : "bound",
       catalog: BUILT_IN_RULES.map((rule) => ({ id: rule.id, version: rule.version, title: rule.title })),
       rules: rules.map((rule) => ({ ...ruleStatusJson(rule) as Readonly<Record<string, JsonValue>>, source: state.configSources[JSON.stringify(["rule", rule.id])] ?? null })) }));
     return;
@@ -2376,7 +2394,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const project = await resolveAgentsProject(values.project ?? process.cwd());
     const change = await namingSection(() => withWriteLock(project.libraryPath, at, async () => enableRule({
       libraryRoot: project.libraryPath,
-      projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
+      projectRoot: project.projectRoot, ...await outputConfigurationOptions(values, project),
       id: values.id ?? "",
       occurredAt: at,
       ...(order === undefined ? {} : { order }),
@@ -2395,7 +2413,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const project = await resolveAgentsProject(values.project ?? process.cwd());
     const change = await namingSection(() => withWriteLock(project.libraryPath, at, async () => disableRule({
       libraryRoot: project.libraryPath,
-      projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
+      projectRoot: project.projectRoot, ...await outputConfigurationOptions(values, project),
       id: values.id ?? "",
       force,
       occurredAt: at,

@@ -1,4 +1,3 @@
-import { chainIdentity } from "./chain-identity.js";
 import { effectiveProjectState } from "./project-chain.js";
 import { scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
@@ -42,14 +41,21 @@ import { scopedWorkspaceState } from "./project-scope.js";
 //
 // TCRN-CROSS-STORY-538 GWT3 (TCRN-CROSS-SUB-499): both read the library and plan AGENTS.md outside the
 // library write lock, and write and record under it only while neither has moved since they read
-// them (workspace.ts, appendPlannedWrite); a coordination library's change, which writes no file,
-// is checked the same way before its record goes in.
+// them (workspace.ts, appendPlannedWrite); a change that writes no file is checked the same way
+// before its record goes in.
+//
+// TCRN-CROSS-STORY-540 GWT1 (MIN-258 D3(c), which replaces MIN-245 D6; TCRN-CROSS-SUB-505): a
+// coordination library's rules go the same way as a project's, into the AGENTS.md of the project root
+// this device registered for it (agents-sections.ts, managedOutputBinding), and their states are read
+// from the same three places. A coordination library this device registered no such root for has
+// nowhere to write: enabling or disabling a rule there records the rule alone, as it did before, and
+// says so (outputBindingStatus unconfigured).
 
 import { join } from "node:path";
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
-import { assertManagedOutputRoot, AGENTS_FILE, RULE_SECTION_PREFIX, commitPlanned, filesAsPlanned, orderRuleSections, planSectionTakeOut, putBackUnrecorded, ruleOrders, writeSectionPlan } from "./agents-sections.js";
-import type { SectionChangeResult, SectionPlan } from "./agents-sections.js";
+import { AGENTS_FILE, RULE_SECTION_PREFIX, commitPlanned, filesAsPlanned, managedOutputBinding, orderRuleSections, planSectionTakeOut, putBackUnrecorded, ruleOrders, writeSectionPlan } from "./agents-sections.js";
+import type { ManagedOutputBinding, SectionChangeResult, SectionPlan } from "./agents-sections.js";
 import { configRecord, configRecords, removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
 import type { ConfigRecordValue } from "./config-records.js";
 import { applyManagedWrite, managedSectionRecordKey, managedSectionRecordsFor, parseManagedFile, planManagedWrite } from "./managed-sections.js";
@@ -211,9 +217,8 @@ function statusOf(state: Pick<WorkspaceState, "configRecords">, inFile: Readonly
     recordedVersion: record?.version ?? null,
     fileVersion: inFileSection?.rev ?? null,
     section,
-    state: state.configRecords.some(entry => entry.collection === "chain" && entry.key === "identity" && entry.value.role === "coordination")
-      ? (!record?.enabled ? "disabled" : shippedVersion !== null && shippedVersion > record.version ? "update-available" : "enabled")
-      : ruleState({ record, shippedVersion, section: inFileSection, sectionRecord }),
+    // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): a coordination library's rule too.
+    state: ruleState({ record, shippedVersion, section: inFileSection, sectionRecord }),
     ...(record?.order === undefined ? {} : { order: record.order }),
   };
 }
@@ -269,16 +274,21 @@ export interface RuleChange {
   readonly backupPath: string | null;
   // How many records the change wrote to the library.
   readonly recorded: number;
+  // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): bound when the change went to AGENTS.md; unconfigured
+  // when the library is a coordination library this device registered no project root for, so the
+  // change recorded the rule alone (agents-sections.ts, managedOutputBinding).
+  readonly outputBindingStatus: ManagedOutputBinding;
   readonly status: RuleStatus;
   readonly state: WorkspaceState;
 }
 
 // TCRN-CROSS-STORY-538 GWT3 (TCRN-CROSS-SUB-499): what a rule change plans outside the library write
-// lock, for the lock to write and record. A coordination library writes no AGENTS.md, so its plan is
-// the rule's record alone (changeCoordinationRule); a project's is the plan of its section as well.
-// `recorded` counts the change's own deltas, `deltas` those and the ones alongside them.
-interface CoordinationRulePlan {
-  readonly kind: "coordination";
+// lock, for the lock to write and record. With no project root to write (TCRN-CROSS-STORY-540: a
+// coordination library this device registered none for) the plan is the rule's record alone
+// (commitRecordOnlyRule); otherwise it is the plan of the rule's section as well. `recorded` counts
+// the change's own deltas, `deltas` those and the ones alongside them.
+interface RecordOnlyRulePlan {
+  readonly kind: "record-only";
   readonly recorded: number;
   readonly deltas: number;
 }
@@ -286,22 +296,21 @@ interface CoordinationRulePlan {
 // TCRN-CROSS-STORY-526 (TCRN-CROSS-SUB-452): every delta of a rule change carries the change's
 // authorization (input.authorization), so each event it appends records how the change was let through.
 //
-// A coordination library's rule change, planned: the rule's record as {enabled, version, order},
+// A rule change with nowhere to write, planned: the rule's record as {enabled, version, order},
 // unless the library records it so already.
-async function planCoordinationRule(nativeState: WorkspaceState, input: RuleChangeInput, enabled: boolean, version: number, order?: number): Promise<LibraryWritePlan<CoordinationRulePlan>> {
-  const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+function planRecordOnlyRule(state: Pick<WorkspaceState, "configRecords">, input: RuleChangeInput, enabled: boolean, version: number, order?: number): LibraryWritePlan<RecordOnlyRulePlan> {
   const previous = recordedRule(state, input.id);
   const value = { enabled, version, ...(order === undefined ? {} : { order }) };
   const deltas = previous?.enabled === enabled && previous.version === version && previous.order === order ? [] : [setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), ...(input.authorization === undefined ? {} : { authorization: input.authorization }), collection: "rule", key: input.id, value })];
   const all = [...deltas, ...(input.alongside ?? [])];
-  return { deltas: all, plan: { kind: "coordination", recorded: deltas.length, deltas: all.length } };
+  return { deltas: all, plan: { kind: "record-only", recorded: deltas.length, deltas: all.length } };
 }
 
-// A coordination library's rule change, recorded under the lock (TCRN-CROSS-SUB-499 moved only where
-// the lock is held; what the change records is as it was).
-async function changeCoordinationRule(root: string, append: () => Promise<WorkspaceState>, input: RuleChangeInput, enabled: boolean, planned: CoordinationRulePlan): Promise<RuleChange> {
+// A rule change with nowhere to write, recorded under the lock. Its state is read as any rule's is,
+// against no file (TCRN-CROSS-STORY-540: an enabled rule then reads removed-from-file).
+async function commitRecordOnlyRule(root: string, append: () => Promise<WorkspaceState>, input: RuleChangeInput, enabled: boolean, planned: RecordOnlyRulePlan): Promise<RuleChange> {
   const committed = await commitPlanned(root, append, planned.deltas);
-  return { id: input.id, section: ruleSectionId(input.id), file: AGENTS_FILE, action: enabled ? "enable" : "disable", result: "unchanged", written: false, backupPath: null, recorded: planned.recorded, status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), new Map(), input.catalog ?? BUILT_IN_RULES, input.id), state: committed };
+  return { id: input.id, section: ruleSectionId(input.id), file: AGENTS_FILE, action: enabled ? "enable" : "disable", result: "unchanged", written: false, backupPath: null, recorded: planned.recorded, outputBindingStatus: "unconfigured", status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), new Map(), input.catalog ?? BUILT_IN_RULES, input.id), state: committed };
 }
 
 /**
@@ -335,14 +344,10 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
   if (input.order !== undefined && !isOrder(input.order)) {
     fail("RULE_RECORD_INVALID", `the order of rule ${rule.id} is a positive integer`, { id: rule.id, field: "order" });
   }
-  return appendPlannedWrite<CoordinationRulePlan | EnableRulePlan, RuleChange>(input.libraryRoot, input, {
+  return appendPlannedWrite<RecordOnlyRulePlan | EnableRulePlan, RuleChange>(input.libraryRoot, input, {
     plan: async (root, nativeState) => {
-      if (chainIdentity(nativeState)?.role === "coordination") {
-        const recorded = recordedRule(scopedWorkspaceState(nativeState, input.configurationProjectId), rule.id);
-        if (recorded !== null && recorded.version > rule.version) fail("RULE_VERSION_NEWER", "recorded rule version is newer");
-        return planCoordinationRule(nativeState, input, true, rule.version, input.order ?? recorded?.order);
-      }
-      await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+      // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): a coordination library's rule as a project's.
+      const binding = await managedOutputBinding(root, input.projectRoot, nativeState);
       const state = await effectiveProjectState(nativeState, input.configurationProjectId);
       const recorded = recordedRule(state, rule.id);
       if (recorded !== null && recorded.version > rule.version) {
@@ -353,6 +358,7 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
         });
       }
       const order = input.order ?? recorded?.order;
+      if (binding === "unconfigured") return planRecordOnlyRule(state, input, true, rule.version, order);
       const value: ConfigRecordValue = { enabled: true, version: rule.version, ...(order === undefined ? {} : { order }) };
       // The rules' orders as they will stand once this rule is recorded.
       const orders = new Map(ruleOrders(state));
@@ -376,9 +382,9 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
       const all = [...deltas, ...(input.alongside ?? [])];
       return { deltas: all, plan: { kind: "project", section, plan, result: decision?.result ?? "unchanged", recorded: deltas.length, deltas: all.length } };
     },
-    unchanged: async (planned) => planned.kind === "coordination" || await filesAsPlanned([planned.plan]),
+    unchanged: async (planned) => planned.kind === "record-only" || await filesAsPlanned([planned.plan]),
     write: async (root, nativeState, planned, append) => {
-      if (planned.kind === "coordination") return changeCoordinationRule(root, append, input, true, planned);
+      if (planned.kind === "record-only") return commitRecordOnlyRule(root, append, input, true, planned);
       const { section, plan } = planned;
       const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
       let committed: WorkspaceState;
@@ -397,6 +403,7 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
         written: applied.written,
         backupPath: applied.backupPath,
         recorded: planned.recorded,
+        outputBindingStatus: "bound",
         status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), sectionsOfText(applied.written ? plan.after : plan.before), catalog, rule.id),
         state: committed,
       };
@@ -437,23 +444,22 @@ interface DisableRulePlan {
  */
 export async function disableRule(input: RuleChangeInput & { readonly force?: boolean }): Promise<RuleChange> {
   const catalog = input.catalog ?? BUILT_IN_RULES;
-  return appendPlannedWrite<CoordinationRulePlan | DisableRulePlan, RuleChange>(input.libraryRoot, input, {
+  return appendPlannedWrite<RecordOnlyRulePlan | DisableRulePlan, RuleChange>(input.libraryRoot, input, {
     plan: async (root, nativeState) => {
-      if (chainIdentity(nativeState)?.role === "coordination") {
-        const recorded = recordedRule(scopedWorkspaceState(nativeState, input.configurationProjectId), input.id);
-        const shipped = catalog.find(rule => rule.id === input.id);
-        if (!recorded && !shipped) fail("RULE_UNKNOWN", "rule is not recorded or shipped");
-        return planCoordinationRule(nativeState, input, false, recorded?.version ?? shipped!.version, recorded?.order);
-      }
-      await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+      // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): a coordination library's rule as a project's.
+      const binding = await managedOutputBinding(root, input.projectRoot, nativeState);
       const state = await effectiveProjectState(nativeState, input.configurationProjectId);
       const recorded = isRuleId(input.id) ? recordedRule(state, input.id) : null;
-      if (recorded === null && !catalog.some((entry) => entry.id === input.id)) {
+      const shipped = catalog.find((entry) => entry.id === input.id);
+      if (recorded === null && shipped === undefined) {
         fail("RULE_UNKNOWN", `neither the engine nor the library knows a rule ${JSON.stringify(input.id)}`, {
           id: String(input.id),
           known: catalog.map((entry) => entry.id).join(","),
         });
       }
+      // With nowhere to write, the rule is recorded disabled at the version it holds, or else the one
+      // this engine ships, its order kept.
+      if (binding === "unconfigured") return planRecordOnlyRule(state, input, false, recorded?.version ?? shipped!.version, recorded?.order);
       const section = ruleSectionId(input.id);
       const records = managedSectionRecordsFor(state, AGENTS_FILE);
       const planned = await planSectionTakeOut({
@@ -476,9 +482,9 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
       const all = [...deltas, ...(input.alongside ?? [])];
       return { deltas: all, plan: { kind: "project", section, planned, recorded: deltas.length, deltas: all.length } };
     },
-    unchanged: async (planned) => planned.kind === "coordination" || await filesAsPlanned([planned.planned.plan]),
+    unchanged: async (planned) => planned.kind === "record-only" || await filesAsPlanned([planned.planned.plan]),
     write: async (root, nativeState, planned, append) => {
-      if (planned.kind === "coordination") return changeCoordinationRule(root, append, input, false, planned);
+      if (planned.kind === "record-only") return commitRecordOnlyRule(root, append, input, false, planned);
       const { change, wrote } = await writeSectionPlan(planned.planned, input.occurredAt, input.backupRoot);
       let committed: WorkspaceState;
       try {
@@ -496,6 +502,7 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
         written: change.written,
         backupPath: change.backupPath,
         recorded: planned.recorded,
+        outputBindingStatus: "bound",
         status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), await sectionsOfAgentsFile(input.projectRoot), catalog, input.id),
         state: committed,
       };

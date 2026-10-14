@@ -34,6 +34,10 @@ import { effectiveProjectState } from "./project-chain.js";
 // the library and plan every file outside the library write lock, and hold it for the write alone:
 // under it the library must stand where they read it and each file must hold what they read
 // (filesAsPlanned), or they read and plan again (workspace.ts, appendPlannedWrite).
+//
+// TCRN-CROSS-STORY-540 GWT1 (MIN-258 D3(c); TCRN-CROSS-SUB-505): a coordination library's sections go
+// the same way, into the project root this device's registry holds for it -- the container it
+// coordinates -- and nowhere else (managedOutputBinding).
 
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isUtf8 } from "node:buffer";
@@ -65,7 +69,7 @@ import type {
 } from "./managed-sections.js";
 import type { AgentsNavigationChoice } from "./machine-settings.js";
 import { BRAND } from "./names.js";
-import { gitTopLevel, resolveLibrary } from "./registry.js";
+import { gitTopLevel, readRegistry, resolveLibrary } from "./registry.js";
 import type { ResolutionPath } from "./registry.js";
 import { BUILT_IN_RULES, builtInRule, ruleBody } from "./rules-catalog.js";
 import {
@@ -83,6 +87,10 @@ export const AGENTS_SECTIONS_REASON_CODES = Object.freeze([
   "MANAGED_SECTION_ACTION_INVALID",
   "MANAGED_SECTION_FORCE_REQUIRED",
   "MANAGED_SECTION_NOT_FOUND",
+  // TCRN-CROSS-STORY-540 GWT1 (TCRN-CROSS-SUB-505): a project root managed sections may not be
+  // written into (managedOutputBinding).
+  "MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY",
+  "MANAGED_SECTION_OUTPUT_UNREGISTERED",
 ] as const);
 
 export type AgentsSectionsReasonCode = typeof AGENTS_SECTIONS_REASON_CODES[number];
@@ -521,21 +529,83 @@ export interface AgentsProject {
   readonly projectId?: string;
 }
 
+// ---- Where managed sections may be written (TCRN-CROSS-STORY-540 GWT1) ----
+
+/** Whether a library's managed sections have a root to go to on this device (managedOutputBinding). */
+export type ManagedOutputBinding = "bound" | "unconfigured";
+
+// Whether `path` is a library in `libraries` or lies within one.
+function insideLibrary(path: string, libraries: readonly string[]): boolean {
+  return libraries.some((library) => {
+    const relation = relative(library, path);
+    return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
+  });
+}
+
+/**
+ * Where a library's managed sections may be written, checked by every entry point that writes them
+ * (agents-render, rule-resolve, rule-enable, rule-disable and the variable sections), even for a direct
+ * caller. A project root is never the library or a directory within it
+ * (MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY).
+ *
+ * TCRN-CROSS-STORY-540 GWT1 (MIN-258 D3(c), which replaces MIN-245 D6; TCRN-CROSS-SUB-505): a
+ * coordination library is a destination too, for the project root this device's registry holds for
+ * it -- the container it coordinates -- and for no other directory. Its roots are the project paths
+ * the registry records for the library that lie within no library the registry knows, the library's
+ * own included. With such a root, `projectRoot` must be one of them: within a library it is refused
+ * as above, and any other directory with MANAGED_SECTION_OUTPUT_UNREGISTERED. Without one (a
+ * coordination library registered only as its own project path, or not at all) the binding is
+ * unconfigured: rule-enable and rule-disable then record the rule alone, as before, and every other
+ * entry point refuses (assertManagedOutputRoot). A project library is bound wherever it is not refused.
+ */
+export async function managedOutputBinding(libraryRoot: string, projectRoot: string, state: Pick<WorkspaceState, "configRecords" | "metadata">): Promise<ManagedOutputBinding> {
+  const library = await realpath(libraryRoot);
+  const project = await realpath(projectRoot);
+  const insideRefusal = (): never => fail("MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY", `managed prose cannot be written inside a library: ${project} is ${library} or lies within a library`, {
+    library,
+    project,
+  });
+  if (chainIdentity(state)?.role !== "coordination") {
+    if (insideLibrary(project, [library])) insideRefusal();
+    return "bound";
+  }
+  const registry = await readRegistry();
+  const libraries = [library, ...registry.entries.map((entry) => entry.libraryPath)];
+  const roots = registry.entries
+    .filter((entry) => entry.libraryId === state.metadata.workspaceId && !insideLibrary(entry.projectPath, libraries))
+    .map((entry) => entry.projectPath);
+  if (roots.length === 0) return "unconfigured";
+  if (insideLibrary(project, libraries)) insideRefusal();
+  if (!roots.includes(project)) {
+    fail("MANAGED_SECTION_OUTPUT_UNREGISTERED", `the coordination library ${state.metadata.workspaceId} writes managed sections only into the project root this device registered for it, not ${project}`, {
+      library,
+      project,
+      remedy: "library-register",
+    });
+  }
+  return "bound";
+}
+
+/**
+ * Refuse a project root managed sections may not be written into (managedOutputBinding): within a
+ * library, not the root this device registered for a coordination library, or for a coordination
+ * library this device registered no root for (MANAGED_SECTION_OUTPUT_UNREGISTERED).
+ */
+export async function assertManagedOutputRoot(libraryRoot: string, projectRoot: string, state: Pick<WorkspaceState, "configRecords" | "metadata">): Promise<void> {
+  if (await managedOutputBinding(libraryRoot, projectRoot, state) === "unconfigured") {
+    fail("MANAGED_SECTION_OUTPUT_UNREGISTERED", `the coordination library ${state.metadata.workspaceId} has no project root registered on this device outside a library, so its managed sections have nowhere to go`, {
+      library: await realpath(libraryRoot),
+      project: await realpath(projectRoot),
+      remedy: "library-register",
+    });
+  }
+}
+
 /**
  * The project a directory belongs to, as this device's registry resolves it (TCRN-CROSS-STORY-470
  * R1): the registered project that holds the directory, or, for another clone of it found through
  * its remote, that clone's working tree. LIBRARY_NOT_REGISTERED when the registry names none.
  */
-/** A coordination library is not a prose destination, even for direct callers. */
-export async function assertManagedOutputRoot(libraryRoot: string, projectRoot: string, state: WorkspaceState): Promise<void> {
-  const library = await realpath(libraryRoot);
-  const project = await realpath(projectRoot);
-  const relation = relative(library, project);
-  if (chainIdentity(state)?.role === "coordination" || relation === "" || (!relation.startsWith("..") && !isAbsolute(relation))) {
-    throw new Error("managed prose cannot be written inside a library or for coordination");
-  }
-}
-
 export async function resolveAgentsProject(directory: string): Promise<AgentsProject> {
   const resolved = await resolveLibrary(directory);
   let projectRoot = resolved.entry.projectPath;

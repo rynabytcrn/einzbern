@@ -760,6 +760,8 @@ export {
   NAVIGATION_LINES,
   disableAgentsSection,
   ensureClaudeImport,
+  // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): rule-list reads a coordination library against its root.
+  managedOutputBinding,
   renderAgentsSections,
   resolveAgentsProject,
   resolveAgentsSection,

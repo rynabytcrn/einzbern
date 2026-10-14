@@ -195,14 +195,17 @@ test("operation readiness separates gate declarations from models, repository an
   assert.equal(target.readiness.development.ready, false);
 });
 
-test("coordination rule writes preserve runtime enable/disable and never create managed prose", async t => {
+// TCRN-CROSS-STORY-540 GWT1 (TCRN-CROSS-SUB-505): a coordination library this device registered no root
+// for outside a library (this fixture registers it in its own device directory, not the process's)
+// still records a rule change, with nowhere to write it, and its state is read against no file.
+test("coordination rule writes with no registered root record the rule alone and never create managed prose", async t => {
   const f = await fixture(t);
   const input = { libraryRoot: f.coordination.path, projectRoot: f.coordination.path, id: "autonomy", occurredAt: at };
   const enabled = await enableRule(input);
-  assert.equal(enabled.status.state, "enabled");
+  assert.deepEqual([enabled.status.state, enabled.status.recordedVersion, enabled.outputBindingStatus], ["removed-from-file", 1, "unconfigured"]);
   assert.equal(enabled.written, false);
-  assert.equal((await listRules({ libraryRoot: f.coordination.path })).find(rule => rule.id === "autonomy").state, "enabled");
-  await assert.rejects(renderAgentsSections(f.coordination.path, { projectRoot: f.coordination.path, navigation: null, occurredAt: at }), /managed prose/u);
+  assert.equal((await listRules({ libraryRoot: f.coordination.path })).find(rule => rule.id === "autonomy").state, "removed-from-file");
+  await assert.rejects(renderAgentsSections(f.coordination.path, { projectRoot: f.coordination.path, navigation: null, occurredAt: at }), { reasonCode: "MANAGED_SECTION_OUTPUT_UNREGISTERED" });
   const disabled = await disableRule(input);
   assert.equal(disabled.status.state, "disabled");
   assert.equal(disabled.written, false);
@@ -344,7 +347,10 @@ test("F07: common defaults inherit optional project scalars only, and an unresol
 
 // F02 (U09): the runtime rule write path Atelier takes for a coordination chain, the CLI's
 // rule-enable and rule-disable on the coordination registration setup makes, records the rule's
-// state and never writes managed prose into the library.
+// state and never writes managed prose into the library. TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505):
+// setup registers such a library as its own project path, which lies within a library, so it has no
+// output root: the receipts say so (outputBindingStatus unconfigured) and the rule's state is read
+// against no file.
 test("F02: rule-enable and rule-disable through the CLI on a setup-made coordination record runtime state and write no prose", async t => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-coordination-rule-")));
   const previous = { home: process.env.EINZBERN_HOME, surface: process.env.EINZBERN_SURFACE };
@@ -365,11 +371,12 @@ test("F02: rule-enable and rule-disable through the CLI on a setup-made coordina
   // Atelier's surface, as its runtime rule write runs the CLI (no human-identity claim).
   process.env.EINZBERN_SURFACE = "atelier";
   const enabled = await cli(["rule-enable", "--id", "autonomy", "--project", coordination.path, "--project-id", entry.projectId, "--at", at]);
-  assert.deepEqual([enabled.reasonCode, enabled.written, enabled.recorded, enabled.result, enabled.rule.state], ["RULE_ENABLED", false, 1, "unchanged", "enabled"]);
-  assert.equal((await listRules({ libraryRoot: coordination.path, configurationProjectId: entry.projectId })).find(rule => rule.id === "autonomy").state, "enabled");
-  assert.equal((await cli(["rule-list", "--project", coordination.path])).rules.find(rule => rule.id === "autonomy").state, "enabled");
+  assert.deepEqual([enabled.reasonCode, enabled.written, enabled.recorded, enabled.result, enabled.rule.state, enabled.rule.recordedVersion, enabled.outputBindingStatus], ["RULE_ENABLED", false, 1, "unchanged", "removed-from-file", 1, "unconfigured"]);
+  assert.equal((await listRules({ libraryRoot: coordination.path, configurationProjectId: entry.projectId })).find(rule => rule.id === "autonomy").state, "removed-from-file");
+  const listed = await cli(["rule-list", "--project", coordination.path]);
+  assert.deepEqual([listed.rules.find(rule => rule.id === "autonomy").state, listed.outputBindingStatus], ["removed-from-file", "unconfigured"]);
   const disabled = await cli(["rule-disable", "--id", "autonomy", "--project", coordination.path, "--project-id", entry.projectId, "--at", at]);
-  assert.deepEqual([disabled.reasonCode, disabled.written, disabled.recorded], ["RULE_DISABLED", false, 1]);
+  assert.deepEqual([disabled.reasonCode, disabled.written, disabled.recorded, disabled.outputBindingStatus], ["RULE_DISABLED", false, 1, "unconfigured"]);
   assert.equal((await listRules({ libraryRoot: coordination.path, configurationProjectId: entry.projectId })).find(rule => rule.id === "autonomy").state, "disabled");
   await assert.rejects(readFile(join(coordination.path, "AGENTS.md")), { code: "ENOENT" }, "no managed prose in the coordination library");
 });

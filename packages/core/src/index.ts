@@ -742,6 +742,10 @@ export type { ConfigRecord } from "./config-records.js";
 // TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-471): work-transition to done holds the item to the leases
 // before it judges the gates.
 export { assertWorkLeaseAdmits, claimWork, releaseWork, workLeaseView } from "./work-lease.js";
+// TCRN-CROSS-STORY-527 (MIN-257 D6, Q5, Q6; TCRN-CROSS-SUB-477): the gate and rule changes a model
+// proposes (gates-config-propose, rule-propose) and Atelier approves or rejects (proposal-approve,
+// proposal-reject); gates-config-list and rule-list read them with --status.
+export { approveProposal, listProposals, proposeChange, rejectProposal } from "./config-proposals.js";
 // TCRN-CROSS-STORY-478 R1, R2, R6 (TCRN-CROSS-SUB-316): the managed-section writer.
 export { applyManagedWrite, managedSectionRecordsFor, parseManagedFile, planManagedWrite } from "./managed-sections.js";
 export type { ManagedSectionRecord } from "./managed-sections.js";

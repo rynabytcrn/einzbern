@@ -14,9 +14,10 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // order, and the others follow by name (gates-plan.ts). The order says when a gate runs, not what it
 // proves, so it is not part of the declarations digest a run is judged by.
 
-import { configRecords, removeConfigRecord, setConfigRecord } from "./config-records.js";
+import type { WriteAuthorization } from "./actor-attestation.js";
+import { configRecords, removeConfigRecord, removeConfigRecordDelta, setConfigRecord, setConfigRecordDelta } from "./config-records.js";
 import { GatesPlanError, compileGlob } from "./gates-plan.js";
-import type { WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
+import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 
 export const GATES_CONFIG_REASON_CODES = Object.freeze(["GATES_CONFIG_INVALID"] as const);
 
@@ -139,6 +140,36 @@ export async function setGate(workspaceRoot: string, input: { readonly name: str
   if (!isGateName(input.name)) invalid("name", `${input.name} is not a gate name: use non-empty letters, digits, dots, colons, underscores and hyphens`, { name: String(input.name) });
   const gate = checkGateDeclaration(input.gate, input.name);
   return setConfigRecord(workspaceRoot, { ...input, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "gate", key: input.name, value: gate });
+}
+
+// TCRN-CROSS-STORY-527 (TCRN-CROSS-SUB-477): the same two writes as deltas, for an append that
+// carries other events with them: Atelier's approval of a proposed gate declares or removes the gate
+// and settles the proposal in one append (config-proposals.ts). `projectId` scopes the gate as
+// --project-id does; the authorization is recorded beside the record.
+export interface GateDeltaInput {
+  readonly name: string;
+  readonly projectId?: string;
+  readonly authorization?: WriteAuthorization;
+}
+
+/** The delta that declares or redeclares one gate; the name and declaration are checked before any lock is taken. */
+export function setGateDelta(input: GateDeltaInput & { readonly gate: unknown }): (state: WorkspaceState) => MutationDelta {
+  if (!isGateName(input.name)) invalid("name", `${input.name} is not a gate name: use non-empty letters, digits, dots, colons, underscores and hyphens`, { name: String(input.name) });
+  const gate = checkGateDeclaration(input.gate, input.name);
+  return setConfigRecordDelta({
+    ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+    ...(input.authorization === undefined ? {} : { authorization: input.authorization }),
+    collection: "gate", key: input.name, value: gate,
+  });
+}
+
+/** The delta that removes one gate; a name the merged state does not declare is refused (CONFIG_RECORD_NOT_FOUND). */
+export function removeGateDelta(input: GateDeltaInput): (state: WorkspaceState) => MutationDelta {
+  return removeConfigRecordDelta({
+    ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+    ...(input.authorization === undefined ? {} : { authorization: input.authorization }),
+    collection: "gate", key: input.name,
+  });
 }
 
 /** Remove one gate from a library; a name the library does not declare is refused (CONFIG_RECORD_NOT_FOUND). */

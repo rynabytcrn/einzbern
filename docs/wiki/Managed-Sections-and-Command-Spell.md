@@ -73,6 +73,20 @@ rule-resolve --section <段 id> --action overwrite|keep|unmanage [--force true] 
 
 `agents-render` 也渲染已启用原则的段：项目换了 `artifact.language`，下一次渲染就换成对应语言的正文。
 
+### 提交待批准
+
+模型不能直接启停原则（上一节），但可以提交待批准的启停，由人在 Atelier 的规则页里批准或拒绝（TCRN-CROSS-STORY-527）：
+
+```text
+rule-propose --id <规则 id> [--action enable|disable] [--order <正整数>] [--project <目录>] --actor <行动者> --at <时刻>
+rule-list --status pending|rejected
+proposal-approve --key rule:<规则 id> --proposed-at <提交时刻> [--project <目录>] --actor <行动者> --at <时刻>
+proposal-reject --key rule:<规则 id> --proposed-at <提交时刻> --actor <行动者> --at <时刻>
+```
+
+- 待批准项记在库的 `proposal` 集合里，键为 `rule:<规则 id>`。它不启用原则，也不写任何文件：`rule-list` 缺省列出的状态不变，`agents-render` 与 `rule-resolve` 不渲染它。`rule-list --status pending` 或 `--status rejected` 列出对应状态的待批准项。注意这里的待批准项与六种状态里的 `pending`（等待处置的受管段）不是一回事。
+- 批准只在 Atelier 运行，与 `rule-enable`、`rule-disable` 一样先写 AGENTS.md 再追加记录：原则记录、段记录与移除待批准项在同一次追加里，追加失败时文件放回原样。事件记 `surface: atelier` 与 `decidedIn: proposal:rule:<规则 id>@<提交时刻>`。拒绝、重新提出与过期的处理同门，见「门」页的「提交待批准」。
+
 ### 原则段的顺序
 
 库里有原则记着顺序（TCRN-CROSS-STORY-508 R7）时，AGENTS.md 里的原则段按顺序排列：

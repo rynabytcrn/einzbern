@@ -6,7 +6,7 @@
 // contract only; WSE-2/WSE-3 enforce it. No new dependencies.
 
 import type { JsonValue } from "../../protocol/src/index.js";
-import { assertProtocolId } from "../../protocol/src/index.js";
+import { assertProtocolId, assertStrictInstant } from "../../protocol/src/index.js";
 import { parseDecisionAddress } from "./minutes.js";
 
 export const ACTOR_ATTESTATION_SCHEMA_VERSION = "tcrn.actor-attestation.v1" as const;
@@ -87,6 +87,30 @@ export interface WriteAuthorization {
 
 const LIBRARY_ID = /^(library|workspace):[a-f0-9]{24}$/u;
 
+// TCRN-CROSS-STORY-527 (Q5; TCRN-CROSS-SUB-477): the decision Atelier's approval of a pending proposal
+// cites is the proposal itself, proposal:<key of the proposal record>@<the instant it was proposed>
+// (config-proposals.ts), in this library and from surface atelier. An engine that predates the value
+// rejects such an event on replay and skips it.
+const PROPOSAL_DECISION = /^proposal:((?:gate|rule):[^\s@]+)@([^\s@]+)$/u;
+
+/** The decidedIn of the approval of the proposal recorded under `key` at `proposedAt`. */
+export function proposalDecision(key: string, proposedAt: string): string {
+  return `proposal:${key}@${proposedAt}`;
+}
+
+/** The proposal a decidedIn of the form proposal:<key>@<proposedAt> names, or null for any other value. */
+export function parseProposalDecision(value: unknown): { readonly key: string; readonly proposedAt: string } | null {
+  if (typeof value !== "string") return null;
+  const match = PROPOSAL_DECISION.exec(value);
+  if (match === null) return null;
+  try {
+    assertStrictInstant(match[2]);
+  } catch {
+    return null;
+  }
+  return { key: match[1]!, proposedAt: match[2]! };
+}
+
 /** The payload extras a write's authorization adds: none when there is none. */
 export function writeAuthorizationExtras(authorization: WriteAuthorization | undefined): Readonly<Record<string, JsonValue>> {
   if (authorization === undefined) return {};
@@ -101,12 +125,19 @@ export function writeAuthorizationExtras(authorization: WriteAuthorization | und
  * What is wrong with the authorization extras `fields` holds, or null when they are well formed:
  * surface is cli or atelier, decidedIn is a decision number and decidedInLibraryId a library id, and
  * the last two come together. The write path and replay ask the same question.
+ *
+ * TCRN-CROSS-STORY-527 (Q5): decidedIn may also name a proposal Atelier approved,
+ * proposal:<key>@<proposedAt>, which is recorded with surface atelier.
  */
 export function writeAuthorizationProblem(fields: Readonly<Record<string, unknown>>): string | null {
   const present = (key: string): boolean => Object.hasOwn(fields, key);
   if (present("surface") && !WRITE_SURFACES.includes(fields.surface as WriteSurface)) return "surface is cli or atelier";
   if (present("decidedIn") !== present("decidedInLibraryId")) return "decidedIn and decidedInLibraryId are recorded together";
-  if (present("decidedIn") && parseDecisionAddress(fields.decidedIn) === null) return "decidedIn is a decision number, minutes:<id>#D<n>";
+  const proposal = present("decidedIn") ? parseProposalDecision(fields.decidedIn) : null;
+  if (present("decidedIn") && proposal === null && parseDecisionAddress(fields.decidedIn) === null) {
+    return "decidedIn is a decision number, minutes:<id>#D<n>, or an approved proposal, proposal:<key>@<proposedAt>";
+  }
+  if (proposal !== null && fields.surface !== "atelier") return "a proposal's approval is recorded with surface atelier";
   if (present("decidedInLibraryId") && (typeof fields.decidedInLibraryId !== "string" || !LIBRARY_ID.test(fields.decidedInLibraryId))) {
     return "decidedInLibraryId is a library id";
   }

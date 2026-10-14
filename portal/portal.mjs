@@ -503,14 +503,17 @@ function renderManagedAgents(library = currentLibrary()) {
   return Promise.resolve({ ok: true, body: { ok: true, reasonCode: ambiguous ? AMBIGUOUS_BINDING : "PORTAL_PROJECT_BINDING_UNCONFIGURED", outputBindingStatus: binding.status, pending: true, projectId: library.configurationProjectId ?? null, ...(ambiguous ? { candidates: binding.candidates } : {}) } });
 }
 
+// `pending` names the managed sections that wait for rule-resolve; `proposals` the rule changes a model
+// proposed that wait for Atelier's approval (TCRN-CROSS-STORY-527).
 async function rulesProjection() {
-  const result = await ruleListing();
+  const [result, proposals] = await Promise.all([ruleListing(), proposalsProjection(["rule-list", "--workspace", currentLibrary().libraryPath, ...scopeArguments()])]);
   if (!result.ok) return { ...result.body, ok: false };
   const rules = Array.isArray(result.body?.rules) ? result.body.rules : [];
   return {
     ...result.body,
     ok: true,
     pending: rules.filter((rule) => rule.state === "pending").map((rule) => ({ id: rule.section, file: "AGENTS.md", ruleId: rule.id })),
+    proposals,
   };
 }
 
@@ -634,10 +637,19 @@ const writeVariable = (body) => governedWrite((common) => [
 const removeVariable = (name) => governedWrite((common) => ["variable-remove", ...common, "--name", String(name)], ATELIER_SURFACE);
 const variablesCatalog = () => cliResult(["variable-list", "--workspace", currentLibrary().libraryPath, ...scopeArguments()]);
 
+// TCRN-CROSS-STORY-527 (TCRN-CROSS-SUB-479): the proposals that wait for Atelier on a page, read
+// through the page's own list with --status (Q6): the pending ones, then the rejected ones. They are
+// kept apart from the declarations as `proposals`; a status that cannot be read shows none of its own.
+async function proposalsProjection(listing) {
+  const results = await Promise.all(["pending", "rejected"].map((status) => cliResult([...listing, "--status", status])));
+  return results.flatMap((result) => (result.ok && Array.isArray(result.body?.records) ? result.body.records : []));
+}
+
 async function gatesProjection() {
-  const result = await cliResult(["gates-config-list", "--workspace", currentLibrary().libraryPath, ...scopeArguments()]);
-  if (!result.ok) return { ...result.body, ok: false, gates: [] };
-  return { ...result.body, ok: true, reasonCode: "PORTAL_GATES_READY", gates: Array.isArray(result.body?.records) ? result.body.records : [] };
+  const listing = ["gates-config-list", "--workspace", currentLibrary().libraryPath, ...scopeArguments()];
+  const [result, proposals] = await Promise.all([cliResult(listing), proposalsProjection(listing)]);
+  if (!result.ok) return { ...result.body, ok: false, gates: [], proposals: [] };
+  return { ...result.body, ok: true, reasonCode: "PORTAL_GATES_READY", gates: Array.isArray(result.body?.records) ? result.body.records : [], proposals };
 }
 
 function deviceHomePath() {
@@ -1249,6 +1261,30 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
         ? { ...mutation.body, ok: true, removed: name, gates: result.gates }
         : { ...mutation.body, ok: false, ...(mutation.ok ? { reasonCode: result?.reasonCode ?? "PORTAL_GATES_READBACK_FAILED", mutation: mutation.body, gates: result?.gates ?? [] } : {}) };
       send(response, payload.ok ? 200 : 409, payload);
+      return;
+    }
+    // TCRN-CROSS-STORY-527 (MIN-257 D6; TCRN-CROSS-SUB-479): Atelier approves or rejects one proposal
+    // by its key (gate:<name> or rule:<id>) and the proposedAt the page showed, as TCRN_PORTAL_ACTOR,
+    // for Atelier. The approval is the write the proposal names (proposal-approve records it with
+    // decidedIn proposal:<key>@<proposedAt>); a rejection keeps the proposal, rejected. A rule's
+    // approval writes AGENTS.md, so it runs in the project the rules page writes (projectWrite); the
+    // others run against the library, as the gate writes do. The answer carries the page's list again.
+    const proposalRoute = /^\/api\/proposals\/([^/]+)$/u.exec(pathname);
+    if (request.method === "POST" && proposalRoute !== null) {
+      const body = await readJsonBody(request);
+      const key = decodeURIComponent(proposalRoute[1]);
+      const action = String(body?.action ?? "");
+      const proposedAt = typeof body?.proposedAt === "string" ? body.proposedAt : "";
+      const kind = key.startsWith("gate:") ? "gate" : key.startsWith("rule:") ? "rule" : null;
+      if (kind === null || !["approve", "reject"].includes(action) || proposedAt === "") {
+        send(response, 400, { ok: false, reasonCode: "PORTAL_PROPOSAL_INPUT_INVALID", key, action });
+        return;
+      }
+      const build = (common) => [action === "approve" ? "proposal-approve" : "proposal-reject", "--key", key, "--proposed-at", proposedAt, ...common];
+      const result = kind === "rule" && action === "approve" ? await projectWrite(build, ATELIER_SURFACE, currentLibrary(), true) : await governedWrite(build, ATELIER_SURFACE);
+      const latest = kind === "gate" ? await gatesProjection() : await rulesProjection();
+      const lists = kind === "gate" ? { gates: latest.gates ?? [] } : { rules: latest.rules ?? [], pending: latest.pending ?? [] };
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok, ...lists, proposals: latest.proposals ?? [] });
       return;
     }
     if (request.method === "GET" && pathname === "/api/gates/last-run") {

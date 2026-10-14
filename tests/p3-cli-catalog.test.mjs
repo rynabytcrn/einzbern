@@ -289,6 +289,7 @@ test("STORY-485 R1 to R4: the gates verbs are cataloged, and work-transition and
   const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
   const shape = (name) => [entry(name).mutates, entry(name).flags.filter((flag) => flag.required).map((flag) => flag.name).sort()];
   assert.deepEqual(shape("gates-config-list"), [false, []]);
+  assert.deepEqual([entry("gates-config-list").flags.find((flag) => flag.name === "status")?.required, entry("gates-config-list").flags.find((flag) => flag.name === "status")?.valueKind], [false, "string"]);
   assert.deepEqual(shape("gates-config-set"), [true, ["at", "name"]]);
   assert.deepEqual(shape("gates-config-remove"), [true, ["at", "name"]]);
   assert.deepEqual(shape("gates-plan"), [false, []]);
@@ -355,7 +356,8 @@ test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --
   const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
   const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
   assert.equal(entry("rule-list").mutates, false);
-  assert.deepEqual(flags("rule-list"), [["workspace", false, "string"], ["project", false, "string"], ["project-id", false, "string"]]);
+  // TCRN-CROSS-STORY-527 (Q6): --status declared|pending|rejected.
+  assert.deepEqual(flags("rule-list"), [["workspace", false, "string"], ["project", false, "string"], ["project-id", false, "string"], ["status", false, "string"]]);
   assert.equal(entry("rule-enable").mutates, true);
   assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"], ["decided-in", false, "string"]]);
   assert.equal(entry("rule-disable").mutates, true);
@@ -396,5 +398,32 @@ test("526 GWT5: the eight decided-in flags carry valueShape minutes:<id>#D<n>, a
   for (const name of writes) {
     const flag = COMMAND_CATALOG.find((entry) => entry.name === name).flags.find((candidate) => candidate.name === "decided-in");
     assert.deepEqual({ ...flag }, { name: "decided-in", required: false, valueKind: "string", valueShape: "minutes:<id>#D<n>" }, name);
+  }
+});
+
+// TCRN-CROSS-STORY-527 (MIN-257 D6, Q6; TCRN-CROSS-SUB-478): a model proposes with gates-config-propose
+// and rule-propose; Atelier settles with proposal-approve and proposal-reject. All four write, name
+// who acts, and none takes --decided-in: a proposal cites no decision, and an approval is its own.
+test("527 Q6: the proposal verbs are cataloged with their required flags, and none takes --decided-in", () => {
+  const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
+  const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
+  for (const name of ["gates-config-propose", "rule-propose", "proposal-approve", "proposal-reject"]) {
+    assert.equal(entry(name)?.mutates, true, name);
+    assert.equal(entry(name).flags.some((flag) => flag.name === "decided-in"), false, name);
+  }
+  assert.deepEqual(flags("gates-config-propose"), [
+    ["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["action", false, "string"], ["command", false, "string"], ["root", false, "string"],
+    ["covers", false, "list"], ["required", false, "boolean"], ["enabled", false, "boolean"], ["release-only", false, "boolean"], ["order", false, "integer"],
+    ["actor", true, "string"], ["project-id", false, "string"],
+  ]);
+  assert.deepEqual(flags("rule-propose"), [
+    ["id", true, "string"], ["action", false, "string"], ["order", false, "integer"], ["at", true, "instant"], ["workspace", false, "string"], ["project", false, "string"],
+    ["actor", true, "string"], ["project-id", false, "string"],
+  ]);
+  for (const name of ["proposal-approve", "proposal-reject"]) {
+    assert.deepEqual(flags(name), [
+      ["key", true, "string"], ["proposed-at", true, "instant"], ["at", true, "instant"], ["workspace", false, "string"], ["project", false, "string"],
+      ["actor", true, "string"], ["project-id", false, "string"],
+    ], name);
   }
 });

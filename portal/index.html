@@ -4114,6 +4114,9 @@ button:disabled { cursor: not-allowed; }
    fixed minimums that fit the narrowest desktop width and shares of the rest, on the published
    TableShell variables only. */
 [data-ui="gate-config-table"] { --tcrn-table-column-count: 3; --tcrn-table-shell-columns: minmax(5.5rem, 0.4fr) minmax(13rem, 1.6fr) minmax(19rem, 2fr); }
+/* TCRN-CROSS-STORY-527 (TCRN-CROSS-SUB-479): the proposals that wait for Atelier, on the gates and rules
+   pages, in the same TableShell: what it changes, the change, and its status with the actions. */
+[data-ui="proposals-table"] { --tcrn-table-column-count: 3; }
 [data-gate-switches] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2) var(--tcrn-space-4); }
 [data-gate-cell] { display: grid; gap: var(--tcrn-space-2); }
 [data-gate-cell-actions] { display: flex; flex-wrap: wrap; gap: var(--tcrn-space-2); }
@@ -4296,6 +4299,7 @@ button:disabled { cursor: not-allowed; }
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="gates.scope">Enabled gates run when their covered paths change. Required gates are checked before work is marked done.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
             <div id="gates-view" data-ui="gates-view">
+              <div id="gate-proposals" data-ui="gate-proposals"></div>
               <article class="tcrn-surface" aria-labelledby="gates-last-run-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="gates-last-run-title" data-i18n="gates.lastRunTitle">Most recent gate run</h2></div></div><div id="gates-last-run" data-ui="gates-last-run" aria-live="polite"></div></article>
               <article class="tcrn-surface" aria-labelledby="gates-add-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="gates-add-title" data-i18n="gates.addTitle">Add a gate</h2></div></div>
                 <form id="gate-add-form" data-ui="gate-add-form">
@@ -5800,6 +5804,7 @@ const BOOT = __PORTAL_BOOT__;
       </div></div>
       <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("gates.columnCovers"))}"><div data-gate-covers>${(Array.isArray(gate.covers) ? gate.covers : []).map((cover) => `<div data-gate-cover-row><input class="tcrn-input" data-gate-cover value="${esc(cover)}" aria-label="${esc(t("gates.columnCovers"))}"><button type="button" class="tcrn-button tcrn-button--quiet" data-gate-remove-cover aria-label="${esc(t("gates.removeCover"))}">×</button></div>`).join("")}<button type="button" class="tcrn-button tcrn-button--quiet" data-gate-add-cover>${esc(t("gates.addCover"))}</button></div></div>
     </div>`).join("");
+    $("#gate-proposals").innerHTML = proposalsMarkup(state.gateProposals, "gate");
     const lastRun = state.lastGateRun;
     const run = lastRun?.run ?? null;
     const runHost = $("#gates-last-run");
@@ -6033,16 +6038,51 @@ const BOOT = __PORTAL_BOOT__;
     return `<div data-rule-card-order><label class="tcrn-field" data-rule-order-field><span class="tcrn-field__label">${esc(t("collection.order"))}</span>${orderInput(rule.order ?? "", `aria-label="${esc(`${t("collection.order")} · ${ruleTitle(rule.id)}`)}" data-rule-order="${esc(rule.id)}"${editable ? "" : " disabled"}`)}</label>${save}${note}</div>`;
   };
   const ruleOrderValue = (id) => $(`[data-rule-order="${CSS.escape(id)}"]`)?.value.trim() ?? "";
+  // Proposals (TCRN-CROSS-STORY-527) begin.
+  // TCRN-CROSS-STORY-527 (MIN-257 D6; TCRN-CROSS-SUB-479): the gate and rule changes a model proposed,
+  // pending or rejected, in the pages' TableShell rows with their status badge. A pending one carries
+  // Approve and Reject, which send the proposedAt shown here; a rejected one is read only. These are
+  // `proposals`, apart from the managed sections that wait for rule-resolve (`pending`).
+  const proposalChange = (proposal) => {
+    if (proposal.kind === "gate") {
+      if (proposal.action === "remove") return t("proposals.gateRemove");
+      const gate = proposal.payload ?? {};
+      return t("proposals.gateSet", { command: (Array.isArray(gate.command) ? gate.command : []).join(" "), covers: (Array.isArray(gate.covers) ? gate.covers : []).join(", ") });
+    }
+    if (proposal.action === "disable") return t("proposals.ruleDisable");
+    return `${t("proposals.ruleEnable")}${proposal.payload?.order === undefined ? "" : ` · ${t("collection.order")} ${proposal.payload.order}`}`;
+  };
+  const proposalTime = (instant) => `<time datetime="${esc(instant)}">${esc(new Date(instant).toLocaleString(state.locale))}</time>`;
+  const proposalsMarkup = (proposals, kind) => {
+    const list = Array.isArray(proposals) ? proposals.filter((proposal) => proposal?.kind === kind) : [];
+    if (list.length === 0) return "";
+    const title = kind === "gate" ? t("proposals.gatesTitle") : t("proposals.rulesTitle");
+    const subject = kind === "gate" ? t("gates.columnGate") : t("proposals.columnRule");
+    const rows = list.map((proposal) => {
+      const pending = proposal.status === "pending";
+      const actions = pending
+        ? `<div data-gate-cell-actions><button type="button" class="tcrn-button tcrn-button--secondary" data-proposal-action="approve" data-proposal-key="${esc(proposal.key)}" data-proposed-at="${esc(proposal.proposedAt)}" data-cli-action="proposal-approve">${esc(t("proposals.approve"))}</button><button type="button" class="tcrn-button tcrn-button--quiet" data-proposal-action="reject" data-proposal-key="${esc(proposal.key)}" data-proposed-at="${esc(proposal.proposedAt)}" data-cli-action="proposal-reject">${esc(t("proposals.reject"))}</button></div>`
+        : `<p class="tcrn-text">${t("proposals.rejectedBy", { actor: esc(proposal.rejectedBy ?? "—"), at: proposalTime(proposal.rejectedAt ?? "") })}</p>`;
+      return `<div class="tcrn-table-shell__row" role="row" data-proposal-row="${esc(proposal.key)}" data-proposal-status="${esc(proposal.status)}">
+        <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(subject)}"><strong><code>${esc(kind === "gate" ? proposal.target : ruleTitle(proposal.target))}</code></strong></div>
+        <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("proposals.columnChange"))}"><p class="tcrn-text">${esc(proposalChange(proposal))}</p><p class="tcrn-text">${t("proposals.proposedBy", { actor: esc(proposal.proposedBy ?? "—"), at: proposalTime(proposal.proposedAt ?? "") })}</p></div>
+        <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("proposals.columnStatus"))}"><span class="tcrn-badge" data-proposal-state="${esc(proposal.status)}">${esc(pending ? t("proposals.pending") : t("proposals.rejected"))}</span>${actions}</div>
+      </div>`;
+    }).join("");
+    return `<article class="tcrn-surface" data-ui="${kind}-proposals-list" aria-label="${esc(title)}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(title)}</h2></div></div>
+      <div class="tcrn-table-shell" role="table" aria-label="${esc(title)}" data-ui="proposals-table" data-mobile-layout="stacked-cards"><div class="tcrn-table-shell__head" role="row"><span class="tcrn-table-shell__heading" role="columnheader">${esc(subject)}</span><span class="tcrn-table-shell__heading" role="columnheader">${esc(t("proposals.columnChange"))}</span><span class="tcrn-table-shell__heading" role="columnheader">${esc(t("proposals.columnStatus"))}</span></div><div role="rowgroup">${rows}</div></div></article>`;
+  };
+  // Proposals end.
   const renderProseDirectory = () => {
     // The cards follow the rule sections of AGENTS.md: rules with an order first, then in catalog order.
     const rules = inRecordOrder(state.rules?.rules || []);
-    $("#prose-directory").innerHTML = rules.length ? rules.map((rule) => {
+    $("#prose-directory").innerHTML = proposalsMarkup(state.rules?.proposals, "rule") + (rules.length ? rules.map((rule) => {
       const enabled = ruleIsEnabled(rule);
       const changed = ["user-modified", "pending"].includes(rule.state);
       const forceId = `rule-force-${rule.id}`;
       const upgrade = rule.state === "update-available" ? `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-rule-upgrade="${esc(rule.id)}" data-cli-action="rule-enable">${esc(t("rule.upgrade", { version: rule.version }))}</button>` : "";
       return `<article class="tcrn-surface" data-rule-card="${esc(rule.id)}"><div class="tcrn-surface__head" data-rule-card-head><h2 class="tcrn-heading tcrn-heading--3" data-rule-card-title>${esc(ruleTitle(rule.id))}</h2><span class="tcrn-badge" data-rule-state="${esc(rule.state)}">${esc(ruleStateLabel(rule.state))}</span></div><div class="tcrn-text" data-rule-card-meta>${esc(rule.section)} · v${esc(rule.version ?? "—")}</div>${ruleOrderField(rule)}<div data-rule-card-actions><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-rule-switch="${esc(rule.id)}" aria-label="${esc(ruleTitle(rule.id))}" ${enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(enabled ? t("config.enabled") : t("config.disabled"))}</span></label>${upgrade}${changed && enabled ? `<label class="tcrn-text" data-rule-force-label for="${forceId}"><input class="tcrn-checkbox" type="checkbox" id="${forceId}" data-rule-force="${esc(rule.id)}">${esc(t("rule.forceDisable"))}</label>` : ""}</div></article>`;
-    }).join("") : `<div class="tcrn-state-surface">${esc(t("config.loading"))}</div>`;
+    }).join("") : `<div class="tcrn-state-surface">${esc(t("config.loading"))}</div>`);
     $$('[data-rule-switch]').forEach((input) => input.addEventListener("change", async () => {
       const id = input.dataset.ruleSwitch;
       const action = input.checked ? "enable" : "disable";
@@ -6305,7 +6345,7 @@ const BOOT = __PORTAL_BOOT__;
     for (const category of vocabularyCategories()) for (const term of vocabularyRows(category)) rows.push({ text: `${termValue(term)} ${vocabularyDefinition(category, term)}`, label: termValue(term), meta: t("search.vocabulary"), page: "vocabulary", vocabulary: category });
     state.searchIndex = rows;
   };
-  const refreshGates = async () => { const [response, lastRun] = await Promise.all([api("/api/gates"), api("/api/gates/last-run")]); if (unkept(response, lastRun)) return; state.gateResponse = response; state.gates = Array.isArray(response.gates) ? response.gates : []; state.lastGateRun = lastRun; renderGates(); };
+  const refreshGates = async () => { const [response, lastRun] = await Promise.all([api("/api/gates"), api("/api/gates/last-run")]); if (unkept(response, lastRun)) return; state.gateResponse = response; state.gates = Array.isArray(response.gates) ? response.gates : []; state.gateProposals = Array.isArray(response.proposals) ? response.proposals : []; state.lastGateRun = lastRun; renderGates(); };
   const renderSearchResults = () => { const target = $("#search-results"); target.hidden = state.searchResults.length === 0; target.innerHTML = state.searchResults.map((result, index) => `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-product-shell-search__result" data-selected="${index === state.searchSelection ? "true" : "false"}" aria-current="${index === state.searchSelection ? "true" : "false"}" data-search-index="${index}"><strong>${esc(result.label)}</strong><span >${esc(result.meta)} · ${esc(result.page)}</span></button>`).join(""); $$('[data-search-index]').forEach((button) => button.addEventListener("click", () => chooseSearch(Number(button.dataset.searchIndex)))); };
   const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)) : []; state.searchSelection = 0; renderSearchResults(); };
   const chooseSearch = (index = 0) => {
@@ -6388,6 +6428,20 @@ const BOOT = __PORTAL_BOOT__;
       showReceipt(result);
       if (result.ok) await refreshGates();
     }
+  });
+  // TCRN-CROSS-STORY-527 (TCRN-CROSS-SUB-479): Approve or Reject on either page settles the proposal the
+  // row shows, at the proposedAt it shows; the page then reads its list again.
+  document.addEventListener("click", async (event) => {
+    const button = event.target?.closest?.("[data-proposal-action]");
+    if (!button) return;
+    const key = button.dataset.proposalKey;
+    const action = button.dataset.proposalAction;
+    echo(action === "approve" ? "proposal-approve" : "proposal-reject", ["--key", key]);
+    button.disabled = true;
+    const result = await api(`/api/proposals/${encodeURIComponent(key)}`, { method: "POST", body: JSON.stringify({ action, proposedAt: button.dataset.proposedAt }) });
+    showReceipt(result);
+    if (key.startsWith("gate:")) await refreshGates();
+    else await loadAgents();
   });
   $("#save-agents").addEventListener("click", async () => { echo("rule-list"); const result = await api("/api/agents-md", { method: "PUT", body: JSON.stringify({ file: "AGENTS.md", text: $("#agents-md").value }) }); showReceipt(result); await loadAgents(); });
   $("#agents-md").addEventListener("input", (event) => { state.agentsText = event.target.value; renderGutter(); });

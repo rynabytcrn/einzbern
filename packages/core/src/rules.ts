@@ -244,6 +244,11 @@ export interface RuleChangeInput extends WorkspaceMutationOptions {
   readonly backupRoot?: string;
   // The rules this engine ships (BUILT_IN_RULES); a test hands in another catalog here.
   readonly catalog?: readonly BuiltInRule[];
+  // TCRN-CROSS-STORY-527 (Q24; TCRN-CROSS-SUB-477): deltas appended after the change's own, in the
+  // same append: Atelier's approval of a proposed rule change settles the proposal here, so the
+  // records and the settlement land together or, with AGENTS.md put back, not at all. They are not
+  // counted in `recorded`.
+  readonly alongside?: readonly ((state: WorkspaceState) => MutationDelta)[];
 }
 
 /** What enabling or disabling a rule did. */
@@ -293,7 +298,7 @@ async function changeCoordinationRule(root: string, nativeState: WorkspaceState,
   const previous = recordedRule(state, input.id);
   const value = { enabled, version, ...(order === undefined ? {} : { order }) };
   const deltas = previous?.enabled === enabled && previous.version === version && previous.order === order ? [] : [setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), ...(input.authorization === undefined ? {} : { authorization: input.authorization }), collection: "rule", key: input.id, value })];
-  const committed = await commit(root, nativeState, deltas, input);
+  const committed = await commit(root, nativeState, [...deltas, ...(input.alongside ?? [])], input);
   return { id: input.id, section: ruleSectionId(input.id), file: AGENTS_FILE, action: enabled ? "enable" : "disable", result: "unchanged", written: false, backupPath: null, recorded: deltas.length, status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), new Map(), input.catalog ?? BUILT_IN_RULES, input.id), state: committed };
 }
 
@@ -348,7 +353,7 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
     }
     let committed: WorkspaceState;
     try {
-      committed = await commit(root, nativeState, deltas, input);
+      committed = await commit(root, nativeState, [...deltas, ...(input.alongside ?? [])], input);
     } catch (error) {
       await putBackUnrecorded(root, nativeState, applied.written ? [plan] : []);
       throw error;
@@ -417,7 +422,7 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
     }
     let committed: WorkspaceState;
     try {
-      committed = await commit(root, nativeState, deltas, input);
+      committed = await commit(root, nativeState, [...deltas, ...(input.alongside ?? [])], input);
     } catch (error) {
       await putBackUnrecorded(root, nativeState, wrote === null ? [] : [wrote]);
       throw error;

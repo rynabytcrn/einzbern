@@ -61,8 +61,9 @@ export function projectConfigValues(settings: readonly { readonly key: string; r
   return values;
 }
 
-// The collections a projection leaves out.
-const UNPROJECTED_COLLECTIONS: ReadonlySet<string> = new Set(["lease"]);
+// The collections a projection leaves out: the leases (TCRN-CROSS-STORY-528) and the proposals that
+// wait for Atelier (TCRN-CROSS-STORY-527), which are not configuration in force.
+const UNPROJECTED_COLLECTIONS: ReadonlySet<string> = new Set(["lease", "proposal"]);
 
 function projectedRecords<T extends ProjectedConfigRecord>(records: readonly T[]): readonly T[] {
   return records.filter((entry) => !UNPROJECTED_COLLECTIONS.has(entry.collection));

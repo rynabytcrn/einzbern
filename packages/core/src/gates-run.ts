@@ -12,12 +12,17 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // A gate that outlives its timeout is stopped with its whole process group, and whatever a gate left
 // running in its group is stopped when it ends.
 //
-// TCRN-CROSS-STORY-530 (MIN-256; TCRN-CROSS-SUB-450): a run made for Stories whose commits are known by
-// key (the plan's subjectKeys: the external keys of the Stories and their Subtasks) takes its tree
-// digest over the files those commits touched only (storyCommitPaths in gates-plan.ts), and records
-// them as each root's `paths` (einzbern.gate-tree.v2). A file another process writes elsewhere in the
-// project leaves such a run standing; a change to one of the Story's files does not. The done check
-// takes the digest again over the paths the run recorded and compares the two.
+// TCRN-CROSS-STORY-530 (MIN-256; TCRN-CROSS-SUB-450), TCRN-CROSS-STORY-534 (MIN-257 D6;
+// TCRN-CROSS-SUB-469): a run made for Stories whose commits are known by key (the plan's subjectKeys:
+// the external keys of the Stories and their Subtasks) takes its tree digest over the files those
+// commits touched (storyCommitPaths in gates-plan.ts), each read as it is now, changed or not, and
+// leaves HEAD out (einzbern.gate-tree.v3): each such root records the files as `paths` and, in
+// `files`, each one's content digest. A commit or a file another process makes elsewhere in the
+// project leaves such a run standing; a change to the content of one of the Story's files does not,
+// committed or not. When those commits touched no file under any root (Q1), the run is taken as one
+// made without keys, so its digest is never a constant. A run made without keys, a release run among
+// them, records each root's HEAD and the digest of every changed and untracked file, as before. The
+// done check reads the recorded files again and compares their digests.
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -32,7 +37,7 @@ import { GatesPlanError, changedFiles, gitHead, resolveGateRoot, storyCommitPath
 import type { GatesPlan } from "./gates-plan.js";
 
 export const GATE_RUN_SCHEMA_VERSION = "einzbern.gate-run.v1" as const;
-export const GATE_TREE_SCHEMA_VERSION = "einzbern.gate-tree.v2" as const;
+export const GATE_TREE_SCHEMA_VERSION = "einzbern.gate-tree.v3" as const;
 export const GATE_RUNS_DIRECTORY = "gate-runs" as const;
 export const GATE_RUN_DEFAULT_TIMEOUT_MS = 1_800_000 as const;
 export const GATE_RUN_DEFAULT_OUTPUT_BYTES = 1_048_576 as const;
@@ -57,25 +62,50 @@ function fail(message: string, details?: Readonly<Record<string, string>>): neve
   throw new GatesRunError("GATES_RUN_INPUT_INVALID", message, details);
 }
 
-/** One root's state as a run records it. */
-export interface GateRootTree {
+/** TCRN-CROSS-STORY-534: one of the Story's files under a root, as a run read it. */
+export interface GateFileDigest {
+  // Relative to the root, with forward slashes.
+  readonly path: string;
+  // sha256:<hex> of a file's content, link:<target> for a symbolic link, directory, other, or deleted.
+  readonly digest: string;
+}
+
+/** A root's state over every change under it, as a run made without a Story's keys records it. */
+export interface GateRootChanges {
   readonly root: string;
   // False when the root is outside Git: its changes cannot be told apart, so any state of it matches.
   readonly git: boolean;
   readonly head: string | null;
   // The digest of every changed and untracked file under the root, path and content; null without Git.
-  // With `paths`, only the changed files among them count.
   readonly changes: string | null;
-  // TCRN-CROSS-STORY-530: present when the digest is limited to the files the Story's commits touched:
-  // those under the root, relative to it with forward slashes, sorted.
-  readonly paths?: readonly string[];
+  readonly paths?: never;
+  readonly files?: never;
 }
 
 /**
- * TCRN-CROSS-STORY-530: what a tree digest is limited to. `keys` names the Stories and Subtasks whose
- * commits give each root's files (storyCommitPaths); `paths` gives them per root as a run recorded
- * them, for the digest to be taken again. A root `paths` does not name, and every root when neither
- * is given or `keys` is empty, counts every changed and untracked file.
+ * TCRN-CROSS-STORY-534: a root's state over the files the Story's commits touched, each read as it is
+ * now; HEAD and the other changes under the root are not part of it.
+ */
+export interface GateRootPaths {
+  readonly root: string;
+  readonly git: true;
+  // The files, relative to the root with forward slashes, sorted.
+  readonly paths: readonly string[];
+  // Each of `paths`, in the same order, with its content digest.
+  readonly files: readonly GateFileDigest[];
+  readonly head?: never;
+  readonly changes?: never;
+}
+
+/** One root's state as a run records it. */
+export type GateRootTree = GateRootChanges | GateRootPaths;
+
+/**
+ * TCRN-CROSS-STORY-530, 534: what a tree digest is limited to. `keys` names the Stories and Subtasks
+ * whose commits give the files of each root that has a commit (storyCommitPaths); when they give no
+ * file under any root (Q1), or `keys` is empty, every root counts every change. `paths` gives the
+ * files per root as a run recorded them, for their content to be read again; a root it does not name
+ * counts every change.
  */
 export interface GateTreeScope {
   readonly keys?: readonly string[];
@@ -141,38 +171,58 @@ async function contentDigest(path: string): Promise<string> {
   return `sha256:${createHash("sha256").update(await readFile(path)).digest("hex")}`;
 }
 
+// A root's state over every change under it: the commit HEAD names and the digest of the path and
+// content of every file changed against HEAD or untracked. Outside Git neither is recorded, so every
+// state of the root looks the same.
+async function changesTree(root: string, directory: string): Promise<GateRootChanges> {
+  let files: readonly string[];
+  try {
+    files = changedFiles(directory);
+  } catch (error) {
+    if (error instanceof GatesPlanError && error.reasonCode === "GATES_GIT_UNAVAILABLE") return { root, git: false, head: null, changes: null };
+    throw error;
+  }
+  const entries: string[] = [];
+  for (const file of files) entries.push(`${file}\u0000${await contentDigest(join(directory, ...file.split("/")))}`);
+  return { root, git: true, head: gitHead(directory), changes: createHash("sha256").update(entries.join("\u0000"), "utf8").digest("hex") };
+}
+
+// TCRN-CROSS-STORY-534: a root's state over the Story's files, each read where it is now, whether Git
+// sees it changed or not.
+async function pathsTree(root: string, directory: string, paths: readonly string[]): Promise<GateRootPaths> {
+  const files: GateFileDigest[] = [];
+  for (const path of paths) files.push({ path, digest: await contentDigest(join(directory, ...path.split("/"))) });
+  return { root, git: true, paths: [...paths], files };
+}
+
 /**
- * The state of the project a run is made on: for each root, the commit HEAD names and the digest
- * of the path and content of every file changed against HEAD or untracked, or, within `scope`, of
- * those among the Story's files (GateTreeScope), which the root then records as `paths`. A root
- * outside Git records neither, so every state of it looks the same.
+ * The state of the project a run is made on. For a run made for Stories (`scope.keys`), each root
+ * with a commit records the files their commits touched there, with each one's content as it is now
+ * (GateRootPaths), and a root without a commit records its HEAD and every change (GateRootChanges);
+ * when the commits touched no file under any root (TCRN-CROSS-STORY-534 Q1) every root records its
+ * HEAD and every change, as for a run made without keys. With `scope.paths`, the roots it names read
+ * the files a run recorded again, and the others every change.
  */
 export async function gateTreeState(projectRoot: string, roots: readonly string[], scope: GateTreeScope = {}): Promise<GateTreeState> {
   const project = await realpath(projectRoot);
   const keys = [...new Set(scope.keys ?? [])];
-  const trees: GateRootTree[] = [];
-  for (const root of [...new Set(roots)].sort(compareCanonicalText)) {
-    const directory = await resolveGateRoot(project, root);
-    let files: readonly string[];
-    try {
-      files = changedFiles(directory);
-    } catch (error) {
-      if (error instanceof GatesPlanError && error.reasonCode === "GATES_GIT_UNAVAILABLE") {
-        trees.push({ root, git: false, head: null, changes: null });
-        continue;
-      }
-      throw error;
+  const directories: (readonly [string, string])[] = [];
+  for (const root of [...new Set(roots)].sort(compareCanonicalText)) directories.push([root, await resolveGateRoot(project, root)]);
+  const limited = new Map<string, readonly string[]>();
+  if (scope.paths !== undefined) {
+    for (const [root] of directories) {
+      const recorded = Object.hasOwn(scope.paths, root) ? scope.paths[root] : undefined;
+      if (recorded !== undefined) limited.set(root, recorded);
     }
-    const recorded = scope.paths === undefined || !Object.hasOwn(scope.paths, root) ? undefined : scope.paths[root];
-    const paths = recorded !== undefined ? [...recorded] : scope.paths === undefined && keys.length > 0 ? storyCommitPaths(directory, keys) : undefined;
-    const allowed = paths === undefined ? null : new Set(paths);
-    const counted = allowed === null ? files : files.filter((file) => allowed.has(file));
-    const entries: string[] = [];
-    for (const file of counted) entries.push(`${file}\u0000${await contentDigest(join(directory, ...file.split("/")))}`);
-    trees.push({
-      root, git: true, head: gitHead(directory), changes: createHash("sha256").update(entries.join("\u0000"), "utf8").digest("hex"),
-      ...(paths === undefined ? {} : { paths }),
-    });
+  } else if (keys.length > 0) {
+    for (const [root, directory] of directories) if (gitHead(directory) !== null) limited.set(root, storyCommitPaths(directory, keys));
+    // Q1: without a file of the Stories' anywhere the digest would be a constant that no change moves.
+    if ([...limited.values()].every((paths) => paths.length === 0)) limited.clear();
+  }
+  const trees: GateRootTree[] = [];
+  for (const [root, directory] of directories) {
+    const paths = limited.get(root);
+    trees.push(paths === undefined ? await changesTree(root, directory) : await pathsTree(root, directory, paths));
   }
   return { treeDigest: canonicalSha256({ schemaVersion: GATE_TREE_SCHEMA_VERSION, trees }), trees };
 }
@@ -331,6 +381,33 @@ export async function runGates(plan: GatesPlan, options: {
   return { run, recordPath };
 }
 
+// A path a run recorded under a root: relative, with forward slashes, and no empty, . or .. segment.
+function isRootPath(value: unknown): value is string {
+  return typeof value === "string" && !value.includes("\u0000") && value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
+// TCRN-CROSS-STORY-534: a root's state as einzbern.gate-tree.v3 records it. A root limited to the
+// Story's files names them, each with its content digest, and no HEAD; any other root names its HEAD
+// and the digest of its changes. A root of an older record that names its paths without their
+// digests cannot be read again, so the record is not taken as a run.
+function isGateRootTree(value: unknown): value is GateRootTree {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const tree = value as Readonly<Record<string, unknown>>;
+  if (typeof tree.root !== "string") return false;
+  if (tree.paths === undefined && tree.files === undefined) {
+    return typeof tree.git === "boolean" && (tree.head === null || typeof tree.head === "string") && (tree.changes === null || typeof tree.changes === "string");
+  }
+  const paths = tree.paths;
+  const files = tree.files;
+  return tree.git === true && tree.head === undefined && tree.changes === undefined &&
+    Array.isArray(paths) && paths.every(isRootPath) && Array.isArray(files) && files.length === paths.length &&
+    files.every((file: unknown, index: number) => {
+      if (file === null || typeof file !== "object" || Array.isArray(file)) return false;
+      const entry = file as Readonly<Record<string, unknown>>;
+      return entry.path === paths[index] && typeof entry.digest === "string";
+    });
+}
+
 function isGateRun(value: unknown): value is GateRun {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Readonly<Record<string, unknown>>;
@@ -338,12 +415,7 @@ function isGateRun(value: unknown): value is GateRun {
   const gates = record.gates;
   const trees = record.trees;
   return record.schemaVersion === GATE_RUN_SCHEMA_VERSION && typeof record.runId === "string" && typeof record.libraryId === "string" &&
-    // TCRN-CROSS-STORY-530: each root's state, with the paths its digest was limited to when it was.
-    Array.isArray(trees) && trees.every((tree: unknown) => {
-      if (tree === null || typeof tree !== "object" || Array.isArray(tree)) return false;
-      const entry = tree as Readonly<Record<string, unknown>>;
-      return typeof entry.root === "string" && (entry.paths === undefined || (Array.isArray(entry.paths) && entry.paths.every((path: unknown) => typeof path === "string")));
-    }) &&
+    Array.isArray(trees) && trees.every(isGateRootTree) &&
     (record.projectId === undefined || (typeof record.projectId === "string" && /^project:[a-f0-9]{24}$/u.test(record.projectId))) &&
     typeof record.at === "string" && typeof record.treeDigest === "string" && typeof record.declarationsDigest === "string" &&
     Array.isArray(workIds) && workIds.every((workId: unknown) => typeof workId === "string" && /^work:[0-9a-f]{24}$/u.test(workId)) &&
@@ -372,8 +444,9 @@ function instant(value: string): bigint | null {
  * does not read as a run is skipped. `workIds` keeps only runs made for exactly those target work
  * ids; `includesWorkIds` (TCRN-CROSS-STORY-525) only runs whose targets include each of them.
  * `accept` (TCRN-CROSS-STORY-530), given, is asked of the remaining runs from the latest back, and
- * the first it accepts is the answer: the done check takes each run's tree digest again over the
- * paths the run recorded.
+ * the first it accepts is the answer: the done check reads the files each run recorded again
+ * (TCRN-CROSS-STORY-534). A record with a root that names its paths without their content digests
+ * (einzbern.gate-tree.v2) is skipped, as is any other that does not read as a run.
  */
 export async function latestGateRun(input: {
   readonly libraryId: string;

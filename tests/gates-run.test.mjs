@@ -9,6 +9,7 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -436,8 +437,13 @@ test("530-GWT1, GWT2, GWT3: a run for a Story records the files its commits touc
   const plan = await planGates({ projectRoot: project, gates: listGates(declared), base: "HEAD", workIds: [STORY], subjectKeys: keys });
   assert.deepEqual(plan.subjectKeys, keys);
   const { run, recordPath } = await runGates(plan, { libraryId, at: at(), deviceHome: desk });
-  // GWT3: the record names the files its digest took in.
-  assert.deepEqual(run.trees.map((tree) => [tree.root, tree.paths]), [[".", ["docs/sub.md", "src/a.ts"]]]);
+  // GWT3: the record names the files its digest took in, each with its content digest, and no HEAD
+  // (TCRN-CROSS-STORY-534, einzbern.gate-tree.v3).
+  const sha = (text) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
+  assert.deepEqual(run.trees, [{
+    root: ".", git: true, paths: ["docs/sub.md", "src/a.ts"],
+    files: [{ path: "docs/sub.md", digest: sha("sub\n") }, { path: "src/a.ts", digest: sha("export const a = 2;\n") }],
+  }]);
   assert.deepEqual(JSON.parse(await readFile(recordPath, "utf8")).trees, run.trees);
   const done = () => assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk });
   assert.equal((await done()).runId, run.runId);

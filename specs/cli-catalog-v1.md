@@ -239,11 +239,18 @@ TCRN-CROSS-STORY-541 (MIN-258 D3): `device-clean --at <instant> [--home <home>]`
 installs and updates gather in the device directory (`<home>/.einzbern` for `--home`, as the
 machine-settings verbs take it; otherwise `EINZBERN_HOME` or `~/.einzbern`). It lists each staging
 in `trash/` (`install-*`, `setup-update-*`) and each entry of `backups/`, with `kind`, `version`,
-`bytes` and `reason`, judged against `engine/current`: `keep` holds the pre-update backups
-(`…pre-update-<version>`) of the current and the previous version, the stagings whose unpacked
-release (`einzbern-<version>`) is the current version, and any other entry of `trash/`; `remove`
-holds every other staging and backup, with `removeBytes`; `refused` holds a symbolic link, or an
-area whose real path is not in the device directory, which is never touched. Without `--yes true`
+`bytes` and `reason`, an entry of `backups/` also with `contents`: the names of what it holds one
+level down, sorted, read with `lstat` alone and no link followed (none for a file). Each is judged
+against `engine/current`: `keep` holds the pre-update backups (`…pre-update-<version>`) of the
+current and the previous version, the stagings whose unpacked release (`einzbern-<version>`) is the
+current version, and any other entry of `trash/`; `remove` holds every other staging and
+pre-update backup, with `removeBytes`; `refused` holds a symbolic link, or an area whose real path
+is not in the device directory, which is never touched. Any other entry of `backups/` is judged by
+its contents (TCRN-CROSS-SUB-519): one that holds the skill copies alone, as a directory
+`skill-copies`, is in `remove` (`skill-copies-backup`), since their release places them again; one
+that holds an original a write replaced, `host-hooks`, `writable-roots`, `managed-sections`,
+`crest-bodies` or a file `registry.json`, is kept (`holds-originals`), and so is one that holds
+nothing or anything else, or is a file (`unrecognised-backup`). Without `--yes true`
 it answers `DEVICE_CLEAN_PLAN_READY` with that plan and writes nothing. With `--yes true` it makes
 the plan again, checks each entry of `remove` once more and deletes it with what it holds, links
 removed as links and never followed, answering `DEVICE_CLEANED` with the plan, `removed` (path and

@@ -23,6 +23,15 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // made without keys, so its digest is never a constant. A run made without keys, a release run among
 // them, records each root's HEAD and the digest of every changed and untracked file, as before. The
 // done check reads the recorded files again and compares their digests.
+//
+// TCRN-CROSS-STORY-537 (MIN-257 D6; TCRN-CROSS-SUB-487): a gate can see what the same run has already
+// done. Each gate process gets EINZBERN_GATE_RUN_PRIOR, the canonical JSON of the run id and, in the
+// order they ran, every gate of this run that ended before it started (GateRunPrior): its name, its
+// root as declared and the real directory it ran in, its command, whether it passed, whether its
+// output was cut, and the absolute path of its output file. The first gate gets an empty list. The
+// variable is laid over the caller's environment, so a variable of that name the caller passes is
+// replaced. It is not part of the run record. The push gate reads it to leave out verify:p1 when
+// the same run has already passed each of P1's legs (scripts/lib/push-gate-p1-coverage.mjs).
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -41,6 +50,8 @@ export const GATE_TREE_SCHEMA_VERSION = "einzbern.gate-tree.v3" as const;
 export const GATE_RUNS_DIRECTORY = "gate-runs" as const;
 export const GATE_RUN_DEFAULT_TIMEOUT_MS = 1_800_000 as const;
 export const GATE_RUN_DEFAULT_OUTPUT_BYTES = 1_048_576 as const;
+/** TCRN-CROSS-STORY-537: the variable through which a gate reads the gates of its run that ended before it. */
+export const GATE_RUN_PRIOR_VARIABLE = "EINZBERN_GATE_RUN_PRIOR" as const;
 
 export const GATES_RUN_REASON_CODES = Object.freeze(["GATES_RUN_INPUT_INVALID"] as const);
 
@@ -150,6 +161,27 @@ export interface GateRun {
   readonly gates: readonly GateRunResult[];
   // Every gate that did not pass, required or not, in plan order.
   readonly reds: readonly string[];
+}
+
+/** TCRN-CROSS-STORY-537: a gate of the run that ended before the gate that reads it. */
+export interface GatePriorResult {
+  readonly name: string;
+  // The root as the gate declares it, relative to the project.
+  readonly root: string;
+  // The real, absolute directory the gate ran in.
+  readonly directory: string;
+  readonly command: readonly string[];
+  readonly ok: boolean;
+  readonly truncated: boolean;
+  // The absolute path of the gate's output file (the run record keeps it relative).
+  readonly outputFile: string;
+}
+
+/** TCRN-CROSS-STORY-537: what EINZBERN_GATE_RUN_PRIOR holds for one gate of a run. */
+export interface GateRunPrior {
+  readonly runId: string;
+  // In the order they ran; empty for the first gate.
+  readonly gates: readonly GatePriorResult[];
 }
 
 /** This device's directory of gate runs for a library. */
@@ -310,7 +342,8 @@ function utcStamp(at: string): string {
 /**
  * Run every gate of a plan and record the run in this device's cache of the library. Every gate
  * runs, whatever the ones before it did; `reds` lists all that did not pass. The tree digest is
- * taken before the first gate starts.
+ * taken before the first gate starts. Each gate's environment is `env` (the process's when not
+ * given) with EINZBERN_GATE_RUN_PRIOR set to the gates of this run that ended before it.
  */
 export async function runGates(plan: GatesPlan, options: {
   readonly libraryId: string;
@@ -341,18 +374,24 @@ export async function runGates(plan: GatesPlan, options: {
   }).slice(0, 12)}`;
   await mkdir(join(directory, runId), { recursive: true });
   const results: GateRunResult[] = [];
+  // TCRN-CROSS-STORY-537: the gates that have ended, handed to each gate after them.
+  const ended: GatePriorResult[] = [];
+  const environment = options.env ?? process.env;
   for (const [index, gate] of plan.gates.entries()) {
     const cwd = await resolveGateRoot(plan.projectRoot, gate.root);
-    const outcome = await runGateProcess(gate.command, cwd, timeoutMs, outputBytes, options.env ?? process.env);
+    const prior: GateRunPrior = { runId, gates: ended };
+    const outcome = await runGateProcess(gate.command, cwd, timeoutMs, outputBytes, { ...environment, [GATE_RUN_PRIOR_VARIABLE]: canonicalJson(prior) });
     const outputFile = `${runId}/${index + 1}-${gate.name.replace(/[^A-Za-z0-9._-]/gu, "_")}.log`;
-    await writeFileAtomic(join(directory, ...outputFile.split("/")), outcome.output);
+    const outputPath = join(directory, ...outputFile.split("/"));
+    await writeFileAtomic(outputPath, outcome.output);
+    const ok = outcome.exitCode === 0 && !outcome.timedOut;
     results.push({
       name: gate.name,
       root: gate.root,
       required: gate.required,
       matched: gate.matched,
       matchedWorkIds: gate.matchedWorkIds,
-      ok: outcome.exitCode === 0 && !outcome.timedOut,
+      ok,
       exitCode: outcome.exitCode,
       signal: outcome.signal,
       timedOut: outcome.timedOut,
@@ -360,6 +399,7 @@ export async function runGates(plan: GatesPlan, options: {
       outputBytes: outcome.output.length,
       truncated: outcome.truncated,
     });
+    ended.push({ name: gate.name, root: gate.root, directory: cwd, command: [...gate.command], ok, truncated: outcome.truncated, outputFile: outputPath });
   }
   const run: GateRun = {
     schemaVersion: GATE_RUN_SCHEMA_VERSION,

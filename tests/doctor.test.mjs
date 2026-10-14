@@ -17,11 +17,14 @@ import {
   acquireFileLock,
   applyHostHooks,
   applyMachineSettingSet,
+  declareChainIdentity,
+  enableRule,
   initializeLibrary,
   lockPath,
   planHostHooks,
   readHostHooks,
   registerLibrary,
+  renderAgentsSections,
 } from "../dist/build/packages/core/src/index.js";
 import { MACHINE_SETTINGS_FILE_NAME } from "../dist/build/packages/core/src/machine-settings.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
@@ -329,4 +332,29 @@ test("ordinary doctor waits for a live writer beyond the removed two-second prod
   } finally { await held.release(); }
   const checks = await waiting;
   assert.equal(byCheck(checks, "device-stream").ok, true, JSON.stringify(checks));
+});
+
+// TCRN-CROSS-STORY-540 GWT4 (MIN-258 D3(c); TCRN-CROSS-SUB-507): doctor checks the root a coordination
+// library is registered for, the container it coordinates, as it checks a project: the container's files
+// against the coordination library's records, every recorded section listed with its state, and a
+// section changed by hand pending.
+test("540-GWT4: managed-sections checks a coordination library's registered root and lists its sections", async (context) => {
+  const fixture = await healthy(context);
+  await declareChainIdentity(fixture.library, { role: "coordination", coordinationLibraryId: await libraryId(fixture) }, { occurredAt: AT });
+  const enabled = await enableRule({ libraryRoot: fixture.library, projectRoot: fixture.project, id: "autonomy", occurredAt: AT });
+  assert.deepEqual([enabled.written, enabled.outputBindingStatus], [true, "bound"]);
+  await renderAgentsSections(fixture.library, { projectRoot: fixture.project, navigation: null, occurredAt: AT });
+  const results = await doctor(fixture);
+  assert.deepEqual(results.map((entry) => [entry.check, entry.ok]), DOCTOR_CHECKS.map((check) => [check, true]));
+  const sections = byCheck(results, "managed-sections").detail;
+  assert.deepEqual(sections.pending, []);
+  const listed = sections.sections.map((entry) => entry.section);
+  for (const key of ["AGENTS.md#navigation", "AGENTS.md#rule:autonomy", "AGENTS.md#variables-custom", "AGENTS.md#variables-system"]) assert.ok(listed.includes(key), `doctor lists ${key}`);
+  assert.ok(sections.sections.every((entry) => entry.state === "managed"));
+
+  const path = join(fixture.project, "AGENTS.md");
+  await writeFile(path, (await readFile(path, "utf8")).replace("## Autonomous Operation Principle v1", "## Autonomy, as the Owner rewrote it"));
+  const changed = await doctor(fixture);
+  assertOnlyRed(changed, "managed-sections", "MANAGED_SECTION_PENDING");
+  assert.deepEqual(byCheck(changed, "managed-sections").detail.pending, ["AGENTS.md#rule:autonomy"]);
 });

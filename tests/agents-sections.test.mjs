@@ -579,3 +579,20 @@ test("489: a render stopped at its second file takes back the first", async (con
   assert.equal(await readFile(claudePath, "utf8"), USER_TEXT);
   assert.deepEqual(await libraryHead(root), head, "the library holds no new event");
 });
+
+// TCRN-CROSS-STORY-540 GWT1 (TCRN-CROSS-SUB-505): a project root within its library is refused with a
+// reason code of its own, before anything is read or written; a coordination library's roots are
+// covered in coordination-managed-sections.test.mjs.
+test("540-GWT1: a project root within the library is refused with MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY", async (context) => {
+  const paths = await scratch(context);
+  const root = await library(paths.base);
+  const before = await materializeWorkspace(root);
+  const inner = join(root, (await readdir(root, { withFileTypes: true })).find((entry) => entry.isDirectory()).name);
+  for (const projectRoot of [root, inner]) {
+    const refused = await refusal(() => renderAgentsSections(root, { projectRoot, navigation: null, backupRoot: paths.backups, occurredAt: at() }));
+    assert.equal(refused.reasonCode, "MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY", projectRoot);
+    assert.match(refused.message, /managed prose cannot be written inside a library/u);
+    await assert.rejects(readFile(join(projectRoot, AGENTS_FILE)), { code: "ENOENT" });
+  }
+  assert.equal((await materializeWorkspace(root)).headEventHash, before.headEventHash, "a refusal records nothing");
+});

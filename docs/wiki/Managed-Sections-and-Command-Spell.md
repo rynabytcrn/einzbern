@@ -61,7 +61,7 @@ rule-resolve --section <段 id> --action overwrite|keep|unmanage [--force true] 
 ### 启用与禁用
 
 - `rule-list [--project <目录>]`：列出每条原则的 `{id, version, recordedVersion, fileVersion, section, state}`，库里记有顺序的原则还带 `order`；只读，不写任何文件。`version` 是本机引擎带的版本，`recordedVersion` 是库里记录的版本，`fileVersion` 是段起始标记里的修订号。
-- `rule-enable --id <规则 id> [--order <正整数>] [--project <目录>] --at <时刻>`：在库的 `rule` 集合里记下 `{enabled: true, version}`（版本取本机引擎带的版本），并把正文作为 `rule:<规则 id>` 段写进 AGENTS.md。回执 `RULE_ENABLED` 给出原则的新状态、这一段的处理结果和备份目录。
+- `rule-enable --id <规则 id> [--order <正整数>] [--project <目录>] --at <时刻>`：在库的 `rule` 集合里记下 `{enabled: true, version}`（版本取本机引擎带的版本），并把正文作为 `rule:<规则 id>` 段写进 AGENTS.md。回执 `RULE_ENABLED` 给出原则的新状态、这一段的处理结果和备份目录；`outputBindingStatus` 为 `bound` 表示写进了 AGENTS.md，为 `unconfigured` 表示没有可写的项目根、只记了原则记录（见下文「协调库的受管段」）。
   - 带 `--order` 时同时记下这条原则的顺序；不带时保留库里已记的顺序。
   - 对已经启用的原则只改顺序时，这一段的结果是 `unchanged`，文件按新顺序重排。
   - `--order` 不是正整数时报 `CLI_ARGUMENT_MALFORMED`，什么也不写。
@@ -117,6 +117,16 @@ proposal-reject --key rule:<规则 id> --proposed-at <提交时刻> --actor <行
 已有 batch v2 仍适用且保持原字节；rule-list、Atelier 读取及普通 agents-render 只显示 update-available，显式 rule-enable 升级才写 v3。用户修改仍按 user-modified/pending 与 keep/overwrite/unmanage 保护。正文验证不是运行期遵守证明，未经可比会话测量的 token 节省为 unknown。
 
 同一版本内的正文修订不改版本号（INIT-053 R40：batch v3 追加第 7 条，silent-reporting v1 追加「一轮做完、下一轮开始之间同样不汇报」一句，Owner 在自己的 AGENTS.md 里把这两段记为修订号 2；INIT-053 R48：batch v3 追加第 8 条「知识采集按轮」，Owner 把该段记为修订号 3；INIT-053 R52：batch v3 在第 6 条末尾补入小轮合并，并追加第 9 条「证据按摘录读」，Owner 把该段记为修订号 4）。已在该版本启用的原则，rule-list 与 Atelier 仍读作 enabled，没有单独的「正文过期」状态；下一次 agents-render 把未改动的段换成修订后的正文，段的修订号加 1；你改过的段照旧不被覆盖，按 user-modified/pending 等待处置。
+
+## 协调库的受管段
+
+协调库同样是受管段的目的地（TCRN-CROSS-STORY-540，MIN-258 D3(c)，取代 MIN-245 D6）。协调库在本机注册表里登记的项目根，就是它所协调的容器目录；只要这个项目根不在任何库内，`agents-render`、`rule-resolve`、`rule-enable`、`rule-disable` 与变量段的写入就按协调库自己的配置（规则、变量与 `artifact.language` 等运行设置）把段写进容器的 AGENTS.md，并在协调库里记下受管段记录，与项目库完全相同；原则的六种状态也同样按文件与记录判定。`--project` 给容器里的任何目录都行，注册表解析出容器根；协调库的注册项不带项目时，不必也不能加 `--project-id`。
+
+- 项目根在库内（就是某个库，或在某个库的目录里）时拒写，报 `MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY`。
+- 协调库已经登记了容器根，而给的目录不是它时拒写，报 `MANAGED_SECTION_OUTPUT_UNREGISTERED`，补救提示为 `library-register`。
+- 协调库在本机没有库外的项目根（没有注册，或者像 setup 自动建的协调库那样只把库自己登记为项目路径）时，`rule-enable` 与 `rule-disable` 照旧只记原则记录、不写任何文件，回执的 `outputBindingStatus` 为 `unconfigured`，原则状态按「没有文件」判定（已启用的读作 `removed-from-file`）；`agents-render` 与 `rule-resolve` 报 `MANAGED_SECTION_OUTPUT_UNREGISTERED`。`rule-list` 对协调库也按登记的容器根读文件，没有时 `outputBindingStatus` 为 `unconfigured`。
+
+引擎第一次接管容器时，文件里已有带标记、标记里的摘要与正文相符、但库里还没有记录的段，按引擎的正文替换：先备份原文件，修订号在原标记的基础上加 1，并记下记录，不进入待处理。正文与标记摘要不符的段视为你改过，照旧原样保留并转为 `pending`，用 `rule-resolve` 处置。
 
 ## Project-bound output
 

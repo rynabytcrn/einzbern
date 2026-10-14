@@ -16,6 +16,10 @@
 //   repair     the steps of a first installation from the registry on, again, for the project's
 //              registered library (setup-fresh.ts). Each compares before it writes, so a repair of an
 //              installation that is whole writes nothing. The library's settings are not written.
+//              TCRN-CROSS-STORY-540 GWT4 (MIN-258 D3(c); TCRN-CROSS-SUB-507): the root a coordination
+//              library is registered for, the container it coordinates, is repaired as a project is,
+//              its managed sections planned and written from the coordination library's own
+//              configuration; update still writes no project file.
 //   uninstall  the Einzbern hook groups taken out of both hosts' user settings, both skill copies and
 //              skills.json moved whole into the backups of this run, and the project's registry entry
 //              removed once registry.json is copied there, with the registration setup made for the

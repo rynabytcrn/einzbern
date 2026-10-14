@@ -18,7 +18,7 @@ import { gzipSync } from "node:zlib";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, readRegistry } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, readRegistry, registerLibrary } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
 import { MACHINE_SETTINGS_FILE_NAME } from "../dist/build/packages/core/src/machine-settings.js";
@@ -470,4 +470,47 @@ test("480-AC4 (U04): uninstall keeps the coordination registration while a regis
   assert.deepEqual(await registered(), [], "the coordination registration goes with the last project naming it");
   assert.deepEqual(await digests(), before, "no library was written, moved or deleted");
   assert.ok((await lstat(join(coordination, "manifest.json"))).isFile(), "the coordination library itself stays");
+});
+
+// TCRN-CROSS-STORY-540 GWT4 (MIN-258 D3(c); TCRN-CROSS-SUB-507): the root a coordination library is
+// registered for, the container it coordinates, is repaired as a project is: the repair plan lists the
+// managed sections and the library's records, the apply writes them from the coordination library's own
+// configuration (no models.*, no setup project binding), a second repair writes nothing, and an update
+// plan writes no project file there.
+test("540-GWT4: repair of a coordination library's registered root plans and writes its managed sections; update plans none", async (context) => {
+  const f = await installed(context);
+  const coordination = join(f.deviceHome, "coordination-library");
+  const container = join(f.base, "container");
+  await mkdir(container);
+  const projectsBefore = (await materializeWorkspace(coordination)).projects.length;
+  await registerLibrary({ projectPath: container, libraryPath: coordination, registeredAt: at(), gitRemote: null }, f.deviceHome);
+  const atContainer = { ...f, project: container };
+
+  const planned = await plan(atContainer, "repair");
+  assert.deepEqual(planned.blockers, []);
+  const sectionRows = [["managed-sections", join(container, "AGENTS.md"), "create"], ["managed-sections", join(container, "CLAUDE.md"), "create"], ["library", coordination, "update"]];
+  for (const expected of sectionRows) assert.ok(rows(planned.writes).some((entry) => JSON.stringify(entry) === JSON.stringify(expected)), `the plan lists ${expected.join(" ")}`);
+  const repaired = await applySetup(planned);
+  for (const expected of sectionRows) assert.ok(rows(repaired.written).some((entry) => JSON.stringify(entry) === JSON.stringify(expected)), `the apply wrote ${expected.join(" ")}`);
+  assertSelfCheckGreen(repaired);
+  const doctor = repaired.selfCheck.find((entry) => entry.check === "managed-sections");
+  assert.deepEqual(doctor.detail.pending, []);
+  assert.ok(doctor.detail.sections.some((entry) => entry.section === "AGENTS.md#variables-system" && entry.state === "managed"), "doctor lists the container's sections");
+
+  const agents = await readFile(join(container, "AGENTS.md"), "utf8");
+  assert.ok(agents.includes("| execution.maxConcurrentSubagents |"), "the coordination library's own keys");
+  assert.doesNotMatch(agents, /models\./u);
+  const library = await materializeWorkspace(coordination);
+  const record = library.configRecords.find((entry) => entry.collection === "managed-section" && entry.key === "AGENTS.md#variables-system");
+  assert.deepEqual([record?.projectId, record?.value.state], [undefined, "managed"], "recorded for the whole coordination library");
+  assert.equal(library.projects.length, projectsBefore, "no setup project binding is made in a coordination library");
+  assert.equal((await readRegistry(f.deviceHome)).entries.find((entry) => entry.projectPath === container)?.projectId, undefined);
+
+  const again = await plan(atContainer, "repair");
+  assert.deepEqual(again.writes, [], "a second repair writes nothing");
+
+  const release = await releaseOf(f.base, NEWER);
+  const updated = await plan(atContainer, "update", { archive: release.archive });
+  assert.deepEqual(updated.blockers, []);
+  assert.deepEqual(updated.writes.filter((entry) => entry.step === "managed-sections" || entry.path.startsWith(`${container}/`)), [], "update writes no project file");
 });

@@ -553,7 +553,23 @@ Common defaults are optional project scalar settings only. Collection tables,
 library/runtime settings, gate roots/coverage and managed-file digests are not
 cross-chain defaults. Coordination retains its own rule, variable, gate and
 managed-section records and their provenance; it does not inherit development
-configuration or acquire a managed prose root. Context readiness is reported
+configuration. Its managed prose root is the project root this device's
+registry holds for it outside every library, the container it coordinates
+(TCRN-CROSS-STORY-540, MIN-258 D3(c), which replaces MIN-245 D6): agents-render,
+rule-resolve, rule-enable, rule-disable and the variable sections write that
+root's AGENTS.md from the coordination library's own configuration and record
+each section, as they do for a project, and a rule's state is read from the
+file and the records. Any other root, or one within a library, is refused
+(`MANAGED_SECTION_OUTPUT_UNREGISTERED`, `MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY`).
+A coordination library this device registered no such root for has none: a
+rule change there records the rule alone, with `outputBindingStatus:
+"unconfigured"` in its receipt. A coordination library's system variable
+section lists `execution.maxConcurrentSubagents`, the four `quota.*` settings
+and the seven `design.*` bindings with their effective values and sources; it
+lists no `models.*`, which a coordination library does not have (MIN-243 D1).
+Both variable sections, for any library, follow `artifact.language`: `zh-CN`
+writes their headings, notes, table headers and placeholders in Chinese, any
+other value or none in English. Context readiness is reported
 separately for design declarations, model configuration, repository/build
 bindings, registered output, language and gates. Publication verification stays
 unverified until separately established. A gate operation requires its own

@@ -85,6 +85,17 @@
 
 无旗标。
 
+## `device-clean`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--at` | 必填 | `instant` |
+| `--yes` | 可选 | `boolean` |
+| `--home` | 可选 | `string` |
+
 ## `doctor`
 
 - 可用范围：`cli`。
@@ -604,6 +615,17 @@
 | --- | --- | --- |
 | `--cwd` | 可选 | `string` |
 
+## `library-unregister`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--project` | 必填 | `string` |
+| `--at` | 必填 | `instant` |
+| `--yes` | 可选 | `boolean` |
+
 ## `machine-settings-catalog`
 
 - 可用范围：`cli`。
@@ -690,29 +712,31 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--project-id` | 必填 | `string` |
-| `--key` | 必填 | `string` |
-| `--at` | 必填 | `instant` |
-| `--actor` | 可选 | `string` |
-| `--timeout-ms` | 可选 | `integer` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project-id` | 必填 | `string` |  |
+| `--key` | 必填 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--actor` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `project-bindings-set`
 
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--project-id` | 必填 | `string` |
-| `--key` | 必填 | `string` |
-| `--value` | 必填 | `json` |
-| `--at` | 必填 | `instant` |
-| `--actor` | 可选 | `string` |
-| `--timeout-ms` | 可选 | `integer` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project-id` | 必填 | `string` |  |
+| `--key` | 必填 | `string` |  |
+| `--value` | 必填 | `json` |  |
+| `--at` | 必填 | `instant` |  |
+| `--actor` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `project-context`
 
@@ -1232,14 +1256,15 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--id` | 必填 | `string` |
-| `--reason` | 必填 | `string` |
-| `--actor` | 必填 | `string` |
-| `--timeout-ms` | 可选 | `integer` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--id` | 必填 | `string` |  |
+| `--reason` | 必填 | `string` |  |
+| `--actor` | 必填 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `work-list`
 
@@ -1276,14 +1301,15 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--id` | 必填 | `string` |
-| `--actor` | 必填 | `string` |
-| `--force` | 可选 | `boolean` |
-| `--timeout-ms` | 可选 | `integer` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--id` | 必填 | `string` |  |
+| `--actor` | 必填 | `string` |  |
+| `--force` | 可选 | `boolean` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `work-show`
 

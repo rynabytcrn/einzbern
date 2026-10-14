@@ -37,7 +37,7 @@ test("528 SUB-458: work-claim and work-release are cataloged writes with their f
   const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
   const flags = (name) => Object.fromEntries(entry(name).flags.map((flag) => [flag.name, [flag.required, flag.valueKind]]));
   assert.deepEqual(flags("work-claim"), { workspace: [false, "string"], at: [true, "instant"], id: [true, "string"], actor: [true, "string"], ttl: [false, "string"], "timeout-ms": [false, "integer"] });
-  assert.deepEqual(flags("work-release"), { workspace: [false, "string"], at: [true, "instant"], id: [true, "string"], actor: [true, "string"], force: [false, "boolean"], "timeout-ms": [false, "integer"] });
+  assert.deepEqual(flags("work-release"), { workspace: [false, "string"], at: [true, "instant"], id: [true, "string"], actor: [true, "string"], force: [false, "boolean"], "decided-in": [false, "string"], "timeout-ms": [false, "integer"] });
   for (const name of ["work-claim", "work-release"]) {
     assert.equal(entry(name).mutates, true, `${name} writes`);
     assert.equal(entry(name).availability, "cli");
@@ -111,7 +111,8 @@ test("528 SUB-458: work-release frees the holder's lease, needs --force for anot
     });
     const forcedByModel = await refusal(["work-release", ...ws, "--at", at(2), "--id", f.ids.epic, "--actor", B, "--force", "true"]);
     assert.equal(forcedByModel.reasonCode, "MODEL_WRITE_REFUSED");
-    assert.deepEqual(forcedByModel.details, { workId: f.ids.epic, remedy: "change it in Atelier" });
+    // TCRN-CROSS-SUB-510: the remedy names both ways, Atelier and a cited Owner decision.
+    assert.deepEqual(forcedByModel.details, { workId: f.ids.epic, remedy: "change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>" });
     assert.equal((await refusal(["work-release", ...ws, "--at", at(2), "--id", f.ids.epic, "--actor", B, "--force", "yes"])).reasonCode, "CLI_ARGUMENT_MALFORMED");
   });
   assert.equal((await run(["work-show", ...ws, "--id", f.ids.epic])).version, version, "the refusals wrote nothing");

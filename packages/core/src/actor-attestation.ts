@@ -68,12 +68,16 @@ export const EVENT_PAYLOAD_OPERATION_EXTRAS: Readonly<Record<string, readonly st
 // `decidedInLibraryId`, the library whose minutes hold that decision; the two travel together). A
 // payload may carry any of them for the operations this table names and none for any other; an event
 // written without them is byte for byte what it was before.
+// TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-510): gate.updated may carry them too, since
+// work-gate-release, which appends it to release a gate, takes --decided-in; an engine that
+// predates this rejects such an event on replay.
 export const WRITE_SURFACES = Object.freeze(["atelier", "cli"] as const);
 export type WriteSurface = typeof WRITE_SURFACES[number];
 export const WRITE_AUTHORIZATION_EXTRAS = Object.freeze(["decidedIn", "decidedInLibraryId", "surface"] as const);
 export const EVENT_PAYLOAD_OPTIONAL_EXTRAS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "config.record.set": WRITE_AUTHORIZATION_EXTRAS,
   "config.record.removed": WRITE_AUTHORIZATION_EXTRAS,
+  "gate.updated": WRITE_AUTHORIZATION_EXTRAS,
   "settings.updated": WRITE_AUTHORIZATION_EXTRAS,
   "settings.removed": WRITE_AUTHORIZATION_EXTRAS,
 });

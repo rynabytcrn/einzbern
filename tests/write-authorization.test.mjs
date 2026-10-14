@@ -6,6 +6,8 @@
 // and its text names the target, bounded, or as <prefix>.* for a target under <prefix>. Every other
 // answer is MODEL_WRITE_AUTHORIZATION_INVALID with the decision, the target and the reason. Every
 // library, project and device directory here is a temporary one.
+// TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-510): a work item, the target of work-release
+// --force, is named by its id or by its external key, each whole, and never through <prefix>.*.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -17,6 +19,7 @@ import test from "node:test";
 import {
   DECIDED_IN_VALUE_SHAPE,
   createProject,
+  createWork,
   declareChainIdentity,
   initializeLibrary,
   materializeWorkspace,
@@ -30,6 +33,7 @@ import {
   WRITE_AUTHORIZATION_DECIDER,
   WRITE_AUTHORIZATION_REASONS,
   decisionNamesTarget,
+  decisionNamesWork,
 } from "../dist/build/packages/core/src/write-authorization.js";
 
 const at = (second) => `2026-10-14T09:00:${String(second).padStart(2, "0")}Z`;
@@ -156,4 +160,37 @@ test("SUB-451 (Q1): minutes the written library does not hold are looked up in t
   assert.deepEqual({ ...verified }, { decidedIn, libraryId: coordinationId, target: "unit" }, "the event records the library whose minutes hold the decision");
   await assert.rejects(verifyWriteAuthorization({ state, decidedIn, target: "lint" }), refusedWith("target-not-named", decidedIn, "lint"));
   assert.equal((await project.state()).version, state.version, "the check writes nothing to the library written to");
+});
+
+test("SUB-510: a decision names a work item by its id or by its whole external key, and no <prefix>.* names one", () => {
+  const work = { id: "work:0123456789abcdef01234567", externalKey: "TCRN-CROSS-STORY-541" };
+  assert.equal(decisionNamesWork("Free the lease on TCRN-CROSS-STORY-541 by force.", work), true);
+  assert.equal(decisionNamesWork("Free work:0123456789abcdef01234567 as well.", work), true);
+  assert.equal(decisionNamesWork("Free TCRN-CROSS-STORY-54 and TCRN-CROSS-STORY-5410.", work), false, "a shorter or longer key is not the key");
+  assert.equal(decisionNamesWork("Archive TCRN-CROSS-STORY-541-OLD.", work), false, "a key that begins with it is not it");
+  assert.equal(decisionNamesWork("Free STORY-541 now.", work), false, "part of the key is not the key");
+  assert.equal(decisionNamesWork("Free the lease on TCRN-CROSS-STORY-541.", { id: work.id }), false, "without the key only the id names the item");
+  // A dotted key shows the difference from decisionNamesTarget: <prefix>.* names a name, never a work item.
+  const dotted = { id: work.id, externalKey: "AUTH.INIT" };
+  assert.equal(decisionNamesTarget("Free every AUTH.* lease.", dotted.externalKey), true);
+  assert.equal(decisionNamesWork("Free every AUTH.* lease.", dotted), false);
+});
+
+test("SUB-510: verifyWriteAuthorization with a work target accepts a decision naming the item's id or external key, and refuses one that names neither", async (context) => {
+  const fixture = await library(context);
+  const created = await createWork(fixture.workspace, { occurredAt: at(20), projectId: fixture.projectId, externalKey: "AUTH-INIT-541", kind: "Initiative", parentId: null, title: "AUTH-INIT-541" });
+  const workId = created.work.find((record) => record.externalKey === "AUTH-INIT-541").id;
+  const minutesId = await fixture.record("AUTH-MIN-541", [
+    "Free the lease on AUTH-INIT-541 by force; its session ended.",
+    `Release ${workId} the same way.`,
+    "Archive AUTH-INIT-541-OLD and AUTH-INIT-5410 next quarter.",
+  ]);
+  const state = await fixture.state();
+  for (const number of [1, 2]) {
+    const verified = await verifyWriteAuthorization({ state, decidedIn: `${minutesId}#D${number}`, target: workId, targetKind: "work" });
+    assert.deepEqual({ ...verified }, { decidedIn: `${minutesId}#D${number}`, libraryId: state.metadata.workspaceId, target: workId }, `D${number}`);
+  }
+  await assert.rejects(verifyWriteAuthorization({ state, decidedIn: `${minutesId}#D3`, target: workId, targetKind: "work" }), refusedWith("target-not-named", `${minutesId}#D3`, workId));
+  // The external key names the item only for a work target; any other target is named by itself.
+  await assert.rejects(verifyWriteAuthorization({ state, decidedIn: `${minutesId}#D1`, target: workId }), refusedWith("target-not-named", `${minutesId}#D1`, workId));
 });

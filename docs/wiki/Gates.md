@@ -32,7 +32,7 @@ gates-config-remove --name <门名> --at <时刻>
 
 ## 提交待批准
 
-模型不能直接声明或删除门（上一节），但可以提交一条待批准的改动，由人在 Atelier 的门页里批准或拒绝（TCRN-CROSS-STORY-527）：
+模型要改门声明有两条路（TCRN-CROSS-STORY-541，MIN-258 D3）：手里有点名这道门的 Owner 决定时，直接用上一节的 `gates-config-set` 或 `gates-config-remove` 加 `--decided-in` 写入，不必提议；没有决定时，提交一条待批准的改动，由人在 Atelier 的门页里批准或拒绝（TCRN-CROSS-STORY-527）：
 
 ```text
 gates-config-propose --name <门名> [--action set|remove] [--command '<JSON argv>'] [--root <目录>] [--covers <glob-or-work-id,...>] [--required true|false] [--enabled true|false] [--release-only true|false] [--order <正整数>] --actor <行动者> --at <时刻>

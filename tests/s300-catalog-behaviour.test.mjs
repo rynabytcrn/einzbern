@@ -67,6 +67,19 @@ test("526 GWT5: --help on the eight writes names decided-in and its written form
   }
 });
 
+// TCRN-CROSS-STORY-541 GWT1 (MIN-258 D3; TCRN-CROSS-SUB-510): the four more writes that may cite an Owner
+// decision name it in --help the same way.
+test("541 GWT1: --help on work-gate-release, project-bindings-set and -remove and work-release names decided-in", async () => {
+  for (const name of ["work-gate-release", "project-bindings-set", "project-bindings-remove", "work-release"]) {
+    const result = await capture([name, "--help"]);
+    assert.equal(result.ok, true, `${name} --help must not refuse: ${result.reasonCode ?? ""}`);
+    const flag = JSON.parse(result.output).commands[0].flags.find((entry) => entry.name === "decided-in");
+    assert.deepEqual([flag?.required, flag?.valueKind, flag?.valueShape], [false, "string", "minutes:<id>#D<n>"], name);
+  }
+  const declare = JSON.parse((await capture(["chain-declare", "--help"])).output).commands[0];
+  assert.equal(declare.flags.some((entry) => entry.name === "decided-in"), false, "chain-declare takes no decision");
+});
+
 // TCRN-CROSS-STORY-527 (Q6; TCRN-CROSS-SUB-478): --help on the four proposal verbs answers their own
 // flags, and on the two lists names --status.
 test("527 Q6: --help on the proposal verbs answers their flags, and the two lists take --status", async () => {

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { COMMAND_CATALOG, MODEL_WRITE_REMEDY, runCli } from "../dist/build/packages/cli/src/index.js";
+import { COMMAND_CATALOG, MODEL_WRITE_DECISION_REMEDY, runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   LEGACY_CONTROL_DIRECTORY,
   appendEvents,
@@ -244,7 +244,8 @@ test("489 (MIN-235 D11; C-R17-6): work-gate-release refuses a model with MODEL_W
   // A model's write is refused before the library is opened.
   const releaseArgs = (reason) => ["work-gate-release", ...common, "--at", at(), "--id", OWNER_GATE_ID, "--reason", reason, "--actor", RELEASER];
   const refused = await withSurface(undefined, () => refusalOf(releaseArgs("a model's reason")));
-  assert.deepEqual([refused.reasonCode, refused.details.gate, refused.details.remedy], ["MODEL_WRITE_REFUSED", OWNER_GATE_ID, MODEL_WRITE_REMEDY]);
+  // TCRN-CROSS-SUB-510: the remedy names both ways, Atelier and a cited Owner decision.
+  assert.deepEqual([refused.reasonCode, refused.details.gate, refused.details.remedy], ["MODEL_WRITE_REFUSED", OWNER_GATE_ID, MODEL_WRITE_DECISION_REMEDY]);
   const bin = spawnSync(process.execPath, [cliPath, ...releaseArgs("through the bin")], { encoding: "utf8", env: { ...process.env, EINZBERN_SURFACE: "" } });
   assert.deepEqual(JSON.parse(bin.stderr.trim().split("\n").at(-1)).reasonCode, "MODEL_WRITE_REFUSED");
   assert.equal((await materializeWorkspace(library)).version, before, "a refused release appends nothing");
@@ -295,7 +296,7 @@ test("489 (TCRN-CROSS-SUB-365): the two gate verbs are cataloged, neither starts
   assert.equal(entry("work-gate-list").mutates, false);
   assert.deepEqual(flags("work-gate-list"), [["workspace", false, "string"], ["work-id", false, "string"], ["status", false, "string"], ["limit", false, "integer"], ["offset", false, "integer"]]);
   assert.equal(entry("work-gate-release").mutates, true);
-  assert.deepEqual(flags("work-gate-release"), [["workspace", false, "string"], ["at", true, "instant"], ["id", true, "string"], ["reason", true, "string"], ["actor", true, "string"], ["timeout-ms", false, "integer"]]);
+  assert.deepEqual(flags("work-gate-release"), [["workspace", false, "string"], ["at", true, "instant"], ["id", true, "string"], ["reason", true, "string"], ["actor", true, "string"], ["decided-in", false, "string"], ["timeout-ms", false, "integer"]]);
   assert.equal(GATE_RELEASE_VERB, "work-gate-release", "the refusal names the cataloged verb");
   for (const name of ["work-gate-list", "work-gate-release"]) assert.equal(/^(gate|minutes)-/u.test(name), false, name);
 });

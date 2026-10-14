@@ -13,6 +13,11 @@
 //
 // The check makes a write traceable to a decision. It does not prove the Owner took it: a model can
 // record minutes whose deciders name owner:governance and cite them. MIN-256 D4 accepts that boundary.
+//
+// TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-510): a write may change a work item, as
+// work-release --force does to its lease. Such a target is a work item, and a decision names it by
+// its id or by its external key, each as a whole: bounded as any name is, and never through
+// <prefix>.*, so TCRN-CROSS-STORY-54 does not name TCRN-CROSS-STORY-541.
 
 import { chainIdentity } from "./chain-identity.js";
 import { decisionAddress, minutesById, parseDecisionAddress } from "./minutes.js";
@@ -71,14 +76,21 @@ const NAME_CHARACTER = /[A-Za-z0-9._:-]/u;
 // <prefix>.*, with no name character before the prefix or after the star.
 const PREFIX_WILDCARD = /(?<![A-Za-z0-9._:*-])([A-Za-z0-9._:-]+)\.\*(?![A-Za-z0-9._:*-])/gu;
 
+// Whether `text` holds `name` itself, with no name character on either side of it.
+function namesWhole(text: string, name: string): boolean {
+  if (name === "") return false;
+  for (let index = text.indexOf(name); index !== -1; index = text.indexOf(name, index + 1)) {
+    const before = index === 0 ? "" : text.charAt(index - 1);
+    const after = text.charAt(index + name.length);
+    if (!NAME_CHARACTER.test(before) && !NAME_CHARACTER.test(after)) return true;
+  }
+  return false;
+}
+
 /** Whether `text` names `target`: the name itself, bounded, or <prefix>.* for a target under <prefix>. */
 export function decisionNamesTarget(text: string, target: string): boolean {
   if (target === "") return false;
-  for (let index = text.indexOf(target); index !== -1; index = text.indexOf(target, index + 1)) {
-    const before = index === 0 ? "" : text.charAt(index - 1);
-    const after = text.charAt(index + target.length);
-    if (!NAME_CHARACTER.test(before) && !NAME_CHARACTER.test(after)) return true;
-  }
+  if (namesWhole(text, target)) return true;
   for (const match of text.matchAll(PREFIX_WILDCARD)) {
     const prefix = match[1] ?? "";
     if (prefix !== "" && target.startsWith(`${prefix}.`) && target.length > prefix.length + 1) return true;
@@ -86,15 +98,35 @@ export function decisionNamesTarget(text: string, target: string): boolean {
   return false;
 }
 
+/** A work item as a decision may name it: by its id, or by its external key (TCRN-CROSS-SUB-510). */
+export interface WorkTargetNames {
+  readonly id: string;
+  readonly externalKey?: string | null;
+}
+
+/**
+ * Whether `text` names the work item `work` (TCRN-CROSS-SUB-510): its id or its external key, each
+ * as a whole and bounded as decisionNamesTarget bounds a name; a <prefix>.* names no work item.
+ */
+export function decisionNamesWork(text: string, work: WorkTargetNames): boolean {
+  if (namesWhole(text, work.id)) return true;
+  return typeof work.externalKey === "string" && namesWhole(text, work.externalKey);
+}
+
 type MinutesState = Pick<WorkspaceState, "minutes" | "conferenceMinutes" | "conferences">;
 
 export interface VerifyWriteAuthorizationInput {
-  // The library the write goes to, as read inside its write lock.
-  readonly state: MinutesState & Pick<WorkspaceState, "configRecords" | "metadata">;
+  // The library the write goes to, as read inside its write lock; its work records give a work
+  // target's external key.
+  readonly state: MinutesState & Pick<WorkspaceState, "configRecords" | "metadata"> & Partial<Pick<WorkspaceState, "work">>;
   // The --decided-in value: minutes:<id>#D<n>.
   readonly decidedIn: string;
-  // What the write changes: a gate's name, a rule's id, a setting's key or a variable's name.
+  // What the write changes: a gate's name (a migrated gate's id), a rule's id, a setting's key, a
+  // variable's name, a project binding's key or a work item's id.
   readonly target: string;
+  // TCRN-CROSS-SUB-510: "work" when the target is a work item's id; the decision then names it by
+  // that id or by the item's external key (decisionNamesWork).
+  readonly targetKind?: "work";
   // The device directory whose registry locates the coordination library; this device's by default.
   readonly home?: string;
 }
@@ -162,7 +194,12 @@ export async function verifyWriteAuthorization(input: VerifyWriteAuthorizationIn
     refuse(decidedIn, target, "not-owner-decided", `its minutes were not decided by ${WRITE_AUTHORIZATION_DECIDER}`);
   }
   if (decision.status === "obsolete") refuse(decidedIn, target, "obsolete", "the decision is obsolete; only a valid decision authorizes a write");
-  if (!decisionNamesTarget(decision.text, target)) {
+  if (input.targetKind === "work") {
+    const work = input.state.work?.find((record) => record.id === target && !record.tombstone);
+    if (!decisionNamesWork(decision.text, { id: target, externalKey: work?.externalKey ?? null })) {
+      refuse(decidedIn, target, "target-not-named", `the decision does not name the work item ${target} by its id or its external key`);
+    }
+  } else if (!decisionNamesTarget(decision.text, target)) {
     refuse(decidedIn, target, "target-not-named", `the decision does not name ${target}, or a <prefix>.* it falls under`);
   }
   return { decidedIn: decisionAddress(reference.minutesId, reference.number), libraryId: source.libraryId, target };

@@ -16,8 +16,9 @@
 //
 // The rules: a claim by the holder renews the lease; a claim is refused while another actor holds an
 // unexpired lease on the item, on any item above it or on any item below it. The holder releases at
-// any time; another actor needs force (Atelier only, decided at the CLI) while the lease runs, and
-// a lease that has run out binds no one, so anyone may clear it.
+// any time; another actor needs force (decided at the CLI: Atelier, or a model's run citing an Owner
+// decision that names the item, TCRN-CROSS-SUB-510) while the lease runs, and a lease that has run
+// out binds no one, so anyone may clear it.
 //
 // TCRN-CROSS-STORY-535 (MIN-257 D6): a lease does not outlive its item. Deleting a work item is not a
 // write a lease guards, so any actor deletes a leased item, and its lease is removed in the same
@@ -28,6 +29,7 @@
 import { ProtocolError, assertProtocolId, parseStrictInstant } from "../../protocol/src/index.js";
 import type { JsonValue, WorkRecord } from "../../protocol/src/index.js";
 import { assertActorId } from "./actor-attestation.js";
+import type { WriteAuthorization } from "./actor-attestation.js";
 import { removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
 import type { ConfigRecord } from "./config-records.js";
 import { WorkspaceError, appendEvents } from "./workspace.js";
@@ -245,9 +247,13 @@ export interface ClaimWorkInput {
 export interface ReleaseWorkInput {
   readonly id: string;
   readonly actorId: string;
-  // Release another actor's running lease. The CLI lets only Atelier ask for it (MIN-256 R1 Q7).
+  // Release another actor's running lease. The CLI lets Atelier ask for it (MIN-256 R1 Q7), and a
+  // model's run that cites an Owner decision naming the work item (TCRN-CROSS-SUB-510).
   readonly force?: boolean;
   readonly occurredAt: string;
+  // TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): how the release was let through, recorded in the
+  // lease's config.record.removed event; left out, the event is as it was.
+  readonly authorization?: WriteAuthorization;
 }
 
 /** The delta that claims a work item for `actorId` from `occurredAt` for the TTL; the input is checked before any lock is taken. */
@@ -269,9 +275,13 @@ export function claimWorkDelta(input: ClaimWorkInput): (state: WorkspaceState) =
   };
 }
 
-// The config.record.removed delta of one lease record, in the scope it was recorded in.
-function leaseRecordRemoval(record: ConfigRecord): (state: WorkspaceState) => MutationDelta {
-  return removeConfigRecordDelta({ collection: WORK_LEASE_COLLECTION, key: record.key, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) });
+// The config.record.removed delta of one lease record, in the scope it was recorded in, with the
+// authorization of the write that removes it when it has one.
+function leaseRecordRemoval(record: ConfigRecord, authorization?: WriteAuthorization): (state: WorkspaceState) => MutationDelta {
+  return removeConfigRecordDelta({
+    collection: WORK_LEASE_COLLECTION, key: record.key, ...(record.projectId === undefined ? {} : { projectId: record.projectId }),
+    ...(authorization === undefined ? {} : { authorization }),
+  });
 }
 
 /** The delta that releases the lease a work item holds; the input is checked before any lock is taken. */
@@ -283,7 +293,7 @@ export function releaseWorkDelta(input: ReleaseWorkInput): (state: WorkspaceStat
     if (record === undefined) fail("WORK_LEASE_NOT_FOUND", `work ${input.id} holds no lease`, { workId: input.id });
     const lease = heldLease(record);
     if (lease.holder !== input.actorId && runsAt(lease, at) && input.force !== true) throw leasedError(input.id, lease);
-    return leaseRecordRemoval(record)(state);
+    return leaseRecordRemoval(record, input.authorization)(state);
   };
 }
 

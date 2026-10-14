@@ -388,11 +388,13 @@ test("STORY-480: setup writes and takes the wizard's flags; doctor reads and tak
   assert.equal(["setup", "doctor"].some((name) => entry(name).flags.some((flag) => flag.name === "workspace")), false);
 });
 
-// TCRN-CROSS-STORY-526 GWT5 (Q15; TCRN-CROSS-SUB-455): the eight writes that may cite an Owner decision
+// TCRN-CROSS-STORY-526 GWT5 (Q15; TCRN-CROSS-SUB-455): the writes that may cite an Owner decision
 // take --decided-in, a string whose valueShape says how a decision is cited; no other flag carries a
 // valueShape, and the catalog stays schema-valid with it (the schema test above).
-test("526 GWT5: the eight decided-in flags carry valueShape minutes:<id>#D<n>, and no other flag carries one", () => {
-  const writes = ["gates-config-remove", "gates-config-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set"];
+// TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): twelve, with project-bindings-set and -remove,
+// work-gate-release and work-release.
+test("526 GWT5, 541 GWT1: the twelve decided-in flags carry valueShape minutes:<id>#D<n>, and no other flag carries one", () => {
+  const writes = ["gates-config-remove", "gates-config-set", "project-bindings-remove", "project-bindings-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set", "work-gate-release", "work-release"];
   const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags.filter((flag) => flag.valueShape !== undefined).map((flag) => [entry.name, flag.name]));
   assert.deepEqual(shaped, writes.map((name) => [name, "decided-in"]));
   for (const name of writes) {

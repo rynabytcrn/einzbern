@@ -20,9 +20,11 @@ operation can carry an unvalidated or absent actor once enforcement is on.
 ## Optional authorization extras (TCRN-CROSS-STORY-526)
 
 Beside the extras a registered operation must carry (`conference.closed` carries
-`minutes`), four operations may carry optional extras that record how a configuration
+`minutes`), five operations may carry optional extras that record how a configuration
 write was let through: `config.record.set`, `config.record.removed`, `settings.updated`
-and `settings.removed`. They are `surface`, the surface the write came from (`cli` or
+and `settings.removed`, and, since TCRN-CROSS-STORY-541 (MIN-258 D3), `gate.updated`,
+which `work-gate-release` appends to release a gate. An engine that predates the last
+rejects such a `gate.updated` on replay. They are `surface`, the surface the write came from (`cli` or
 `atelier`), and `decidedIn`, the Owner decision the write cites (`minutes:<id>#D<n>`),
 with `decidedInLibraryId`, the library whose minutes hold that decision; the last two are
 recorded together. A payload of one of these operations may carry any of them and of no

@@ -6,8 +6,10 @@
 // record decidedIn, the library whose minutes hold it (decidedInLibraryId) and surface cli; a run for
 // Atelier records surface atelier. A run citing a decision that does not qualify is
 // MODEL_WRITE_AUTHORIZATION_INVALID and changes nothing; a run citing none is still
-// MODEL_WRITE_REFUSED, its remedy now naming --decided-in. The writes that take no decision keep their
-// refusal and its remedy. Every project, library and device directory here is a temporary one.
+// MODEL_WRITE_REFUSED, its remedy now naming --decided-in. TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510):
+// project-bindings-set takes a decision as well (model-write-decided-in-more.test.mjs), and
+// chain-declare, the write that takes none, is refused with the remedy of Atelier's library page.
+// Every project, library and device directory here is a temporary one.
 
 import "./helpers/device-home.mjs";
 import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
@@ -18,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { MODEL_WRITE_DECISION_REMEDY, MODEL_WRITE_REMEDY, assertModelWriteAllowed, runCli } from "../dist/build/packages/cli/src/index.js";
+import { MODEL_WRITE_DECISION_REMEDY, MODEL_WRITE_LIBRARY_PAGE_REMEDY, MODEL_WRITE_REMEDY, assertModelWriteAllowed, runCli } from "../dist/build/packages/cli/src/index.js";
 import { materializeWorkspace, recordMinutes, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 
 const ENTRY = resolve(import.meta.dirname, "..", "scripts", "einzbern.mjs");
@@ -232,16 +234,22 @@ test("526 (SUB-453): the barrier answers a permit, names --decided-in only for t
   assert.deepEqual(assertModelWriteAllowed({ rule: "batch" }, false, { EINZBERN_SURFACE: ATELIER_SURFACE }, { decidedIn }), { surface: "atelier", decidedIn, target: "batch" });
   assert.throws(() => assertModelWriteAllowed({ name: "deploy.host" }, false, {}, { decidedIn: undefined }),
     (error) => error.reasonCode === "MODEL_WRITE_REFUSED" && error.details.remedy === MODEL_WRITE_DECISION_REMEDY);
-  assert.throws(() => assertModelWriteAllowed({ key: "chain.identity" }, false, {}),
-    (error) => error.reasonCode === "MODEL_WRITE_REFUSED" && error.details.remedy === MODEL_WRITE_REMEDY, "a write that takes no decision keeps its remedy");
+  assert.throws(() => assertModelWriteAllowed({ key: "common-default" }, false, {}),
+    (error) => error.reasonCode === "MODEL_WRITE_REFUSED" && error.details.remedy === MODEL_WRITE_REMEDY, "a caller that passes no citation keeps the Atelier remedy");
   assert.throws(() => assertModelWriteAllowed({ gate: "unit" }, false, {}, { decidedIn: "unit" }),
     (error) => error.reasonCode === "MODEL_WRITE_AUTHORIZATION_INVALID" && error.details.reason === "malformed");
 
-  // project-bindings-set takes no decision: refused with its old remedy, and --decided-in is not its flag.
+  // TCRN-CROSS-SUB-510: project-bindings-set takes a decision now, so its refusal names --decided-in;
+  // chain-declare takes none: refused with the remedy of Atelier's library page, and --decided-in is
+  // not its flag.
   const fx = await scratch(context);
   const projectId = (await cli(["project-list", "--workspace", fx.library])).records[0].id;
   const bindings = (...more) => ["project-bindings-set", "--workspace", fx.library, "--at", at(), "--project-id", projectId, "--key", "common-default", "--value", "{}", ...more];
   const refused = await asModel(() => refusal(bindings()));
-  assert.deepEqual([refused.reasonCode, refused.details.remedy], ["MODEL_WRITE_REFUSED", MODEL_WRITE_REMEDY]);
-  assert.equal((await asModel(() => refusal(bindings("--decided-in", fx.owner(1))))).reasonCode, "CLI_ARGUMENT_UNKNOWN");
+  assert.deepEqual([refused.reasonCode, refused.details.remedy], ["MODEL_WRITE_REFUSED", MODEL_WRITE_DECISION_REMEDY]);
+  const libraryId = (await stateOf(fx.library)).metadata.workspaceId;
+  const declare = (...more) => ["chain-declare", "--workspace", fx.library, "--at", at(), "--role", "coordination", "--coordination-library-id", libraryId, ...more];
+  const hard = await asModel(() => refusal(declare()));
+  assert.deepEqual([hard.reasonCode, { ...hard.details }], ["MODEL_WRITE_REFUSED", { key: "chain.identity", remedy: MODEL_WRITE_LIBRARY_PAGE_REMEDY }]);
+  assert.equal((await asModel(() => refusal(declare("--decided-in", fx.owner(1))))).reasonCode, "CLI_ARGUMENT_UNKNOWN");
 });

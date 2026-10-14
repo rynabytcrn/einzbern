@@ -52,9 +52,11 @@ Each entry is `{name, availability, mutates, flags}`, optionally plus
   - `valueShape` — how a value is written where its kind alone does not say
     (TCRN-CROSS-STORY-526, Q15). Optional and descriptive, so the catalog stays v1: a
     reader that does not know the field reads every other one as before. Carried by
-    `decided-in` on the eight writes that may cite an Owner decision —
+    `decided-in` on the twelve writes that may cite an Owner decision —
     `gates-config-set`, `gates-config-remove`, `rule-enable`, `rule-disable`,
-    `settings-set`, `settings-remove`, `variable-set` and `variable-remove` — as
+    `settings-set`, `settings-remove`, `variable-set` and `variable-remove`, and since
+    TCRN-CROSS-STORY-541 (MIN-258 D3) `work-gate-release`, `project-bindings-set`,
+    `project-bindings-remove` and `work-release` (for `--force true`) — as
     `minutes:<id>#D<n>`, so `--help` on any of them shows how to cite one.
 
 ### `--timeout-ms` on the writes that take the library write lock
@@ -86,9 +88,16 @@ append-only; removing a flag or verb requires a new catalog version.
 writes an explicit role and coordination identity through the canonical engine
 writer. `project-bindings-set --project-id --key --value` accepts the typed
 `common-default` and `repositories` keys. `project-bindings-remove` explicitly
-removes a project binding without changing unrelated configuration. These configuration changes have the
-same Atelier-only CLI convention as other Owner configuration; the convention
-is not authenticated-human identity.
+removes a project binding without changing unrelated configuration. A project
+binding is changed in Atelier, or by a model's run that cites an Owner decision
+naming the binding's key with `--decided-in minutes:<id>#D<n>` (TCRN-CROSS-STORY-541,
+MIN-258 D3): the decision is checked inside the write lock and recorded in the event,
+as for the other configuration writes; citing none, a model's run is refused with
+`MODEL_WRITE_REFUSED`, its remedy naming both ways. `chain-declare` keeps a hard
+constraint: it takes no `--decided-in`, a model's run is refused with
+`MODEL_WRITE_REFUSED` and the remedy `declare it on the library page in Atelier`,
+and only a run for Atelier writes. The surface convention is not
+authenticated-human identity.
 
 `work-create` and `work-annotate` accept JSON `--involved-projects`; annotation
 also accepts `--expected-revision`. `work-list --involved-project` accepts a
@@ -159,7 +168,10 @@ remove`; `rule-propose` takes `--action enable` (the default, with an optional `
 `disable`. Both require `--actor`, recorded as the proposer. `proposal-approve` and
 `proposal-reject` settle one proposal by its `--key` (`gate:<name>` or `rule:<id>`) and the
 `--proposed-at` the caller read; they run for Atelier only (`MODEL_WRITE_REFUSED`, with
-`details.target` and `details.remedy`, otherwise, and nothing is appended). `rule-propose`,
+`details.target` and `details.remedy`, otherwise, and nothing is appended). A proposal is the
+way for a model that holds no Owner decision; one that holds a decision naming the gate or the
+rule writes the change directly, `gates-config-set`, `gates-config-remove`, `rule-enable` or
+`rule-disable` with `--decided-in minutes:<id>#D<n>`, and proposes nothing. `rule-propose`,
 `proposal-approve` and `proposal-reject` take `--workspace` or `--project` as `rule-list` does;
 given neither, the current directory's registered project answers. `gates-config-list` and
 `rule-list` take `--status declared|pending|rejected`: `declared`, the default, keeps each list as

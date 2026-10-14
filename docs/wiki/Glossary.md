@@ -70,7 +70,7 @@
 | --- | --- | --- |
 | 申领 | `work-claim --id <工单> --actor <行动者> --at <时刻>`，可加 `--ttl <n>m` 或 `--ttl <n>h` | 默认 2h，可设 1m 至 24h；持有者再次申领即续期。他人在这张工单、它的上级或下级持有未到期的租约时，申领回 `WORK_LEASED`。 |
 | 受约束的写入 | `work-transition`、`work-annotate`，以及 `work-batch` 里的这两类成员 | 他人的租约未到期时，对这张工单及其下级的写入回 `WORK_LEASED`，并给出 `holder`、`expiresAt` 与租约所在的 `leasedWorkId`；不带 `--actor` 的写入按他人处理；批量写入整批不写。`work-create`、`work-delete` 不受约束；`work-delete` 在同一次写入里一并移除这张工单自己的租约，租约不会比工单活得更久。 |
-| 释放 | `work-release --id <工单> --actor <行动者> --at <时刻>` | 持有者随时可以释放；已到期的租约不再约束任何人，谁都可以释放；他人的租约未到期时只能在 Atelier 强制释放（`--force true` 只在 `EINZBERN_SURFACE=atelier` 下可用，否则 `MODEL_WRITE_REFUSED`）。Atelier 自己的写入也受租约约束，要先强制释放。 |
+| 释放 | `work-release --id <工单> --actor <行动者> --at <时刻>` | 持有者随时可以释放；已到期的租约不再约束任何人，谁都可以释放；他人的租约未到期时要强制释放（`--force true`）：在 Atelier 里做，或由模型引用点名这张工单（工单 id 或完整外部键）的 Owner 决定运行，加 `--decided-in minutes:<id>#D<n>`（TCRN-CROSS-STORY-541）；两者都不是时报 `MODEL_WRITE_REFUSED`。Atelier 自己的写入也受租约约束，要先强制释放。 |
 | 显示 | `work-show` 的 `lease`、`work-list` 每条的 `lease`、Atelier 工单页 | 工单自己的租约，没有时为 `null`。`active` 按读取时的本机时钟计算，只供阅读；写入是否受约束按写入自己的 `--at` 判断，引擎不读时钟。 |
 
 ## Command Spell 四原则

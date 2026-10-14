@@ -119,8 +119,11 @@ appends included; nothing else writes it.
   unexpired lease on the item, on an item above it or on an item below it; `details` name the
   holder, `expiresAt` and the `leasedWorkId`.
 - The holder releases at any time; another actor needs force while the lease runs (the CLI grants
-  it to Atelier only), and a lease that has run out binds no one, so anyone may clear it. Releasing
-  an item that holds no lease is `WORK_LEASE_NOT_FOUND`.
+  it to Atelier, and to a model's run that cites an Owner decision naming the work item by its id or
+  its external key with `--decided-in minutes:<id>#D<n>`, TCRN-CROSS-STORY-541; the release's
+  `config.record.removed` then records the authorization, as any configuration write does), and a
+  lease that has run out binds no one, so anyone may clear it. Releasing an item that holds no
+  lease is `WORK_LEASE_NOT_FOUND`.
 - A lease does not outlive its item (TCRN-CROSS-STORY-535). Deleting a work item removes its lease
   in the same append: `work-delete`, by any actor and whether or not the lease still runs, writes the
   lease's `config.record.removed` just before `work.deleted`. A delete is not a write a lease

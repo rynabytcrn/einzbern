@@ -1439,7 +1439,15 @@ function configurationOptions(values: Readonly<Record<string, string>>, boundPro
 async function registeredProjectRootForWorkspace(workspace: string, projectId?: string): Promise<string | null> {
   const state = await materializeWorkspace(workspace);
   const entries = (await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId);
-  return entries.length === 1 ? entries[0]!.projectPath : null;
+  if (chainIdentity(state)?.role !== "coordination") return entries.length === 1 ? entries[0]!.projectPath : null;
+  // TCRN-CROSS-STORY-540 GWT2 (TCRN-CROSS-SUB-506): a coordination library's variable sections follow a
+  // write into the one root this device registered for it outside every library (managedOutputBinding),
+  // and into none while it has no such root, so the write stays a library-only operation.
+  const bound: string[] = [];
+  for (const entry of entries) {
+    if (await managedOutputBinding(workspace, entry.projectPath, state).then((binding) => binding === "bound", () => false)) bound.push(entry.projectPath);
+  }
+  return bound.length === 1 ? bound[0]! : null;
 }
 
 async function renderVariableSectionsAfterWrite(workspace: string, projectRoot: string | null, at: string, actor: string | undefined, projectId?: string): Promise<Awaited<ReturnType<typeof materializeWorkspace>>> {

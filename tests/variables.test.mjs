@@ -16,10 +16,11 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { SETTINGS_CATALOG, createProject, scopedWorkspaceState, initializeLibrary, materializeWorkspace, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { SETTINGS_CATALOG, createProject, declareChainIdentity, scopedWorkspaceState, initializeLibrary, materializeWorkspace, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { configRecord, setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { absolutePathLine, managedSectionRecordsFor, parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import {
+  COORDINATION_SYSTEM_VARIABLE_KEYS,
   SYSTEM_VARIABLE_KEYS,
   VARIABLES_CUSTOM_SECTION_ID,
   VARIABLES_SYSTEM_SECTION_ID,
@@ -608,4 +609,84 @@ test("489: a variable-section write whose records went in before the failure (a 
   const again = await write(fx);
   assert.deepEqual([again.written, again.pendingSections], [false, []], "the file and the records agree");
   assert.equal((await materializeWorkspace(fx.library)).version, state.version, "and nothing more is recorded");
+});
+
+// ---- TCRN-CROSS-STORY-540 GWT2, Q4, Q5 (MIN-243 D1; TCRN-CROSS-SUB-506) ----
+
+const COORDINATION_LIMITS = ["execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent"];
+const DESIGN_KEYS = ["design.authority", "design.repository", "design.pullRequestTarget", "design.productionDocs", "design.buildService", "design.buildProject", "design.consumedVersion"];
+
+// The project fixture's library as a coordination library, registered on this device for the project
+// root, the container it coordinates.
+async function coordination(context) {
+  const fx = await project(context);
+  const state = await materializeWorkspace(fx.library);
+  await declareChainIdentity(fx.library, { role: "coordination", coordinationLibraryId: state.metadata.workspaceId }, { occurredAt: at() });
+  await registerLibrary({ projectPath: fx.root, libraryPath: fx.library, registeredAt: at(), gitRemote: null });
+  return fx;
+}
+
+const scoped = async (fx) => scopedWorkspaceState(await materializeWorkspace(fx.library));
+
+test("540-GWT2: a coordination library's system section lists its limits and the design bindings, never models.*", async (context) => {
+  assert.deepEqual(COORDINATION_SYSTEM_VARIABLE_KEYS, [...COORDINATION_LIMITS, ...DESIGN_KEYS]);
+  const fx = await coordination(context);
+  const { body } = renderSystemVariablesSection(await scoped(fx));
+  assert.doesNotMatch(body, /models\./u, "a coordination library has no models.*");
+  assert.doesNotMatch(body, /execution\.dispatchTiers/u);
+  for (const key of COORDINATION_SYSTEM_VARIABLE_KEYS) assert.match(body, new RegExp(`^\\| ${key.replace(/\./gu, "\\.")} \\|`, "mu"), key);
+  assert.ok(body.includes("Written by Einzbern from the coordination library's configuration."));
+  // Each limit at its effective value: the engine's default while the library declares none.
+  for (const [key, value] of [["execution.maxConcurrentSubagents", "8"], ["quota.fiveHourParallelOffPercent", "75"], ["quota.weeklyWaitPercent", "(unset)"]]) {
+    assert.ok(body.includes(`| ${key} | ${value} |`), `${key} reads ${value}`);
+  }
+  assert.ok(body.includes("| design.authority | (unconfigured) | default | false |"));
+});
+
+test("540-GWT2: a coordination library's sections are written into its container and follow a settings or variable change", async (context) => {
+  const fx = await coordination(context);
+  await writeFile(fx.agents, OWNER_TEXT);
+  await setWorkspaceSetting(fx.library, { key: "execution.maxConcurrentSubagents", value: "3", occurredAt: at() });
+  const written = await write(fx);
+  assert.equal(written.written, true);
+  let text = await readFile(fx.agents, "utf8");
+  assert.ok(text.startsWith(OWNER_TEXT));
+  assert.ok(text.includes("| execution.maxConcurrentSubagents | 3 |"));
+  assert.ok(text.includes("| execution.maxConcurrentSubagents | library | false |"), "its provenance is the library's own declaration");
+  for (const id of [VARIABLES_SYSTEM_SECTION_ID, VARIABLES_CUSTOM_SECTION_ID]) {
+    assert.equal(managedSectionRecordsFor(await materializeWorkspace(fx.library), "AGENTS.md").find((record) => record.id === id)?.state, "managed", id);
+  }
+  await setWorkspaceSetting(fx.library, { key: "quota.weeklyWaitPercent", value: "95", occurredAt: at() });
+  await write(fx);
+  text = await readFile(fx.agents, "utf8");
+  assert.ok(text.includes("| quota.weeklyWaitPercent | 95 |"), "the next render takes the change");
+  // A variable written through the CLI renders into the container, from the coordination library.
+  const receipt = await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--name", "release-train", "--type", "string", "--value", "weekly", "--at", at()]));
+  assert.equal(receipt.reasonCode, "VARIABLE_WRITE_COMMITTED");
+  assert.ok((await readFile(fx.agents, "utf8")).includes("| release-train | string | weekly |"));
+});
+
+test("540-Q4: the variable sections follow artifact.language: Chinese for zh-CN, English otherwise", async (context) => {
+  const fx = await coordination(context);
+  await setWorkspaceSetting(fx.library, { key: "artifact.language", value: "zh-CN", occurredAt: at() });
+  await setVariable(fx.library, { name: "owner", type: "string", value: "release-owner", occurredAt: at() });
+  const state = await scoped(fx);
+  const system = renderSystemVariablesSection(state).body;
+  assert.ok(system.startsWith("## 系统变量\n\n由 Einzbern 按协调库的配置写入。"));
+  assert.ok(system.includes("| 设置 | 取值 |"));
+  assert.ok(system.includes("| quota.weeklyWaitPercent | （未设置） |"));
+  assert.ok(system.includes("| design.authority | （未配置） | default | false |"));
+  assert.ok(system.includes("| 系统设置 | 生效来源 | 继承 |"));
+  const custom = renderCustomVariablesSection(state).body;
+  assert.ok(custom.startsWith("## 自定义变量\n\n由 Einzbern 按协调库的配置写入。"));
+  assert.ok(custom.includes("| 名称 | 类型 | 取值 | 说明 |"));
+  // A project library: the same language rule, the project's note, models.* kept.
+  const other = await project(context);
+  await setWorkspaceSetting(other.library, { key: "artifact.language", value: "zh-CN", occurredAt: at() });
+  const projectBody = renderSystemVariablesSection(await scoped(other)).body;
+  assert.ok(projectBody.startsWith("## 系统变量\n\n由 Einzbern 按项目配置写入。"));
+  assert.match(projectBody, /^### models\.category$/mu);
+  assert.ok(projectBody.includes("| 顺序 | 分类 | 运行方 | 模型 | 推理强度 | 备注 |") || projectBody.includes("（无）"));
+  await setWorkspaceSetting(other.library, { key: "artifact.language", value: "fr", occurredAt: at() });
+  assert.ok(renderSystemVariablesSection(await scoped(other)).body.startsWith("## System variables\n\nWritten by Einzbern from the project's configuration."), "any other language is English");
 });

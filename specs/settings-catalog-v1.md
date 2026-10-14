@@ -563,7 +563,13 @@ file and the records. Any other root, or one within a library, is refused
 (`MANAGED_SECTION_OUTPUT_UNREGISTERED`, `MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY`).
 A coordination library this device registered no such root for has none: a
 rule change there records the rule alone, with `outputBindingStatus:
-"unconfigured"` in its receipt. Context readiness is reported
+"unconfigured"` in its receipt. A coordination library's system variable
+section lists `execution.maxConcurrentSubagents`, the four `quota.*` settings
+and the seven `design.*` bindings with their effective values and sources; it
+lists no `models.*`, which a coordination library does not have (MIN-243 D1).
+Both variable sections, for any library, follow `artifact.language`: `zh-CN`
+writes their headings, notes, table headers and placeholders in Chinese, any
+other value or none in English. Context readiness is reported
 separately for design declarations, model configuration, repository/build
 bindings, registered output, language and gates. Publication verification stays
 unverified until separately established. A gate operation requires its own

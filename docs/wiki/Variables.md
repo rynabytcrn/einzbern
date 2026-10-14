@@ -6,6 +6,8 @@
 
 系统变量段 `variables-system` 渲染下面的设置，其他设置永远不会出现在这里：`models.category`、`models.tiers`、`models.escalation.enabled`、`models.escalation.threshold`、`models.escalation.ceiling` 与全部 `design.*` 配套键。它们都只能经 Atelier 修改（见下文「模型写保护」）。
 
+协调库的系统变量段列的是对协调库生效的键（TCRN-CROSS-STORY-540，MIN-243 D1）：`execution.maxConcurrentSubagents`、四个 `quota.*`（`quota.fiveHourParallelOffPercent`、`quota.fiveHourWaitPercent`、`quota.weeklyParallelOffPercent`、`quota.weeklyWaitPercent`）与七个 `design.*`。协调库没有 `models.*`，所以不列；2.x 的设置目录里也没有 `execution.dispatchTiers`。协调库的段写进它在本机注册的容器根的 AGENTS.md，见「受管段与 Command Spell」页的「协调库的受管段」。
+
 分类、宿主与 runner 的名字以小写字母开头，由小写字母、数字、`.`、`_`、`-` 组成，没有产品长度上限。两张表的值都按顺序从小到大完整存成规范 JSON；引用、Unicode、精确整数和密钥保护保持。
 
 ### models.category
@@ -99,6 +101,10 @@
 前三个小节的表格前各有一行说明：分类与档位的那一行说明顺序的含义，升档的那一行说明怎样升档。空的模型或推理强度写作 `(unset)`，空的说明或备注留空。
 
 分类的名字或说明、档位的模型、推理强度或备注，形如密钥或含绝对路径时，这一行照写，但这几格写作 `(withheld)`，并在回执的 `withheld` 里列出原因。分类记作 `models.category.<id>`，档位记作 `models.tiers.<order>`。
+
+协调库的系统变量段只有两个小节：先是 `execution.maxConcurrentSubagents` 与四个 `quota.*`，Setting、Value 两列，库里没有声明的键取引擎的缺省值（`quota.weeklyWaitPercent` 没有缺省值，写作 `(unset)`）；再是与项目相同的 `design` 小节。段末的来源表同样逐键列出生效来源与继承状态。说明行写明本段由 Einzbern 按协调库的配置写入。
+
+两个变量段都跟随库的 `artifact.language`（TCRN-CROSS-STORY-540 Q4）：`zh-CN` 时标题、说明行、表头与 `(unset)`、`(none)`、`(withheld)`、`(unconfigured)` 这类占位都写中文（如「## 系统变量」「（未设置）」）；其他取值或未设置时写英文。设置键名、来源（`library`、`default`）与 `true`/`false` 这类取值两种语言相同。
 
 段里从不写绝对路径。只有三处摘要一致时才替换这一段；你改过的段转为待处理，不会被覆盖。
 

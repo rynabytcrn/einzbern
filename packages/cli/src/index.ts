@@ -81,6 +81,10 @@ import {
   readRecallCards,
   assertDoneGates,
   listGates,
+  approveProposal,
+  listProposals,
+  proposeChange,
+  rejectProposal,
   planGates,
   removeGate,
   runGates,
@@ -188,7 +192,7 @@ import { cp, lstat, mkdir, readdir, realpath, writeFile } from "node:fs/promises
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
+import { assertStrictInstant, canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
 import { isWorkStatus } from "../../protocol/src/index.js";
 import type { JsonValue, PlannedDeliveryKind, WorkRecord, WorkStatus } from "../../protocol/src/index.js";
 // ProjectRecord is a core type, not a protocol one. The protocol package never exported
@@ -1410,6 +1414,33 @@ async function renderVariableSectionsAfterWrite(workspace: string, projectRoot: 
   return materializeWorkspace(workspace);
 }
 
+// TCRN-CROSS-STORY-527 (Q6; TCRN-CROSS-SUB-478): which list gates-config-list and rule-list answer:
+// the declarations (declared, the default), or the proposals that are pending or rejected.
+function listStatus(values: Readonly<Record<string, string>>): "declared" | "pending" | "rejected" {
+  const status = values.status ?? "declared";
+  if (status !== "declared" && status !== "pending" && status !== "rejected") fail("CLI_ARGUMENT_MALFORMED", "status");
+  return status;
+}
+
+// TCRN-CROSS-STORY-527 (TCRN-CROSS-SUB-478): the library a proposal verb writes and the scope it writes
+// in, found as rule-list finds them: --workspace names the library, else --project or the current
+// directory names a registered project and its library. `needRoot` asks for the project's root as well,
+// which a rule's approval writes AGENTS.md in: the --project directory's, or the one this device
+// registered for the library and scope.
+async function proposalPlace(values: Readonly<Record<string, string>>, needRoot: boolean): Promise<{ readonly libraryRoot: string; readonly projectId?: string; readonly projectRoot?: string }> {
+  const project = values.project !== undefined || values.workspace === undefined ? await resolveAgentsProject(values.project ?? process.cwd()) : null;
+  const libraryRoot = values.workspace ?? project!.libraryPath;
+  if (project !== null && await realpath(libraryRoot) !== await realpath(project.libraryPath)) fail("WORKSPACE_INPUT_INVALID", "the project and library bindings conflict");
+  const projectId = configurationOptions(values, project?.projectId).configurationProjectId;
+  let projectRoot = project?.projectRoot;
+  if (needRoot && projectRoot === undefined) {
+    const state = await materializeWorkspace(libraryRoot);
+    const mapped = (await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId);
+    if (mapped.length === 1) projectRoot = mapped[0]!.projectPath;
+  }
+  return { libraryRoot, ...(projectId === undefined ? {} : { projectId }), ...(projectRoot === undefined ? {} : { projectRoot }) };
+}
+
 // TCRN-CROSS-STORY-483 R2: one rule as the rule verbs print it, with its order when its record holds
 // one (TCRN-CROSS-STORY-508 R7).
 function ruleStatusJson(status: RuleStatus): JsonValue {
@@ -1506,7 +1537,13 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R1 to R3: gate declarations (one configuration record per gate), the plan a
   // change and optional Story need, and running it into this device's cache.
-  { name: "gates-config-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-527 (Q6): --status declared (the default) lists the declarations, pending or
+  // rejected the gate proposals in that state.
+  { name: "gates-config-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-527 (MIN-257 D6, Q6; TCRN-CROSS-SUB-478): a model proposes a gate declaration
+  // (--action set, the default, with gates-config-set's flags) or a gate's removal (--action remove);
+  // the proposal waits for Atelier and is not a declaration. A model's run is not refused.
+  { name: "gates-config-propose", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "action", required: false, valueKind: "string" }, { name: "command", required: false, valueKind: "string" }, { name: "root", required: false, valueKind: "string" }, { name: "covers", required: false, valueKind: "list" }, { name: "required", required: false, valueKind: "boolean" }, { name: "enabled", required: false, valueKind: "boolean" }, { name: "release-only", required: false, valueKind: "boolean" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: true, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "gates-config-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "gates-config-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "command", required: false, valueKind: "string" }, { name: "root", required: false, valueKind: "string" }, { name: "covers", required: false, valueKind: "list" }, { name: "required", required: false, valueKind: "boolean" }, { name: "enabled", required: false, valueKind: "boolean" }, { name: "release-only", required: false, valueKind: "boolean" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "gates-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }, { name: "work-id", required: false, valueKind: "list" }, { name: "project-id", required: false, valueKind: "string" }] },
@@ -1564,6 +1601,9 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "project-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "project-update", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-527 (Q6; TCRN-CROSS-SUB-478): Atelier settles a proposal (see rule-propose below).
+  { name: "proposal-approve", availability: "cli", mutates: true, flags: [{ name: "key", required: true, valueKind: "string" }, { name: "proposed-at", required: true, valueKind: "instant" }, { name: "at", required: true, valueKind: "instant" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "proposal-reject", availability: "cli", mutates: true, flags: [{ name: "key", required: true, valueKind: "string" }, { name: "proposed-at", required: true, valueKind: "instant" }, { name: "at", required: true, valueKind: "instant" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "status", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   // TCRN-CROSS-STORY-483 R2 (with agents-render and rule-resolve): the Command Spell rules of the
@@ -1571,7 +1611,13 @@ export const COMMAND_CATALOG = Object.freeze([
   // rule-disable takes out a section the user changed only with --force.
   { name: "rule-disable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "rule-enable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
-  { name: "rule-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "rule-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-527 (MIN-257 D6, Q6; TCRN-CROSS-SUB-478): a model proposes enabling (--action
+  // enable, the default, with an optional --order) or disabling a rule; the proposal waits for Atelier
+  // and enables nothing. proposal-approve and proposal-reject settle a proposal by its key
+  // (gate:<name> or rule:<id>) and the --proposed-at they read, and run for Atelier only
+  // (MODEL_WRITE_REFUSED otherwise). The four take --workspace or --project, as rule-list does.
+  { name: "rule-propose", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "action", required: false, valueKind: "string" }, { name: "order", required: false, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-478 R3 (STORY-483 R2 reuses it): settle a managed section the user changed:
   // overwrite, keep or unmanage; --force overwrites a section the user kept.
   { name: "rule-resolve", availability: "cli", mutates: true, flags: [{ name: "section", required: true, valueKind: "string" }, { name: "action", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
@@ -1800,6 +1846,11 @@ const REGISTRY_RESOLVED_VERBS: ReadonlyMap<string, readonly string[]> = new Map(
     .filter((flag: { readonly name: string; readonly required: boolean }) => flag.required && flag.name !== "workspace")
     .map((flag: { readonly name: string }) => flag.name)]));
 
+// The verbs that take --project or --workspace and, given neither, resolve the project from the current
+// directory (rule-list; TCRN-CROSS-STORY-527's rule-propose, proposal-approve and proposal-reject): the
+// registry does not put a --workspace in front of a --project.
+const PROJECT_OR_LIBRARY_VERBS: ReadonlySet<string> = new Set(["proposal-approve", "proposal-reject", "rule-list", "rule-propose"]);
+
 function hasFlag(arguments_: readonly string[], name: string): boolean {
   return arguments_.some((argument) => argument === `--${name}` || argument.startsWith(`--${name}=`));
 }
@@ -1993,7 +2044,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // whose hint then offers --workspace, since every verb here takes it (TCRN-CROSS-SUB-427).
   // A verb missing another required flag is left to report CLI_ARGUMENT_MISSING first.
   const otherRequired = REGISTRY_RESOLVED_VERBS.get(command);
-  if (command !== "rule-list" && otherRequired !== undefined && !rest.includes("--help") && !rest.includes("-h") && !hasFlag(rest, "workspace") &&
+  if (!PROJECT_OR_LIBRARY_VERBS.has(command) && otherRequired !== undefined && !rest.includes("--help") && !rest.includes("-h") && !hasFlag(rest, "workspace") &&
     otherRequired.every((name) => hasFlag(rest, name))) {
     rest = ["--workspace", (await resolveLibrary(process.cwd(), undefined, { workspaceFlag: true })).libraryPath, ...rest];
   }
@@ -2208,12 +2259,20 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): both writes run for Atelier only; a model's run is
   // refused with MODEL_WRITE_REFUSED once its arguments parse, before the project is resolved.
   if (command === "rule-list") {
-    const values = parseArguments(rest, ["project", "workspace", "project-id"]);
+    const values = parseArguments(rest, ["project", "workspace", "project-id", "status"]);
+    const status = listStatus(values);
     const project = values.project !== undefined || values.workspace === undefined ? await resolveAgentsProject(values.project ?? process.cwd()) : null;
     const libraryRoot = values.workspace ?? project!.libraryPath;
     if (project !== null && await realpath(libraryRoot) !== await realpath(project.libraryPath)) fail("WORKSPACE_INPUT_INVALID", "rule-list project and library bindings conflict");
     const projectId = configurationOptions(values, project?.projectId).configurationProjectId;
-    const state = await effectiveProjectState(await materializeWorkspace(libraryRoot), projectId);
+    const native = await materializeWorkspace(libraryRoot);
+    const state = await effectiveProjectState(native, projectId);
+    // TCRN-CROSS-STORY-527 (Q6; TCRN-CROSS-SUB-478): --status pending or rejected lists the rule
+    // proposals in that state, in the project's scope, instead of the rules.
+    if (status !== "declared") {
+      io.write(canonicalJson(paginate(state, "proposal", listProposals(native, { ...(projectId === undefined ? {} : { projectId }), kind: "rule", status }), values)));
+      return;
+    }
     const mapped = (await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId);
     const projectRoot = projectId === undefined ? undefined : project?.projectRoot ?? (mapped.length === 1 ? mapped[0]!.projectPath : undefined);
     const rules = await namingSection(() => listRules({ libraryRoot, ...(projectRoot === undefined ? {} : { projectRoot }), ...(projectId === undefined ? {} : { configurationProjectId: projectId }) }));
@@ -2262,6 +2321,27 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...await writeAuthorization(permit, project.libraryPath),
     })));
     writeRuleChange(io, project, change);
+    return;
+  }
+  // TCRN-CROSS-STORY-527 (MIN-257 D6, Q6; TCRN-CROSS-SUB-478): where a model may not enable or disable
+  // a rule, it proposes the change: --action enable (the default, with an optional --order) or
+  // disable. The proposal enables nothing and writes no file until Atelier approves it (rule-list
+  // --status pending lists it). A model's run is not refused.
+  if (command === "rule-propose") {
+    const values = parseArguments(rest, ["project-id", "workspace", "project", "id", "action", "order", "at", "actor"]);
+    required(values, ["id", "at", "actor"]);
+    const at = values.at ?? "";
+    const action = values.action ?? "enable";
+    if (action !== "enable" && action !== "disable") fail("CLI_ARGUMENT_MALFORMED", "action");
+    const order = boundedInteger(values, "order");
+    if (order !== undefined && action !== "enable") fail("CLI_ARGUMENT_MALFORMED", "order");
+    const place = await proposalPlace(values, false);
+    const written = await withWriteLock(place.libraryRoot, at, () => proposeChange(place.libraryRoot, {
+      occurredAt: at, ...(place.projectId === undefined ? {} : { configurationProjectId: place.projectId }),
+      kind: "rule", target: values.id ?? "", action, payload: order === undefined ? {} : { order },
+      proposedBy: values.actor ?? "", actorId: values.actor ?? "",
+    }));
+    writeState(io, written.state, undefined, undefined, { proposal: written.proposal });
     return;
   }
   if (command === "library-resolve") {
@@ -3786,11 +3866,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-485 R1 (MIN-227 D4; TCRN-CROSS-SUB-345): the gates a library declares, one
   // configuration record each, keyed by name: what runs (an argv), in which directory of the project,
   // which paths under it it covers, and whether it is required, enabled and release-only.
+  // TCRN-CROSS-STORY-527 (Q6; TCRN-CROSS-SUB-478): --status pending or rejected lists the gate
+  // proposals in that state, in the --project-id scope, instead of the declarations.
   if (command === "gates-config-list") {
-    const values = parseArguments(rest, ["project-id", "workspace"]);
+    const values = parseArguments(rest, ["project-id", "workspace", "status"]);
     required(values, ["workspace"]);
-    const state = await effectiveProjectState(await validateWorkspace(values.workspace ?? ""), values["project-id"]);
-    io.write(canonicalJson(paginate(state, "gate", listGates(state), values)));
+    const status = listStatus(values);
+    const native = await validateWorkspace(values.workspace ?? "");
+    const state = await effectiveProjectState(native, values["project-id"]);
+    io.write(canonicalJson(status === "declared"
+      ? paginate(state, "gate", listGates(state), values)
+      : paginate(state, "proposal", listProposals(native, { ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), kind: "gate", status }), values)));
     return;
   }
   // Declaring a gate that exists keeps whatever the flags leave out; a new gate runs in the project
@@ -3847,6 +3933,96 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...await writeAuthorization(permit, workspace),
     }));
     writeState(io, state, undefined, undefined, { removed: values.name ?? "" });
+    return;
+  }
+  // TCRN-CROSS-STORY-527 (MIN-257 D6, Q6; TCRN-CROSS-SUB-478): where a model may not declare or remove a
+  // gate, it proposes the change. --action set (the default) takes gates-config-set's flags, a gate
+  // that exists keeping whatever they leave out, and records the whole declaration; --action remove
+  // takes none of them. The proposal waits for Atelier: gates-config-list, gates-plan and gates-run do
+  // not see it, and gates-config-list --status pending lists it. A model's run is not refused.
+  if (command === "gates-config-propose") {
+    const values = parseArguments(rest, ["project-id", ...shared, "name", "action", "command", "root", "covers", "required", "enabled", "release-only", "order", "actor"]);
+    required(values, [...requiredShared, "name", "actor"]);
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const name = values.name ?? "";
+    const action = values.action ?? "set";
+    if (action !== "set" && action !== "remove") fail("CLI_ARGUMENT_MALFORMED", "action");
+    if (action === "remove" && ["command", "root", "covers", "required", "enabled", "release-only", "order"].some((flag) => values[flag] !== undefined)) {
+      fail("CLI_ARGUMENT_MALFORMED", "a gate's removal takes no declaration flags");
+    }
+    const commandValue = values.command === undefined ? undefined : gateCommandValue(values.command);
+    const requiredValue = optionalBoolean(values.required, "required");
+    const enabledValue = optionalBoolean(values.enabled, "enabled");
+    const releaseOnlyValue = optionalBoolean(values["release-only"], "release-only");
+    const orderValue = boundedInteger(values, "order");
+    const written = await withWriteLock(workspace, at, async () => {
+      let payload: Readonly<Record<string, JsonValue>> = {};
+      if (action === "set") {
+        const existing = listGates(scopedWorkspaceState(await materializeWorkspace(workspace), values["project-id"])).find((gate) => gate.name === name);
+        if (commandValue === undefined && existing === undefined) fail("CLI_ARGUMENT_MISSING", "command");
+        const order = orderValue ?? existing?.order;
+        payload = {
+          // A command that is not an argv is refused by the declaration's check (GATES_CONFIG_INVALID).
+          command: (commandValue ?? existing?.command) as JsonValue,
+          root: values.root ?? existing?.root ?? ".",
+          covers: values.covers === undefined ? [...(existing?.covers ?? ["**"])] : [...listValue(values.covers)],
+          required: requiredValue ?? existing?.required ?? true,
+          enabled: enabledValue ?? existing?.enabled ?? true,
+          releaseOnly: releaseOnlyValue ?? existing?.releaseOnly ?? false,
+          ...(order === undefined ? {} : { order }),
+        };
+      }
+      return proposeChange(workspace, { occurredAt: at, ...configurationOptions(values), kind: "gate", target: name, action, payload, proposedBy: values.actor ?? "", actorId: values.actor ?? "" });
+    });
+    writeState(io, written.state, undefined, undefined, { proposal: written.proposal });
+    return;
+  }
+  // TCRN-CROSS-STORY-527 (MIN-257 D6, Q6; TCRN-CROSS-SUB-478): Atelier settles a proposal. Both run for
+  // Atelier only, as work-gate-release does: without EINZBERN_SURFACE=atelier they are refused with
+  // MODEL_WRITE_REFUSED before the library is opened. --proposed-at is the instant Atelier read; a
+  // proposal recorded since is PROPOSAL_STALE. proposal-approve writes the change the proposal names
+  // and removes it in one append, recorded with surface atelier and decidedIn
+  // proposal:<key>@<proposed-at> (Q5); a rule's approval also writes AGENTS.md, in the project
+  // --project names (or the one this device registered for the scope). proposal-reject keeps the
+  // proposal, rejected, recorded with surface atelier.
+  if (command === "proposal-approve" || command === "proposal-reject") {
+    const approve = command === "proposal-approve";
+    const values = parseArguments(rest, ["project-id", "workspace", "project", "key", "proposed-at", "at", "actor"]);
+    required(values, ["key", "proposed-at", "at", "actor"]);
+    const key = values.key ?? "";
+    if (process.env[SURFACE_ENVIRONMENT_VARIABLE] !== ATELIER_SURFACE) {
+      throw new WorkflowCliError("MODEL_WRITE_REFUSED", `the proposal ${key} is ${approve ? "approved" : "rejected"} in Atelier; a model does not settle it through the CLI`, {
+        target: key,
+        remedy: MODEL_WRITE_REMEDY,
+      });
+    }
+    const proposedAt = values["proposed-at"] ?? "";
+    try {
+      assertStrictInstant(proposedAt);
+    } catch {
+      fail("CLI_ARGUMENT_MALFORMED", "proposed-at");
+    }
+    const at = values.at ?? "";
+    const actor = values.actor ?? "";
+    const place = await proposalPlace(values, approve && key.startsWith("rule:"));
+    const scope = place.projectId === undefined ? {} : { configurationProjectId: place.projectId };
+    if (approve) {
+      const approval = await namingSection(() => withWriteLock(place.libraryRoot, at, () => approveProposal({
+        libraryRoot: place.libraryRoot, key, proposedAt, occurredAt: at, actorId: actor, ...scope,
+        ...(place.projectRoot === undefined ? {} : { projectRoot: place.projectRoot }),
+      })));
+      const change = approval.ruleChange;
+      writeState(io, approval.state, undefined, undefined, {
+        approved: approval.proposal,
+        ...(change === null ? {} : { rule: ruleStatusJson(change.status), written: change.written, backupPath: change.backupPath }),
+      });
+      return;
+    }
+    const rejection = await withWriteLock(place.libraryRoot, at, () => rejectProposal(place.libraryRoot, {
+      key, proposedAt, rejectedBy: actor, actorId: actor, occurredAt: at, ...scope, authorization: { surface: "atelier" },
+    }));
+    writeState(io, rejection.state, undefined, undefined, { proposal: rejection.proposal });
     return;
   }
   // TCRN-CROSS-STORY-485 R2 (MIN-235 D8): the gates a change and optional Story need. Non-release

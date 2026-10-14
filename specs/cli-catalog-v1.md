@@ -132,3 +132,20 @@ holds that project, an entry registered for the library with no project, as
 setup and migration write it, answers for any project the library holds and has
 not deleted: the only such entry, or the one `--project` names. A project chain
 still needs an entry for the stable project, or the root is `GATES_PROJECT_UNKNOWN`.
+
+## Proposal commands
+
+TCRN-CROSS-STORY-527 (MIN-257 D6, Q6): `gates-config-propose` and `rule-propose` record a change
+to a gate declaration or to a Command Spell rule as a pending proposal (config-records-v1,
+Proposals) instead of writing it, and a model's run is not refused. `gates-config-propose` takes
+`gates-config-set`'s flags with `--action set` (the default) and none of them with `--action
+remove`; `rule-propose` takes `--action enable` (the default, with an optional `--order`) or
+`disable`. Both require `--actor`, recorded as the proposer. `proposal-approve` and
+`proposal-reject` settle one proposal by its `--key` (`gate:<name>` or `rule:<id>`) and the
+`--proposed-at` the caller read; they run for Atelier only (`MODEL_WRITE_REFUSED`, with
+`details.target` and `details.remedy`, otherwise, and nothing is appended). `rule-propose`,
+`proposal-approve` and `proposal-reject` take `--workspace` or `--project` as `rule-list` does;
+given neither, the current directory's registered project answers. `gates-config-list` and
+`rule-list` take `--status declared|pending|rejected`: `declared`, the default, keeps each list as
+it was; `pending` and `rejected` answer `WORKSPACE_LIST_READY` with `kind` `proposal` and the
+proposals of that kind and status in the scope.

@@ -66,3 +66,16 @@ test("526 GWT5: --help on the eight writes names decided-in and its written form
     assert.deepEqual([flag.required, flag.valueKind, flag.valueShape], [false, "string", "minutes:<id>#D<n>"], name);
   }
 });
+
+// TCRN-CROSS-STORY-527 (Q6; TCRN-CROSS-SUB-478): --help on the four proposal verbs answers their own
+// flags, and on the two lists names --status.
+test("527 Q6: --help on the proposal verbs answers their flags, and the two lists take --status", async () => {
+  for (const name of ["gates-config-propose", "rule-propose", "proposal-approve", "proposal-reject", "gates-config-list", "rule-list"]) {
+    const result = await capture([name, "--help"]);
+    assert.equal(result.ok, true, `${name} --help must not refuse: ${result.reasonCode ?? ""}`);
+    const entry = JSON.parse(result.output).commands[0];
+    assert.equal(entry.name, name);
+    if (name.endsWith("-list")) assert.ok(entry.flags.some((flag) => flag.name === "status"), name);
+    else assert.ok(entry.flags.some((flag) => flag.name === "actor" && flag.required), name);
+  }
+});

@@ -30,6 +30,22 @@ gates-config-remove --name <门名> --at <时刻>
 
 模型也可以引用 Owner 的决定来声明或删除门（TCRN-CROSS-STORY-526）：给这两条命令加 `--decided-in minutes:<id>#D<n>`，`<id>` 是纪要 id（`minutes-show` 读得到；`TCRN-CROSS-MIN-256#D8` 这类外部键号写法不认，报 `malformed`），`<n>` 是决定序号。引擎在写锁内核对这条决定，四条都满足才写入：纪要能找到（先在本库找，本库没有时按本库链身份里的协调库 id，到本设备注册表登记的协调库里只读查找）；这份纪要的 `decidedBy` 含 `owner:governance`；这条决定仍有效（被取代或撤回的不算）；决定正文写出了这道门的门名，前后不紧接字母、数字或 `._:-`，或者写出 `<前缀>.*` 而门名以 `<前缀>.` 开头。核对通过时照常写入，写入的每条事件另记 `decidedIn`（完整的决定编号）、`decidedInLibraryId`（纪要所在库的 id）与 `surface: cli`；核对不通过报 `MODEL_WRITE_AUTHORIZATION_INVALID`，错误带 `decidedIn`、`target` 与 `reason`（`malformed`、`not-found`、`not-owner-decided`、`obsolete`、`target-not-named`，也写在错误文本里），库里不追加任何事件。Atelier 的写入记 `surface: atelier`。引用只让写入可追溯到一条决定，不证明 Owner 真的做了这个决定：模型自己记一份 `decidedBy` 写着 `owner:governance` 的纪要再引用它，同样能通过。
 
+## 提交待批准
+
+模型不能直接声明或删除门（上一节），但可以提交一条待批准的改动，由人在 Atelier 的门页里批准或拒绝（TCRN-CROSS-STORY-527）：
+
+```text
+gates-config-propose --name <门名> [--action set|remove] [--command '<JSON argv>'] [--root <目录>] [--covers <glob-or-work-id,...>] [--required true|false] [--enabled true|false] [--release-only true|false] [--order <正整数>] --actor <行动者> --at <时刻>
+gates-config-list --status pending|rejected
+proposal-approve --key gate:<门名> --proposed-at <提交时刻> --actor <行动者> --at <时刻>
+proposal-reject --key gate:<门名> --proposed-at <提交时刻> --actor <行动者> --at <时刻>
+```
+
+- `--action set`（缺省）带 `gates-config-set` 的旗标，已有的门保留没有给出的值，记下整条声明；`--action remove` 不带声明旗标，只能对已声明的门提出，否则报 `CONFIG_RECORD_NOT_FOUND`。模型运行不被拒绝，`--actor` 记为提出者。
+- 待批准项记在库的 `proposal` 集合里，键为 `gate:<门名>`。它不是门声明：`gates-config-list` 缺省只列声明，`gates-plan`（包括 `--release`）与 `gates-run` 不会选中它。`gates-config-list --status pending` 或 `--status rejected` 列出对应状态的待批准项。同一道门再次提出时替换原来的待批准项，被拒绝的也一样。
+- 批准与拒绝只在 Atelier 运行（`EINZBERN_SURFACE=atelier`），否则报 `MODEL_WRITE_REFUSED`，什么也不追加。批准在同一次追加里写入与 `gates-config-set` 或 `gates-config-remove` 相同的事件，并移除待批准项；这些事件记 `surface: atelier`、`decidedIn: proposal:gate:<门名>@<提交时刻>` 与本库的 `decidedInLibraryId`。
+- 拒绝把待批准项改为 `rejected`，记下拒绝者与时刻，仍可读；被拒绝的项要重新提出才能批准，否则报 `PROPOSAL_NOT_PENDING`。`--proposed-at` 与库里记的提交时刻不一致（其间有人重新提出过）时报 `PROPOSAL_STALE`，details 的 `required` 是库里的时刻，`actual` 是给出的时刻。
+
 ## gates-plan：这次改动要跑哪几道门
 
 ```text

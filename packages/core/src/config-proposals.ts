@@ -31,9 +31,16 @@
 //
 // A pending proposal is not a declaration: listGates, listRules, gates-plan, gates-run and the managed
 // sections read the gate and rule collections only, and config/project.json does not show proposals.
+//
+// TCRN-CROSS-STORY-538 (MIN-256 D6 C2, C3; TCRN-CROSS-SUB-497): proposing, rejecting and approving
+// hold the library write lock for their append alone (appendEvents). What they read and check -- the
+// key, the instants, the target the proposal names, the proposal an approval or a rejection settles
+// -- is read and checked outside the lock, so a refusal waits for no other writer, and checked again
+// by the deltas against the state the append is built on, so a proposal another writer settled or
+// proposed again in between is refused with the same reason codes and nothing is appended.
 
 import type { JsonValue } from "../../protocol/src/index.js";
-import { assertStrictInstant } from "../../protocol/src/index.js";
+import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
 import { assertActorId, proposalDecision } from "./actor-attestation.js";
 import type { WriteAuthorization } from "./actor-attestation.js";
 import { chainIdentity } from "./chain-identity.js";
@@ -44,7 +51,7 @@ import { RuleError, disableRule, enableRule, isRuleId } from "./rules.js";
 import type { RuleChange } from "./rules.js";
 import { BUILT_IN_RULES } from "./rules-catalog.js";
 import type { BuiltInRule } from "./rules-catalog.js";
-import { appendEvents, materializeWorkspace, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
+import { appendEvents, assertLibraryWritable, materializeWorkspace, projectConfiguration } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 
 export const PROPOSAL_COLLECTION = "proposal" as const;
@@ -311,6 +318,20 @@ function settleDelta(input: ProposalSettleInput): (state: WorkspaceState) => Mut
   };
 }
 
+// TCRN-CROSS-SUB-497: the settlement of a rule's approval. AGENTS.md is written from the proposal the
+// approval read, before the append and outside the lock, so the append settles that proposal only: one
+// proposed again since at the very same instant, with another change, is PROPOSAL_STALE as well.
+function settleReadDelta(input: ProposalSettleInput, read: Proposal): (state: WorkspaceState) => MutationDelta {
+  const settle = settleDelta(input);
+  return (state) => {
+    const recorded = pendingProposal(state, input.key, input.projectId, input.proposedAt);
+    if (canonicalJson(recorded) !== canonicalJson(read)) {
+      fail("PROPOSAL_STALE", `the proposal ${input.key} was proposed again since it was read; read it again before settling it`, { target: input.key, required: recorded.proposedAt, actual: input.proposedAt });
+    }
+    return settle(state);
+  };
+}
+
 /**
  * The deltas that approve one pending proposal of a gate: the gate's declaration or removal, exactly
  * the config.record event gates-config-set or gates-config-remove appends, with the approval's
@@ -339,23 +360,25 @@ export interface ProposalWrite {
 
 /**
  * Record a pending proposal in a library, as this machine's only writer of it. Proposals are not
- * projected, so neither this nor a rejection rewrites config/project.json.
+ * projected, so neither this nor a rejection rewrites config/project.json. TCRN-CROSS-SUB-497: the
+ * proposal is checked, and the delta built against the merged state, outside the library write lock;
+ * only the append takes it.
  */
 export async function proposeChange(libraryRoot: string, input: Omit<ProposeDeltaInput, "proposedAt" | "projectId"> & WorkspaceMutationOptions): Promise<ProposalWrite> {
   const delta = proposeDelta({ ...input, proposedAt: input.occurredAt, ...scopeOf(input.configurationProjectId) });
-  return withWorkspaceWriteLock(libraryRoot, async (root) => {
-    const committed = await appendEvents(root, [delta], input);
-    return { proposal: recordedProposal(committed, proposalKey(input.kind, input.target), input.configurationProjectId)!, state: committed };
-  });
+  const committed = await appendEvents(libraryRoot, [delta], input);
+  return { proposal: recordedProposal(committed, proposalKey(input.kind, input.target), input.configurationProjectId)!, state: committed };
 }
 
-/** Reject one pending proposal in a library; the rejection is recorded with `authorization`. */
+/**
+ * Reject one pending proposal in a library; the rejection is recorded with `authorization`.
+ * TCRN-CROSS-SUB-497: the proposal is read and judged outside the library write lock, and judged
+ * again by the delta against the state the append is built on; only the append takes the lock.
+ */
 export async function rejectProposal(libraryRoot: string, input: { readonly key: string; readonly proposedAt: string; readonly rejectedBy: string } & WorkspaceMutationOptions): Promise<ProposalWrite> {
   const delta = rejectDelta({ key: input.key, proposedAt: input.proposedAt, ...scopeOf(input.configurationProjectId), rejectedBy: input.rejectedBy, rejectedAt: input.occurredAt, ...(input.authorization === undefined ? {} : { authorization: input.authorization }) });
-  return withWorkspaceWriteLock(libraryRoot, async (root) => {
-    const committed = await appendEvents(root, [delta], input);
-    return { proposal: recordedProposal(committed, input.key, input.configurationProjectId)!, state: committed };
-  });
+  const committed = await appendEvents(libraryRoot, [delta], input);
+  return { proposal: recordedProposal(committed, input.key, input.configurationProjectId)!, state: committed };
 }
 
 export interface ProposalApprovalInput extends WorkspaceMutationOptions {
@@ -382,6 +405,15 @@ export interface ProposalApproval {
  * proposal:<key>@<proposedAt> in this library (Q5). A rule's change goes through enableRule or
  * disableRule, which write AGENTS.md first and put it back when the append fails, so the file, the
  * records and the settlement change together or not at all (Q24).
+ *
+ * TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-497): no lock is held while the proposal is read and checked;
+ * a refusal (not recorded, not pending, stale, no project named) waits for no other writer. The
+ * approval's conditions are judged again where the append builds its events, against the state it
+ * is built on: still recorded, still pending, proposed at `proposedAt` (and, for a rule, the very
+ * proposal read). An approval another writer settled first, or a proposal recorded again since, is
+ * refused there with the same reason codes and nothing is appended. A gate's declaration, the
+ * settlement and config/project.json are written under one hold of the lock (appendEvents); a rule's
+ * records and settlement are one append of enableRule or disableRule.
  */
 export async function approveProposal(input: ProposalApprovalInput): Promise<ProposalApproval> {
   const named = proposalTargetOf(input.key) ?? fail("PROPOSAL_INVALID", `${input.key} is not gate:<gate name> or rule:<rule id>`, { target: input.key });
@@ -394,33 +426,44 @@ export async function approveProposal(input: ProposalApprovalInput): Promise<Pro
     ...(input.viewBudgetBytes === undefined ? {} : { viewBudgetBytes: input.viewBudgetBytes }),
   };
   const settle: ProposalSettleInput = { key: input.key, proposedAt: input.proposedAt, ...scopeOf(projectId) };
-  return withWorkspaceWriteLock(input.libraryRoot, async (root) => {
-    const native = await materializeWorkspace(root);
-    // Checked before a file is written; the settlement checks it again inside the append.
-    const proposal = pendingProposal(native, input.key, projectId, input.proposedAt);
-    if (named.kind === "gate") {
-      const committed = await appendEvents(root, approveDeltas(settle), options);
-      await projectConfiguration(root, committed);
-      return { proposal, state: committed, ruleChange: null };
-    }
-    if (input.projectRoot === undefined && chainIdentity(native)?.role !== "coordination") {
-      fail("PROPOSAL_INVALID", `approving ${input.key} writes the project's AGENTS.md: name the project`, { target: input.key, field: "projectRoot" });
-    }
-    const change = {
-      ...options,
-      libraryRoot: root,
-      projectRoot: input.projectRoot ?? root,
-      id: named.target,
-      ...(projectId === undefined ? {} : { configurationProjectId: projectId }),
-      authorization: approvalAuthorization(native, input.key, input.proposedAt),
-      alongside: [settleDelta(settle)],
-      ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }),
-      ...(input.catalog === undefined ? {} : { catalog: input.catalog }),
-    };
-    const order = proposal.payload.order;
-    const ruleChange = proposal.action === "enable"
-      ? await enableRule({ ...change, ...(typeof order === "number" ? { order } : {}) })
-      : await disableRule(change);
-    return { proposal, state: ruleChange.state, ruleChange };
-  });
+  // A library the append would refuse (an old layout, or one moved away) is refused before it is read,
+  // as when the whole approval held the lock.
+  await assertLibraryWritable(input.libraryRoot);
+  const native = await materializeWorkspace(input.libraryRoot);
+  const root = native.library?.libraryRoot ?? input.libraryRoot;
+  // Checked before a file is written; the append checks it again.
+  const proposal = pendingProposal(native, input.key, projectId, input.proposedAt);
+  if (named.kind === "gate") {
+    const [declare, settlement] = approveDeltas(settle) as readonly [(state: WorkspaceState) => MutationDelta, (state: WorkspaceState) => MutationDelta];
+    // The proposal the append approved, which the receipt shows.
+    let approved = proposal;
+    const committed = await appendEvents(root, [
+      (state) => {
+        approved = pendingProposal(state, input.key, projectId, input.proposedAt);
+        return declare(state);
+      },
+      settlement,
+    ], options, (libraryRoot, state) => projectConfiguration(libraryRoot, state));
+    return { proposal: approved, state: committed, ruleChange: null };
+  }
+  if (input.projectRoot === undefined && chainIdentity(native)?.role !== "coordination") {
+    fail("PROPOSAL_INVALID", `approving ${input.key} writes the project's AGENTS.md: name the project`, { target: input.key, field: "projectRoot" });
+  }
+  const change = {
+    ...options,
+    libraryRoot: root,
+    projectRoot: input.projectRoot ?? root,
+    id: named.target,
+    ...(projectId === undefined ? {} : { configurationProjectId: projectId }),
+    // The library's id, which the state the append is built on holds as well.
+    authorization: approvalAuthorization(native, input.key, input.proposedAt),
+    alongside: [settleReadDelta(settle, proposal)],
+    ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }),
+    ...(input.catalog === undefined ? {} : { catalog: input.catalog }),
+  };
+  const order = proposal.payload.order;
+  const ruleChange = proposal.action === "enable"
+    ? await enableRule({ ...change, ...(typeof order === "number" ? { order } : {}) })
+    : await disableRule(change);
+  return { proposal, state: ruleChange.state, ruleChange };
 }

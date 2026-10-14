@@ -82,6 +82,15 @@ the complete native state. `configRecords(state, collection)` and `configRecord(
 key)` read them. The device cache's replay snapshot keeps them; a snapshot written without them
 is not used as a seed.
 
+`recover` rebuilds this device's cache of a library: it drops the cache, replays every stream from
+genesis and writes the views and a snapshot of the result, strictly and by force. Unlike the writes
+that append, it holds the library write lock for its whole run (TCRN-CROSS-STORY-538): it appends
+nothing, and held from the drop to the forced write the lock keeps every write on this machine from
+committing in between, so the cache it leaves and the state it reports are of one head, the library
+as it stands when it returns. Narrowed like an append, it would replay from genesis again whenever
+a write landed during its replay, and on a busy library fall back to holding the lock for a replay
+anyway.
+
 ## Writes
 
 `setConfigRecord` and `removeConfigRecord` check their input before any lock is taken, then run
@@ -133,8 +142,22 @@ appends included; nothing else writes it.
   refuses the delete with `WORK_LEASED`, whoever asks; `details` name the `workId`, the `holder`
   and `expiresAt` (with `leasedWorkId` and `projectId`), and nothing is written. The project's
   other refusals are as they were.
+- Both deletes hold the library write lock for their append alone (TCRN-CROSS-STORY-538): they
+  read and check outside it, so a refusal does not wait for another writer, and judge the leases
+  again where the append builds its events, against the state it is built on, from which the
+  lease removals are planned. A lease released or cleared in between is not removed. `work-delete`
+  removes the lease the item held when the delete read it, and one that has run out by its `--at`;
+  a lease claimed on the item since the read, or claimed again over the one read, that still runs
+  at `--at` refuses the delete with `WORK_LEASED`, whoever asks, with the details a claim's refusal
+  has, and nothing is written. `project-delete` judges the project's leases at the append as above,
+  so one claimed since its read on a live item refuses it with `WORK_LEASED`.
 - Whether a lease runs is judged against the instant of the write (`--at`); the engine reads no
   clock. A display may judge it against the reader's present instant, for reading only.
+- A lease check made before a write (TCRN-CROSS-STORY-536) -- `work-transition` to `done`, before
+  the Story's gates are judged, and the transition and annotation members of a `work-batch` --
+  judges leases only at an `--at` the write takes. An `--at` that is not a strict instant skips the
+  check, and the write itself refuses it with `TIMESTAMP_INVALID`, as in a library that holds no
+  lease (a Story going to `done` with no green run is refused by its gates first).
 - Leases are not projected: `config/project.json` and `configProjectionStatus` leave the
   collection out, so a claim or a release writes no projection and a library without leases
   projects exactly as before.
@@ -173,6 +196,12 @@ or to a Command Spell rule that a model proposes and Atelier approves or rejects
   `PROPOSAL_NOT_FOUND`; a rejected proposal is `PROPOSAL_NOT_PENDING` until it is proposed again; a
   proposal recorded since at another instant is `PROPOSAL_STALE` (`details.required` the recorded
   instant, `details.actual` the one named). A refusal appends nothing.
+- Proposing, rejecting and approving hold the library write lock for their append alone
+  (TCRN-CROSS-STORY-538): the proposal is read and checked before the lock is taken, so a refusal
+  does not wait for another writer, and checked again against the state the append is built on, so
+  a proposal another writer settled or proposed again in between is refused there with the codes
+  above. A rule's approval writes AGENTS.md from the proposal it read, so one proposed again since
+  at the same instant with another change is `PROPOSAL_STALE` too, and AGENTS.md is put back.
 - A proposal is not a declaration: gates, rules, plans, runs and managed sections read the `gate`
   and `rule` collections only. Proposals are not projected: `config/project.json` and
   `configProjectionStatus` leave the collection out, and a proposal or a rejection writes no

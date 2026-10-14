@@ -17,6 +17,7 @@ import { ProtocolError, canonicalByteLength, canonicalJson, compareCanonicalText
 import type { JsonValue } from "../../protocol/src/index.js";
 import { buildEventPayload, writeAuthorizationExtras } from "./actor-attestation.js";
 import type { WriteAuthorization } from "./actor-attestation.js";
+import { checkProposalRecordValue } from "./config-proposals.js";
 import { checkGateRecordValue } from "./gates-config.js";
 import { checkManagedSectionRecordValue } from "./managed-sections.js";
 import { checkRuleRecordValue } from "./rules.js";
@@ -55,7 +56,7 @@ function fail(reasonCode: ConfigRecordReasonCode, message: string, details?: Rea
   throw new ConfigRecordError(reasonCode, message, details);
 }
 
-export type ConfigRecordCollection = "gate" | "managed-section" | "rule" | "variable" | "chain" | "lease";
+export type ConfigRecordCollection = "gate" | "managed-section" | "rule" | "variable" | "chain" | "lease" | "proposal";
 export type ConfigRecordValue = Readonly<Record<string, JsonValue>>;
 
 /** The check a collection adds on top of the shape every record meets. It throws to refuse. */
@@ -91,6 +92,11 @@ const CONFIG_RECORD_VALUE_CHECKS: Readonly<Record<ConfigRecordCollection, Config
   // item's id and scoped to the item's project (SUB-456, work-lease.ts). config/project.json does
   // not show it.
   lease: checkLeaseRecordValue,
+
+  // TCRN-CROSS-STORY-527 (MIN-257 D6, Q5; TCRN-CROSS-SUB-477): a change to a gate or a rule that waits
+  // for Atelier, {kind, action, payload, status, proposedBy, proposedAt, rejectedBy?, rejectedAt?},
+  // keyed gate:<name> or rule:<id> (config-proposals.ts). config/project.json does not show it.
+  proposal: checkProposalRecordValue,
 });
 
 /** The collections of the closed table, sorted. */

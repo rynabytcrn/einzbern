@@ -33,6 +33,12 @@ library, with `EVENT_PAYLOAD_EXTRA_INVALID`, and replay refuses the same shapes 
 payload it appended before. The extras say what the write cited; they do not prove who
 took the decision.
 
+TCRN-CROSS-STORY-527 (Q5): `decidedIn` may also be `proposal:<key>@<proposedAt>`, where `key` is a
+proposal record's key (`gate:<name>` or `rule:<id>`) and `proposedAt` a UTC instant: Atelier's
+approval of that proposal (config-records-v1, Proposals). It is recorded with `surface` `atelier`
+and `decidedInLibraryId`, the library that held the proposal; with another surface, or none, it is
+refused like any malformed extra. An engine that predates the form rejects these events on replay.
+
 ## Enablement
 
 The write entrance for enablement is retired (TCRN-CROSS-STORY-467 R2): no verb appends

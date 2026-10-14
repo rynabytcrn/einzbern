@@ -5,7 +5,8 @@
 Project-level configuration records (TCRN-CROSS-STORY-478 R1, MIN-227 D13) are the part of a
 project's configuration that is not a setting: what the engine recorded about the managed
 sections it wrote into the project's files, which Command Spell rules are enabled, the custom
-variables, the gate declarations, and the leases actors hold on work items. They travel with the library, so every device that
+variables, the gate declarations, the leases actors hold on work items, and the gate and rule
+changes that wait for Atelier's approval. They travel with the library, so every device that
 merges the library reads the same records. `packages/core/src/config-records.ts` owns the
 collections, the checks and the write functions; the replay arm in
 `packages/core/src/workspace.ts` applies the events.
@@ -23,6 +24,7 @@ replay.
 | `variable` | a custom variable, keyed by name | TCRN-CROSS-STORY-484 |
 | `gate` | a gate declaration, keyed by gate name | TCRN-CROSS-STORY-485 |
 | `lease` | a work lease, keyed by work id and scoped to the work item's project | TCRN-CROSS-STORY-528 |
+| `proposal` | a gate or rule change that waits for Atelier, keyed `gate:<name>` or `rule:<id>` | TCRN-CROSS-STORY-527 |
 
 Every record meets one common shape, and each collection may add its own check on top of it:
 
@@ -48,7 +50,8 @@ actor-attestation-v1, optional authorization extras): `surface` (`cli` or `ateli
 `removeConfigRecord` and their deltas take them as `authorization`; the gate, variable and
 rule writes pass theirs through, a rule change on each event it appends. Without one the
 payload is exactly `{operation, record}`. A surface, decision number or library id that is
-not one is `WORKSPACE_EVENT_CORRUPT` on replay.
+not one is `WORKSPACE_EVENT_CORRUPT` on replay. TCRN-CROSS-STORY-527 (Q5): the events of
+Atelier's approval of a proposal cite the proposal instead of a decision number (see Proposals).
 
 ## Merge
 
@@ -126,6 +129,46 @@ items. `packages/core/src/work-lease.ts` writes it; nothing else does.
 An engine that predates the collection rejects its events on replay like any unknown collection's
 (they are recorded among the rejected events and skipped), so every device that reads a library
 needs an engine that knows `lease` before leases are written to it.
+
+## Proposals
+
+The `proposal` collection (TCRN-CROSS-STORY-527, MIN-257 D6) holds the changes to a gate declaration
+or to a Command Spell rule that a model proposes and Atelier approves or rejects.
+`packages/core/src/config-proposals.ts` writes it; nothing else does.
+
+- The key names what the proposal would change, `gate:<gate name>` or `rule:<rule id>`, and the
+  record is scoped as that gate or rule is (`projectId`, or the library when absent). A proposal
+  belongs to its scope and is not inherited.
+- The value is exactly `{kind, action, payload, status, proposedBy, proposedAt}`, with `rejectedBy`
+  and `rejectedAt` as well when `status` is `rejected`. `kind` is the key's prefix; `action` is
+  `set` or `remove` for a gate and `enable` or `disable` for a rule; `payload` is the whole gate
+  declaration for `set` (checked as a gate record is), `{}` or `{order}` for `enable`, and `{}`
+  otherwise; `status` is `pending` or `rejected`; the actors are actor ids and the instants UTC.
+  Anything else is refused with `CONFIG_RECORD_VALUE_INVALID`, `details.refusedBy`
+  `PROPOSAL_INVALID` (or the gate declaration's own `GATES_CONFIG_INVALID`).
+- Proposing sets the record, pending, at the write's instant; proposing the same target again
+  replaces it, a rejected one included. A gate removal is proposed only for a gate the scope
+  declares (`CONFIG_RECORD_NOT_FOUND`), a rule enable only for a rule the engine ships, a rule
+  disable for one it ships or the library records (`RULE_UNKNOWN`).
+- Approving appends, in one append, the change the proposal names -- the same `config.record.set`
+  or `config.record.removed` a direct write appends (for a rule, with its managed-section record,
+  AGENTS.md written first and put back when the append fails) -- then the proposal's
+  `config.record.removed`. Every event of an approval carries `surface` `atelier`, `decidedIn`
+  `proposal:<key>@<proposedAt>` and `decidedInLibraryId`, this library's id.
+- Rejecting rewrites the record as `rejected` with `rejectedBy` and `rejectedAt`; it stays readable.
+- An approval or a rejection names the `proposedAt` it read. A key with no proposal is
+  `PROPOSAL_NOT_FOUND`; a rejected proposal is `PROPOSAL_NOT_PENDING` until it is proposed again; a
+  proposal recorded since at another instant is `PROPOSAL_STALE` (`details.required` the recorded
+  instant, `details.actual` the one named). A refusal appends nothing.
+- A proposal is not a declaration: gates, rules, plans, runs and managed sections read the `gate`
+  and `rule` collections only. Proposals are not projected: `config/project.json` and
+  `configProjectionStatus` leave the collection out, and a proposal or a rejection writes no
+  projection.
+
+An engine that predates the collection rejects its events on replay like any unknown collection's,
+and rejects the approval events whose `decidedIn` cites a proposal, so the change an approval wrote
+is not applied there either: every device that reads a library needs an engine that knows proposals
+before they are written to it.
 
 ## Explicit chain configuration
 

@@ -2889,11 +2889,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "artifact-put") {
-    // TCRN-CROSS-STORY-380. The engine write lock is the quiesce proof, the same one
-    // snapshot-manifest takes below: two puts appending to one manifest without it each write a manifest
-    // missing the other's entry, and the loser's blob sits on disk with nothing pointing
-    // at it. No chain event is appended — the manifest is the record, and keeping the put
-    // off the chain is what lets the blob root be a directory the engine does not own.
+    // TCRN-CROSS-STORY-380. The engine write lock serialises the artifact manifest: two puts appending
+    // to one manifest without it each write a manifest missing the other's entry, and the loser's blob
+    // sits on disk with nothing pointing at it. TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-500): the lock is
+    // held for the manifest's replacement alone; putArtifact copies the blob into the blob root and
+    // reads it back before it takes the lock. No chain event is appended — the manifest is the record,
+    // and keeping the put off the chain is what lets the blob root be a directory the engine does not
+    // own.
     const values = parseArguments(rest, ["workspace", "file", "at", "timeout-ms"]);
     required(values, ["workspace", "file", "at"]);
     const workspace = values.workspace ?? "";
@@ -2914,10 +2916,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "snapshot-manifest") {
-    // WSF-2: read-only snapshot witness. The engine write lock is the quiesce proof —
-    // createSnapshotManifest holds it for the computation (WORKSPACE_LOCKED when another
-    // writer never lets go); the manifest is emitted verbatim to stdout as the receipt.
-    // --at stays in the catalog unchanged; the lock needs no instant.
+    // WSF-2: read-only snapshot witness. TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-500): createSnapshotManifest
+    // takes no lock. It stamps every file the manifest covers before it reads the state and again after
+    // it walks the tree, and equal stamps prove the tree did not move while it was read; only a tree that
+    // moved under four reads in a row is read under the engine write lock (WORKSPACE_LOCKED when another
+    // writer never lets go). The manifest is emitted verbatim to stdout as the receipt. --at stays in the
+    // catalog unchanged; neither the read nor the lock needs an instant.
     const values = parseArguments(rest, ["workspace", "at"]);
     required(values, ["workspace", "at"]);
     const workspace = values.workspace ?? "";

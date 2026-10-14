@@ -89,13 +89,18 @@ nothing, and held from the drop to the forced write the lock keeps every write o
 committing in between, so the cache it leaves and the state it reports are of one head, the library
 as it stands when it returns. Narrowed like an append, it would replay from genesis again whenever
 a write landed during its replay, and on a busy library fall back to holding the lock for a replay
-anyway.
+anyway. `specs/cli-catalog-v1.md` gives the same reason beside what every other write holds the lock
+for ("What each write holds the library write lock for (2.2.0)").
 
 ## Writes
 
-`setConfigRecord` and `removeConfigRecord` check their input before any lock is taken, then run
-as this machine's only writer of the library: they read the merged state under the library's
-lock, append one event to this device's stream, and rewrite `config/project.json`.
+`setConfigRecord` and `removeConfigRecord` check their input, read the merged state and check the
+change against it before any lock is taken (TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-481). Under this
+machine's write lock of the library they only check that no stream moved since that read, then
+append one event to this device's stream and rewrite `config/project.json`. Like every other
+append (`specs/cli-catalog-v1.md`, "What each write holds the library write lock for (2.2.0)"),
+a write that finds a stream moved reads and checks again, and one that other writers outran four
+times reads and checks under the lock.
 `setConfigRecordDelta` and `removeConfigRecordDelta` are the same changes as deltas for a
 caller that appends several events at once.
 

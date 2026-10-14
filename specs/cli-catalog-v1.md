@@ -113,6 +113,8 @@ the library and replays every stream from genesis into a new one, strictly. The
 library itself is only read; the lock keeps this machine's appends from
 committing while the cache is gone and rebuilt, so the head `recover` reports and
 the snapshot it leaves are the library's head when it ends.
+`specs/config-records-v1.md` gives the same reason, and why a hold narrowed like
+an append's would not do.
 
 `snapshot-manifest` writes nothing and takes no lock: it proves the tree it read
 still by stamping every file it covers (path, inode, size and modification time)
@@ -120,11 +122,14 @@ before it reads the state and after it walks the tree, and reads again when the
 stamps differ; after four reads that never held still it reads under the lock.
 `init` and `library-import-legacy` write a library they create. `gates-run`,
 `setup`, `engine-update`, `engine-rollback`, `skill-render`, `library-register`,
-`machine-settings-set` and `machine-settings-remove` write this device's files,
-the host's or a project's, and take no library lock of their own; what `setup`
-records in a library it records through the writes above (`agents-render`'s
-among them). The knowledge store's writes, `knowledge-init` among them, are
-judged in the same way (TCRN-CROSS-SUB-501).
+`library-unregister`, `machine-settings-set` and `machine-settings-remove` write
+this device's files, the host's or a project's, and `device-clean` writes this
+device's directory alone; none of them takes a library lock of its own, and what
+`setup` records in a library it records through the writes above
+(`agents-render`'s among them). What the knowledge store's writes,
+`knowledge-init` among them, hold the lock for is the table of
+`packages/core/spec/knowledge-core-v1.md`, "Freshness, writing, and retrieval"
+(TCRN-CROSS-SUB-501).
 
 ## Parity and stability
 

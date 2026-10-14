@@ -147,9 +147,10 @@ writer. `project-bindings-set --project-id --key --value` accepts the typed
 removes a project binding without changing unrelated configuration. A project
 binding is changed in Atelier, or by a model's run that cites an Owner decision
 naming the binding's key with `--decided-in minutes:<id>#D<n>` (TCRN-CROSS-STORY-541,
-MIN-258 D3): the decision is checked inside the write lock and recorded in the event,
-as for the other configuration writes; citing none, a model's run is refused with
-`MODEL_WRITE_REFUSED`, its remedy naming both ways. `chain-declare` keeps a hard
+MIN-258 D3): the decision is checked before the lock, against the state the write
+reads, and recorded in the event, as for the other configuration writes; citing
+none, a model's run is refused with `MODEL_WRITE_REFUSED`, its remedy naming both
+ways. `chain-declare` keeps a hard
 constraint: it takes no `--decided-in`, a model's run is refused with
 `MODEL_WRITE_REFUSED` and the remedy `declare it on the library page in Atelier`,
 and only a run for Atelier writes. The surface convention is not

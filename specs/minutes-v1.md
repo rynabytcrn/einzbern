@@ -198,7 +198,11 @@ Incident or Story; no active card reaches 0.44.
 `minutes-record` writes one record (`--project-id`, `--title`, `--summary`, the decisions as
 `--decisions <list>` or `--decisions-file <JSON array of strings>`, `--decided-by`,
 `--work-ids`, an optional `--external-key`, `--at`, `--actor`) and answers `MINUTES_RECORDED`
-with `id`, `externalKey`, `decisions` and the written `ids`, `version` and `headEventHash`. Its
+with `id`, `externalKey`, `decisions`, the written `ids`, `version` and `headEventHash`, and
+`knowledgeHint` (`line`, `conflictCandidateIds`, `filteredByFamily`; see
+`packages/core/spec/knowledge-core-v1.md`, "Conflict retirement"); when the record was
+written beside decisions of another INIT family, the answer also carries `warnings` (see
+Topic comparison). Its
 declarations are `--supersedes <decision>=<successor>,...` (the successor may be `Dn`, a
 decision of the record being written), `--withdraws <decision>,...` and `--coexists
 <decision>,...`, each decision a number or `<external key>#Dn`; the answer then carries
@@ -222,5 +226,5 @@ names its deciding minutes with `--decided-in` on `work-create` and `work-annota
 | `MINUTES_EXTERNAL_KEY_REQUIRED` | no numbered key exists yet to number a key-less record after |
 | `MINUTES_NOT_FOUND` | no such minutes or decision |
 | `MINUTES_DECISION_OBSOLETE` | a declaration makes an obsolete decision obsolete again, or names one as a successor or to stand beside |
-| `MINUTES_POSSIBLE_CONFLICT` | a decision is close in topic to a valid decision the declarations do not settle |
+| `MINUTES_POSSIBLE_CONFLICT` | a decision is close in topic to a valid decision the declarations do not settle, and the two share an INIT family or either side's family is not known; a close decision of another family refuses nothing: the record is written beside it and the `minutes-record` answer names it under `warnings` with this code (see Topic comparison) |
 | `KNOWLEDGE_ALREADY_RECORDED` | a card repeats a work record or a valid decision |

@@ -2,9 +2,12 @@
 
 // TCRN-CROSS-STORY-467 R1 (MIN-227 D3): writers are serialised by an engine-held file
 // lock, not by a caller-supplied expected version. A writer creates the lock file
-// exclusively, does its read-build-append under it, and removes it; a second writer
-// waits with backoff until the first is done. There is nothing for a caller to pass and
-// nothing to retry: the engine reads the latest state inside the lock.
+// exclusively and removes it when done; a second writer waits with backoff until the
+// first is done, and there is nothing for a caller to pass. TCRN-CROSS-STORY-529: a
+// library write reads and builds before it takes the lock (appendEvents in workspace.ts);
+// under it the write only checks that no stream moved since that read, then appends. One
+// that finds a stream moved reads and builds again, and one other writers outran four
+// times reads under the lock. What each write holds the lock for: specs/cli-catalog-v1.md.
 //
 // A lock is reclaimable only when a well-formed owner on this host is provably
 // dead. Age is never ownership evidence. Foreign, malformed and unknown owners

@@ -62,14 +62,21 @@ hostile parent-component replacement outside the process.
 ## Writes, events, and recovery
 
 Every mutation takes the engine write lock and a strict RFC 3339 instant; there is no
-caller-supplied version (TCRN-CROSS-STORY-467 R1). The lock is the file `write.lock` in
-the control directory, created exclusively; a second writer waits with backoff until it
-is released, so two concurrent writes both land, in order. Under the lock the engine
-reads the latest state, builds each delta against it, and appends; event construction,
-authoritative segment commit, replay and the derived-view write all happen while it is
-held. A lock whose holder is gone (same host and process not alive) or that is older
-than the stale bound is broken under a short-lived breaker file, after the breaker
-re-reads it and finds the same owner. Every write receipt echoes the record ids written
+caller-supplied version (TCRN-CROSS-STORY-467 R1). In the old layout the lock was the
+file `write.lock` in the control directory, created exclusively; a second writer waited
+with backoff until it was released, so two concurrent writes both landed, in order.
+Under that lock the engine read the state, built each delta against it, and appended;
+event construction, authoritative segment commit, replay and the derived-view write all
+happened while it was held. A lock whose holder was gone (same host and process not
+alive) or that was older than the stale bound was broken under a short-lived breaker
+file, after the breaker re-read it and found the same owner. From TCRN-CROSS-STORY-529
+on, a write reads the library and builds and measures every delta before it takes this
+machine's write lock of the library (`packages/core/src/file-lock.ts`); under the lock
+it only checks that no stream moved since that read and then appends. A write that
+finds a stream moved reads and builds again, and one that other writers outran four
+times does the whole write under the lock. What each write holds the lock for is in
+`specs/cli-catalog-v1.md`, "What each write holds the library write lock for (2.2.0)".
+Every write receipt echoes the record ids written
 beside the new version and head event hash. Writes use an exclusive no-follow
 descriptor, file synchronization, atomic rename, target identity validation, and
 parent-directory synchronization. The Workspace version is the number of validated

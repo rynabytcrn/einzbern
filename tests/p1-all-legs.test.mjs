@@ -6,12 +6,13 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { P1_TASKS, runAllP1Legs } from "../scripts/p1-sequence.mjs";
+import { heavyLockDirectoryUnder, privateHeavyEnvironment } from "./helpers/heavy-slots.mjs";
 
 const productRoot = resolve(import.meta.dirname, "..");
 const threeReds = { lint: "LINT_INJECTED", test: "TESTS_INJECTED", links: "LINKS_INJECTED" };
@@ -74,21 +75,28 @@ async function p1Fixture(context) {
     const result = spawnSync("git", argv, { cwd: root, encoding: "utf8" });
     assert.equal(result.status, 0, `${argv.join(" ")}\n${result.stderr}`);
   }
-  return root;
+  // TCRN-CROSS-SUB-502 (STORY-538 GWT5): verify-p1 takes its heavy-run slot in a directory of this test's
+  // own, beside the repository so that it stays clean, and never the slot of a run around the test; its
+  // device directory and its HOME are this test's too, so it reads nothing under the user's home.
+  const own = await mkdtemp(join(tmpdir(), "einzbern-p1-all-legs-own-"));
+  context.after(() => rm(own, { recursive: true, force: true }));
+  await mkdir(join(own, "home"));
+  const environment = privateHeavyEnvironment(heavyLockDirectoryUnder(own), { ...process.env, HOME: join(own, "home"), EINZBERN_HOME: join(own, "device") });
+  return { root, environment };
 }
 
-function verifyP1(root, injection) {
+function verifyP1({ root, environment }, injection) {
   return spawnSync(process.execPath, ["scripts/task.mjs", "verify-p1"], {
     cwd: root,
     encoding: "utf8",
-    env: { ...process.env, EINZBERN_P1_INJECT: JSON.stringify(injection) },
+    env: { ...environment, EINZBERN_P1_INJECT: JSON.stringify(injection) },
   });
 }
 
 test("467-AC4: the verify-p1 entry prints all three reds with their reason codes and exits non-zero", async (context) => {
-  const root = await p1Fixture(context);
+  const fixture = await p1Fixture(context);
   const injection = { ...Object.fromEntries(P1_TASKS.map((task) => [task, true])), ...threeReds };
-  const run = verifyP1(root, injection);
+  const run = verifyP1(fixture, injection);
   assert.equal(run.status, 1, `${run.stdout}${run.stderr}`);
   const receipt = JSON.parse(run.stderr.trim().split("\n").at(-1));
   assert.equal(receipt.reasonCode, "P1_RED");
@@ -102,11 +110,11 @@ test("467-AC4: the verify-p1 entry prints all three reds with their reason codes
 });
 
 test("an injected run never reads as P1_VERIFIED, and an unknown leg is refused", async (context) => {
-  const root = await p1Fixture(context);
-  const passed = verifyP1(root, Object.fromEntries(P1_TASKS.map((task) => [task, true])));
+  const fixture = await p1Fixture(context);
+  const passed = verifyP1(fixture, Object.fromEntries(P1_TASKS.map((task) => [task, true])));
   assert.equal(passed.status, 0, passed.stderr);
   assert.equal(JSON.parse(passed.stdout).reasonCode, "P1_VERIFIED_WITH_INJECTION");
-  const unknown = verifyP1(root, { "not-a-leg": true });
+  const unknown = verifyP1(fixture, { "not-a-leg": true });
   assert.equal(unknown.status, 1);
   assert.equal(JSON.parse(unknown.stderr.trim().split("\n").at(-1)).reasonCode, "P1_INJECTION_INVALID");
 });

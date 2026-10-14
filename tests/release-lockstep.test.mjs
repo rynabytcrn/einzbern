@@ -34,6 +34,7 @@ import { setGate } from "../dist/build/packages/core/src/gates-config.js";
 import { gateTreeState } from "../dist/build/packages/core/src/gates-run.js";
 import { stripTypesWithScopedExperimentalWarning } from "../scripts/lib/scoped-strip-types.mjs";
 import { BRAND, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
+import { privateHeavyEnvironment } from "./helpers/heavy-slots.mjs";
 
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-release-lockstep-")));
 const OLD_VERSION = FRAMEWORK_VERSION;
@@ -121,11 +122,13 @@ async function createOrigin(root, name) {
   git(root, ["push", "--set-upstream", "origin", "main"]);
 }
 
+// TCRN-CROSS-SUB-502 (STORY-538 GWT5): the gates-run a release step starts takes its heavy-run slot in a
+// directory of this case's own, outside the case's project root, never the slot of a run around the test.
 async function makeEnvironment(name) {
   const home = join(base, name, "home");
   const einZbernHome = join(home, ".einzbern");
   await mkdir(einZbernHome, { recursive: true });
-  return { ...process.env, HOME: home, EINZBERN_HOME: einZbernHome };
+  return privateHeavyEnvironment(join(base, "heavy-locks", name), { ...process.env, HOME: home, EINZBERN_HOME: einZbernHome });
 }
 
 async function makeWorkspace(name, repos, environment, { declarations = "required", red = false, helperRequired = true } = {}) {

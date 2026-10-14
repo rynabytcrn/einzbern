@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-SUB-484 (TCRN-CROSS-STORY-529 GWT5-7, MIN-257 D6): the machine's heavy-run semaphore.
-// gates-run, the whole test suite (scripts/task.mjs test), the portal proof train
-// (scripts/verify-portal.mjs) and release finish (scripts/release.mjs) each take one of the
-// execution.maxConcurrentHeavyRuns slots before they start, one unless this device's machine
-// settings say otherwise, so two of them do not run at once on one machine.
+// gates-run, the whole test suite (scripts/task.mjs test), verify-p1 (scripts/task.mjs verify-p1,
+// TCRN-CROSS-SUB-493), the portal proof train (scripts/verify-portal.mjs) and release finish
+// (scripts/release.mjs) each take one of the execution.maxConcurrentHeavyRuns slots before they
+// start, one unless this device's machine settings say otherwise, so two of them do not run at once
+// on one machine. A slot records the command its taker names: gates-run, test, verify-p1,
+// verify:portal or release finish (TCRN-CROSS-SUB-502).
 //
 // A slot is a lock file in the device directory's locks/ (heavy.lock, then heavy-2.lock and on),
 // created exclusively and owned as core's file locks are (packages/core/src/file-lock.ts):
@@ -14,8 +16,9 @@
 // process is provably dead; age is never evidence, and a malformed or foreign owner is waited for.
 //
 // The holder puts EINZBERN_HEAVY_SLOT (its token and its slot file) into its environment, so a
-// heavy run it starts -- gates-run's gates, the suite's tests, finish's gates and trains -- finds
-// the slot held for it and takes none of its own: waiting for the parent's slot would never end.
+// heavy run it starts -- gates-run's gates, the suite's tests, verify-p1's legs, finish's gates and
+// trains -- finds the slot held for it and takes none of its own: waiting for the parent's slot would
+// never end.
 // A token whose slot file no longer carries it, or whose holder is provably dead, is ignored.
 //
 // A run that has to wait says so on stderr, once and again whenever the holders change: one JSON
@@ -259,7 +262,7 @@ function delay(milliseconds) {
 }
 
 /**
- * Take a heavy-run slot for `command` (gates-run, test, verify:portal, release finish), waiting
+ * Take a heavy-run slot for `command` (gates-run, test, verify-p1, verify:portal, release finish), waiting
  * while every slot is held. Returns the slot, whose release() frees it and takes EINZBERN_HEAVY_SLOT
  * back out of `env`; when a heavy run above this process already holds one for it, returns that
  * slot as inherited, with nothing to release. `env` is read for EINZBERN_HOME,

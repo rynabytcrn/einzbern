@@ -21,6 +21,7 @@
 
 import "./helpers/device-home.mjs";
 import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
+import { heavyLockDirectoryUnder, usePrivateHeavySlots } from "./helpers/heavy-slots.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -62,6 +63,12 @@ function render(tokens, substitutions) {
 test("the flagship governed loop replays end-to-end through the CLI with an unbroken trace digest chain", async (context) => {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-e2e-governed-loop-")));
   context.after(() => rm(base, { recursive: true, force: true }));
+  // TCRN-CROSS-SUB-502 (STORY-538 GWT5): the storyline's gates-run takes its heavy-run slot in a directory
+  // of this test's own, beside base, which is the project root the gate runs in, and never a run's around
+  // the test.
+  const heavy = await realpath(await mkdtemp(join(tmpdir(), "tcrn-e2e-governed-loop-heavy-")));
+  context.after(() => rm(heavy, { recursive: true, force: true }));
+  usePrivateHeavySlots(context, heavyLockDirectoryUnder(heavy));
 
   // The live substitution table: the library placeholder first, identifiers as the
   // storyline captures them from each receipt.

@@ -8,9 +8,15 @@
 // takes one before its output session. TCRN-CROSS-SUB-493: so does verify-p1, whose legs run under
 // its slot and inherit it. Every slot here lives in a directory of this test's own
 // (EINZBERN_HEAVY_LOCK_DIR), and the token a whole-suite run hands down is kept out of every taker.
+// TCRN-CROSS-STORY-538 GWT5 (TCRN-CROSS-SUB-502): every process this test starts runs with a HOME of
+// its own, never the user's (J5-14); and a gates-run a test's fixture starts takes its slot in the
+// fixture's own directory, so it waits for no slot of a run around the tests and runs under none
+// (J5-12, tests/helpers/heavy-slots.mjs).
 
 import "./helpers/device-home.mjs";
 import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
+import { heavyLockDirectoryUnder, privateHeavyEnvironment } from "./helpers/heavy-slots.mjs";
+import { gatesRun, leaseGatesLibrary } from "./helpers/work-lease-gates-fixture.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -73,12 +79,14 @@ async function until(check, what, timeoutMs = 20_000) {
   }
 }
 
-/** A scratch directory with a device directory, a slot directory and the taker script of its own. */
+/** A scratch directory with a device directory, a slot directory, a HOME and the taker script of its own. */
 async function scratch(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-heavy-runs-")));
   const home = join(base, "device");
   const locks = join(base, "heavy-locks");
+  const userHome = join(base, "home");
   await mkdir(home, { recursive: true });
+  await mkdir(userHome, { recursive: true });
   const script = join(base, "holder.mjs");
   await writeFile(script, HOLDER);
   const started = [];
@@ -86,10 +94,11 @@ async function scratch(context) {
     for (const run of started) if (run.child.exitCode === null && run.child.signalCode === null) run.child.kill("SIGKILL");
     await rm(base, { recursive: true, force: true });
   });
-  // The environment a taker sees: this scratch's device and slot directories, and no token handed
-  // down by a run above this test.
+  // The environment a taker sees: this scratch's device and slot directories, its HOME (TCRN-CROSS-SUB-502,
+  // J5-14: a process here reads nothing under the user's home), and no token handed down by a run above
+  // this test.
   const environment = (extra = {}) => {
-    const env = { ...process.env, EINZBERN_HOME: home, EINZBERN_HEAVY_LOCK_DIR: locks, ...extra };
+    const env = { ...process.env, HOME: userHome, EINZBERN_HOME: home, EINZBERN_HEAVY_LOCK_DIR: locks, ...extra };
     if (!Object.hasOwn(extra, heavy.HEAVY_SLOT_VARIABLE)) delete env[heavy.HEAVY_SLOT_VARIABLE];
     return env;
   };
@@ -462,4 +471,73 @@ test("SUB-493: verify-p1 takes its slot before its output session, and its legs 
   assert.equal(seen.variable, `${seen.owner.token}:${join(locks, "heavy.lock")}`, "and the leg ran under verify-p1's token");
   assert.deepEqual(p1.stderr.split("\n").filter(Boolean), [JSON.stringify(notice)], "verify-p1's stderr carries its own waiting line and nothing else");
   await assert.rejects(stat(join(locks, "heavy.lock")), { code: "ENOENT" }, "verify-p1 let go of its slot as it ended");
+});
+
+// Settles as `promise` does, or rejects once `milliseconds` have passed without it settling.
+async function within(promise, milliseconds, what) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise((resolveNever, reject) => {
+      timer = setTimeout(() => reject(new Error(`${what} did not end within ${milliseconds} ms`)), milliseconds);
+    })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// TCRN-CROSS-STORY-538 GWT5 (TCRN-CROSS-SUB-502, J5-12): a run around the tests -- the whole suite, or a
+// heavy run of another package that shares the slot directory -- sets EINZBERN_HEAVY_LOCK_DIR and
+// EINZBERN_HEAVY_SLOT for every test process. A gates-run a test's fixture starts takes its slot in the
+// fixture's own directory (tests/helpers/heavy-slots.mjs): it neither waits for the outer slot nor runs
+// under the outer token, whether it runs in the test's process or in one of its own.
+test("538 GWT5 (SUB-502): with EINZBERN_HEAVY_LOCK_DIR and EINZBERN_HEAVY_SLOT set around the tests, a gates-run a fixture starts waits for no slot outside it and runs under one of its own", async (context) => {
+  const { base, locks: shared, environment, track, holder } = await scratch(context);
+  // The run around the tests holds the one slot of the directory it shares with other heavy runs.
+  const around = holder("around");
+  await until(around.held, "the slot of the run around the tests");
+  const sharedSlot = join(shared, "heavy.lock");
+  const aroundOwner = await readFile(sharedSlot, "utf8");
+
+  // In this process, as the work-lease tests run gates-run through runCli. The environment names the
+  // shared directory and a token its slot does not carry, which a taker does not trust: a gates-run that
+  // took its slot there would wait for the run around the tests to end.
+  const saved = { directory: process.env[heavy.HEAVY_LOCK_DIRECTORY_VARIABLE], slot: process.env[heavy.HEAVY_SLOT_VARIABLE] };
+  const outerToken = `${"f".repeat(32)}:${sharedSlot}`;
+  try {
+    process.env[heavy.HEAVY_LOCK_DIRECTORY_VARIABLE] = shared;
+    process.env[heavy.HEAVY_SLOT_VARIABLE] = outerToken;
+    await context.test("the gates-run the work-lease fixture runs in this process", async (inner) => {
+      const fixture = await leaseGatesLibrary(inner, "HEAVY-AROUND");
+      const ran = await within(gatesRun(fixture, [fixture.ids.story]), 30_000, "the fixture's gates-run");
+      assert.deepEqual([ran.reasonCode, ran.ok], ["GATES_RUN_COMPLETED", true]);
+      assert.equal(process.env[heavy.HEAVY_SLOT_VARIABLE], undefined, "it ran under no token from around the test, and left none");
+    });
+    assert.deepEqual([process.env[heavy.HEAVY_LOCK_DIRECTORY_VARIABLE], process.env[heavy.HEAVY_SLOT_VARIABLE]], [shared, outerToken],
+      "the fixture put back the environment it found");
+  } finally {
+    for (const [name, value] of [[heavy.HEAVY_LOCK_DIRECTORY_VARIABLE, saved.directory], [heavy.HEAVY_SLOT_VARIABLE, saved.slot]]) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+
+  // In a process of its own, as release-lockstep and p1-all-legs start theirs. Here the outer token is the
+  // holder's own, so a gates-run left with it would take no slot and run its gates under that token.
+  const own = heavyLockDirectoryUnder(join(base, "fixture"));
+  const { probe, run } = await gateFixture(context, base, own);
+  const child = track(spawn(process.execPath, [join(repositoryRoot, "scripts/einzbern.mjs"), ...run()], {
+    env: privateHeavyEnvironment(own, environment({ [heavy.HEAVY_SLOT_VARIABLE]: around.held().variable, EINZBERN_HOME: process.env.EINZBERN_HOME })),
+    stdio: ["ignore", "pipe", "pipe"],
+  }));
+  const [code] = await within(child.closed, 30_000, "the gates-run process");
+  assert.equal(code, 0, child.stderr);
+  assert.equal(JSON.parse(child.stdout).reasonCode, "GATES_RUN_COMPLETED");
+  assert.deepEqual(child.notices(), [], "it waited for no slot");
+  const seen = JSON.parse(await readFile(probe, "utf8"));
+  assert.deepEqual([seen.owner.command, seen.owner.pid], ["gates-run", child.child.pid], "its gate ran while it held a slot in the fixture's directory");
+  assert.equal(seen.variable, `${seen.owner.token}:${join(own, "heavy.lock")}`, "and under that slot's token, not the token of the run around the tests");
+  await assert.rejects(stat(join(own, "heavy.lock")), { code: "ENOENT" }, "it let go of its slot as it ended");
+  assert.equal(await readFile(sharedSlot, "utf8"), aroundOwner, "the run around the tests held its slot throughout");
+  around.release();
+  await around.closed;
 });

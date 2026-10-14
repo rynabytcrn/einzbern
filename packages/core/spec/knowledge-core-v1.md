@@ -357,6 +357,59 @@ Mutation input is validated before anything is written. A write takes no claim
 invalid request cannot poison the crest or block a later valid write, and a crash
 leaves either no event or a complete one.
 
+What each write of a library's crest holds this machine's write lock of the library for, the lock
+every chain write takes (TCRN-CROSS-STORY-529; TCRN-CROSS-STORY-538 GWT4, TCRN-CROSS-SUB-501): a write
+scans the crest -- every stream, every body bound -- digests its sources and judges its record before
+it takes the lock. Under the lock it first checks that every device stream of the crest stands where
+its scan found it (each stream's head, from the stream's file names alone); then it appends its event,
+clears this device's bodies of removed cards and projects this device's index view. A write that
+finds a stream moved scans and judges again, so its checks, an expected revision among them, hold for
+the crest its event is appended to; one that other writers outran four times scans under the lock, as
+every write once did. A write that cannot do with that much holds the lock for its whole run, and the
+reason is written below. No read takes the lock (see "Storage and authority"), and a write of the user
+crest (`--scope user`) holds this machine's lock of the user crest, not the library's, for its whole
+run.
+
+| Writes | The lock covers | Before the lock |
+| --- | --- | --- |
+| `knowledge-create`, `knowledge-capture`, `knowledge-article-create` and `knowledge-remove` (TCRN-CROSS-STORY-529); `knowledge-reverify`, `knowledge-article-refresh` and a batch's `knowledge-policy` member (TCRN-CROSS-SUB-501) | the check that no stream moved, the event's append, the clearing of this device's bodies of removed cards and the index view's projection | the scan of the whole crest, the source digests (an article refresh reads its article twice; `knowledge-article-create` writes its Markdown file first), the language policy and every check |
+| `knowledge-batch` | nothing of its own: each member holds it as its verb does, and `--align-first` as `knowledge-rebase` does | the shape pass |
+| `knowledge-rebase`, and `knowledge-batch --align-first` | the whole re-validation | -- |
+| `knowledge-bodies-migrate`, with or without `--clear-removed true` | the whole rewrite | -- |
+| `knowledge-recover` | the whole recovery | -- |
+| `knowledge-init` | the whole creation | -- |
+
+`knowledge-batch` held the lock from its first member to its last until TCRN-CROSS-SUB-501, so every
+member's scan and checks waited for any other writer. Another writer can now land between two members:
+a member acting on a card that writer changed is refused with `KNOWLEDGE_CAS_MISMATCH`, as the single
+verb is, and the batch's receipt says which members landed (the batch is not atomic across members).
+
+`knowledge-rebase` holds the lock for its whole run, although it writes nothing but this device's
+index view, because it answers for one state of the chain and the crest together: it replays the
+chain, then reads every stream of the crest, and refuses a record written against chain events its
+replay does not hold (`KNOWLEDGE_HIGH_WATER_MISMATCH`). A chain write of this machine, and a card
+written against it, landing between those two reads would make it refuse a crest that is whole; both
+take the lock to append, so under it neither can.
+
+`knowledge-bodies-migrate` holds it for its whole run because what it writes is no append that a check
+of the stream heads could guard: it rewrites the metadata/body layout's bodies in place, into segments,
+or with `--clear-removed true` clears the removed cards' bodies from that layout after a backup.
+`knowledge-recover` writes that layout too (a retired record's body given back), and so would a second
+migration, so none of them may run in the middle of another on this machine; and the counts it
+answers, before and after, are of one layout.
+
+`knowledge-recover` holds it for its whole run because it judges what a stopped writer left --
+staging files in this device's stream, the claim and bodies of a stopped write of the metadata/body
+layout -- and settles them in place. Every writer of this machine publishes under the lock, so while
+recovery holds it nothing it finds can be a publication still under way, and the index view it projects
+again is of the crest as it ends. Recovery of the user crest holds that crest's own lock in the same
+way.
+
+`knowledge-init` holds it for its whole run because what it writes is the crest itself: it finds the
+crest's folder absent or empty, makes it, and creates the root manifest exclusively (see "Storage and
+authority"). Before it there is no stream whose heads a check could compare, and what it reads first
+is the chain, for the library's id and head; it scans no card.
+
 ## Limits and privacy
 
 R4 removes the former body, subject, summary, snippet, locator, metadata,

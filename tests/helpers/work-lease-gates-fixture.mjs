@@ -15,6 +15,7 @@ import { runCli } from "../../dist/build/packages/cli/src/index.js";
 import { materializeWorkspace } from "../../dist/build/packages/core/src/index.js";
 import { gateRunsDirectory } from "../../dist/build/packages/core/src/gates-run.js";
 import { deriveStableId } from "../../dist/build/packages/protocol/src/index.js";
+import { heavyLockDirectoryUnder, usePrivateHeavySlots } from "./heavy-slots.mjs";
 import { A } from "./work-lease-fixture.mjs";
 import { ATELIER_SURFACE, withSurface } from "./workspace-fixture.mjs";
 
@@ -53,6 +54,8 @@ function git(root, args) {
 /**
  * The library above, under a scratch directory removed after the test, with its own HOME and device
  * directory for the test's duration. `at()` answers the next instant, one second after the last.
+ * TCRN-CROSS-SUB-502 (STORY-538 GWT5): its gates-run takes its heavy-run slot under the scratch directory
+ * too, and not the slot of a run around the test (heavy-slots.mjs).
  */
 export async function leaseGatesLibrary(context, key) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-lease-gates-")));
@@ -66,6 +69,7 @@ export async function leaseGatesLibrary(context, key) {
     restoreEnv("EINZBERN_HOME", previousDeviceHome);
     await rm(base, { recursive: true, force: true });
   });
+  usePrivateHeavySlots(context, heavyLockDirectoryUnder(base));
   let second = 0;
   const at = () => {
     second += 1;

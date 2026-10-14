@@ -7,6 +7,7 @@
 // test's own device directory, never the real one.
 import "./helpers/device-home.mjs";
 import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
+import { heavyLockDirectoryUnder, usePrivateHeavySlots } from "./helpers/heavy-slots.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -56,6 +57,8 @@ async function scratch(context) {
     else process.env.EINZBERN_HOME = previous;
     await rm(base, { recursive: true, force: true });
   });
+  // TCRN-CROSS-SUB-502 (STORY-538 GWT5): a gates-run takes its heavy-run slot under base, never a run's around the test.
+  usePrivateHeavySlots(context, heavyLockDirectoryUnder(base));
   return base;
 }
 

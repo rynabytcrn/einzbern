@@ -5,7 +5,8 @@
 // go; a run started by a holder inherits the slot through EINZBERN_HEAVY_SLOT and takes none; at
 // two, two run side by side and the third waits; a value outside 1 to 16 is refused. gates-run,
 // release finish and the portal train take a slot before they do anything, and the test command
-// takes one before its output session. Every slot here lives in a directory of this test's own
+// takes one before its output session. TCRN-CROSS-SUB-493: so does verify-p1, whose legs run under
+// its slot and inherit it. Every slot here lives in a directory of this test's own
 // (EINZBERN_HEAVY_LOCK_DIR), and the token a whole-suite run hands down is kept out of every taker.
 
 import "./helpers/device-home.mjs";
@@ -13,7 +14,7 @@ import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { devNull, hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -25,6 +26,7 @@ import { FILE_LOCK_SCHEMA_VERSION } from "../dist/build/packages/core/src/file-l
 import { MACHINE_SETTINGS_CATALOG, MACHINE_SETTINGS_VERSION, applyMachineSettingSet, machineSettingsPath } from "../dist/build/packages/core/src/machine-settings.js";
 import { DIRECTORY } from "../dist/build/packages/core/src/names.js";
 import * as heavy from "../scripts/lib/heavy-runs.mjs";
+import { P1_TASKS } from "../scripts/p1-sequence.mjs";
 
 // gates-config-set is Atelier's; this file declares its one gate as Atelier does.
 standInForAtelier();
@@ -378,12 +380,86 @@ test("SUB-484: release finish and the portal train take a slot before they do an
   await assert.rejects(stat(join(locks, "heavy.lock")), { code: "ENOENT" }, "both let go of their slot as they ended");
 });
 
-test("SUB-484: the test command takes its slot before its output session, and the build carries the module", async () => {
+test("SUB-484, SUB-493: the test command and verify-p1 take their slot before their output session, and the build carries the module", async () => {
   const source = await readFile(join(repositoryRoot, "scripts/task.mjs"), "utf8");
-  const taking = source.indexOf('if (command === "test") heavySlot = await acquireHeavySlot({ command: "test" });');
+  const commands = source.indexOf('const HEAVY_COMMANDS = new Set(["test", "verify-p1"]);');
+  const taking = source.indexOf("if (HEAVY_COMMANDS.has(command)) heavySlot = await acquireHeavySlot({ command });");
   const session = source.indexOf("const result = await withExclusiveOutputSession(repositoryRoot, async () => invoke(command));");
-  assert.ok(taking > 0 && session > taking, "the slot is taken first");
+  assert.ok(commands > 0 && taking > commands && session > taking, "the slot is taken first, by the test command and by verify-p1");
   assert.match(source, /\} finally \{\n {2}heavySlot\?\.release\(\);\n\}\n?$/u, "and let go however the command ends");
   assert.ok(source.includes('safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/heavy-runs.mjs", heavyRuns)'));
   assert.deepEqual(await readFile(join(repositoryRoot, "dist/build/scripts/lib/heavy-runs.mjs")), await readFile(join(repositoryRoot, "scripts/lib/heavy-runs.mjs")), "the build's copy is the source");
+});
+
+// TCRN-CROSS-SUB-493: the portal leg's train, in the disposable repository below. It takes its slot
+// as scripts/verify-portal.mjs does, but gives up after five seconds rather than waiting for ever,
+// writes down what it got and whose slot it found, and prints the train's green receipt.
+const portalProbe = (probe, slotFile) => [
+  'import { readFileSync, writeFileSync } from "node:fs";',
+  'import { acquireHeavySlot } from "./lib/heavy-runs.mjs";',
+  'const slot = await acquireHeavySlot({ command: "verify:portal", timeoutMs: 5000 });',
+  `const owner = JSON.parse(readFileSync(${JSON.stringify(slotFile)}, "utf8"));`,
+  `writeFileSync(${JSON.stringify(probe)}, JSON.stringify({ held: slot.held, inherited: slot.inherited, variable: process.env.EINZBERN_HEAVY_SLOT ?? null, owner }));`,
+  'slot.release();',
+  'process.stdout.write(`${JSON.stringify({ ok: true, reasonCode: "PORTAL_VERIFY_TRAIN_GREEN", commands: [], unverified: [], observations: [] })}\\n`);',
+  '',
+].join("\n");
+
+/**
+ * A disposable repository carrying this repository's scripts/ and node_modules/, as
+ * tests/p1-all-legs.test.mjs builds one, with a probe as its portal train; clean, so verify-p1
+ * starts. Git, here and under verify-p1, runs with a private home under base, never the user's.
+ */
+async function p1Fixture(base, train) {
+  const root = join(base, "repository");
+  const home = join(base, "home");
+  await mkdir(home, { recursive: true });
+  await cp(join(repositoryRoot, "scripts"), join(root, "scripts"), { recursive: true });
+  await cp(join(repositoryRoot, "node_modules"), join(root, "node_modules"), { recursive: true });
+  await writeFile(join(root, "scripts/verify-portal.mjs"), train);
+  await writeFile(join(root, "package.json"), "{\"name\":\"einzbern-heavy-runs-p1-fixture\",\"type\":\"module\"}\n");
+  await writeFile(join(root, ".gitignore"), "dist/\nnode_modules/\n");
+  const gitEnv = { ...process.env, HOME: home, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: devNull };
+  const git = (args) => execFileSync("git", ["-C", root, ...args], { env: gitEnv, stdio: ["ignore", "pipe", "pipe"] });
+  git(["init", "-q"]);
+  // As in tests/p1-all-legs.test.mjs: no background maintenance writing into .git after a command returns.
+  for (const [key, value] of [["user.name", "heavy-runs-test"], ["user.email", "heavy-runs-test-at-example.invalid"], ["commit.gpgsign", "false"], ["maintenance.auto", "false"], ["gc.auto", "0"]]) git(["config", key, value]);
+  git(["add", "package.json", ".gitignore", "scripts"]);
+  git(["commit", "-q", "-m", "fixture"]);
+  return { root, home };
+}
+
+test("SUB-493: verify-p1 takes its slot before its output session, and its legs run under it and inherit it", async (context) => {
+  const { base, locks, environment, track } = await scratch(context);
+  const probe = join(base, "portal-probe.json");
+  const { root, home: userHome } = await p1Fixture(base, portalProbe(probe, join(locks, "heavy.lock")));
+  // Every leg but the portal train is injected, so the one leg that runs is the probe.
+  const injection = Object.fromEntries(P1_TASKS.filter((task) => task !== "portal").map((task) => [task, true]));
+  assert.equal(Object.keys(injection).length, P1_TASKS.length - 1);
+  const holding = await heavy.acquireHeavySlot({ command: "holder", env: environment() });
+  const p1 = track(spawn(process.execPath, [join(root, "scripts/task.mjs"), "verify-p1"], {
+    cwd: root,
+    env: environment({ HOME: userHome, EINZBERN_P1_INJECT: JSON.stringify(injection) }),
+    stdio: ["ignore", "pipe", "pipe"],
+  }));
+  const [notice] = await until(() => p1.notices().length > 0 && p1.notices(), "verify-p1's notice");
+  assert.deepEqual([notice.command, notice.holders.map(({ pid, command }) => [pid, command])], ["verify-p1", [[process.pid, "holder"]]]);
+  await pause(300);
+  assert.equal(p1.stdout, "", "verify-p1 is still waiting");
+  assert.deepEqual((await readdir(join(root, ".git"))).filter((name) => name.includes("einzbern-output")), [], "it waits before its output session");
+  await assert.rejects(stat(join(root, "dist")), { code: "ENOENT" }, "no leg has written its evidence");
+  await assert.rejects(stat(probe), { code: "ENOENT" }, "and the portal leg has not started");
+
+  holding.release();
+  const [code] = await p1.closed;
+  assert.equal(code, 0, p1.stderr);
+  const receipt = JSON.parse(p1.stdout);
+  assert.equal(receipt.reasonCode, "P1_VERIFIED_WITH_INJECTION");
+  assert.deepEqual(receipt.legs.find((leg) => leg.task === "portal"), { task: "portal", ok: true, reasonCode: "PORTAL_VERIFY_TRAIN_GREEN" }, "the leg is green: its train waited for nothing and wrote nothing on stderr");
+  const seen = JSON.parse(await readFile(probe, "utf8"));
+  assert.deepEqual([seen.held, seen.inherited], [false, true], "the leg's train took no slot of its own");
+  assert.deepEqual([seen.owner.command, seen.owner.pid], ["verify-p1", p1.child.pid], "the slot was verify-p1's while its leg ran");
+  assert.equal(seen.variable, `${seen.owner.token}:${join(locks, "heavy.lock")}`, "and the leg ran under verify-p1's token");
+  assert.deepEqual(p1.stderr.split("\n").filter(Boolean), [JSON.stringify(notice)], "verify-p1's stderr carries its own waiting line and nothing else");
+  await assert.rejects(stat(join(locks, "heavy.lock")), { code: "ENOENT" }, "verify-p1 let go of its slot as it ended");
 });

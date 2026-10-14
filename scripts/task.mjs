@@ -1489,9 +1489,14 @@ async function invoke(name) {
 // execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs) before its output session, so it
 // never holds the session while it waits, and keeps it until the suite has ended; the test
 // processes it starts inherit the slot through EINZBERN_HEAVY_SLOT and take none of their own.
+// TCRN-CROSS-SUB-493: `verify-p1` takes its slot the same way, at its entry and before its output
+// session, because its legs are the suite and the portal train: every leg runs under that one slot
+// and the processes a leg starts inherit it, so no leg waits for a slot its own run holds or
+// carries a waiting line on its stderr; the only waiting line is p1's own, before any leg starts.
+const HEAVY_COMMANDS = new Set(["test", "verify-p1"]);
 let heavySlot = null;
 try {
-  if (command === "test") heavySlot = await acquireHeavySlot({ command: "test" });
+  if (HEAVY_COMMANDS.has(command)) heavySlot = await acquireHeavySlot({ command });
   const result = await withExclusiveOutputSession(repositoryRoot, async () => invoke(command));
   process.stdout.write(`${JSON.stringify({ ok: true, command, ...result })}\n`);
 } catch (error) {

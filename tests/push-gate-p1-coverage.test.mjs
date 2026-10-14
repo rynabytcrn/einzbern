@@ -15,6 +15,8 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { P1_SEQUENCE } from "../scripts/p1-sequence.mjs";
+import { acquireHeavySlot } from "../scripts/lib/heavy-runs.mjs";
+import { hasWarningOrError } from "../scripts/lib/push-gate-output.mjs";
 import {
   GATE_RUN_PRIOR_VARIABLE,
   assessP1Coverage,
@@ -168,6 +170,31 @@ test("537: a leg's gate is named for it and runs exactly its script; its receipt
   assert.equal(judgeLegOutput(`${JSON.stringify({ ok: true, command: "lint", reasonCode: "LINT_VERIFIED" })}\n`, testLeg), "P1_LEG_RECEIPT_MISSING", "another leg's receipt");
   assert.equal(judgeLegOutput(`${JSON.stringify({ ...receiptFor(portalLeg), command: "portal" })}\n`, portalLeg), "P1_LEG_RECEIPT_MISSING", "the portal leg's receipt has no command");
   assert.equal(judgeLegOutput(Buffer.from([0xff, 0xfe, 0x0a]), testLeg), "P1_LEG_OUTPUT_UNREADABLE");
+});
+
+// TCRN-CROSS-SUB-493: verify:p1 on its own takes a heavy-run slot at its entry, and while another heavy
+// run holds every slot it says so on stderr, once, before any leg starts. The push gate judges p1's
+// stdout and stderr together (hasWarningOrError); that line is no warning, and a warning beside it is.
+test("SUB-493: a HEAVY_SLOT_WAITING line on verify:p1's stderr is judged no warning, and a warning beside it still is", async (context) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-push-gate-p1-wait-")));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  // The line as scripts/lib/heavy-runs.mjs writes it: a holder in a slot directory of this test's own,
+  // and verify-p1 waiting for it until a short timeout.
+  const env = { EINZBERN_HOME: join(base, "device"), EINZBERN_HEAVY_LOCK_DIR: join(base, "locks") };
+  const holder = await acquireHeavySlot({ command: "gates-run", env: { ...env } });
+  let stderr = "";
+  try {
+    await assert.rejects(acquireHeavySlot({ command: "verify-p1", env: { ...env }, stderr: { write: (text) => { stderr += text; } }, timeoutMs: 200 }), { reasonCode: "HEAVY_SLOT_TIMEOUT" });
+  } finally {
+    holder.release();
+  }
+  assert.equal(stderr.split("\n").filter(Boolean).length, 1);
+  assert.deepEqual([JSON.parse(stderr).reasonCode, JSON.parse(stderr).command], ["HEAVY_SLOT_WAITING", "verify-p1"]);
+  const legs = P1_SEQUENCE.map((leg) => ({ task: leg.task, ok: true, reasonCode: `${leg.task.toUpperCase().replaceAll("-", "_")}_VERIFIED` }));
+  const stdout = `${JSON.stringify({ ok: true, command: "verify-p1", reasonCode: "P1_VERIFIED", commands: legs.map(({ task }) => task), legs, observedReasonCodes: legs.map(({ reasonCode }) => reasonCode), notices: [] })}\n`;
+  assert.equal(hasWarningOrError(stdout, "verify:p1"), false, "the receipt alone is clear");
+  assert.equal(hasWarningOrError(`${stdout}${stderr}`, "verify:p1"), false, "the waiting line is no warning");
+  assert.equal(hasWarningOrError(`${stdout}${stderr}warning: TS6385 'x' is deprecated\n`, "verify:p1"), true, "a warning beside it still is");
 });
 
 // The push gate's timing probe runs every stage and writes the real receipt but starts no child: what

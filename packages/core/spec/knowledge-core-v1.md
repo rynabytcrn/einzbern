@@ -587,6 +587,21 @@ scores as a possible conflict with a valid card is refused with
 `KNOWLEDGE_POSSIBLE_CONFLICT` (details `conflicts`) unless it names `--supersedes` or
 `--coexist`; `--supersedes` removes the older card, conflict superseded (see "Valid
 and removed"): it leaves every default and searched read, and its body is cleared.
+The refusal is split by INIT family (TCRN-CROSS-STORY-531, MIN-256 D6 C5). A card's
+families are read from its source references against the library the write goes
+through: a work id names the Initiative at the top of its parent chain (an
+Initiative its own), a minutes id the families of the work its minutes link (a
+conference's minutes, the conference's), and a file or URL none. A card has no known
+family when no reference names one, or when one names work or minutes this library
+does not hold -- a user-crest card that points at another library's work among them
+--, minutes that link no work, or work whose chain ends at no Initiative. A conflict
+every version of which is of families apart from the new card's, both known, refuses
+nothing: the card is written beside it, recorded in `coexistsWith` as `--coexist`
+records it, and the receipt (each member's entry of a `knowledge-batch` receipt)
+names it under `warnings` (`reasonCode` `KNOWLEDGE_POSSIBLE_CONFLICT`, `id`,
+`families`, `message`). A conflict of a shared family, or of no known family on
+either side, refuses as before; the refusal's `conflicts` names those alone and
+`otherFamilyConflicts` the others. `--supersedes` and `--coexist` behave as they did.
 `knowledge-remove` removes a card a model found invalid in use, or one that repeats a
 work item or a decision. No clock, observation day, window or store size removes a
 card: `maximumAgeDays` only marks a card `stale`, and a store has no body budget a

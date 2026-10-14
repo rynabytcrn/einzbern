@@ -72,6 +72,7 @@ import { readUserCrestPath } from "./machine-settings.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
 import { assertKnowledgeNotRecorded } from "./knowledge-duplicates.js";
 import { readRegistry } from "./registry.js";
+import { familiesApart, referenceFamilies } from "./work-family.js";
 
 export const KNOWLEDGE_CORE_VERSION = "tcrn.knowledge-core.v1" as const;
 export const KNOWLEDGE_STORE_SCHEMA_VERSION = "tcrn.knowledge-store.v1" as const;
@@ -4412,6 +4413,82 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
 }
 
 /**
+ * TCRN-CROSS-STORY-531 (MIN-256 D6 C5; TCRN-CROSS-SUB-485): one card a write was admitted beside
+ * although it scores as a possible conflict, because it is of another INIT family (`families`, the
+ * Initiatives its source references lead to). The receipt names each under `warnings`; the card
+ * records it in coexistsWith.
+ */
+interface KnowledgeConflictWarning {
+  readonly reasonCode: "KNOWLEDGE_POSSIBLE_CONFLICT";
+  readonly id: string;
+  readonly families: readonly string[];
+  readonly message: string;
+}
+
+// How a write's conflicts stand: `blocking` refuses it, `otherFamily` it stands beside with a warning.
+interface ConflictFamilyVerdict {
+  readonly blocking: readonly string[];
+  readonly otherFamily: readonly KnowledgeConflictWarning[];
+}
+
+// TCRN-CROSS-SUB-485: a write that names neither --supersedes nor --coexist is refused only for the
+// conflicts of its own INIT family. The families are read from the source references
+// (referenceFamilies, Q11): the new card's, and those of every scored version of a conflicting card,
+// since a duplicate's versions can point at different work. A conflict all of whose versions are of
+// families apart from the new card's is stood beside; one of a shared family, or one either side of
+// which has no known family, refuses the write as before. A write that names --supersedes or
+// --coexist is admitted beside every conflict, as it always was.
+function conflictFamilyVerdict(
+  state: WorkspaceState,
+  metadata: KnowledgeUnitMetadata,
+  conflicts: readonly string[],
+  scored: readonly KnowledgeUnitMetadata[],
+  input: Pick<CreateKnowledgeUnitInput, "coexist">,
+): ConflictFamilyVerdict {
+  if (conflicts.length === 0 || metadata.supersedes !== null || input.coexist === true) return { blocking: [], otherFamily: [] };
+  const own = referenceFamilies(state, metadata.sourceReferences);
+  const blocking: string[] = [];
+  const otherFamily: KnowledgeConflictWarning[] = [];
+  for (const id of conflicts) {
+    const families = new Set<string>();
+    let apart = own !== null;
+    for (const version of scored) {
+      if (!apart) break;
+      if (version.id !== id) continue;
+      const theirs = referenceFamilies(state, version.sourceReferences);
+      if (theirs === null || !familiesApart(own, theirs)) apart = false;
+      else for (const family of theirs) families.add(family);
+    }
+    if (!apart || families.size === 0) {
+      blocking.push(id);
+      continue;
+    }
+    const named = [...families].sort(compareCanonicalText);
+    otherFamily.push({
+      reasonCode: "KNOWLEDGE_POSSIBLE_CONFLICT",
+      id,
+      families: named,
+      message: `${id} is close in subject but of another INIT family (${named.join(", ")}); the card is written beside it (coexistsWith)`,
+    });
+  }
+  return { blocking, otherFamily };
+}
+
+// The refusal's details: the conflicts that refuse the write, and those of another family it would
+// stand beside once they are answered.
+function conflictRefusalDetails(verdict: ConflictFamilyVerdict): Readonly<Record<string, JsonValue>> {
+  return {
+    conflicts: [...verdict.blocking],
+    ...(verdict.otherFamily.length === 0 ? {} : { otherFamilyConflicts: verdict.otherFamily.map((entry) => entry.id) }),
+  };
+}
+
+// The receipt's warnings: one per conflict of another family the write stood beside, none otherwise.
+function conflictWarnings(verdict: ConflictFamilyVerdict): { readonly warnings?: JsonValue } {
+  return verdict.otherFamily.length === 0 ? {} : { warnings: verdict.otherFamily as unknown as JsonValue };
+}
+
+/**
  * Write one card. TCRN-CROSS-STORY-476 R5: scope "user" writes it to this user's crest, under this
  * machine's lock of the user crest, and the crest's first card lays the crest out; the library at
  * `workspaceRoot` still supplies the language policy and the source files the card names. Every
@@ -4471,18 +4548,22 @@ async function createUserCrestEvent(
   if (metadata.supersedes !== null && replacedRecords.every((unit) => unit.metadata.lifecycle === "retired")) {
     fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
   }
+  const scored = records.filter((unit) => !scan.removals.has(unit.metadata.id)).map((unit) => unit.metadata);
   const conflicts = [...new Set(knowledgeConflictHits(
-    records.filter((unit) => !scan.removals.has(unit.metadata.id)).map((unit) => unit.metadata),
+    scored,
     metadata.subject,
     metadata.supersedes === null ? [metadata.id] : [metadata.id, metadata.supersedes],
   ))];
-  if (conflicts.length > 0 && metadata.supersedes === null && input.coexist !== true) {
-    fail("KNOWLEDGE_POSSIBLE_CONFLICT", conflicts.join(","), { conflicts: [...conflicts] });
+  // TCRN-CROSS-SUB-485: the families are read in the library this write goes through; a card of the
+  // crest that points at another library's work has none this library can name, and still refuses.
+  const verdict = conflictFamilyVerdict(workspace, metadata, conflicts, scored, input);
+  if (verdict.blocking.length > 0) {
+    fail("KNOWLEDGE_POSSIBLE_CONFLICT", verdict.blocking.join(","), conflictRefusalDetails(verdict));
   }
   // TCRN-CROSS-SUB-310: the conflicts this write saw and was admitted beside -- with --coexist, or
-  // beside the card it supersedes -- are recorded in the card, so a reader tells them from a
-  // conflict no writer saw (projectCrestUnits). A library's write records them the same way
-  // (TCRN-CROSS-SUB-414, createLibraryCrestEvent).
+  // beside the card it supersedes, or of another INIT family (TCRN-CROSS-SUB-485) -- are recorded in
+  // the card, so a reader tells them from a conflict no writer saw (projectCrestUnits). A library's
+  // write records them the same way (TCRN-CROSS-SUB-414, createLibraryCrestEvent).
   const written: KnowledgeUnitMetadata = conflicts.length === 0
     ? metadata
     : { ...metadata, extensions: { coexistsWith: conflicts.slice(0, KNOWLEDGE_LIMITS.maximumQueryResults) } };
@@ -4549,6 +4630,7 @@ async function createUserCrestEvent(
     scope: "user",
     ...(conflicts.length > 0 ? { conflicts: [...conflicts] } : {}),
     ...(metadata.supersedes === null ? {} : { superseded: metadata.supersedes }),
+    ...conflictWarnings(verdict),
   };
 }
 
@@ -4685,14 +4767,17 @@ async function createLibraryCrestEvent(
   }
   // TCRN-CROSS-STORY-365: score before writing. Above the threshold the writer must have said which
   // it is -- this card replaces those (--supersedes) or stands beside them (--coexist) -- and the
-  // refusal hands back the hit list rather than only naming it.
+  // refusal hands back the hit list rather than only naming it. TCRN-CROSS-SUB-485: a conflict of
+  // another INIT family, read in the chain the scan read, is stood beside without being asked.
+  const scored = records.filter((unit) => !scan.removals.has(unit.metadata.id)).map((unit) => unit.metadata);
   const conflicts = [...new Set(knowledgeConflictHits(
-    records.filter((unit) => !scan.removals.has(unit.metadata.id)).map((unit) => unit.metadata),
+    scored,
     metadata.subject,
     metadata.supersedes === null ? [metadata.id] : [metadata.id, metadata.supersedes],
   ))];
-  if (conflicts.length > 0 && metadata.supersedes === null && input.coexist !== true) {
-    fail("KNOWLEDGE_POSSIBLE_CONFLICT", conflicts.join(","), { conflicts: [...conflicts] });
+  const verdict = conflictFamilyVerdict(scan.workspace, metadata, conflicts, scored, input);
+  if (verdict.blocking.length > 0) {
+    fail("KNOWLEDGE_POSSIBLE_CONFLICT", verdict.blocking.join(","), conflictRefusalDetails(verdict));
   }
   const written: KnowledgeUnitMetadata = conflicts.length === 0
     ? metadata
@@ -4737,6 +4822,7 @@ async function createLibraryCrestEvent(
     version: scan.marker.version + 1,
     ...(conflicts.length > 0 ? { conflicts: [...conflicts] } : {}),
     ...(metadata.supersedes === null ? {} : { superseded: metadata.supersedes }),
+    ...conflictWarnings(verdict),
   };
 }
 

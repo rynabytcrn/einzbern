@@ -864,7 +864,9 @@ function batchTransitionsOrAnnotates(document: unknown): boolean {
 // TCRN-CROSS-STORY-476 (problem list #18): every knowledge verb that writes a card answers the ids
 // it wrote beside the store's version, as a library write answers its ids beside its version: the
 // card written, the card it superseded (whose record the write rewrites), and in a batch every card
-// a member wrote or superseded.
+// a member wrote or superseded. TCRN-CROSS-SUB-485 (STORY-531): the receipt carries core's answer
+// whole, so a card written beside a conflict of another INIT family carries `warnings` naming each
+// such card (a batch member, in its entry under `applied`).
 function knowledgeWriteReceipt(result: Readonly<Record<string, JsonValue>>): string {
   const ids: string[] = [];
   const add = (value: JsonValue | undefined): void => {

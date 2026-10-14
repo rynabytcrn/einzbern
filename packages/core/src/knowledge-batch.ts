@@ -196,10 +196,12 @@ async function applyKnowledgeBatchUnlocked(
         version = result.version as number;
         revisions.set(result.id as string, result.revision as number);
         // TCRN-CROSS-SUB-311: a member that superseded a card names it, as the single verb does, so
-        // the batch receipt's ids hold every card record the batch rewrote.
+        // the batch receipt's ids hold every card record the batch rewrote. TCRN-CROSS-SUB-485: a
+        // member written beside a conflict of another INIT family carries the single verb's warnings.
         applied.push({
           index, verb: "knowledge-create", id: result.id as string, revision: result.revision as number, version,
           ...(typeof result.superseded === "string" ? { superseded: result.superseded } : {}),
+          ...(Array.isArray(result.warnings) ? { warnings: result.warnings } : {}),
         });
         continue;
       }

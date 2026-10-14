@@ -206,7 +206,22 @@ async function wireProjects(projectRoots: readonly string[], libraryPath: string
   return wiring;
 }
 
-/** Relocate the library at `sourceInput` to `targetInput` (see the module comment). */
+/**
+ * Relocate the library at `sourceInput` to `targetInput` (see the module comment).
+ *
+ * TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-500): this write holds the library write lock from the
+ * copy to the tombstone, and must: it cannot hold it for an append alone, because what it writes is
+ * the whole library. The copy is compared with the source file by file and replayed to the source's
+ * heads, and then the registry points at the copy and the tombstone turns every later write at the
+ * source away. A write of this machine landing between the copy and the tombstone would be in the
+ * source alone, left in a library nothing points at any more, so no write may land while the library
+ * moves, and the lock is what keeps them out: every writer of this machine takes it for its append or
+ * its manifest, and finds the tombstone once it has it. A blob artifact-put copies before it takes
+ * the lock is the one file that can still arrive while the library moves; arriving before the
+ * comparison it fails the move (RELOCATE_COPY_MISMATCH, the copy undone), and after the tombstone the
+ * put is turned away when it takes the lock to record it. The host wiring follows once the lock is
+ * released: it writes the projects' files, not the library.
+ */
 export async function relocateLibrary(sourceInput: string, targetInput: string, options: RelocateOptions): Promise<RelocationReport> {
   assertStrictInstant(options.at);
   const moved = await withWorkspaceWriteLock(sourceInput, async (sourceRoot): Promise<{

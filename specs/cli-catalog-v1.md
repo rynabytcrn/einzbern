@@ -73,6 +73,57 @@ stays v1. `host-probe`'s own `timeout-ms` bounds its probe and is unrelated.
 `library-import-legacy` and `init` write a library they create and do not take
 the flag.
 
+### What each write holds the library write lock for (2.2.0)
+
+TCRN-CROSS-STORY-538 GWT4 (MIN-256 D6 C2, C3): a write reads the library, judges
+and builds what it writes before it takes this machine's write lock of the
+library, and holds the lock only to append its events or to replace a manifest.
+Under the lock it first checks that no stream of the library moved since its
+read (each stream's sequence and head, from the stream manifests alone); one
+that finds a stream moved reads and judges again, and one that other writers
+outran four times does the whole write under the lock. A write that cannot do
+with that much holds the lock for its whole run, and the reason is written
+below. Read verbs never take the lock.
+
+| Writes | The lock covers | Before the lock |
+| --- | --- | --- |
+| `work-create`, `work-transition`, `work-annotate`, `work-claim`, `work-release`, `work-gate-release`, `work-batch`, `project-create`, `project-update`, `project-bindings-set`, `project-bindings-remove`, `chain-declare`, `settings-set`, `settings-remove`, `variable-set`, `variable-remove`, `gates-config-set`, `gates-config-remove`, `minutes-record`, `template-admit` | the append, the stream manifest's replacement, and the projection that must follow the append (`config/project.json`) | the read, every check (a work lease among them) and every event built and measured |
+| `gates-config-propose`, `rule-propose`, `proposal-reject`, `proposal-approve` (GWT1) | the append; a rule's approval then writes `AGENTS.md` as `rule-enable` and `rule-disable` do | the read, the proposal's validation and its judgement |
+| `work-delete`, `project-delete` (GWT2) | the append, whose delta reads the leases as they stand at the append and refuses with the lease reason codes | the read and the checks |
+| `agents-render`, `rule-resolve`, `rule-enable`, `rule-disable`, and the variable sections `variable-set` and `variable-remove` render (GWT3) | the check that no stream moved and that `AGENTS.md` and `CLAUDE.md` hold what was read, the files' writes, then the append; an append that fails puts the files back (TCRN-CROSS-STORY-489) | the read and the plan of every file; a stale plan is made again |
+| `artifact-put` | the check that no stream moved (the blob root is a setting of the library) and that the blob is still the file read back, then the artifact manifest's replacement | the blob's copy into the root and its read-back: a blob is named for its content, so copying one twice writes the same bytes |
+| `workspace-relocate` | the whole move | — |
+| `recover` | the whole rebuild | — |
+
+`workspace-relocate` holds the lock from the copy to the tombstone because what
+it writes is the whole library: the copy is compared with the source file by
+file and replayed to the source's heads, and then the registry points at the
+copy and the tombstone turns every later write at the source away. A write of
+this machine landing between the copy and the tombstone would be in the source
+alone, left in a library nothing points at, so no write may land while the
+library moves. A blob `artifact-put` copies before it takes the lock can still
+arrive: before the comparison it fails the move (`RELOCATE_COPY_MISMATCH`, the
+copy undone), and after the tombstone the put is turned away when it takes the
+lock to record it.
+
+`recover` holds the lock for the whole rebuild: it drops this device's cache of
+the library and replays every stream from genesis into a new one, strictly. The
+library itself is only read; the lock keeps this machine's appends from
+committing while the cache is gone and rebuilt, so the head `recover` reports and
+the snapshot it leaves are the library's head when it ends.
+
+`snapshot-manifest` writes nothing and takes no lock: it proves the tree it read
+still by stamping every file it covers (path, inode, size and modification time)
+before it reads the state and after it walks the tree, and reads again when the
+stamps differ; after four reads that never held still it reads under the lock.
+`init` and `library-import-legacy` write a library they create. `gates-run`,
+`setup`, `engine-update`, `engine-rollback`, `skill-render`, `library-register`,
+`machine-settings-set` and `machine-settings-remove` write this device's files,
+the host's or a project's, and take no library lock of their own; what `setup`
+records in a library it records through the writes above (`agents-render`'s
+among them). The knowledge store's writes, `knowledge-init` among them, are
+judged in the same way (TCRN-CROSS-SUB-501).
+
 ## Parity and stability
 
 The catalog is the source of truth for the verb set: every dispatched verb has

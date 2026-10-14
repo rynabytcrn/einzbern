@@ -3829,16 +3829,48 @@ async function commitAppend(prepared: PreparedAppend, options: WorkspaceMutation
   };
 }
 
+// Where one stream stands: its device, its sequence and its head event.
+interface StreamPlace {
+  readonly deviceId: string;
+  readonly sequence: number;
+  readonly headEventHash: string | null;
+}
+
+// The places of the streams that hold an event, as one key two reads can be compared by.
+function streamPlacesKey(places: readonly StreamPlace[]): string {
+  return JSON.stringify(places.filter((place) => place.sequence > 0)
+    .map((place) => [place.deviceId, place.sequence, place.headEventHash])
+    .sort((left, right) => compareCanonicalText(String(left[0]), String(right[0]))));
+}
+
+// Where every stream of the library stands now, from the stream manifests alone.
+async function currentStreamPlaces(libraryRoot: string): Promise<string> {
+  const places: StreamPlace[] = [];
+  for (const deviceId of await listStreamDevices(libraryRoot)) {
+    const manifest = await readStreamManifest(libraryRoot, deviceId);
+    if (manifest !== null) places.push({ deviceId, sequence: manifest.sequence, headEventHash: manifest.headEventHash });
+  }
+  return streamPlacesKey(places);
+}
+
 // Whether every stream of the library stands where `read` found it: the same devices, each at the
 // same sequence and head. Only the stream manifests are read, so the check under the lock is short.
 async function streamsUnchangedSince(libraryRoot: string, read: LibraryRead): Promise<boolean> {
-  const heads = (entries: readonly { readonly deviceId: string; readonly manifest: StreamManifest | null }[]): string =>
-    JSON.stringify(entries.filter((entry) => entry.manifest !== null && entry.manifest.sequence > 0)
-      .map((entry) => [entry.deviceId, entry.manifest?.sequence ?? 0, entry.manifest?.headEventHash ?? null])
-      .sort((left, right) => compareCanonicalText(String(left[0]), String(right[0]))));
-  const now: { readonly deviceId: string; readonly manifest: StreamManifest | null }[] = [];
-  for (const deviceId of await listStreamDevices(libraryRoot)) now.push({ deviceId, manifest: await readStreamManifest(libraryRoot, deviceId) });
-  return heads(now) === heads(read.streams);
+  const places = read.streams.flatMap((stream) => stream.manifest === null ? [] : [{ deviceId: stream.deviceId, sequence: stream.manifest.sequence, headEventHash: stream.manifest.headEventHash }]);
+  return await currentStreamPlaces(libraryRoot) === streamPlacesKey(places);
+}
+
+/**
+ * TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-500): whether the library `state` was merged from still
+ * stands where it was read: every stream at the sequence and head the state holds, the check
+ * appendEvents makes under the lock (only the stream manifests are read). For a write that reads
+ * the library outside the lock and must find under it that nothing moved since: artifact-put, whose
+ * blob root is a setting of the library (artifact-store.ts). A state not merged from a library's
+ * streams never stands.
+ */
+export async function libraryUnchangedSince(state: WorkspaceState): Promise<boolean> {
+  if (state.library === undefined) return false;
+  return await currentStreamPlaces(state.library.libraryRoot) === streamPlacesKey(state.library.streams);
 }
 
 // TCRN-CROSS-SUB-481: the events the appends of one flow wrote, in the order they were written.

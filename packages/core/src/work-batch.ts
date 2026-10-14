@@ -33,6 +33,7 @@ import {
   ProtocolError,
   canonicalExternalKey,
   deriveStableId,
+  parseStrictInstant,
 } from "../../protocol/src/index.js";
 import type { JsonValue, WorkRecord } from "../../protocol/src/index.js";
 import {
@@ -317,7 +318,8 @@ function applyRefusal(members: readonly unknown[], failing: number, phase: strin
   }));
 }
 
-// A key that does not canonicalize is for the shape or the apply pass to refuse, not for the lease check.
+// A key that does not canonicalize, or an instant that does not parse, is for the shape or the apply
+// pass to refuse, not for the lease check.
 function resolvedOrNull<T>(resolve: () => T): T | null {
   try {
     return resolve();
@@ -337,9 +339,14 @@ function resolvedOrNull<T>(resolve: () => T): T | null {
  * names the member, WORK_LEASED, and in its detail the holder and when the lease runs out; the
  * members after it are not evaluated. A work-create member is not held by a lease (MIN-256 R1 Q7),
  * and a document that is not a batch is left for applyWorkBatch to refuse.
+ *
+ * TCRN-CROSS-SUB-496: leases are judged only at an `occurredAt` the write takes. Any other is the
+ * write's to refuse (TIMESTAMP_INVALID), for the reason it gets in a library that holds no lease, so
+ * no member is held to a lease at it.
  */
 export function assertWorkBatchLeases(state: Pick<WorkspaceState, "configRecords" | "work">, document: unknown, options: WorkBatchOptions): void {
   if (!isObject(document) || document.schemaVersion !== WORK_BATCH_SCHEMA_VERSION || !Array.isArray(document.members)) return;
+  if (resolvedOrNull(() => parseStrictInstant(options.occurredAt)) === null) return;
   const members = document.members as readonly unknown[];
   // The lease walk reads only a record's id and parentId, so a record a member creates joins the
   // view as those two; a later entry for an id takes the place of an earlier one.
@@ -360,8 +367,8 @@ export function assertWorkBatchLeases(state: Pick<WorkspaceState, "configRecords
     try {
       assertWorkLeaseAdmits(view, id, options.actorId, options.occurredAt);
     } catch (error) {
-      // Only a lease that binds the member is the member's; an instant that does not parse is the
-      // write's, refused as work-transition refuses it.
+      // Only a lease that binds the member is the member's; the instant parses (above), and anything
+      // else is thrown as it is.
       if (error instanceof WorkLeaseError && error.reasonCode === "WORK_LEASED") throw applyRefusal(members, index, "delta", error.reasonCode, error.message);
       throw error;
     }

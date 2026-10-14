@@ -5,11 +5,15 @@
 // SUB-476 GWT2: project-delete is not held up by a lease that has run out or whose item is gone; the
 // same append removes such leases before project.deleted. GWT3: a lease that runs on a live item
 // refuses project-delete with WORK_LEASED naming the item, the holder and expiresAt, whoever asks,
-// and the library is left as it was.
+// and the library is left as it was. SUB-495: the shipped entry prints that refusal with the item,
+// the holder, expiresAt, the leased item and the project, and nothing else beside the reason.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
@@ -25,6 +29,9 @@ import { claimWork, projectLeases, releaseWork, workLease } from "../dist/build/
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { forgeOwnStream } from "./helpers/library-forge.mjs";
 import { A, B, at, leaseLibrary as library, leaseRecords } from "./helpers/work-lease-fixture.mjs";
+
+const execFileAsync = promisify(execFile);
+const CLI = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
 
 async function run(argv) {
   let output = "";
@@ -176,6 +183,21 @@ test("535 SUB-476 GWT3: a lease that runs on a live item refuses project-delete 
   const cli = await refusal(["project-delete", "--workspace", f.root, "--at", at(5), "--id", f.projectId, "--actor", B]);
   assert.equal(cli.reasonCode, "WORK_LEASED");
   assert.deepEqual([cli.details.holder, cli.details.expiresAt, cli.details.workId], [A, at(120), f.ids.subtask], "the CLI names the holder, expiresAt and the item");
+  // SUB-495: the shipped entry prints the same refusal with the project beside the item, the holder,
+  // expiresAt and the leased item, and no other field.
+  const argv = ["project-delete", "--workspace", f.root, "--at", at(5), "--id", f.projectId, "--actor", B];
+  const failure = await execFileAsync(process.execPath, [CLI, ...argv], { encoding: "utf8" }).then(() => null, (error) => error);
+  assert.notEqual(failure, null, "the shipped entry refuses project-delete as well");
+  assert.deepEqual(JSON.parse(failure.stderr.trim().split("\n").at(-1)), {
+    ok: false,
+    reasonCode: "WORK_LEASED",
+    projectId: f.projectId,
+    workId: f.ids.subtask,
+    holder: A,
+    expiresAt: at(120),
+    leasedWorkId: f.ids.subtask,
+    error: `project ${f.projectId} still holds work ${f.ids.subtask}, leased to ${A} until ${at(120)}`,
+  });
   const after = await materializeWorkspace(f.root);
   assert.equal(after.version, before.version, "a refused project-delete writes nothing, not even the expired lease's removal");
   assert.equal(after.headEventHash, before.headEventHash);

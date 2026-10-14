@@ -196,7 +196,7 @@ import { cp, lstat, mkdir, readdir, realpath, writeFile } from "node:fs/promises
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { assertStrictInstant, canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
+import { ProtocolError, assertStrictInstant, canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
 import { isWorkStatus } from "../../protocol/src/index.js";
 import type { JsonValue, PlannedDeliveryKind, WorkRecord, WorkStatus } from "../../protocol/src/index.js";
 // ProjectRecord is a core type, not a protocol one. The protocol package never exported
@@ -551,6 +551,19 @@ function consumeWrittenIds(): readonly string[] | null {
   const ids = lastWrittenIds;
   lastWrittenIds = null;
   return ids;
+}
+
+// TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-496): whether --at is an instant the write takes. A lease check
+// made before the write judges leases at --at only when it is one; any other --at is the write's to
+// refuse (TIMESTAMP_INVALID), for the reason it gets in a library that holds no lease.
+function writeInstant(at: string): boolean {
+  try {
+    assertStrictInstant(at);
+    return true;
+  } catch (error) {
+    if (error instanceof ProtocolError) return false;
+    throw error;
+  }
 }
 
 // WSB-1: the mutated record's identity, projected additively so agents never have
@@ -3485,10 +3498,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // item is named (WORKSPACE_GATE_PENDING, with work-gate-release).
       // TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-471): before either, the item is held to the leases as the
       // write itself would hold it: while another actor's unexpired lease binds the item, the
-      // transition is refused with WORK_LEASED and no gate is judged.
+      // transition is refused with WORK_LEASED and no gate is judged. TCRN-CROSS-SUB-496: only at an
+      // --at the write takes; any other --at goes on as in a library with no lease.
       const before = values.status === "done" ? await materializeWorkspace(workspace) : null;
       if (before !== null) {
-        assertWorkLeaseAdmits(before, values.id ?? "", values.actor ? values.actor : undefined, at);
+        if (writeInstant(at)) assertWorkLeaseAdmits(before, values.id ?? "", values.actor ? values.actor : undefined, at);
         assertWorkGatesClear(before, [values.id ?? ""]);
       }
       const verdict: DoneGatesVerdict | null = before === null

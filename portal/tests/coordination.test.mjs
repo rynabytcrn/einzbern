@@ -23,6 +23,9 @@ const portalRoot = fileURLToPath(new URL("..", import.meta.url));
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
 const ACTOR = "agent:test-portal";
 const OWNER_TEXT = "# The container\n\nThe Owner's own text, which the engine never rewrites.\n";
+// The portal is a loopback server on this machine; the offline boundary allows the page's requests to
+// it, made as the page makes them, through the platform's request function.
+const loopback = globalThis.fetch;
 
 let second = 0;
 const at = () => { second += 1; return new Date(Date.UTC(2026, 9, 15, 2, 0, second)).toISOString().replace(".000Z", "Z"); };
@@ -75,14 +78,14 @@ async function startPortal({ library, home, deviceEnv }) {
 }
 
 async function readBoot(url) {
-  const page = await (await fetch(url)).text();
+  const page = await (await loopback(url)).text();
   const boot = JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]);
   const target = { epoch: boot.epoch, libraryId: boot.library.libraryId, projectId: boot.library.configurationProjectId ?? null };
   return { boot, read: { headers: { "x-portal-token": boot.token } }, write: (method, body) => ({ method, headers: { "content-type": "application/json", "x-portal-token": boot.token, "x-configuration-target": JSON.stringify(target) }, body: JSON.stringify(body) }) };
 }
 
 async function request(url, path, options) {
-  const response = await fetch(new URL(path, url), options);
+  const response = await loopback(new URL(path, url), options);
   return { response, body: await response.json() };
 }
 

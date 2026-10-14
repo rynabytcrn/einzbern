@@ -340,9 +340,11 @@ test("SUB-484: gates-run holds a slot while its gates run, hands it to them, and
     else process.env[heavy.HEAVY_LOCK_DIRECTORY_VARIABLE] = saved.locks;
   }
 
-  // Another process's gates-run waits for a slot this test holds, and runs once it is let go.
+  // Another process's gates-run waits for a slot this test holds, and runs once it is let go. It
+  // runs as this fixture's device, and its home is the private one gateFixture made under base,
+  // named here rather than read back from the environment (TCRN-CROSS-SUB-492).
   const holding = await heavy.acquireHeavySlot({ command: "holder", env: environment() });
-  const child = track(spawn(process.execPath, [join(repositoryRoot, "scripts/einzbern.mjs"), ...run()], { env: environment({ EINZBERN_HOME: process.env.EINZBERN_HOME, HOME: process.env.HOME }), stdio: ["ignore", "pipe", "pipe"] }));
+  const child = track(spawn(process.execPath, [join(repositoryRoot, "scripts/einzbern.mjs"), ...run()], { env: environment({ EINZBERN_HOME: process.env.EINZBERN_HOME, HOME: join(base, "home") }), stdio: ["ignore", "pipe", "pipe"] }));
   const [notice] = await until(() => child.notices().length > 0 && child.notices(), "gates-run's notice");
   assert.deepEqual([notice.command, notice.holders.map(({ pid, command }) => [pid, command])], ["gates-run", [[process.pid, "holder"]]]);
   await pause(300);

@@ -123,6 +123,13 @@ appends included; nothing else writes it.
   lease's `config.record.removed` just before `work.deleted`. A delete is not a write a lease
   guards; an item without a lease is deleted in one event, as before, and a refused delete leaves
   the lease in place.
+- Nor does a lease that binds no one hold up a project's delete. `project-delete` judges the
+  project's leases at its own `--at`: one that has run out, or whose work item is deleted or absent
+  (a delete written before the rule above left it behind), is removed in the same append, one
+  `config.record.removed` each, before `project.deleted`. One that still runs on a live work item
+  refuses the delete with `WORK_LEASED`, whoever asks; `details` name the `workId`, the `holder`
+  and `expiresAt` (with `leasedWorkId` and `projectId`), and nothing is written. The project's
+  other refusals are as they were.
 - Whether a lease runs is judged against the instant of the write (`--at`); the engine reads no
   clock. A display may judge it against the reader's present instant, for reading only.
 - Leases are not projected: `config/project.json` and `configProjectionStatus` leave the

@@ -168,7 +168,7 @@ import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relatio
 import { WORK_GATES_KINDS, normalizedWorkGates, workGatesShapeProblem } from "./work-gates.js";
 import { projectLineage, workspaceSettingIdentity, assertScopedSettingWriteConsistent } from "./project-scope.js";
 import { ConfigRecordError, configRecordId, configRecordIdentity, isConfigRecordCollection, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
-import { assertWorkLeaseAdmits, leaseRemovalDelta } from "./work-lease.js";
+import { assertProjectLeasesAdmitDelete, assertWorkLeaseAdmits, leaseRemovalDelta, staleProjectLeaseRemovalDeltas } from "./work-lease.js";
 import type { ConfigRecord } from "./config-records.js";
 
 export const WORKSPACE_SCHEMA_VERSION = "tcrn.workspace.v1" as const;
@@ -3726,18 +3726,35 @@ export async function updateProject(workspaceRoot: string, input: {
   }, input);
 }
 
-export async function deleteProject(workspaceRoot: string, input: {
-  readonly id: string;
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, (state) => {
+function deleteProjectDelta(input: { readonly id: string; readonly occurredAt: string }): (state: WorkspaceState) => MutationDelta {
+  return (state) => {
     const current = projectById(state, input.id);
+    assertProjectLeasesAdmitDelete(state, current.id, input.occurredAt);
     if (state.projects.some((record) => record.parentProjectId === current.id && !record.tombstone) || state.settings.some((record) => record.projectId === current.id) || state.configRecords.some((record) => record.projectId === current.id)) fail("WORKSPACE_INPUT_INVALID", "project still has subprojects or scoped configuration");
     if (state.work.some((record) => record.projectId === current.id && !record.tombstone)) {
       fail("WORKSPACE_INPUT_INVALID", `project ${current.id} still owns live work`);
     }
     const record = { ...current, revision: current.revision + 1, updatedAt: input.occurredAt, tombstone: true };
     return { payload: { operation: "project.deleted", record: projectJsonFields(record) }, projects: sortedProjects(state.projects.map((entry) => entry.id === record.id ? record : entry)), work: state.work };
-  }, input);
+  };
+}
+
+// TCRN-CROSS-STORY-535 (MIN-257 D6; TCRN-CROSS-SUB-476): a lease that binds no one does not hold up a
+// project's delete. The latest state is read under the write lock, and the same append removes the
+// project's leases that have run out by --at or whose work item is deleted or absent (one
+// config.record.removed each) before the project.deleted event. A lease that still runs on a live
+// item refuses the delete with WORK_LEASED, whoever asks, and nothing is written (R4 Q4); the other
+// refusals are as they were.
+export async function deleteProject(workspaceRoot: string, input: {
+  readonly id: string;
+} & WorkspaceMutationOptions): Promise<WorkspaceState> {
+  assertStrictInstant(input.occurredAt);
+  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
+    const state = await materializeWorkspace(root);
+    const current = projectById(state, input.id);
+    assertProjectLeasesAdmitDelete(state, current.id, input.occurredAt);
+    return appendEvents(root, [...staleProjectLeaseRemovalDeltas(state, current.id, input.occurredAt), deleteProjectDelta(input)], input);
+  });
 }
 
 // STORY-300 slice 3: createWork's delta, exposed so a batch can compose it. createWork

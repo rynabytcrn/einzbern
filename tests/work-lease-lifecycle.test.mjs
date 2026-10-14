@@ -2,20 +2,43 @@
 // TCRN-CROSS-STORY-535 (MIN-257 D6): a lease does not outlive its work item. SUB-475 GWT1: work-delete,
 // by any actor and whether the lease still runs, removes the item's lease in the same append, just
 // before the work.deleted event; an item without a lease is deleted in one event, as before.
+// SUB-476 GWT2: project-delete is not held up by a lease that has run out or whose item is gone; the
+// same append removes such leases before project.deleted. GWT3: a lease that runs on a live item
+// refuses project-delete with WORK_LEASED naming the item, the holder and expiresAt, whoever asks,
+// and the library is left as it was.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { deleteWork, materializeWorkspace, materializeWorkspaceFromGenesis } from "../dist/build/packages/core/src/index.js";
-import { claimWork, workLease } from "../dist/build/packages/core/src/work-lease.js";
+import {
+  createProject,
+  createWork,
+  deleteProject,
+  deleteWork,
+  materializeWorkspace,
+  materializeWorkspaceFromGenesis,
+} from "../dist/build/packages/core/src/index.js";
+import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
+import { claimWork, projectLeases, releaseWork, workLease } from "../dist/build/packages/core/src/work-lease.js";
+import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { forgeOwnStream } from "./helpers/library-forge.mjs";
 import { A, B, at, leaseLibrary as library, leaseRecords } from "./helpers/work-lease-fixture.mjs";
 
 async function run(argv) {
   let output = "";
   await runCli(argv, { write: (value) => { output += value; } });
   return JSON.parse(output);
+}
+
+async function refusal(argv) {
+  try {
+    await run(argv);
+  } catch (error) {
+    return error;
+  }
+  throw new Error(`${argv.join(" ")} was expected to be refused`);
 }
 
 /** What `operation` appended to the library at `root`: the payloads of its events, in order. */
@@ -80,4 +103,93 @@ test("535 SUB-475 GWT1: a refused delete removes no lease and writes nothing", a
   assert.equal(after.version, before.version, "a refused delete writes nothing");
   assert.equal(after.headEventHash, before.headEventHash);
   assert.deepEqual(workLease(after, f.ids.story), { workId: f.ids.story, holder: A, claimedAt: at(0), expiresAt: at(120) }, "the lease stays");
+});
+
+/** The leases of `projectId` as they stand at `instant`, by item. */
+const standings = (state, projectId, instant) => Object.fromEntries(projectLeases(state, projectId, instant).map((lease) => [lease.workId, [lease.holder, lease.standing]]));
+
+/** Assert that `operation` is refused with WORK_LEASED naming A's lease on the Subtask of `f`. */
+async function refusedAsHeld(operation, f) {
+  await assert.rejects(operation, (error) => {
+    assert.equal(error.reasonCode, "WORK_LEASED", error.message);
+    assert.deepEqual(
+      { workId: error.details.workId, holder: error.details.holder, expiresAt: error.details.expiresAt, leasedWorkId: error.details.leasedWorkId, projectId: error.details.projectId },
+      { workId: f.ids.subtask, holder: A, expiresAt: at(120), leasedWorkId: f.ids.subtask, projectId: f.projectId },
+    );
+    return true;
+  });
+}
+
+test("535 SUB-476 GWT2: leases that have run out or whose item is gone do not hold up project-delete; the same append removes them first", async (context) => {
+  const f = await library(context, "LEASE-PROJECT-STALE");
+  await claimWork(f.root, { id: f.ids.subtask, actorId: A, occurredAt: at(0) });
+  await claimWork(f.root, { id: f.ids.sibling, actorId: B, ttl: "1m", occurredAt: at(0) });
+  for (const [index, name] of ["subtask", "story", "sibling", "epic", "initiative"].entries()) {
+    await deleteWork(f.root, { id: f.ids[name], occurredAt: at(2 + index) });
+  }
+  // The history an engine before SUB-475 wrote: the same deletes, the leases left behind.
+  await forgeOwnStream(f.root, (events) => events
+    .filter((event) => !(event.payload.operation === "config.record.removed" && event.payload.record.collection === "lease"))
+    .map((event) => ({ occurredAt: event.occurredAt, payload: event.payload, clock: event.clock })));
+  // A lease on an item the library never held, and another project's lease, which stays.
+  const ghost = deriveStableId("work", "LEASE-PROJECT-GHOST");
+  await setConfigRecord(f.root, { collection: "lease", key: ghost, projectId: f.projectId, value: { holder: B, claimedAt: at(7), expiresAt: at(127) }, occurredAt: at(7) });
+  const other = await createProject(f.root, { occurredAt: at(8), externalKey: "LEASE-PROJECT-OTHER-P", name: "Other" });
+  const otherProjectId = other.projects.find((record) => record.externalKey === "LEASE-PROJECT-OTHER-P").id;
+  const otherWork = await createWork(f.root, { occurredAt: at(8), projectId: otherProjectId, externalKey: "LEASE-PROJECT-OTHER-INIT", kind: "Initiative", parentId: null });
+  const otherId = otherWork.work.find((record) => record.externalKey === "LEASE-PROJECT-OTHER-INIT").id;
+  await claimWork(f.root, { id: otherId, actorId: A, occurredAt: at(9) });
+
+  const before = await materializeWorkspace(f.root);
+  assert.deepEqual(standings(before, f.projectId, at(10)), {
+    [f.ids.subtask]: [A, "orphaned"],
+    [f.ids.sibling]: [B, "orphaned"],
+    [ghost]: [B, "orphaned"],
+  }, "a lease on a deleted or absent item is orphaned, run out or not");
+
+  const deleted = await appended(f.root, () => deleteProject(f.root, { id: f.projectId, actorId: B, occurredAt: at(10) }));
+  const removed = deleted.payloads.slice(0, -1);
+  assert.deepEqual(removed.map((payload) => payload.operation), ["config.record.removed", "config.record.removed", "config.record.removed"]);
+  assert.deepEqual(removed.map((payload) => payload.record.key).sort(), [f.ids.subtask, f.ids.sibling, ghost].sort());
+  assert.ok(removed.every((payload) => payload.record.collection === "lease" && payload.record.projectId === f.projectId));
+  assert.deepEqual(shape(deleted.payloads.slice(-1)), [["project.deleted", f.projectId]], "the project is deleted after its leases are removed");
+  assert.equal(deleted.result.projects.find((record) => record.id === f.projectId).tombstone, true);
+
+  const live = await materializeWorkspace(f.root);
+  assert.deepEqual(leaseRecords(live).map((record) => [record.key, record.projectId]), [[otherId, otherProjectId]], "only the other project's lease is left");
+  assert.deepEqual(await materializeWorkspaceFromGenesis(f.root), live, "the genesis replay matches the live materialization");
+});
+
+test("535 SUB-476 GWT3: a lease that runs on a live item refuses project-delete with WORK_LEASED, whoever asks, and the library is left as it was", async (context) => {
+  const f = await library(context, "LEASE-PROJECT-HELD");
+  await claimWork(f.root, { id: f.ids.subtask, actorId: A, occurredAt: at(0) });
+  await claimWork(f.root, { id: f.ids.sibling, actorId: B, ttl: "1m", occurredAt: at(0) });
+  const before = await materializeWorkspace(f.root);
+  assert.deepEqual(standings(before, f.projectId, at(5)), {
+    [f.ids.subtask]: [A, "held"],
+    [f.ids.sibling]: [B, "expired"],
+  });
+
+  await refusedAsHeld(() => deleteProject(f.root, { id: f.projectId, actorId: B, occurredAt: at(5) }), f);
+  await refusedAsHeld(() => deleteProject(f.root, { id: f.projectId, actorId: A, occurredAt: at(5) }), f);
+  await refusedAsHeld(() => deleteProject(f.root, { id: f.projectId, occurredAt: at(5) }), f);
+  const cli = await refusal(["project-delete", "--workspace", f.root, "--at", at(5), "--id", f.projectId, "--actor", B]);
+  assert.equal(cli.reasonCode, "WORK_LEASED");
+  assert.deepEqual([cli.details.holder, cli.details.expiresAt, cli.details.workId], [A, at(120), f.ids.subtask], "the CLI names the holder, expiresAt and the item");
+  const after = await materializeWorkspace(f.root);
+  assert.equal(after.version, before.version, "a refused project-delete writes nothing, not even the expired lease's removal");
+  assert.equal(after.headEventHash, before.headEventHash);
+  assert.deepEqual(leaseRecords(after), leaseRecords(before));
+
+  // Once no lease runs, the live work is what refuses; the expired lease is not, and it stays.
+  await releaseWork(f.root, { id: f.ids.subtask, actorId: A, occurredAt: at(6) });
+  const released = await materializeWorkspace(f.root);
+  await assert.rejects(() => deleteProject(f.root, { id: f.projectId, actorId: B, occurredAt: at(7) }), (error) => {
+    assert.equal(error.reasonCode, "WORKSPACE_INPUT_INVALID");
+    assert.match(error.message, /still owns live work/);
+    return true;
+  });
+  const unchanged = await materializeWorkspace(f.root);
+  assert.equal(unchanged.version, released.version);
+  assert.deepEqual(leaseRecords(unchanged).map((record) => record.key), [f.ids.sibling]);
 });

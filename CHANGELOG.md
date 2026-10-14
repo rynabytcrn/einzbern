@@ -5,6 +5,193 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Gates and Done
+
+A run made with `--work-id` now takes its tree digest over the content of the Story's own files
+(TCRN-CROSS-STORY-534, TCRN-CROSS-SUB-469 and TCRN-CROSS-SUB-470, EPIC-149 R4, MIN-257 D6). It reads
+every file that the commits of the Story and its Subtasks touched under a gate root, changed or not,
+and records the root with those paths and a content digest for each file, without `HEAD` and without
+a change list (`einzbern.gate-tree.v3`). A root that none of those commits touched is recorded with
+its `HEAD` and every change, as in a run without `--work-id`, and so is every root when the commits
+touched none. So a commit or a file elsewhere in the project, another session's among them, no
+longer stales the run, and the Story goes to done without its gates running again. The done check
+reads the recorded files again and compares their digests, and compares the files the Story's
+commits touch now with the paths the run recorded: a change to one of the Story's files, committed
+or not, or a new commit of the Story's that touches another file, refuses done with
+`WORK_DONE_GATES_NOT_RUN`, whose details now carry `changedPaths` and `addedPaths`. Putting back the
+content the run read brings the run back. A run without `--work-id`, a release run among them,
+records the same shape as before.
+
+`gates-run` now hands every gate process `EINZBERN_GATE_RUN_PRIOR` (TCRN-CROSS-STORY-537,
+TCRN-CROSS-SUB-487, EPIC-149 R4, MIN-257 D6): canonical JSON with the run id and, in run order, each
+gate of the same run that ended before the gate started, with its name, its declared root, the real
+directory it ran in, its command, whether it passed, whether its output was cut, and the absolute
+path of its output file. The first gate reads an empty list. The engine's value replaces a variable
+of the same name in the caller's environment, and it is not written to the run record.
+
+### Work Leases
+
+A Story's transition to done, and every transition and annotation member of a `work-batch`, is now
+held to the leases before the gates are judged (TCRN-CROSS-STORY-536, TCRN-CROSS-SUB-471 and
+TCRN-CROSS-SUB-472, EPIC-149 R4). While another actor's unexpired lease binds the item,
+`work-transition --status done` is refused with `WORK_LEASED` (`holder`, `expiresAt` and
+`leasedWorkId` in its details) and no gate is judged; a batch with such a member is refused whole
+with `WORK_BATCH_REFUSED`, whose `failed.reasonCode` is `WORK_LEASED`, and nothing is written. A
+record that an earlier member of the batch creates is bound by a lease above the parent that member
+names. The holder's own transition is judged by the gates as before, and `work-create` stays outside
+the lease.
+
+Those lease checks now parse `--at` first, with the strict instant parser the write uses, and judge
+no lease when it does not parse (TCRN-CROSS-STORY-536, TCRN-CROSS-SUB-496, EPIC-149 R5). An `--at`
+that is not a strict instant is refused by the write with `TIMESTAMP_INVALID`, or answered first by
+the gates for a Story going to done, the same way whether the library holds a lease or not; 2.0.3
+refused it with `WORK_LEASE_INVALID` in a library that held any lease.
+
+A deleted work item or project no longer leaves its leases behind (TCRN-CROSS-STORY-535,
+TCRN-CROSS-SUB-475 and TCRN-CROSS-SUB-476, EPIC-149 R4). `work-delete` removes the item's own lease
+in the same append that deletes it, whoever deletes and whether the lease still runs; a refused
+delete leaves the lease in place. `project-delete` judges the project's leases at its `--at`: an
+expired lease, and a lease on a work item that is deleted or absent (as a delete written by 2.0.3
+left it), is removed in the same append, before the project is deleted. A running lease on a live
+work item refuses the delete with `WORK_LEASED`, whoever asks, with `workId`, `holder`, `expiresAt`,
+`leasedWorkId` and `projectId` in its details, and nothing is written. The CLI entry
+`scripts/einzbern.mjs` now prints `projectId` with that refusal (TCRN-CROSS-STORY-535,
+TCRN-CROSS-SUB-495, EPIC-149 R5).
+
+### Gate and Rule Proposals
+
+A model can now propose a gate or rule change that Atelier settles, instead of being refused
+(TCRN-CROSS-STORY-527, TCRN-CROSS-SUB-477 and TCRN-CROSS-SUB-478, EPIC-149 R4, MIN-257 D6).
+`gates-config-propose` proposes a gate declaration or removal, and `rule-propose` a rule's enable or
+disable; neither is refused to a model, and both record `--actor` as the proposer. The proposal is
+stored in the new closed `proposal` collection, keyed `gate:<name>` or `rule:<id>`, outside the
+declarations: a pending proposal is not planned, enabled, rendered or projected into
+`config/project.json`, and proposing again replaces it. `proposal-approve` and `proposal-reject`
+settle a proposal by `--key` and the `--proposed-at` they read, and run for Atelier only, otherwise
+`MODEL_WRITE_REFUSED` with nothing appended. An approval appends, in one append, the configuration
+event the direct write appends and the proposal's removal, recorded with `surface: atelier`,
+`decidedInLibraryId` naming this library and `decidedIn` in the new form
+`proposal:<key>@<proposed-at>`; a rule's approval writes `AGENTS.md` in the `--project` directory,
+or in the one this device registered. A rejection keeps the record as rejected.
+`PROPOSAL_NOT_FOUND`, `PROPOSAL_NOT_PENDING` and `PROPOSAL_STALE` refuse an approval or rejection
+that cannot settle what it read. `gates-config-list` and `rule-list` take
+`--status declared|pending|rejected`; `declared`, the default, lists what they listed before.
+
+### Atelier
+
+The gates and rules pages list the page's proposals, pending then rejected, apart from the
+declarations, each with a status badge (TCRN-CROSS-STORY-527, TCRN-CROSS-SUB-479, EPIC-149 R4). A
+pending row carries Approve and Reject, which run `proposal-approve` or `proposal-reject` as
+`TCRN_PORTAL_ACTOR` with the `proposedAt` the row shows; a rejected row is read only. The copy is in
+all five locales, and the Atelier wiki page describes the area.
+
+### Concurrency and Device State
+
+The library write lock is now held for the append alone (TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-481,
+EPIC-149 R4, MIN-257 D6). A write reads the merged state, builds its events and measures the result
+outside the lock; under the lock it checks that no device stream moved since that read and appends,
+or reads again. The CLI's before-reads, lease pre-checks, gate checks and a Story's done judgement
+run outside the lock, and a write receipt names exactly the records its own appends wrote.
+
+A lock wait that runs out is refused with `WORKSPACE_LOCKED`, which now names the holder's
+`holderPid`, `holderCommand` and `heldSince` (TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-480,
+EPIC-149 R4). The lock file records the holder's command as an optional field, so its format stays
+`einzbern.file-lock.v1` and older readers ignore it. Every write that takes the library write lock
+accepts `--timeout-ms`, the longest it waits for the lock.
+
+Reads of the user crest (list, snippet, body, and so recall) answer from a snapshot, without the
+user crest lock (TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-482, EPIC-149 R4). A user crest write replaces
+this device's snapshot, `cache/user-crest/snapshot.json` in the device directory
+(`einzbern.user-crest-snapshot.v1`), under the lock once its event is down. A snapshot that is
+missing or behind the crest is rebuilt under the lock when the lock is free; while a writer holds
+the lock, a read answers from the snapshot it has, or from a scan, and waits for nothing.
+
+Every prompt in a registered project now leaves one line in `log/hook.ndjson` in the device
+directory, written by the engine's recall in the launcher's `einzbern.hook-log.v1` shape, whether it
+was answered or not: `HOOK_RECALL_ANSWERED`, `HOOK_RECALL_NO_HITS`, `HOOK_RECALL_PROMPT_EMPTY`,
+`HOOK_RECALL_LIBRARY_UNCONFIRMED`, or a failed recall's own code (TCRN-CROSS-STORY-529,
+TCRN-CROSS-SUB-483, EPIC-149 R4, MIN-257 D6). The directory is made 0700 and the file 0600; a line
+that cannot be written is dropped, and what the hook prints is unchanged.
+
+`gates-run`, the whole test suite (`scripts/task.mjs test`), the portal proof train
+(`scripts/verify-portal.mjs`) and release finish (`scripts/release.mjs finish`) now each take a
+machine-wide heavy-run slot before they start, so two of them do not run at once on one machine
+(TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-484, EPIC-149 R4, MIN-257 D6). A slot is a lock file in the
+device directory's `locks/` (`heavy.lock`, then `heavy-2.lock` and on), and
+`EINZBERN_HEAVY_LOCK_DIR` names another directory, so that several device directories can share one
+set of slots. The new machine setting `execution.maxConcurrentHeavyRuns` (an integer from 1 to 16, 1
+by default) sets how many there are. A run that has to wait writes one `HEAVY_SLOT_WAITING` line on
+stderr naming the holders, again whenever they change, and waits as long as it takes. The holder
+passes `EINZBERN_HEAVY_SLOT` to what it starts, so a gate, test or train it runs takes no slot of
+its own; a slot is reclaimed only from a holder on this host whose process is provably dead.
+`verify:p1` takes its slot at its entry, before its output session, so its legs inherit it and a
+wait no longer reaches a leg's stderr (TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-493, EPIC-149 R5).
+
+### Knowledge and Minutes
+
+The conflict guards of knowledge cards and of minutes now split their conflicts by INIT family
+(TCRN-CROSS-STORY-531, TCRN-CROSS-SUB-485 and TCRN-CROSS-SUB-486, EPIC-149 R4, MIN-256 D6,
+MIN-257 D6). A record's family is the Initiative at the top of the parent chain of the work it
+names, directly or through the minutes it links. A card written with neither `--supersedes` nor
+`--coexist`, whose conflicts are each of a family apart from the new card's, is written beside them:
+the card records them in `coexistsWith`, as `--coexist` would, and the receipt lists them under
+`warnings` with `KNOWLEDGE_POSSIBLE_CONFLICT`. A conflict of a shared family, or of no known family
+on either side, refuses the write with `KNOWLEDGE_POSSIBLE_CONFLICT` as before, naming those under
+`conflicts` and the others under `otherFamilyConflicts`. In the same way, `minutes-record` writes a
+record beside the close decisions of another family, adding them to its `declarations.coexists` and
+warning with `MINUTES_POSSIBLE_CONFLICT`, and refuses with `MINUTES_POSSIBLE_CONFLICT` only for the
+decisions of a shared or unknown family. `--supersedes` and `--coexist` behave as before.
+
+### Release and Repository Tooling
+
+Inside `gates-run --release`, the push gate (`engine:release`) now leaves `verify:p1` out when the
+same gate run has already passed every P1 leg (TCRN-CROSS-STORY-537, TCRN-CROSS-SUB-488,
+EPIC-149 R4, MIN-252 D3, MIN-257 D6). It reads `EINZBERN_GATE_RUN_PRIOR`, and only when every leg of
+`scripts/p1-sequence.mjs` has a gate in that run that is named for the leg, ran in this repository,
+ran exactly the leg's package script through pnpm, passed, kept its whole output, printed exactly
+one terminal receipt of the leg and printed nothing P1's zero-warning rule rejects, does its receipt
+record the `verify:p1` child as `notStarted`, with `coveredBy` naming the run and each leg's gate,
+output file and digest, and the assessment `P1_COVERED_BY_GATE_RUN`. Otherwise `verify:p1` runs in
+full, and when a run was handed but did not carry every leg, its entry gains `p1Coverage`, saying
+which legs fell short and why. Run on its own, the push gate runs `verify:p1` in full as before.
+
+The release policy now says that, from the first release after 2.0.3, a change to a format version
+or to the shape of an event raises the minor version and is not released as a patch
+(TCRN-CROSS-STORY-537, TCRN-CROSS-SUB-489, EPIC-149 R4, MIN-257 D3). This release is 2.1.0 under
+that rule.
+
+The portal's Design System reconciliation and the DS component CSS snapshot generator now read
+`Navigation.tsx` from the candidate commit that `portal/ds-consumer-contract.json` binds, in the git
+objects of the Design System root, never from that checkout's working tree (TCRN-CROSS-STORY-533,
+TCRN-CROSS-SUB-473 and TCRN-CROSS-SUB-474, EPIC-149 R4). An unpublished change in the sibling
+checkout no longer turns the portal gate red. When the candidate cannot be read or has no usable
+export, the reconciliation records the observation `DS_COMPONENT_CSS_SOURCE_UNRECONCILED` with its
+reason (`not-a-repository`, `candidate-absent`, `tree-mismatch`, `export-not-found` or
+`export-has-interpolation`), and its verdict still compares only the inline copy with the snapshot;
+the generator refuses with `DS_COMPONENT_CSS_SOURCE_UNAVAILABLE` and the reason before it writes
+anything, so the snapshot keeps its bytes.
+
+### Upgrading from 2.0.3
+
+- Readers need 2.1.0. Once 2.1.0 writes a gate or rule proposal, or Atelier's approval or rejection
+  of one, to a library, 2.0.3 still opens that library without an error, but it counts each of those
+  events in `rejectedEventCount` and skips it, so the state it reads no longer matches 2.1.0's: a
+  gate that Atelier approved is not declared, an approved rule reads disabled, and
+  `configProjection` reads `stale`. A library that 2.1.0 creates records `minEngineVersion` 2.1.0,
+  and 2.0.3 refuses to open it with `ENGINE_TOO_OLD`. Install 2.1.0 first on every device that reads
+  the same library.
+- Rolling back to 2.0.3 is safe only before the first such write.
+- A gate run that 2.0.x recorded no longer counts toward done: 2.1.0 skips a run record whose roots
+  name their paths without content digests. Run `gates-run --work-id <Story id>` on 2.1.0 once more
+  for each Story before it goes to done.
+- New device state: the heavy-run slot files (`locks/heavy.lock`, `locks/heavy-2.lock` and on), the
+  machine setting `execution.maxConcurrentHeavyRuns` (1 by default), the user crest snapshot
+  (`cache/user-crest/snapshot.json`), and `~/.einzbern/log/hook.ndjson`, which gains one line per
+  prompt, is never rotated, and can be deleted without losing anything.
+- Running the gates on a tree that contains this release no longer needs `TCRN_DESIGN_SYSTEM_ROOT`
+  to name a checkout of the bound Design System commit: the portal gate reads that commit from the
+  git objects of the Design System checkout beside the engine, whatever its working tree holds.
+
 ## 2.0.3
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.0.3. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

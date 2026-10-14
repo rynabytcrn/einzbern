@@ -414,26 +414,26 @@ test("527 Q6: the proposal verbs are cataloged with their required flags, and no
   assert.deepEqual(flags("gates-config-propose"), [
     ["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["action", false, "string"], ["command", false, "string"], ["root", false, "string"],
     ["covers", false, "list"], ["required", false, "boolean"], ["enabled", false, "boolean"], ["release-only", false, "boolean"], ["order", false, "integer"],
-    ["actor", true, "string"], ["project-id", false, "string"],
+    ["actor", true, "string"], ["project-id", false, "string"], ["timeout-ms", false, "integer"],
   ]);
   assert.deepEqual(flags("rule-propose"), [
     ["id", true, "string"], ["action", false, "string"], ["order", false, "integer"], ["at", true, "instant"], ["workspace", false, "string"], ["project", false, "string"],
-    ["actor", true, "string"], ["project-id", false, "string"],
+    ["actor", true, "string"], ["project-id", false, "string"], ["timeout-ms", false, "integer"],
   ]);
   for (const name of ["proposal-approve", "proposal-reject"]) {
     assert.deepEqual(flags(name), [
       ["key", true, "string"], ["proposed-at", true, "instant"], ["at", true, "instant"], ["workspace", false, "string"], ["project", false, "string"],
-      ["actor", true, "string"], ["project-id", false, "string"],
+      ["actor", true, "string"], ["project-id", false, "string"], ["timeout-ms", false, "integer"],
     ], name);
   }
 });
 
 test("529 GWT2 (TCRN-CROSS-SUB-480): every write that takes the library write lock takes an optional integer --timeout-ms", () => {
-  const lockWrites = ["agents-render", "artifact-put", "chain-declare", "gates-config-remove", "gates-config-set",
+  const lockWrites = ["agents-render", "artifact-put", "chain-declare", "gates-config-propose", "gates-config-remove", "gates-config-set",
     "knowledge-article-create", "knowledge-article-refresh", "knowledge-batch", "knowledge-bodies-migrate", "knowledge-capture",
     "knowledge-create", "knowledge-init", "knowledge-rebase", "knowledge-recover", "knowledge-remove", "knowledge-reverify",
     "minutes-record", "project-bindings-remove", "project-bindings-set", "project-create", "project-delete", "project-update",
-    "recover", "rule-disable", "rule-enable", "rule-resolve", "settings-remove", "settings-set", "template-admit",
+    "proposal-approve", "proposal-reject", "recover", "rule-disable", "rule-enable", "rule-propose", "rule-resolve", "settings-remove", "settings-set", "template-admit",
     "variable-remove", "variable-set", "work-annotate", "work-batch", "work-claim", "work-create", "work-delete",
     "work-gate-release", "work-release", "work-transition", "workspace-relocate"];
   const carriers = COMMAND_CATALOG.filter((entry) => entry.flags.some((flag) => flag.name === "timeout-ms")).map((entry) => entry.name);

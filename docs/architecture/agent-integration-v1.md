@@ -74,10 +74,13 @@ Flag-value sentinels carry a fixed meaning across verbs.
   compatibility on `knowledge-create` `--project-id` and `--last-verified` only.
   Prefer `-`; the alias may be withdrawn in a later release.
 - There is no `--expected-version`, and so no `head` sentinel for it: TCRN-CROSS-STORY-467 R1
-  replaced the caller-supplied version with the engine write lock. A write reads the latest
-  state under the lock and builds its change against it, and its receipt echoes `ids` (the
-  records it wrote), `version` and `headEventHash`, so no read-version-then-mutate two-step
-  is needed. `commands`, or `<verb> --help` for a single one, remains the authority on flags.
+  replaced the caller-supplied version with the engine write lock. Since TCRN-CROSS-STORY-529
+  a write reads and builds its change before it takes the lock, and under the lock only
+  checks that no stream moved since that read before it appends (one that finds a stream
+  moved reads and builds again; one other writers outran four times reads under the lock).
+  Its receipt still echoes `ids` (the records it wrote), `version` and `headEventHash`, so
+  no read-version-then-mutate two-step is needed. `commands`, or `<verb> --help` for a
+  single one, remains the authority on flags.
 
 The `--flag=value` attached form (split on the first `=`) lets a value legitimately
 begin with `--`; the two-token `--flag value` form rejects a value beginning with
@@ -129,7 +132,7 @@ what exists now, not the names in a row.
 | `work-list --parent-id null` | `total=0` — the record created by `work-create --parent-id null` was unfindable by the identical spelling | Matches, exactly as `--parent-id -` does | `work-create` accepted both sentinel spellings and `work-list` compared against only one. This was a silent wrong answer, not an inconsistency. |
 | `verifyPrivacy` when the git object stream overflows its buffer | `COMMAND_FAILED` | `COMMAND_OUTPUT_OVERFLOW`, with `PRIVACY_GIT_OBJECT_STREAM_INCOMPLETE` for a short stream | Batching the scan introduced an explicit `maxBuffer`, and an overflow there had to be distinguishable from a command that simply failed. `ENOENT` and `ETIMEDOUT` still report `COMMAND_FAILED`. |
 | `P8_VERSION_MISMATCH`, `P8_ARCHIVE_*`, `P8_CORE_REFERENCE_*` (8 codes) | Emitted by four release helpers | Removed | The helpers were dead — no gate, no script, and no test reached them. No caller could observe these codes, which is why they are listed here as a removal rather than a migration. |
-| `--expected-version` (and its `head` sentinel), `lease-inspect`, `lease-break`, `lease-recovery-break`; `WORKSPACE_CAS_MISMATCH`, `WORKSPACE_LEASE_*`, `WORKSPACE_RECOVERY_CLAIM_BROKEN` | A writer took a lease and passed the version it expected; a stale version was refused | Removed. A writer takes the engine write lock (`write.lock` in the control directory), reads the latest state under it and appends; a second writer waits instead of failing, and a lock whose holder is gone is broken by the next writer. Every write receipt carries `ids`, `version` and `headEventHash` | TCRN-CROSS-STORY-467 R1: the version ceremony cost a read before every write and bought nothing a single-machine lock does not; chains written under the lease replay unchanged, because none of that state was ever part of an event. |
+| `--expected-version` (and its `head` sentinel), `lease-inspect`, `lease-break`, `lease-recovery-break`; `WORKSPACE_CAS_MISMATCH`, `WORKSPACE_LEASE_*`, `WORKSPACE_RECOVERY_CLAIM_BROKEN` | A writer took a lease and passed the version it expected; a stale version was refused | Removed. A writer takes the engine write lock (`write.lock` in the control directory when this landed) to append; a second writer waits instead of failing, and a lock whose holder is gone is broken by the next writer. Since TCRN-CROSS-STORY-529 a writer reads and builds before it takes the lock and, under it, only checks that no stream moved since that read before it appends (one other writers outran four times reads under the lock). Every write receipt still carries `ids`, `version` and `headEventHash` | TCRN-CROSS-STORY-467 R1: the version ceremony cost a read before every write and bought nothing a single-machine lock does not; chains written under the lease replay unchanged, because none of that state was ever part of an event. |
 
 ## 8. Two rules for an agent reporting on this repository
 

@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "epic149-r2-pf-init053",
+  "pack": "epic149-r5-pf-init053",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "067a5cbf6c1a05ce760e1623c7151a96cfa79ab82a2fffedf207a3813c380c71"
+      "sha256": "5fc9c6072fdc2f8ef187e5169e1cdeec4abd69d91a6914061185acf533baa3f2"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -15,7 +15,7 @@
     },
     {
       "path": "packages/core/src/actor-attestation.ts",
-      "sha256": "637e295ca7052a7edb5b5e419aa7d3160b7c1a61a55e6cde3d48aafd20db2ea9"
+      "sha256": "0f16a1f3c37aa324ef6525d411ec05ca43d31ed138b0d5dbc730db74df75e8d0"
     },
     {
       "path": "packages/core/src/agents-sections.ts",
@@ -23,7 +23,7 @@
     },
     {
       "path": "packages/core/src/akasha.ts",
-      "sha256": "e7947635d4f6477eba45fb6cf6c0992b9ec8476ebf7b1a9b70c80ad90b21b212"
+      "sha256": "9cc84db13bb02e4913123fedfb4d4d20306877aeff6ad4b2bf9bfb53a66d6122"
     },
     {
       "path": "packages/core/src/artifact-store.ts",
@@ -58,8 +58,12 @@
       "sha256": "88da25785bca1dd7ee2a53edb1be032a60fefbe952ebb785a6d7d7c3b252c34a"
     },
     {
+      "path": "packages/core/src/config-proposals.ts",
+      "sha256": "a45ebe2994222b26e27b9a53a7ebf24852190cfc95e1ec5d48979025dfbb4372"
+    },
+    {
       "path": "packages/core/src/config-records.ts",
-      "sha256": "be5abb74216db4a1fc0414a5a8398f3e625e6e108d177d9a3cc252a32994b428"
+      "sha256": "8dea3e9e9b7186de79e1ccee5c0fd1ddbaa5c4d350a67fb325d2e89d54f4a501"
     },
     {
       "path": "packages/core/src/dependency.ts",
@@ -67,7 +71,7 @@
     },
     {
       "path": "packages/core/src/device-home.ts",
-      "sha256": "fc4dce3fcc59ded0bebc45de9133039b6bdf9bda018948bfb78fb39ccf817221"
+      "sha256": "1da9ef59cc5cd038ed8382e267672082185aaaa84c2150a0cf344fe307f0d5f0"
     },
     {
       "path": "packages/core/src/device-identity.ts",
@@ -99,7 +103,7 @@
     },
     {
       "path": "packages/core/src/file-lock.ts",
-      "sha256": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387"
+      "sha256": "a7bf2f074f35319bf52831011c2783be3fce3f7bcde3014f9abfa58fb207030d"
     },
     {
       "path": "packages/core/src/format-version.ts",
@@ -107,7 +111,7 @@
     },
     {
       "path": "packages/core/src/framework-version.ts",
-      "sha256": "12c5312ec9ec798f3f4634a5d4491d64845a0079095f192ba8551622543ab869"
+      "sha256": "7ce6b182ea564e283ce244d44a7d2290f2ce34c83583a07a26512bc55d5de7c2"
     },
     {
       "path": "packages/core/src/gate-identity.ts",
@@ -115,11 +119,11 @@
     },
     {
       "path": "packages/core/src/gates-config.ts",
-      "sha256": "de91d1e259ae093f8b59393afa0f5d0c492c8946f9a4a690f5359232e8364d75"
+      "sha256": "aec9cfe12a64627a94ef05db8b69848e8b75c0860e181538165417f773822c53"
     },
     {
       "path": "packages/core/src/gates-done.ts",
-      "sha256": "6637cbe2847e96f14d7afbb330fcd35d1d56bd6a2de96fae9c33c3c6c424fb9f"
+      "sha256": "d2e3d2b45a5ad07b9fe606ecf75181c10f4af048f64ea282b2baafed8b2ae8fe"
     },
     {
       "path": "packages/core/src/gates-plan.ts",
@@ -127,11 +131,11 @@
     },
     {
       "path": "packages/core/src/gates-run.ts",
-      "sha256": "f01050f6c3647434b80a5b802c6c3df52aaa746428b3833391190e9e946e5a3d"
+      "sha256": "ce7a4395310c328236cd921f6897bbd99d3cf7db9e194faacf9432db51828776"
     },
     {
       "path": "packages/core/src/hook-recall.ts",
-      "sha256": "c3529ead14fd54580eec81ff07b8e524fa63748c6fc98676154a3b8f4eef4a7e"
+      "sha256": "6f450252127a2670af8f50c7e6126a510426256af8dd51c57632dfa6fb8c93f2"
     },
     {
       "path": "packages/core/src/host-hooks.ts",
@@ -147,7 +151,7 @@
     },
     {
       "path": "packages/core/src/index.ts",
-      "sha256": "e8f91f768698cbfe444058ac52d7684a4e3e943a333ea6b3b856e1782a8ea38f"
+      "sha256": "d4f517f087d88780b2f99104488c7560b732a3634f58c3a8138042c8f3fdfe28"
     },
     {
       "path": "packages/core/src/install-manifest.ts",
@@ -167,11 +171,11 @@
     },
     {
       "path": "packages/core/src/knowledge-batch.ts",
-      "sha256": "c4bd52f5081a8b3490bf9d1beda545de7a583f3095b3a1237b76a12684a6cf1a"
+      "sha256": "a6e59aaaf6367686ec8d18863ddde83b6686f8f265bbe1e8858692a76dd6c908"
     },
     {
       "path": "packages/core/src/knowledge-core.ts",
-      "sha256": "c073b211c5f8288a67049259eeb647dc865bf974307fb475306c178d119f07a5"
+      "sha256": "5337726120f9dda6b424ac349c66cb5084e0acdca5666548872023518fb8880a"
     },
     {
       "path": "packages/core/src/knowledge-duplicates.ts",
@@ -199,11 +203,11 @@
     },
     {
       "path": "packages/core/src/library-config.ts",
-      "sha256": "c2fcd87be0911f77cb17b3dd449a15dc05041edb051ded9f9b7adebab129226c"
+      "sha256": "7d6d6c11f705548557d0464a941e4d79e2bc2f4155347f2521e553f7d009bf0e"
     },
     {
       "path": "packages/core/src/machine-settings.ts",
-      "sha256": "9a753836328806eebc798589921290aae9b2998131b37f904a1106ff6fe3dd8e"
+      "sha256": "440f0f5d343bd3eb1284c9000b958e94b2ba086537b37dfac9b1a10aa25928df"
     },
     {
       "path": "packages/core/src/managed-sections.ts",
@@ -219,7 +223,7 @@
     },
     {
       "path": "packages/core/src/minutes.ts",
-      "sha256": "5e565862bbc9d05e1dc56d676ef922822c0491c6b26df1256572d8bbf2174316"
+      "sha256": "0208867034c9cb32af8ac40604ea1fe9a65abe694a712c7d2c61044087d8bec3"
     },
     {
       "path": "packages/core/src/model-plan.ts",
@@ -287,7 +291,7 @@
     },
     {
       "path": "packages/core/src/rules.ts",
-      "sha256": "1d1b196f22551b9a5fbfed81d13ef70f8f643ca944030bb56c82b27a79b30308"
+      "sha256": "006f5db0a44fe8e82f98e090eca21dcadf5ffd9e33434e4252354a4289ce0db9"
     },
     {
       "path": "packages/core/src/settings.ts",
@@ -351,7 +355,11 @@
     },
     {
       "path": "packages/core/src/work-batch.ts",
-      "sha256": "a54672844e40887c6cedb51bd5e18725b105feef18dffdf89cc5a8d5031d3929"
+      "sha256": "779c8f064ca7eba08ff3a4564fb88478ca1c6e2d4e7234212cc20ae304e9d57c"
+    },
+    {
+      "path": "packages/core/src/work-family.ts",
+      "sha256": "d7ddb708527314d2ddb0678b469c1a401f3426bdae9a49db7e04349c7686e0af"
     },
     {
       "path": "packages/core/src/work-gates.ts",
@@ -359,7 +367,7 @@
     },
     {
       "path": "packages/core/src/work-lease.ts",
-      "sha256": "87fdddac08a6c4b9ba2e4c724cb659978236507ee216d9c0ce85ddafe1dad265"
+      "sha256": "92e7f88fc84aa038b5bd8ad72540286d828823c72649e8bc5a327b7fd6b10fd7"
     },
     {
       "path": "packages/core/src/work-relations.ts",
@@ -375,7 +383,7 @@
     },
     {
       "path": "packages/core/src/workspace.ts",
-      "sha256": "f07c2daef877ea7fa4caa98b348eeea7efbd44d9e02196fc71f79d294f705035"
+      "sha256": "535770fdc7496bbfbcd918779706c8eefac44b9ae932a733dc5097f6e492262c"
     },
     {
       "path": "packages/core/src/write-authorization.ts",
@@ -387,7 +395,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "02c89a6f1bed3ae64f22353fcab58a20b6fb8d0c3d9d2f94ce0d60e1aa845da9"
+      "sha256": "5949fd9c4456bed29903407e60288f0a1de389bff66ce5ed9148bb16bd363a3d"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -395,11 +403,11 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "c9345310f94772ed385b7f972f06b94d184d0f51b3fb831dadb9f7fbf27abeed"
+      "sha256": "5b2dc49b61739be19b2c94c8d4b53417cd0258e136317d50697fd2eea5f92dfa"
     },
     {
       "path": "portal/portal.mjs",
-      "sha256": "02c3c48bef195cb12b89133459cc571cfa8586c91e7442112169bf3859c83571"
+      "sha256": "7bb743e0273c79a0ff9a9007d72de076e3ebf30d02f3a08378f01708e87b98e8"
     },
     {
       "path": "portal/scripts/dependency-audit.mjs",
@@ -479,11 +487,11 @@
     },
     {
       "path": "scripts/ds-component-css-proof.mjs",
-      "sha256": "f9a04c5b15a6a5be53b9e772336240b0a913e5a48f148cb42a00c43181f5748d"
+      "sha256": "74089e3462a3f086802111401c178edb086b010f1a49f612fc048664005cfec7"
     },
     {
       "path": "scripts/ds-component-css-reconcile.mjs",
-      "sha256": "67a538caa66cb70b658ff8ccca2fbc8fd0fb4b18a1e60085addd209e8be10e1b"
+      "sha256": "385a922467edb4c9a9818acc52e5731b7112e89e5e59226db9b6942ebd9deca6"
     },
     {
       "path": "scripts/einzbern-hook-launcher.mjs",
@@ -491,7 +499,7 @@
     },
     {
       "path": "scripts/einzbern-hook.mjs",
-      "sha256": "f8871f9649353980227a7b37178dee240acf34e22a4e3bf3affb6d01d17b7681"
+      "sha256": "9097f9a9c81e506a9644fd3658700cc445922b1c9669914e82155d5d41d8dcdb"
     },
     {
       "path": "scripts/einzbern-launcher.mjs",
@@ -499,7 +507,7 @@
     },
     {
       "path": "scripts/einzbern.mjs",
-      "sha256": "5fb82c465d1fa4def1cae817b15ac2867f3d966e37b52c0e64b639c5f05932b1"
+      "sha256": "64239bc5ac0672a5358fc33890d0a05b4a5ceba8e923cba5d35936d77a66617d"
     },
     {
       "path": "scripts/embed-ds-component-css-snapshot.mjs",
@@ -515,7 +523,7 @@
     },
     {
       "path": "scripts/generate-ds-component-css-snapshot.mjs",
-      "sha256": "d3566f97f50ba0ea6f4561d99b07e844d8739cf17cba1121f6bca5e91a943f73"
+      "sha256": "caf01b29adf176c7576977d15907aaa12bccbf13c045ff18c38b1ba39cccc938"
     },
     {
       "path": "scripts/generate-ds-consumer-contract.mjs",
@@ -570,8 +578,16 @@
       "sha256": "cf385f1c7fd692b6d139d441f5b2ea3c707b28419ca39650a5b007c37f73b407"
     },
     {
+      "path": "scripts/lib/ds-candidate-source.mjs",
+      "sha256": "84fea81f4deabd756450ce95d6ab60c404e1e60905bc966e8ebd8bb10f972c52"
+    },
+    {
       "path": "scripts/lib/files.mjs",
       "sha256": "1f164fb47500d6d1e567d6f59aaa844708d2ec2873d0b9882b2626121d63cec0"
+    },
+    {
+      "path": "scripts/lib/heavy-runs.mjs",
+      "sha256": "be4ffd62d1c551f61fe842219b5d939ae4827f84327c90e2dce456ca0a38c674"
     },
     {
       "path": "scripts/lib/incremental-output.mjs",
@@ -591,7 +607,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "eff92331f56ff6fd313149373d6c11a569ed1a2d0f8217990cb18f584d2d0a91"
+      "sha256": "6899a073f5e5f07adda56ac7eff72f35c829c80091d088159fe7cf42c6074e91"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -608,6 +624,10 @@
     {
       "path": "scripts/lib/push-gate-output.mjs",
       "sha256": "b89c936bdfce8ccae3a0e6f1962d644adbcef09f2ad902e5cf7939607d7e85be"
+    },
+    {
+      "path": "scripts/lib/push-gate-p1-coverage.mjs",
+      "sha256": "9ed332f7ff730138e04a1e72e271c9f7dd933f9ff27f354e91532591c6b0b2c9"
     },
     {
       "path": "scripts/lib/registry-lock.mjs",
@@ -695,7 +715,7 @@
     },
     {
       "path": "scripts/push-gate.mjs",
-      "sha256": "9d3b3a50c01443afaddf29e98f05fb7196f7fe0537098e21db3787960aea1794"
+      "sha256": "7118cb92a21649e130925a4c9d35cf74a2f2790292337b873f9f69b32f71f4d3"
     },
     {
       "path": "scripts/push-wiki.mjs",
@@ -703,7 +723,7 @@
     },
     {
       "path": "scripts/release.mjs",
-      "sha256": "3630562cf93ccb444df644b15d1aefd10e7e45bb13695ec206457e32b4c08e26"
+      "sha256": "8ec13c10cb0bf5c5a69501f1687ee63fceebfa9809eed5eed712523d95ed9eff"
     },
     {
       "path": "scripts/render-helper-docs.mjs",
@@ -747,7 +767,7 @@
     },
     {
       "path": "scripts/task.mjs",
-      "sha256": "2ab916bf41fbf14a460d3ab64b84eefb1e068e3375144b2cf2a0fb679bd040a0"
+      "sha256": "c1bef945191b8d62bc932598a891ed085ec02f9e5e9a3ddeb6cc34afbdc8097b"
     },
     {
       "path": "scripts/test-controller-bootstrap.mjs",
@@ -779,7 +799,7 @@
     },
     {
       "path": "scripts/verbatim-evidence-proof.mjs",
-      "sha256": "86ff4f69c37045868c3b92d9e270f8e84181a5bca20358e9d9a068e5aa70e625"
+      "sha256": "4d32995e777db39e8a6df99d82e5dc6f054d535a3ab7e0d1efe190632cae50f3"
     },
     {
       "path": "scripts/verify-otel-privacy.mjs",
@@ -787,7 +807,7 @@
     },
     {
       "path": "scripts/verify-portal.mjs",
-      "sha256": "f430fe0e545e407148de6806e8215cd2b473d39598fa900dcc3f926e02523b4d"
+      "sha256": "fb8fcdb2ee1ca0b2b818fd6de7da03825dca79582f8f57bad1b36a451cf48c76"
     },
     {
       "path": "scripts/verify-release-trust.mjs",
@@ -810,7 +830,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "EPIC-149 R2 PF package regeneration (TCRN-CROSS-EPIC-149 R2 PF, MIN-236 D2 and MIN-246 D8: the CHANGELOG gains the 2.0.3 module sections and the upgrade notes (476d7897), and the reviewed 2.0.3 package members are classified and the privacy boundary test gains the 2.0.3 case (a6391fad), on E main 2dfa5b8e in the package worktree before any merge; since the R54 PF regeneration (cdb97173) the 2.0.2 release, the CI time limit, EPIC-149 R1 (TCRN-CROSS-STORY-525, TCRN-CROSS-STORY-526, TCRN-CROSS-STORY-528, TCRN-CROSS-STORY-530 and TCRN-CROSS-STORY-532) and the R2 fixes (TCRN-CROSS-SUB-465 to TCRN-CROSS-SUB-468 and the regenerated portal proof block) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at a6391fad in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1818 of 1818 tests in 197 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "EPIC-149 R5 PF package regeneration (TCRN-CROSS-EPIC-149 R5 PF, MIN-236 D2 and MIN-246 D8: the CHANGELOG gains the 2.1.0 module sections and the upgrade notes from 2.0.3 (a9102463), and the reviewed 2.1.0 package members are classified by their exact labels and the privacy boundary test gains the 2.1.0 case (ff41fbd3), on E main 119abbc1 in the package worktree before any merge; since the EPIC-149 R2 PF regeneration (0992bab1) the 2.0.3 release, EPIC-149 R4 (TCRN-CROSS-STORY-527, TCRN-CROSS-STORY-529, TCRN-CROSS-STORY-531, TCRN-CROSS-STORY-533, TCRN-CROSS-STORY-534, TCRN-CROSS-STORY-535, TCRN-CROSS-STORY-536 and TCRN-CROSS-STORY-537) and the R5 fixes (TCRN-CROSS-SUB-490 to TCRN-CROSS-SUB-496) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at ff41fbd3 in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1910 of 1910 tests in 214 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -944,9 +964,9 @@
   "inputProjections": [
     {
       "input": "inventory-values.json",
-      "sha256": "4c108a1a90b27da38602d02fc5147b0181ca6ff36cf1e5026bbb04bf58955988",
+      "sha256": "12c596c10e229dd03a6ea427cd90d0c06210e9f05a1cb77c70f619ecae623755",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -962,9 +982,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "24eb4568e4e1ea52d05fc58c3eba279bdee516a5edf5eca071088ca84d557473",
+      "sha256": "ec4eea46d7ac731a1d6df1a1afc27cdb929733aa5fd923632eaa7b397077958b",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -974,15 +994,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "ee221c7b71795ea254d700696b53ba8cb4ca315e553054f4e4bc47bb97c4ba48",
+      "sha256": "096d750f9bac3421c2bcbadc6a23cd80015935c35dba7186589b0586642e155a",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "058dce53a509699d21899daa4fd55c4d65d7855fc41f9335c584df48d4875dda",
+      "sha256": "9e6b9cc10729b97d49e03ca0e7dbb7402b0a5cdc1b2c54764af91b5ff9489e3f",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -994,7 +1014,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1024,13 +1044,13 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1818,
-      "pass": 1818,
+      "tests": 1910,
+      "pass": 1910,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 197,
+    "wholeFiles": 214,
     "original61Retained": false,
     "necessaryAddedWholeFiles": [
       "tests/act11-adapter-acceptance.test.mjs",
@@ -1047,21 +1067,30 @@
       "tests/cloud-roots.test.mjs",
       "tests/code-only.test.mjs",
       "tests/conference.test.mjs",
+      "tests/config-proposals-cli.test.mjs",
+      "tests/config-proposals.test.mjs",
       "tests/config-records.test.mjs",
+      "tests/conflict-family.test.mjs",
       "tests/cross-repo-privacy.test.mjs",
       "tests/decided-in-cli.test.mjs",
       "tests/dependency-materialization.test.mjs",
       "tests/dependency-policy.test.mjs",
       "tests/device-home.test.mjs",
+      "tests/ds-component-css-candidate.test.mjs",
       "tests/ds-component-css-observation.test.mjs",
       "tests/ether-library.test.mjs",
       "tests/final-gate-plan-batch-verify.test.mjs",
       "tests/final-gate-plan.test.mjs",
       "tests/format-version.test.mjs",
+      "tests/gate-tree-story-paths.test.mjs",
+      "tests/gates-done-story-paths.test.mjs",
       "tests/gates-plan.test.mjs",
+      "tests/gates-run-prior.test.mjs",
       "tests/gates-run.test.mjs",
       "tests/governance-trim-surface.test.mjs",
+      "tests/heavy-runs.test.mjs",
       "tests/hook-launcher.test.mjs",
+      "tests/hook-recall-log.test.mjs",
       "tests/host-harness.test.mjs",
       "tests/host-writable-roots.test.mjs",
       "tests/inc224-chain-event-bound.test.mjs",
@@ -1114,6 +1143,7 @@
       "tests/privacy-normalization.test.mjs",
       "tests/project-chain-model.test.mjs",
       "tests/protocol-v1.test.mjs",
+      "tests/push-gate-p1-coverage.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/readme-render.test.mjs",
       "tests/recall-cli.test.mjs",
@@ -1161,23 +1191,30 @@
       "tests/story-fields.test.mjs",
       "tests/story-rule-conservation.test.mjs",
       "tests/token-attribution.test.mjs",
+      "tests/user-crest-snapshot.test.mjs",
       "tests/variables.test.mjs",
       "tests/wiki-pages.test.mjs",
       "tests/work-gates-field.test.mjs",
       "tests/work-index-ceiling.test.mjs",
+      "tests/work-lease-at-input.test.mjs",
+      "tests/work-lease-batch-done.test.mjs",
       "tests/work-lease-batch.test.mjs",
       "tests/work-lease-cli.test.mjs",
+      "tests/work-lease-done-order.test.mjs",
+      "tests/work-lease-lifecycle.test.mjs",
       "tests/work-lease.test.mjs",
       "tests/work-relations-cli.test.mjs",
       "tests/workspace-extension-records.test.mjs",
+      "tests/workspace-lock-holder.test.mjs",
+      "tests/workspace-lock-scope.test.mjs",
       "tests/write-authorization.test.mjs"
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-13T21:17:09.983493+00:00",
+  "generationTimeUtc": "2026-10-14T10:21:07.300652+00:00",
   "currentApplicationCaseResults": [
     {
       "name": "target switch settles on matching response, UI authority and native inheritance",
@@ -2529,7 +2566,7 @@
       "class": "tcrn-app-status-bar",
       "variant": "family root/alias",
       "consumerLines": [
-        4352
+        4356
       ],
       "publishedStyleSites": [
         {
@@ -2557,7 +2594,7 @@
       "class": "tcrn-app-status-bar__action",
       "variant": "component part",
       "consumerLines": [
-        4352
+        4356
       ],
       "publishedStyleSites": [
         {
@@ -2573,7 +2610,7 @@
       "class": "tcrn-app-status-bar__command",
       "variant": "component part",
       "consumerLines": [
-        4352
+        4356
       ],
       "publishedStyleSites": [
         {
@@ -2589,7 +2626,7 @@
       "class": "tcrn-app-status-bar__state",
       "variant": "component part",
       "consumerLines": [
-        4352
+        4356
       ],
       "publishedStyleSites": [
         {
@@ -2605,41 +2642,42 @@
       "class": "tcrn-badge",
       "variant": "family root/alias",
       "consumerLines": [
-        4180,
-        4225,
-        4233,
-        4242,
-        4246,
-        4247,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327,
-        4340,
-        4356,
-        4583,
+        4183,
+        4228,
+        4236,
+        4245,
+        4249,
+        4250,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331,
+        4344,
+        4360,
         4587,
-        4602,
-        4726,
-        4727,
-        5218,
-        5219,
-        5539,
-        5554,
-        5563,
-        5735,
-        5759,
-        5812,
-        5824,
-        5834,
-        5844,
-        5948,
-        5952,
-        6044,
-        6090,
-        6416
+        4591,
+        4606,
+        4730,
+        4731,
+        5222,
+        5223,
+        5543,
+        5558,
+        5567,
+        5739,
+        5763,
+        5817,
+        5829,
+        5839,
+        5849,
+        5953,
+        5957,
+        6069,
+        6084,
+        6130,
+        6470
       ],
       "publishedStyleSites": [
         {
@@ -2766,13 +2804,13 @@
       "class": "tcrn-badge--danger",
       "variant": "modifier",
       "consumerLines": [
-        4583,
         4587,
-        4602,
-        5812,
-        5824,
-        5834,
-        5844
+        4591,
+        4606,
+        5817,
+        5829,
+        5839,
+        5849
       ],
       "publishedStyleSites": [
         {
@@ -2794,22 +2832,22 @@
       "class": "tcrn-badge--positive",
       "variant": "modifier",
       "consumerLines": [
-        4180,
-        4225,
-        4233,
-        4242,
-        4356,
-        4583,
+        4183,
+        4228,
+        4236,
+        4245,
+        4360,
         4587,
-        4602,
-        5554,
-        5812,
-        5824,
-        5834,
-        5844,
-        5948,
-        6090,
-        6416
+        4591,
+        4606,
+        5558,
+        5817,
+        5829,
+        5839,
+        5849,
+        5953,
+        6130,
+        6470
       ],
       "publishedStyleSites": [
         {
@@ -2838,8 +2876,8 @@
       "class": "tcrn-badge--warning",
       "variant": "modifier",
       "consumerLines": [
-        5218,
-        6090
+        5222,
+        6130
       ],
       "publishedStyleSites": [
         {
@@ -2856,7 +2894,7 @@
       "class": "tcrn-brand-mark",
       "variant": "family root/alias",
       "consumerLines": [
-        4171
+        4174
       ],
       "publishedStyleSites": [
         {
@@ -2872,7 +2910,7 @@
       "class": "tcrn-brand-wordmark__suffix--workflow",
       "variant": "modifier",
       "consumerLines": [
-        4173
+        4176
       ],
       "publishedStyleSites": [
         {
@@ -2888,48 +2926,49 @@
       "class": "tcrn-button",
       "variant": "family root/alias",
       "consumerLines": [
-        4177,
-        4178,
-        4207,
-        4236,
-        4312,
-        4327,
-        4330,
-        4333,
-        4352,
+        4180,
+        4181,
+        4210,
+        4239,
+        4316,
+        4331,
+        4334,
+        4337,
         4356,
-        4748,
-        4798,
-        4815,
-        4921,
-        4937,
-        4989,
-        5014,
-        5015,
-        5166,
-        5201,
-        5202,
-        5221,
-        5242,
-        5253,
-        5254,
-        5284,
-        5301,
-        5302,
-        5303,
-        5479,
-        5480,
-        5618,
-        5701,
-        5757,
-        5799,
-        5801,
-        6032,
-        6043,
-        6091,
-        6309,
-        6363,
-        6450
+        4360,
+        4752,
+        4802,
+        4819,
+        4925,
+        4941,
+        4993,
+        5018,
+        5019,
+        5170,
+        5205,
+        5206,
+        5225,
+        5246,
+        5257,
+        5258,
+        5288,
+        5305,
+        5306,
+        5307,
+        5483,
+        5484,
+        5622,
+        5705,
+        5761,
+        5803,
+        5805,
+        6037,
+        6064,
+        6083,
+        6131,
+        6349,
+        6403,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -3047,31 +3086,31 @@
       "class": "tcrn-button--md",
       "variant": "modifier",
       "consumerLines": [
-        4177,
-        4178,
-        4207,
-        4921,
-        4937,
-        5015,
-        5166,
-        5201,
-        5202,
-        5221,
-        5242,
-        5253,
-        5254,
-        5284,
-        5301,
-        5302,
-        5303,
-        5479,
-        5480,
-        5618,
-        5757,
-        6032,
-        6043,
-        6091,
-        6309
+        4180,
+        4181,
+        4210,
+        4925,
+        4941,
+        5019,
+        5170,
+        5205,
+        5206,
+        5225,
+        5246,
+        5257,
+        5258,
+        5288,
+        5305,
+        5306,
+        5307,
+        5483,
+        5484,
+        5622,
+        5761,
+        6037,
+        6083,
+        6131,
+        6349
       ],
       "publishedStyleSites": [
         {
@@ -3105,17 +3144,17 @@
       "class": "tcrn-button--primary",
       "variant": "modifier",
       "consumerLines": [
-        4312,
-        4327,
-        4798,
-        5015,
-        5202,
-        5253,
-        5301,
-        5302,
-        5479,
-        5618,
-        6450
+        4316,
+        4331,
+        4802,
+        5019,
+        5206,
+        5257,
+        5305,
+        5306,
+        5483,
+        5622,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -3146,29 +3185,30 @@
       "class": "tcrn-button--quiet",
       "variant": "modifier",
       "consumerLines": [
-        4330,
-        4352,
+        4334,
         4356,
-        4748,
-        4798,
-        4815,
-        4921,
-        5015,
-        5166,
-        5201,
-        5221,
-        5242,
-        5254,
-        5284,
-        5303,
-        5480,
-        5618,
-        5757,
-        5799,
-        5801,
-        6091,
-        6309,
-        6363
+        4360,
+        4752,
+        4802,
+        4819,
+        4925,
+        5019,
+        5170,
+        5205,
+        5225,
+        5246,
+        5258,
+        5288,
+        5307,
+        5484,
+        5622,
+        5761,
+        5803,
+        5805,
+        6064,
+        6131,
+        6349,
+        6403
       ],
       "publishedStyleSites": [
         {
@@ -3203,24 +3243,25 @@
       "class": "tcrn-button--secondary",
       "variant": "modifier",
       "consumerLines": [
-        4177,
-        4178,
-        4207,
-        4327,
-        4330,
-        4333,
-        4937,
-        4989,
-        5014,
-        5015,
-        5202,
-        5480,
-        5618,
-        5701,
-        5799,
-        6032,
-        6043,
-        6450
+        4180,
+        4181,
+        4210,
+        4331,
+        4334,
+        4337,
+        4941,
+        4993,
+        5018,
+        5019,
+        5206,
+        5484,
+        5622,
+        5705,
+        5803,
+        6037,
+        6064,
+        6083,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -3243,13 +3284,13 @@
       "class": "tcrn-button--sm",
       "variant": "modifier",
       "consumerLines": [
-        4333,
-        4798,
-        4815,
-        4989,
-        5014,
-        5701,
-        6450
+        4337,
+        4802,
+        4819,
+        4993,
+        5018,
+        5705,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -3266,8 +3307,8 @@
       "class": "tcrn-content-scope",
       "variant": "family root/alias",
       "consumerLines": [
-        5058,
-        5061
+        5062,
+        5065
       ],
       "publishedStyleSites": [
         {
@@ -3300,7 +3341,7 @@
       "class": "tcrn-content-scope__content",
       "variant": "component part",
       "consumerLines": [
-        5058
+        5062
       ],
       "publishedStyleSites": [
         {
@@ -3316,20 +3357,20 @@
       "class": "tcrn-definition-list",
       "variant": "family root/alias",
       "consumerLines": [
-        4242,
-        4243,
-        4356,
-        4612,
-        4989,
-        5219,
-        5221,
-        5563,
-        5565,
-        5571,
-        5573,
+        4245,
+        4246,
+        4360,
+        4616,
+        4993,
+        5223,
+        5225,
+        5567,
+        5569,
         5575,
-        5812,
-        5852
+        5577,
+        5579,
+        5817,
+        5857
       ],
       "publishedStyleSites": [
         {
@@ -3374,12 +3415,12 @@
       "class": "tcrn-definition-list--dense",
       "variant": "modifier",
       "consumerLines": [
-        4242,
-        4989,
-        5221,
-        5573,
-        5575,
-        5812
+        4245,
+        4993,
+        5225,
+        5577,
+        5579,
+        5817
       ],
       "publishedStyleSites": [
         {
@@ -3397,13 +3438,13 @@
       "class": "tcrn-definition-list__definition",
       "variant": "component part",
       "consumerLines": [
-        4612,
-        4989,
-        5563,
-        5565,
-        5571,
-        5573,
-        5852
+        4616,
+        4993,
+        5567,
+        5569,
+        5575,
+        5577,
+        5857
       ],
       "publishedStyleSites": [
         {
@@ -3419,15 +3460,15 @@
       "class": "tcrn-definition-list__item",
       "variant": "component part",
       "consumerLines": [
-        4612,
-        4989,
-        5219,
-        5563,
-        5565,
-        5571,
-        5573,
-        5812,
-        5852
+        4616,
+        4993,
+        5223,
+        5567,
+        5569,
+        5575,
+        5577,
+        5817,
+        5857
       ],
       "publishedStyleSites": [
         {
@@ -3455,13 +3496,13 @@
       "class": "tcrn-definition-list__term",
       "variant": "component part",
       "consumerLines": [
-        4612,
-        4989,
-        5563,
-        5565,
-        5571,
-        5573,
-        5852
+        4616,
+        4993,
+        5567,
+        5569,
+        5575,
+        5577,
+        5857
       ],
       "publishedStyleSites": [
         {
@@ -3477,7 +3518,7 @@
       "class": "tcrn-detail-drawer",
       "variant": "family root/alias",
       "consumerLines": [
-        4356
+        4360
       ],
       "publishedStyleSites": [
         {
@@ -3501,11 +3542,11 @@
       "class": "tcrn-disclosure-panel",
       "variant": "family root/alias",
       "consumerLines": [
-        4180,
-        4333,
-        4484,
-        4989,
-        5575
+        4183,
+        4337,
+        4488,
+        4993,
+        5579
       ],
       "publishedStyleSites": [
         {
@@ -3531,11 +3572,11 @@
       "class": "tcrn-disclosure-panel__title",
       "variant": "component part",
       "consumerLines": [
-        4180,
-        4333,
-        4484,
-        4989,
-        5575
+        4183,
+        4337,
+        4488,
+        4993,
+        5579
       ],
       "publishedStyleSites": [
         {
@@ -3549,9 +3590,9 @@
       "class": "tcrn-document-canvas",
       "variant": "family root/alias",
       "consumerLines": [
-        5709,
-        5720,
-        5759
+        5713,
+        5724,
+        5763
       ],
       "publishedStyleSites": [
         {
@@ -3613,8 +3654,8 @@
       "class": "tcrn-document-canvas__section",
       "variant": "component part",
       "consumerLines": [
-        5720,
-        5759
+        5724,
+        5763
       ],
       "publishedStyleSites": [
         {
@@ -3636,30 +3677,30 @@
       "class": "tcrn-field",
       "variant": "family root/alias",
       "consumerLines": [
-        4303,
-        4304,
-        4305,
-        4306,
-        4829,
-        4830,
-        4840,
+        4307,
+        4308,
+        4309,
+        4310,
+        4833,
+        4834,
         4844,
-        4913,
-        4926,
-        5015,
-        5098,
-        5161,
-        5468,
-        5469,
-        5470,
-        5591,
-        5618,
-        5739,
-        5740,
-        5794,
-        5796,
-        5797,
-        6033
+        4848,
+        4917,
+        4930,
+        5019,
+        5102,
+        5165,
+        5472,
+        5473,
+        5474,
+        5595,
+        5622,
+        5743,
+        5744,
+        5798,
+        5800,
+        5801,
+        6038
       ],
       "publishedStyleSites": [
         {
@@ -3761,7 +3802,7 @@
       "class": "tcrn-field--error",
       "variant": "modifier",
       "consumerLines": [
-        5098
+        5102
       ],
       "publishedStyleSites": [
         {
@@ -3779,7 +3820,7 @@
       "class": "tcrn-field-provenance",
       "variant": "family root/alias",
       "consumerLines": [
-        4926
+        4930
       ],
       "publishedStyleSites": [
         {
@@ -3809,7 +3850,7 @@
       "class": "tcrn-field-provenance__source",
       "variant": "component part",
       "consumerLines": [
-        4926
+        4930
       ],
       "publishedStyleSites": [
         {
@@ -3823,7 +3864,7 @@
       "class": "tcrn-field-provenance__value",
       "variant": "component part",
       "consumerLines": [
-        4926
+        4930
       ],
       "publishedStyleSites": [
         {
@@ -3837,7 +3878,7 @@
       "class": "tcrn-field__hint",
       "variant": "component part",
       "consumerLines": [
-        4913
+        4917
       ],
       "publishedStyleSites": [
         {
@@ -3851,18 +3892,18 @@
       "class": "tcrn-field__label",
       "variant": "component part",
       "consumerLines": [
-        4303,
-        4304,
-        4305,
-        4306,
-        5015,
-        5591,
-        5618,
-        5739,
-        5740,
-        5796,
-        5797,
-        6033
+        4307,
+        4308,
+        4309,
+        4310,
+        5019,
+        5595,
+        5622,
+        5743,
+        5744,
+        5800,
+        5801,
+        6038
       ],
       "publishedStyleSites": [
         {
@@ -3887,20 +3928,20 @@
       "class": "tcrn-heading",
       "variant": "family root/alias",
       "consumerLines": [
-        4233,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327,
-        4340,
-        4356,
-        5015,
-        5591,
-        5735,
-        5745,
-        6044
+        4236,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331,
+        4344,
+        4360,
+        5019,
+        5595,
+        5739,
+        5749,
+        6084
       ],
       "publishedStyleSites": [
         {
@@ -3970,14 +4011,14 @@
       "class": "tcrn-heading--2",
       "variant": "modifier",
       "consumerLines": [
-        4233,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327,
-        4340
+        4236,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331,
+        4344
       ],
       "publishedStyleSites": [
         {
@@ -3991,12 +4032,12 @@
       "class": "tcrn-heading--3",
       "variant": "modifier",
       "consumerLines": [
-        4356,
-        5015,
-        5591,
-        5735,
-        5745,
-        6044
+        4360,
+        5019,
+        5595,
+        5739,
+        5749,
+        6084
       ],
       "publishedStyleSites": [
         {
@@ -4010,12 +4051,12 @@
       "class": "tcrn-icon-button",
       "variant": "family root/alias",
       "consumerLines": [
-        4177,
-        4178,
-        4207,
-        4748,
-        4921,
-        5284
+        4180,
+        4181,
+        4210,
+        4752,
+        4925,
+        5288
       ],
       "publishedStyleSites": [
         {
@@ -4039,14 +4080,14 @@
       "class": "tcrn-inline-alert",
       "variant": "family root/alias",
       "consumerLines": [
-        4878,
-        4879,
-        5014,
-        5147,
-        5149,
-        5194,
-        5634,
-        6450
+        4882,
+        4883,
+        5018,
+        5151,
+        5153,
+        5198,
+        5638,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -4081,8 +4122,8 @@
       "class": "tcrn-inline-alert--danger",
       "variant": "modifier",
       "consumerLines": [
-        5149,
-        5634
+        5153,
+        5638
       ],
       "publishedStyleSites": [
         {
@@ -4098,7 +4139,7 @@
       "class": "tcrn-inline-alert--neutral",
       "variant": "modifier",
       "consumerLines": [
-        5194
+        5198
       ],
       "publishedStyleSites": [
         {
@@ -4112,9 +4153,9 @@
       "class": "tcrn-inline-alert--warning",
       "variant": "modifier",
       "consumerLines": [
-        4879,
-        5014,
-        6450
+        4883,
+        5018,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -4130,26 +4171,26 @@
       "class": "tcrn-input",
       "variant": "family root/alias",
       "consumerLines": [
-        4204,
-        4303,
-        4304,
-        4305,
-        4306,
-        4333,
-        4829,
-        4830,
-        4840,
+        4207,
+        4307,
+        4308,
+        4309,
+        4310,
+        4337,
+        4833,
+        4834,
         4844,
-        5015,
-        5159,
-        5160,
-        5465,
-        5470,
-        5740,
-        5796,
-        5797,
+        4848,
+        5019,
+        5163,
+        5164,
+        5469,
+        5474,
+        5744,
+        5800,
         5801,
-        6362
+        5805,
+        6402
       ],
       "publishedStyleSites": [
         {
@@ -4200,9 +4241,9 @@
       "class": "tcrn-label-set",
       "variant": "family root/alias",
       "consumerLines": [
-        5563,
-        5720,
-        5759
+        5567,
+        5724,
+        5763
       ],
       "publishedStyleSites": [
         {
@@ -4220,9 +4261,9 @@
       "class": "tcrn-line-numbered-editor",
       "variant": "family root/alias",
       "consumerLines": [
-        4333,
-        6084,
-        6091
+        4337,
+        6124,
+        6131
       ],
       "publishedStyleSites": [
         {
@@ -4288,7 +4329,7 @@
       "class": "tcrn-line-numbered-editor__content",
       "variant": "component part",
       "consumerLines": [
-        4333
+        4337
       ],
       "publishedStyleSites": [
         {
@@ -4304,7 +4345,7 @@
       "class": "tcrn-line-numbered-editor__control",
       "variant": "component part",
       "consumerLines": [
-        4333
+        4337
       ],
       "publishedStyleSites": [
         {
@@ -4324,7 +4365,7 @@
       "class": "tcrn-line-numbered-editor__findings",
       "variant": "component part",
       "consumerLines": [
-        4333
+        4337
       ],
       "publishedStyleSites": [
         {
@@ -4340,7 +4381,7 @@
       "class": "tcrn-line-numbered-editor__gutter",
       "variant": "component part",
       "consumerLines": [
-        4333
+        4337
       ],
       "publishedStyleSites": [
         {
@@ -4368,7 +4409,7 @@
       "class": "tcrn-link",
       "variant": "family root/alias",
       "consumerLines": [
-        5966
+        5971
       ],
       "publishedStyleSites": [
         {
@@ -4438,9 +4479,9 @@
       "class": "tcrn-machine-token",
       "variant": "family root/alias",
       "consumerLines": [
-        5571,
-        5969,
-        6091
+        5575,
+        5974,
+        6131
       ],
       "publishedStyleSites": [
         {
@@ -4497,7 +4538,7 @@
       "class": "tcrn-machine-token--compact",
       "variant": "modifier",
       "consumerLines": [
-        6091
+        6131
       ],
       "publishedStyleSites": [
         {
@@ -4521,8 +4562,8 @@
       "class": "tcrn-machine-token__value",
       "variant": "component part",
       "consumerLines": [
-        5571,
-        6091
+        5575,
+        6131
       ],
       "publishedStyleSites": [
         {
@@ -4546,10 +4587,10 @@
       "class": "tcrn-menu",
       "variant": "family root/alias",
       "consumerLines": [
-        4797,
-        4798,
-        5617,
-        5618
+        4801,
+        4802,
+        5621,
+        5622
       ],
       "publishedStyleSites": [
         {
@@ -4579,8 +4620,8 @@
       "class": "tcrn-menu__item",
       "variant": "component part",
       "consumerLines": [
-        4797,
-        5617
+        4801,
+        5621
       ],
       "publishedStyleSites": [
         {
@@ -4606,13 +4647,13 @@
       "class": "tcrn-multi-select-dropdown",
       "variant": "family root/alias",
       "consumerLines": [
-        4797,
-        4798,
-        5617,
-        5618,
-        5619,
-        6123,
-        6137
+        4801,
+        4802,
+        5621,
+        5622,
+        5623,
+        6163,
+        6177
       ],
       "publishedStyleSites": [
         {
@@ -4678,8 +4719,8 @@
       "class": "tcrn-multi-select-dropdown__caret",
       "variant": "component part",
       "consumerLines": [
-        4798,
-        5618
+        4802,
+        5622
       ],
       "publishedStyleSites": [
         {
@@ -4693,8 +4734,8 @@
       "class": "tcrn-multi-select-dropdown__list",
       "variant": "component part",
       "consumerLines": [
-        4798,
-        5618
+        4802,
+        5622
       ],
       "publishedStyleSites": [
         {
@@ -4712,8 +4753,8 @@
       "class": "tcrn-multi-select-dropdown__option",
       "variant": "component part",
       "consumerLines": [
-        4797,
-        5617
+        4801,
+        5621
       ],
       "publishedStyleSites": [
         {
@@ -4743,10 +4784,10 @@
       "class": "tcrn-multi-select-dropdown__trigger",
       "variant": "component part",
       "consumerLines": [
-        4798,
-        5618,
-        6123,
-        6137
+        4802,
+        5622,
+        6163,
+        6177
       ],
       "publishedStyleSites": [
         {
@@ -4772,17 +4813,17 @@
       "class": "tcrn-nav-item",
       "variant": "family root/alias",
       "consumerLines": [
-        4182,
-        4183,
-        4184,
         4185,
         4186,
         4187,
         4188,
         4189,
-        5040,
-        5983,
-        6213
+        4190,
+        4191,
+        4192,
+        5044,
+        5988,
+        6253
       ],
       "publishedStyleSites": [
         {
@@ -4861,14 +4902,14 @@
       "class": "tcrn-nav-item__content",
       "variant": "component part",
       "consumerLines": [
-        4182,
-        4183,
-        4184,
         4185,
         4186,
         4187,
         4188,
-        4189
+        4189,
+        4190,
+        4191,
+        4192
       ],
       "publishedStyleSites": [
         {
@@ -4891,15 +4932,15 @@
       "class": "tcrn-nav-item__label",
       "variant": "component part",
       "consumerLines": [
-        4182,
-        4183,
-        4184,
         4185,
         4186,
         4187,
         4188,
         4189,
-        6213
+        4190,
+        4191,
+        4192,
+        6253
       ],
       "publishedStyleSites": [
         {
@@ -4926,10 +4967,10 @@
       "class": "tcrn-number-input",
       "variant": "family root/alias",
       "consumerLines": [
-        4829,
-        4840,
-        5159,
-        5465
+        4833,
+        4844,
+        5163,
+        5469
       ],
       "publishedStyleSites": [
         {
@@ -4960,7 +5001,7 @@
       "class": "tcrn-number-input-field",
       "variant": "family root/alias",
       "consumerLines": [
-        4840
+        4844
       ],
       "publishedStyleSites": [
         {
@@ -4976,12 +5017,12 @@
       "class": "tcrn-operation-feedback",
       "variant": "family root/alias",
       "consumerLines": [
-        4356,
-        4484,
-        4583,
-        4602,
-        4611,
-        5834
+        4360,
+        4488,
+        4587,
+        4606,
+        4615,
+        5839
       ],
       "publishedStyleSites": [
         {
@@ -5049,9 +5090,9 @@
       "class": "tcrn-operation-feedback__details",
       "variant": "component part",
       "consumerLines": [
-        4356,
-        4484,
-        5834
+        4360,
+        4488,
+        5839
       ],
       "publishedStyleSites": [
         {
@@ -5088,9 +5129,9 @@
       "class": "tcrn-operation-feedback__details-body",
       "variant": "component part",
       "consumerLines": [
-        4356,
-        4484,
-        5834
+        4360,
+        4488,
+        5839
       ],
       "publishedStyleSites": [
         {
@@ -5115,8 +5156,8 @@
       "class": "tcrn-operation-feedback__details-trigger",
       "variant": "component part",
       "consumerLines": [
-        4356,
-        5834
+        4360,
+        5839
       ],
       "publishedStyleSites": [
         {
@@ -5137,9 +5178,9 @@
       "class": "tcrn-operation-feedback__identity",
       "variant": "component part",
       "consumerLines": [
-        4356,
-        4611,
-        5834
+        4360,
+        4615,
+        5839
       ],
       "publishedStyleSites": [
         {
@@ -5169,8 +5210,8 @@
       "class": "tcrn-operation-feedback__identity-row",
       "variant": "component part",
       "consumerLines": [
-        4611,
-        5834
+        4615,
+        5839
       ],
       "publishedStyleSites": [
         {
@@ -5187,10 +5228,10 @@
       "class": "tcrn-operation-feedback__status",
       "variant": "component part",
       "consumerLines": [
-        4356,
-        4583,
-        4602,
-        5834
+        4360,
+        4587,
+        4606,
+        5839
       ],
       "publishedStyleSites": [
         {
@@ -5209,8 +5250,8 @@
       "class": "tcrn-operation-feedback__summary",
       "variant": "component part",
       "consumerLines": [
-        4356,
-        5834
+        4360,
+        5839
       ],
       "publishedStyleSites": [
         {
@@ -5227,14 +5268,14 @@
       "class": "tcrn-page-header",
       "variant": "family root/alias",
       "consumerLines": [
-        4233,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327,
-        4340
+        4236,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331,
+        4344
       ],
       "publishedStyleSites": [
         {
@@ -5320,14 +5361,14 @@
       "class": "tcrn-page-header__actions",
       "variant": "component part",
       "consumerLines": [
-        4233,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327,
-        4340
+        4236,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331,
+        4344
       ],
       "publishedStyleSites": [
         {
@@ -5349,14 +5390,14 @@
       "class": "tcrn-page-header__body",
       "variant": "component part",
       "consumerLines": [
-        4233,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327,
-        4340
+        4236,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331,
+        4344
       ],
       "publishedStyleSites": [
         {
@@ -5374,14 +5415,14 @@
       "class": "tcrn-page-header__title",
       "variant": "component part",
       "consumerLines": [
-        4233,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327,
-        4340
+        4236,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331,
+        4344
       ],
       "publishedStyleSites": [
         {
@@ -5403,38 +5444,38 @@
       "class": "tcrn-page-hierarchy",
       "variant": "family root/alias",
       "consumerLines": [
-        4231,
-        4232,
+        4234,
         4235,
         4238,
-        4252,
-        4253,
+        4241,
+        4255,
         4256,
         4259,
-        4265,
-        4266,
+        4262,
+        4268,
         4269,
-        4270,
-        4274,
-        4275,
+        4272,
+        4273,
+        4277,
         4278,
-        4279,
-        4283,
-        4284,
+        4281,
+        4282,
+        4286,
         4287,
-        4288,
-        4292,
-        4293,
+        4290,
+        4291,
+        4295,
         4296,
-        4297,
-        4325,
-        4326,
+        4299,
+        4300,
         4329,
-        4332,
-        4338,
-        4339,
+        4330,
+        4333,
+        4336,
         4342,
-        4345
+        4343,
+        4346,
+        4349
       ],
       "publishedStyleSites": [
         {
@@ -5509,14 +5550,14 @@
       "class": "tcrn-page-hierarchy__header",
       "variant": "component part",
       "consumerLines": [
-        4232,
-        4253,
-        4266,
-        4275,
-        4284,
-        4293,
-        4326,
-        4339
+        4235,
+        4256,
+        4269,
+        4278,
+        4287,
+        4296,
+        4330,
+        4343
       ],
       "publishedStyleSites": [
         {
@@ -5539,14 +5580,14 @@
       "class": "tcrn-page-hierarchy__lower-content",
       "variant": "component part",
       "consumerLines": [
-        4238,
-        4259,
-        4270,
-        4279,
-        4288,
-        4297,
-        4332,
-        4345
+        4241,
+        4262,
+        4273,
+        4282,
+        4291,
+        4300,
+        4336,
+        4349
       ],
       "publishedStyleSites": [
         {
@@ -5569,14 +5610,14 @@
       "class": "tcrn-page-hierarchy__section-tabs",
       "variant": "component part",
       "consumerLines": [
-        4235,
-        4256,
-        4269,
-        4278,
-        4287,
-        4296,
-        4329,
-        4342
+        4238,
+        4259,
+        4272,
+        4281,
+        4290,
+        4299,
+        4333,
+        4346
       ],
       "publishedStyleSites": [
         {
@@ -5603,7 +5644,7 @@
       "class": "tcrn-popover",
       "variant": "family root/alias",
       "consumerLines": [
-        4744
+        4748
       ],
       "publishedStyleSites": [
         {
@@ -5635,10 +5676,10 @@
       "class": "tcrn-product-logo",
       "variant": "family root/alias",
       "consumerLines": [
-        4170,
-        4172,
         4173,
-        4174
+        4175,
+        4176,
+        4177
       ],
       "publishedStyleSites": [
         {
@@ -5689,7 +5730,7 @@
       "class": "tcrn-product-logo__copy",
       "variant": "component part",
       "consumerLines": [
-        4172
+        4175
       ],
       "publishedStyleSites": [
         {
@@ -5709,7 +5750,7 @@
       "class": "tcrn-product-logo__line-one",
       "variant": "component part",
       "consumerLines": [
-        4173
+        4176
       ],
       "publishedStyleSites": [
         {
@@ -5737,7 +5778,7 @@
       "class": "tcrn-product-logo__line-one-base",
       "variant": "component part",
       "consumerLines": [
-        4173
+        4176
       ],
       "publishedStyleSites": [
         {
@@ -5753,7 +5794,7 @@
       "class": "tcrn-product-logo__line-one-suffix",
       "variant": "component part",
       "consumerLines": [
-        4173
+        4176
       ],
       "publishedStyleSites": [
         {
@@ -5769,7 +5810,7 @@
       "class": "tcrn-product-logo__line-two",
       "variant": "component part",
       "consumerLines": [
-        4174
+        4177
       ],
       "publishedStyleSites": [
         {
@@ -5789,23 +5830,23 @@
       "class": "tcrn-product-shell",
       "variant": "family root/alias",
       "consumerLines": [
-        4167,
-        4168,
-        4169,
         4170,
-        4193,
-        4228,
-        4230,
-        4251,
-        4264,
-        4273,
-        4282,
-        4291,
-        4324,
-        4337,
-        4355,
-        6309,
-        6625
+        4171,
+        4172,
+        4173,
+        4196,
+        4231,
+        4233,
+        4254,
+        4267,
+        4276,
+        4285,
+        4294,
+        4328,
+        4341,
+        4359,
+        6349,
+        6679
       ],
       "publishedStyleSites": [
         {
@@ -6095,14 +6136,14 @@
       "class": "tcrn-product-shell-content-stack",
       "variant": "family root/alias",
       "consumerLines": [
-        4230,
-        4251,
-        4264,
-        4273,
-        4282,
-        4291,
-        4324,
-        4337
+        4233,
+        4254,
+        4267,
+        4276,
+        4285,
+        4294,
+        4328,
+        4341
       ],
       "publishedStyleSites": [
         {
@@ -6120,8 +6161,8 @@
       "class": "tcrn-product-shell-search__result",
       "variant": "component part",
       "consumerLines": [
-        4355,
-        6309
+        4359,
+        6349
       ],
       "publishedStyleSites": [
         {
@@ -6155,7 +6196,7 @@
       "class": "tcrn-product-shell-search__results",
       "variant": "component part",
       "consumerLines": [
-        4355
+        4359
       ],
       "publishedStyleSites": [
         {
@@ -6173,7 +6214,7 @@
       "class": "tcrn-product-shell__brand",
       "variant": "component part",
       "consumerLines": [
-        4170
+        4173
       ],
       "publishedStyleSites": [
         {
@@ -6193,7 +6234,7 @@
       "class": "tcrn-product-shell__main",
       "variant": "component part",
       "consumerLines": [
-        4228
+        4231
       ],
       "publishedStyleSites": [
         {
@@ -6213,8 +6254,8 @@
       "class": "tcrn-product-shell__sidebar",
       "variant": "component part",
       "consumerLines": [
-        4168,
-        4169
+        4171,
+        4172
       ],
       "publishedStyleSites": [
         {
@@ -6263,7 +6304,7 @@
       "class": "tcrn-product-shell__sidebar-header",
       "variant": "component part",
       "consumerLines": [
-        4169
+        4172
       ],
       "publishedStyleSites": [
         {
@@ -6287,7 +6328,7 @@
       "class": "tcrn-product-shell__workspace",
       "variant": "component part",
       "consumerLines": [
-        4193
+        4196
       ],
       "publishedStyleSites": [
         {
@@ -6315,7 +6356,7 @@
       "class": "tcrn-readback-panel",
       "variant": "family root/alias",
       "consumerLines": [
-        4356
+        4360
       ],
       "publishedStyleSites": [
         {
@@ -6340,9 +6381,9 @@
       "class": "tcrn-record-row",
       "variant": "family root/alias",
       "consumerLines": [
-        5702,
-        5708,
-        5709
+        5706,
+        5712,
+        5713
       ],
       "publishedStyleSites": [
         {
@@ -6488,7 +6529,7 @@
       "class": "tcrn-record-row--dense",
       "variant": "modifier",
       "consumerLines": [
-        5702
+        5706
       ],
       "publishedStyleSites": [
         {
@@ -6510,9 +6551,9 @@
       "class": "tcrn-record-row__id",
       "variant": "component part",
       "consumerLines": [
-        5702,
-        5708,
-        5709
+        5706,
+        5712,
+        5713
       ],
       "publishedStyleSites": [
         {
@@ -6530,7 +6571,7 @@
       "class": "tcrn-record-row__meta",
       "variant": "component part",
       "consumerLines": [
-        5702
+        5706
       ],
       "publishedStyleSites": [
         {
@@ -6560,7 +6601,7 @@
       "class": "tcrn-record-row__summary",
       "variant": "component part",
       "consumerLines": [
-        5702
+        5706
       ],
       "publishedStyleSites": [
         {
@@ -6590,9 +6631,9 @@
       "class": "tcrn-record-table",
       "variant": "family root/alias",
       "consumerLines": [
-        5705,
-        5708,
-        5709
+        5709,
+        5712,
+        5713
       ],
       "publishedStyleSites": [
         {
@@ -6622,8 +6663,8 @@
       "class": "tcrn-row-group",
       "variant": "family root/alias",
       "consumerLines": [
-        5708,
-        5709
+        5712,
+        5713
       ],
       "publishedStyleSites": [
         {
@@ -6677,8 +6718,8 @@
       "class": "tcrn-row-group--dense",
       "variant": "modifier",
       "consumerLines": [
-        5708,
-        5709
+        5712,
+        5713
       ],
       "publishedStyleSites": [
         {
@@ -6692,8 +6733,8 @@
       "class": "tcrn-row-group__head",
       "variant": "component part",
       "consumerLines": [
-        5708,
-        5709
+        5712,
+        5713
       ],
       "publishedStyleSites": [
         {
@@ -6719,10 +6760,10 @@
       "class": "tcrn-search-input",
       "variant": "family root/alias",
       "consumerLines": [
-        4202,
-        4203,
-        4204,
-        4205
+        4205,
+        4206,
+        4207,
+        4208
       ],
       "publishedStyleSites": [
         {
@@ -6801,7 +6842,7 @@
       "class": "tcrn-search-input__control",
       "variant": "component part",
       "consumerLines": [
-        4204
+        4207
       ],
       "publishedStyleSites": [
         {
@@ -6837,7 +6878,7 @@
       "class": "tcrn-search-input__icon",
       "variant": "component part",
       "consumerLines": [
-        4203
+        4206
       ],
       "publishedStyleSites": [
         {
@@ -6857,7 +6898,7 @@
       "class": "tcrn-search-input__shortcut",
       "variant": "component part",
       "consumerLines": [
-        4205
+        4208
       ],
       "publishedStyleSites": [
         {
@@ -6873,9 +6914,9 @@
       "class": "tcrn-search-result-list",
       "variant": "family root/alias",
       "consumerLines": [
-        5720,
-        5749,
-        5759
+        5724,
+        5753,
+        5763
       ],
       "publishedStyleSites": [
         {
@@ -6933,8 +6974,8 @@
       "class": "tcrn-search-result-list__item",
       "variant": "component part",
       "consumerLines": [
-        5720,
-        5759
+        5724,
+        5763
       ],
       "publishedStyleSites": [
         {
@@ -6956,7 +6997,7 @@
       "class": "tcrn-section-tabs",
       "variant": "family root/alias",
       "consumerLines": [
-        4236
+        4239
       ],
       "publishedStyleSites": [
         {
@@ -7004,19 +7045,19 @@
       "class": "tcrn-select",
       "variant": "family root/alias",
       "consumerLines": [
-        4198,
-        4200,
-        4330,
-        4798,
-        4815,
-        4832,
-        4843,
-        5015,
-        5284,
-        5469,
-        5591,
-        5618,
-        5739
+        4201,
+        4203,
+        4334,
+        4802,
+        4819,
+        4836,
+        4847,
+        5019,
+        5288,
+        5473,
+        5595,
+        5622,
+        5743
       ],
       "publishedStyleSites": [
         {
@@ -7051,11 +7092,11 @@
       "class": "tcrn-setting-choice",
       "variant": "family root/alias",
       "consumerLines": [
-        4798,
-        4815,
-        4832,
-        4840,
-        4843
+        4802,
+        4819,
+        4836,
+        4844,
+        4847
       ],
       "publishedStyleSites": [
         {
@@ -7107,8 +7148,8 @@
       "class": "tcrn-setting-choice__hint",
       "variant": "component part",
       "consumerLines": [
-        4815,
-        4840
+        4819,
+        4844
       ],
       "publishedStyleSites": [
         {
@@ -7129,9 +7170,9 @@
       "class": "tcrn-setting-choice__select-label",
       "variant": "component part",
       "consumerLines": [
-        4815,
-        4832,
-        4843
+        4819,
+        4836,
+        4847
       ],
       "publishedStyleSites": [
         {
@@ -7153,13 +7194,13 @@
       "class": "tcrn-setting-row",
       "variant": "family root/alias",
       "consumerLines": [
-        4913,
-        4916,
-        4922,
-        4928,
+        4917,
+        4920,
+        4926,
         4932,
-        4938,
-        5058
+        4936,
+        4942,
+        5062
       ],
       "publishedStyleSites": [
         {
@@ -7301,7 +7342,7 @@
       "class": "tcrn-setting-row-list",
       "variant": "family root/alias",
       "consumerLines": [
-        5058
+        5062
       ],
       "publishedStyleSites": [
         {
@@ -7333,9 +7374,9 @@
       "class": "tcrn-setting-row__control",
       "variant": "component part",
       "consumerLines": [
-        4928,
         4932,
-        4938
+        4936,
+        4942
       ],
       "publishedStyleSites": [
         {
@@ -7381,7 +7422,7 @@
       "class": "tcrn-setting-row__description",
       "variant": "component part",
       "consumerLines": [
-        4913
+        4917
       ],
       "publishedStyleSites": [
         {
@@ -7397,7 +7438,7 @@
       "class": "tcrn-setting-row__key",
       "variant": "component part",
       "consumerLines": [
-        4913
+        4917
       ],
       "publishedStyleSites": [
         {
@@ -7413,7 +7454,7 @@
       "class": "tcrn-setting-row__label",
       "variant": "component part",
       "consumerLines": [
-        4913
+        4917
       ],
       "publishedStyleSites": [
         {
@@ -7433,7 +7474,7 @@
       "class": "tcrn-setting-row__modified",
       "variant": "component part",
       "consumerLines": [
-        4922
+        4926
       ],
       "publishedStyleSites": [
         {
@@ -7449,7 +7490,7 @@
       "class": "tcrn-setting-row__name",
       "variant": "component part",
       "consumerLines": [
-        4913
+        4917
       ],
       "publishedStyleSites": [
         {
@@ -7465,7 +7506,7 @@
       "class": "tcrn-setting-row__reset",
       "variant": "component part",
       "consumerLines": [
-        4916
+        4920
       ],
       "publishedStyleSites": [
         {
@@ -7485,9 +7526,9 @@
       "class": "tcrn-setting-row__tools",
       "variant": "component part",
       "consumerLines": [
-        4928,
         4932,
-        4938
+        4936,
+        4942
       ],
       "publishedStyleSites": [
         {
@@ -7525,9 +7566,9 @@
       "class": "tcrn-settings-layout",
       "variant": "family root/alias",
       "consumerLines": [
-        4257,
         4260,
-        5058
+        4263,
+        5062
       ],
       "publishedStyleSites": [
         {
@@ -7633,7 +7674,7 @@
       "class": "tcrn-settings-layout__content",
       "variant": "component part",
       "consumerLines": [
-        4260
+        4263
       ],
       "publishedStyleSites": [
         {
@@ -7649,8 +7690,8 @@
       "class": "tcrn-settings-layout__form",
       "variant": "component part",
       "consumerLines": [
-        4260,
-        5058
+        4263,
+        5062
       ],
       "publishedStyleSites": [
         {
@@ -7727,7 +7768,7 @@
       "class": "tcrn-settings-layout__frame",
       "variant": "component part",
       "consumerLines": [
-        4260
+        4263
       ],
       "publishedStyleSites": [
         {
@@ -7743,7 +7784,7 @@
       "class": "tcrn-settings-layout__grid",
       "variant": "component part",
       "consumerLines": [
-        4260
+        4263
       ],
       "publishedStyleSites": [
         {
@@ -7763,7 +7804,7 @@
       "class": "tcrn-settings-layout__nav",
       "variant": "component part",
       "consumerLines": [
-        4257
+        4260
       ],
       "publishedStyleSites": [
         {
@@ -7783,7 +7824,7 @@
       "class": "tcrn-shell-brand-lockup",
       "variant": "family root/alias",
       "consumerLines": [
-        4170
+        4173
       ],
       "publishedStyleSites": [
         {
@@ -7815,16 +7856,16 @@
       "class": "tcrn-shell-locale-menu",
       "variant": "family root/alias",
       "consumerLines": [
-        4211,
-        4212,
         4214,
+        4215,
         4217,
-        4218,
-        4219,
         4220,
         4221,
         4222,
-        4627
+        4223,
+        4224,
+        4225,
+        4631
       ],
       "publishedStyleSites": [
         {
@@ -7937,8 +7978,8 @@
       "class": "tcrn-shell-locale-menu__current",
       "variant": "component part",
       "consumerLines": [
-        4214,
-        4627
+        4217,
+        4631
       ],
       "publishedStyleSites": [
         {
@@ -7955,11 +7996,11 @@
       "class": "tcrn-shell-locale-menu__name",
       "variant": "component part",
       "consumerLines": [
-        4218,
-        4219,
-        4220,
         4221,
-        4222
+        4222,
+        4223,
+        4224,
+        4225
       ],
       "publishedStyleSites": [
         {
@@ -7979,11 +8020,11 @@
       "class": "tcrn-shell-locale-menu__option",
       "variant": "component part",
       "consumerLines": [
-        4218,
-        4219,
-        4220,
         4221,
-        4222
+        4222,
+        4223,
+        4224,
+        4225
       ],
       "publishedStyleSites": [
         {
@@ -8015,7 +8056,7 @@
       "class": "tcrn-shell-locale-menu__panel",
       "variant": "component part",
       "consumerLines": [
-        4217
+        4220
       ],
       "publishedStyleSites": [
         {
@@ -8035,7 +8076,7 @@
       "class": "tcrn-shell-locale-menu__trigger",
       "variant": "component part",
       "consumerLines": [
-        4212
+        4215
       ],
       "publishedStyleSites": [
         {
@@ -8087,8 +8128,8 @@
       "class": "tcrn-shell-mobile-nav-toggle",
       "variant": "family root/alias",
       "consumerLines": [
-        4178,
-        6623
+        4181,
+        6677
       ],
       "publishedStyleSites": [
         {
@@ -8109,8 +8150,8 @@
       "class": "tcrn-shell-side-nav-toggle",
       "variant": "family root/alias",
       "consumerLines": [
-        4177,
-        4178
+        4180,
+        4181
       ],
       "publishedStyleSites": [
         {
@@ -8146,8 +8187,8 @@
       "class": "tcrn-shell-side-nav-toggle__icon",
       "variant": "component part",
       "consumerLines": [
-        4177,
-        4178
+        4180,
+        4181
       ],
       "publishedStyleSites": [
         {
@@ -8163,9 +8204,9 @@
       "class": "tcrn-shell-theme-toggle",
       "variant": "family root/alias",
       "consumerLines": [
-        4207,
-        4208,
-        4209
+        4210,
+        4211,
+        4212
       ],
       "publishedStyleSites": [
         {
@@ -8231,8 +8272,8 @@
       "class": "tcrn-shell-theme-toggle__icon",
       "variant": "component part",
       "consumerLines": [
-        4208,
-        4209
+        4211,
+        4212
       ],
       "publishedStyleSites": [
         {
@@ -8269,7 +8310,7 @@
       "class": "tcrn-side-nav",
       "variant": "family root/alias",
       "consumerLines": [
-        4181
+        4184
       ],
       "publishedStyleSites": [
         {
@@ -8297,21 +8338,21 @@
       "class": "tcrn-sr-only",
       "variant": "family root/alias",
       "consumerLines": [
-        4197,
-        4199,
-        4330,
-        4333,
-        4798,
-        4815,
-        4829,
-        4830,
-        4832,
-        4840,
-        4843,
+        4200,
+        4202,
+        4334,
+        4337,
+        4802,
+        4819,
+        4833,
+        4834,
+        4836,
         4844,
-        4989,
-        5618,
-        5794
+        4847,
+        4848,
+        4993,
+        5622,
+        5798
       ],
       "publishedStyleSites": [
         {
@@ -8340,7 +8381,7 @@
       "class": "tcrn-stat-card",
       "variant": "family root/alias",
       "consumerLines": [
-        4240
+        4243
       ],
       "publishedStyleSites": [
         {
@@ -8380,7 +8421,7 @@
       "class": "tcrn-stat-card__label",
       "variant": "component part",
       "consumerLines": [
-        4240
+        4243
       ],
       "publishedStyleSites": [
         {
@@ -8396,7 +8437,7 @@
       "class": "tcrn-stat-card__note",
       "variant": "component part",
       "consumerLines": [
-        4240
+        4243
       ],
       "publishedStyleSites": [
         {
@@ -8412,7 +8453,7 @@
       "class": "tcrn-stat-card__value",
       "variant": "component part",
       "consumerLines": [
-        4240
+        4243
       ],
       "publishedStyleSites": [
         {
@@ -8440,27 +8481,27 @@
       "class": "tcrn-state-surface",
       "variant": "family root/alias",
       "consumerLines": [
-        4246,
-        4318,
-        4484,
-        5059,
-        5179,
-        5191,
-        5253,
-        5300,
-        5492,
-        5556,
-        5666,
-        5681,
-        5733,
-        5736,
-        5745,
-        5747,
-        5807,
+        4249,
+        4322,
+        4488,
+        5063,
+        5183,
+        5195,
+        5257,
+        5304,
+        5496,
+        5560,
+        5670,
+        5685,
+        5737,
+        5740,
+        5749,
+        5751,
         5812,
-        5835,
-        5992,
-        6045
+        5817,
+        5840,
+        5997,
+        6085
       ],
       "publishedStyleSites": [
         {
@@ -8531,7 +8572,7 @@
       "class": "tcrn-state-surface__action",
       "variant": "component part",
       "consumerLines": [
-        5191
+        5195
       ],
       "publishedStyleSites": [
         {
@@ -8547,11 +8588,11 @@
       "class": "tcrn-state-surface__description",
       "variant": "component part",
       "consumerLines": [
-        4484,
-        5191,
-        5253,
-        5300,
-        5745
+        4488,
+        5195,
+        5257,
+        5304,
+        5749
       ],
       "publishedStyleSites": [
         {
@@ -8567,8 +8608,8 @@
       "class": "tcrn-state-surface__title",
       "variant": "component part",
       "consumerLines": [
-        5191,
-        5745
+        5195,
+        5749
       ],
       "publishedStyleSites": [
         {
@@ -8592,29 +8633,30 @@
       "class": "tcrn-surface",
       "variant": "family root/alias",
       "consumerLines": [
-        4242,
-        4243,
+        4245,
         4246,
-        4247,
-        4299,
-        4300,
-        4316,
-        4330,
-        4356,
-        4798,
-        4999,
-        5015,
-        5061,
-        5194,
-        5202,
-        5221,
-        5493,
-        5618,
-        5733,
-        5735,
-        5736,
-        6044,
-        6450
+        4249,
+        4250,
+        4303,
+        4304,
+        4320,
+        4334,
+        4360,
+        4802,
+        5003,
+        5019,
+        5065,
+        5198,
+        5206,
+        5225,
+        5497,
+        5622,
+        5737,
+        5739,
+        5740,
+        6072,
+        6084,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -8671,27 +8713,28 @@
       "class": "tcrn-surface__head",
       "variant": "component part",
       "consumerLines": [
-        4242,
-        4243,
+        4245,
         4246,
-        4247,
-        4299,
-        4300,
-        4316,
-        4356,
-        4798,
-        5015,
-        5061,
-        5194,
-        5202,
-        5221,
-        5493,
-        5618,
-        5733,
-        5735,
-        5736,
-        6044,
-        6450
+        4249,
+        4250,
+        4303,
+        4304,
+        4320,
+        4360,
+        4802,
+        5019,
+        5065,
+        5198,
+        5206,
+        5225,
+        5497,
+        5622,
+        5737,
+        5739,
+        5740,
+        6072,
+        6084,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -8736,12 +8779,12 @@
       "class": "tcrn-surface__head-actions",
       "variant": "component part",
       "consumerLines": [
-        4798,
-        5015,
-        5194,
-        5202,
-        5618,
-        6450
+        4802,
+        5019,
+        5198,
+        5206,
+        5622,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -8757,19 +8800,20 @@
       "class": "tcrn-surface__head-content",
       "variant": "component part",
       "consumerLines": [
-        4242,
-        4243,
+        4245,
         4246,
-        4247,
-        4299,
-        4300,
-        4316,
-        5061,
-        5194,
-        5202,
-        5221,
-        5493,
-        5735
+        4249,
+        4250,
+        4303,
+        4304,
+        4320,
+        5065,
+        5198,
+        5206,
+        5225,
+        5497,
+        5739,
+        6072
       ],
       "publishedStyleSites": [
         {
@@ -8796,12 +8840,12 @@
       "class": "tcrn-switch",
       "variant": "family root/alias",
       "consumerLines": [
-        4309,
-        4310,
-        4311,
-        4839,
-        5798,
-        6044
+        4313,
+        4314,
+        4315,
+        4843,
+        5802,
+        6084
       ],
       "publishedStyleSites": [
         {
@@ -8860,12 +8904,12 @@
       "class": "tcrn-switch__control",
       "variant": "component part",
       "consumerLines": [
-        4309,
-        4310,
-        4311,
-        4839,
-        5798,
-        6044
+        4313,
+        4314,
+        4315,
+        4843,
+        5802,
+        6084
       ],
       "publishedStyleSites": [
         {
@@ -8908,12 +8952,12 @@
       "class": "tcrn-switch__label",
       "variant": "component part",
       "consumerLines": [
-        4309,
-        4310,
-        4311,
-        4839,
-        5798,
-        6044
+        4313,
+        4314,
+        4315,
+        4843,
+        5802,
+        6084
       ],
       "publishedStyleSites": [
         {
@@ -8936,28 +8980,33 @@
       "class": "tcrn-table-shell",
       "variant": "family root/alias",
       "consumerLines": [
-        4317,
-        5150,
-        5161,
-        5172,
-        5173,
+        4321,
+        5154,
+        5165,
+        5176,
         5177,
-        5179,
-        5188,
-        5468,
-        5469,
-        5470,
+        5181,
+        5183,
+        5192,
         5472,
-        5478,
-        5489,
+        5473,
+        5474,
+        5476,
+        5482,
         5493,
-        5793,
-        5794,
-        5795,
-        5801,
-        5993,
-        5994,
-        5995
+        5497,
+        5797,
+        5798,
+        5799,
+        5805,
+        5998,
+        5999,
+        6000,
+        6066,
+        6067,
+        6068,
+        6069,
+        6073
       ],
       "publishedStyleSites": [
         {
@@ -9053,16 +9102,19 @@
       "class": "tcrn-table-shell__cell",
       "variant": "component part",
       "consumerLines": [
-        5150,
-        5161,
-        5468,
-        5469,
-        5470,
-        5478,
-        5794,
-        5795,
-        5801,
-        5995
+        5154,
+        5165,
+        5472,
+        5473,
+        5474,
+        5482,
+        5798,
+        5799,
+        5805,
+        6000,
+        6067,
+        6068,
+        6069
       ],
       "publishedStyleSites": [
         {
@@ -9100,9 +9152,9 @@
       "class": "tcrn-table-shell__empty",
       "variant": "component part",
       "consumerLines": [
-        5172,
-        5179,
-        5489
+        5176,
+        5183,
+        5493
       ],
       "publishedStyleSites": [
         {
@@ -9124,9 +9176,9 @@
       "class": "tcrn-table-shell__empty-row",
       "variant": "component part",
       "consumerLines": [
-        5172,
-        5179,
-        5489
+        5176,
+        5183,
+        5493
       ],
       "publishedStyleSites": [
         {
@@ -9144,10 +9196,11 @@
       "class": "tcrn-table-shell__head",
       "variant": "component part",
       "consumerLines": [
-        4317,
-        5177,
-        5493,
-        5994
+        4321,
+        5181,
+        5497,
+        5999,
+        6073
       ],
       "publishedStyleSites": [
         {
@@ -9177,13 +9230,14 @@
       "class": "tcrn-table-shell__row",
       "variant": "component part",
       "consumerLines": [
-        5172,
-        5173,
-        5179,
-        5472,
-        5489,
-        5793,
-        5995
+        5176,
+        5177,
+        5183,
+        5476,
+        5493,
+        5797,
+        6000,
+        6066
       ],
       "publishedStyleSites": [
         {
@@ -9216,60 +9270,62 @@
       "class": "tcrn-text",
       "variant": "family root/alias",
       "consumerLines": [
-        4191,
-        4233,
-        4242,
-        4243,
+        4194,
+        4236,
+        4245,
         4246,
-        4247,
-        4254,
-        4267,
-        4269,
-        4276,
-        4278,
-        4285,
-        4287,
-        4294,
-        4296,
-        4305,
-        4306,
-        4327,
-        4333,
-        4340,
-        4356,
-        4484,
-        4936,
-        5061,
-        5202,
-        5221,
-        5241,
-        5474,
-        5493,
-        5563,
-        5571,
-        5574,
-        5591,
-        5618,
-        5701,
-        5702,
-        5707,
-        5708,
-        5719,
-        5720,
-        5735,
+        4249,
+        4250,
+        4257,
+        4270,
+        4272,
+        4279,
+        4281,
+        4288,
+        4290,
+        4297,
+        4299,
+        4309,
+        4310,
+        4331,
+        4337,
+        4344,
+        4360,
+        4488,
+        4940,
+        5065,
+        5206,
+        5225,
+        5245,
+        5478,
+        5497,
+        5567,
+        5575,
+        5578,
+        5595,
+        5622,
+        5705,
+        5706,
+        5711,
+        5712,
+        5723,
+        5724,
         5739,
-        5745,
-        5759,
-        5796,
-        5812,
-        5947,
+        5743,
+        5749,
+        5763,
+        5800,
+        5817,
         5952,
-        5956,
         5957,
-        5963,
-        5990,
-        6044,
-        6091
+        5961,
+        5962,
+        5968,
+        5995,
+        6065,
+        6068,
+        6084,
+        6131
       ],
       "publishedStyleSites": [
         {
@@ -9344,10 +9400,10 @@
       "class": "tcrn-textarea",
       "variant": "family root/alias",
       "consumerLines": [
-        4305,
-        4306,
-        4333,
-        5796
+        4309,
+        4310,
+        4337,
+        5800
       ],
       "publishedStyleSites": [
         {
@@ -9366,8 +9422,8 @@
       "class": "tcrn-tooltip",
       "variant": "family root/alias",
       "consumerLines": [
-        4744,
-        4747
+        4748,
+        4751
       ],
       "publishedStyleSites": [
         {
@@ -9456,7 +9512,7 @@
       "class": "tcrn-tooltip__content",
       "variant": "component part",
       "consumerLines": [
-        4744
+        4748
       ],
       "publishedStyleSites": [
         {
@@ -9540,9 +9596,9 @@
       "class": "tcrn-top-bar",
       "variant": "family root/alias",
       "consumerLines": [
-        4194,
-        4195,
-        4196
+        4197,
+        4198,
+        4199
       ],
       "publishedStyleSites": [
         {
@@ -9589,7 +9645,7 @@
       "class": "tcrn-top-bar__actions",
       "variant": "component part",
       "consumerLines": [
-        4196
+        4199
       ],
       "publishedStyleSites": [
         {
@@ -9605,7 +9661,7 @@
       "class": "tcrn-top-bar__module",
       "variant": "component part",
       "consumerLines": [
-        4195
+        4198
       ],
       "publishedStyleSites": [
         {
@@ -9623,8 +9679,8 @@
       "class": "tcrn-action-row",
       "variant": "family root/alias",
       "consumerLines": [
-        4798,
-        5202
+        4802,
+        5206
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9635,8 +9691,8 @@
       "class": "tcrn-app",
       "variant": "family root/alias",
       "consumerLines": [
-        4166,
-        4352
+        4169,
+        4356
       ],
       "publishedStyleSites": [
         {
@@ -9665,25 +9721,25 @@
       "class": "tcrn-badge--",
       "variant": "modifier",
       "consumerLines": [
-        4180,
-        4225,
-        4233,
-        4242,
-        4356,
-        4583,
+        4183,
+        4228,
+        4236,
+        4245,
+        4360,
         4587,
-        4602,
-        5218,
-        5539,
-        5554,
-        5563,
-        5812,
-        5824,
-        5834,
-        5844,
-        5948,
-        6090,
-        6416
+        4591,
+        4606,
+        5222,
+        5543,
+        5558,
+        5567,
+        5817,
+        5829,
+        5839,
+        5849,
+        5953,
+        6130,
+        6470
       ],
       "publishedStyleSites": [
         {
@@ -9734,7 +9790,7 @@
       "class": "tcrn-checkbox",
       "variant": "family root/alias",
       "consumerLines": [
-        6044
+        6084
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9745,7 +9801,7 @@
       "class": "tcrn-dashboard-grid",
       "variant": "family root/alias",
       "consumerLines": [
-        4241
+        4244
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9756,7 +9812,7 @@
       "class": "tcrn-design-authority",
       "variant": "family root/alias",
       "consumerLines": [
-        4852
+        4856
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9767,13 +9823,13 @@
       "class": "tcrn-design-system-storybook",
       "variant": "family root/alias",
       "consumerLines": [
-        4180,
-        4194,
-        4198,
-        4204,
+        4183,
+        4197,
+        4201,
         4207,
-        4211,
-        4225
+        4210,
+        4214,
+        4228
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9790,7 +9846,7 @@
       "class": "tcrn-detail-drawer__head",
       "variant": "component part",
       "consumerLines": [
-        4356
+        4360
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9801,9 +9857,9 @@
       "class": "tcrn-dot",
       "variant": "family root/alias",
       "consumerLines": [
-        4352,
-        4922,
-        6091
+        4356,
+        4926,
+        6131
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9816,7 +9872,7 @@
       "class": "tcrn-editor-shell",
       "variant": "family root/alias",
       "consumerLines": [
-        4333
+        4337
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9827,7 +9883,7 @@
       "class": "tcrn-editor__bar",
       "variant": "component part",
       "consumerLines": [
-        4333
+        4337
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9838,7 +9894,7 @@
       "class": "tcrn-editor__status",
       "variant": "component part",
       "consumerLines": [
-        4333
+        4337
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9849,7 +9905,7 @@
       "class": "tcrn-finding-link",
       "variant": "family root/alias",
       "consumerLines": [
-        6091
+        6131
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9860,9 +9916,9 @@
       "class": "tcrn-grid",
       "variant": "family root/alias",
       "consumerLines": [
-        4240,
-        4241,
-        4302
+        4243,
+        4244,
+        4306
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9875,8 +9931,8 @@
       "class": "tcrn-grid--2",
       "variant": "modifier",
       "consumerLines": [
-        4241,
-        4302
+        4244,
+        4306
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9888,7 +9944,7 @@
       "class": "tcrn-grid--4",
       "variant": "modifier",
       "consumerLines": [
-        4240
+        4243
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9899,7 +9955,7 @@
       "class": "tcrn-highlightable",
       "variant": "family root/alias",
       "consumerLines": [
-        4928
+        4932
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9910,16 +9966,16 @@
       "class": "tcrn-icon",
       "variant": "family root/alias",
       "consumerLines": [
-        4177,
-        4178,
-        4207,
-        4748,
-        4797,
-        4798,
-        4921,
-        5284,
-        5617,
-        5618
+        4180,
+        4181,
+        4210,
+        4752,
+        4801,
+        4802,
+        4925,
+        5288,
+        5621,
+        5622
       ],
       "publishedStyleSites": [
         {
@@ -9943,13 +9999,13 @@
       "class": "tcrn-inline-alert--",
       "variant": "modifier",
       "consumerLines": [
-        4879,
-        5014,
-        5147,
-        5149,
-        5194,
-        5634,
-        6450
+        4883,
+        5018,
+        5151,
+        5153,
+        5198,
+        5638,
+        6504
       ],
       "publishedStyleSites": [
         {
@@ -9979,7 +10035,7 @@
       "class": "tcrn-line-numbered-editor__finding--",
       "variant": "modifier",
       "consumerLines": [
-        6091
+        6131
       ],
       "publishedStyleSites": [
         {
@@ -10003,7 +10059,7 @@
       "class": "tcrn-line-numbered-editor__line--",
       "variant": "modifier",
       "consumerLines": [
-        6084
+        6124
       ],
       "publishedStyleSites": [
         {
@@ -10019,7 +10075,7 @@
       "class": "tcrn-machine-token--key",
       "variant": "modifier",
       "consumerLines": [
-        6091
+        6131
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10030,7 +10086,7 @@
       "class": "tcrn-main",
       "variant": "family root/alias",
       "consumerLines": [
-        4228
+        4231
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10041,7 +10097,7 @@
       "class": "tcrn-manage",
       "variant": "family root/alias",
       "consumerLines": [
-        4260
+        4263
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10052,7 +10108,7 @@
       "class": "tcrn-multi-select-dropdown__validation",
       "variant": "component part",
       "consumerLines": [
-        4798
+        4802
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -10061,8 +10117,8 @@
       "class": "tcrn-multi-select-dropdown__value",
       "variant": "component part",
       "consumerLines": [
-        4798,
-        5618
+        4802,
+        5622
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -10071,7 +10127,7 @@
       "class": "tcrn-operation-feedback__identity-value",
       "variant": "component part",
       "consumerLines": [
-        4611
+        4615
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10082,54 +10138,54 @@
       "class": "tcrn-page",
       "variant": "family root/alias",
       "consumerLines": [
-        4230,
-        4231,
-        4232,
         4233,
+        4234,
         4235,
+        4236,
         4238,
-        4251,
-        4252,
-        4253,
+        4241,
         4254,
+        4255,
         4256,
+        4257,
         4259,
-        4264,
-        4265,
-        4266,
+        4262,
         4267,
+        4268,
         4269,
         4270,
+        4272,
         4273,
-        4274,
-        4275,
         4276,
+        4277,
         4278,
         4279,
+        4281,
         4282,
-        4283,
-        4284,
         4285,
+        4286,
         4287,
         4288,
+        4290,
         4291,
-        4292,
-        4293,
         4294,
+        4295,
         4296,
         4297,
-        4324,
-        4325,
-        4326,
-        4327,
+        4299,
+        4300,
+        4328,
         4329,
-        4332,
-        4337,
-        4338,
-        4339,
-        4340,
+        4330,
+        4331,
+        4333,
+        4336,
+        4341,
         4342,
-        4345
+        4343,
+        4344,
+        4346,
+        4349
       ],
       "publishedStyleSites": [
         {
@@ -10296,13 +10352,13 @@
       "class": "tcrn-page__actions",
       "variant": "component part",
       "consumerLines": [
-        4233,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327
+        4236,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10319,14 +10375,14 @@
       "class": "tcrn-page__head",
       "variant": "component part",
       "consumerLines": [
-        4233,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327,
-        4340
+        4236,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331,
+        4344
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10344,14 +10400,14 @@
       "class": "tcrn-page__lede",
       "variant": "component part",
       "consumerLines": [
-        4233,
-        4254,
-        4267,
-        4276,
-        4285,
-        4294,
-        4327,
-        4340
+        4236,
+        4257,
+        4270,
+        4279,
+        4288,
+        4297,
+        4331,
+        4344
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10369,7 +10425,7 @@
       "class": "tcrn-rail__footer",
       "variant": "component part",
       "consumerLines": [
-        4191
+        4194
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10380,7 +10436,7 @@
       "class": "tcrn-rail__mark",
       "variant": "component part",
       "consumerLines": [
-        4180
+        4183
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10391,7 +10447,7 @@
       "class": "tcrn-rail__workspace",
       "variant": "component part",
       "consumerLines": [
-        4180
+        4183
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10402,7 +10458,7 @@
       "class": "tcrn-search-input--compact",
       "variant": "modifier",
       "consumerLines": [
-        4204
+        4207
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10413,7 +10469,7 @@
       "class": "tcrn-search-results",
       "variant": "family root/alias",
       "consumerLines": [
-        4355
+        4359
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10424,7 +10480,7 @@
       "class": "tcrn-setting-row--modified",
       "variant": "modifier",
       "consumerLines": [
-        4928
+        4932
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10435,7 +10491,7 @@
       "class": "tcrn-state-surface--neutral",
       "variant": "modifier",
       "consumerLines": [
-        5745
+        5749
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -10444,10 +10500,10 @@
       "class": "tcrn-subnav",
       "variant": "family root/alias",
       "consumerLines": [
-        4257,
-        4343,
-        5040,
-        5983
+        4260,
+        4347,
+        5044,
+        5988
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10461,8 +10517,8 @@
       "class": "tcrn-subnav__item",
       "variant": "component part",
       "consumerLines": [
-        5040,
-        5983
+        5044,
+        5988
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10474,7 +10530,7 @@
       "class": "tcrn-subnav__row",
       "variant": "component part",
       "consumerLines": [
-        5983
+        5988
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10485,7 +10541,8 @@
       "class": "tcrn-table-shell__heading",
       "variant": "component part",
       "consumerLines": [
-        4317
+        4321,
+        6073
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -10494,7 +10551,7 @@
       "class": "tcrn-top-bar__module--path",
       "variant": "modifier",
       "consumerLines": [
-        4195
+        4198
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10505,7 +10562,7 @@
       "class": "tcrn-variable-table",
       "variant": "family root/alias",
       "consumerLines": [
-        5493
+        5497
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10516,10 +10573,10 @@
       "class": "tcrn-vocabulary",
       "variant": "family root/alias",
       "consumerLines": [
-        4346,
-        5957,
-        5966,
-        5990
+        4350,
+        5962,
+        5971,
+        5995
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10533,7 +10590,7 @@
       "class": "tcrn-vocabulary__category-description",
       "variant": "component part",
       "consumerLines": [
-        5990
+        5995
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10544,7 +10601,7 @@
       "class": "tcrn-vocabulary__semantic",
       "variant": "component part",
       "consumerLines": [
-        5957
+        5962
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10555,7 +10612,7 @@
       "class": "tcrn-vocabulary__source",
       "variant": "component part",
       "consumerLines": [
-        5966
+        5971
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10566,7 +10623,7 @@
       "class": "tcrn-vocabulary__terms",
       "variant": "component part",
       "consumerLines": [
-        4346
+        4350
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10577,10 +10634,10 @@
       "class": "tcrn-work-tree",
       "variant": "family root/alias",
       "consumerLines": [
-        5702,
-        5705,
-        5708,
-        5709
+        5706,
+        5709,
+        5712,
+        5713
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10593,9 +10650,9 @@
       "class": "tcrn-work-tree__children",
       "variant": "component part",
       "consumerLines": [
-        5705,
-        5708,
-        5709
+        5709,
+        5712,
+        5713
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10607,8 +10664,8 @@
       "class": "tcrn-work-tree__epic",
       "variant": "component part",
       "consumerLines": [
-        5708,
-        5709
+        5712,
+        5713
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10620,9 +10677,9 @@
       "class": "tcrn-work-tree__key",
       "variant": "component part",
       "consumerLines": [
-        5702,
-        5708,
-        5709
+        5706,
+        5712,
+        5713
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10635,7 +10692,7 @@
       "class": "tcrn-work-tree__missing",
       "variant": "component part",
       "consumerLines": [
-        5702
+        5706
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10646,7 +10703,7 @@
       "class": "tcrn-work-tree__story",
       "variant": "component part",
       "consumerLines": [
-        5702
+        5706
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10657,8 +10714,8 @@
       "class": "tcrn-work-tree__summary",
       "variant": "component part",
       "consumerLines": [
-        5708,
-        5709
+        5712,
+        5713
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10670,7 +10727,7 @@
       "class": "tcrn-work-tree__text",
       "variant": "component part",
       "consumerLines": [
-        5702
+        5706
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10681,7 +10738,7 @@
       "class": "tcrn-work-tree__title",
       "variant": "component part",
       "consumerLines": [
-        5702
+        5706
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -10692,7 +10749,7 @@
       "class": "tcrn-workflow-two-line",
       "variant": "family root/alias",
       "consumerLines": [
-        4170
+        4173
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -11442,6 +11499,12 @@
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
     },
     {
+      "selector": "[data-ui=\"proposals-table\"]",
+      "context": [],
+      "declarations": "--tcrn-table-column-count: 3;",
+      "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
+    },
+    {
       "selector": "[data-gate-switches]",
       "context": [],
       "declarations": "display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2) var(--tcrn-space-4);",
@@ -11799,7 +11862,7 @@
     }
   },
   "actualBounds": [
-    "EPIC-149 R2 PF reuses in place the R46 browser probe result (integration-r46-init053-raw/u18, run once on ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 with Playwright from the DS main checkout at the published merge d53f2305); between fbc3a073 and the EPIC-149 R2 PF head a6391fad66ab42ab28a80466e893a736e9dc3e87 Portal source files outside portal/tests changed under portal/ (README.md, index.html, locales.js, portal.mjs and scripts/generate-launchers.mjs: EPIC-149 R1 TCRN-CROSS-SUB-454 and TCRN-CROSS-SUB-459, R2 TCRN-CROSS-SUB-467; styles and snapshots unchanged), and the R46 probe was not run again, so it does not cover those changes; every case and failure is recorded individually in that application evidence; no canonical integration claim",
+    "EPIC-149 R5 PF reuses in place the R46 browser probe result (integration-r46-init053-raw/u18, run once on ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 with Playwright from the DS main checkout at the published merge d53f2305); between fbc3a073 and the EPIC-149 R5 PF head ff41fbd3603473105fcf7231b11a8e1ec67dfe33 Portal source files outside portal/tests changed under portal/ (README.md, index.html, locales.js, portal.mjs and scripts/generate-launchers.mjs: EPIC-149 R1 TCRN-CROSS-SUB-454 and TCRN-CROSS-SUB-459, R2 TCRN-CROSS-SUB-467, R4 TCRN-CROSS-SUB-479 and TCRN-CROSS-SUB-484; styles and snapshots unchanged), and the R46 probe was not run again, so it does not cover those changes; every case and failure is recorded individually in that application evidence; no canonical integration claim",
     "actual wide/narrow/column and lifecycle outcomes are recorded individually in that application evidence; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
   ]

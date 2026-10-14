@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "epic149-r2-pf-init053",
+  "pack": "epic149-r5-pf-init053",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "067a5cbf6c1a05ce760e1623c7151a96cfa79ab82a2fffedf207a3813c380c71"
+      "sha256": "5fc9c6072fdc2f8ef187e5169e1cdeec4abd69d91a6914061185acf533baa3f2"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -15,7 +15,7 @@
     },
     {
       "path": "packages/core/src/actor-attestation.ts",
-      "sha256": "637e295ca7052a7edb5b5e419aa7d3160b7c1a61a55e6cde3d48aafd20db2ea9"
+      "sha256": "0f16a1f3c37aa324ef6525d411ec05ca43d31ed138b0d5dbc730db74df75e8d0"
     },
     {
       "path": "packages/core/src/agents-sections.ts",
@@ -23,7 +23,7 @@
     },
     {
       "path": "packages/core/src/akasha.ts",
-      "sha256": "e7947635d4f6477eba45fb6cf6c0992b9ec8476ebf7b1a9b70c80ad90b21b212"
+      "sha256": "9cc84db13bb02e4913123fedfb4d4d20306877aeff6ad4b2bf9bfb53a66d6122"
     },
     {
       "path": "packages/core/src/artifact-store.ts",
@@ -58,8 +58,12 @@
       "sha256": "88da25785bca1dd7ee2a53edb1be032a60fefbe952ebb785a6d7d7c3b252c34a"
     },
     {
+      "path": "packages/core/src/config-proposals.ts",
+      "sha256": "a45ebe2994222b26e27b9a53a7ebf24852190cfc95e1ec5d48979025dfbb4372"
+    },
+    {
       "path": "packages/core/src/config-records.ts",
-      "sha256": "be5abb74216db4a1fc0414a5a8398f3e625e6e108d177d9a3cc252a32994b428"
+      "sha256": "8dea3e9e9b7186de79e1ccee5c0fd1ddbaa5c4d350a67fb325d2e89d54f4a501"
     },
     {
       "path": "packages/core/src/dependency.ts",
@@ -67,7 +71,7 @@
     },
     {
       "path": "packages/core/src/device-home.ts",
-      "sha256": "fc4dce3fcc59ded0bebc45de9133039b6bdf9bda018948bfb78fb39ccf817221"
+      "sha256": "1da9ef59cc5cd038ed8382e267672082185aaaa84c2150a0cf344fe307f0d5f0"
     },
     {
       "path": "packages/core/src/device-identity.ts",
@@ -99,7 +103,7 @@
     },
     {
       "path": "packages/core/src/file-lock.ts",
-      "sha256": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387"
+      "sha256": "a7bf2f074f35319bf52831011c2783be3fce3f7bcde3014f9abfa58fb207030d"
     },
     {
       "path": "packages/core/src/format-version.ts",
@@ -107,7 +111,7 @@
     },
     {
       "path": "packages/core/src/framework-version.ts",
-      "sha256": "12c5312ec9ec798f3f4634a5d4491d64845a0079095f192ba8551622543ab869"
+      "sha256": "7ce6b182ea564e283ce244d44a7d2290f2ce34c83583a07a26512bc55d5de7c2"
     },
     {
       "path": "packages/core/src/gate-identity.ts",
@@ -115,11 +119,11 @@
     },
     {
       "path": "packages/core/src/gates-config.ts",
-      "sha256": "de91d1e259ae093f8b59393afa0f5d0c492c8946f9a4a690f5359232e8364d75"
+      "sha256": "aec9cfe12a64627a94ef05db8b69848e8b75c0860e181538165417f773822c53"
     },
     {
       "path": "packages/core/src/gates-done.ts",
-      "sha256": "6637cbe2847e96f14d7afbb330fcd35d1d56bd6a2de96fae9c33c3c6c424fb9f"
+      "sha256": "d2e3d2b45a5ad07b9fe606ecf75181c10f4af048f64ea282b2baafed8b2ae8fe"
     },
     {
       "path": "packages/core/src/gates-plan.ts",
@@ -127,11 +131,11 @@
     },
     {
       "path": "packages/core/src/gates-run.ts",
-      "sha256": "f01050f6c3647434b80a5b802c6c3df52aaa746428b3833391190e9e946e5a3d"
+      "sha256": "ce7a4395310c328236cd921f6897bbd99d3cf7db9e194faacf9432db51828776"
     },
     {
       "path": "packages/core/src/hook-recall.ts",
-      "sha256": "c3529ead14fd54580eec81ff07b8e524fa63748c6fc98676154a3b8f4eef4a7e"
+      "sha256": "6f450252127a2670af8f50c7e6126a510426256af8dd51c57632dfa6fb8c93f2"
     },
     {
       "path": "packages/core/src/host-hooks.ts",
@@ -147,7 +151,7 @@
     },
     {
       "path": "packages/core/src/index.ts",
-      "sha256": "e8f91f768698cbfe444058ac52d7684a4e3e943a333ea6b3b856e1782a8ea38f"
+      "sha256": "d4f517f087d88780b2f99104488c7560b732a3634f58c3a8138042c8f3fdfe28"
     },
     {
       "path": "packages/core/src/install-manifest.ts",
@@ -167,11 +171,11 @@
     },
     {
       "path": "packages/core/src/knowledge-batch.ts",
-      "sha256": "c4bd52f5081a8b3490bf9d1beda545de7a583f3095b3a1237b76a12684a6cf1a"
+      "sha256": "a6e59aaaf6367686ec8d18863ddde83b6686f8f265bbe1e8858692a76dd6c908"
     },
     {
       "path": "packages/core/src/knowledge-core.ts",
-      "sha256": "c073b211c5f8288a67049259eeb647dc865bf974307fb475306c178d119f07a5"
+      "sha256": "5337726120f9dda6b424ac349c66cb5084e0acdca5666548872023518fb8880a"
     },
     {
       "path": "packages/core/src/knowledge-duplicates.ts",
@@ -199,11 +203,11 @@
     },
     {
       "path": "packages/core/src/library-config.ts",
-      "sha256": "c2fcd87be0911f77cb17b3dd449a15dc05041edb051ded9f9b7adebab129226c"
+      "sha256": "7d6d6c11f705548557d0464a941e4d79e2bc2f4155347f2521e553f7d009bf0e"
     },
     {
       "path": "packages/core/src/machine-settings.ts",
-      "sha256": "9a753836328806eebc798589921290aae9b2998131b37f904a1106ff6fe3dd8e"
+      "sha256": "440f0f5d343bd3eb1284c9000b958e94b2ba086537b37dfac9b1a10aa25928df"
     },
     {
       "path": "packages/core/src/managed-sections.ts",
@@ -219,7 +223,7 @@
     },
     {
       "path": "packages/core/src/minutes.ts",
-      "sha256": "5e565862bbc9d05e1dc56d676ef922822c0491c6b26df1256572d8bbf2174316"
+      "sha256": "0208867034c9cb32af8ac40604ea1fe9a65abe694a712c7d2c61044087d8bec3"
     },
     {
       "path": "packages/core/src/model-plan.ts",
@@ -287,7 +291,7 @@
     },
     {
       "path": "packages/core/src/rules.ts",
-      "sha256": "1d1b196f22551b9a5fbfed81d13ef70f8f643ca944030bb56c82b27a79b30308"
+      "sha256": "006f5db0a44fe8e82f98e090eca21dcadf5ffd9e33434e4252354a4289ce0db9"
     },
     {
       "path": "packages/core/src/settings.ts",
@@ -351,7 +355,11 @@
     },
     {
       "path": "packages/core/src/work-batch.ts",
-      "sha256": "a54672844e40887c6cedb51bd5e18725b105feef18dffdf89cc5a8d5031d3929"
+      "sha256": "779c8f064ca7eba08ff3a4564fb88478ca1c6e2d4e7234212cc20ae304e9d57c"
+    },
+    {
+      "path": "packages/core/src/work-family.ts",
+      "sha256": "d7ddb708527314d2ddb0678b469c1a401f3426bdae9a49db7e04349c7686e0af"
     },
     {
       "path": "packages/core/src/work-gates.ts",
@@ -359,7 +367,7 @@
     },
     {
       "path": "packages/core/src/work-lease.ts",
-      "sha256": "87fdddac08a6c4b9ba2e4c724cb659978236507ee216d9c0ce85ddafe1dad265"
+      "sha256": "92e7f88fc84aa038b5bd8ad72540286d828823c72649e8bc5a327b7fd6b10fd7"
     },
     {
       "path": "packages/core/src/work-relations.ts",
@@ -375,7 +383,7 @@
     },
     {
       "path": "packages/core/src/workspace.ts",
-      "sha256": "f07c2daef877ea7fa4caa98b348eeea7efbd44d9e02196fc71f79d294f705035"
+      "sha256": "535770fdc7496bbfbcd918779706c8eefac44b9ae932a733dc5097f6e492262c"
     },
     {
       "path": "packages/core/src/write-authorization.ts",
@@ -387,7 +395,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "02c89a6f1bed3ae64f22353fcab58a20b6fb8d0c3d9d2f94ce0d60e1aa845da9"
+      "sha256": "5949fd9c4456bed29903407e60288f0a1de389bff66ce5ed9148bb16bd363a3d"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -395,11 +403,11 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "c9345310f94772ed385b7f972f06b94d184d0f51b3fb831dadb9f7fbf27abeed"
+      "sha256": "5b2dc49b61739be19b2c94c8d4b53417cd0258e136317d50697fd2eea5f92dfa"
     },
     {
       "path": "portal/portal.mjs",
-      "sha256": "02c3c48bef195cb12b89133459cc571cfa8586c91e7442112169bf3859c83571"
+      "sha256": "7bb743e0273c79a0ff9a9007d72de076e3ebf30d02f3a08378f01708e87b98e8"
     },
     {
       "path": "portal/scripts/dependency-audit.mjs",
@@ -479,11 +487,11 @@
     },
     {
       "path": "scripts/ds-component-css-proof.mjs",
-      "sha256": "f9a04c5b15a6a5be53b9e772336240b0a913e5a48f148cb42a00c43181f5748d"
+      "sha256": "74089e3462a3f086802111401c178edb086b010f1a49f612fc048664005cfec7"
     },
     {
       "path": "scripts/ds-component-css-reconcile.mjs",
-      "sha256": "67a538caa66cb70b658ff8ccca2fbc8fd0fb4b18a1e60085addd209e8be10e1b"
+      "sha256": "385a922467edb4c9a9818acc52e5731b7112e89e5e59226db9b6942ebd9deca6"
     },
     {
       "path": "scripts/einzbern-hook-launcher.mjs",
@@ -491,7 +499,7 @@
     },
     {
       "path": "scripts/einzbern-hook.mjs",
-      "sha256": "f8871f9649353980227a7b37178dee240acf34e22a4e3bf3affb6d01d17b7681"
+      "sha256": "9097f9a9c81e506a9644fd3658700cc445922b1c9669914e82155d5d41d8dcdb"
     },
     {
       "path": "scripts/einzbern-launcher.mjs",
@@ -499,7 +507,7 @@
     },
     {
       "path": "scripts/einzbern.mjs",
-      "sha256": "5fb82c465d1fa4def1cae817b15ac2867f3d966e37b52c0e64b639c5f05932b1"
+      "sha256": "64239bc5ac0672a5358fc33890d0a05b4a5ceba8e923cba5d35936d77a66617d"
     },
     {
       "path": "scripts/embed-ds-component-css-snapshot.mjs",
@@ -515,7 +523,7 @@
     },
     {
       "path": "scripts/generate-ds-component-css-snapshot.mjs",
-      "sha256": "d3566f97f50ba0ea6f4561d99b07e844d8739cf17cba1121f6bca5e91a943f73"
+      "sha256": "caf01b29adf176c7576977d15907aaa12bccbf13c045ff18c38b1ba39cccc938"
     },
     {
       "path": "scripts/generate-ds-consumer-contract.mjs",
@@ -570,8 +578,16 @@
       "sha256": "cf385f1c7fd692b6d139d441f5b2ea3c707b28419ca39650a5b007c37f73b407"
     },
     {
+      "path": "scripts/lib/ds-candidate-source.mjs",
+      "sha256": "84fea81f4deabd756450ce95d6ab60c404e1e60905bc966e8ebd8bb10f972c52"
+    },
+    {
       "path": "scripts/lib/files.mjs",
       "sha256": "1f164fb47500d6d1e567d6f59aaa844708d2ec2873d0b9882b2626121d63cec0"
+    },
+    {
+      "path": "scripts/lib/heavy-runs.mjs",
+      "sha256": "be4ffd62d1c551f61fe842219b5d939ae4827f84327c90e2dce456ca0a38c674"
     },
     {
       "path": "scripts/lib/incremental-output.mjs",
@@ -591,7 +607,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "eff92331f56ff6fd313149373d6c11a569ed1a2d0f8217990cb18f584d2d0a91"
+      "sha256": "6899a073f5e5f07adda56ac7eff72f35c829c80091d088159fe7cf42c6074e91"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -608,6 +624,10 @@
     {
       "path": "scripts/lib/push-gate-output.mjs",
       "sha256": "b89c936bdfce8ccae3a0e6f1962d644adbcef09f2ad902e5cf7939607d7e85be"
+    },
+    {
+      "path": "scripts/lib/push-gate-p1-coverage.mjs",
+      "sha256": "9ed332f7ff730138e04a1e72e271c9f7dd933f9ff27f354e91532591c6b0b2c9"
     },
     {
       "path": "scripts/lib/registry-lock.mjs",
@@ -695,7 +715,7 @@
     },
     {
       "path": "scripts/push-gate.mjs",
-      "sha256": "9d3b3a50c01443afaddf29e98f05fb7196f7fe0537098e21db3787960aea1794"
+      "sha256": "7118cb92a21649e130925a4c9d35cf74a2f2790292337b873f9f69b32f71f4d3"
     },
     {
       "path": "scripts/push-wiki.mjs",
@@ -703,7 +723,7 @@
     },
     {
       "path": "scripts/release.mjs",
-      "sha256": "3630562cf93ccb444df644b15d1aefd10e7e45bb13695ec206457e32b4c08e26"
+      "sha256": "8ec13c10cb0bf5c5a69501f1687ee63fceebfa9809eed5eed712523d95ed9eff"
     },
     {
       "path": "scripts/render-helper-docs.mjs",
@@ -747,7 +767,7 @@
     },
     {
       "path": "scripts/task.mjs",
-      "sha256": "2ab916bf41fbf14a460d3ab64b84eefb1e068e3375144b2cf2a0fb679bd040a0"
+      "sha256": "c1bef945191b8d62bc932598a891ed085ec02f9e5e9a3ddeb6cc34afbdc8097b"
     },
     {
       "path": "scripts/test-controller-bootstrap.mjs",
@@ -779,7 +799,7 @@
     },
     {
       "path": "scripts/verbatim-evidence-proof.mjs",
-      "sha256": "86ff4f69c37045868c3b92d9e270f8e84181a5bca20358e9d9a068e5aa70e625"
+      "sha256": "4d32995e777db39e8a6df99d82e5dc6f054d535a3ab7e0d1efe190632cae50f3"
     },
     {
       "path": "scripts/verify-otel-privacy.mjs",
@@ -787,7 +807,7 @@
     },
     {
       "path": "scripts/verify-portal.mjs",
-      "sha256": "f430fe0e545e407148de6806e8215cd2b473d39598fa900dcc3f926e02523b4d"
+      "sha256": "fb8fcdb2ee1ca0b2b818fd6de7da03825dca79582f8f57bad1b36a451cf48c76"
     },
     {
       "path": "scripts/verify-release-trust.mjs",
@@ -810,7 +830,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "EPIC-149 R2 PF package regeneration (TCRN-CROSS-EPIC-149 R2 PF, MIN-236 D2 and MIN-246 D8: the CHANGELOG gains the 2.0.3 module sections and the upgrade notes (476d7897), and the reviewed 2.0.3 package members are classified and the privacy boundary test gains the 2.0.3 case (a6391fad), on E main 2dfa5b8e in the package worktree before any merge; since the R54 PF regeneration (cdb97173) the 2.0.2 release, the CI time limit, EPIC-149 R1 (TCRN-CROSS-STORY-525, TCRN-CROSS-STORY-526, TCRN-CROSS-STORY-528, TCRN-CROSS-STORY-530 and TCRN-CROSS-STORY-532) and the R2 fixes (TCRN-CROSS-SUB-465 to TCRN-CROSS-SUB-468 and the regenerated portal proof block) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at a6391fad in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1818 of 1818 tests in 197 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "EPIC-149 R5 PF package regeneration (TCRN-CROSS-EPIC-149 R5 PF, MIN-236 D2 and MIN-246 D8: the CHANGELOG gains the 2.1.0 module sections and the upgrade notes from 2.0.3 (a9102463), and the reviewed 2.1.0 package members are classified by their exact labels and the privacy boundary test gains the 2.1.0 case (ff41fbd3), on E main 119abbc1 in the package worktree before any merge; since the EPIC-149 R2 PF regeneration (0992bab1) the 2.0.3 release, EPIC-149 R4 (TCRN-CROSS-STORY-527, TCRN-CROSS-STORY-529, TCRN-CROSS-STORY-531, TCRN-CROSS-STORY-533, TCRN-CROSS-STORY-534, TCRN-CROSS-STORY-535, TCRN-CROSS-STORY-536 and TCRN-CROSS-STORY-537) and the R5 fixes (TCRN-CROSS-SUB-490 to TCRN-CROSS-SUB-496) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at ff41fbd3 in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1910 of 1910 tests in 214 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -944,9 +964,9 @@
   "inputProjections": [
     {
       "input": "inventory-values.json",
-      "sha256": "4c108a1a90b27da38602d02fc5147b0181ca6ff36cf1e5026bbb04bf58955988",
+      "sha256": "12c596c10e229dd03a6ea427cd90d0c06210e9f05a1cb77c70f619ecae623755",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -962,9 +982,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "24eb4568e4e1ea52d05fc58c3eba279bdee516a5edf5eca071088ca84d557473",
+      "sha256": "ec4eea46d7ac731a1d6df1a1afc27cdb929733aa5fd923632eaa7b397077958b",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -974,15 +994,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "ee221c7b71795ea254d700696b53ba8cb4ca315e553054f4e4bc47bb97c4ba48",
+      "sha256": "096d750f9bac3421c2bcbadc6a23cd80015935c35dba7186589b0586642e155a",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "058dce53a509699d21899daa4fd55c4d65d7855fc41f9335c584df48d4875dda",
+      "sha256": "9e6b9cc10729b97d49e03ca0e7dbb7402b0a5cdc1b2c54764af91b5ff9489e3f",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -994,7 +1014,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1024,13 +1044,13 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1818,
-      "pass": 1818,
+      "tests": 1910,
+      "pass": 1910,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 197,
+    "wholeFiles": 214,
     "original61Retained": false,
     "necessaryAddedWholeFiles": [
       "tests/act11-adapter-acceptance.test.mjs",
@@ -1047,21 +1067,30 @@
       "tests/cloud-roots.test.mjs",
       "tests/code-only.test.mjs",
       "tests/conference.test.mjs",
+      "tests/config-proposals-cli.test.mjs",
+      "tests/config-proposals.test.mjs",
       "tests/config-records.test.mjs",
+      "tests/conflict-family.test.mjs",
       "tests/cross-repo-privacy.test.mjs",
       "tests/decided-in-cli.test.mjs",
       "tests/dependency-materialization.test.mjs",
       "tests/dependency-policy.test.mjs",
       "tests/device-home.test.mjs",
+      "tests/ds-component-css-candidate.test.mjs",
       "tests/ds-component-css-observation.test.mjs",
       "tests/ether-library.test.mjs",
       "tests/final-gate-plan-batch-verify.test.mjs",
       "tests/final-gate-plan.test.mjs",
       "tests/format-version.test.mjs",
+      "tests/gate-tree-story-paths.test.mjs",
+      "tests/gates-done-story-paths.test.mjs",
       "tests/gates-plan.test.mjs",
+      "tests/gates-run-prior.test.mjs",
       "tests/gates-run.test.mjs",
       "tests/governance-trim-surface.test.mjs",
+      "tests/heavy-runs.test.mjs",
       "tests/hook-launcher.test.mjs",
+      "tests/hook-recall-log.test.mjs",
       "tests/host-harness.test.mjs",
       "tests/host-writable-roots.test.mjs",
       "tests/inc224-chain-event-bound.test.mjs",
@@ -1114,6 +1143,7 @@
       "tests/privacy-normalization.test.mjs",
       "tests/project-chain-model.test.mjs",
       "tests/protocol-v1.test.mjs",
+      "tests/push-gate-p1-coverage.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/readme-render.test.mjs",
       "tests/recall-cli.test.mjs",
@@ -1161,23 +1191,30 @@
       "tests/story-fields.test.mjs",
       "tests/story-rule-conservation.test.mjs",
       "tests/token-attribution.test.mjs",
+      "tests/user-crest-snapshot.test.mjs",
       "tests/variables.test.mjs",
       "tests/wiki-pages.test.mjs",
       "tests/work-gates-field.test.mjs",
       "tests/work-index-ceiling.test.mjs",
+      "tests/work-lease-at-input.test.mjs",
+      "tests/work-lease-batch-done.test.mjs",
       "tests/work-lease-batch.test.mjs",
       "tests/work-lease-cli.test.mjs",
+      "tests/work-lease-done-order.test.mjs",
+      "tests/work-lease-lifecycle.test.mjs",
       "tests/work-lease.test.mjs",
       "tests/work-relations-cli.test.mjs",
       "tests/workspace-extension-records.test.mjs",
+      "tests/workspace-lock-holder.test.mjs",
+      "tests/workspace-lock-scope.test.mjs",
       "tests/write-authorization.test.mjs"
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/epic-149/r2/r2-pf-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/epic-149/r5/r5-pf-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-13T21:17:09.983493+00:00",
+  "generationTimeUtc": "2026-10-14T10:21:07.300652+00:00",
   "settings": [
     {
       "catalog": {
@@ -1231,7 +1268,7 @@
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 3985,
+          "line": 4213,
           "text": "// Fail-closed: a workspace that records artifact.language and cannot produce the"
         },
         {
@@ -1336,22 +1373,22 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4783,
+          "line": 4787,
           "text": "const values = currentSetting(\"artifact.language\")?.allowedValues;"
         },
         {
           "file": "portal/index.html",
-          "line": 4787,
+          "line": 4791,
           "text": "const selected = new Set(String(value ?? currentSetting(\"artifact.language\")?.currentValue ?? \"\").split(\",\").map((part) => part.trim()).filter((part) => roster.includes(part)));"
         },
         {
           "file": "portal/index.html",
-          "line": 4798,
+          "line": 4802,
           "text": "return `<div class=\"tcrn-setting-choice\" data-setting-choice-component=\"SettingChoice\" ${settingChoiceAttrs(roster, entry.key, \"collection-closed\", \"multi-select\")} data-setting-choice-cardinality=\"set\" data-setting-choice-source=\"artifact.language.allowedValues\" data-setting-choice-value-format=\"comma-separated\"><div class=\"tcrn-multi-select-dropdown\" data-prompt-language-dropdown data-choice-cardinality=\"collection\" data-choice-value-mode=\"closed\" data-choice-presentation=\"dropdown\" data-choice-option-count=\"${roster.length}\" data-empty-selection-label=\"${esc(t(\"scope.selectLanguages\"))}\"><button type=\"button\" id=\"${esc(id)}\" class=\"tcrn-select tcrn-multi-select-dropdown__trigger\" aria-label=\"${esc(label)}\" aria-required=\"true\" aria-haspopup=\"listbox\" aria-expanded=\"false\" aria-controls=\"${esc(listId)}\"><span data-multi-select-summary>${esc([...selected].map(promptLanguageLabel).join(\", \") || t(\"scope.selectLanguages\"))}</span><svg class=\"tcrn-icon tcrn-multi-select-dropdown__caret\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></button><select class=\"tcrn-sr-only tcrn-multi-select-dropdown__value\" data-choice-presentation=\"dropdown\" multiple name=\"${esc(entry.key)}\" tabindex=\"-1\" aria-hidden=\"true\" data-setting-control=\"${esc(entry.key)}\" data-setting-cardinality=\"set\" data-cli-action=\"settings-set\">${roster.map((language) => `<option value=\"${esc(language)}\" ${selected.has(language) ? \"selected\" : \"\"}>${esc(promptLanguageLabel(language))}</option>`).join(\"\")}</select><input class=\"tcrn-sr-only tcrn-multi-select-dropdown__validation\" type=\"checkbox\" required tabindex=\"-1\" aria-hidden=\"true\" ${selected.size > 0 ? \"checked\" : \"\"}><div id=\"${esc(listId)}\" class=\"tcrn-menu tcrn-multi-select-dropdown__list\" role=\"listbox\" aria-multiselectable=\"true\" aria-label=\"${esc(label)}\" tabindex=\"-1\" hidden>${options}</div></div><div class=\"tcrn-surface__head-actions tcrn-action-row\"><button type=\"button\" class=\"tcrn-button tcrn-button--primary tcrn-button--sm\" data-save-setting-choice=\"${esc(entry.key)}\" ${dirty ? \"\" : \"disabled\"}>${esc(t(\"config.save\"))}</button><button type=\"button\" class=\"tcrn-button tcrn-button--quiet tcrn-button--sm\" data-undo-setting-choice=\"${esc(entry.key)}\" ${dirty ? \"\" : \"disabled\"}>${esc(t(\"config.undo\"))}</button></div></div>`;"
         },
         {
           "file": "portal/index.html",
-          "line": 4843,
+          "line": 4847,
           "text": "if (entry.controlType === \"enum\" && values.length > 0) return `<div class=\"tcrn-setting-choice\" data-setting-choice-component=\"SettingChoice\" ${settingChoiceAttrs(values, entry.key)}><label class=\"tcrn-setting-choice__select-label\" for=\"${esc(id)}\"><span class=\"tcrn-sr-only\">${esc(label)}</span><select class=\"tcrn-select\" id=\"${esc(id)}\" data-setting-control=\"${esc(entry.key)}\" data-cli-action=\"settings-set\">${values.map((value) => `<option value=\"${esc(value)}\" ${value === current ? \"selected\" : \"\"}>${esc(entry.key === \"artifact.language\" ? promptLanguageLabel(value) : value || t(\"config.unset\"))}</option>`).join(\"\")}</select></label></div>`;"
         },
         {
@@ -1386,197 +1423,197 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 342,
+          "line": 344,
           "text": "\"setting.artifact.language.label\": \"Artefact language\","
         },
         {
           "file": "portal/locales.js",
-          "line": 343,
+          "line": 345,
           "text": "\"setting.artifact.language.description\": \"Language used when writing knowledge cards for this target. Unsupported input is translated before saving when a translator is available; uncertain detection can require review.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 344,
+          "line": 346,
           "text": "\"concept.setting.artifact.language\": \"New cards use the selected target’s effective language. Existing cards keep their recorded language.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 770,
+          "line": 787,
           "text": "\"vocabulary.category.setting.artifact.language.description\": \"支持英语、简体中文、日语、韩语和法语。对很短或混合语言文本的识别可能不确定。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 771,
+          "line": 788,
           "text": "\"setting.artifact.language.value.en.description\": \"以英文写入并检索工件。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 772,
+          "line": 789,
           "text": "\"setting.artifact.language.value.zh-CN.description\": \"以简体中文写入并检索工件。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 773,
+          "line": 790,
           "text": "\"setting.artifact.language.value.ja.description\": \"以日语写入并检索工件。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 774,
+          "line": 791,
           "text": "\"setting.artifact.language.value.ko.description\": \"以韩语写入并检索工件。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 775,
+          "line": 792,
           "text": "\"setting.artifact.language.value.fr.description\": \"以法语写入并检索工件。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 833,
+          "line": 852,
           "text": "\"setting.artifact.language.label\": \"生成物语言\","
         },
         {
           "file": "portal/locales.js",
-          "line": 834,
+          "line": 853,
           "text": "\"setting.artifact.language.description\": \"当前目标写入知识卡片时使用的语言。输入语言不受支持且有可用翻译器时，保存前会翻译；检测不确定时可能需要复核。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 835,
+          "line": 854,
           "text": "\"concept.setting.artifact.language\": \"新卡片使用所选目标的有效语言；已有卡片保留其记录语言。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1261,
+          "line": 1295,
           "text": "\"vocabulary.category.setting.artifact.language.description\": \"英語、簡体字中国語、日本語、韓国語、フランス語に対応します。短い文や複数言語が混在する文では判定が不確かな場合があります。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1262,
+          "line": 1296,
           "text": "\"setting.artifact.language.value.en.description\": \"英語のアーティファクトを英語で書き込み、検索します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1263,
+          "line": 1297,
           "text": "\"setting.artifact.language.value.zh-CN.description\": \"中国語のアーティファクトを簡体字中国語で書き込み、検索します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1264,
+          "line": 1298,
           "text": "\"setting.artifact.language.value.ja.description\": \"日本語でアーティファクトを書き込み、検索します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1265,
+          "line": 1299,
           "text": "\"setting.artifact.language.value.ko.description\": \"韓国語でアーティファクトを書き込み、検索します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1266,
+          "line": 1300,
           "text": "\"setting.artifact.language.value.fr.description\": \"フランス語でアーティファクトを書き込み、検索します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1324,
+          "line": 1360,
           "text": "\"setting.artifact.language.label\": \"生成物の言語\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1325,
+          "line": 1361,
           "text": "\"setting.artifact.language.description\": \"この対象のナレッジカードを保存する言語です。対応外の入力は翻訳手段がある場合に保存前に翻訳します。判定が不確かな場合は確認が必要になることがあります。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1326,
+          "line": 1362,
           "text": "\"concept.setting.artifact.language\": \"新しいカードには選択中の対象の有効な言語を使います。既存のカードの記録済み言語は維持します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1752,
+          "line": 1803,
           "text": "\"vocabulary.category.setting.artifact.language.description\": \"영어, 중국어 간체, 일본어, 한국어, 프랑스어를 지원합니다. 짧거나 여러 언어가 섞인 텍스트는 판별이 불확실할 수 있습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1753,
+          "line": 1804,
           "text": "\"setting.artifact.language.value.en.description\": \"영어 아티팩트를 영어로 작성하고 검색합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1754,
+          "line": 1805,
           "text": "\"setting.artifact.language.value.zh-CN.description\": \"중국어 아티팩트를 중국어 간체로 작성하고 검색합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1755,
+          "line": 1806,
           "text": "\"setting.artifact.language.value.ja.description\": \"일본어로 아티팩트를 작성하고 검색합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1756,
+          "line": 1807,
           "text": "\"setting.artifact.language.value.ko.description\": \"한국어로 아티팩트를 작성하고 검색합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1757,
+          "line": 1808,
           "text": "\"setting.artifact.language.value.fr.description\": \"프랑스어로 아티팩트를 작성하고 검색합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1815,
+          "line": 1868,
           "text": "\"setting.artifact.language.label\": \"산출물 언어\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1816,
+          "line": 1869,
           "text": "\"setting.artifact.language.description\": \"이 대상의 지식 카드를 저장할 때 사용하는 언어입니다. 지원하지 않는 입력은 번역기가 있을 때 저장 전에 번역되며, 감지가 불확실하면 검토가 필요할 수 있습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1817,
+          "line": 1870,
           "text": "\"concept.setting.artifact.language\": \"새 카드는 선택한 대상의 유효한 언어를 사용하며, 기존 카드는 기록된 언어를 유지합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2243,
+          "line": 2311,
           "text": "\"vocabulary.category.setting.artifact.language.description\": \"Langues prises en charge : anglais, chinois simplifié, japonais, coréen et français. La détection peut être incertaine pour un texte court ou multilingue.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2244,
+          "line": 2312,
           "text": "\"setting.artifact.language.value.en.description\": \"Les artefacts en anglais sont écrits et recherchés en anglais.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2245,
+          "line": 2313,
           "text": "\"setting.artifact.language.value.zh-CN.description\": \"Les artefacts en chinois sont écrits et recherchés en chinois simplifié.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2246,
+          "line": 2314,
           "text": "\"setting.artifact.language.value.ja.description\": \"Les artefacts sont écrits et recherchés en japonais.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2247,
+          "line": 2315,
           "text": "\"setting.artifact.language.value.ko.description\": \"Les artefacts sont écrits et recherchés en coréen.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2248,
+          "line": 2316,
           "text": "\"setting.artifact.language.value.fr.description\": \"Les artefacts sont écrits et recherchés en français.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2306,
+          "line": 2376,
           "text": "\"setting.artifact.language.label\": \"Langue des artefacts\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2307,
+          "line": 2377,
           "text": "\"setting.artifact.language.description\": \"Langue de rédaction des fiches de cette cible. Une entrée non prise en charge est traduite avant l’enregistrement si un traducteur est disponible ; une détection incertaine peut nécessiter une vérification.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2308,
+          "line": 2378,
           "text": "\"concept.setting.artifact.language\": \"Les nouvelles fiches utilisent la langue effective de la cible. Les fiches existantes conservent leur langue enregistrée.\","
         }
       ],
@@ -1666,17 +1703,17 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4742,
+          "line": 4746,
           "text": "const kind = key === \"setting.design.authority\" || body.length > 240 ? \"popover\" : \"tooltip\";"
         },
         {
           "file": "portal/index.html",
-          "line": 4882,
+          "line": 4886,
           "text": "const url = currentSetting(\"design.authority\")?.currentValue ?? null;"
         },
         {
           "file": "portal/index.html",
-          "line": 5063,
+          "line": 5067,
           "text": "const authorityGroup = settingGroup(\"design.authority\");"
         },
         {
@@ -1696,67 +1733,67 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 744,
+          "line": 761,
           "text": "\"setting.design.authority.label\": \"设计权威\","
         },
         {
           "file": "portal/locales.js",
-          "line": 745,
+          "line": 762,
           "text": "\"setting.design.authority.description\": \"当前目标的设计权威契约地址。请一并配置下方仓库、生产发布和构建绑定。继承来源会明确显示；引擎不验证发布。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 746,
+          "line": 763,
           "text": "\"concept.setting.design.authority\": \"声明的设计权威确定应使用的契约。缺失或冲突的绑定会保留显示。应用接入前，还须有发布成功及源版本一致的证据。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1235,
+          "line": 1269,
           "text": "\"setting.design.authority.label\": \"デザイン権威\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1236,
+          "line": 1270,
           "text": "\"setting.design.authority.description\": \"この対象のデザイン正本の契約URLです。下でリポジトリ、公開先、ビルドの関連付けも設定してください。継承元は明示されますが、エンジンはリリースを検証しません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1237,
+          "line": 1271,
           "text": "\"concept.setting.design.authority\": \"宣言したデザイン正本で使う契約を特定します。不足や矛盾した関連付けは表示したままにします。アプリへの組み込み前に、公開成功とソース版の一致を別途確認する必要があります。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1726,
+          "line": 1777,
           "text": "\"setting.design.authority.label\": \"디자인 권위\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1727,
+          "line": 1778,
           "text": "\"setting.design.authority.description\": \"이 대상의 디자인 기준 계약 URL입니다. 아래에서 저장소, 운영 게시 및 빌드 연결도 설정하세요. 상속 출처는 명시되지만 엔진은 릴리스를 검증하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1728,
+          "line": 1779,
           "text": "\"concept.setting.design.authority\": \"선언된 디자인 기준으로 사용할 계약을 정합니다. 누락되거나 충돌하는 연결은 계속 표시됩니다. 앱에 연결하기 전에 게시 성공과 소스 버전 일치의 별도 증거가 필요합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2217,
+          "line": 2285,
           "text": "\"setting.design.authority.label\": \"Autorité de design\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2218,
+          "line": 2286,
           "text": "\"setting.design.authority.description\": \"URL du contrat de référence du design pour cette cible. Configurez aussi le dépôt, la publication et le service de compilation ci-dessous. Les sources héritées sont indiquées ; le moteur ne vérifie pas une publication.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2219,
+          "line": 2287,
           "text": "\"concept.setting.design.authority\": \"La référence déclarée identifie les contrats à utiliser. Les liens manquants ou contradictoires restent visibles. La publication réussie et la correspondance de version exigent des preuves distinctes avant l’intégration dans l’application.\","
         },
         {
           "file": "portal/portal.mjs",
-          "line": 528,
+          "line": 531,
           "text": "const SYSTEM_VARIABLE_KEYS = Object.freeze([\"design.authority\", \"models.category\", \"models.tiers\"]);"
         }
       ],
@@ -1814,52 +1851,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 490,
+          "line": 492,
           "text": "\"setting.design.buildProject.label\": \"Build project\","
         },
         {
           "file": "portal/locales.js",
-          "line": 491,
+          "line": 493,
           "text": "\"setting.design.buildProject.description\": \"Project identifier in the declared build service. Publication evidence must refer to this project and the consumed source version.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 981,
+          "line": 1000,
           "text": "\"setting.design.buildProject.label\": \"构建项目\","
         },
         {
           "file": "portal/locales.js",
-          "line": 982,
+          "line": 1001,
           "text": "\"setting.design.buildProject.description\": \"声明的构建服务中的项目标识。发布证据须对应此项目及消费的源版本。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1472,
+          "line": 1508,
           "text": "\"setting.design.buildProject.label\": \"ビルドプロジェクト\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1473,
+          "line": 1509,
           "text": "\"setting.design.buildProject.description\": \"指定したビルドサービス内のプロジェクトIDです。公開の証拠は、このプロジェクトと使用するソース版に対応する必要があります。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1963,
+          "line": 2016,
           "text": "\"setting.design.buildProject.label\": \"빌드 프로젝트\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1964,
+          "line": 2017,
           "text": "\"setting.design.buildProject.description\": \"선언된 빌드 서비스의 프로젝트 식별자입니다. 게시 증거는 이 프로젝트와 사용하는 소스 버전에 대응해야 합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2454,
+          "line": 2524,
           "text": "\"setting.design.buildProject.label\": \"Projet de compilation\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2455,
+          "line": 2525,
           "text": "\"setting.design.buildProject.description\": \"Identifiant du projet dans le service déclaré. Les preuves de publication doivent correspondre à ce projet et à la version consommée.\","
         }
       ],
@@ -1912,52 +1949,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 488,
+          "line": 490,
           "text": "\"setting.design.buildService.label\": \"Build and deployment service\","
         },
         {
           "file": "portal/locales.js",
-          "line": 489,
+          "line": 491,
           "text": "\"setting.design.buildService.description\": \"Service declared to build and publish this authority. A declaration alone is not a successful build.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 979,
+          "line": 998,
           "text": "\"setting.design.buildService.label\": \"构建部署服务\","
         },
         {
           "file": "portal/locales.js",
-          "line": 980,
+          "line": 999,
           "text": "\"setting.design.buildService.description\": \"构建与发布此权威的服务声明。只配置名称不代表构建成功。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1470,
+          "line": 1506,
           "text": "\"setting.design.buildService.label\": \"ビルド・公開サービス\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1471,
+          "line": 1507,
           "text": "\"setting.design.buildService.description\": \"この正本のビルドと公開を行うサービスです。宣言だけでビルド成功を示すことはできません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1961,
+          "line": 2014,
           "text": "\"setting.design.buildService.label\": \"빌드 및 배포 서비스\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1962,
+          "line": 2015,
           "text": "\"setting.design.buildService.description\": \"이 기준을 빌드하고 게시할 서비스입니다. 선언만으로 빌드 성공이 확인되지는 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2452,
+          "line": 2522,
           "text": "\"setting.design.buildService.label\": \"Service de compilation et déploiement\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2453,
+          "line": 2523,
           "text": "\"setting.design.buildService.description\": \"Service déclaré pour compiler et publier cette référence. La déclaration seule ne confirme pas la réussite d’une compilation.\","
         }
       ],
@@ -2015,52 +2052,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 492,
+          "line": 494,
           "text": "\"setting.design.consumedVersion.label\": \"Consumed authority version\","
         },
         {
           "file": "portal/locales.js",
-          "line": 493,
+          "line": 495,
           "text": "\"setting.design.consumedVersion.description\": \"Version or source identity actually used by this target. Verify it against successful production build and publication evidence before integration.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 983,
+          "line": 1002,
           "text": "\"setting.design.consumedVersion.label\": \"消费的权威版本\","
         },
         {
           "file": "portal/locales.js",
-          "line": 984,
+          "line": 1003,
           "text": "\"setting.design.consumedVersion.description\": \"当前目标实际使用的版本或源标识。接入前须与成功的生产构建及发布证据核对。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1474,
+          "line": 1510,
           "text": "\"setting.design.consumedVersion.label\": \"使用する正本の版\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1475,
+          "line": 1511,
           "text": "\"setting.design.consumedVersion.description\": \"この対象が実際に使う版またはソース識別子です。組み込み前に、本番ビルドと公開成功の証拠との一致を確認してください。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1965,
+          "line": 2018,
           "text": "\"setting.design.consumedVersion.label\": \"사용하는 기준 버전\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1966,
+          "line": 2019,
           "text": "\"setting.design.consumedVersion.description\": \"이 대상에서 실제로 사용하는 버전 또는 소스 식별자입니다. 연결하기 전에 성공한 운영 빌드 및 게시 증거와 비교하세요.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2456,
+          "line": 2526,
           "text": "\"setting.design.consumedVersion.label\": \"Version de référence utilisée\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2457,
+          "line": 2527,
           "text": "\"setting.design.consumedVersion.description\": \"Version ou identifiant source réellement utilisé par cette cible. Vérifiez sa correspondance avec les preuves de compilation et de publication réussies avant l’intégration.\","
         }
       ],
@@ -2113,52 +2150,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 486,
+          "line": 488,
           "text": "\"setting.design.productionDocs.label\": \"Production documentation\","
         },
         {
           "file": "portal/locales.js",
-          "line": 487,
+          "line": 489,
           "text": "\"setting.design.productionDocs.description\": \"Production documentation or component library URL. Preview URLs do not prove production publication.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 977,
+          "line": 996,
           "text": "\"setting.design.productionDocs.label\": \"生产文档\","
         },
         {
           "file": "portal/locales.js",
-          "line": 978,
+          "line": 997,
           "text": "\"setting.design.productionDocs.description\": \"生产文档或组件库地址。预览地址不能证明生产发布成功。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1468,
+          "line": 1504,
           "text": "\"setting.design.productionDocs.label\": \"公開済みドキュメント\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1469,
+          "line": 1505,
           "text": "\"setting.design.productionDocs.description\": \"公開済みのドキュメントまたは部品ライブラリの URL です。プレビューURLは本番公開の証拠にはなりません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1959,
+          "line": 2012,
           "text": "\"setting.design.productionDocs.label\": \"운영 문서\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1960,
+          "line": 2013,
           "text": "\"setting.design.productionDocs.description\": \"운영 문서 또는 구성 요소 라이브러리의 URL입니다. 미리보기 URL은 운영 게시의 증거가 아닙니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2450,
+          "line": 2520,
           "text": "\"setting.design.productionDocs.label\": \"Documentation en production\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2451,
+          "line": 2521,
           "text": "\"setting.design.productionDocs.description\": \"URL de la documentation ou bibliothèque de composants en production. Une URL de prévisualisation ne prouve pas une publication.\","
         }
       ],
@@ -2211,52 +2248,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 484,
+          "line": 486,
           "text": "\"setting.design.pullRequestTarget.label\": \"Change request target\","
         },
         {
           "file": "portal/locales.js",
-          "line": 485,
+          "line": 487,
           "text": "\"setting.design.pullRequestTarget.description\": \"Declared branch or target for authority change requests. This records the target; it does not create a request.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 975,
+          "line": 994,
           "text": "\"setting.design.pullRequestTarget.label\": \"改动提案目标\","
         },
         {
           "file": "portal/locales.js",
-          "line": 976,
+          "line": 995,
           "text": "\"setting.design.pullRequestTarget.description\": \"向权威提出改动时使用的分支或目标。此处仅记录目标，不创建提案。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1466,
+          "line": 1502,
           "text": "\"setting.design.pullRequestTarget.label\": \"変更提案先\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1467,
+          "line": 1503,
           "text": "\"setting.design.pullRequestTarget.description\": \"正本への変更提案に使うブランチまたは対象です。ここでは記録のみ行い、提案を作成しません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1957,
+          "line": 2010,
           "text": "\"setting.design.pullRequestTarget.label\": \"변경 제안 대상\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1958,
+          "line": 2011,
           "text": "\"setting.design.pullRequestTarget.description\": \"기준 변경 제안에 사용할 분기 또는 대상입니다. 여기서는 대상을 기록하며 제안을 생성하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2448,
+          "line": 2518,
           "text": "\"setting.design.pullRequestTarget.label\": \"Cible des demandes de modification\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2449,
+          "line": 2519,
           "text": "\"setting.design.pullRequestTarget.description\": \"Branche ou cible déclarée pour les demandes de modification. Ce réglage l’enregistre sans créer de demande.\","
         }
       ],
@@ -2309,52 +2346,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 482,
+          "line": 484,
           "text": "\"setting.design.repository.label\": \"Authority repository\","
         },
         {
           "file": "portal/locales.js",
-          "line": 483,
+          "line": 485,
           "text": "\"setting.design.repository.description\": \"HTTPS URL of the repository that owns the design contract and implementation.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 973,
+          "line": 992,
           "text": "\"setting.design.repository.label\": \"权威仓库\","
         },
         {
           "file": "portal/locales.js",
-          "line": 974,
+          "line": 993,
           "text": "\"setting.design.repository.description\": \"拥有设计契约与实现的仓库 HTTPS 地址。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1464,
+          "line": 1500,
           "text": "\"setting.design.repository.label\": \"正本リポジトリ\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1465,
+          "line": 1501,
           "text": "\"setting.design.repository.description\": \"デザイン契約と実装を管理するリポジトリの HTTPS URL です。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1955,
+          "line": 2008,
           "text": "\"setting.design.repository.label\": \"기준 저장소\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1956,
+          "line": 2009,
           "text": "\"setting.design.repository.description\": \"디자인 계약과 구현을 관리하는 저장소의 HTTPS URL입니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2446,
+          "line": 2516,
           "text": "\"setting.design.repository.label\": \"Dépôt de référence\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2447,
+          "line": 2517,
           "text": "\"setting.design.repository.description\": \"URL HTTPS du dépôt qui possède le contrat et son implémentation.\","
         }
       ],
@@ -2432,7 +2469,7 @@
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 2723,
+          "line": 2724,
           "text": "const engineRequirement = settingRecords.find((record) => record.key === \"engine.requiredVersion\");"
         },
         {
@@ -2452,62 +2489,62 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 749,
+          "line": 766,
           "text": "\"concept.setting.engine.requiredVersion\": \"打开此库所需的最低引擎版本。旧引擎会拒绝打开；此设置不会安装或升级引擎。未设置时不增加版本要求。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 818,
+          "line": 835,
           "text": "\"setting.engine.requiredVersion.label\": \"要求的引擎版本\","
         },
         {
           "file": "portal/locales.js",
-          "line": 819,
+          "line": 836,
           "text": "\"setting.engine.requiredVersion.description\": \"工作区声明的最低引擎版本。更高要求会连同两个版本一起被拒绝。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1240,
+          "line": 1274,
           "text": "\"concept.setting.engine.requiredVersion\": \"このライブラリを開くために必要な最小エンジンバージョンです。古いエンジンは開くことを拒否します。導入や更新は行いません。未設定なら追加のバージョン要件はありません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1309,
+          "line": 1343,
           "text": "\"setting.engine.requiredVersion.label\": \"必要エンジン版\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1310,
+          "line": 1344,
           "text": "\"setting.engine.requiredVersion.description\": \"このワークスペースが宣言する最低エンジン版。より新しい要求は双方の版とともに拒否されます。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1731,
+          "line": 1782,
           "text": "\"concept.setting.engine.requiredVersion\": \"이 라이브러리를 여는 데 필요한 최소 엔진 버전입니다. 이전 엔진은 열기를 거부합니다. 엔진을 설치하거나 업데이트하지 않으며 미설정 시 추가 버전 요구가 없습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1800,
+          "line": 1851,
           "text": "\"setting.engine.requiredVersion.label\": \"필수 엔진 버전\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1801,
+          "line": 1852,
           "text": "\"setting.engine.requiredVersion.description\": \"이 워크스페이스가 선언하는 최소 엔진 버전입니다. 더 높은 요구는 두 버전과 함께 거부됩니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2222,
+          "line": 2290,
           "text": "\"concept.setting.engine.requiredVersion\": \"Version minimale du moteur pour ouvrir cette bibliothèque. Les versions antérieures refusent de l’ouvrir. Ce réglage n’installe ni ne met à jour le moteur ; non défini, il n’ajoute aucune exigence de version.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2291,
+          "line": 2359,
           "text": "\"setting.engine.requiredVersion.label\": \"Version moteur requise\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2292,
+          "line": 2360,
           "text": "\"setting.engine.requiredVersion.description\": \"Version minimale du moteur déclarée par cet espace. Une exigence supérieure est refusée avec les deux versions.\","
         },
         {
@@ -2628,62 +2665,62 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 748,
+          "line": 765,
           "text": "\"concept.setting.execution.maxConcurrentSubagents\": \"请求同时运行的代理上限。调低可减少并行工作；宿主可能允许更少。修改此值不会改变已批准的执行方法。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 820,
+          "line": 837,
           "text": "\"setting.execution.maxConcurrentSubagents.label\": \"最大并发子代理数\","
         },
         {
           "file": "portal/locales.js",
-          "line": 821,
+          "line": 838,
           "text": "\"setting.execution.maxConcurrentSubagents.description\": \"期望同时运行的子代理上限。宿主的实际容量仍然适用；未设置时为 8。此设置不会改变已获批的执行方法。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1239,
+          "line": 1273,
           "text": "\"concept.setting.execution.maxConcurrentSubagents\": \"同時に要求するエージェント数の上限です。下げると並列作業が減ります。ホストが許可する数はさらに少ない場合があります。承認済みの実行方法は変更しません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1311,
+          "line": 1345,
           "text": "\"setting.execution.maxConcurrentSubagents.label\": \"最大同時サブエージェント数\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1312,
+          "line": 1346,
           "text": "\"setting.execution.maxConcurrentSubagents.description\": \"同時に動かす子エージェント数の希望上限です。実行環境の容量も適用されます。未設定時は 8 で、承認済みの実行方法は変更しません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1730,
+          "line": 1781,
           "text": "\"concept.setting.execution.maxConcurrentSubagents\": \"한 번에 요청하는 에이전트 수의 상한입니다. 낮추면 병렬 작업이 줄어듭니다. 호스트가 더 적게 허용할 수 있으며 승인된 실행 방법은 바뀌지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1802,
+          "line": 1853,
           "text": "\"setting.execution.maxConcurrentSubagents.label\": \"최대 동시 서브에이전트\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1803,
+          "line": 1854,
           "text": "\"setting.execution.maxConcurrentSubagents.description\": \"동시에 실행할 하위 에이전트 수의 요청 상한입니다. 호스트의 실제 용량도 적용되며, 미설정 시 8입니다. 승인된 실행 방법은 변경하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2221,
+          "line": 2289,
           "text": "\"concept.setting.execution.maxConcurrentSubagents\": \"Nombre maximal d’agents demandés en même temps. Réduisez-le pour limiter le travail parallèle. L’hôte peut en autoriser moins ; cela ne change pas la méthode d’exécution approuvée.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2293,
+          "line": 2361,
           "text": "\"setting.execution.maxConcurrentSubagents.label\": \"Sous-agents simultanés maximum\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2294,
+          "line": 2362,
           "text": "\"setting.execution.maxConcurrentSubagents.description\": \"Maximum souhaité d’agents secondaires simultanés. La capacité de l’hôte s’applique également ; la valeur par défaut est 8. Cela ne modifie pas une méthode d’exécution approuvée.\","
         },
         {
@@ -2754,7 +2791,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3065,
+          "line": 3185,
           "text": "const promptBytes = Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\");"
         },
         {
@@ -2764,12 +2801,12 @@
         },
         {
           "file": "packages/core/src/hook-recall.ts",
-          "line": 151,
-          "text": "* for it, cut to injection.perPromptBytes, and the host protocol JSON carrying them; null when the"
+          "line": 172,
+          "text": "* hit lines recall gives for it, cut to injection.perPromptBytes, and the host protocol JSON"
         },
         {
           "file": "packages/core/src/hook-recall.ts",
-          "line": 170,
+          "line": 194,
           "text": "const perPromptBytes = numericSetting(state, \"injection.perPromptBytes\", (value) => Number.isSafeInteger(value) && value > 0);"
         },
         {
@@ -2794,77 +2831,77 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 339,
+          "line": 341,
           "text": "\"setting.injection.perPromptBytes.label\": \"Recall context budget (bytes)\","
         },
         {
           "file": "portal/locales.js",
-          "line": 340,
+          "line": 342,
           "text": "\"setting.injection.perPromptBytes.description\": \"Maximum metadata bytes to attach to one prompt. Unset uses 1600. Larger budgets may include more matching context; the session budget still applies.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 341,
+          "line": 343,
           "text": "\"concept.setting.injection.perPromptBytes\": \"Results are selected within this byte budget. The number of results is not fixed by this setting.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 830,
+          "line": 849,
           "text": "\"setting.injection.perPromptBytes.label\": \"召回上下文字节预算\","
         },
         {
           "file": "portal/locales.js",
-          "line": 831,
+          "line": 850,
           "text": "\"setting.injection.perPromptBytes.description\": \"单次提示可附带的元数据字节预算。未设置时为 1600。较大预算可包含更多匹配上下文；会话预算仍然适用。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 832,
+          "line": 851,
           "text": "\"concept.setting.injection.perPromptBytes\": \"结果按此字节预算选择；此设置不固定结果条数。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1321,
+          "line": 1357,
           "text": "\"setting.injection.perPromptBytes.label\": \"検索コンテキストの予算（バイト）\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1322,
+          "line": 1358,
           "text": "\"setting.injection.perPromptBytes.description\": \"一つのプロンプトに付けるメタデータのバイト予算です。未設定時は 1600 です。増やすと一致した文脈をより多く含められますが、セッションの予算も適用されます。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1323,
+          "line": 1359,
           "text": "\"concept.setting.injection.perPromptBytes\": \"このバイト予算に収まる結果を選びます。この設定で件数を固定することはありません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1812,
+          "line": 1865,
           "text": "\"setting.injection.perPromptBytes.label\": \"검색 맥락 예산(바이트)\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1813,
+          "line": 1866,
           "text": "\"setting.injection.perPromptBytes.description\": \"한 프롬프트에 첨부할 메타데이터의 바이트 예산입니다. 미설정 시 1600입니다. 늘리면 일치하는 맥락을 더 포함할 수 있지만 세션 예산도 적용됩니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1814,
+          "line": 1867,
           "text": "\"concept.setting.injection.perPromptBytes\": \"이 바이트 예산 내에서 결과를 선택하며, 결과 수를 고정하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2303,
+          "line": 2373,
           "text": "\"setting.injection.perPromptBytes.label\": \"Budget du contexte de recherche (octets)\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2304,
+          "line": 2374,
           "text": "\"setting.injection.perPromptBytes.description\": \"Budget d’octets de métadonnées jointes à une question. La valeur par défaut est 1600. L’augmenter peut inclure davantage de contexte pertinent ; le budget de session s’applique aussi.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2305,
+          "line": 2375,
           "text": "\"concept.setting.injection.perPromptBytes\": \"Les résultats sont choisis dans ce budget d’octets. Ce réglage ne fixe pas leur nombre.\","
         }
       ],
@@ -2907,17 +2944,17 @@
       "consumerSites": [
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 896,
+          "line": 900,
           "text": "const configured = workspace.settings.find((entry) => entry.key === \"knowledge.articlesPath\")?.value;"
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 898,
+          "line": 902,
           "text": "const defaultValue = SETTINGS_CATALOG.find((entry) => entry.key === \"knowledge.articlesPath\")?.defaultValue;"
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 899,
+          "line": 903,
           "text": "if (typeof defaultValue !== \"string\" || defaultValue.length === 0) fail(\"KNOWLEDGE_PATH_INVALID\", \"knowledge.articlesPath has no default\");"
         },
         {
@@ -2942,77 +2979,77 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 349,
+          "line": 351,
           "text": "\"setting.knowledge.articlesPath.label\": \"Article directory\","
         },
         {
           "file": "portal/locales.js",
-          "line": 350,
+          "line": 352,
           "text": "\"setting.knowledge.articlesPath.description\": \"Article directory for this configuration target. Relative paths start at the library root. Absolute paths must be normalized and outside the control tree. Changing this setting does not move existing files.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 351,
+          "line": 353,
           "text": "\"concept.setting.knowledge.articlesPath\": \"Project overrides and declared parent inheritance apply here. Library defaults remain the fallback; each article records its stable project identity.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 840,
+          "line": 859,
           "text": "\"setting.knowledge.articlesPath.label\": \"文章目录\","
         },
         {
           "file": "portal/locales.js",
-          "line": 841,
+          "line": 860,
           "text": "\"setting.knowledge.articlesPath.description\": \"当前配置目标的文章目录。相对路径从库根目录解析；绝对路径须规范化并位于控制树之外。修改配置不会移动已有文件。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 842,
+          "line": 861,
           "text": "\"concept.setting.knowledge.articlesPath\": \"这里使用项目覆盖值和已声明的父项目继承值，库级默认值作为回退。每篇文章记录其稳定项目身份。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1331,
+          "line": 1367,
           "text": "\"setting.knowledge.articlesPath.label\": \"記事ディレクトリ\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1332,
+          "line": 1368,
           "text": "\"setting.knowledge.articlesPath.description\": \"この設定対象の記事の保存先です。相対パスはライブラリのルートから解決します。絶対パスは正規化され、管理領域の外にある必要があります。変更しても既存のファイルは移動しません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1333,
+          "line": 1369,
           "text": "\"concept.setting.knowledge.articlesPath\": \"プロジェクトの指定値と宣言済みの親からの継承を使い、なければライブラリの既定値を使います。記事には安定したプロジェクト ID を記録します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1822,
+          "line": 1875,
           "text": "\"setting.knowledge.articlesPath.label\": \"문서 디렉터리\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1823,
+          "line": 1876,
           "text": "\"setting.knowledge.articlesPath.description\": \"이 설정 대상의 문서 폴더입니다. 상대 경로는 라이브러리 루트에서 해석됩니다. 절대 경로는 정규화되어 관리 트리 밖에 있어야 합니다. 설정을 바꿔도 기존 파일은 이동하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1824,
+          "line": 1877,
           "text": "\"concept.setting.knowledge.articlesPath\": \"프로젝트에 지정한 값과 선언된 부모 프로젝트의 상속 값을 사용하며, 없으면 라이브러리 기본값을 사용합니다. 각 문서는 안정적인 프로젝트 ID를 기록합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2313,
+          "line": 2383,
           "text": "\"setting.knowledge.articlesPath.label\": \"Répertoire des articles\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2314,
+          "line": 2384,
           "text": "\"setting.knowledge.articlesPath.description\": \"Dossier d’articles de cette cible. Les chemins relatifs partent de la racine de la bibliothèque. Un chemin absolu doit être normalisé et hors de l’arborescence de contrôle. Changer ce réglage ne déplace pas les fichiers existants.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2315,
+          "line": 2385,
           "text": "\"concept.setting.knowledge.articlesPath\": \"La cible utilise ses propres valeurs, puis celles du parent déclaré, puis les valeurs par défaut de la bibliothèque. Chaque article conserve l’identité stable de son projet.\","
         }
       ],
@@ -3058,12 +3095,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1219,
+          "line": 1242,
           "text": "// derived reads the same in both: an unset models.category is the default categories and every"
         },
         {
           "file": "packages/core/src/index.ts",
-          "line": 235,
+          "line": 237,
           "text": "// TCRN-CROSS-STORY-484 R3, TCRN-CROSS-STORY-508 R1, R2, R4: models.category and models.tiers, two"
         },
         {
@@ -3213,217 +3250,217 @@
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 2529,
+          "line": 2530,
           "text": "// value's shape and no reference between models.category and models.tiers: that is the write's."
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 4503,
+          "line": 4675,
           "text": "// written by machine-settings-set. TCRN-CROSS-STORY-508 R1, R2: a write of models.category or"
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 4505,
+          "line": 4677,
           "text": "// R3: so is a write of models.escalation.ceiling, which may only name a category models.category"
         },
         {
           "file": "portal/index.html",
-          "line": 4135,
+          "line": 4138,
           "text": "[data-collection-table=\"models.category\"] { --tcrn-table-shell-columns: minmax(5.5rem, 0.5fr) minmax(5.5rem, 1fr) minmax(5.5rem, 1fr) minmax(6rem, 1.4fr) minmax(8rem, 0.6fr) minmax(7.5rem, 0.5fr); }"
         },
         {
           "file": "portal/index.html",
-          "line": 4267,
+          "line": 4270,
           "text": "<header class=\"tcrn-page-header tcrn-page__head\"><div class=\"tcrn-page-header__body\"><div class=\"tcrn-page-header__title\"><h1 class=\"tcrn-heading tcrn-heading--2\" data-i18n=\"page.modelCategories\">Model categories</h1><p class=\"tcrn-text tcrn-page__lede\" data-i18n=\"modelCategories.lede\" data-collection-purpose=\"models.category\">The parent table of the model tiers. The order column ranks the categories: the lower the order, the stronger the category, and escalation climbs toward the lower orders.</p></div><div class=\"tcrn-page-header__actions tcrn-page__actions\"><span class=\"tcrn-badge\" id=\"model-categories-count\">—</span></div></div></header>"
         },
         {
           "file": "portal/index.html",
-          "line": 4270,
+          "line": 4273,
           "text": "<div class=\"tcrn-page-hierarchy__lower-content\" data-page-hierarchy-region=\"lower-content\" data-page-hierarchy-slot=\"content\"><div id=\"model-categories-view\" data-ui=\"model-categories-view\" data-collection-view=\"models.category\"></div></div>"
         },
         {
           "file": "portal/index.html",
-          "line": 4375,
+          "line": 4379,
           "text": "const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? \"en\", theme: document.documentElement.dataset.tcrnTheme, page: \"dashboard\", dashboardTab: \"overview\", settingGroup: \"general\", collections: { \"models.category\": { draft: null, dirty: false, findings: [], refusal: null }, \"models.tiers\": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: \"\", knowledgeStatus: \"valid\", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: \"conferenceTypes\", receipt: null, operationDetailsOpen: false, agentsText: \"\", reconciliation: null, rules: null, pendingSection: \"\", searchIndex: [], searchResults: [], searchSelection: 0 };"
         },
         {
           "file": "portal/index.html",
-          "line": 4730,
+          "line": 4734,
           "text": "const COLLECTION_PAGES = Object.freeze({ \"models.category\": \"model-categories\", \"models.tiers\": \"model-tiers\" });"
         },
         {
           "file": "portal/index.html",
-          "line": 5111,
+          "line": 5115,
           "text": "\"models.category\": Object.freeze([\"order\", \"id\", \"name\", \"description\"]),"
         },
         {
           "file": "portal/index.html",
-          "line": 5232,
+          "line": 5236,
           "text": "const key = \"models.category\";"
         },
         {
           "file": "portal/index.html",
-          "line": 5253,
+          "line": 5257,
           "text": "const empty = readOnly ? `<p class=\"tcrn-state-surface__description\">${esc(t(\"collection.readOnlyEmpty\"))}</p>` : emptyGuide(t(\"modelCategories.emptyTitle\"), t(\"modelCategories.emptyBody\"), `<button type=\"button\" class=\"tcrn-button tcrn-button--primary tcrn-button--md\" data-collection-add=\"models.category\">${esc(t(\"modelCategories.add\"))}</button>`);"
         },
         {
           "file": "portal/index.html",
-          "line": 5272,
+          "line": 5276,
           "text": "const categories = storedRecords(\"models.category\");"
         },
         {
           "file": "portal/index.html",
-          "line": 5319,
+          "line": 5323,
           "text": "if (key === \"models.category\") renderModelCategories();"
         },
         {
           "file": "portal/index.html",
-          "line": 5348,
+          "line": 5352,
           "text": "const category = focus?.key === key && focus.field === \"category\" ? String(focus.value) : String(rows.at(-1)?.category ?? storedRecords(\"models.category\")[0]?.id ?? \"\");"
         },
         {
           "file": "portal/index.html",
-          "line": 5349,
+          "line": 5353,
           "text": "const record = key === \"models.category\""
         },
         {
           "file": "portal/index.html",
-          "line": 5355,
+          "line": 5359,
           "text": "$(`[data-collection-table=\"${key}\"] [data-collection-row=\"${rows.length}\"] [data-collection-field=\"${key === \"models.category\" ? \"id\" : \"runner\"}\"]`)?.focus?.();"
         },
         {
           "file": "portal/index.html",
-          "line": 5385,
+          "line": 5389,
           "text": "for (const key of [\"models.category\", \"models.tiers\"]) {"
         },
         {
           "file": "portal/index.html",
-          "line": 6118,
+          "line": 6158,
           "text": "const rendersSystemVariables = (key) => [\"models.category\", \"models.tiers\"].includes(key) || String(key).startsWith(\"models.escalation.\") || String(key).startsWith(\"design.\");"
         },
         {
           "file": "portal/locales.js",
-          "line": 455,
+          "line": 457,
           "text": "\"setting.models.category.label\": \"Model categories\","
         },
         {
           "file": "portal/locales.js",
-          "line": 456,
+          "line": 458,
           "text": "\"setting.models.category.description\": \"The categories a rule names instead of a model. Each tier is filed under one; the order ranks them, the lower the stronger.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 463,
+          "line": 465,
           "text": "\"concept.setting.models.category\": \"A rule never names a model: it names a category and is given that category's tier with the largest order. A category that tiers are still filed under cannot be removed.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 946,
+          "line": 965,
           "text": "\"setting.models.category.label\": \"模型分类\","
         },
         {
           "file": "portal/locales.js",
-          "line": 947,
+          "line": 966,
           "text": "\"setting.models.category.description\": \"规则用来代替具体模型的分类。每个档位归入其中之一；顺序决定等级，越小越强。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 954,
+          "line": 973,
           "text": "\"concept.setting.models.category\": \"规则从不直接指定模型：它指定分类，并取该分类中顺序最大的档位。仍有档位归入的分类不能删除。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1437,
+          "line": 1473,
           "text": "\"setting.models.category.label\": \"モデル分類\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1438,
+          "line": 1474,
           "text": "\"setting.models.category.description\": \"ルールがモデルの代わりに指定する分類です。各ティアはいずれかに属し、順序が格付けを決めます（小さいほど強い）。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1445,
+          "line": 1481,
           "text": "\"concept.setting.models.category\": \"ルールはモデルを直接指定しません。分類を指定し、その分類で順序が最大のティアを受け取ります。ティアが属している分類は削除できません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1928,
+          "line": 1981,
           "text": "\"setting.models.category.label\": \"모델 분류\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1929,
+          "line": 1982,
           "text": "\"setting.models.category.description\": \"규칙이 모델 대신 지정하는 분류입니다. 각 티어는 그중 하나에 속하며, 순서가 등급을 정합니다(작을수록 강함).\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1936,
+          "line": 1989,
           "text": "\"concept.setting.models.category\": \"규칙은 모델을 직접 지정하지 않습니다. 분류를 지정하고 그 분류에서 순서가 가장 큰 티어를 받습니다. 티어가 아직 속한 분류는 삭제할 수 없습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2419,
+          "line": 2489,
           "text": "\"setting.models.category.label\": \"Catégories de modèles\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2420,
+          "line": 2490,
           "text": "\"setting.models.category.description\": \"Les catégories qu’une règle nomme à la place d’un modèle. Chaque niveau est rangé dans l’une d’elles ; l’ordre les classe, le plus petit étant le plus fort.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2427,
+          "line": 2497,
           "text": "\"concept.setting.models.category\": \"Une règle ne nomme jamais un modèle : elle nomme une catégorie et reçoit le niveau de cette catégorie dont l’ordre est le plus grand. Une catégorie qui contient encore des niveaux ne peut pas être supprimée.\","
         },
         {
           "file": "portal/portal.mjs",
-          "line": 528,
+          "line": 531,
           "text": "const SYSTEM_VARIABLE_KEYS = Object.freeze([\"design.authority\", \"models.category\", \"models.tiers\"]);"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 544,
+          "line": 547,
           "text": "const COLLECTION_KEYS = Object.freeze([\"models.category\", \"models.tiers\"]);"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 545,
+          "line": 548,
           "text": "const COLLECTION_IDENTITY = Object.freeze({ \"models.category\": \"id\", \"models.tiers\": \"order\" });"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 573,
+          "line": 576,
           "text": "if (reasonCode === \"MODELS_CATEGORY_DUPLICATE\" && key === \"models.category\") return on(rowsSharing(rows, \"id\"), \"id\");"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 575,
+          "line": 578,
           "text": "const known = new Set(storedTable(catalog, \"models.category\").map((category) => recordOf(category).id));"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 578,
+          "line": 581,
           "text": "if (reasonCode === \"MODELS_CATEGORY_IN_USE\" && key === \"models.category\") {"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 584,
+          "line": 587,
           "text": "return storedTable(catalog, \"models.category\").map((category) => recordOf(category).id).filter((id) => !kept.has(id)).flatMap((category) => {"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 595,
+          "line": 598,
           "text": "// A settings-remove of models.category puts back the default categories and every other category the"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 599,
+          "line": 602,
           "text": "const defaults = tableOf(catalog?.settings?.find((entry) => entry.key === \"models.category\")?.defaultValue) ?? [];"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 606,
+          "line": 609,
           "text": "if (key !== \"models.category\") return [];"
         }
       ],
@@ -3525,7 +3562,7 @@
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 4505,
+          "line": 4677,
           "text": "// R3: so is a write of models.escalation.ceiling, which may only name a category models.category"
         },
         {
@@ -3535,87 +3572,87 @@
         },
         {
           "file": "portal/index.html",
-          "line": 5207,
+          "line": 5211,
           "text": "const ESCALATION_KEYS = Object.freeze([\"models.escalation.enabled\", \"models.escalation.threshold\", \"models.escalation.ceiling\"]);"
         },
         {
           "file": "portal/index.html",
-          "line": 5210,
+          "line": 5214,
           "text": "const ceiling = effectiveSetting(\"models.escalation.ceiling\");"
         },
         {
           "file": "portal/index.html",
-          "line": 5215,
+          "line": 5219,
           "text": "\"models.escalation.ceiling\": category === undefined ? t(\"modelTiers.missingCategory\", { category: ceiling }) : categoryLabel(category),"
         },
         {
           "file": "portal/index.html",
-          "line": 5218,
+          "line": 5222,
           "text": "const tone = key === \"models.escalation.ceiling\" && category === undefined ? \" tcrn-badge--warning\" : \"\";"
         },
         {
           "file": "portal/locales.js",
-          "line": 461,
+          "line": 463,
           "text": "\"setting.models.escalation.ceiling.label\": \"Escalation ceiling\","
         },
         {
           "file": "portal/locales.js",
-          "line": 462,
+          "line": 464,
           "text": "\"setting.models.escalation.ceiling.description\": \"The category escalation stops in, at its tier with the smallest order; main by default. It must be a category of the model categories page, and that page cannot drop it while it is the ceiling.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 952,
+          "line": 971,
           "text": "\"setting.models.escalation.ceiling.label\": \"升档上限\","
         },
         {
           "file": "portal/locales.js",
-          "line": 953,
+          "line": 972,
           "text": "\"setting.models.escalation.ceiling.description\": \"升档止步的分类，停在该分类中顺序最小的档位；默认 main。必须是模型分类页中已有的分类；作为上限期间，分类页不能删除它。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1443,
+          "line": 1479,
           "text": "\"setting.models.escalation.ceiling.label\": \"エスカレーションの上限\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1444,
+          "line": 1480,
           "text": "\"setting.models.escalation.ceiling.description\": \"エスカレーションが止まる分類で、その分類の中で順序が最小のティアで止まります。既定は main です。モデル分類ページにある分類でなければならず、上限である間は分類ページから削除できません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1934,
+          "line": 1987,
           "text": "\"setting.models.escalation.ceiling.label\": \"상향 조정 상한\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1935,
+          "line": 1988,
           "text": "\"setting.models.escalation.ceiling.description\": \"상향 조정이 멈추는 분류로, 그 분류에서 순서가 가장 작은 티어에서 멈춥니다. 기본값은 main입니다. 모델 분류 페이지에 있는 분류여야 하며, 상한인 동안에는 분류 페이지에서 삭제할 수 없습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2425,
+          "line": 2495,
           "text": "\"setting.models.escalation.ceiling.label\": \"Plafond d’escalade\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2426,
+          "line": 2496,
           "text": "\"setting.models.escalation.ceiling.description\": \"La catégorie où l’escalade s’arrête, à son niveau d’ordre le plus petit ; main par défaut. Ce doit être une catégorie de la page des catégories de modèles, qui ne peut pas la retirer tant qu’elle est le plafond.\","
         },
         {
           "file": "portal/portal.mjs",
-          "line": 538,
+          "line": 541,
           "text": "// models.escalation.ceiling (TCRN-CROSS-SUB-406); a restore of the default category table is refused"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 546,
+          "line": 549,
           "text": "const ESCALATION_CEILING_KEY = \"models.escalation.ceiling\";"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 582,
+          "line": 585,
           "text": "// write may not drop it either, so it is listed beside the tier records as models.escalation.ceiling."
         }
       ],
@@ -3684,62 +3721,62 @@
         },
         {
           "file": "portal/index.html",
-          "line": 5207,
+          "line": 5211,
           "text": "const ESCALATION_KEYS = Object.freeze([\"models.escalation.enabled\", \"models.escalation.threshold\", \"models.escalation.ceiling\"]);"
         },
         {
           "file": "portal/index.html",
-          "line": 5213,
+          "line": 5217,
           "text": "\"models.escalation.enabled\": effectiveSetting(\"models.escalation.enabled\") === \"true\" ? t(\"config.enabled\") : t(\"config.disabled\"),"
         },
         {
           "file": "portal/locales.js",
-          "line": 457,
+          "line": 459,
           "text": "\"setting.models.escalation.enabled.label\": \"Escalation enabled\","
         },
         {
           "file": "portal/locales.js",
-          "line": 458,
+          "line": 460,
           "text": "\"setting.models.escalation.enabled.description\": \"Whether a rule's tier escalates when its attempts are sent back. Off, every rule keeps its category's base tier.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 948,
+          "line": 967,
           "text": "\"setting.models.escalation.enabled.label\": \"启用升档\","
         },
         {
           "file": "portal/locales.js",
-          "line": 949,
+          "line": 968,
           "text": "\"setting.models.escalation.enabled.description\": \"规则的尝试被退回后是否升档。关闭时，每条规则都停在其分类的基础档位。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1439,
+          "line": 1475,
           "text": "\"setting.models.escalation.enabled.label\": \"エスカレーションを有効化\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1440,
+          "line": 1476,
           "text": "\"setting.models.escalation.enabled.description\": \"ルールの試行が差し戻されたときにティアをエスカレーションするかどうか。オフでは、各ルールは分類の基本ティアのままです。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1930,
+          "line": 1983,
           "text": "\"setting.models.escalation.enabled.label\": \"상향 조정 사용\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1931,
+          "line": 1984,
           "text": "\"setting.models.escalation.enabled.description\": \"규칙의 시도가 반려되었을 때 티어를 상향 조정할지 여부입니다. 끄면 모든 규칙이 분류의 기본 티어에 머뭅니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2421,
+          "line": 2491,
           "text": "\"setting.models.escalation.enabled.label\": \"Escalade activée\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2422,
+          "line": 2492,
           "text": "\"setting.models.escalation.enabled.description\": \"Indique si le niveau d’une règle monte quand ses tentatives sont renvoyées. Désactivée, chaque règle garde le niveau de base de sa catégorie.\","
         }
       ],
@@ -3805,62 +3842,62 @@
         },
         {
           "file": "portal/index.html",
-          "line": 5207,
+          "line": 5211,
           "text": "const ESCALATION_KEYS = Object.freeze([\"models.escalation.enabled\", \"models.escalation.threshold\", \"models.escalation.ceiling\"]);"
         },
         {
           "file": "portal/index.html",
-          "line": 5214,
+          "line": 5218,
           "text": "\"models.escalation.threshold\": effectiveSetting(\"models.escalation.threshold\"),"
         },
         {
           "file": "portal/locales.js",
-          "line": 459,
+          "line": 461,
           "text": "\"setting.models.escalation.threshold.label\": \"Rejections per step\","
         },
         {
           "file": "portal/locales.js",
-          "line": 460,
+          "line": 462,
           "text": "\"setting.models.escalation.threshold.description\": \"How many rejections move a rule's tier one step toward the smaller orders of the tier table; 1 by default.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 950,
+          "line": 969,
           "text": "\"setting.models.escalation.threshold.label\": \"每步退回次数\","
         },
         {
           "file": "portal/locales.js",
-          "line": 951,
+          "line": 970,
           "text": "\"setting.models.escalation.threshold.description\": \"累计多少次退回，规则的档位沿档位表朝顺序更小的方向上升一步；默认 1。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1441,
+          "line": 1477,
           "text": "\"setting.models.escalation.threshold.label\": \"1 段階あたりの差し戻し回数\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1442,
+          "line": 1478,
           "text": "\"setting.models.escalation.threshold.description\": \"何回の差し戻しでルールのティアがティア表の順序の小さい方へ 1 段階上がるか。既定は 1 です。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1932,
+          "line": 1985,
           "text": "\"setting.models.escalation.threshold.label\": \"단계당 반려 횟수\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1933,
+          "line": 1986,
           "text": "\"setting.models.escalation.threshold.description\": \"몇 번 반려되면 규칙의 티어가 티어 표에서 순서가 작은 쪽으로 한 단계 올라가는지입니다. 기본값은 1입니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2423,
+          "line": 2493,
           "text": "\"setting.models.escalation.threshold.label\": \"Renvois par palier\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2424,
+          "line": 2494,
           "text": "\"setting.models.escalation.threshold.description\": \"Nombre de renvois qui font monter d’un palier le niveau d’une règle vers les ordres plus petits de la table des niveaux ; 1 par défaut.\","
         }
       ],
@@ -3906,17 +3943,17 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1220,
+          "line": 1243,
           "text": "// other category models.tiers names, not the default table. A set key is still its value and any"
         },
         {
           "file": "packages/core/src/index.ts",
-          "line": 235,
+          "line": 237,
           "text": "// TCRN-CROSS-STORY-484 R3, TCRN-CROSS-STORY-508 R1, R2, R4: models.category and models.tiers, two"
         },
         {
           "file": "packages/core/src/index.ts",
-          "line": 243,
+          "line": 245,
           "text": "// along the order of models.tiers. readModelsEscalation is their effective values; resolveModelsTier,"
         },
         {
@@ -4076,27 +4113,27 @@
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 2144,
+          "line": 2145,
           "text": "// TCRN-CROSS-STORY-508 R2: and a models.tiers value from before the record table seeds as records."
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 2522,
+          "line": 2523,
           "text": "// (execution.dispatchTiers carries over as models.tiers), until a write of the new name."
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 2528,
+          "line": 2529,
           "text": "// (a per-host models.tiers value as records), and the event keeps its bytes. Replay checks each"
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 2529,
+          "line": 2530,
           "text": "// value's shape and no reference between models.category and models.tiers: that is the write's."
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 4504,
+          "line": 4676,
           "text": "// models.tiers is also checked against the other table as it stands (assertSettingWriteConsistent);"
         },
         {
@@ -4106,172 +4143,172 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4136,
+          "line": 4139,
           "text": "[data-collection-table=\"models.tiers\"] { --tcrn-table-shell-columns: minmax(5.5rem, 0.3fr) minmax(5.5rem, 0.9fr) minmax(5.5rem, 0.8fr) minmax(4.5rem, 1.3fr) minmax(6.75rem, 0.5fr) minmax(5.5rem, 1fr) minmax(7.5rem, 0.4fr); }"
         },
         {
           "file": "portal/index.html",
-          "line": 4276,
+          "line": 4279,
           "text": "<header class=\"tcrn-page-header tcrn-page__head\"><div class=\"tcrn-page-header__body\"><div class=\"tcrn-page-header__title\"><h1 class=\"tcrn-heading tcrn-heading--2\" data-i18n=\"page.modelTiers\">Model tiers</h1><p class=\"tcrn-text tcrn-page__lede\" data-i18n=\"modelTiers.lede\" data-collection-purpose=\"models.tiers\">Every model a rule can be given, one record per row. The order column ranks all records together: the lower the order, the stronger the record. A category's tier with the largest order is the one a rule gets, and escalation moves to the next smaller order.</p></div><div class=\"tcrn-page-header__actions tcrn-page__actions\"><span class=\"tcrn-badge\" id=\"model-tiers-count\">—</span></div></div></header>"
         },
         {
           "file": "portal/index.html",
-          "line": 4279,
+          "line": 4282,
           "text": "<div class=\"tcrn-page-hierarchy__lower-content\" data-page-hierarchy-region=\"lower-content\" data-page-hierarchy-slot=\"content\"><div id=\"model-tiers-view\" data-ui=\"model-tiers-view\" data-collection-view=\"models.tiers\"></div></div>"
         },
         {
           "file": "portal/index.html",
-          "line": 4375,
+          "line": 4379,
           "text": "const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? \"en\", theme: document.documentElement.dataset.tcrnTheme, page: \"dashboard\", dashboardTab: \"overview\", settingGroup: \"general\", collections: { \"models.category\": { draft: null, dirty: false, findings: [], refusal: null }, \"models.tiers\": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: \"\", knowledgeStatus: \"valid\", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: \"conferenceTypes\", receipt: null, operationDetailsOpen: false, agentsText: \"\", reconciliation: null, rules: null, pendingSection: \"\", searchIndex: [], searchResults: [], searchSelection: 0 };"
         },
         {
           "file": "portal/index.html",
-          "line": 4730,
+          "line": 4734,
           "text": "const COLLECTION_PAGES = Object.freeze({ \"models.category\": \"model-categories\", \"models.tiers\": \"model-tiers\" });"
         },
         {
           "file": "portal/index.html",
-          "line": 5112,
+          "line": 5116,
           "text": "\"models.tiers\": Object.freeze([\"order\", \"category\", \"runner\", \"model\", \"effort\", \"note\"]),"
         },
         {
           "file": "portal/index.html",
-          "line": 5229,
+          "line": 5233,
           "text": "const tierCounts = () => storedRecords(\"models.tiers\").reduce((counts, record) => counts.set(record.category, (counts.get(record.category) ?? 0) + 1), new Map());"
         },
         {
           "file": "portal/index.html",
-          "line": 5269,
+          "line": 5273,
           "text": "const key = \"models.tiers\";"
         },
         {
           "file": "portal/index.html",
-          "line": 5302,
+          "line": 5306,
           "text": ": emptyGuide(t(\"modelTiers.emptyTitle\"), t(\"modelTiers.emptyBody\"), `<button type=\"button\" class=\"tcrn-button tcrn-button--primary tcrn-button--md\" data-collection-add=\"models.tiers\">${esc(t(\"modelTiers.add\"))}</button>`);"
         },
         {
           "file": "portal/index.html",
-          "line": 5320,
+          "line": 5324,
           "text": "else if (key === \"models.tiers\") renderModelTiers();"
         },
         {
           "file": "portal/index.html",
-          "line": 5385,
+          "line": 5389,
           "text": "for (const key of [\"models.category\", \"models.tiers\"]) {"
         },
         {
           "file": "portal/index.html",
-          "line": 6118,
+          "line": 6158,
           "text": "const rendersSystemVariables = (key) => [\"models.category\", \"models.tiers\"].includes(key) || String(key).startsWith(\"models.escalation.\") || String(key).startsWith(\"design.\");"
         },
         {
           "file": "portal/locales.js",
-          "line": 384,
+          "line": 386,
           "text": "\"setting.models.tiers.label\": \"Model tiers\","
         },
         {
           "file": "portal/locales.js",
-          "line": 385,
+          "line": 387,
           "text": "\"setting.models.tiers.description\": \"A table of records, each a model under a category with its runner, effort and note. The order ranks every record; the lower the stronger.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 386,
+          "line": 388,
           "text": "\"concept.setting.models.tiers\": \"A rule that names a category gets the category's record with the largest order, whatever its runner. Escalation moves to the next smaller order, across categories, up to the ceiling.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 875,
+          "line": 894,
           "text": "\"setting.models.tiers.label\": \"模型档位\","
         },
         {
           "file": "portal/locales.js",
-          "line": 876,
+          "line": 895,
           "text": "\"setting.models.tiers.description\": \"一张记录表，每条记录是某个分类下的模型，含运行器、effort 和备注。顺序为所有记录排级，越小越强。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 877,
+          "line": 896,
           "text": "\"concept.setting.models.tiers\": \"规则指定分类后，取该分类中顺序最大的记录，不按运行器筛选。升档沿顺序取更小的上一条，可以跨分类，止于上限。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1366,
+          "line": 1402,
           "text": "\"setting.models.tiers.label\": \"モデルティア\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1367,
+          "line": 1403,
           "text": "\"setting.models.tiers.description\": \"レコードのテーブルです。各レコードは分類に属するモデルで、ランナー、effort、メモを持ちます。順序が全レコードを格付けし、小さいほど強くなります。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1368,
+          "line": 1404,
           "text": "\"concept.setting.models.tiers\": \"分類を指定したルールは、ランナーに関係なく、その分類で順序が最大のレコードを受け取ります。エスカレーションは順序が一つ小さいレコードへ進み、分類をまたいで上限まで上がります。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1857,
+          "line": 1910,
           "text": "\"setting.models.tiers.label\": \"모델 티어\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1858,
+          "line": 1911,
           "text": "\"setting.models.tiers.description\": \"레코드 표입니다. 각 레코드는 분류에 속한 모델이며 실행기, effort, 메모를 가집니다. 순서가 모든 레코드를 등급화하며 작을수록 강합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1859,
+          "line": 1912,
           "text": "\"concept.setting.models.tiers\": \"분류를 지정한 규칙은 실행기와 관계없이 그 분류에서 순서가 가장 큰 레코드를 받습니다. 상향 조정은 순서가 바로 더 작은 레코드로 이동하며, 분류를 넘어 상한까지 올라갑니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2348,
+          "line": 2418,
           "text": "\"setting.models.tiers.label\": \"Niveaux de modèle\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2349,
+          "line": 2419,
           "text": "\"setting.models.tiers.description\": \"Une table d’enregistrements, chacun un modèle rangé dans une catégorie avec son exécuteur, son effort et une remarque. L’ordre classe tous les enregistrements ; le plus petit est le plus fort.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2350,
+          "line": 2420,
           "text": "\"concept.setting.models.tiers\": \"Une règle qui nomme une catégorie reçoit l’enregistrement de cette catégorie dont l’ordre est le plus grand, quel que soit son exécuteur. L’escalade passe à l’ordre immédiatement inférieur, d’une catégorie à l’autre, jusqu’au plafond.\","
         },
         {
           "file": "portal/portal.mjs",
-          "line": 528,
+          "line": 531,
           "text": "const SYSTEM_VARIABLE_KEYS = Object.freeze([\"design.authority\", \"models.category\", \"models.tiers\"]);"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 544,
+          "line": 547,
           "text": "const COLLECTION_KEYS = Object.freeze([\"models.category\", \"models.tiers\"]);"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 545,
+          "line": 548,
           "text": "const COLLECTION_IDENTITY = Object.freeze({ \"models.category\": \"id\", \"models.tiers\": \"order\" });"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 574,
+          "line": 577,
           "text": "if (reasonCode === \"MODELS_CATEGORY_UNKNOWN\" && key === \"models.tiers\") {"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 580,
+          "line": 583,
           "text": "const tiers = storedTable(catalog, \"models.tiers\").map(recordOf);"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 586,
+          "line": 589,
           "text": "...tiers.filter((tier) => tier.category === category).map((tier) => `models.tiers.${tier.order}`),"
         },
         {
           "file": "portal/portal.mjs",
-          "line": 601,
+          "line": 604,
           "text": "const named = storedTable(catalog, \"models.tiers\").map((tier) => recordOf(tier).category).filter((id) => typeof id === \"string\" && !ids.has(id));"
         }
       ],
@@ -4338,52 +4375,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 387,
+          "line": 389,
           "text": "\"setting.quota.fiveHourParallelOffPercent.label\": \"Five-hour parallel limit\","
         },
         {
           "file": "portal/locales.js",
-          "line": 388,
+          "line": 390,
           "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"Declares the five-hour usage percentage at which the host should run one subagent at a time. The host must read usage and apply this policy; the engine does neither automatically.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 878,
+          "line": 897,
           "text": "\"setting.quota.fiveHourParallelOffPercent.label\": \"五小时并行限制阈值\","
         },
         {
           "file": "portal/locales.js",
-          "line": 879,
+          "line": 898,
           "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"声明五小时用量达到多少百分比时，宿主应每次只运行一个子代理。宿主须读取用量并执行此策略；引擎不会自动执行。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1369,
+          "line": 1405,
           "text": "\"setting.quota.fiveHourParallelOffPercent.label\": \"5 時間の並列制限\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1370,
+          "line": 1406,
           "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"5 時間使用率が何パーセントに達したらホストがサブエージェントを一つずつ実行するかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1860,
+          "line": 1913,
           "text": "\"setting.quota.fiveHourParallelOffPercent.label\": \"5시간 병렬 제한 기준\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1861,
+          "line": 1914,
           "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"5시간 사용률이 몇 퍼센트에 도달하면 호스트가 서브에이전트를 하나씩 실행할지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2351,
+          "line": 2421,
           "text": "\"setting.quota.fiveHourParallelOffPercent.label\": \"Limite parallèle sur cinq heures\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2352,
+          "line": 2422,
           "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"Déclare le pourcentage d’utilisation de cinq heures auquel l’hôte doit exécuter un seul sous-agent à la fois. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement.\","
         }
       ],
@@ -4450,52 +4487,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 389,
+          "line": 391,
           "text": "\"setting.quota.fiveHourWaitPercent.label\": \"Five-hour wait threshold\","
         },
         {
           "file": "portal/locales.js",
-          "line": 390,
+          "line": 392,
           "text": "\"setting.quota.fiveHourWaitPercent.description\": \"Declares the five-hour usage percentage at which the host should wait for the five-hour window to reset. The host must read usage and apply this policy; the engine does neither automatically.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 880,
+          "line": 899,
           "text": "\"setting.quota.fiveHourWaitPercent.label\": \"五小时等待阈值\","
         },
         {
           "file": "portal/locales.js",
-          "line": 881,
+          "line": 900,
           "text": "\"setting.quota.fiveHourWaitPercent.description\": \"声明五小时用量达到多少百分比时，宿主应等待五小时窗口重置。宿主须读取用量并执行此策略；引擎不会自动执行。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1371,
+          "line": 1407,
           "text": "\"setting.quota.fiveHourWaitPercent.label\": \"5 時間の待機しきい値\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1372,
+          "line": 1408,
           "text": "\"setting.quota.fiveHourWaitPercent.description\": \"5 時間使用率が何パーセントに達したらホストが5 時間枠のリセットを待つかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1862,
+          "line": 1915,
           "text": "\"setting.quota.fiveHourWaitPercent.label\": \"5시간 대기 기준\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1863,
+          "line": 1916,
           "text": "\"setting.quota.fiveHourWaitPercent.description\": \"5시간 사용률이 몇 퍼센트에 도달하면 호스트가 5시간 창 초기화를 기다릴지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2353,
+          "line": 2423,
           "text": "\"setting.quota.fiveHourWaitPercent.label\": \"Seuil d’attente sur cinq heures\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2354,
+          "line": 2424,
           "text": "\"setting.quota.fiveHourWaitPercent.description\": \"Déclare le pourcentage d’utilisation de cinq heures auquel l’hôte doit attendre le renouvellement de la fenêtre de cinq heures. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement.\","
         }
       ],
@@ -4562,52 +4599,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 391,
+          "line": 393,
           "text": "\"setting.quota.weeklyParallelOffPercent.label\": \"Weekly parallel limit\","
         },
         {
           "file": "portal/locales.js",
-          "line": 392,
+          "line": 394,
           "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"Declares the weekly usage percentage at which the host should run one subagent at a time. The host must read usage and apply this policy; the engine does neither automatically.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 882,
+          "line": 901,
           "text": "\"setting.quota.weeklyParallelOffPercent.label\": \"每周并行限制阈值\","
         },
         {
           "file": "portal/locales.js",
-          "line": 883,
+          "line": 902,
           "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"声明每周用量达到多少百分比时，宿主应每次只运行一个子代理。宿主须读取用量并执行此策略；引擎不会自动执行。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1373,
+          "line": 1409,
           "text": "\"setting.quota.weeklyParallelOffPercent.label\": \"週間の並列制限\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1374,
+          "line": 1410,
           "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"週間使用率が何パーセントに達したらホストがサブエージェントを一つずつ実行するかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1864,
+          "line": 1917,
           "text": "\"setting.quota.weeklyParallelOffPercent.label\": \"주간 병렬 제한 기준\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1865,
+          "line": 1918,
           "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"주간 사용률이 몇 퍼센트에 도달하면 호스트가 서브에이전트를 하나씩 실행할지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2355,
+          "line": 2425,
           "text": "\"setting.quota.weeklyParallelOffPercent.label\": \"Limite parallèle hebdomadaire\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2356,
+          "line": 2426,
           "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"Déclare le pourcentage d’utilisation hebdomadaire auquel l’hôte doit exécuter un seul sous-agent à la fois. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement.\","
         }
       ],
@@ -4674,52 +4711,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 393,
+          "line": 395,
           "text": "\"setting.quota.weeklyWaitPercent.label\": \"Weekly wait threshold\","
         },
         {
           "file": "portal/locales.js",
-          "line": 394,
+          "line": 396,
           "text": "\"setting.quota.weeklyWaitPercent.description\": \"Declares the weekly usage percentage at which the host should wait for the weekly window to reset. The host must read usage and apply this policy; the engine does neither automatically. Unset means no weekly wait policy.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 884,
+          "line": 903,
           "text": "\"setting.quota.weeklyWaitPercent.label\": \"每周等待阈值\","
         },
         {
           "file": "portal/locales.js",
-          "line": 885,
+          "line": 904,
           "text": "\"setting.quota.weeklyWaitPercent.description\": \"声明每周用量达到多少百分比时，宿主应等待每周窗口重置。宿主须读取用量并执行此策略；引擎不会自动执行。未设置表示没有每周等待策略。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1375,
+          "line": 1411,
           "text": "\"setting.quota.weeklyWaitPercent.label\": \"週間の待機しきい値\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1376,
+          "line": 1412,
           "text": "\"setting.quota.weeklyWaitPercent.description\": \"週間使用率が何パーセントに達したらホストが週間枠のリセットを待つかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。未設定なら週次の待機方針はありません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1866,
+          "line": 1919,
           "text": "\"setting.quota.weeklyWaitPercent.label\": \"주간 대기 기준\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1867,
+          "line": 1920,
           "text": "\"setting.quota.weeklyWaitPercent.description\": \"주간 사용률이 몇 퍼센트에 도달하면 호스트가 주간 창 초기화를 기다릴지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다. 미설정 시 주간 대기 정책이 없습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2357,
+          "line": 2427,
           "text": "\"setting.quota.weeklyWaitPercent.label\": \"Seuil d’attente hebdomadaire\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2358,
+          "line": 2428,
           "text": "\"setting.quota.weeklyWaitPercent.description\": \"Déclare le pourcentage d’utilisation hebdomadaire auquel l’hôte doit attendre le renouvellement de la fenêtre hebdomadaire. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement. Non défini : aucune politique d’attente hebdomadaire.\","
         }
       ],
@@ -4787,117 +4824,117 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4841,
+          "line": 4845,
           "text": "if (entry.key === \"retrieval.promptLanguages\") return promptLanguageChoice(entry, label, id);"
         },
         {
           "file": "portal/index.html",
-          "line": 6122,
+          "line": 6162,
           "text": "if (key === \"retrieval.promptLanguages\" && String(value ?? \"\").trim() === \"\") {"
         },
         {
           "file": "portal/index.html",
-          "line": 6166,
+          "line": 6206,
           "text": "if (key === \"retrieval.promptLanguages\") focusPromptLanguage();"
         },
         {
           "file": "portal/locales.js",
-          "line": 345,
+          "line": 347,
           "text": "\"setting.retrieval.promptLanguages.label\": \"Prompt languages\","
         },
         {
           "file": "portal/locales.js",
-          "line": 346,
+          "line": 348,
           "text": "\"setting.retrieval.promptLanguages.description\": \"Languages expected in questions for this target. Save applies the selected set. Reset removes this target’s choice; when no inherited choice exists, the artifact language is used.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 347,
+          "line": 349,
           "text": "\"concept.setting.retrieval.promptLanguages\": \"Questions outside the selected languages require translation before recall. Missing translation support causes a refusal instead of a guessed language.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 348,
+          "line": 350,
           "text": "\"setting.retrieval.promptLanguages.reset\": \"Use inherited languages\","
         },
         {
           "file": "portal/locales.js",
-          "line": 836,
+          "line": 855,
           "text": "\"setting.retrieval.promptLanguages.label\": \"提问语言\","
         },
         {
           "file": "portal/locales.js",
-          "line": 837,
+          "line": 856,
           "text": "\"setting.retrieval.promptLanguages.description\": \"当前目标预计接收的问题语言。保存应用所选集合。重置移除当前目标的选择；无继承配置时使用产物语言。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 838,
+          "line": 857,
           "text": "\"concept.setting.retrieval.promptLanguages\": \"不属于所选语言的问题需先翻译再召回。缺少翻译能力时拒绝处理，不猜测语言。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 839,
+          "line": 858,
           "text": "\"setting.retrieval.promptLanguages.reset\": \"使用继承语言\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1327,
+          "line": 1363,
           "text": "\"setting.retrieval.promptLanguages.label\": \"プロンプト言語\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1328,
+          "line": 1364,
           "text": "\"setting.retrieval.promptLanguages.description\": \"この対象で想定する質問の言語です。保存で選択を適用します。リセットでこの対象の指定を解除し、継承値もなければ成果物の言語を使います。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1329,
+          "line": 1365,
           "text": "\"concept.setting.retrieval.promptLanguages\": \"選んだ言語以外の質問は検索前に翻訳が必要です。翻訳手段がなければ、言語を推測せず拒否します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1330,
+          "line": 1366,
           "text": "\"setting.retrieval.promptLanguages.reset\": \"継承した言語を使う\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1818,
+          "line": 1871,
           "text": "\"setting.retrieval.promptLanguages.label\": \"프롬프트 언어\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1819,
+          "line": 1872,
           "text": "\"setting.retrieval.promptLanguages.description\": \"이 대상에서 예상하는 질문 언어입니다. 저장하면 선택한 집합이 적용됩니다. 초기화하면 이 대상의 선택이 제거되며 상속 값도 없으면 산출물 언어를 사용합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1820,
+          "line": 1873,
           "text": "\"concept.setting.retrieval.promptLanguages\": \"선택한 언어 밖의 질문은 검색 전에 번역이 필요합니다. 번역 기능이 없으면 언어를 추측하지 않고 거부합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1821,
+          "line": 1874,
           "text": "\"setting.retrieval.promptLanguages.reset\": \"상속 언어 사용\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2309,
+          "line": 2379,
           "text": "\"setting.retrieval.promptLanguages.label\": \"Langues des questions\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2310,
+          "line": 2380,
           "text": "\"setting.retrieval.promptLanguages.description\": \"Langues attendues dans les questions de cette cible. Enregistrer applique la sélection. Réinitialiser retire le choix propre à cette cible ; sans choix hérité, la langue des productions est utilisée.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2311,
+          "line": 2381,
           "text": "\"concept.setting.retrieval.promptLanguages\": \"Les questions hors des langues sélectionnées nécessitent une traduction avant la recherche. Sans traduction disponible, la demande est refusée au lieu de supposer la langue.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2312,
+          "line": 2382,
           "text": "\"setting.retrieval.promptLanguages.reset\": \"Utiliser les langues héritées\","
         }
       ],
@@ -4943,17 +4980,17 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3061,
+          "line": 3181,
           "text": "const scopeBytes = Number(settingValue(\"retrieval.scopeExcerptBytes\") ?? \"512\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3506,
+          "line": 3641,
           "text": "const configuredScopeBytes = scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value;"
         },
         {
           "file": "packages/core/src/hook-recall.ts",
-          "line": 169,
+          "line": 193,
           "text": "const scopeExcerptBytes = numericSetting(state, \"retrieval.scopeExcerptBytes\", (value) => Number.isSafeInteger(value) && value > 0);"
         },
         {
@@ -4973,77 +5010,77 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 352,
+          "line": 354,
           "text": "\"setting.retrieval.scopeExcerptBytes.label\": \"Scope excerpt bytes\","
         },
         {
           "file": "portal/locales.js",
-          "line": 356,
+          "line": 358,
           "text": "\"setting.retrieval.scopeExcerptBytes.description\": \"Default byte budget for search excerpts in work lists. The full work scope is preserved; an explicit search budget overrides this value.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 357,
+          "line": 359,
           "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"Amount of each work description shown in search results, in bytes. Increase it for longer excerpts. Each search can override this default; the stored description stays complete.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 843,
+          "line": 862,
           "text": "\"setting.retrieval.scopeExcerptBytes.label\": \"范围摘录字节数\","
         },
         {
           "file": "portal/locales.js",
-          "line": 847,
+          "line": 866,
           "text": "\"setting.retrieval.scopeExcerptBytes.description\": \"工作列表搜索摘要的默认字节预算。完整工作范围仍保留；搜索时显式指定的预算覆盖此值。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 848,
+          "line": 867,
           "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"搜索结果中每条工作说明的摘录长度，单位为字节。调大可显示更多内容；每次搜索可覆盖此默认值，保存的完整说明不变。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1334,
+          "line": 1370,
           "text": "\"setting.retrieval.scopeExcerptBytes.label\": \"スコープ抜粋バイト数\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1338,
+          "line": 1374,
           "text": "\"setting.retrieval.scopeExcerptBytes.description\": \"作業一覧の検索抜粋の既定バイト予算です。作業範囲の全文は保持し、検索時に明示した予算があれば優先します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1339,
+          "line": 1375,
           "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"検索結果に表示する各作業説明の抜粋量をバイトで指定します。増やすと長く表示されます。検索ごとに変更でき、保存済みの全文は変わりません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1825,
+          "line": 1878,
           "text": "\"setting.retrieval.scopeExcerptBytes.label\": \"스코프 발췌 바이트\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1829,
+          "line": 1882,
           "text": "\"setting.retrieval.scopeExcerptBytes.description\": \"작업 목록 검색 발췌의 기본 바이트 예산입니다. 전체 작업 범위는 유지되며 검색 시 명시한 예산이 우선합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1830,
+          "line": 1883,
           "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"검색 결과에 표시할 각 작업 설명의 발췌 길이(바이트)입니다. 늘리면 더 길게 표시됩니다. 검색마다 재정의할 수 있으며 저장된 전체 설명은 바뀌지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2316,
+          "line": 2386,
           "text": "\"setting.retrieval.scopeExcerptBytes.label\": \"Octets d’extrait de scope\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2320,
+          "line": 2390,
           "text": "\"setting.retrieval.scopeExcerptBytes.description\": \"Budget d’octets par défaut des extraits de recherche dans les travaux. Le périmètre complet est conservé ; un budget explicite de recherche est prioritaire.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2321,
+          "line": 2391,
           "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"Longueur de l’extrait de chaque description de travail dans les résultats, en octets. Augmentez-la pour voir davantage de texte. Chaque recherche peut remplacer cette valeur ; le texte enregistré reste complet.\","
         }
       ],
@@ -5089,12 +5126,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3050,
+          "line": 3170,
           "text": "const configuredTau = Number(settingValue(\"retrieval.tau\") ?? String(RECALL_DEFAULT_TAU));"
         },
         {
           "file": "packages/core/src/hook-recall.ts",
-          "line": 168,
+          "line": 192,
           "text": "const tau = numericSetting(state, \"retrieval.tau\", (value) => Number.isFinite(value) && value >= 0);"
         },
         {
@@ -5124,77 +5161,77 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 353,
+          "line": 355,
           "text": "\"setting.retrieval.tau.label\": \"Recall relevance threshold\","
         },
         {
           "file": "portal/locales.js",
-          "line": 354,
+          "line": 356,
           "text": "\"setting.retrieval.tau.description\": \"Minimum relevance required to return a result. Unset uses 3. Raising it filters more weak matches; lowering it admits more results. The threshold adapts to the library’s indexed content.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 355,
+          "line": 357,
           "text": "\"concept.setting.retrieval.tau\": \"This filters weak matches; it does not cap the amount of stored knowledge. A value supplied for one recall overrides this setting for that call.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 844,
+          "line": 863,
           "text": "\"setting.retrieval.tau.label\": \"召回相关性阈值\","
         },
         {
           "file": "portal/locales.js",
-          "line": 845,
+          "line": 864,
           "text": "\"setting.retrieval.tau.description\": \"返回结果所需的最低相关性。未设置时为 3。调高会过滤更多弱匹配；调低可返回更多结果。阈值随库内已索引内容调整。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 846,
+          "line": 865,
           "text": "\"concept.setting.retrieval.tau\": \"此值筛选弱匹配，不限制知识存储量。单次召回指定的值会覆盖本次使用的配置。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1335,
+          "line": 1371,
           "text": "\"setting.retrieval.tau.label\": \"検索の関連度しきい値\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1336,
+          "line": 1372,
           "text": "\"setting.retrieval.tau.description\": \"結果を返す最低関連度です。未設定時は 3 です。上げると弱い一致を除き、下げるとより多くの結果を認めます。しきい値はライブラリの索引内容に応じて調整されます。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1337,
+          "line": 1373,
           "text": "\"concept.setting.retrieval.tau\": \"弱い一致を除く設定で、保存できる知識量の上限ではありません。一回の検索で値を指定すれば、その呼び出しだけに適用します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1826,
+          "line": 1879,
           "text": "\"setting.retrieval.tau.label\": \"검색 관련성 기준값\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1827,
+          "line": 1880,
           "text": "\"setting.retrieval.tau.description\": \"결과를 반환하는 데 필요한 최소 관련성입니다. 미설정 시 3입니다. 높이면 약한 일치를 더 제외하고 낮추면 더 많은 결과를 허용합니다. 기준은 라이브러리의 색인 내용에 맞춰 조정됩니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1828,
+          "line": 1881,
           "text": "\"concept.setting.retrieval.tau\": \"약한 일치를 걸러낼 뿐 저장할 지식의 양을 제한하지 않습니다. 한 번의 검색에 값을 지정하면 해당 호출에서 이 설정을 대신합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2317,
+          "line": 2387,
           "text": "\"setting.retrieval.tau.label\": \"Seuil de pertinence de la recherche\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2318,
+          "line": 2388,
           "text": "\"setting.retrieval.tau.description\": \"Pertinence minimale pour renvoyer un résultat. La valeur par défaut est 3. L’augmenter élimine davantage de correspondances faibles ; la réduire en admet plus. Le seuil s’adapte au contenu indexé de la bibliothèque.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2319,
+          "line": 2389,
           "text": "\"concept.setting.retrieval.tau\": \"Ce seuil filtre les correspondances faibles, sans limiter les connaissances stockées. Une valeur fournie pour une recherche remplace ce réglage pour cet appel.\","
         },
         {
@@ -5250,17 +5287,17 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1226,
+          "line": 1249,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources })"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2523,
+          "line": 2643,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources });"
         },
         {
           "file": "packages/core/src/akasha.ts",
-          "line": 495,
+          "line": 499,
           "text": "// storage.segmentBytes: a segment that would grow past this is closed and a new one begun."
         },
         {
@@ -5290,87 +5327,87 @@
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 3487,
+          "line": 3520,
           "text": "const configured = state.settings.find((entry) => entry.key === \"storage.segmentBytes\")?.value;"
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 3490,
+          "line": 3523,
           "text": "fail(\"WORKSPACE_SCHEMA_INVALID\", \"storage.segmentBytes is outside its declared bounds\");"
         },
         {
           "file": "portal/locales.js",
-          "line": 333,
+          "line": 335,
           "text": "\"setting.storage.segmentBytes.label\": \"Event segment rollover size (bytes)\","
         },
         {
           "file": "portal/locales.js",
-          "line": 334,
+          "line": 336,
           "text": "\"setting.storage.segmentBytes.description\": \"Target byte budget for new event segments. Smaller values create segments sooner. An individual event remains whole, and saved history is unchanged.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 335,
+          "line": 337,
           "text": "\"concept.setting.storage.segmentBytes\": \"This is a storage rollover target. It does not impose an extra size ceiling on a valid event.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 824,
+          "line": 843,
           "text": "\"setting.storage.segmentBytes.label\": \"事件分段目标大小（字节）\","
         },
         {
           "file": "portal/locales.js",
-          "line": 825,
+          "line": 844,
           "text": "\"setting.storage.segmentBytes.description\": \"新事件分段的目标字节预算。值越小，越早创建下一段。单个事件保持完整，已保存的历史不变。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 826,
+          "line": 845,
           "text": "\"concept.setting.storage.segmentBytes\": \"这是存储换段目标，不另行限制有效事件的大小。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1315,
+          "line": 1351,
           "text": "\"setting.storage.segmentBytes.label\": \"イベント分割の目安（バイト）\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1316,
+          "line": 1352,
           "text": "\"setting.storage.segmentBytes.description\": \"新しいイベント区間の目標バイト予算です。値が小さいほど早く次の区間を作ります。一つのイベントは分割せず、保存済みの履歴も変更しません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1317,
+          "line": 1353,
           "text": "\"concept.setting.storage.segmentBytes\": \"保存区間を切り替える目安です。有効なイベントに追加のサイズ上限は課しません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1806,
+          "line": 1859,
           "text": "\"setting.storage.segmentBytes.label\": \"이벤트 분할 목표 크기(바이트)\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1807,
+          "line": 1860,
           "text": "\"setting.storage.segmentBytes.description\": \"새 이벤트 구간의 목표 바이트 예산입니다. 값이 작을수록 새 구간을 빨리 만듭니다. 개별 이벤트는 온전히 유지되며 저장된 기록은 바뀌지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1808,
+          "line": 1861,
           "text": "\"concept.setting.storage.segmentBytes\": \"저장 구간을 전환하는 목표값이며, 유효한 이벤트에 추가 크기 상한을 두지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2297,
+          "line": 2367,
           "text": "\"setting.storage.segmentBytes.label\": \"Taille cible des segments (octets)\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2298,
+          "line": 2368,
           "text": "\"setting.storage.segmentBytes.description\": \"Budget cible en octets des nouveaux segments. Une valeur plus petite crée plus tôt un nouveau segment. Chaque événement reste entier et l’historique enregistré ne change pas.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2299,
+          "line": 2369,
           "text": "\"concept.setting.storage.segmentBytes\": \"C’est un seuil de changement de segment, sans plafond supplémentaire sur la taille d’un événement valide.\","
         }
       ],
@@ -5441,92 +5478,92 @@
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 3305,
+          "line": 3338,
           "text": "// The snapshot interval: storage.snapshotEveryEvents, or its catalog default."
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 3307,
+          "line": 3340,
           "text": "const configured = Number(state.settings.find((entry) => entry.key === \"storage.snapshotEveryEvents\")?.value ?? SETTINGS_CATALOG.find((entry) => entry.key === \"storage.snapshotEveryEvents\")?.defaultValue);"
         },
         {
           "file": "packages/core/src/workspace.ts",
-          "line": 3326,
+          "line": 3359,
           "text": "* storage.snapshotEveryEvents events past the one it resumed from. The cache is derived, so a"
         },
         {
           "file": "portal/locales.js",
-          "line": 336,
+          "line": 338,
           "text": "\"setting.storage.snapshotEveryEvents.label\": \"Snapshot interval\","
         },
         {
           "file": "portal/locales.js",
-          "line": 337,
+          "line": 339,
           "text": "\"setting.storage.snapshotEveryEvents.description\": \"Number of events between replay checkpoints. Unset uses 512. Invalid checkpoints are refused rather than used as history.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 338,
+          "line": 340,
           "text": "\"concept.setting.storage.snapshotEveryEvents\": \"Number of new events between saved checkpoints. A smaller interval reduces the history to replay when loading, but writes checkpoints more often. Earlier history is preserved.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 827,
+          "line": 846,
           "text": "\"setting.storage.snapshotEveryEvents.label\": \"快照间隔\","
         },
         {
           "file": "portal/locales.js",
-          "line": 828,
+          "line": 847,
           "text": "\"setting.storage.snapshotEveryEvents.description\": \"回放检查点之间的事件数量。未设置时为 512。无效检查点会被拒绝，不作为历史使用。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 829,
+          "line": 848,
           "text": "\"concept.setting.storage.snapshotEveryEvents\": \"每新增多少条事件保存一次检查点。间隔越小，加载时需重放的历史越少，但检查点写入更频繁；此前历史仍完整保留。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1318,
+          "line": 1354,
           "text": "\"setting.storage.snapshotEveryEvents.label\": \"スナップショット間隔\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1319,
+          "line": 1355,
           "text": "\"setting.storage.snapshotEveryEvents.description\": \"再生チェックポイント間のイベント数です。未設定時は 512 です。無効なチェックポイントは履歴として使わず拒否します。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1320,
+          "line": 1356,
           "text": "\"concept.setting.storage.snapshotEveryEvents\": \"チェックポイントを保存する間隔を新規イベント数で指定します。短くすると読み込み時に再生する履歴が減りますが、保存頻度が増えます。以前の履歴は保持されます。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1809,
+          "line": 1862,
           "text": "\"setting.storage.snapshotEveryEvents.label\": \"스냅샷 간격\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1810,
+          "line": 1863,
           "text": "\"setting.storage.snapshotEveryEvents.description\": \"재생 체크포인트 사이의 이벤트 수입니다. 미설정 시 512입니다. 유효하지 않은 체크포인트는 기록으로 사용하지 않고 거부합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1811,
+          "line": 1864,
           "text": "\"concept.setting.storage.snapshotEveryEvents\": \"새 이벤트 몇 건마다 체크포인트를 저장할지 정합니다. 간격이 짧으면 로딩 시 재생할 기록이 줄지만 저장이 더 잦아집니다. 이전 기록은 보존됩니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2300,
+          "line": 2370,
           "text": "\"setting.storage.snapshotEveryEvents.label\": \"Intervalle des instantanés\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2301,
+          "line": 2371,
           "text": "\"setting.storage.snapshotEveryEvents.description\": \"Nombre d’événements entre les points de reprise. La valeur par défaut est 512. Un point invalide est refusé au lieu d’être utilisé comme historique.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2302,
+          "line": 2372,
           "text": "\"concept.setting.storage.snapshotEveryEvents\": \"Nombre de nouveaux événements entre deux points de reprise. Un intervalle plus court réduit l’historique à rejouer au chargement, mais écrit plus souvent. L’historique antérieur est conservé.\","
         }
       ],
@@ -5569,12 +5606,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1467,
+          "line": 1517,
           "text": "// TCRN-CROSS-STORY-380: the three verbs that make workspace.generatedArtifactsPath a"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2577,
+          "line": 2697,
           "text": "if (values.key === \"workspace.generatedArtifactsPath\") {"
         },
         {
@@ -5629,52 +5666,52 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 331,
+          "line": 333,
           "text": "\"setting.workspace.generatedArtifactsPath.label\": \"Artifacts directory\","
         },
         {
           "file": "portal/locales.js",
-          "line": 332,
+          "line": 334,
           "text": "\"setting.workspace.generatedArtifactsPath.description\": \"Generated artifact directory for the whole library. Relative paths start at the library root. An existing absolute directory outside the device and control trees is also allowed. Changing this setting does not move existing files.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 822,
+          "line": 841,
           "text": "\"setting.workspace.generatedArtifactsPath.label\": \"工件目录\","
         },
         {
           "file": "portal/locales.js",
-          "line": 823,
+          "line": 842,
           "text": "\"setting.workspace.generatedArtifactsPath.description\": \"整个库的生成工件目录。相对路径从库根目录解析，也可使用已存在且位于设备目录和控制树之外的绝对目录。修改配置不会移动已有文件。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1313,
+          "line": 1349,
           "text": "\"setting.workspace.generatedArtifactsPath.label\": \"成果物ディレクトリ\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1314,
+          "line": 1350,
           "text": "\"setting.workspace.generatedArtifactsPath.description\": \"ライブラリ全体の生成成果物の保存先です。相対パスはライブラリのルートから解決します。端末設定と管理領域の外にある既存の絶対ディレクトリも使えます。変更しても既存のファイルは移動しません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1804,
+          "line": 1857,
           "text": "\"setting.workspace.generatedArtifactsPath.label\": \"산출물 디렉터리\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1805,
+          "line": 1858,
           "text": "\"setting.workspace.generatedArtifactsPath.description\": \"라이브러리 전체의 생성 산출물 폴더입니다. 상대 경로는 라이브러리 루트에서 해석됩니다. 기기 설정과 관리 트리 밖에 있는 기존 절대 폴더도 사용할 수 있습니다. 설정을 바꿔도 기존 파일은 이동하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2295,
+          "line": 2365,
           "text": "\"setting.workspace.generatedArtifactsPath.label\": \"Répertoire des artefacts\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2296,
+          "line": 2366,
           "text": "\"setting.workspace.generatedArtifactsPath.description\": \"Dossier des artefacts générés pour toute la bibliothèque. Les chemins relatifs partent de sa racine. Un dossier absolu existant, hors des réglages de l’appareil et de l’arborescence de contrôle, est aussi autorisé. Changer ce réglage ne déplace pas les fichiers existants.\","
         },
         {
@@ -5719,7 +5756,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2091,
+          "line": 2182,
           "text": "// agents.navigation is written, the navigation section; CLAUDE.md's import section unless it"
         },
         {
@@ -5749,7 +5786,7 @@
         },
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 43,
+          "line": 45,
           "text": "export const AGENTS_NAVIGATION_SETTING = \"agents.navigation\" as const;"
         },
         {
@@ -5789,42 +5826,42 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 755,
+          "line": 772,
           "text": "\"setting.agents.navigation.label\": \"导航三行\","
         },
         {
           "file": "portal/locales.js",
-          "line": 756,
+          "line": 773,
           "text": "\"setting.agents.navigation.description\": \"三行导航（本项目由 Einzbern 管理、开工加载 Mana Orchestrate、先 recall）是写进各项目的 AGENTS.md，还是改由 SessionStart 与 SubagentStart 两条指针钩子交给 Agent。安装时询问一次；未设置时两者都不渲染。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1246,
+          "line": 1280,
           "text": "\"setting.agents.navigation.label\": \"ナビゲーション行\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1247,
+          "line": 1281,
           "text": "\"setting.agents.navigation.description\": \"3 行のナビゲーション（Einzbern が管理するプロジェクトであること、作業前に Mana Orchestrate を読み込むこと、まず recall すること）を各プロジェクトの AGENTS.md に書き込むか、代わりに SessionStart と SubagentStart のポインターフックでエージェントに渡すかです。インストール時に一度だけ尋ねます。未設定ならどちらも描画しません。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1737,
+          "line": 1788,
           "text": "\"setting.agents.navigation.label\": \"내비게이션 줄\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1738,
+          "line": 1789,
           "text": "\"setting.agents.navigation.description\": \"세 줄 내비게이션(Einzbern이 관리하는 프로젝트, 작업 전 Mana Orchestrate 불러오기, 먼저 recall)을 각 프로젝트의 AGENTS.md에 쓸지, 아니면 SessionStart와 SubagentStart 포인터 훅으로 에이전트에게 전달할지입니다. 설치할 때 한 번 묻습니다. 설정하지 않으면 둘 다 렌더링하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2228,
+          "line": 2296,
           "text": "\"setting.agents.navigation.label\": \"Lignes de navigation\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2229,
+          "line": 2297,
           "text": "\"setting.agents.navigation.description\": \"Indique si les trois lignes de navigation (projet géré par Einzbern, charger Mana Orchestrate, commencer par recall) sont écrites dans l’AGENTS.md de chaque projet, ou transmises aux agents par les deux hooks pointeurs SessionStart et SubagentStart. Demandé une fois à l’installation ; non défini, aucun des deux n’est rendu.\","
         }
       ],
@@ -5875,17 +5912,17 @@
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 2639,
+          "line": 2702,
           "text": "// project, role or work (validateUserCrestLinks). Its place is the device-level key crest.userPath,"
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 2646,
+          "line": 2709,
           "text": "// crest.userPath named the place: the folder that holds it is then never created here, so a"
         },
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 340,
+          "line": 362,
           "text": "* TCRN-CROSS-STORY-476 R5: where this device keeps the user-level crest -- crest.userPath as this"
         },
         {
@@ -5900,43 +5937,166 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 757,
+          "line": 774,
           "text": "\"setting.crest.userPath.label\": \"用户级 crest 位置\","
         },
         {
           "file": "portal/locales.js",
-          "line": 758,
+          "line": 775,
           "text": "\"setting.crest.userPath.description\": \"用户级 crest 所在的位置，即每个项目都会召回的个人知识库。须为绝对路径，可以是云文件夹；未设置时为本机设备目录下的 crest 文件夹。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1248,
+          "line": 1282,
           "text": "\"setting.crest.userPath.label\": \"ユーザー crest の場所\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1249,
+          "line": 1283,
           "text": "\"setting.crest.userPath.description\": \"ユーザー crest の置き場所です。すべてのプロジェクトが呼び出す個人の知識ストアです。絶対パスで指定し、クラウドフォルダーも使えます。未設定なら、この端末のデバイスディレクトリ内の crest フォルダーです。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1739,
+          "line": 1790,
           "text": "\"setting.crest.userPath.label\": \"사용자 crest 위치\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1740,
+          "line": 1791,
           "text": "\"setting.crest.userPath.description\": \"사용자 crest가 있는 위치로, 모든 프로젝트가 불러오는 개인 지식 저장소입니다. 절대 경로이며 클라우드 폴더도 쓸 수 있습니다. 설정하지 않으면 이 기기의 장치 디렉터리 안에 있는 crest 폴더입니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2230,
+          "line": 2298,
           "text": "\"setting.crest.userPath.label\": \"Emplacement du crest utilisateur\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2231,
+          "line": 2299,
           "text": "\"setting.crest.userPath.description\": \"L'emplacement de votre crest utilisateur, le magasin de connaissances que chaque projet rappelle. Un chemin absolu, éventuellement dans un dossier cloud ; non défini, c'est le dossier crest du répertoire de cet appareil.\","
+        }
+      ],
+      "verification": "init053-owner-return stable target/inheritance/replay/export/registered output and scoped article checks; portal target epoch/header stale-write refusal; settings/machine policy tests",
+      "publicationVerification": null
+    },
+    {
+      "catalog": {
+        "key": "execution.maxConcurrentHeavyRuns",
+        "type": "integer",
+        "controlType": "number",
+        "layer": "device",
+        "layerKind": "machine_configuration",
+        "defaultValue": "1",
+        "shape": "scalar",
+        "group": "execution",
+        "order": 6,
+        "min": 1,
+        "max": 16,
+        "appliesOn": "next-open",
+        "valueSource": "settings-catalog"
+      },
+      "scope": "device",
+      "priorCatalog": null,
+      "priorEffectiveScope": "device file",
+      "requiredScope": "device",
+      "scopeBasis": "machine preference/identity, not inheritable project authority",
+      "disposition": "device ownership retained",
+      "effectiveResolution": "device file only",
+      "provenance": "kind/projectId/projectName/inherited; declaredValue/fallbackValue/fallbackSource exposed; absent defaults never labelled as configured library values",
+      "reset": "remove this declaration and expose the effective inherited/default value; existing data/files never move implicitly",
+      "consumers": [
+        "scripts/lib/heavy-runs.mjs machine-wide heavy-run slot count, read from this device machine settings by gates-run, the test and verify-p1 commands (scripts/task.mjs), the portal proof train (scripts/verify-portal.mjs) and release finish (scripts/release.mjs); a whole number 1 to 16, unset uses 1; device scope, no library inheritance; next-open"
+      ],
+      "consumerSites": [
+        {
+          "file": "packages/cli/src/index.ts",
+          "line": 4096,
+          "text": "// slot of execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs), waiting while every slot"
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 331,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.label\": \"Max concurrent heavy runs\","
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 332,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.description\": \"How many heavy runs (gates-run, the full test suite, the portal proof train, release finish) may run at once on this device; the rest wait for a free slot. Unset uses 1.\","
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 839,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.label\": \"最大并发重活数\","
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 840,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.description\": \"本机同时运行的重活（gates-run、全量测试、门户证明链、发布 finish）上限，其余的排队等待空出的槽。未设置时为 1。\","
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 1347,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.label\": \"重い実行の最大同時数\","
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 1348,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.description\": \"この端末で同時に動かせる重い実行（gates-run、全テスト、ポータル証明チェーン、リリース finish）の上限です。残りは空きスロットを待ちます。未設定時は 1 です。\","
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 1855,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.label\": \"최대 동시 무거운 실행\","
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 1856,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.description\": \"이 기기에서 동시에 실행할 수 있는 무거운 실행(gates-run, 전체 테스트, 포털 증명 체인, 릴리스 finish)의 상한입니다. 나머지는 빈 슬롯을 기다립니다. 미설정 시 1입니다.\","
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 2363,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.label\": \"Exécutions lourdes simultanées maximum\","
+        },
+        {
+          "file": "portal/locales.js",
+          "line": 2364,
+          "text": "\"setting.execution.maxConcurrentHeavyRuns.description\": \"Nombre d’exécutions lourdes (gates-run, la suite de tests complète, la chaîne de preuve du portail, release finish) qui peuvent tourner en même temps sur cet appareil ; les autres attendent un emplacement libre. Sans valeur, 1.\","
+        },
+        {
+          "file": "scripts/lib/heavy-runs.mjs",
+          "line": 5,
+          "text": "// execution.maxConcurrentHeavyRuns slots before they start, one unless this device's machine"
+        },
+        {
+          "file": "scripts/lib/heavy-runs.mjs",
+          "line": 34,
+          "text": "export const HEAVY_RUNS_SETTING = \"execution.maxConcurrentHeavyRuns\";"
+        },
+        {
+          "file": "scripts/lib/heavy-runs.mjs",
+          "line": 90,
+          "text": "/** A stored execution.maxConcurrentHeavyRuns as a number: a whole number from 1 to 16, as the machine settings catalog checks it. */"
+        },
+        {
+          "file": "scripts/lib/heavy-runs.mjs",
+          "line": 101,
+          "text": "* How many heavy runs this device lets run at once: execution.maxConcurrentHeavyRuns in its machine"
+        },
+        {
+          "file": "scripts/release.mjs",
+          "line": 116,
+          "text": "// a slot of execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs) before it checks"
+        },
+        {
+          "file": "scripts/task.mjs",
+          "line": 1489,
+          "text": "// execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs) before its output session, so it"
+        },
+        {
+          "file": "scripts/verify-portal.mjs",
+          "line": 6,
+          "text": "// execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs) before its first step, waiting"
         }
       ],
       "verification": "init053-owner-return stable target/inheritance/replay/export/registered output and scoped article checks; portal target epoch/header stale-write refusal; settings/machine policy tests",
@@ -5978,12 +6138,12 @@
       "consumerSites": [
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 50,
+          "line": 53,
           "text": "\"portal.defaultLocale\","
         },
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 147,
+          "line": 169,
           "text": "key: \"portal.defaultLocale\","
         },
         {
@@ -5998,47 +6158,47 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 759,
+          "line": 776,
           "text": "\"setting.portal.defaultLocale.label\": \"默认语言\","
         },
         {
           "file": "portal/locales.js",
-          "line": 760,
+          "line": 777,
           "text": "\"setting.portal.defaultLocale.description\": \"浏览器首次打开时看到的语言。浏览器内的选择优先于此。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1250,
+          "line": 1284,
           "text": "\"setting.portal.defaultLocale.label\": \"既定の言語\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1251,
+          "line": 1285,
           "text": "\"setting.portal.defaultLocale.description\": \"ブラウザが初回に表示する言語です。ブラウザでの選択が優先されます。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1741,
+          "line": 1792,
           "text": "\"setting.portal.defaultLocale.label\": \"기본 언어\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1742,
+          "line": 1793,
           "text": "\"setting.portal.defaultLocale.description\": \"브라우저가 처음 열 때 보는 언어입니다. 브라우저에서의 선택이 우선합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2232,
+          "line": 2300,
           "text": "\"setting.portal.defaultLocale.label\": \"Langue par défaut\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2233,
+          "line": 2301,
           "text": "\"setting.portal.defaultLocale.description\": \"La langue vue par un navigateur à sa première visite. Un choix fait dans le navigateur l’emporte.\","
         },
         {
           "file": "portal/portal.mjs",
-          "line": 923,
+          "line": 935,
           "text": "locale: await machineValue(\"portal.defaultLocale\"),"
         }
       ],
@@ -6074,17 +6234,17 @@
       "consumerSites": [
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 51,
+          "line": 54,
           "text": "\"portal.defaultPartition\","
         },
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 161,
+          "line": 183,
           "text": "key: \"portal.defaultPartition\","
         },
         {
           "file": "portal/index.html",
-          "line": 4822,
+          "line": 4826,
           "text": "const deviceOptions = (entry) => entry.key === \"portal.defaultPartition\""
         },
         {
@@ -6099,42 +6259,42 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 761,
+          "line": 778,
           "text": "\"setting.portal.defaultPartition.label\": \"默认库\","
         },
         {
           "file": "portal/locales.js",
-          "line": 762,
+          "line": 779,
           "text": "\"setting.portal.defaultPartition.description\": \"在已注册的项目之外启动门户时打开的库。取值为本机已注册的库。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1252,
+          "line": 1286,
           "text": "\"setting.portal.defaultPartition.label\": \"既定のライブラリ\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1253,
+          "line": 1287,
           "text": "\"setting.portal.defaultPartition.description\": \"登録済みのプロジェクトの外でポータルを起動したときに開くライブラリです。値はこのマシンに登録されたライブラリです。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1743,
+          "line": 1794,
           "text": "\"setting.portal.defaultPartition.label\": \"기본 라이브러리\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1744,
+          "line": 1795,
           "text": "\"setting.portal.defaultPartition.description\": \"등록된 프로젝트 밖에서 포털을 시작할 때 여는 라이브러리입니다. 값은 이 컴퓨터에 등록된 라이브러리입니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2234,
+          "line": 2302,
           "text": "\"setting.portal.defaultPartition.label\": \"Bibliothèque par défaut\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2235,
+          "line": 2303,
           "text": "\"setting.portal.defaultPartition.description\": \"La bibliothèque que le portail ouvre lorsqu’il démarre hors d’un projet enregistré. Les valeurs sont les bibliothèques enregistrées sur cette machine.\","
         },
         {
@@ -6185,12 +6345,12 @@
       "consumerSites": [
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 52,
+          "line": 55,
           "text": "\"portal.defaultTheme\","
         },
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 174,
+          "line": 196,
           "text": "key: \"portal.defaultTheme\","
         },
         {
@@ -6205,47 +6365,47 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 763,
+          "line": 780,
           "text": "\"setting.portal.defaultTheme.label\": \"默认主题\","
         },
         {
           "file": "portal/locales.js",
-          "line": 764,
+          "line": 781,
           "text": "\"setting.portal.defaultTheme.description\": \"浏览器首次打开时看到的主题。浏览器内的选择优先于此。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1254,
+          "line": 1288,
           "text": "\"setting.portal.defaultTheme.label\": \"既定のテーマ\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1255,
+          "line": 1289,
           "text": "\"setting.portal.defaultTheme.description\": \"ブラウザが初回に表示するテーマです。ブラウザでの選択が優先されます。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1745,
+          "line": 1796,
           "text": "\"setting.portal.defaultTheme.label\": \"기본 테마\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1746,
+          "line": 1797,
           "text": "\"setting.portal.defaultTheme.description\": \"브라우저가 처음 열 때 보는 테마입니다. 브라우저에서의 선택이 우선합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2236,
+          "line": 2304,
           "text": "\"setting.portal.defaultTheme.label\": \"Thème par défaut\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2237,
+          "line": 2305,
           "text": "\"setting.portal.defaultTheme.description\": \"Le thème vu par un navigateur à sa première visite. Un choix fait dans le navigateur l’emporte.\","
         },
         {
           "file": "portal/portal.mjs",
-          "line": 924,
+          "line": 936,
           "text": "theme: await machineValue(\"portal.defaultTheme\"),"
         }
       ],
@@ -6283,12 +6443,12 @@
       "consumerSites": [
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 53,
+          "line": 56,
           "text": "\"portal.port\","
         },
         {
           "file": "packages/core/src/machine-settings.ts",
-          "line": 188,
+          "line": 210,
           "text": "key: \"portal.port\","
         },
         {
@@ -6303,47 +6463,47 @@
         },
         {
           "file": "portal/locales.js",
-          "line": 765,
+          "line": 782,
           "text": "\"setting.portal.port.label\": \"门户端口\","
         },
         {
           "file": "portal/locales.js",
-          "line": 766,
+          "line": 783,
           "text": "\"setting.portal.port.description\": \"门户监听的端口。命令行给出的端口优先于此。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1256,
+          "line": 1290,
           "text": "\"setting.portal.port.label\": \"ポータルのポート\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1257,
+          "line": 1291,
           "text": "\"setting.portal.port.description\": \"ポータルが待ち受けるポートです。コマンドラインで指定したポートが優先されます。\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1747,
+          "line": 1798,
           "text": "\"setting.portal.port.label\": \"포털 포트\","
         },
         {
           "file": "portal/locales.js",
-          "line": 1748,
+          "line": 1799,
           "text": "\"setting.portal.port.description\": \"포털이 수신하는 포트입니다. 명령줄에서 지정한 포트가 우선합니다.\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2238,
+          "line": 2306,
           "text": "\"setting.portal.port.label\": \"Port du portail\","
         },
         {
           "file": "portal/locales.js",
-          "line": 2239,
+          "line": 2307,
           "text": "\"setting.portal.port.description\": \"Le port d’écoute du portail. Un port donné en ligne de commande l’emporte.\","
         },
         {
           "file": "portal/portal.mjs",
-          "line": 1294,
+          "line": 1330,
           "text": "const port = Number(portArgument || (await machineValue(\"portal.port\")) || \"4319\");"
         }
       ],
@@ -6613,6 +6773,6 @@
       ]
     }
   ],
-  "settingCount": 33,
+  "settingCount": 34,
   "nativeReads": "installed engine 2.0.0, live 10151, INIT revision17 and INC399 revision9; read-only status/work-show readbacks of 2026-10-09T13:25:27Z retained in the raw archive (dispatch-runs/init-053/integration-r50-init053-raw/u18/native-reads.json)"
 }

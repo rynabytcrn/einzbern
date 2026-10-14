@@ -9,6 +9,7 @@
 
 import "./helpers/device-home.mjs";
 import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
+import { heavyLockDirectoryUnder, usePrivateHeavySlots } from "./helpers/heavy-slots.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
@@ -31,7 +32,8 @@ const HINT_PREFIX = `${KNOWLEDGE_HINT_QUESTION}；可能冲突的卡：`;
 // work, so none is.
 const HINT_UNFILTERED = "；按族滤掉 0 张";
 
-// A device directory of this test's own, so the user crest it writes is never another test's.
+// A device directory of this test's own, so the user crest it writes is never another test's, and a
+// heavy-run slot directory beside it for the gates-run a test runs (TCRN-CROSS-SUB-502, STORY-538 GWT5).
 async function device(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-knowledge-cli-")));
   const previous = process.env.EINZBERN_HOME;
@@ -41,6 +43,7 @@ async function device(context) {
     resetRecallCache();
     await rm(base, { recursive: true, force: true });
   });
+  usePrivateHeavySlots(context, heavyLockDirectoryUnder(base));
   return base;
 }
 

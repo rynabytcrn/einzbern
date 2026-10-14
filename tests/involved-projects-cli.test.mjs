@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
+import { heavyLockDirectoryUnder, usePrivateHeavySlots } from "./helpers/heavy-slots.mjs";
 import { initializeLibrary, declareChainIdentity, createProject, createWork, annotateWork, registerLibrary, setConfigRecord, setWorkspaceSetting, readSettingsCatalog, enableRule } from "../dist/build/packages/core/src/index.js";
 const at = "2026-10-08T09:00:00Z";
 const cli = async args => { let output = ""; await runCli(args, { write: text => { output += text; } }); return JSON.parse(output); };
@@ -15,6 +16,8 @@ test("existing gates consumers execute independent roots from a Cross Project wo
   const previous = process.env.EINZBERN_HOME;
   process.env.EINZBERN_HOME = join(root, "device");
   t.after(async () => { process.env.EINZBERN_HOME = previous; await rm(root, { recursive: true, force: true }); });
+  // TCRN-CROSS-SUB-502 (STORY-538 GWT5): the gates-run below takes its heavy-run slot under root, never a run's around the test.
+  usePrivateHeavySlots(t, heavyLockDirectoryUnder(root));
   async function make(name, role, coordinationLibraryId) {
     const path = join(root, name + "-library"), repo = join(root, name);
     await mkdir(repo);
@@ -91,6 +94,8 @@ test("U10: output, rules and AGENTS consumers follow each target's own configura
   const previous = process.env.EINZBERN_HOME;
   process.env.EINZBERN_HOME = join(root, "device");
   t.after(async () => { process.env.EINZBERN_HOME = previous; await rm(root, { recursive: true, force: true }); });
+  // TCRN-CROSS-SUB-502 (STORY-538 GWT5): the gates-run below takes its heavy-run slot under root, never a run's around the test.
+  usePrivateHeavySlots(t, heavyLockDirectoryUnder(root));
   async function make(name, role, coordinationLibraryId) {
     const path = join(root, name + "-library"), repo = join(root, name);
     await mkdir(repo);

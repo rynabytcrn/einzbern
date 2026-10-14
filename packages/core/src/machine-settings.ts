@@ -146,8 +146,9 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     appliesOn: "next-open",
     valueSource: "settings-catalog",
   }),
-  // TCRN-CROSS-SUB-484 (MIN-257 D6): how many heavy runs -- gates-run, the whole test suite, the
-  // portal proof train, release finish -- may hold a slot at once on this machine
+  // TCRN-CROSS-SUB-484 (MIN-257 D6): how many heavy runs -- gates-run, the whole test suite, verify-p1,
+  // the portal proof train and release finish, which a slot records as gates-run, test, verify-p1,
+  // verify:portal and release finish (TCRN-CROSS-SUB-502) -- may hold a slot at once on this machine
   // (scripts/lib/heavy-runs.mjs, which reads it without the engine and owns its bounds). Unset, one.
   // A change applies to the next run that takes a slot.
   Object.freeze({

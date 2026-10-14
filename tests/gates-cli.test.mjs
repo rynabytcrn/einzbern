@@ -13,6 +13,7 @@
 
 import "./helpers/device-home.mjs";
 import { ATELIER_SURFACE, standInForAtelier, withSurface } from "./helpers/workspace-fixture.mjs";
+import { heavyLockDirectoryUnder, usePrivateHeavySlots } from "./helpers/heavy-slots.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
@@ -99,7 +100,10 @@ async function raw(args) {
   return JSON.parse(output);
 }
 
-/** A Git project with one commit, a library beside it and a device directory, all temporary. */
+/**
+ * A Git project with one commit, a library beside it and a device directory, all temporary; a gates-run
+ * takes its heavy-run slot under the same directory, never a run's around the test (TCRN-CROSS-SUB-502).
+ */
 async function setup(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-gates-cli-")));
   const previousHome = process.env.HOME;
@@ -113,6 +117,7 @@ async function setup(context) {
     restoreEnv("EINZBERN_HOME", previousDeviceHome);
     await rm(base, { recursive: true, force: true });
   });
+  usePrivateHeavySlots(context, heavyLockDirectoryUnder(base));
   const project = join(base, "project");
   await mkdir(project);
   git(project, ["init", "-q"]);

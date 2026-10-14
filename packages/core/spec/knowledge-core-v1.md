@@ -202,7 +202,15 @@ the card it supersedes. `knowledge-list --scope user` names the pairs as
 `unresolvedConflicts` (each pair and the list in canonical id order); its default
 selection leaves their cards out while `--selection all`, `knowledge-snippet` and
 `knowledge-body` still read them, and every other card reads, recalls and is
-written as before. A new card on the same subject is refused naming both cards; a
+written as before. A pair whose two cards are of INIT families apart, both known
+(see "Conflict retirement"; TCRN-CROSS-STORY-539), is no unresolved conflict: the
+write-time guard would have written either card beside the other. The scan that
+finds the pairs, and the cache that keeps it, reads no chain; a read sets those
+pairs aside in the chain it reads -- a library's crest in its library, the user
+crest in the library the read goes through -- so `knowledge-list`, recall and a
+checkpoint neither name such a pair nor leave its cards out. A pair of one family,
+or one either card of which has no known family, stands as before. A new card on
+the same subject is refused naming both cards; a
 write whose `--supersedes` names either card of a pair resolves it. A card that
 more than one card replaces -- two devices that each replaced it before either saw
 the other's replacement -- is removed either way: its removal's `supersededBy`
@@ -609,6 +617,14 @@ either side, refuses as before; the refusal's `conflicts` names those alone and
 `minutes-record`'s guard (`MINUTES_POSSIBLE_CONFLICT`) reads families from the same
 sources: a record's from the work it links, a valid decision's from the work its
 minutes link.
+Reads are split the same way (TCRN-CROSS-STORY-539). Besides the unresolved pairs
+(see "Storage and authority"), the knowledge hint that `work-transition` to done,
+each done of a `work-batch` and `minutes-record` answer (`knowledgeHint`) names
+only the cards of the target's family or of no known family: a work record's family
+is its own, minutes' are those of the work they link. A card both of whose sides
+are known and share no family is left out; `filteredByFamily` counts the cards so
+left out, and the line ends saying how many (`；按族滤掉 n 张`). A target of no known
+family leaves none out, and its count is 0.
 `knowledge-remove` removes a card a model found invalid in use, or one that repeats a
 work item or a decision. No clock, observation day, window or store size removes a
 card: `maximumAgeDays` only marks a card `stale`, and a store has no body budget a

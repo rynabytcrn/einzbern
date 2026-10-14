@@ -73,6 +73,7 @@ import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from 
 import { assertKnowledgeNotRecorded } from "./knowledge-duplicates.js";
 import { readRegistry } from "./registry.js";
 import { cardFamilies, familiesApart } from "./work-family.js";
+import type { WorkFamilyState } from "./work-family.js";
 
 export const KNOWLEDGE_CORE_VERSION = "tcrn.knowledge-core.v1" as const;
 export const KNOWLEDGE_STORE_SCHEMA_VERSION = "tcrn.knowledge-store.v1" as const;
@@ -674,7 +675,8 @@ interface CrestScan {
   // TCRN-CROSS-SUB-310 (MIN-235 D7): pairs of live cards from two writers that each wrote without
   // seeing the other, which the write-time conflict check would have refused. Each pair is in
   // canonical id order and so is the list. Both cards stay readable; default selection leaves
-  // them out until a write resolves the pair (projectCrestUnits).
+  // them out until a write resolves the pair (projectCrestUnits). TCRN-CROSS-SUB-504: found without
+  // a chain, every pair is here; a read leaves out those of INIT families apart (familySplitScan).
   readonly unresolvedConflicts: readonly (readonly string[])[];
   // TCRN-CROSS-SUB-413 (STORY-476 D7): every id more than one writer wrote with differing metadata,
   // in canonical id order, resolved or not. Their versions are not in `units`.
@@ -3317,6 +3319,45 @@ function unresolvedConflictIds(scan: Pick<CrestScan, "unresolvedConflicts">): Re
   return new Set(scan.unresolvedConflicts.flat());
 }
 
+/**
+ * TCRN-CROSS-SUB-504 (TCRN-CROSS-STORY-539 GWT2, MIN-256 D6 C5): the scan as a read answers it, its
+ * unresolved pairs read in the chain `state` holds. The scan finds the pairs without a chain
+ * (projectCrestUnits), and its cache keeps them so; a read leaves out each pair whose two cards are of
+ * INIT families apart, both known (cardFamilies, familiesApart) -- the write-time guard would have
+ * written either card beside the other (TCRN-CROSS-SUB-485), so neither is unresolved -- and with it
+ * the pair's hold on default selection. A pair of one family, or one either card of which has no known
+ * family, stands as before, and so does every pair when there is no chain to read (`state` null).
+ */
+function familySplitScan<T extends CrestScan>(scan: T, state: WorkFamilyState | null): T {
+  if (state === null || scan.unresolvedConflicts.length === 0) return scan;
+  const cards = new Map(scan.units.map((unit) => [unit.metadata.id, unit.metadata]));
+  const families = new Map<string, readonly string[] | null>();
+  const familiesOf = (id: string): readonly string[] | null => {
+    if (!families.has(id)) {
+      const card = cards.get(id);
+      families.set(id, card === undefined ? null : cardFamilies(state, card));
+    }
+    return families.get(id) ?? null;
+  };
+  const unresolvedConflicts = scan.unresolvedConflicts.filter(([left, right]) => !familiesApart(familiesOf(left ?? ""), familiesOf(right ?? "")));
+  return unresolvedConflicts.length === scan.unresolvedConflicts.length ? scan : { ...scan, unresolvedConflicts };
+}
+
+/**
+ * TCRN-CROSS-SUB-504: the chain a read of the user crest names families in -- the library the read
+ * goes through, as a user-crest write's guard names them there (TCRN-CROSS-SUB-485) -- read only when
+ * the crest holds a pair. A library the read cannot open names none, and every pair stands.
+ */
+async function userCrestFamilyState(scan: UserCrestScan, workspaceRoot: string): Promise<WorkFamilyState | null> {
+  if (scan.unresolvedConflicts.length === 0) return null;
+  try {
+    return await materializeWorkspace(workspaceRoot);
+  } catch (error) {
+    if (typeof (error as { readonly reasonCode?: unknown }).reasonCode !== "string") throw error;
+    return null;
+  }
+}
+
 // TCRN-CROSS-SUB-413: a duplicate is unresolved while one of its versions is still live -- not
 // replaced and not retired. A card whose supersedes names its id resolves it; TCRN-CROSS-SUB-425: so
 // does a removal of its id, which removes every version.
@@ -5448,6 +5489,9 @@ function withheldCardIds(scan: CrestScan): ReadonlySet<string> {
  * whose project the chain no longer holds, whose cards default selection leaves out until a card
  * supersedes them. TCRN-CROSS-INIT-053 R46 (I04): a library whose store was never created answers an
  * empty list with `knowledgeStore: "absent"`; every other store state answers as it did.
+ * TCRN-CROSS-SUB-504 (TCRN-CROSS-STORY-539): a pair whose two cards are of INIT families apart is no
+ * unresolved conflict of the answer, and holds neither card out of default selection
+ * (familySplitScan); the user crest's cards name their families in the library `workspaceRoot` names.
  */
 export async function listKnowledgeMetadata(workspaceRoot: string, query: KnowledgeListQuery): Promise<Readonly<Record<string, JsonValue>>> {
   const normalized = normalizeListQuery(query);
@@ -5455,7 +5499,7 @@ export async function listKnowledgeMetadata(workspaceRoot: string, query: Knowle
   if (query.scope === "user") {
     return readUserCrest(query, async (scan) => {
       if (scan === null) return knowledgeListAnswer([], query, normalized, USER_CREST_DISCLOSURE);
-      return mergedCrestList(scan, query, normalized, USER_CREST_DISCLOSURE);
+      return mergedCrestList(familySplitScan(scan, await userCrestFamilyState(scan, workspaceRoot)), query, normalized, USER_CREST_DISCLOSURE);
     });
   }
   const place = await knowledgeStorePlace(workspaceRoot);
@@ -5463,7 +5507,7 @@ export async function listKnowledgeMetadata(workspaceRoot: string, query: Knowle
   // inventory that says so, never a refusal.
   if (await libraryStoreNeverCreated(place)) return knowledgeListAnswer([], query, normalized, ABSENT_STORE_DISCLOSURE);
   const scan = await scanKnowledgeStoreAt(place, query, false, "metadata-only", false, false);
-  return mergedCrestList(scan, query, normalized, trailingDisclosure(scan));
+  return mergedCrestList(familySplitScan(scan, scan.workspace), query, normalized, trailingDisclosure(scan));
 }
 
 // TCRN-CROSS-SUB-425 (MIN-239 D6): a list answers the valid cards unless it asks for another status.
@@ -5995,7 +6039,8 @@ export async function exportKnowledgeCheckpoint(workspaceRoot: string, at: strin
   const scan = await scanKnowledgeStore(workspaceRoot, { ...options, allowTrailing: false }, false, "metadata-only");
   assertScopesResolve(scan);
   assertChainHoldsCrest(scan);
-  const withheld = withheldCardIds(scan);
+  // TCRN-CROSS-SUB-504: the default selection's corpus, a pair of INIT families apart withholding nothing.
+  const withheld = withheldCardIds(familySplitScan(scan, scan.workspace));
   // TCRN-CROSS-SUB-425: a removed card is in no checkpoint.
   const records = scan.units.map((unit) => unit.metadata).filter((metadata) => !withheld.has(metadata.id) && !scan.removals.has(metadata.id) && isDefaultSelectable(metadata, at));
   records.sort((left, right) => compareCanonicalText(left.id, right.id));

@@ -122,7 +122,8 @@ export function referenceFamilies(state: WorkFamilyState, references: readonly s
 /**
  * TCRN-CROSS-SUB-503: the INIT families of a card -- its source references and its linked work
  * (referenceFamilies), read in `state`. What the write-time guard reads of a new card and of each
- * version of a card it scores against.
+ * version of a card it scores against, and, since TCRN-CROSS-SUB-504, what a read reads of the two
+ * cards of an unresolved pair and of a knowledge hint's candidates.
  */
 export function cardFamilies(
   state: WorkFamilyState,

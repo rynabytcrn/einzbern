@@ -62,7 +62,7 @@
 
 写卡前，卡片与工单正文和有效决策比对，重复即拒写（`KNOWLEDGE_ALREADY_RECORDED`），内容应写进工单或纪要。新纪要的决策与某条有效决策主题相近而未声明取代、撤回或并存（`--coexists`）时拒写（`MINUTES_POSSIBLE_CONFLICT`），并点名候选。工单 decided-by 或卡片关联的决策已过时，`work-show` 与召回提示已被哪条取代。完整规则见 `specs/minutes-v1.md`。
 
-知识卡与纪要的冲突守卫按 INIT 族分流（TCRN-CROSS-STORY-531、TCRN-CROSS-STORY-539）：族是工单父链顶端的 Initiative。卡的族取自来源引用与关联工单（`--work-ids`）：工单 id、纪要 id（取该纪要关联的工单）、本库工单的外部键（整串相等、区分大小写，如 `TCRN-CROSS-STORY-529`）；文件路径、URL 与本库没有的外部键不给族。纪要的族取自它关联的工单。与其他族的卡或决策相近时照常写入，回执的 `warnings` 给出 `KNOWLEDGE_POSSIBLE_CONFLICT` 或 `MINUTES_POSSIBLE_CONFLICT`；同族、或任一方族不明时照旧拒写。完整规则见 `packages/core/spec/knowledge-core-v1.md`。
+知识卡与纪要的冲突守卫按 INIT 族分流（TCRN-CROSS-STORY-531、TCRN-CROSS-STORY-539）：族是工单父链顶端的 Initiative。卡的族取自来源引用与关联工单（`--work-ids`）：工单 id、纪要 id（取该纪要关联的工单）、本库工单的外部键（整串相等、区分大小写，如 `TCRN-CROSS-STORY-529`）；文件路径、URL 与本库没有的外部键不给族。纪要的族取自它关联的工单。与其他族的卡或决策相近时照常写入，回执的 `warnings` 给出 `KNOWLEDGE_POSSIBLE_CONFLICT` 或 `MINUTES_POSSIBLE_CONFLICT`；同族、或任一方族不明时照旧拒写。读侧同样分流：`knowledge-list` 的 `unresolvedConflicts` 不列两张卡族都可知且不相交的一对，默认选择、召回与 checkpoint 也不因这一对扣下卡；`work-transition` 转 done、`work-batch` 的 done 与 `minutes-record` 回执的知识提示行只列与目标同族或族不明的卡，行末与 `filteredByFamily` 给出按族滤掉的张数，目标没有族时为 0。完整规则见 `packages/core/spec/knowledge-core-v1.md`。
 
 ## 工单租约
 

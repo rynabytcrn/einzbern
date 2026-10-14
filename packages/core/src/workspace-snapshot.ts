@@ -14,7 +14,7 @@ import {
   compareCanonicalText,
 } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
-import { WORKSPACE_CONTROL_DIRECTORY, WORKSPACE_SEGMENT_BYTES_MAX, validateWorkspace, withWorkspaceWriteLock } from "./workspace.js";
+import { WORKSPACE_CONTROL_DIRECTORY, WORKSPACE_SEGMENT_BYTES_MAX, assertLibraryWritable, validateWorkspace, withWorkspaceWriteLock } from "./workspace.js";
 import { DIRECTORY, WORKSPACE_WRITE_LOCK_FILE } from "./names.js";
 import { knowledgeStorePath, validateKnowledgeStore } from "./knowledge-core.js";
 import { AKASHA_SEGMENT_BYTES_MAXIMUM } from "./akasha.js";
@@ -175,7 +175,7 @@ async function libraryTreeRules(root: string, invalidManifest: SnapshotReasonCod
     }
   }
   return {
-    excluded: [`${DIRECTORY.knowledge}/mutation.claim`],
+    excluded: libraryExcludedPaths(),
     readLimit: (relativePath) => {
       if (segment.test(relativePath)) return { maximumBytes: AKASHA_SEGMENT_BYTES_MAXIMUM };
       const expectedBytes = bodySegments.get(relativePath);
@@ -183,6 +183,11 @@ async function libraryTreeRules(root: string, invalidManifest: SnapshotReasonCod
       return { maximumBytes: relativePath === manifestPath ? RUNTIME_CAPACITY.bufferBytes : PROTOCOL_LIMITS.maxCanonicalBytes };
     },
   };
+}
+
+// The paths of a library tree the witness leaves out: the knowledge mutation claim.
+function libraryExcludedPaths(): readonly string[] {
+  return [`${DIRECTORY.knowledge}/mutation.claim`];
 }
 
 // Minimal bound-read helpers, re-implemented locally per the duplicate-machinery
@@ -342,19 +347,97 @@ async function directoryExists(path: string): Promise<boolean> {
   }
 }
 
-// Build a canonical snapshot manifest for a quiesced workspace. The engine write lock is
-// the quiesce proof (only one writer can hold it), taken here for the whole computation. Emits sorted per-file sha256,
+// TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-500): how many times a manifest is read without the lock
+// before it is read under it.
+const SNAPSHOT_READ_ATTEMPTS = 4;
+
+/** TCRN-CROSS-SUB-500: what createSnapshotManifest takes beside the root -- a test seam alone. */
+export interface SnapshotManifestOptions {
+  // Runs in the middle of a read made without the lock, once the state is read and before the tree
+  // is walked: a test seam that writes to the library while the manifest is read.
+  readonly midReadForTest?: () => Promise<void>;
+}
+
+// Build a canonical snapshot manifest for a quiesced workspace. Emits sorted per-file sha256,
 // the workspace headEventHash/version/workspaceId, and the embedded validate result
 // for both stores. No Date.now, no randomness — determinism constraint 6.
-export async function createSnapshotManifest(workspaceRootInput: string): Promise<string> {
+//
+// TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-500): the manifest is read without the engine write lock,
+// and the tree itself proves it quiesced: every file the manifest covers is stamped (path, inode,
+// size, modification time, from lstat alone) before the state is read and again after the tree is
+// walked. Equal stamps say no file was written, added, replaced or removed in between -- the event
+// streams' manifests and segments among them, so the state and the files are of one stream head --
+// and a stamp that moved sends the read back to begin again. A read that refused while the tree
+// moved is read again too; one that refused on a still tree is the refusal. Read
+// SNAPSHOT_READ_ATTEMPTS times without the tree holding still, the manifest is read under the lock,
+// the quiesce proof it once always took. An old-layout workspace and a moved library refuse first,
+// as the lock refused them.
+export async function createSnapshotManifest(workspaceRootInput: string, options: SnapshotManifestOptions = {}): Promise<string> {
   if (typeof workspaceRootInput !== "string" || workspaceRootInput.length === 0) {
     fail("SNAPSHOT_INPUT_INVALID", "workspace root");
   }
   const root = await boundReadDirectory(workspaceRootInput);
-  return withWorkspaceWriteLock(root, () => snapshotManifestHoldingLock(root));
+  await assertLibraryWritable(root);
+  for (let attempt = 1; attempt <= SNAPSHOT_READ_ATTEMPTS; attempt += 1) {
+    const before = await treeStamp(root);
+    let manifest: string | null = null;
+    let refusal: unknown = null;
+    try {
+      manifest = await snapshotManifestOf(root, options.midReadForTest);
+    } catch (error) {
+      refusal = error;
+    }
+    if (await treeStamp(root) === before) {
+      if (manifest === null) throw refusal;
+      return manifest;
+    }
+  }
+  return withWorkspaceWriteLock(root, () => snapshotManifestOf(root));
 }
 
-async function snapshotManifestHoldingLock(root: string): Promise<string> {
+// TCRN-CROSS-SUB-500: every file of the library tree the witness covers, as one key two stamps can be
+// compared by: its path, inode, size and modification time, from lstat alone -- nothing is read.
+// Temporaries and the paths the witness leaves out are left out here too; an entry that goes while
+// the stamp is taken is stamped as gone, so the next stamp differs.
+async function treeStamp(root: string): Promise<string> {
+  const excluded = libraryExcludedPaths();
+  const stamps: string[] = [];
+  const walk = async (directory: string, relativeBase: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") {
+        stamps.push(`${relativeBase}/ gone`);
+        return;
+      }
+      throw error;
+    }
+    for (const entry of entries) {
+      const relativePath = relativeBase === "" ? entry.name : `${relativeBase}/${entry.name}`;
+      if (entry.name.startsWith(TEMPORARY_PREFIX) || excluded.includes(relativePath)) continue;
+      let metadata;
+      try {
+        metadata = await lstat(resolve(directory, entry.name), { bigint: true });
+      } catch (error) {
+        if ((error as { code?: string }).code === "ENOENT") {
+          stamps.push(`${relativePath} gone`);
+          continue;
+        }
+        throw error;
+      }
+      if (metadata.isDirectory()) {
+        await walk(resolve(directory, entry.name), relativePath);
+        continue;
+      }
+      stamps.push(`${relativePath} ${String(metadata.ino)} ${String(metadata.size)} ${String(metadata.mtimeNs)}`);
+    }
+  };
+  await walk(root, "");
+  return stamps.sort(compareCanonicalText).join("\n");
+}
+
+async function snapshotManifestOf(root: string, midReadForTest?: () => Promise<void>): Promise<string> {
   // INC-086 (superseded, TCRN-CROSS-STORY-354): the manifest walks the DISK
   // file tree (walkControlTree below), so validate here was pinned to the FILE
   // backend rather than the ambient factory, which served PG before STORY-189
@@ -373,7 +456,8 @@ async function snapshotManifestHoldingLock(root: string): Promise<string> {
     await validateKnowledgeStore(root);
     knowledgeStatus = "valid";
   }
-  // The write lock is only granted on a library, so this is the library tree.
+  await midReadForTest?.();
+  // A library alone gets this far (assertLibraryWritable, or the write lock), so this is the library tree.
   const files = await walkControlTree(root, await libraryTreeRules(root));
   return canonicalJson({
     schemaVersion: SNAPSHOT_MANIFEST_SCHEMA_VERSION,

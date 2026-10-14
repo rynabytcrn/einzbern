@@ -36,6 +36,9 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // to the configured root, and the manifest that indexes them stays in the workspace
 // control tree, so an operator can point the root at a managed directory without any
 // governed state following it there.
+//
+// TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-500): a put holds the library write lock for the
+// manifest alone; the blob is copied and read back before the lock is taken (putArtifact).
 
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
@@ -47,7 +50,8 @@ import type { JsonValue } from "../../protocol/src/index.js";
 import { deviceHome } from "./device-home.js";
 import { MACHINE_SETTINGS_DIRECTORY } from "./machine-settings.js";
 import { SETTINGS_CATALOG } from "./settings.js";
-import { WORKSPACE_CONTROL_DIRECTORY, materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
+import { WORKSPACE_CONTROL_DIRECTORY, assertLibraryWritable, libraryUnchangedSince, materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
+import type { WorkspaceState } from "./workspace.js";
 import { hasLibraryManifest } from "./ether-library.js";
 import { DIRECTORY } from "./names.js";
 
@@ -235,7 +239,11 @@ export async function assertGeneratedArtifactsRoot(
 }
 
 async function effectiveArtifactsSetting(workspaceRoot: string): Promise<string> {
-  const state = await materializeWorkspace(workspaceRoot);
+  return artifactsSettingOf(await materializeWorkspace(workspaceRoot));
+}
+
+// The blob root a library's state sets, or the catalog's default.
+function artifactsSettingOf(state: Pick<WorkspaceState, "settings">): string {
   const record = state.settings.find((entry) => entry.key === ARTIFACT_ROOT_SETTING_KEY);
   if (record !== undefined) return record.value;
   const catalogDefault = SETTINGS_CATALOG.find((entry) => entry.key === ARTIFACT_ROOT_SETTING_KEY)?.defaultValue;
@@ -369,12 +377,27 @@ export interface ArtifactPutReceipt {
   readonly artifacts: number;
 }
 
+// TCRN-CROSS-SUB-500: how many times a put reads the library and checks it under the lock before it
+// does the whole put under the lock.
+const ARTIFACT_PUT_ATTEMPTS = 4;
+
 /**
  * Put one file into the workspace's configured blob root, named for its content.
  *
- * The workspace write lock serialises it, exactly as it does `snapshot-manifest`: two
- * callers appending to one manifest without it would each write a manifest missing the
- * other's entry, and the loser's blob would be on disk with nothing pointing at it.
+ * The workspace write lock serialises the manifest: two callers appending to one manifest
+ * without it would each write a manifest missing the other's entry, and the loser's blob
+ * would be on disk with nothing pointing at it.
+ *
+ * TCRN-CROSS-STORY-538 GWT4 (TCRN-CROSS-SUB-500): the lock is held for the manifest alone. The
+ * library is read for the blob root, and the blob copied there and read back, before the lock is
+ * taken. Content addressing is what makes that safe: a blob is only ever written as the bytes its
+ * name names, so two puts of one file write the same bytes, and a put that finds the blob in place
+ * proves it before it counts it. Under the lock the put checks that the library still stands where
+ * it read the root from (libraryUnchangedSince) and that the blob is still the regular file it read
+ * back, then adds the entry and replaces the manifest. A put that finds either moved reads the
+ * library again, and copies again only when the root it reads is not the one it copied to; one
+ * other writers outran ARTIFACT_PUT_ATTEMPTS times does the whole put under the lock, as every put
+ * once did. An old-layout workspace and a moved library refuse before anything is read.
  */
 export async function putArtifact(
   workspaceRootInput: string,
@@ -389,12 +412,47 @@ export async function putArtifact(
   try { assertStrictInstant(options.at); } catch { fail("ARTIFACT_INPUT_INVALID", "at"); }
   const file = options.file;
   const at = options.at;
-  return withWorkspaceWriteLock(await boundDirectory(workspaceRootInput), (workspace) => putArtifactHoldingLock(workspace, file, at));
+  const workspace = await boundDirectory(workspaceRootInput);
+  await assertLibraryWritable(workspace);
+  let copied: CopiedArtifact | null = null;
+  for (let attempt = 1; attempt <= ARTIFACT_PUT_ATTEMPTS; attempt += 1) {
+    const state = await materializeWorkspace(workspace);
+    const root = await assertGeneratedArtifactsRoot(workspace, artifactsSettingOf(state));
+    if (copied === null || copied.root !== root) copied = await copyArtifactBlob(root, file);
+    const blob = copied;
+    const receipt = await withWorkspaceWriteLock(workspace, async (locked) => {
+      if (!(await libraryUnchangedSince(state)) || !(await blobInPlace(blob))) return null;
+      return recordArtifact(locked, blob, at);
+    });
+    if (receipt !== null) return receipt;
+  }
+  return withWorkspaceWriteLock(workspace, async (locked) => {
+    const root = await assertGeneratedArtifactsRoot(locked, await effectiveArtifactsSetting(locked));
+    return recordArtifact(locked, await copyArtifactBlob(root, file), at);
+  });
 }
 
-async function putArtifactHoldingLock(workspace: string, file: string, at: string): Promise<ArtifactPutReceipt> {
-  const root = await assertGeneratedArtifactsRoot(workspace, await effectiveArtifactsSetting(workspace));
+// TCRN-CROSS-SUB-500: a blob copied into a root and read back there, for the lock to index.
+interface CopiedArtifact {
+  readonly root: string;
+  readonly digest: string;
+  readonly target: string;
+  readonly name: string;
+  readonly bytes: number;
+  readonly storedBytes: number;
+  readonly deduplicated: boolean;
+}
 
+// Whether the blob is still where it was read back: a regular file of the size that was read.
+async function blobInPlace(blob: CopiedArtifact): Promise<boolean> {
+  const metadata = await lstat(blob.target).catch(() => null);
+  return metadata !== null && metadata.isFile() && !metadata.isSymbolicLink() && metadata.size === blob.storedBytes;
+}
+
+// The first half of a put, outside the lock (TCRN-CROSS-SUB-500): read the file and copy it into
+// `root` under its digest, or prove the blob already there is these bytes; either way the stored
+// bytes are read back from disk before the put goes on.
+async function copyArtifactBlob(root: string, file: string): Promise<CopiedArtifact> {
   const source = resolve(file);
   const plaintext = await boundFileBytes(source, ARTIFACT_BYTES_MAX);
   const digest = sha256(plaintext);
@@ -430,29 +488,33 @@ async function putArtifactHoldingLock(workspace: string, file: string, at: strin
     }
     stored = verified;
   }
+  return { root, digest, target, name, bytes: plaintext.length, storedBytes: stored.length, deduplicated };
+}
 
+// The second half, under the lock (TCRN-CROSS-SUB-500): index the blob, replacing the manifest.
+async function recordArtifact(workspace: string, blob: CopiedArtifact, at: string): Promise<ArtifactPutReceipt> {
   const manifest = await readManifest(workspace);
   const entry: ArtifactManifestEntry = {
-    sha256: digest,
-    bytes: plaintext.length,
-    storedBytes: stored.length,
-    name,
+    sha256: blob.digest,
+    bytes: blob.bytes,
+    storedBytes: blob.storedBytes,
+    name: blob.name,
     storedAt: at,
   };
-  const artifacts = [...manifest.artifacts.filter((candidate) => candidate.sha256 !== digest), entry]
+  const artifacts = [...manifest.artifacts.filter((candidate) => candidate.sha256 !== blob.digest), entry]
     .sort((left, right) => compareCanonicalText(left.sha256, right.sha256));
   await writeManifest(workspace, { schemaVersion: ARTIFACT_MANIFEST_SCHEMA_VERSION, artifacts });
 
   return {
     schemaVersion: ARTIFACT_PUT_SCHEMA_VERSION,
     reasonCode: "ARTIFACT_PUT_COMMITTED",
-    sha256: digest,
+    sha256: blob.digest,
     bytes: entry.bytes,
     storedBytes: entry.storedBytes,
     name: entry.name,
     storedAt: entry.storedAt,
-    blobName: `${digest}${BLOB_SUFFIX}`,
-    deduplicated,
+    blobName: `${blob.digest}${BLOB_SUFFIX}`,
+    deduplicated: blob.deduplicated,
     artifacts: artifacts.length,
   };
 }

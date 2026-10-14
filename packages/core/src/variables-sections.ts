@@ -23,7 +23,7 @@ import { DESIGN_CONFIGURATION_KEYS, designConfiguration } from "./project-scope.
 
 import { join } from "node:path";
 
-import { assertManagedOutputRoot, putBackUnrecorded } from "./agents-sections.js";
+import { assertManagedOutputRoot, commitPlanned, filesAsPlanned, putBackUnrecorded } from "./agents-sections.js";
 import { setConfigRecordDelta } from "./config-records.js";
 import {
   absolutePathLine,
@@ -44,7 +44,7 @@ import {
 } from "./models-escalation.js";
 import { MODELS_TIERS_SETTING_KEY, modelsTierReference, readModelsCategory, readModelsTiers } from "./models-tiers.js";
 import { looksSecretShaped, variablesInRenderOrder } from "./variables.js";
-import { appendEvents, materializeWorkspace, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
+import { appendPlannedWrite } from "./workspace.js";
 import type { WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 
 export const VARIABLES_SECTIONS_FILE = "AGENTS.md" as const;
@@ -266,48 +266,55 @@ function recordWithheldCustomVariablesAsPending(plan: ManagedWritePlan, state: P
  * its safe rows are written. A section whose markers the user removed is not put back. When the
  * records cannot be committed, AGENTS.md returns to what it held, and a file the write created is
  * taken away, before the error goes on (TCRN-CROSS-STORY-489; agents-sections.ts,
- * putBackUnrecorded).
+ * putBackUnrecorded). TCRN-CROSS-STORY-538 GWT3 (TCRN-CROSS-SUB-499): the library is read and
+ * AGENTS.md planned outside the library write lock; under it the file is written and the records
+ * appended only while the library stands where it was read and the file holds what was read, and the
+ * write is planned again otherwise (workspace.ts, appendPlannedWrite).
  */
 export async function writeVariablesSections(workspaceRoot: string, input: {
   readonly projectRoot: string;
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<VariablesSectionsResult> {
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const nativeState = await materializeWorkspace(root);
-    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
-    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
-    const system = renderSystemVariablesSection(state);
-    const custom = renderCustomVariablesSection(state);
-    const planned = await planManagedWrite({
-      filePath: join(input.projectRoot, VARIABLES_SECTIONS_FILE),
-      file: VARIABLES_SECTIONS_FILE,
-      desired: [system, custom].map((section) => ({ id: section.id, body: section.body })),
-      records: managedSectionRecordsFor(state, VARIABLES_SECTIONS_FILE),
-    });
-    const plan = recordWithheldCustomVariablesAsPending(planned, state, custom.withheld);
-    const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
-    const deltas = plan.sections.filter((decision) => decision.recordChanged).map((decision) => setConfigRecordDelta({
-      ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }),
-      collection: "managed-section",
-      key: managedSectionRecordKey(VARIABLES_SECTIONS_FILE, decision.id),
-      value: decision.record,
-    }));
-    if (deltas.length > 0) {
-      try {
-        const committed = await appendEvents(root, deltas, input);
-        await projectConfiguration(root, committed);
-      } catch (error) {
-        await putBackUnrecorded(root, nativeState, applied.written ? [plan] : []);
-        throw error;
+  return appendPlannedWrite(workspaceRoot, input, {
+    plan: async (root, nativeState) => {
+      await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+      const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+      const system = renderSystemVariablesSection(state);
+      const custom = renderCustomVariablesSection(state);
+      const planned = await planManagedWrite({
+        filePath: join(input.projectRoot, VARIABLES_SECTIONS_FILE),
+        file: VARIABLES_SECTIONS_FILE,
+        desired: [system, custom].map((section) => ({ id: section.id, body: section.body })),
+        records: managedSectionRecordsFor(state, VARIABLES_SECTIONS_FILE),
+      });
+      const plan = recordWithheldCustomVariablesAsPending(planned, state, custom.withheld);
+      const deltas = plan.sections.filter((decision) => decision.recordChanged).map((decision) => setConfigRecordDelta({
+        ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }),
+        collection: "managed-section",
+        key: managedSectionRecordKey(VARIABLES_SECTIONS_FILE, decision.id),
+        value: decision.record,
+      }));
+      return { deltas, plan: { plan, recorded: deltas.length, withheld: [...system.withheld, ...custom.withheld] } };
+    },
+    unchanged: ({ plan }) => filesAsPlanned([plan]),
+    write: async (root, nativeState, { plan, recorded, withheld }, append) => {
+      const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
+      if (recorded > 0) {
+        try {
+          await commitPlanned(root, append, recorded);
+        } catch (error) {
+          await putBackUnrecorded(root, nativeState, applied.written ? [plan] : []);
+          throw error;
+        }
       }
-    }
-    return {
-      file: VARIABLES_SECTIONS_FILE,
-      written: applied.written,
-      backupPath: applied.backupPath,
-      sections: plan.sections,
-      pendingSections: plan.pending,
-      withheld: [...system.withheld, ...custom.withheld],
-    };
+      return {
+        file: VARIABLES_SECTIONS_FILE,
+        written: applied.written,
+        backupPath: applied.backupPath,
+        sections: plan.sections,
+        pendingSections: plan.pending,
+        withheld,
+      };
+    },
   });
 }

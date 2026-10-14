@@ -158,6 +158,24 @@ setup and migration write it, answers for any project the library holds and has
 not deleted: the only such entry, or the one `--project` names. A project chain
 still needs an entry for the stable project, or the root is `GATES_PROJECT_UNKNOWN`.
 
+## Registry commands
+
+TCRN-CROSS-STORY-541 (MIN-258 D3): `library-unregister --project <path> --at <instant>` takes
+one entry out of this device's registry: the one whose project path is `<path>`, made absolute,
+or its real path while it still exists. The path need not exist any more. Without `--yes true`
+it answers `LIBRARY_UNREGISTER_PLAN_READY` with the plan and writes nothing: the `entry`,
+`projectPathExists`, `libraryPathExists`, `sameLibraryEntries` (the project paths of the other
+entries of the same library, which stay), `remaining` and `backupDirectory`. With `--yes true`
+it copies `registry.json` into `backups/<UTC>-library-unregister/` of the device directory
+(named by `--at`, or the first free `-2`, `-3`, … when that directory is taken) and replaces the
+registry atomically without the entry, under the registry lock; it answers
+`LIBRARY_UNREGISTERED` with the plan and `backupPath`. No entry with that project path is
+`LIBRARY_NOT_REGISTERED`. Like `library-register` it writes this device's configuration and no
+library, so it takes no `--timeout-ms` and the model write barrier does not apply; a caller runs
+it with `--yes true` once the user agreed. `doctor`'s registry check lists each entry whose
+library path no longer exists in `detail.hints` (`REGISTRY_LIBRARY_MISSING`) without changing
+its answer.
+
 ## Proposal commands
 
 TCRN-CROSS-STORY-527 (MIN-257 D6, Q6): `gates-config-propose` and `rule-propose` record a change

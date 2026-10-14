@@ -262,6 +262,39 @@ test("480-AC5: managed-sections is red and lists a section the user changed, or 
   assert.deepEqual(byCheck(malformed, "managed-sections").detail.problems, [{ file: "AGENTS.md", reasonCode: "MANAGED_SECTION_MALFORMED", line: 3 }]);
 });
 
+// TCRN-CROSS-STORY-541 GWT3 (MIN-258 D3; TCRN-CROSS-SUB-511): an entry of the registry whose library
+// path no longer exists is a hint of the registry check, REGISTRY_LIBRARY_MISSING with the verb that
+// takes it out, library-unregister; every check keeps its answer.
+test("541 GWT3: an entry whose library is gone is a hint of the registry check, and all eight checks keep their answers", async (context) => {
+  const fixture = await healthy(context);
+  assert.deepEqual(byCheck(await doctor(fixture), "registry").detail.hints, [], "a registry whose libraries are all there gives no hint");
+  const other = join(fixture.base, "other");
+  const otherLibrary = join(other, ".ether");
+  await mkdir(other, { recursive: true });
+  await initializeLibrary({ root: otherLibrary, createdAt: AT });
+  await registerLibrary({ projectPath: other, libraryPath: otherLibrary, registeredAt: AT, cloudHosted: false, gitRemote: null }, fixture.deviceHome);
+  const otherId = JSON.parse(await readFile(join(otherLibrary, "manifest.json"), "utf8")).libraryId;
+  await rename(other, join(fixture.base, "other-moved"));
+
+  const results = await doctor(fixture);
+  assert.deepEqual(results.map((entry) => [entry.check, entry.ok, entry.reasonCode]), DOCTOR_CHECKS.map((check) => [check, true, null]), "a hint turns no check red");
+  const registry = byCheck(results, "registry");
+  assert.deepEqual(registry.detail.causes, []);
+  assert.deepEqual(registry.detail.hints, [{
+    hint: "REGISTRY_LIBRARY_MISSING",
+    projectPath: other,
+    libraryPath: otherLibrary,
+    libraryId: otherId,
+    remedy: `library-unregister --project ${other} --at <UTC>, then with --yes true`,
+  }]);
+
+  // A red registry check keeps its own cause and lists the hint beside it.
+  await writeFile(join(fixture.deviceHome, "registry.json"), JSON.stringify({ schemaVersion: "einzbern.registry.v1", entries: JSON.parse(await readFile(join(fixture.deviceHome, "registry.json"), "utf8")).entries.filter((entry) => entry.projectPath !== fixture.project) }));
+  const unregistered = await doctor(fixture);
+  assertOnlyRed(unregistered, "registry", "LIBRARY_NOT_REGISTERED");
+  assert.deepEqual(byCheck(unregistered, "registry").detail.hints.map((hint) => hint.projectPath), [other]);
+});
+
 test("480-AC5: cloud-flag is red, as a hint, when the registry's flag differs from the cloud folder table", async (context) => {
   const fixture = await healthy(context);
   await registerLibrary({ projectPath: fixture.project, libraryPath: fixture.library, registeredAt: AT, cloudHosted: true, gitRemote: null }, fixture.deviceHome);

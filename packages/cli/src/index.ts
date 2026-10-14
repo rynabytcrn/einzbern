@@ -122,6 +122,8 @@ import {
   readRegistry,
   registerLibrary,
   resolveLibrary,
+  planLibraryUnregister,
+  unregisterLibraryEntry,
   suggestCloudHosted,
   readLibraryTombstone,
   relocateLibrary,
@@ -1606,6 +1608,9 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "library-list", availability: "cli", mutates: false, flags: [] },
   { name: "library-register", availability: "cli", mutates: true, flags: [{ name: "project", required: true, valueKind: "string" }, { name: "library", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }, { name: "git-remote", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "library-resolve", availability: "cli", mutates: false, flags: [{ name: "cwd", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-511): take one entry out of the registry by its
+  // project path; the plan without --yes true, the removal (registry copied to backups first) with it.
+  { name: "library-unregister", availability: "cli", mutates: true, flags: [{ name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }] },
   // STORY-281: machine-level portal preferences. No workspace and no chain write lock:
   // this layer is not chain-backed, so there is no head to write against — see
   // packages/core/src/machine-settings.ts for why a laptop's default theme is not
@@ -2199,6 +2204,26 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       realPath: entry.libraryPath,
       suggestedCloudHosted: suggestCloudHosted(entry.libraryPath),
     }));
+    return;
+  }
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-511): take one entry out of this device's
+  // registry by its project path, which need not exist any more. Without --yes true it answers the
+  // plan (LIBRARY_UNREGISTER_PLAN_READY) and writes nothing; with it, registry.json is copied into
+  // backups/<UTC>-library-unregister/ of the device directory and replaced without the entry
+  // (LIBRARY_UNREGISTERED). Other entries of the same library stay. Like library-register it writes
+  // this device's configuration, never a library, so the model write barrier does not apply; whoever
+  // runs it with --yes true has the user's go-ahead first (the skill's references/doctor.md).
+  if (command === "library-unregister") {
+    const values = parseArguments(rest, ["project", "at", "yes"]);
+    required(values, ["project", "at"]);
+    const confirmed = booleanValue(values.yes, "yes");
+    const project = values.project ?? "";
+    const at = values.at ?? "";
+    if (!confirmed) {
+      io.write(canonicalJson({ reasonCode: "LIBRARY_UNREGISTER_PLAN_READY", ...await planLibraryUnregister(project, at) } as unknown as JsonValue));
+      return;
+    }
+    io.write(canonicalJson({ reasonCode: "LIBRARY_UNREGISTERED", ...await unregisterLibraryEntry(project, at) } as unknown as JsonValue));
     return;
   }
   // TCRN-CROSS-STORY-478 R2, R4, R5 (MIN-227 D14, D17): render the engine's sections into the

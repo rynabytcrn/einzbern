@@ -722,6 +722,8 @@ export { configProjectionStatus } from "./library-config.js";
 export { defaultImportTarget, importLegacyWorkspace } from "./legacy-import.js";
 // TCRN-CROSS-STORY-470 R1: this device's registry of libraries and resolution from a directory.
 export { readRegistry, registerLibrary, resolveLibrary } from "./registry.js";
+// TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-511): library-unregister's plan and removal of one entry.
+export { planLibraryUnregister, unregisterLibraryEntry } from "./registry.js";
 // TCRN-CROSS-STORY-470 R2: the cloud folders a cloud-hosted flag is suggested for.
 export { suggestCloudHosted } from "./cloud-roots.js";
 // TCRN-CROSS-STORY-470 R3: moving a library, and the tombstone its old place keeps.

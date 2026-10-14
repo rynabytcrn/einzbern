@@ -557,8 +557,10 @@ function insideLibrary(path: string, libraries: readonly string[]): boolean {
  * coordination library registered only as its own project path, or not at all) the binding is
  * unconfigured: rule-enable and rule-disable then record the rule alone, as before, and every other
  * entry point refuses (assertManagedOutputRoot). A project library is bound wherever it is not refused.
+ * `home` is the device directory whose registry is read: this process's by default, setup's own
+ * when setup plans (TCRN-CROSS-SUB-507, setup-fresh.ts).
  */
-export async function managedOutputBinding(libraryRoot: string, projectRoot: string, state: Pick<WorkspaceState, "configRecords" | "metadata">): Promise<ManagedOutputBinding> {
+export async function managedOutputBinding(libraryRoot: string, projectRoot: string, state: Pick<WorkspaceState, "configRecords" | "metadata">, home?: string): Promise<ManagedOutputBinding> {
   const library = await realpath(libraryRoot);
   const project = await realpath(projectRoot);
   const insideRefusal = (): never => fail("MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY", `managed prose cannot be written inside a library: ${project} is ${library} or lies within a library`, {
@@ -569,7 +571,7 @@ export async function managedOutputBinding(libraryRoot: string, projectRoot: str
     if (insideLibrary(project, [library])) insideRefusal();
     return "bound";
   }
-  const registry = await readRegistry();
+  const registry = await readRegistry(home);
   const libraries = [library, ...registry.entries.map((entry) => entry.libraryPath)];
   const roots = registry.entries
     .filter((entry) => entry.libraryId === state.metadata.workspaceId && !insideLibrary(entry.projectPath, libraries))

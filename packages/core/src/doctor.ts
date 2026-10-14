@@ -17,7 +17,10 @@
 //   device-stream     this device's stream is writable: the library's write lock can be taken and a
 //                     probe file written where the stream lives
 //   managed-sections  every managed section in the project's files agrees with its library record;
-//                     the pending ones are listed
+//                     the recorded ones and the pending ones are listed. A coordination library's
+//                     registered root, the container it coordinates, is checked as a project's:
+//                     its files against the coordination library's records (TCRN-CROSS-STORY-540
+//                     GWT4, TCRN-CROSS-SUB-507)
 //   cloud-flag        the registry's cloud-hosted flag is what the cloud folder table suggests; a
 //                     difference is a hint, because the flag is the user's (cloud-roots.ts)
 //
@@ -37,6 +40,7 @@ import { dirname, join, resolve } from "node:path";
 // The barrel is loaded first, so every module below is evaluated in the order the engine's own entry
 // evaluates it, whichever module a caller imports first.
 import { FRAMEWORK_VERSION } from "./framework-version.js";
+import { compareCanonicalText } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import { ATOMIC_TEMPORARY_PREFIX } from "./atomic-file.js";
 import { streamDirectory } from "./akasha.js";
@@ -622,6 +626,10 @@ async function managedSectionsCheck(context: DoctorContext, located: ProjectLibr
   return result("managed-sections", causes, {
     libraryPath: located.libraryPath,
     files,
+    // TCRN-CROSS-STORY-540 GWT4 (TCRN-CROSS-SUB-507): each section the library records, as
+    // <file>#<section id>, with the state its record holds.
+    sections: recorded.map((record) => ({ section: record.key, state: String(record.value.state) }))
+      .sort((left, right) => compareCanonicalText(left.section, right.section)),
     pending: [...pending].sort(),
     removed: removed.sort(),
     problems,

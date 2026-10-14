@@ -102,6 +102,13 @@ the check red only while the library records a section in it; with none recorded
 listed in `detail.skipped` and the check stays ok. Leave such a file alone and ask the user what
 to do with it.
 
+A coordination library's sections are managed the same way. Its registered root, the container it
+coordinates, holds them in its own `AGENTS.md` and `CLAUDE.md`, and `doctor --project` with that
+root checks them against the coordination library's records: `detail.sections` lists every
+recorded section as `<file>#<section id>` with its state, and `detail.pending` the ones that wait.
+Pending sections are handled exactly as above. `setup --mode repair` on the container puts its
+sections back; `setup --mode update` writes no project file, the container included.
+
 ### cloud-flag
 
 The cloud-drive flag matches where the library sits. Not ok, as a hint only:

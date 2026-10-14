@@ -49,7 +49,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 // The barrel is loaded first, so every module below is evaluated in the order the engine's own entry
 // evaluates it, whichever module a caller imports first.
 import { FRAMEWORK_VERSION } from "./framework-version.js";
-import { AGENTS_FILE, CLAUDE_FILE, agentsFileSections, disableAgentsSection, planClaudeImport, renderAgentsSections } from "./agents-sections.js";
+import { AGENTS_FILE, CLAUDE_FILE, agentsFileSections, disableAgentsSection, managedOutputBinding, planClaudeImport, renderAgentsSections } from "./agents-sections.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 import { ENGINE_HOOK_LAUNCHER, backupsPath, deviceFilePath, engineRoot, ensureDeviceDirectory, registryPath } from "./device-home.js";
@@ -637,10 +637,21 @@ async function planSections(recorder: SetupRecorder, projectRoot: string, state:
   return { pending, recordsChange };
 }
 
+// TCRN-CROSS-STORY-540 GWT4 (MIN-258 D3(c); TCRN-CROSS-SUB-507): whether `projectRoot` is the root a
+// coordination library's managed sections go to: the project root this device's registry holds for it
+// outside every library (agents-sections.ts, managedOutputBinding). Its sections are planned and written
+// as a project's are, from the library's own configuration; any other root of a coordination library
+// (one within a library, as setup registers its own coordination library) takes none.
+async function coordinationSectionsRoot(libraryPath: string, projectRoot: string, state: WorkspaceState, deviceHome: string): Promise<boolean> {
+  return managedOutputBinding(libraryPath, projectRoot, state, deviceHome).then((binding) => binding === "bound", () => false);
+}
+
 /**
  * Plan the steps from registry on (or those `steps` names), in their order, for a project wired to
  * `library`. Nothing is written; what would stop the apply is a blocker. Answers the managed
- * sections that stay pending.
+ * sections that stay pending. TCRN-CROSS-STORY-540 GWT4 (TCRN-CROSS-SUB-507): for a coordination
+ * library's registered root, the managed sections are planned from the library's own configuration
+ * (coordinationSectionsRoot).
  */
 export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
   const { projectRoot, home, deviceHome, library, navigation, steps } = input;
@@ -655,6 +666,13 @@ export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput
     recorder.write("machine-settings", settingsFile, await entryKind(settingsFile) === null ? "create" : "update");
   }
   if (library === null || !runs(steps, "managed-sections")) return [];
+  if (library.state.configRecords.some((record) => record.collection === "chain" && record.key === "identity" && record.projectId === undefined && record.value.role === "coordination")) {
+    const native = await materializeWorkspaceFromGenesis(library.path);
+    if (!await coordinationSectionsRoot(library.path, projectRoot, native, deviceHome)) return [];
+    const sections = await planSections(recorder, projectRoot, scopedWorkspaceState(native), navigation);
+    if (sections.recordsChange) recorder.write("library", library.path, "update");
+    return sections.pending;
+  }
   const declared = input.configurationProjectId ?? (await readRegistry(deviceHome)).entries.find(entry => entry.projectPath === projectRoot && entry.libraryPath === library.path)?.projectId;
   const view = Object.hasOwn(library.state, "configurationProjectId") || declared === undefined
     ? library.state : scopedWorkspaceState(await materializeWorkspaceFromGenesis(library.path), declared);
@@ -846,18 +864,22 @@ async function applySections(recorder: SetupRecorder, input: WiringApplyInput, l
 
 /**
  * Apply the steps from registry on (or those `steps` names), in their order, each comparing before
- * it writes. Answers the managed sections that stay pending.
+ * it writes. Answers the managed sections that stay pending. TCRN-CROSS-STORY-540 GWT4
+ * (TCRN-CROSS-SUB-507): a coordination library takes no setup project binding, since its sections are
+ * written from its own configuration, and only its registered root takes them (coordinationSectionsRoot).
  */
 export async function applyWiring(recorder: SetupRecorder, input: WiringApplyInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
   const { steps, library } = input;
+  let coordinationRoot: boolean | null = null;
   if (library !== null) {
     const prior = await materializeWorkspace(library.path);
     const identity = chainIdentity(prior);
     // Contract item 3: the coordination a project library names is resolved, never replaced; one
     // this device does not locate stays unregistered here, and a competing identity refuses.
     if (identity?.role === "project") await resolveCoordinationBinding(identity.coordinationLibraryId, input.deviceHome);
-    const configurationProjectId = input.configurationProjectId ?? await ensureSetupProjectBinding(input.projectRoot, library.path, input);
-    input = { ...input, configurationProjectId };
+    if (identity?.role === "coordination") coordinationRoot = await coordinationSectionsRoot(library.path, input.projectRoot, prior, input.deviceHome);
+    const configurationProjectId = coordinationRoot !== null ? input.configurationProjectId : input.configurationProjectId ?? await ensureSetupProjectBinding(input.projectRoot, library.path, input);
+    input = { ...input, ...(configurationProjectId === undefined ? {} : { configurationProjectId }) };
     if ((await materializeWorkspace(library.path)).version !== prior.version) recorder.write("library", library.path, "update");
     // Migrate/restore may have registered the library before these shared steps.
     // Completing that same entry's declared configuration binding is required
@@ -870,7 +892,7 @@ export async function applyWiring(recorder: SetupRecorder, input: WiringApplyInp
   if (runs(steps, "host-hooks")) await applyHooks(recorder, input);
   if (library !== null && runs(steps, "writable-roots")) await applyRoots(recorder, input, library);
   if (runs(steps, "machine-settings")) await applyNavigationSetting(recorder, input);
-  return library !== null && runs(steps, "managed-sections") ? applySections(recorder, input, library) : [];
+  return library !== null && runs(steps, "managed-sections") && coordinationRoot !== false ? applySections(recorder, input, library) : [];
 }
 
 /** SETUP_APPLIED for a plan, with what the recorder kept (its warnings too) and doctor's eight checks right after. */

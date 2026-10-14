@@ -179,7 +179,7 @@ dry-run、计划的分区项和执行回执都列出 `knowledgeOmission`：
   - 同一秒的备份已在时拒绝 `KNOWLEDGE_ALREADY_EXISTS`：换一个更晚的 `--at` 重跑。
 - 旧工作区留在原处，仍可只读打开。对它写入会返回 `LEGACY_WORKSPACE_MIGRATED`，其中 `movedTo` 指向新库，改用 `--workspace <库>` 即可。没有迁移过的旧布局，写入仍返回 `LEGACY_WORKSPACE_READ_ONLY`。
 - 旧链里未满足的 gate，在新库里保持原状态，仍挡住所绑工单转 done；拒绝码 `WORKSPACE_GATE_PENDING` 会点名这张 gate。
-  - 解除有两条路，都记录谁、何时、为何：在 Atelier 的迁移门页放行；或由模型引用点名这张 gate（写它的 id）的 Owner 决定运行 `work-gate-release --id <gate> --reason <原因> --actor <操作者> --at <UTC 时刻> --decided-in minutes:<id>#D<n>`（TCRN-CROSS-STORY-541），决定在写锁内核对，事件记下 `decidedIn`。
+  - 解除有两条路，都记录谁、何时、为何：在 Atelier 的迁移门页放行；或由模型引用点名这张 gate（写它的 id）的 Owner 决定运行 `work-gate-release --id <gate> --reason <原因> --actor <操作者> --at <UTC 时刻> --decided-in minutes:<id>#D<n>`（TCRN-CROSS-STORY-541），决定在写入前按这次写入读到的状态核对，事件记下 `decidedIn`。
   - 模型不引用决定运行会被拒绝（`MODEL_WRITE_REFUSED`），补救提示写出这两条路；决定不合格报 `MODEL_WRITE_AUTHORIZATION_INVALID`。
   - `work-gate-list --status all` 列出这些 gate。
 - 库里的事件数与头哈希：

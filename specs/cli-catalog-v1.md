@@ -113,6 +113,8 @@ the library and replays every stream from genesis into a new one, strictly. The
 library itself is only read; the lock keeps this machine's appends from
 committing while the cache is gone and rebuilt, so the head `recover` reports and
 the snapshot it leaves are the library's head when it ends.
+`specs/config-records-v1.md` gives the same reason, and why a hold narrowed like
+an append's would not do.
 
 `snapshot-manifest` writes nothing and takes no lock: it proves the tree it read
 still by stamping every file it covers (path, inode, size and modification time)
@@ -120,11 +122,14 @@ before it reads the state and after it walks the tree, and reads again when the
 stamps differ; after four reads that never held still it reads under the lock.
 `init` and `library-import-legacy` write a library they create. `gates-run`,
 `setup`, `engine-update`, `engine-rollback`, `skill-render`, `library-register`,
-`machine-settings-set` and `machine-settings-remove` write this device's files,
-the host's or a project's, and take no library lock of their own; what `setup`
-records in a library it records through the writes above (`agents-render`'s
-among them). The knowledge store's writes, `knowledge-init` among them, are
-judged in the same way (TCRN-CROSS-SUB-501).
+`library-unregister`, `machine-settings-set` and `machine-settings-remove` write
+this device's files, the host's or a project's, and `device-clean` writes this
+device's directory alone; none of them takes a library lock of its own, and what
+`setup` records in a library it records through the writes above
+(`agents-render`'s among them). What the knowledge store's writes,
+`knowledge-init` among them, hold the lock for is the table of
+`packages/core/spec/knowledge-core-v1.md`, "Freshness, writing, and retrieval"
+(TCRN-CROSS-SUB-501).
 
 ## Parity and stability
 
@@ -142,9 +147,10 @@ writer. `project-bindings-set --project-id --key --value` accepts the typed
 removes a project binding without changing unrelated configuration. A project
 binding is changed in Atelier, or by a model's run that cites an Owner decision
 naming the binding's key with `--decided-in minutes:<id>#D<n>` (TCRN-CROSS-STORY-541,
-MIN-258 D3): the decision is checked inside the write lock and recorded in the event,
-as for the other configuration writes; citing none, a model's run is refused with
-`MODEL_WRITE_REFUSED`, its remedy naming both ways. `chain-declare` keeps a hard
+MIN-258 D3): the decision is checked before the lock, against the state the write
+reads, and recorded in the event, as for the other configuration writes; citing
+none, a model's run is refused with `MODEL_WRITE_REFUSED`, its remedy naming both
+ways. `chain-declare` keeps a hard
 constraint: it takes no `--decided-in`, a model's run is refused with
 `MODEL_WRITE_REFUSED` and the remedy `declare it on the library page in Atelier`,
 and only a run for Atelier writes. The surface convention is not
@@ -233,11 +239,18 @@ TCRN-CROSS-STORY-541 (MIN-258 D3): `device-clean --at <instant> [--home <home>]`
 installs and updates gather in the device directory (`<home>/.einzbern` for `--home`, as the
 machine-settings verbs take it; otherwise `EINZBERN_HOME` or `~/.einzbern`). It lists each staging
 in `trash/` (`install-*`, `setup-update-*`) and each entry of `backups/`, with `kind`, `version`,
-`bytes` and `reason`, judged against `engine/current`: `keep` holds the pre-update backups
-(`…pre-update-<version>`) of the current and the previous version, the stagings whose unpacked
-release (`einzbern-<version>`) is the current version, and any other entry of `trash/`; `remove`
-holds every other staging and backup, with `removeBytes`; `refused` holds a symbolic link, or an
-area whose real path is not in the device directory, which is never touched. Without `--yes true`
+`bytes` and `reason`, an entry of `backups/` also with `contents`: the names of what it holds one
+level down, sorted, read with `lstat` alone and no link followed (none for a file). Each is judged
+against `engine/current`: `keep` holds the pre-update backups (`…pre-update-<version>`) of the
+current and the previous version, the stagings whose unpacked release (`einzbern-<version>`) is the
+current version, and any other entry of `trash/`; `remove` holds every other staging and
+pre-update backup, with `removeBytes`; `refused` holds a symbolic link, or an area whose real path
+is not in the device directory, which is never touched. Any other entry of `backups/` is judged by
+its contents (TCRN-CROSS-SUB-519): one that holds the skill copies alone, as a directory
+`skill-copies`, is in `remove` (`skill-copies-backup`), since their release places them again; one
+that holds an original a write replaced, `host-hooks`, `writable-roots`, `managed-sections`,
+`crest-bodies` or a file `registry.json`, is kept (`holds-originals`), and so is one that holds
+nothing or anything else, or is a file (`unrecognised-backup`). Without `--yes true`
 it answers `DEVICE_CLEAN_PLAN_READY` with that plan and writes nothing. With `--yes true` it makes
 the plan again, checks each entry of `remove` once more and deletes it with what it holds, links
 removed as links and never followed, answering `DEVICE_CLEANED` with the plan, `removed` (path and

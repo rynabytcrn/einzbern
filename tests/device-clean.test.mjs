@@ -3,9 +3,12 @@
 // the device directory's trash/ and the entries of its backups/, each with its size and the reason it
 // is kept or cleared, and writes nothing; with --yes true it deletes only what the plan clears. Kept
 // always: the pre-update backups of the current and the previous engine version (engine/current) and
-// the stagings of the current version. A symbolic link, or an area that leads out of the device
-// directory, is refused and never touched. Every device directory here is a temporary one, reached
-// through --home as the machine-settings verbs take it.
+// the stagings of the current version. TCRN-CROSS-SUB-519 (J7-07): any other entry of backups/ is
+// judged by what it holds one level down, listed as its contents; only one that holds the skill copies
+// alone is cleared, and one that holds an original a write replaced, or anything else, is kept. A
+// symbolic link, or an area that leads out of the device directory, is refused and never touched.
+// Every device directory here is a temporary one, reached through --home as the machine-settings verbs
+// take it.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -39,7 +42,10 @@ const STAGINGS = {
   update210: "setup-update-20261014T132031Z",
   updateUnknown: "setup-update-20261013T000000Z",
 };
+// Named and laid out, one level down, as the backups/ of the machine J7-07 was judged on after its
+// 2.1.0 update.
 const BACKUPS = {
+  codexRebuild: "2026-10-02T17-04-23-006Z",
   stamp: "20261002T170423Z",
   oldEngine: "20261010T020830Z-o10-old-engine-1.2.1",
   pre201: "20261010T021653Z-o5-pre-update-2.0.1",
@@ -52,7 +58,9 @@ const BACKUPS = {
 /**
  * A user's home whose .einzbern has 2.1.0 current and 2.0.3 before it, the stagings an install and an
  * update leave in trash/ (one of an unknown version), an entry of trash/ that is no staging, and the
- * backups of earlier updates; outside it, a file a staging links to.
+ * backups this machine holds: a rebuild of Codex hooks, the hook files' originals, an old engine, four
+ * pre-update backups and the skill copies the 2.1.0 update replaced; outside it, a file a staging links
+ * to.
  */
 async function device(context, { previous = "2.0.3" } = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-device-clean-")));
@@ -72,10 +80,12 @@ async function device(context, { previous = "2.0.3" } = {}) {
   await put(`trash/${STAGINGS.update210}/manifest.json`, "{}\n");
   await put(`trash/${STAGINGS.updateUnknown}/partial.txt`, "half an unpack\n");
   await put("trash/notes/keep.txt", "the user's own\n");
-  await put(`backups/${BACKUPS.stamp}/host-hooks/settings.json`, "{}\n");
+  await put(`backups/${BACKUPS.codexRebuild}/codex-hooks-rebuild/hooks.json`, "{}\n");
+  await put(`backups/${BACKUPS.stamp}/host-hooks/5d41402abc4b2a76/.codex/hooks.json`, "{\"hooks\":{}}\n");
+  await put(`backups/${BACKUPS.stamp}/host-hooks/5d41402abc4b2a76/.codex/config.toml`, "model = \"o\"\n");
   await put(`backups/${BACKUPS.oldEngine}/einzbern.mjs`, "export {};\n");
   for (const name of [BACKUPS.pre201, BACKUPS.pre202, BACKUPS.pre203, BACKUPS.pre210]) await put(`backups/${name}/engine/current`, "{}\n");
-  await put(`backups/${BACKUPS.update210}/skill-copies/SKILL.md`, "# skill\n");
+  for (const host of [".agents", ".claude"]) await put(`backups/${BACKUPS.update210}/skill-copies/${host}/skills/mana-orchestrate/SKILL.md`, "# skill\n");
   // A staging that links out of the device directory: the link goes with it, never what it names.
   const outside = join(base, "outside.txt");
   await writeFile(outside, "not the device's\n");
@@ -125,6 +135,9 @@ test("541 GWT4: without --yes true device-clean lists what it would clear and ke
   assert.deepEqual(named(plan.keep), [
     ["trash", "notes", "not-a-staging"],
     ["trash", STAGINGS.update210, "current-version-staging"],
+    ["backups", BACKUPS.codexRebuild, "unrecognised-backup"],
+    ["backups", BACKUPS.stamp, "holds-originals"],
+    ["backups", BACKUPS.oldEngine, "unrecognised-backup"],
     ["backups", BACKUPS.pre203, "pre-update-backup-of-previous"],
     ["backups", BACKUPS.pre210, "pre-update-backup-of-current"],
   ]);
@@ -132,13 +145,23 @@ test("541 GWT4: without --yes true device-clean lists what it would clear and ke
     ["trash", STAGINGS.install202, "older-version-staging"],
     ["trash", STAGINGS.install203, "older-version-staging"],
     ["trash", STAGINGS.updateUnknown, "unknown-version-staging"],
-    ["backups", BACKUPS.stamp, "other-backup"],
-    ["backups", BACKUPS.oldEngine, "other-backup"],
     ["backups", BACKUPS.pre201, "older-pre-update-backup"],
     ["backups", BACKUPS.pre202, "older-pre-update-backup"],
-    ["backups", BACKUPS.update210, "other-backup"],
+    ["backups", BACKUPS.update210, "skill-copies-backup"],
   ]);
   assert.deepEqual(plan.refused, []);
+  // SUB-519: every entry of backups/ names what it holds one level down; trash/ entries name nothing.
+  assert.deepEqual([...plan.keep, ...plan.remove].filter((entry) => entry.area === "backups").map((entry) => [entry.name, entry.kind, entry.contents]), [
+    [BACKUPS.codexRebuild, "backup", ["codex-hooks-rebuild"]],
+    [BACKUPS.stamp, "backup", ["host-hooks"]],
+    [BACKUPS.oldEngine, "backup", ["einzbern.mjs"]],
+    [BACKUPS.pre203, "pre-update-backup", ["engine"]],
+    [BACKUPS.pre210, "pre-update-backup", ["engine"]],
+    [BACKUPS.pre201, "pre-update-backup", ["engine"]],
+    [BACKUPS.pre202, "pre-update-backup", ["engine"]],
+    [BACKUPS.update210, "backup", ["skill-copies"]],
+  ]);
+  assert.equal([...plan.keep, ...plan.remove].some((entry) => entry.area === "trash" && "contents" in entry), false);
   const install202 = plan.remove[0];
   assert.deepEqual([install202.kind, install202.version, install202.path], ["install-staging", "2.0.2", join(fx.deviceHome, "trash", STAGINGS.install202)]);
   assert.equal(install202.bytes, "export {};\n".length + "{}\n".length + (await lstat(join(fx.deviceHome, "trash", STAGINGS.install202, "linked-out"))).size, "files and the link itself, the link not followed");
@@ -155,7 +178,8 @@ test("541 GWT4: with --yes true it deletes only the entries the plan clears, nam
   assert.deepEqual(done.removed, plan.remove.map((entry) => ({ path: entry.path, bytes: entry.bytes })));
   assert.deepEqual(done.failed, []);
   assert.deepEqual(await readdir(join(fx.deviceHome, "trash")).then((names) => names.sort()), ["notes", STAGINGS.update210].sort());
-  assert.deepEqual(await readdir(join(fx.deviceHome, "backups")).then((names) => names.sort()), [BACKUPS.pre203, BACKUPS.pre210].sort());
+  assert.deepEqual(await readdir(join(fx.deviceHome, "backups")).then((names) => names.sort()), [BACKUPS.codexRebuild, BACKUPS.stamp, BACKUPS.oldEngine, BACKUPS.pre203, BACKUPS.pre210].sort());
+  assert.equal(await readFile(join(fx.deviceHome, "backups", BACKUPS.stamp, "host-hooks", "5d41402abc4b2a76", ".codex", "hooks.json"), "utf8"), "{\"hooks\":{}}\n", "the hook files' originals stay");
   assert.equal(await readFile(join(fx.deviceHome, "trash", "notes", "keep.txt"), "utf8"), "the user's own\n");
   assert.equal(await readFile(fx.outside, "utf8"), "not the device's\n", "the file a cleared staging linked to is still there");
   assert.equal(await readFile(join(fx.deviceHome, "engine", "current"), "utf8").then((text) => JSON.parse(text).version), "2.1.0", "engine/ is never touched");
@@ -167,8 +191,74 @@ test("541 GWT4: with --yes true it deletes only the entries the plan clears, nam
 test("541 GWT4: with no previous version only the current version's pre-update backup is kept", async (context) => {
   const fx = await device(context, { previous: null });
   const plan = await cli(clean(fx));
-  assert.deepEqual(plan.keep.filter((entry) => entry.area === "backups").map((entry) => entry.name), [BACKUPS.pre210]);
+  assert.deepEqual(plan.keep.filter((entry) => entry.kind === "pre-update-backup").map((entry) => entry.name), [BACKUPS.pre210]);
   assert.ok(plan.remove.some((entry) => entry.name === BACKUPS.pre203 && entry.reason === "older-pre-update-backup"));
+});
+
+test("541 GWT4 (SUB-519): a backup is cleared only when it holds the skill copies alone; one that holds an original, or anything device-clean does not know, is kept with its contents", async (context) => {
+  const fx = await device(context);
+  const put = async (relative, text) => {
+    const path = join(fx.deviceHome, "backups", ...relative.split("/"));
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, text);
+  };
+  const more = {
+    crestBodies: "20261015T010000Z",
+    writableRoots: "20261015T010001Z",
+    managedSections: "20261015T010002Z",
+    unregister: "20261015T010003Z-library-unregister",
+    mixed: "20261015T010004Z",
+    empty: "20261015T010005Z",
+    file: "20261015T010006Z",
+    skillAndOther: "20261015T010007Z",
+    linkedSkill: "20261015T010008Z",
+  };
+  await put(`${more.crestBodies}/crest-bodies/library-0123456789abcdef/0001.body`, "the only copy of a body\n");
+  await put(`${more.writableRoots}/writable-roots/9a0b1c2d3e4f5a6b/settings.json`, "{}\n");
+  await put(`${more.managedSections}/managed-sections/7c8d9e0f1a2b3c4d/AGENTS.md`, "# the project's own\n");
+  await put(`${more.unregister}/registry.json`, "{\"entries\":[]}\n");
+  await put(`${more.mixed}/skill-copies/.claude/skills/mana-orchestrate/SKILL.md`, "# skill\n");
+  await put(`${more.mixed}/host-hooks/5d41402abc4b2a76/.claude/settings.json`, "{}\n");
+  await mkdir(join(fx.deviceHome, "backups", more.empty));
+  await writeFile(join(fx.deviceHome, "backups", more.file), "a file, no directory\n");
+  await put(`${more.skillAndOther}/skill-copies/.agents/skills/mana-orchestrate/SKILL.md`, "# skill\n");
+  await put(`${more.skillAndOther}/notes.txt`, "something else\n");
+  // skill-copies that is a link: lstat finds no directory, and the link is not followed.
+  const linkedTo = join(fx.base, "skill-copies-elsewhere");
+  await mkdir(linkedTo);
+  await writeFile(join(linkedTo, "SKILL.md"), "# not the device's\n");
+  await mkdir(join(fx.deviceHome, "backups", more.linkedSkill));
+  await symlink(linkedTo, join(fx.deviceHome, "backups", more.linkedSkill, "skill-copies"));
+
+  const plan = await cli(clean(fx));
+  const added = new Set(Object.values(more));
+  const judged = (entries) => entries.filter((entry) => added.has(entry.name)).map((entry) => [entry.name, entry.kind, entry.reason, entry.contents]);
+  assert.deepEqual(judged(plan.keep), [
+    [more.crestBodies, "backup", "holds-originals", ["crest-bodies"]],
+    [more.writableRoots, "backup", "holds-originals", ["writable-roots"]],
+    [more.managedSections, "backup", "holds-originals", ["managed-sections"]],
+    [more.unregister, "backup", "holds-originals", ["registry.json"]],
+    [more.mixed, "backup", "holds-originals", ["host-hooks", "skill-copies"]],
+    [more.empty, "backup", "unrecognised-backup", []],
+    [more.file, "backup", "unrecognised-backup", []],
+    [more.skillAndOther, "backup", "unrecognised-backup", ["notes.txt", "skill-copies"]],
+    [more.linkedSkill, "backup", "unrecognised-backup", ["skill-copies"]],
+  ]);
+  assert.deepEqual(judged(plan.remove), []);
+  assert.deepEqual(plan.remove.filter((entry) => entry.area === "backups").map((entry) => [entry.name, entry.reason]), [
+    [BACKUPS.pre201, "older-pre-update-backup"],
+    [BACKUPS.pre202, "older-pre-update-backup"],
+    [BACKUPS.update210, "skill-copies-backup"],
+  ]);
+
+  const done = await cli(clean(fx, "--yes", "true"));
+  assert.deepEqual(done.removed, plan.remove.map((entry) => ({ path: entry.path, bytes: entry.bytes })));
+  assert.deepEqual(done.failed, []);
+  const left = new Set(await readdir(join(fx.deviceHome, "backups")));
+  assert.deepEqual([...added].filter((name) => !left.has(name)), [], "every backup the plan keeps is still there");
+  assert.equal(await readFile(join(fx.deviceHome, "backups", more.crestBodies, "crest-bodies", "library-0123456789abcdef", "0001.body"), "utf8"), "the only copy of a body\n");
+  assert.equal(await readFile(join(fx.deviceHome, "backups", more.unregister, "registry.json"), "utf8"), "{\"entries\":[]}\n");
+  assert.equal(await readFile(join(linkedTo, "SKILL.md"), "utf8"), "# not the device's\n", "what a link in a backup names is never touched");
 });
 
 test("541 GWT4: a symbolic link in trash/ and a backups/ that leads out of the device directory are refused and never touched", async (context) => {

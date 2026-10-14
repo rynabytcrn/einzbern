@@ -162,10 +162,10 @@ It is released instead (MIN-235 D17, D11; MIN-238 D4), one gate at a time:
   <instant>` writes it. It runs with `EINZBERN_SURFACE=atelier`, the surface Atelier
   writes through, or, since TCRN-CROSS-STORY-541 (MIN-258 D3), with `--decided-in
   minutes:<id>#D<n>` citing an Owner decision that names the gate by its id. The
-  decision is checked inside the write lock as any configuration write's is
-  (actor-attestation-v1, optional authorization extras), and the `gate.updated`
-  records `surface` and, for a cited decision, `decidedIn` and `decidedInLibraryId`
-  beside the record. Otherwise it is refused with `MODEL_WRITE_REFUSED` (remedy
+  decision is checked before the lock, against the state the write reads, as any
+  configuration write's is (actor-attestation-v1, optional authorization extras),
+  and the `gate.updated` records `surface` and, for a cited decision, `decidedIn`
+  and `decidedInLibraryId` beside the record. Otherwise it is refused with `MODEL_WRITE_REFUSED` (remedy
   `change it in Atelier, or cite the Owner's decision with --decided-in
   minutes:<id>#D<n>`), or `MODEL_WRITE_AUTHORIZATION_INVALID` for a decision that does
   not qualify, and nothing is appended. That surface is an

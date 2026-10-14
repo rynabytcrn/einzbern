@@ -9,12 +9,15 @@
 // The plan lists each install and setup-update staging in trash/ and each entry of backups/, with its
 // size and the reason it is kept or cleared, judged against engine/current: kept are the pre-update
 // backups of the current and the previous version and the stagings of the current version; every
-// other staging and backup is cleared. Another entry of trash/ is no staging and is kept. A symbolic
-// link, or an entry whose real path is not where its name puts it in the device directory, is refused
-// and never touched. The plan writes nothing. With --yes true the cleared entries are deleted one by
-// one, each checked again first, and the receipt names each with its size, or why it was not deleted.
-// Nothing outside trash/ and backups/ of the device directory is ever deleted, and no link is
-// followed: a directory goes with what it holds, a link in it as a link.
+// other staging and pre-update backup is cleared. Another entry of trash/ is no staging and is kept.
+// TCRN-CROSS-SUB-519 (J7-07): any other entry of backups/ is judged by what it holds one level down,
+// listed in the plan as its contents. Only one that holds the skill copies alone is cleared, since an
+// install renders them again; one that holds an original a write replaced, or anything device-clean
+// does not know, is kept. A symbolic link, or an entry whose real path is not where its name puts it
+// in the device directory, is refused and never touched. The plan writes nothing. With --yes true the
+// cleared entries are deleted one by one, each checked again first, and the receipt names each with
+// its size, or why it was not deleted. Nothing outside trash/ and backups/ of the device directory is
+// ever deleted, and no link is followed: a directory goes with what it holds, a link in it as a link.
 
 import { lstat, readdir, realpath, rm } from "node:fs/promises";
 import type { Dirent } from "node:fs";
@@ -36,8 +39,8 @@ export const DEVICE_CLEAN_ENGINE_UNKNOWN = "DEVICE_CLEAN_ENGINE_UNKNOWN" as cons
 
 /** Why an entry is kept, cleared or refused: one code each. */
 export const DEVICE_CLEAN_REASONS = Object.freeze({
-  keep: Object.freeze(["current-version-staging", "not-a-staging", "pre-update-backup-of-current", "pre-update-backup-of-previous"] as const),
-  remove: Object.freeze(["older-pre-update-backup", "older-version-staging", "other-backup", "unknown-version-staging"] as const),
+  keep: Object.freeze(["current-version-staging", "holds-originals", "not-a-staging", "pre-update-backup-of-current", "pre-update-backup-of-previous", "unrecognised-backup"] as const),
+  remove: Object.freeze(["older-pre-update-backup", "older-version-staging", "skill-copies-backup", "unknown-version-staging"] as const),
   refuse: Object.freeze(["outside-device-directory", "symbolic-link"] as const),
 });
 
@@ -53,6 +56,9 @@ export interface DeviceCleanEntry {
   // The bytes of every file and link under it, links not followed.
   readonly bytes: number;
   readonly reason: string;
+  // An entry of backups/ that is judged (TCRN-CROSS-SUB-519): the names of what it holds one level
+  // down, sorted; none for a file. Left out for trash/ and for a refused entry, which is not read.
+  readonly contents?: readonly string[];
 }
 
 export interface DeviceCleanPlan {
@@ -102,6 +108,16 @@ const SETUP_UPDATE_STAGING = /^setup-update-/u;
 const PRE_UPDATE_BACKUP = /(?:^|-)pre-update-(.+)$/u;
 const RELEASE_TREE_PREFIX = `${BRAND.engine.id}-`;
 
+// TCRN-CROSS-SUB-519 (J7-07): what a backup other than a pre-update one may hold, one level down. The
+// skill copies a new tree replaced (skill-copies.ts) are copies of a released skill tree, which its
+// release places again. The originals a write replaced are no copies of anything: a host's hook files
+// (host-hooks.ts), a host's writable roots (host-writable-roots.ts), a project's AGENTS.md and
+// CLAUDE.md (managed-sections.ts), the bodies a clearing of the knowledge store took out of the crest
+// (knowledge-core.ts) and the registry library-unregister rewrote (registry.ts).
+const SKILL_COPIES_BACKUP = "skill-copies";
+const ORIGINALS_BACKUPS: readonly string[] = Object.freeze(["crest-bodies", "host-hooks", "managed-sections", "writable-roots"]);
+const REGISTRY_BACKUP = "registry.json";
+
 function missing(error: unknown): boolean {
   const code = (error as { code?: string }).code;
   return code === "ENOENT" || code === "ENOTDIR";
@@ -145,6 +161,42 @@ interface Verdict {
   readonly version: string | null;
   readonly keep: boolean;
   readonly reason: string;
+  // An entry of backups/ alone: the names of what it holds one level down.
+  readonly contents?: readonly string[];
+}
+
+// One thing a backup holds, one level down, as lstat finds it: a link is neither a directory nor a file.
+interface Held {
+  readonly name: string;
+  readonly directory: boolean;
+  readonly file: boolean;
+}
+
+// What the backup at `path` holds one level down, sorted by name, from lstat alone and no link
+// followed; nothing when the backup is a file.
+async function heldBy(path: string): Promise<readonly Held[]> {
+  if (!(await lstat(path)).isDirectory()) return [];
+  const held: Held[] = [];
+  for (const entry of await children(path)) {
+    const stats = await lstat(join(path, entry.name));
+    held.push({ name: entry.name, directory: stats.isDirectory(), file: stats.isFile() });
+  }
+  return held;
+}
+
+// TCRN-CROSS-SUB-519 (J7-07): a backup other than a pre-update one is cleared only when it holds the
+// skill copies alone, as a directory. One that holds an original a write replaced (host-hooks,
+// writable-roots, managed-sections, crest-bodies, or the file registry.json) is kept, and so is one
+// that holds nothing or anything else, or is a file: what device-clean does not know, it does not
+// clear.
+function backupVerdict(held: readonly Held[]): { readonly keep: boolean; readonly reason: string } {
+  if (held.some((entry) => ORIGINALS_BACKUPS.includes(entry.name) || (entry.name === REGISTRY_BACKUP && entry.file))) {
+    return { keep: true, reason: "holds-originals" };
+  }
+  if (held.length > 0 && held.every((entry) => entry.name === SKILL_COPIES_BACKUP && entry.directory)) {
+    return { keep: false, reason: "skill-copies-backup" };
+  }
+  return { keep: true, reason: "unrecognised-backup" };
 }
 
 // What an entry of trash/ or backups/ is, and whether it is kept, judged against engine/current.
@@ -158,12 +210,14 @@ async function judge(area: DeviceCleanArea, name: string, path: string, current:
       ? { kind, version, keep: true, reason: "current-version-staging" }
       : { kind, version, keep: false, reason: "older-version-staging" };
   }
+  const held = await heldBy(path);
+  const contents = held.map((entry) => entry.name);
   const match = PRE_UPDATE_BACKUP.exec(name);
   const version = match !== null && isEngineVersion(match[1]) ? match[1]! : null;
-  if (version === null) return { kind: "backup", version: null, keep: false, reason: "other-backup" };
-  if (version === current) return { kind: "pre-update-backup", version, keep: true, reason: "pre-update-backup-of-current" };
-  if (version === previous) return { kind: "pre-update-backup", version, keep: true, reason: "pre-update-backup-of-previous" };
-  return { kind: "pre-update-backup", version, keep: false, reason: "older-pre-update-backup" };
+  if (version === null) return { kind: "backup", version: null, contents, ...backupVerdict(held) };
+  if (version === current) return { kind: "pre-update-backup", version, keep: true, reason: "pre-update-backup-of-current", contents };
+  if (version === previous) return { kind: "pre-update-backup", version, keep: true, reason: "pre-update-backup-of-previous", contents };
+  return { kind: "pre-update-backup", version, keep: false, reason: "older-pre-update-backup", contents };
 }
 
 // Null when the entry `name` of the area is where its name puts it: no link, and its real path the
@@ -200,18 +254,26 @@ async function areaEntries(device: string, area: DeviceCleanArea, current: strin
       continue;
     }
     const verdict = await judge(area, entry.name, path, current, previous);
-    judged.push({ area, name: entry.name, path, kind: verdict.kind, version: verdict.version, bytes: await sizeOf(path), reason: verdict.reason, verdict: verdict.keep ? "keep" : "remove" });
+    judged.push({
+      area, name: entry.name, path, kind: verdict.kind, version: verdict.version, bytes: await sizeOf(path), reason: verdict.reason,
+      ...(verdict.contents === undefined ? {} : { contents: verdict.contents }),
+      verdict: verdict.keep ? "keep" : "remove",
+    });
   }
   return judged;
 }
 
 function entryOf(judged: Judged): DeviceCleanEntry {
-  return { area: judged.area, name: judged.name, path: judged.path, kind: judged.kind, version: judged.version, bytes: judged.bytes, reason: judged.reason };
+  return {
+    area: judged.area, name: judged.name, path: judged.path, kind: judged.kind, version: judged.version, bytes: judged.bytes, reason: judged.reason,
+    ...(judged.contents === undefined ? {} : { contents: judged.contents }),
+  };
 }
 
 /**
  * What device-clean would clear in the device directory (TCRN-CROSS-SUB-512): each staging in trash/
- * and each entry of backups/, kept, cleared or refused, with its size and reason. Writes nothing.
+ * and each entry of backups/, kept, cleared or refused, with its size and reason, and an entry of
+ * backups/ with its contents (TCRN-CROSS-SUB-519). Writes nothing.
  * DEVICE_CLEAN_ENGINE_UNKNOWN when engine/current names no version, since nothing can be judged.
  */
 export async function planDeviceClean(input: DeviceCleanInput): Promise<DeviceCleanPlan> {

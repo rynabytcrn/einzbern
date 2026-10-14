@@ -1332,8 +1332,8 @@ function subjectName(subject: ModelWriteSubject): string {
  *
  * TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-453): a write that takes --decided-in passes
  * `citation`. A model's run that cites a decision (minutes:<id>#D<n>; a value of another shape is
- * MODEL_WRITE_AUTHORIZATION_INVALID here) is let through to be checked inside the write lock, and its
- * refusal names --decided-in. Answers the permit the write records: surface atelier for a run for
+ * MODEL_WRITE_AUTHORIZATION_INVALID here) is let through to be checked before the lock, against the
+ * state the write reads (writeAuthorization), and its refusal names --decided-in. Answers the permit the write records: surface atelier for a run for
  * Atelier, surface cli for a cited decision, and nothing for a modelWritable write that cites none.
  * TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): work-gate-release passes its gate's id as `gate`,
  * project-bindings-set and -remove the binding's key as `key`, and work-release --force the work
@@ -1380,11 +1380,11 @@ function assertSettingWriteAllowed(key: string, decidedIn: string | undefined): 
 }
 
 /**
- * The authorization a permitted write records (TCRN-CROSS-SUB-453), worked out inside the write lock
- * of the library at `libraryRoot`: a cited decision is checked against the minutes as they stand
- * (verifyWriteAuthorization: found, decided by owner:governance, valid, naming the target) and
- * refused with MODEL_WRITE_AUTHORIZATION_INVALID before anything is written. Without a permit nothing
- * is recorded, so the event is the one the write appended before.
+ * The authorization a permitted write records (TCRN-CROSS-SUB-453), worked out before the lock, against
+ * the state the write reads of the library at `libraryRoot`: a cited decision is checked against the
+ * minutes as that read finds them (verifyWriteAuthorization: found, decided by owner:governance, valid,
+ * naming the target) and refused with MODEL_WRITE_AUTHORIZATION_INVALID before anything is written.
+ * Without a permit nothing is recorded, so the event is the one the write appended before.
  */
 async function writeAuthorization(permit: ModelWritePermit | undefined, libraryRoot: string): Promise<{ readonly authorization?: WriteAuthorization }> {
   if (permit === undefined) return {};
@@ -2889,11 +2889,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "artifact-put") {
-    // TCRN-CROSS-STORY-380. The engine write lock is the quiesce proof, the same one
-    // snapshot-manifest takes below: two puts appending to one manifest without it each write a manifest
-    // missing the other's entry, and the loser's blob sits on disk with nothing pointing
-    // at it. No chain event is appended — the manifest is the record, and keeping the put
-    // off the chain is what lets the blob root be a directory the engine does not own.
+    // TCRN-CROSS-STORY-380. The engine write lock serialises the artifact manifest: two puts appending
+    // to one manifest without it each write a manifest missing the other's entry, and the loser's blob
+    // sits on disk with nothing pointing at it. TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-500): the lock is
+    // held for the manifest's replacement alone; putArtifact copies the blob into the blob root and
+    // reads it back before it takes the lock. No chain event is appended — the manifest is the record,
+    // and keeping the put off the chain is what lets the blob root be a directory the engine does not
+    // own.
     const values = parseArguments(rest, ["workspace", "file", "at", "timeout-ms"]);
     required(values, ["workspace", "file", "at"]);
     const workspace = values.workspace ?? "";
@@ -2914,10 +2916,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "snapshot-manifest") {
-    // WSF-2: read-only snapshot witness. The engine write lock is the quiesce proof —
-    // createSnapshotManifest holds it for the computation (WORKSPACE_LOCKED when another
-    // writer never lets go); the manifest is emitted verbatim to stdout as the receipt.
-    // --at stays in the catalog unchanged; the lock needs no instant.
+    // WSF-2: read-only snapshot witness. TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-500): createSnapshotManifest
+    // takes no lock. It stamps every file the manifest covers before it reads the state and again after
+    // it walks the tree, and equal stamps prove the tree did not move while it was read; only a tree that
+    // moved under four reads in a row is read under the engine write lock (WORKSPACE_LOCKED when another
+    // writer never lets go). The manifest is emitted verbatim to stdout as the receipt. --at stays in the
+    // catalog unchanged; neither the read nor the lock needs an instant.
     const values = parseArguments(rest, ["workspace", "at"]);
     required(values, ["workspace", "at"]);
     const workspace = values.workspace ?? "";
@@ -3451,7 +3455,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-510): a project binding is changed in Atelier, or
   // by a model's run whose --decided-in cites an Owner decision naming the binding's key
-  // (common-default or repositories), checked inside the write lock and recorded in the event.
+  // (common-default or repositories), checked before the lock, against the state the write reads, and
+  // recorded in the event.
   if (command === "project-bindings-remove") {
     const values = parseArguments(rest, [...shared, "project-id", "key", "actor", "decided-in"]); required(values, [...requiredShared, "project-id", "key"]);
     const permit = assertModelWriteAllowed({ key: values.key! }, false, process.env, { decidedIn: values["decided-in"] });
@@ -3704,9 +3709,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // time, and anyone releases a lease that has run out. Another actor's running lease is released
   // with --force true, which runs for Atelier (MIN-256 R1 Q7). TCRN-CROSS-STORY-541 (MIN-258 D3;
   // TCRN-CROSS-SUB-510): or for a model's run whose --decided-in cites an Owner decision naming the
-  // work item by its id or its external key, checked inside the write lock and recorded in the
-  // lease's event; citing none, --force is refused with MODEL_WRITE_REFUSED before the library is
-  // opened. A release that cites a decision without --force has it checked and recorded as well.
+  // work item by its id or its external key, checked before the lock, against the state the write
+  // reads, and recorded in the lease's event; citing none, --force is refused with MODEL_WRITE_REFUSED
+  // before the library is opened. A release that cites a decision without --force has it checked and
+  // recorded as well.
   if (command === "work-release") {
     const values = parseArguments(rest, [...shared, "id", "actor", "force", "decided-in"]);
     required(values, [...requiredShared, "id", "actor"]);
@@ -3869,10 +3875,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // migration carried over, recording who (--actor), when (--at) and why (--reason) in the gate
   // itself (specs/gate-v1.md, Release). It runs for Atelier. TCRN-CROSS-STORY-541 (MIN-258 D3;
   // TCRN-CROSS-SUB-510): or for a model's run whose --decided-in cites an Owner decision naming the
-  // gate by its id, checked inside the write lock and recorded in the gate.updated event. Any other
-  // model's run is refused with MODEL_WRITE_REFUSED, whose remedy names both ways, before the library
-  // is opened, so nothing is appended. The surface is an agreed convention, not proof of who ran the
-  // command (MIN-235 D11).
+  // gate by its id, checked before the lock, against the state the write reads, and recorded in the
+  // gate.updated event. Any other model's run is refused with MODEL_WRITE_REFUSED, whose remedy names
+  // both ways, before the library is opened, so nothing is appended. The surface is an agreed
+  // convention, not proof of who ran the command (MIN-235 D11).
   if (command === "work-gate-release") {
     const values = parseArguments(rest, [...shared, "id", "reason", "actor", "decided-in"]);
     required(values, [...requiredShared, "id", "reason", "actor"]);

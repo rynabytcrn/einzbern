@@ -443,12 +443,14 @@ model may write the key through the CLI. It is `false` for every key.
   - **Tier:** 1 (the Owner decides the value; it is written with `machine-settings-set` or on
     Atelier's settings page and read back).
   - **Meaning:** how many heavy runs may run at once on this machine. `gates-run`, the whole test
-    suite (`scripts/task.mjs test`), the portal proof train (`scripts/verify-portal.mjs`) and
-    `scripts/release.mjs finish` each take a slot before they start, a lock file in the device
-    directory's `locks/` (`heavy.lock`, then `heavy-2.lock` and on; `EINZBERN_HEAVY_LOCK_DIR`
-    names another directory), wait while every slot is held, and say on stderr which runs hold
-    them. A run started by a slot holder inherits the slot through `EINZBERN_HEAVY_SLOT` and takes
-    none of its own. `gates-plan` takes no slot. A change applies to the next run that takes one.
+    suite (`scripts/task.mjs test`), verify-p1 (`scripts/task.mjs verify-p1`), the portal proof
+    train (`scripts/verify-portal.mjs`) and release finish (`scripts/release.mjs finish`) each
+    take a slot before they start, a lock file in the device directory's `locks/` (`heavy.lock`,
+    then `heavy-2.lock` and on; `EINZBERN_HEAVY_LOCK_DIR` names another directory), wait while
+    every slot is held, and say on stderr which runs hold them. A slot records the command its
+    taker names: `gates-run`, `test`, `verify-p1`, `verify:portal` or `release finish`. A run
+    started by a slot holder inherits the slot through `EINZBERN_HEAVY_SLOT` and takes none of its
+    own. `gates-plan` takes no slot. A change applies to the next run that takes one.
   - **Mechanism:** `machine-settings-catalog` reads it; `machine-settings-set` and
     `machine-settings-remove` write it; a value outside the bounds refuses with
     `MACHINE_SETTING_VALUE_INVALID`. `scripts/lib/heavy-runs.mjs` reads it without the engine.

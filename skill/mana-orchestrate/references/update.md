@@ -86,10 +86,14 @@ at all, and doctor does not report it.
 Each install and update leaves its unpacked release in the device directory's `trash/`, and each
 update leaves the copies it took in `backups/`. Once the new version runs and its checks are ok,
 `device-clean --at <UTC>` lists them: each staging in `trash/` and each entry of `backups/`, with its
-size and why it would be kept or cleared (`DEVICE_CLEAN_PLAN_READY`), and writes nothing. It always
-keeps the pre-update backups of the current and the previous version that `engine/current` names
-(the previous one is what a rollback goes back to) and the staging of the current version; any
-other entry of `trash/` is not a staging and stays too. A symbolic link, or an area that leads out
+size and why it would be kept or cleared (`DEVICE_CLEAN_PLAN_READY`), an entry of `backups/` also
+with what it holds one level down (`contents`), and writes nothing. It always keeps the pre-update
+backups of the current and the previous version that `engine/current` names (the previous one is
+what a rollback goes back to) and the staging of the current version; any other entry of `trash/` is
+not a staging and stays too. Of the other entries of `backups/` it clears only one that holds the
+skill copies alone (`skill-copies`), which their release places again; one that holds an original a
+write replaced (`host-hooks`, `writable-roots`, `managed-sections`, `crest-bodies`,
+`registry.json`), or anything it does not know, stays. A symbolic link, or an area that leads out
 of the device directory, is listed as refused and never touched. Show the plan with `removeBytes`,
 and run the same command with `--yes true` only once the user agreed: it deletes what the plan
 clears, each checked again, and `DEVICE_CLEANED` names each entry it deleted with its size, and any
@@ -106,11 +110,12 @@ it could not (`failed`). Without `engine/current` it judges nothing (`DEVICE_CLE
 | Cloud drive, for a repair | `--cloud true` or `--cloud false` |
 | Navigation section, for a repair | `--navigation true` or `--navigation false` |
 | Yes at the final confirmation | `--yes true` |
-| Clear old stagings and backups after a version change | `device-clean --at <UTC>`, then `--yes true` once the user agreed |
+| Clear old stagings and the backups that can be rebuilt after a version change | `device-clean --at <UTC>`, then `--yes true` once the user agreed |
 
 ## Boundaries
 
 The wizard never commits, pushes, edits `.gitignore`, or deletes anything, and neither do you
 during this task. Anything it replaces is backed up first, and the result names the backup
 directory. The one deletion is `device-clean --yes true`, after the update and once the user
-agreed: only the stagings and backups its plan clears, inside the device directory.
+agreed: only the stagings and backups its plan clears, inside the device directory; a backup that
+holds an original stays.

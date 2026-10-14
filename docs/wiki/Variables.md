@@ -33,7 +33,7 @@
 | `order` | 正整数，全表唯一；重复报 `MODELS_ORDER_DUPLICATE`。顺序越小，记录越强，升档就是往更小的顺序走。 |
 | `category` | 所属分类，必须是 `models.category` 里已有的分类，否则报 `MODELS_CATEGORY_UNKNOWN`。 |
 | `runner` | 执行这条记录的程序：宿主自己，或另一个程序（例如 `codex-cli`）。 |
-| `model` | 模型，文本。引擎不内置任何模型名，默认表里留空，由 Owner 填写。 |
+| `model` | 模型，文本。引擎不内置任何模型名，默认表里留空，由 Owner 决定，在 Atelier 填写，或由模型引用决定写入（`settings-set --decided-in minutes:<id>#D<n>`）。 |
 | `effort` | 推理强度，文本，默认留空。 |
 | `note` | 备注，文本，可以为空。 |
 
@@ -143,20 +143,25 @@ AGENTS.md 会随项目提交，所以变量里永远不放凭据。值或说明�
 
 ## 模型写保护
 
-配置由人在 Atelier 里改，模型不在工作途中顺手改它。设置目录的每一行都带 `modelWritable`，目前全部为 `false`。下面这些写入在环境变量 `EINZBERN_SURFACE` 不为 `atelier` 且没有引用 Owner 决定时一律拒绝，报 `MODEL_WRITE_REFUSED`，补救提示为 `change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>`，库里不追加任何事件：
+配置由 Owner 决定：人在 Atelier 里改，模型引用 Owner 的决定写入（下一节），模型不在工作途中顺手改它。设置目录的每一行都带 `modelWritable`，目前全部为 `false`。下面这些写入在环境变量 `EINZBERN_SURFACE` 不为 `atelier` 且没有引用 Owner 决定时一律拒绝，报 `MODEL_WRITE_REFUSED`，补救提示为 `change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>`，库里不追加任何事件：
 
 - 对 `modelWritable` 为 `false` 的键执行 `settings-set` 与 `settings-remove`；
 - `variable-set` 与 `variable-remove`；
 - Command Spell 原则的 `rule-enable` 与 `rule-disable`（「受管段与 Command Spell」页）；
-- 门声明的 `gates-config-set` 与 `gates-config-remove`（「门」页）。
+- 门声明的 `gates-config-set` 与 `gates-config-remove`（「门」页）；
+- 放行迁移带来的门的 `work-gate-release`（「从 TCRN Workflow 迁移」页，TCRN-CROSS-STORY-541）；
+- 项目绑定的 `project-bindings-set` 与 `project-bindings-remove`；
+- 强制释放他人未到期租约的 `work-release --force true`（「词汇表」页的工单租约）。
 
-拒绝点名被拒的对象：details 里设置是 `key`，变量是 `name`，原则是 `rule`（原则 id），门是 `gate`（门名），并带 `remedy`；命令行入口在 stderr 上给出 `remedy` 和点名该对象的错误文本。
+拒绝点名被拒的对象：details 里设置是 `key`，变量是 `name`，原则是 `rule`（原则 id），门是 `gate`（门名；迁移带来的门是它的 id），项目绑定是 `key`（`common-default` 或 `repositories`），租约是 `workId`（工单 id），并带 `remedy`；命令行入口在 stderr 上给出 `remedy` 和点名该对象的错误文本。
+
+`chain-declare`（声明库的角色与所属协调库）是唯一保留硬约束的写入：它改变库的角色与信任关系，模型经 CLI 一律拒绝，引用决定也不行，报 `MODEL_WRITE_REFUSED`，补救提示为 `declare it on the library page in Atelier`，由人在 Atelier 的库页声明。
 
 在 Atelier 里改，或以 `EINZBERN_SURFACE=atelier` 运行同一条命令，写入照常进行；Atelier 调用 CLI 时就带着它。这是约定，不是身份保证：CLI 无法分辨是谁在运行它，自己带上这个变量的调用同样放行，所以这道软屏障挡住的是模型顺手的改动，不是蓄意绕过。读取从不拒绝，`rule-resolve`、`agents-render`、`gates-plan` 与 `gates-run` 也不受这道屏障限制；引擎对任何人都拒绝的键（`SETTINGS_KEY_DEVICE_LEVEL`、`SETTINGS_KEY_UNREGISTERED`）保持各自的拒绝码。
 
 ### 引用 Owner 的决定（--decided-in）
 
-上面八条命令都接受 `--decided-in minutes:<id>#D<n>`（TCRN-CROSS-STORY-526）：`<id>` 是纪要 id，`minutes-show` 读得到；`<n>` 是决定序号。`TCRN-CROSS-MIN-256#D8` 这类外部键号写法不认，报 `malformed`。`--help` 的旗标条目以 `valueShape` 写出这个写法。引擎在写锁内核对这条决定，四条都满足才写入：纪要能找到（先在本库找，本库没有时按本库链身份里的协调库 id，到本设备注册表登记的协调库里只读查找）；这份纪要的 `decidedBy` 含 `owner:governance`；这条决定仍有效（被取代或撤回的不算）；决定正文写出了被改的对象：设置的键、变量名、原则 id 或门名，前后不紧接字母、数字或 `._:-`，或者写出 `<前缀>.*` 而键或名字以 `<前缀>.` 开头。例如决定正文写 `models.escalation.*`，它授权 `models.escalation.ceiling`、`models.escalation.enabled` 与 `models.escalation.threshold`，不授权 `models.tiers`；写 `engine:test-wiring` 不授权门 `engine:test`。核对通过时照常写入，写入的每条事件另记 `decidedIn`（完整的决定编号）、`decidedInLibraryId`（纪要所在库的 id）与 `surface: cli`；核对不通过报 `MODEL_WRITE_AUTHORIZATION_INVALID`，错误带 `decidedIn`、`target` 与 `reason`（`malformed`、`not-found`、`not-owner-decided`、`obsolete`、`target-not-named`，也写在错误文本里），库里不追加任何事件。以 `EINZBERN_SURFACE=atelier` 运行（Atelier 的写入）记 `surface: atelier`；它同时引用决定时，决定照样核对，事件同时记下决定与 `surface: atelier`。不引用决定的模型写入仍报 `MODEL_WRITE_REFUSED`。`work-gate-release`、`project-bindings-set`、`project-bindings-remove` 与 `chain-declare` 不接受 `--decided-in`，它们的拒绝和补救提示 `change it in Atelier` 不变。引用只让写入可追溯到一条决定，不证明 Owner 真的做了这个决定：模型自己记一份 `decidedBy` 写着 `owner:governance` 的纪要再引用它，同样能通过。
+上面十二条写入都接受 `--decided-in minutes:<id>#D<n>`（TCRN-CROSS-STORY-526；后四条自 TCRN-CROSS-STORY-541 起）：`<id>` 是纪要 id，`minutes-show` 读得到；`<n>` 是决定序号。`TCRN-CROSS-MIN-256#D8` 这类外部键号写法不认，报 `malformed`。`--help` 的旗标条目以 `valueShape` 写出这个写法。引擎在写锁内核对这条决定，四条都满足才写入：纪要能找到（先在本库找，本库没有时按本库链身份里的协调库 id，到本设备注册表登记的协调库里只读查找）；这份纪要的 `decidedBy` 含 `owner:governance`；这条决定仍有效（被取代或撤回的不算）；决定正文写出了被改的对象：设置的键、变量名、原则 id、门名（迁移带来的门写它的 id）或项目绑定的键，前后不紧接字母、数字或 `._:-`，或者写出 `<前缀>.*` 而键或名字以 `<前缀>.` 开头；强制释放租约时，决定正文写出工单的 id 或完整的外部键（例如 `TCRN-CROSS-STORY-541`，写 `TCRN-CROSS-STORY-54` 不算），不认 `<前缀>.*`。例如决定正文写 `models.escalation.*`，它授权 `models.escalation.ceiling`、`models.escalation.enabled` 与 `models.escalation.threshold`，不授权 `models.tiers`；写 `engine:test-wiring` 不授权门 `engine:test`。核对通过时照常写入，写入的每条事件另记 `decidedIn`（完整的决定编号）、`decidedInLibraryId`（纪要所在库的 id）与 `surface: cli`；核对不通过报 `MODEL_WRITE_AUTHORIZATION_INVALID`，错误带 `decidedIn`、`target` 与 `reason`（`malformed`、`not-found`、`not-owner-decided`、`obsolete`、`target-not-named`，也写在错误文本里），库里不追加任何事件。以 `EINZBERN_SURFACE=atelier` 运行（Atelier 的写入）记 `surface: atelier`；它同时引用决定时，决定照样核对，事件同时记下决定与 `surface: atelier`。不引用决定的模型写入仍报 `MODEL_WRITE_REFUSED`。放行门的事件（`gate.updated`）与释放租约的事件（`config.record.removed`）同样记下这些字段。`chain-declare` 不接受 `--decided-in`（上一节）。引用只让写入可追溯到一条决定，不证明 Owner 真的做了这个决定：模型自己记一份 `decidedBy` 写着 `owner:governance` 的纪要再引用它，同样能通过。
 
 ## Configuration sources
 

@@ -17,8 +17,8 @@ its work item back from `done`.
 A migration (`setup --mode migrate`, TCRN-CROSS-STORY-489) carries every gate over
 as it is: a pending gate stays pending in the library and is never satisfied by the
 migration itself. Two verbs, neither of them a `gate-` verb, reach those gates:
-`work-gate-list` reads them, and `work-gate-release` releases one in Atelier (see
-Release below).
+`work-gate-list` reads them, and `work-gate-release` releases one, in Atelier or by a
+model's run that cites an Owner decision naming the gate (see Release below).
 
 ## Record
 
@@ -159,9 +159,16 @@ It is released instead (MIN-235 D17, D11; MIN-238 D4), one gate at a time:
   that fails any of these fails closed with `WORKSPACE_EVENT_CORRUPT`; in a library's
   merged replay that event is rejected and the gate stays as it was.
 - **The verb.** `work-gate-release --id <gate> --reason <why> --actor <actor> --at
-  <instant>` writes it. It is refused with `MODEL_WRITE_REFUSED` (remedy
-  `change it in Atelier`) and nothing appended unless it runs with
-  `EINZBERN_SURFACE=atelier`, the surface Atelier writes through. That surface is an
+  <instant>` writes it. It runs with `EINZBERN_SURFACE=atelier`, the surface Atelier
+  writes through, or, since TCRN-CROSS-STORY-541 (MIN-258 D3), with `--decided-in
+  minutes:<id>#D<n>` citing an Owner decision that names the gate by its id. The
+  decision is checked inside the write lock as any configuration write's is
+  (actor-attestation-v1, optional authorization extras), and the `gate.updated`
+  records `surface` and, for a cited decision, `decidedIn` and `decidedInLibraryId`
+  beside the record. Otherwise it is refused with `MODEL_WRITE_REFUSED` (remedy
+  `change it in Atelier, or cite the Owner's decision with --decided-in
+  minutes:<id>#D<n>`), or `MODEL_WRITE_AUTHORIZATION_INVALID` for a decision that does
+  not qualify, and nothing is appended. That surface is an
   agreed convention, not proof of who ran the command (MIN-235 D11). A gate that is
   deleted or already `satisfied`, a blank or oversized reason, or an actor that is
   not an actor id is refused with `WORKSPACE_INPUT_INVALID` or

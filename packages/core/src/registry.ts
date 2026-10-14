@@ -23,16 +23,22 @@ import { projectLineage } from "./project-scope.js";
 // aimed at it is refused with the library it moved to (workspace.ts, LEGACY_WORKSPACE_MIGRATED).
 // An entry without it reads as before, and one that has it keeps it when its project is registered
 // to the same library again.
+//
+// TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-511): an entry is taken out again by its project
+// path alone, which need not exist any more (library-unregister). The plan writes nothing; the removal
+// first copies registry.json as it stands to backups/<UTC>-library-unregister/ of the device directory
+// and then replaces the file atomically, under the registry lock. Other entries of the same library
+// stay as they are.
 
 import { execFileSync } from "node:child_process";
-import { readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { copyFile, lstat, mkdir, readFile, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
-import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
+import { assertStrictInstant, canonicalJson, parseStrictInstant } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import { withFileLock } from "./file-lock.js";
 import { writeFileAtomic } from "./atomic-file.js";
-import { ensureDeviceDirectory, registryPath } from "./device-home.js";
+import { backupsPath, ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { openLibrary } from "./ether-library.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 
@@ -264,6 +270,126 @@ export async function unregisterLibrary(projectPathInput: string, home?: string)
     if (entries.length === registry.entries.length) return false;
     await writeRegistry({ ...registry, entries }, directory);
     return true;
+  });
+}
+
+// ---- library-unregister (TCRN-CROSS-SUB-511) ----
+
+export const LIBRARY_UNREGISTER_PLAN_SCHEMA_VERSION = "einzbern.library-unregister-plan.v1" as const;
+export const LIBRARY_UNREGISTER_BACKUP_SUFFIX = "library-unregister" as const;
+
+/** What library-unregister would do, and what --yes true did: the entry and where the registry went first. */
+export interface LibraryUnregisterPlan {
+  readonly schemaVersion: typeof LIBRARY_UNREGISTER_PLAN_SCHEMA_VERSION;
+  // registry.json in the device directory.
+  readonly registry: string;
+  // The one entry whose project path is the one given.
+  readonly entry: RegistryEntry;
+  // Whether the entry's project and library paths still exist on this device.
+  readonly projectPathExists: boolean;
+  readonly libraryPathExists: boolean;
+  // The project paths of the other entries of the same library, which stay.
+  readonly sameLibraryEntries: readonly string[];
+  // How many entries the registry keeps.
+  readonly remaining: number;
+  // backups/<UTC>-library-unregister in the device directory, named by --at; a removal at an instant
+  // whose directory is taken already writes to the next free -2, -3, and so on.
+  readonly backupDirectory: string;
+}
+
+export interface LibraryUnregisterResult extends LibraryUnregisterPlan {
+  // The copy of registry.json as it stood before the removal.
+  readonly backupPath: string;
+}
+
+function backupStamp(at: string): string {
+  return new Date(Number(parseStrictInstant(at) / 1_000_000n)).toISOString().replace(/\.\d{3}Z$/u, "Z").replace(/[-:]/gu, "");
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return false;
+    throw error;
+  }
+}
+
+// The spellings an entry's project path may have: the path as given, made absolute, and its real path
+// when it still exists. A registered project path is a real path, so nothing else can match.
+async function projectPathSpellings(projectPathInput: string): Promise<readonly string[]> {
+  const given = resolve(projectPathInput);
+  const actual = await realpath(given).catch(() => null);
+  return actual === null || actual === given ? [given] : [given, actual];
+}
+
+function unregisterPlan(registry: Registry, spellings: readonly string[], at: string, directory: string): Omit<LibraryUnregisterPlan, "projectPathExists" | "libraryPathExists"> {
+  const matches = registry.entries.filter((entry) => spellings.includes(entry.projectPath));
+  if (matches.length === 0) {
+    fail("LIBRARY_NOT_REGISTERED", `no entry of this device's registry has the project path ${spellings[0]}; library-list lists them`, { file: registryPath(directory) });
+  }
+  if (matches.length > 1) {
+    fail("LIBRARY_REGISTRY_INVALID", `${String(matches.length)} entries of this device's registry have the project path ${spellings[0]}`, { file: registryPath(directory) });
+  }
+  const entry = matches[0]!;
+  return {
+    schemaVersion: LIBRARY_UNREGISTER_PLAN_SCHEMA_VERSION,
+    registry: registryPath(directory),
+    entry,
+    sameLibraryEntries: registry.entries.filter((other) => other !== entry && other.libraryId === entry.libraryId).map((other) => other.projectPath),
+    remaining: registry.entries.length - 1,
+    backupDirectory: join(backupsPath(directory), `${backupStamp(at)}-${LIBRARY_UNREGISTER_BACKUP_SUFFIX}`),
+  };
+}
+
+async function withPathsChecked(plan: Omit<LibraryUnregisterPlan, "projectPathExists" | "libraryPathExists">): Promise<LibraryUnregisterPlan> {
+  return { ...plan, projectPathExists: await pathExists(plan.entry.projectPath), libraryPathExists: await pathExists(plan.entry.libraryPath) };
+}
+
+/**
+ * The plan of taking the entry whose project path is `projectPathInput` out of this device's registry
+ * (TCRN-CROSS-SUB-511): the entry, whether its paths still exist, the other entries of its library
+ * (which stay) and where the registry would be copied first. Writes nothing. LIBRARY_NOT_REGISTERED
+ * when no entry has that project path.
+ */
+export async function planLibraryUnregister(projectPathInput: string, at: string, home?: string): Promise<LibraryUnregisterPlan> {
+  assertStrictInstant(at);
+  const directory = dirname(home === undefined ? registryPath() : registryPath(home));
+  return withPathsChecked(unregisterPlan(await readRegistry(directory), await projectPathSpellings(projectPathInput), at, directory));
+}
+
+// backups/<UTC>-library-unregister, or the first of -2, -3, ... that does not exist yet.
+async function freshBackupDirectory(planned: string): Promise<string> {
+  await ensureDeviceDirectory(dirname(planned));
+  for (let attempt = 1; ; attempt += 1) {
+    const candidate = attempt === 1 ? planned : `${planned}-${String(attempt)}`;
+    try {
+      await mkdir(candidate);
+      return candidate;
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
+    }
+  }
+}
+
+/**
+ * Take the entry whose project path is `projectPathInput` out of this device's registry
+ * (TCRN-CROSS-SUB-511), under the registry lock: registry.json as it stands is copied into
+ * backups/<UTC>-library-unregister/ first, then replaced atomically without that entry. Entries that
+ * share its library id stay. Refused as the plan is when no entry, or more than one, has that path.
+ */
+export async function unregisterLibraryEntry(projectPathInput: string, at: string, home?: string): Promise<LibraryUnregisterResult> {
+  assertStrictInstant(at);
+  const spellings = await projectPathSpellings(projectPathInput);
+  return mutateRegistry(home, async (registry, directory) => {
+    const plan = await withPathsChecked(unregisterPlan(registry, spellings, at, directory));
+    const backupDirectory = await freshBackupDirectory(plan.backupDirectory);
+    const backupPath = join(backupDirectory, "registry.json");
+    await copyFile(plan.registry, backupPath);
+    await writeRegistry({ ...registry, entries: registry.entries.filter((entry) => entry !== plan.entry) }, directory);
+    return { ...plan, backupDirectory, backupPath };
   });
 }
 

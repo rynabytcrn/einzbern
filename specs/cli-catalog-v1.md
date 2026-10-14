@@ -52,9 +52,11 @@ Each entry is `{name, availability, mutates, flags}`, optionally plus
   - `valueShape` — how a value is written where its kind alone does not say
     (TCRN-CROSS-STORY-526, Q15). Optional and descriptive, so the catalog stays v1: a
     reader that does not know the field reads every other one as before. Carried by
-    `decided-in` on the eight writes that may cite an Owner decision —
+    `decided-in` on the twelve writes that may cite an Owner decision —
     `gates-config-set`, `gates-config-remove`, `rule-enable`, `rule-disable`,
-    `settings-set`, `settings-remove`, `variable-set` and `variable-remove` — as
+    `settings-set`, `settings-remove`, `variable-set` and `variable-remove`, and since
+    TCRN-CROSS-STORY-541 (MIN-258 D3) `work-gate-release`, `project-bindings-set`,
+    `project-bindings-remove` and `work-release` (for `--force true`) — as
     `minutes:<id>#D<n>`, so `--help` on any of them shows how to cite one.
 
 ### `--timeout-ms` on the writes that take the library write lock
@@ -137,9 +139,16 @@ append-only; removing a flag or verb requires a new catalog version.
 writes an explicit role and coordination identity through the canonical engine
 writer. `project-bindings-set --project-id --key --value` accepts the typed
 `common-default` and `repositories` keys. `project-bindings-remove` explicitly
-removes a project binding without changing unrelated configuration. These configuration changes have the
-same Atelier-only CLI convention as other Owner configuration; the convention
-is not authenticated-human identity.
+removes a project binding without changing unrelated configuration. A project
+binding is changed in Atelier, or by a model's run that cites an Owner decision
+naming the binding's key with `--decided-in minutes:<id>#D<n>` (TCRN-CROSS-STORY-541,
+MIN-258 D3): the decision is checked inside the write lock and recorded in the event,
+as for the other configuration writes; citing none, a model's run is refused with
+`MODEL_WRITE_REFUSED`, its remedy naming both ways. `chain-declare` keeps a hard
+constraint: it takes no `--decided-in`, a model's run is refused with
+`MODEL_WRITE_REFUSED` and the remedy `declare it on the library page in Atelier`,
+and only a run for Atelier writes. The surface convention is not
+authenticated-human identity.
 
 `work-create` and `work-annotate` accept JSON `--involved-projects`; annotation
 also accepts `--expected-revision`. `work-list --involved-project` accepts a
@@ -200,6 +209,42 @@ setup and migration write it, answers for any project the library holds and has
 not deleted: the only such entry, or the one `--project` names. A project chain
 still needs an entry for the stable project, or the root is `GATES_PROJECT_UNKNOWN`.
 
+## Registry commands
+
+TCRN-CROSS-STORY-541 (MIN-258 D3): `library-unregister --project <path> --at <instant>` takes
+one entry out of this device's registry: the one whose project path is `<path>`, made absolute,
+or its real path while it still exists. The path need not exist any more. Without `--yes true`
+it answers `LIBRARY_UNREGISTER_PLAN_READY` with the plan and writes nothing: the `entry`,
+`projectPathExists`, `libraryPathExists`, `sameLibraryEntries` (the project paths of the other
+entries of the same library, which stay), `remaining` and `backupDirectory`. With `--yes true`
+it copies `registry.json` into `backups/<UTC>-library-unregister/` of the device directory
+(named by `--at`, or the first free `-2`, `-3`, … when that directory is taken) and replaces the
+registry atomically without the entry, under the registry lock; it answers
+`LIBRARY_UNREGISTERED` with the plan and `backupPath`. No entry with that project path is
+`LIBRARY_NOT_REGISTERED`. Like `library-register` it writes this device's configuration and no
+library, so it takes no `--timeout-ms` and the model write barrier does not apply; a caller runs
+it with `--yes true` once the user agreed. `doctor`'s registry check lists each entry whose
+library path no longer exists in `detail.hints` (`REGISTRY_LIBRARY_MISSING`) without changing
+its answer.
+
+## Device directory commands
+
+TCRN-CROSS-STORY-541 (MIN-258 D3): `device-clean --at <instant> [--home <home>]` clears what
+installs and updates gather in the device directory (`<home>/.einzbern` for `--home`, as the
+machine-settings verbs take it; otherwise `EINZBERN_HOME` or `~/.einzbern`). It lists each staging
+in `trash/` (`install-*`, `setup-update-*`) and each entry of `backups/`, with `kind`, `version`,
+`bytes` and `reason`, judged against `engine/current`: `keep` holds the pre-update backups
+(`…pre-update-<version>`) of the current and the previous version, the stagings whose unpacked
+release (`einzbern-<version>`) is the current version, and any other entry of `trash/`; `remove`
+holds every other staging and backup, with `removeBytes`; `refused` holds a symbolic link, or an
+area whose real path is not in the device directory, which is never touched. Without `--yes true`
+it answers `DEVICE_CLEAN_PLAN_READY` with that plan and writes nothing. With `--yes true` it makes
+the plan again, checks each entry of `remove` once more and deletes it with what it holds, links
+removed as links and never followed, answering `DEVICE_CLEANED` with the plan, `removed` (path and
+bytes of each) and `failed` (path and reason of each not deleted). Without `engine/current` it is
+`DEVICE_CLEAN_ENGINE_UNKNOWN`. It writes no library and takes no `--timeout-ms`; a caller runs it
+with `--yes true` once the user agreed.
+
 ## Proposal commands
 
 TCRN-CROSS-STORY-527 (MIN-257 D6, Q6): `gates-config-propose` and `rule-propose` record a change
@@ -210,7 +255,10 @@ remove`; `rule-propose` takes `--action enable` (the default, with an optional `
 `disable`. Both require `--actor`, recorded as the proposer. `proposal-approve` and
 `proposal-reject` settle one proposal by its `--key` (`gate:<name>` or `rule:<id>`) and the
 `--proposed-at` the caller read; they run for Atelier only (`MODEL_WRITE_REFUSED`, with
-`details.target` and `details.remedy`, otherwise, and nothing is appended). `rule-propose`,
+`details.target` and `details.remedy`, otherwise, and nothing is appended). A proposal is the
+way for a model that holds no Owner decision; one that holds a decision naming the gate or the
+rule writes the change directly, `gates-config-set`, `gates-config-remove`, `rule-enable` or
+`rule-disable` with `--decided-in minutes:<id>#D<n>`, and proposes nothing. `rule-propose`,
 `proposal-approve` and `proposal-reject` take `--workspace` or `--project` as `rule-list` does;
 given neither, the current directory's registered project answers. `gates-config-list` and
 `rule-list` take `--status declared|pending|rejected`: `declared`, the default, keeps each list as

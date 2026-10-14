@@ -297,7 +297,8 @@ test("WSE-2 replay: a duplicate enable event and a pre-enable actor are both ref
 // and decidedIn with decidedInLibraryId -- and no other operation may. Without them a payload is
 // exactly what it was.
 test("SUB-452: buildEventPayload admits the optional authorization extras for the configuration writes only", () => {
-  assert.deepEqual(Object.keys(EVENT_PAYLOAD_OPTIONAL_EXTRAS).sort(), ["config.record.removed", "config.record.set", "settings.removed", "settings.updated"]);
+  // TCRN-CROSS-SUB-510: gate.updated as well, which work-gate-release appends.
+  assert.deepEqual(Object.keys(EVENT_PAYLOAD_OPTIONAL_EXTRAS).sort(), ["config.record.removed", "config.record.set", "gate.updated", "settings.removed", "settings.updated"]);
   for (const extras of Object.values(EVENT_PAYLOAD_OPTIONAL_EXTRAS)) assert.deepEqual([...extras], ["decidedIn", "decidedInLibraryId", "surface"]);
   assert.deepEqual([...WRITE_SURFACES], ["atelier", "cli"]);
   const record = { collection: "gate", key: "unit" };

@@ -120,8 +120,9 @@ and never guess an answer.
      store it is about. Handle it as "Knowledge carried" below says.
    - `SETUP_LIBRARY_CONFLICT`: this device registered the project to another library, or a library
      migrated before names another primary project than its row's `projectId`. A primary project
-     changes only through `chain-declare`, run in Atelier; from a model it is refused with
-     `MODEL_WRITE_REFUSED`, so tell the user.
+     changes only through `chain-declare`, which the user declares on the library page in Atelier;
+     from a model it is refused with `MODEL_WRITE_REFUSED` even when it cites a decision, so tell
+     the user.
    - `SETUP_ANSWER_INVALID` on a partition's library: its row's `projectId` is not a live project of
      its old chain (or, for a library migrated before, of the library), or the `--project`
      partition's row has `chainRole` `project`, its old chain holds live projects and the row names
@@ -261,10 +262,12 @@ language gates still apply. Reconstruction is a later migration action, never an
   (`--workspace <library>`, the refusal's remedy).
 - A gate that was pending or blocked in the old chain stays so in the library and keeps holding
   its work item back from done; the refusal, `WORKSPACE_GATE_PENDING`, names the gate. It is
-  released only in Atelier: `work-gate-release --id <gate> --reason <why> --actor <actor> --at <UTC>`
-  run with `EINZBERN_SURFACE=atelier`, which records who released it, when and why. Run from a
-  model, it is refused with `MODEL_WRITE_REFUSED`: do not set that surface yourself; tell the user
-  which gates are theirs to release. `work-gate-list --status all` lists them.
+  released in Atelier, on its migrated-gate page, or by you when the user's decision names it:
+  `work-gate-release --id <gate> --reason <why> --actor <actor> --at <UTC> --decided-in
+  minutes:<id>#D<n>`, citing minutes decided by `owner:governance` whose decision names the gate's
+  id. Either way the gate records who released it, when and why. Without a decision your run is
+  refused with `MODEL_WRITE_REFUSED`: do not set `EINZBERN_SURFACE` yourself; tell the user which
+  gates are theirs to release, or ask for the decision. `work-gate-list --status all` lists them.
 
 ## When a migration created a second project
 

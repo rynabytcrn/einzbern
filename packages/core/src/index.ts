@@ -722,6 +722,8 @@ export { configProjectionStatus } from "./library-config.js";
 export { defaultImportTarget, importLegacyWorkspace } from "./legacy-import.js";
 // TCRN-CROSS-STORY-470 R1: this device's registry of libraries and resolution from a directory.
 export { readRegistry, registerLibrary, resolveLibrary } from "./registry.js";
+// TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-511): library-unregister's plan and removal of one entry.
+export { planLibraryUnregister, unregisterLibraryEntry } from "./registry.js";
 // TCRN-CROSS-STORY-470 R2: the cloud folders a cloud-hosted flag is suggested for.
 export { suggestCloudHosted } from "./cloud-roots.js";
 // TCRN-CROSS-STORY-470 R3: moving a library, and the tombstone its old place keeps.
@@ -774,6 +776,8 @@ export type { RuleChange, RuleState, RuleStatus } from "./rules.js";
 // TCRN-CROSS-STORY-471 R2, R3: the engine versions installed on this device, the pointer to the one
 // in use, and switching between them.
 export { listEngines, rollbackEngine, updateEngine } from "./engine-home.js";
+// TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-512): device-clean's plan and its run.
+export { applyDeviceClean, deviceCleanHome, planDeviceClean } from "./device-clean.js";
 // TCRN-CROSS-STORY-481 R4 (TCRN-CROSS-SUB-331): the oldest Node.js this engine runs on, and the check
 // that refuses an older one with ENGINE_NODE_TOO_OLD {required, actual}. The CLI entry and the hook
 // entry import node-floor.js itself rather than this barrel: they ask before the rest of the engine loads.

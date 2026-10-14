@@ -58,7 +58,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 
 - `SETUP_ANSWER_INVALID`：行里的 `projectId` 不是旧链里未删除的项目，或库已迁移过而它不是库里未删除的项目。该分区的 `action` 为 `blocked`，消息逐个列出可选的项目，写法是 `<id> "<名称>" (<n> work items)`。
 - `SETUP_ANSWER_INVALID`：`--project` 所指的分区是 `chainRole` 为 `"project"` 的行，旧链有未删除的项目，行里却没写 `projectId`。消息列出候选；setup 不替用户选，也不在旁边另建配置项目。由用户从 `projectCandidates` 里选定一个，写进该行，再计划一次。
-- `SETUP_LIBRARY_CONFLICT`：库已迁移过，链身份写的是另一个 `primaryProjectId`。主项目只能用 `chain-declare` 改，它在 Atelier 面运行，模型直接运行会被拒绝（`MODEL_WRITE_REFUSED`）。
+- `SETUP_LIBRARY_CONFLICT`：库已迁移过，链身份写的是另一个 `primaryProjectId`。主项目只能用 `chain-declare` 改，由人在 Atelier 的库页声明；模型经 CLI 运行一律被拒绝，引用决定也不行（`MODEL_WRITE_REFUSED`，补救提示 `declare it on the library page in Atelier`）。
 
 ## 执行
 
@@ -179,8 +179,8 @@ dry-run、计划的分区项和执行回执都列出 `knowledgeOmission`：
   - 同一秒的备份已在时拒绝 `KNOWLEDGE_ALREADY_EXISTS`：换一个更晚的 `--at` 重跑。
 - 旧工作区留在原处，仍可只读打开。对它写入会返回 `LEGACY_WORKSPACE_MIGRATED`，其中 `movedTo` 指向新库，改用 `--workspace <库>` 即可。没有迁移过的旧布局，写入仍返回 `LEGACY_WORKSPACE_READ_ONLY`。
 - 旧链里未满足的 gate，在新库里保持原状态，仍挡住所绑工单转 done；拒绝码 `WORKSPACE_GATE_PENDING` 会点名这张 gate。
-  - 解除只能在 Atelier 面：以 `EINZBERN_SURFACE=atelier` 运行 `work-gate-release --id <gate> --reason <原因> --actor <操作者> --at <UTC 时刻>`，记录谁、何时、为何。
-  - 模型直接运行会被拒绝（`MODEL_WRITE_REFUSED`）。
+  - 解除有两条路，都记录谁、何时、为何：在 Atelier 的迁移门页放行；或由模型引用点名这张 gate（写它的 id）的 Owner 决定运行 `work-gate-release --id <gate> --reason <原因> --actor <操作者> --at <UTC 时刻> --decided-in minutes:<id>#D<n>`（TCRN-CROSS-STORY-541），决定在写锁内核对，事件记下 `decidedIn`。
+  - 模型不引用决定运行会被拒绝（`MODEL_WRITE_REFUSED`），补救提示写出这两条路；决定不合格报 `MODEL_WRITE_AUTHORIZATION_INVALID`。
   - `work-gate-list --status all` 列出这些 gate。
 - 库里的事件数与头哈希：
   - 项目自己的库，第一条流前段就是旧链，到旧头为止；之后是本机在迁移中写入的语言与受管段记录，写入者是安装向导 `agent:setup`；

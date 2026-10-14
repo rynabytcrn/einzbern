@@ -4344,6 +4344,10 @@ export interface ReleaseGateInput {
   readonly id: string;
   readonly reason: string;
   readonly actorId: string;
+  // TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): how the release was let through -- surface atelier,
+  // or a model's run citing an Owner decision that names the gate -- recorded in its gate.updated
+  // event beside the record, as a configuration write records it; left out, the event is as it was.
+  readonly authorization?: WriteAuthorization;
 }
 
 /**
@@ -4351,8 +4355,9 @@ export interface ReleaseGateInput {
  * gate.updated to satisfied whose only extensions delta is the release entry, recording who
  * released it, when (the event's instant) and why, which replay checks again. The actor is always
  * named, whether or not the chain signs its events. A gate that is deleted or already satisfied is
- * refused with WORKSPACE_INPUT_INVALID, and nothing is written. Only Atelier runs this through the
- * CLI (work-gate-release refuses a model with MODEL_WRITE_REFUSED).
+ * refused with WORKSPACE_INPUT_INVALID, and nothing is written. Through the CLI, work-gate-release
+ * runs it for Atelier, or for a model's run that cites an Owner decision naming the gate
+ * (TCRN-CROSS-SUB-510); it refuses any other model's run with MODEL_WRITE_REFUSED.
  */
 export async function releaseGate(workspaceRoot: string, input: ReleaseGateInput & WorkspaceMutationOptions): Promise<WorkspaceState> {
   return appendEvent(workspaceRoot, (state) => releaseGateDelta(state, input), input);
@@ -4382,7 +4387,7 @@ function releaseGateDelta(state: WorkspaceState, input: ReleaseGateInput & { rea
   }
   const gates = sortExtensionRecords([...state.gates.filter((gate) => gate.id !== record.id), record]);
   return {
-    payload: { operation: "gate.updated", record: record as unknown as JsonValue },
+    payload: buildEventPayload("gate.updated", record as unknown as JsonValue, undefined, writeAuthorizationExtras(input.authorization)),
     projects: state.projects,
     work: state.work,
     gates,

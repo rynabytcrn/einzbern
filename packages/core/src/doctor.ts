@@ -9,7 +9,9 @@
 //   hooks-present     each host carries exactly one Einzbern hook, as host-hooks.ts renders it, and
 //                     the launcher that hook runs is there
 //   skill-copies      both copies of the skill hold the tree skills.json records (skill-copies.ts)
-//   registry          the registry parses and resolves this project to the library it recorded
+//   registry          the registry parses and resolves this project to the library it recorded;
+//                     an entry whose library path no longer exists is a hint (detail.hints), which
+//                     leaves the check's answer as it is (TCRN-CROSS-STORY-541, TCRN-CROSS-SUB-511)
 //   library-format    the engine answering, and the engine this device has current, both read the
 //                     library's format and meet its minimum engine version
 //   device-stream     this device's stream is writable: the library's write lock can be taken and a
@@ -144,6 +146,8 @@ interface DoctorContext {
 interface ProjectLibrary {
   readonly registryCause: string | null;
   readonly registryError: string | null;
+  // Every entry of the registry as it was read; none when it did not read.
+  readonly registryEntries: readonly RegistryEntry[];
   readonly entry: RegistryEntry | null;
   readonly via: ResolutionPath | null;
   // The registered library, or the project's own when the registry does not resolve the project.
@@ -390,13 +394,16 @@ async function locateLibrary(context: DoctorContext): Promise<ProjectLibrary> {
   let registryCause: string | null = null;
   let registryError: string | null = null;
   let found: { readonly entry: RegistryEntry; readonly via: ResolutionPath } | null = null;
+  let registryEntries: readonly RegistryEntry[] = [];
   try {
-    found = await findEntry(await readRegistry(context.deviceHome), context.projectRoot);
+    const registry = await readRegistry(context.deviceHome);
+    registryEntries = registry.entries;
+    found = await findEntry(registry, context.projectRoot);
   } catch (error) {
     registryCause = causeOf(error);
     registryError = messageOf(error);
   }
-  const base = { registryCause, registryError, entry: found?.entry ?? null, via: found?.via ?? null };
+  const base = { registryCause, registryError, registryEntries, entry: found?.entry ?? null, via: found?.via ?? null };
   if (found !== null) return { ...base, libraryPath: found.entry.libraryPath, librarySource: "registry" };
   const own = join(context.projectRoot, DIRECTORY.library);
   try {
@@ -427,6 +434,33 @@ async function manifestLibraryId(libraryPath: string): Promise<{ readonly id: st
   return typeof id === "string" ? { id, cause: null } : { id: null, cause: "LIBRARY_MANIFEST_INVALID" };
 }
 
+// TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-511): the hint the registry check gives for an
+// entry whose library path no longer exists on this device, and the verb that takes such an entry out.
+export const DOCTOR_REGISTRY_LIBRARY_MISSING = "REGISTRY_LIBRARY_MISSING" as const;
+export const DOCTOR_REGISTRY_LIBRARY_MISSING_REMEDY = "library-unregister" as const;
+
+// Each entry whose library path is gone, as a hint: a path that cannot be looked at is not called gone.
+async function missingLibraryHints(entries: readonly RegistryEntry[]): Promise<readonly JsonValue[]> {
+  const hints: JsonValue[] = [];
+  for (const entry of entries) {
+    let kind: Awaited<ReturnType<typeof entryKind>>;
+    try {
+      kind = await entryKind(entry.libraryPath);
+    } catch {
+      continue;
+    }
+    if (kind !== null) continue;
+    hints.push({
+      hint: DOCTOR_REGISTRY_LIBRARY_MISSING,
+      projectPath: entry.projectPath,
+      libraryPath: entry.libraryPath,
+      libraryId: entry.libraryId,
+      remedy: `${DOCTOR_REGISTRY_LIBRARY_MISSING_REMEDY} --project ${entry.projectPath} --at <UTC>, then with --yes true`,
+    });
+  }
+  return hints;
+}
+
 async function registryCheck(context: DoctorContext, located: ProjectLibrary): Promise<DoctorCheck> {
   const entry = located.entry;
   const detail: Detail = {
@@ -435,6 +469,8 @@ async function registryCheck(context: DoctorContext, located: ProjectLibrary): P
     via: located.via,
     libraryPath: entry?.libraryPath ?? null,
     libraryId: entry?.libraryId ?? null,
+    // Hints, not causes: they never turn the check red.
+    hints: [...await missingLibraryHints(located.registryEntries)],
   };
   if (located.registryCause !== null) return result("registry", [located.registryCause], { ...detail, error: located.registryError });
   if (entry === null) return result("registry", ["LIBRARY_NOT_REGISTERED"], detail);

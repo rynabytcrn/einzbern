@@ -75,7 +75,7 @@ rule-resolve --section <段 id> --action overwrite|keep|unmanage [--force true] 
 
 ### 提交待批准
 
-模型不能直接启停原则（上一节），但可以提交待批准的启停，由人在 Atelier 的规则页里批准或拒绝（TCRN-CROSS-STORY-527）：
+模型要启停原则有两条路（TCRN-CROSS-STORY-541，MIN-258 D3）：手里有点名这条原则 id 的 Owner 决定时，直接用上一节的 `rule-enable` 或 `rule-disable` 加 `--decided-in` 写入，不必提议；没有决定时，提交待批准的启停，由人在 Atelier 的规则页里批准或拒绝（TCRN-CROSS-STORY-527）：
 
 ```text
 rule-propose --id <规则 id> [--action enable|disable] [--order <正整数>] [--project <目录>] --actor <行动者> --at <时刻>

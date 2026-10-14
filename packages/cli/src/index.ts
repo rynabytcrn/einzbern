@@ -122,12 +122,17 @@ import {
   readRegistry,
   registerLibrary,
   resolveLibrary,
+  planLibraryUnregister,
+  unregisterLibraryEntry,
   suggestCloudHosted,
   readLibraryTombstone,
   relocateLibrary,
   listEngines,
   rollbackEngine,
   updateEngine,
+  applyDeviceClean,
+  deviceCleanHome,
+  planDeviceClean,
   libraryUpgradeReadiness,
   RELATION_NAMES,
   REVERSE_RELATION_NAMES,
@@ -1282,14 +1287,21 @@ function writeSettingsState(io: CliIo, rawState: Awaited<ReturnType<typeof mater
 export const SURFACE_ENVIRONMENT_VARIABLE = "EINZBERN_SURFACE" as const;
 export const ATELIER_SURFACE = "atelier" as const;
 export const MODEL_WRITE_REMEDY = "change it in Atelier" as const;
-// TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-453): the eight writes that take --decided-in
-// (gates-config-set and -remove, rule-enable and -disable, settings-set and -remove, variable-set and
-// -remove) name that way out in their refusal. The writes that take no decision -- work-gate-release,
-// project-bindings-set and -remove, chain-declare -- keep MODEL_WRITE_REMEDY.
+// TCRN-CROSS-STORY-526 (MIN-256; TCRN-CROSS-SUB-453): the writes that take --decided-in name that way
+// out in their refusal. TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-510): they are twelve --
+// gates-config-set and -remove, rule-enable and -disable, settings-set and -remove, variable-set and
+// -remove, and now work-gate-release, project-bindings-set and -remove and work-release --force.
 export const MODEL_WRITE_DECISION_REMEDY = "change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>" as const;
+// TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-510): chain-declare changes a library's role and the
+// coordination library it trusts. It is the one write a model's run is refused even when it cites a
+// decision (a hard constraint, r7-survey S6), and Atelier's library page declares it (TCRN-CROSS-SUB-513).
+export const MODEL_WRITE_LIBRARY_PAGE_REMEDY = "declare it on the library page in Atelier" as const;
 
-/** What a write the barrier guards would change: a setting, a variable, a Command Spell rule or a gate. */
-export type ModelWriteSubject = { readonly key: string } | { readonly name: string } | { readonly rule: string } | { readonly gate: string };
+/**
+ * What a write the barrier guards would change: a setting or a project binding (`key`), a variable, a
+ * Command Spell rule, a gate, or the lease on a work item (`workId`, TCRN-CROSS-SUB-510).
+ */
+export type ModelWriteSubject = { readonly key: string } | { readonly name: string } | { readonly rule: string } | { readonly gate: string } | { readonly workId: string };
 
 /**
  * What lets a write the barrier guards through, before anything is read (TCRN-CROSS-SUB-453): the
@@ -1301,10 +1313,13 @@ export interface ModelWritePermit {
   readonly surface: WriteSurface;
   readonly decidedIn?: string;
   readonly target: string;
+  // TCRN-CROSS-SUB-510: "work" when the target is a work item's id, which a decision may name by its
+  // external key instead (verifyWriteAuthorization).
+  readonly targetKind?: "work";
 }
 
 function subjectName(subject: ModelWriteSubject): string {
-  return "key" in subject ? subject.key : "rule" in subject ? subject.rule : "gate" in subject ? subject.gate : subject.name;
+  return "key" in subject ? subject.key : "rule" in subject ? subject.rule : "gate" in subject ? subject.gate : "workId" in subject ? subject.workId : subject.name;
 }
 
 /**
@@ -1319,6 +1334,9 @@ function subjectName(subject: ModelWriteSubject): string {
  * MODEL_WRITE_AUTHORIZATION_INVALID here) is let through to be checked inside the write lock, and its
  * refusal names --decided-in. Answers the permit the write records: surface atelier for a run for
  * Atelier, surface cli for a cited decision, and nothing for a modelWritable write that cites none.
+ * TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): work-gate-release passes its gate's id as `gate`,
+ * project-bindings-set and -remove the binding's key as `key`, and work-release --force the work
+ * item's id as `workId`; all three pass `citation`.
  */
 export function assertModelWriteAllowed(
   subject: ModelWriteSubject,
@@ -1328,12 +1346,13 @@ export function assertModelWriteAllowed(
 ): ModelWritePermit | undefined {
   const name = subjectName(subject);
   const surface: WriteSurface = environment[SURFACE_ENVIRONMENT_VARIABLE] === ATELIER_SURFACE ? "atelier" : "cli";
+  const kind: { readonly targetKind?: "work" } = "workId" in subject ? { targetKind: "work" } : {};
   const decidedIn = citation?.decidedIn;
   if (decidedIn !== undefined) {
     parseDecidedIn(decidedIn, name);
-    return { surface, decidedIn, target: name };
+    return { surface, decidedIn, target: name, ...kind };
   }
-  if (surface === "atelier") return { surface, target: name };
+  if (surface === "atelier") return { surface, target: name, ...kind };
   if (modelWritable) return undefined;
   const target = "key" in subject
     ? `setting ${subject.key}`
@@ -1341,7 +1360,9 @@ export function assertModelWriteAllowed(
       ? `rule ${subject.rule}`
       : "gate" in subject
         ? `gate ${subject.gate}`
-        : `variable ${subject.name}`;
+        : "workId" in subject
+          ? `the lease on ${subject.workId}`
+          : `variable ${subject.name}`;
   throw new WorkflowCliError("MODEL_WRITE_REFUSED", `${target} is changed in Atelier; a model does not write it through the CLI`, {
     ...subject,
     remedy: citation === undefined ? MODEL_WRITE_REMEDY : MODEL_WRITE_DECISION_REMEDY,
@@ -1367,7 +1388,10 @@ function assertSettingWriteAllowed(key: string, decidedIn: string | undefined): 
 async function writeAuthorization(permit: ModelWritePermit | undefined, libraryRoot: string): Promise<{ readonly authorization?: WriteAuthorization }> {
   if (permit === undefined) return {};
   if (permit.decidedIn === undefined) return { authorization: { surface: permit.surface } };
-  const verified = await verifyWriteAuthorization({ state: await materializeWorkspace(libraryRoot), decidedIn: permit.decidedIn, target: permit.target });
+  const verified = await verifyWriteAuthorization({
+    state: await materializeWorkspace(libraryRoot), decidedIn: permit.decidedIn, target: permit.target,
+    ...(permit.targetKind === undefined ? {} : { targetKind: permit.targetKind }),
+  });
   return { authorization: { surface: permit.surface, decidedIn: verified.decidedIn, decidedInLibraryId: verified.libraryId } };
 }
 
@@ -1511,8 +1535,9 @@ function writeTemplateAdmissionState(
 // verb. New verbs MUST ship a catalog entry (SDC-1); the p3-cli-catalog parity
 // test enforces two-way name equality with the dispatcher.
 // TCRN-CROSS-STORY-526 (Q15; TCRN-CROSS-SUB-455): a flag may carry valueShape, how its value is
-// written; the eight writes that take --decided-in show minutes:<id>#D<n> there, so their --help says
-// how to cite an Owner decision.
+// written; the writes that take --decided-in show minutes:<id>#D<n> there, so their --help says how to
+// cite an Owner decision. TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): twelve since work-gate-release,
+// project-bindings-set and -remove and work-release took it.
 export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-380: the three verbs that make workspace.generatedArtifactsPath a
   // real address. artifact-put mutates the workspace (a blob and a manifest line); the
@@ -1530,6 +1555,9 @@ export const COMMAND_CATALOG = Object.freeze([
   // name the stream, sequence and event where it stops being provable. Zero writes.
   { name: "chain-validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "commands", availability: "cli", mutates: false, flags: [] },
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-512): the stagings and backups of the device
+  // directory, the plan without --yes true and the clearing with it; --home as machine-settings take it.
+  { name: "device-clean", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }, { name: "home", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-480 R4, AC5: doctor's eight checks of this device and one project, --project or
   // the current directory. It changes nothing: device-stream's lock and probe file go again.
   { name: "doctor", availability: "cli", mutates: false, flags: [{ name: "project", required: false, valueKind: "string" }] },
@@ -1586,6 +1614,9 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "library-list", availability: "cli", mutates: false, flags: [] },
   { name: "library-register", availability: "cli", mutates: true, flags: [{ name: "project", required: true, valueKind: "string" }, { name: "library", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }, { name: "git-remote", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "library-resolve", availability: "cli", mutates: false, flags: [{ name: "cwd", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-511): take one entry out of the registry by its
+  // project path; the plan without --yes true, the removal (registry copied to backups first) with it.
+  { name: "library-unregister", availability: "cli", mutates: true, flags: [{ name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }] },
   // STORY-281: machine-level portal preferences. No workspace and no chain write lock:
   // this layer is not chain-backed, so there is no head to write against — see
   // packages/core/src/machine-settings.ts for why a laptop's default theme is not
@@ -1600,8 +1631,8 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "minutes-record", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "decisions", required: false, valueKind: "list" }, { name: "decisions-file", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "work-ids", required: false, valueKind: "list" }, { name: "external-key", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "withdraws", required: false, valueKind: "list" }, { name: "coexists", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "minutes-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }] },
-  { name: "project-bindings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "key", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "project-bindings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "json" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
+  { name: "project-bindings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "key", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
+  { name: "project-bindings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "json" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "project-context", availability: "cli", mutates: false, flags: [{ name: "reference", required: true, valueKind: "json" }] },
   { name: "project-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "parent-project-id", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "project-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
@@ -1660,6 +1691,8 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-528 (MIN-256): work leases. work-claim claims a work item for --actor from --at
   // for --ttl (<n>m or <n>h, 2h when left out) or renews the claim; work-release releases it, and
   // another actor's running lease only with --force true for Atelier (MODEL_WRITE_REFUSED otherwise).
+  // TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): or with --force true and --decided-in citing an Owner
+  // decision that names the work item.
   { name: "work-claim", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "ttl", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
@@ -1667,11 +1700,13 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-489 (MIN-235 D17, D11, MIN-238 D4): the gates a migration carried over. work-gate-list
   // reads them, by default the ones that still hold a work item back from done; work-gate-release
   // releases one, recording who, when and why, and runs for Atelier only (MODEL_WRITE_REFUSED otherwise).
+  // TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): or for a model's run whose --decided-in cites an Owner
+  // decision naming the gate.
   { name: "work-gate-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "work-gate-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "reason", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
+  { name: "work-gate-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "reason", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "involved-project", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }] },
-  { name: "work-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
+  { name: "work-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R4: work-transition and work-batch take --project, the project the gates of a
   // Story going to done run in.
@@ -2177,6 +2212,26 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     }));
     return;
   }
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-511): take one entry out of this device's
+  // registry by its project path, which need not exist any more. Without --yes true it answers the
+  // plan (LIBRARY_UNREGISTER_PLAN_READY) and writes nothing; with it, registry.json is copied into
+  // backups/<UTC>-library-unregister/ of the device directory and replaced without the entry
+  // (LIBRARY_UNREGISTERED). Other entries of the same library stay. Like library-register it writes
+  // this device's configuration, never a library, so the model write barrier does not apply; whoever
+  // runs it with --yes true has the user's go-ahead first (the skill's references/doctor.md).
+  if (command === "library-unregister") {
+    const values = parseArguments(rest, ["project", "at", "yes"]);
+    required(values, ["project", "at"]);
+    const confirmed = booleanValue(values.yes, "yes");
+    const project = values.project ?? "";
+    const at = values.at ?? "";
+    if (!confirmed) {
+      io.write(canonicalJson({ reasonCode: "LIBRARY_UNREGISTER_PLAN_READY", ...await planLibraryUnregister(project, at) } as unknown as JsonValue));
+      return;
+    }
+    io.write(canonicalJson({ reasonCode: "LIBRARY_UNREGISTERED", ...await unregisterLibraryEntry(project, at) } as unknown as JsonValue));
+    return;
+  }
   // TCRN-CROSS-STORY-478 R2, R4, R5 (MIN-227 D14, D17): render the engine's sections into the
   // project's AGENTS.md and CLAUDE.md: the variable sections and, when this device's
   // agents.navigation is written, the navigation section; CLAUDE.md's import section unless it
@@ -2394,6 +2449,26 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values["cloud-hosted"] === undefined ? {} : { cloudHosted: booleanValue(values["cloud-hosted"], "cloud-hosted") }),
     });
     io.write(canonicalJson(report as unknown as JsonValue));
+    return;
+  }
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-512; r7 Q8): clear the stagings and backups the
+  // device directory gathers (device-clean.ts). Without --yes true it answers the plan
+  // (DEVICE_CLEAN_PLAN_READY): each staging in trash/ and each entry of backups/, kept, cleared or
+  // refused, with its size and reason; the pre-update backups of the current and the previous engine
+  // version and the stagings of the current version are kept. With --yes true it deletes the entries
+  // the plan clears, each checked again, and names each (DEVICE_CLEANED). --home is the user's home
+  // whose .einzbern is cleaned, as the machine-settings verbs take it. It writes this device's
+  // directory and no library; whoever runs it with --yes true has the user's go-ahead first.
+  if (command === "device-clean") {
+    const values = parseArguments(rest, ["at", "yes", "home"]);
+    required(values, ["at"]);
+    const confirmed = booleanValue(values.yes, "yes");
+    const input = { deviceHome: deviceCleanHome(values.home), at: values.at ?? "" };
+    if (!confirmed) {
+      io.write(canonicalJson({ reasonCode: "DEVICE_CLEAN_PLAN_READY", ...await planDeviceClean(input) } as unknown as JsonValue));
+      return;
+    }
+    io.write(canonicalJson({ reasonCode: "DEVICE_CLEANED", ...await applyDeviceClean(input) } as unknown as JsonValue));
     return;
   }
   // TCRN-CROSS-STORY-471 R2, R3 (engine-home.ts): the device's engine versions. engine-list is also
@@ -3348,18 +3423,21 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     writeState(io, state, projectSummary(state.projects.find((entry) => entry.id === (values.id ?? ""))!));
     return;
   }
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-510): a project binding is changed in Atelier, or
+  // by a model's run whose --decided-in cites an Owner decision naming the binding's key
+  // (common-default or repositories), checked inside the write lock and recorded in the event.
   if (command === "project-bindings-remove") {
-    const values = parseArguments(rest, [...shared, "project-id", "key", "actor"]); required(values, [...requiredShared, "project-id", "key"]);
-    assertModelWriteAllowed({ key: values.key! }, false);
+    const values = parseArguments(rest, [...shared, "project-id", "key", "actor", "decided-in"]); required(values, [...requiredShared, "project-id", "key"]);
+    const permit = assertModelWriteAllowed({ key: values.key! }, false, process.env, { decidedIn: values["decided-in"] });
     if (!["common-default", "repositories"].includes(values.key!)) fail("CLI_ARGUMENT_MALFORMED", "key");
-    const state = await withWriteLock(values.workspace!, values.at!, async () => removeConfigRecord(values.workspace!, { collection: "chain", key: values.key!, projectId: values["project-id"]!, occurredAt: values.at!, ...(values.actor ? { actorId: values.actor } : {}) }));
+    const state = await withWriteLock(values.workspace!, values.at!, async () => removeConfigRecord(values.workspace!, { collection: "chain", key: values.key!, projectId: values["project-id"]!, occurredAt: values.at!, ...(values.actor ? { actorId: values.actor } : {}), ...await writeAuthorization(permit, values.workspace!) }));
     writeState(io, state); return;
   }
   if (command === "project-bindings-set") {
-    const values = parseArguments(rest, [...shared, "project-id", "key", "value", "actor"]); required(values, [...requiredShared, "project-id", "key", "value"]);
-    assertModelWriteAllowed({ key: values.key! }, false);
+    const values = parseArguments(rest, [...shared, "project-id", "key", "value", "actor", "decided-in"]); required(values, [...requiredShared, "project-id", "key", "value"]);
+    const permit = assertModelWriteAllowed({ key: values.key! }, false, process.env, { decidedIn: values["decided-in"] });
     if (!["common-default", "repositories"].includes(values.key!)) fail("CLI_ARGUMENT_MALFORMED", "key");
-    const state = await withWriteLock(values.workspace!, values.at!, async () => setConfigRecord(values.workspace!, { collection: "chain", key: values.key!, projectId: values["project-id"]!, value: jsonValue(values.value!, "value"), occurredAt: values.at!, ...(values.actor ? { actorId: values.actor } : {}) }));
+    const state = await withWriteLock(values.workspace!, values.at!, async () => setConfigRecord(values.workspace!, { collection: "chain", key: values.key!, projectId: values["project-id"]!, value: jsonValue(values.value!, "value"), occurredAt: values.at!, ...(values.actor ? { actorId: values.actor } : {}), ...await writeAuthorization(permit, values.workspace!) }));
     writeState(io, state); return;
   }
   if (command === "chain-identity") {
@@ -3367,9 +3445,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const state = await materializeWorkspace(values.workspace!);
     io.write(canonicalJson({ reasonCode: "CHAIN_IDENTITY_READY", libraryId: state.metadata.workspaceId, identity: chainIdentity(state), status: chainIdentity(state) === null ? "unclassified" : "declared" })); return;
   }
+  // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-510): chain-declare keeps its hard constraint. It
+  // takes no --decided-in, and a model's run is refused with MODEL_WRITE_REFUSED whose remedy is
+  // Atelier's library page (MODEL_WRITE_LIBRARY_PAGE_REMEDY); only a run for Atelier writes.
   if (command === "chain-declare") {
     const values = parseArguments(rest, [...shared, "project-id", "role", "coordination-library-id", "actor"]); required(values, [...requiredShared, "role", "coordination-library-id"]);
-    assertModelWriteAllowed({ key: "chain.identity" }, false);
+    if (process.env[SURFACE_ENVIRONMENT_VARIABLE] !== ATELIER_SURFACE) {
+      throw new WorkflowCliError("MODEL_WRITE_REFUSED", "a library's chain identity is declared on its page in Atelier; a model does not declare it through the CLI, citing a decision or not", {
+        key: "chain.identity",
+        remedy: MODEL_WRITE_LIBRARY_PAGE_REMEDY,
+      });
+    }
     if (!["coordination", "project"].includes(values.role!)) fail("CLI_ARGUMENT_MALFORMED", "role");
     const state = await withWriteLock(values.workspace!, values.at!, async () => declareChainIdentity(values.workspace!, { role: values.role as "coordination" | "project", coordinationLibraryId: values["coordination-library-id"]!, ...(values["project-id"] === undefined ? {} : { primaryProjectId: values["project-id"] }) }, { occurredAt: values.at!, ...(values.actor ? { actorId: values.actor } : {}) }));
     writeState(io, state); return;
@@ -3590,25 +3676,25 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   // TCRN-CROSS-STORY-528 (SUB-458): release the lease a work item holds. The holder releases at any
   // time, and anyone releases a lease that has run out. Another actor's running lease is released
-  // with --force true, which runs for Atelier only: without EINZBERN_SURFACE=atelier it is refused
-  // with MODEL_WRITE_REFUSED before the library is opened, as work-gate-release decides for itself
-  // (MIN-256 R1 Q7); assertModelWriteAllowed keeps its own subjects.
+  // with --force true, which runs for Atelier (MIN-256 R1 Q7). TCRN-CROSS-STORY-541 (MIN-258 D3;
+  // TCRN-CROSS-SUB-510): or for a model's run whose --decided-in cites an Owner decision naming the
+  // work item by its id or its external key, checked inside the write lock and recorded in the
+  // lease's event; citing none, --force is refused with MODEL_WRITE_REFUSED before the library is
+  // opened. A release that cites a decision without --force has it checked and recorded as well.
   if (command === "work-release") {
-    const values = parseArguments(rest, [...shared, "id", "actor", "force"]);
+    const values = parseArguments(rest, [...shared, "id", "actor", "force", "decided-in"]);
     required(values, [...requiredShared, "id", "actor"]);
     const id = values.id ?? "";
     const force = optionalBoolean(values.force, "force") === true;
-    if (force && process.env[SURFACE_ENVIRONMENT_VARIABLE] !== ATELIER_SURFACE) {
-      throw new WorkflowCliError("MODEL_WRITE_REFUSED", `the lease on ${id} is released by force in Atelier; a model does not force it through the CLI`, {
-        workId: id,
-        remedy: MODEL_WRITE_REMEDY,
-      });
-    }
+    const permit = force || values["decided-in"] !== undefined
+      ? assertModelWriteAllowed({ workId: id }, !force, process.env, { decidedIn: values["decided-in"] })
+      : undefined;
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     const state = await withWriteLock(workspace, at, async () => releaseWork(workspace, {
       occurredAt: at, id, actorId: values.actor ?? "",
       ...(force ? { force } : {}),
+      ...await writeAuthorization(permit, workspace),
     }));
     const released = state.work.find((entry) => entry.id === id);
     writeState(io, state, released === undefined ? undefined : workSummary(released), undefined, { lease: null });
@@ -3755,20 +3841,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   // TCRN-CROSS-STORY-489 (MIN-235 D17, D11, MIN-238 D4; TCRN-CROSS-SUB-365): release a gate a
   // migration carried over, recording who (--actor), when (--at) and why (--reason) in the gate
-  // itself (specs/gate-v1.md, Release). It runs for Atelier only: without EINZBERN_SURFACE=atelier it
-  // is refused with MODEL_WRITE_REFUSED and the remedy of doing it in Atelier before the library is
-  // opened, so nothing is appended. The surface is an agreed convention, not proof of who ran the
-  // command (MIN-235 D11); assertModelWriteAllowed keeps its own subjects (C-R17-6).
+  // itself (specs/gate-v1.md, Release). It runs for Atelier. TCRN-CROSS-STORY-541 (MIN-258 D3;
+  // TCRN-CROSS-SUB-510): or for a model's run whose --decided-in cites an Owner decision naming the
+  // gate by its id, checked inside the write lock and recorded in the gate.updated event. Any other
+  // model's run is refused with MODEL_WRITE_REFUSED, whose remedy names both ways, before the library
+  // is opened, so nothing is appended. The surface is an agreed convention, not proof of who ran the
+  // command (MIN-235 D11).
   if (command === "work-gate-release") {
-    const values = parseArguments(rest, [...shared, "id", "reason", "actor"]);
+    const values = parseArguments(rest, [...shared, "id", "reason", "actor", "decided-in"]);
     required(values, [...requiredShared, "id", "reason", "actor"]);
     const id = values.id ?? "";
-    if (process.env[SURFACE_ENVIRONMENT_VARIABLE] !== ATELIER_SURFACE) {
-      throw new WorkflowCliError("MODEL_WRITE_REFUSED", `gate ${id} is released in Atelier; a model does not release it through the CLI`, {
-        gate: id,
-        remedy: MODEL_WRITE_REMEDY,
-      });
-    }
+    const permit = assertModelWriteAllowed({ gate: id }, false, process.env, { decidedIn: values["decided-in"] });
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     const state = await withWriteLock(workspace, at, async () => releaseGate(workspace, {
@@ -3776,6 +3859,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       id,
       reason: values.reason ?? "",
       actorId: values.actor ?? "",
+      ...await writeAuthorization(permit, workspace),
     }));
     const released = state.gates.find((entry) => entry.id === id);
     writeState(io, state, released === undefined ? undefined : { ...released });

@@ -82,7 +82,7 @@ Atelier 在前台运行，没有停止命令：在启动它的终端按 Ctrl-C�
 
 ## 待批准的门与规则改动
 
-模型不能直接声明门或启停规则，可以用 `gates-config-propose` 或 `rule-propose` 提交改动，由人在 Atelier 批准或拒绝（TCRN-CROSS-STORY-527）。有待批准项时，门页顶部出现「待批准的门改动」，规则页的规则卡片上方出现「待批准的原则改动」，没有时这一区不出现。每一行写明要改的门或规则、提出的改动、提出者与时刻，以及状态。它们与门表和规则卡片分开：待批准的门不在门表里，也不会被 `gates-plan` 或 `gates-run` 选中；待批准的规则仍是原来的状态，不渲染进 AGENTS.md。规则页原有的「Pending」指等待处置的受管段，与这里的待批准项不是一回事。
+模型手里有点名对象的 Owner 决定时，直接用 `gates-config-set`、`gates-config-remove`、`rule-enable` 或 `rule-disable` 加 `--decided-in` 写入（TCRN-CROSS-STORY-526）；没有决定时，可以用 `gates-config-propose` 或 `rule-propose` 提交改动，由人在 Atelier 批准或拒绝（TCRN-CROSS-STORY-527）。有待批准项时，门页顶部出现「待批准的门改动」，规则页的规则卡片上方出现「待批准的原则改动」，没有时这一区不出现。每一行写明要改的门或规则、提出的改动、提出者与时刻，以及状态。它们与门表和规则卡片分开：待批准的门不在门表里，也不会被 `gates-plan` 或 `gates-run` 选中；待批准的规则仍是原来的状态，不渲染进 AGENTS.md。规则页原有的「Pending」指等待处置的受管段，与这里的待批准项不是一回事。
 
 - 「批准」就是写入：门页经 `proposal-approve` 声明或删除这道门，规则页经 `proposal-approve` 启用或禁用这条规则并写 AGENTS.md；两者都以 `TCRN_PORTAL_ACTOR` 为行动者，事件记 `surface: atelier` 与 `decidedIn: proposal:<键>@<提交时刻>`。批准后页面重读列表：门表或规则卡片出现这项改动，待批准区随之清空。
 - 「拒绝」经 `proposal-reject` 把这一项改为已拒绝，事件同样记 `surface: atelier`。已拒绝的项留在区里，只读显示拒绝者与时刻，不再有「批准」按钮；模型重新提出后才能再批准。
@@ -127,4 +127,4 @@ chains do not expose development settings.
 
 工作视图的工单树里，持有租约的工单在自己那一行（Initiative 与 Epic 在分组标题上）显示持有者与到期时刻，取自 `work-list` 每条的 `lease`（TCRN-CROSS-STORY-528，MIN-256）。是否仍在租期内按读取时的本机时钟判断，已到期的租约写明已到期。下级工单的行不重复显示上级的租约，但同样受它约束。
 
-旁边的「释放租约」按钮在 Atelier 里强制释放这张工单的租约：门户以 `TCRN_PORTAL_ACTOR` 为行动者运行 `work-release --force true`（`--force` 只在 `EINZBERN_SURFACE=atelier` 下可用），回执照常显示，工单树随即重新读取，`work-show` 的 `lease` 变为 `null`。Atelier 自己的写入同样受他人租约约束：要改他人租用的工单，先在这里释放。约束一张工单的若是上级的租约，到上级那一行释放。
+旁边的「释放租约」按钮在 Atelier 里强制释放这张工单的租约：门户以 `TCRN_PORTAL_ACTOR` 为行动者运行 `work-release --force true`（`--force` 在 `EINZBERN_SURFACE=atelier` 下可用；模型要引用点名这张工单的 Owner 决定，加 `--decided-in`），回执照常显示，工单树随即重新读取，`work-show` 的 `lease` 变为 `null`。Atelier 自己的写入同样受他人租约约束：要改他人租用的工单，先在这里释放。约束一张工单的若是上级的租约，到上级那一行释放。

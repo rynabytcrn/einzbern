@@ -90,6 +90,7 @@ import {
   decisionLookup,
   declarationsFromInput,
   nextMinutesExternalKey,
+  standBeside,
   validateMinutesRecord,
 } from "./minutes.js";
 import type { MinutesDeclarationInput, MinutesRecord } from "./minutes.js";
@@ -4389,12 +4390,18 @@ export function recordMinutesDelta(input: RecordMinutesInput & { readonly occurr
       ...(declarations === null ? {} : { declarations }),
     });
     assertDeclarationsResolve(record, decisionLookup(state.minutes, state.conferenceMinutes), "write");
-    assertNoDecisionTopicConflict(state, record);
+    // TCRN-CROSS-SUB-486 (STORY-531, MIN-256 D6 C5): a decision close in topic to a valid decision of
+    // another INIT family no longer refuses the record; the record stands beside it, written into its
+    // declarations' coexists as --coexists would write it (the event keeps its shape), and the
+    // minutes-record receipt warns of it. Each such decision is valid and of this project, as the topic
+    // check only scores those, so the declarations still resolve.
+    const otherFamily = assertNoDecisionTopicConflict(state, record);
+    const written = standBeside(record, otherFamily.map((entry) => entry.decision));
     return {
-      payload: buildEventPayload(MINUTES_RECORDED_OPERATION, record as unknown as JsonValue),
+      payload: buildEventPayload(MINUTES_RECORDED_OPERATION, written as unknown as JsonValue),
       projects: state.projects,
       work: state.work,
-      minutes: sortExtensionRecords([...state.minutes, record]),
+      minutes: sortExtensionRecords([...state.minutes, written]),
     };
   };
 }

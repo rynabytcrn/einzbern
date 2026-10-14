@@ -204,3 +204,66 @@ test("STORY-531 (SUB-485): the user crest splits the same way, and a card pointi
   assert.equal(sameFamily?.reasonCode, "KNOWLEDGE_POSSIBLE_CONFLICT");
   assert.deepEqual(sameFamily.details, { conflicts: [old.id], otherFamilyConflicts: [written.id] });
 });
+
+// TCRN-CROSS-SUB-486: minutes-record is split the same way. A record's family is that of the work it
+// links; an existing decision's, that of the work its minutes link.
+const OTTER = "Store the otter archive on the east shelf.";
+const decision = (key, number) => `${deriveStableId("minutes", key)}#D${String(number)}`;
+
+async function cliJson(argv) {
+  let output = "";
+  await runCli(argv, { write: (value) => { output += value; } });
+  return JSON.parse(output);
+}
+
+function minutesRecord(fixture, key, linked, decisions, extra = []) {
+  return cliJson([
+    "minutes-record", "--workspace", fixture.workspace, "--at", at(fixture.next()), "--project-id", fixture.projectId, "--external-key", key,
+    "--title", `Minutes ${key}`, "--summary", `Recorded as ${key}.`, "--decisions", decisions.join(","),
+    ...(linked.length === 0 ? [] : ["--work-ids", linked.join(",")]), ...extra,
+  ]);
+}
+
+test("STORY-531 GWT3 (SUB-486): a decision close to one of another INIT family is recorded beside it, with a warning", async (context) => {
+  const fixture = await familyLibrary(context, "gwt3-apart");
+  await minutesRecord(fixture, "CF-MIN-1", [work("CF-STORY-B1")], [OTTER]);
+  const before = (await materializeWorkspace(fixture.workspace)).version;
+  const recorded = await minutesRecord(fixture, "CF-MIN-2", [work("CF-STORY-A1")], [OTTER]);
+  assert.equal(recorded.reasonCode, "MINUTES_RECORDED");
+  assert.equal(recorded.version, before + 1, "one event, as any minutes-record writes");
+  assert.deepEqual(recorded.declarations, { supersedes: [], withdraws: [], coexists: [decision("CF-MIN-1", 1)] }, "the record stands beside the decision of the other family");
+  assert.deepEqual(recorded.warnings.map((warning) => [warning.reasonCode, warning.decision, warning.text, warning.families]), [
+    ["MINUTES_POSSIBLE_CONFLICT", decision("CF-MIN-1", 1), OTTER, [work("CF-INIT-B")]],
+  ], "the receipt warns of it");
+  assert.match(recorded.warnings[0].message, /another INIT family/u);
+
+  const state = await materializeWorkspace(fixture.workspace);
+  const stored = state.events.at(-1).payload.record;
+  assert.deepEqual(Object.keys(stored).sort(), ["decidedBy", "decisions", "declarations", "externalKey", "id", "linkedWorkIds", "projectId", "recordedAt", "revision", "schemaVersion", "summary", "title", "tombstone"], "the event keeps the minutes record's shape");
+  assert.deepEqual(stored.declarations.coexists, [decision("CF-MIN-1", 1)]);
+  const shown = await cliJson(["minutes-show", "--workspace", fixture.workspace, "--id", decision("CF-MIN-1", 1).split("#")[0], "--status", "all"]);
+  assert.deepEqual(shown.record.decisions.map((entry) => entry.status), ["valid"], "standing beside leaves the other decision valid");
+
+  // A writer who declared the decision himself is not warned of it.
+  const declared = await minutesRecord(fixture, "CF-MIN-3", [work("CF-STORY-A2")], [OTTER], ["--coexists", `${decision("CF-MIN-1", 1)},${decision("CF-MIN-2", 1)}`]);
+  assert.deepEqual(declared.declarations.coexists, [decision("CF-MIN-1", 1), decision("CF-MIN-2", 1)].sort());
+  assert.equal(Object.hasOwn(declared, "warnings"), false);
+});
+
+test("STORY-531 GWT3 (SUB-486): a decision close to one of its own family, or of a family not known, is still MINUTES_POSSIBLE_CONFLICT", async (context) => {
+  const fixture = await familyLibrary(context, "gwt3-same");
+  await minutesRecord(fixture, "CF-MIN-1", [work("CF-STORY-B1")], [OTTER]);
+  await minutesRecord(fixture, "CF-MIN-2", [work("CF-STORY-A1")], [OTTER]);
+  const before = (await materializeWorkspace(fixture.workspace)).version;
+  const sameFamily = await refusalOf(minutesRecord(fixture, "CF-MIN-3", [work("CF-STORY-B2")], [OTTER]));
+  assert.equal(sameFamily?.reasonCode, "MINUTES_POSSIBLE_CONFLICT", "a Story of the same Initiative is the same family");
+  assert.deepEqual(sameFamily.details.conflicts, [decision("CF-MIN-1", 1)], "the decision of the same family refuses");
+  assert.deepEqual(sameFamily.details.otherFamilyConflicts, [decision("CF-MIN-2", 1)], "the one of the other family is named apart");
+  assert.match(sameFamily.details.remedy, /--coexists/u);
+
+  const unlinked = await refusalOf(minutesRecord(fixture, "CF-MIN-4", [], [OTTER]));
+  assert.equal(unlinked?.reasonCode, "MINUTES_POSSIBLE_CONFLICT", "a record linking no work has no family: refused");
+  assert.deepEqual([...unlinked.details.conflicts].sort(), [decision("CF-MIN-1", 1), decision("CF-MIN-2", 1)].sort());
+  assert.equal(Object.hasOwn(unlinked.details, "otherFamilyConflicts"), false);
+  assert.equal((await materializeWorkspace(fixture.workspace)).version, before, "a refused record writes nothing");
+});

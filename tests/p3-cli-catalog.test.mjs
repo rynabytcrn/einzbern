@@ -276,7 +276,7 @@ test("SUB-425: knowledge-remove is cataloged with its required flags, knowledge-
   assert.equal(entry("knowledge-remove").mutates, true);
   assert.deepEqual(entry("knowledge-remove").flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [
     ["workspace", false, "string"], ["at", true, "instant"], ["id", true, "string"], ["reason", true, "string"], ["basis", true, "string"],
-    ["actor", true, "string"], ["superseded-by", false, "string"], ["scope", false, "string"],
+    ["actor", true, "string"], ["superseded-by", false, "string"], ["scope", false, "string"], ["timeout-ms", false, "integer"],
   ]);
   for (const verb of ["knowledge-list", "recall"]) {
     const status = entry(verb).flags.find((flag) => flag.name === "status");
@@ -317,7 +317,7 @@ test("STORY-478 R3: agents-render and rule-resolve write, take --at and resolve 
   const render = entry("agents-render");
   assert.ok(render !== undefined, "agents-render is cataloged");
   assert.equal(render.mutates, true, "it writes the project's files and the library's records");
-  assert.deepEqual(render.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["project", false, "string"], ["at", true, "instant"], ["actor", false, "string"], ["project-id", false, "string"]]);
+  assert.deepEqual(render.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["project", false, "string"], ["at", true, "instant"], ["actor", false, "string"], ["project-id", false, "string"], ["timeout-ms", false, "integer"]]);
   const resolve = entry("rule-resolve");
   assert.ok(resolve !== undefined, "rule-resolve is cataloged (STORY-483 R2 reuses it)");
   assert.equal(resolve.mutates, true);
@@ -327,7 +327,7 @@ test("STORY-478 R3: agents-render and rule-resolve write, take --at and resolve 
     ["force", false, "boolean"],
     ["at", true, "instant"],
     ["project", false, "string"],
-    ["actor", false, "string"], ["project-id", false, "string"],
+    ["actor", false, "string"], ["project-id", false, "string"], ["timeout-ms", false, "integer"],
   ]);
   // Neither takes --workspace: the library is the one the registry names for the project.
   assert.equal([render, resolve].some((candidate) => candidate.flags.some((flag) => flag.name === "workspace")), false);
@@ -342,14 +342,14 @@ test("STORY-484 R1, R4: variable-list reads; variable-set and variable-remove wr
   assert.deepEqual(flags("variable-set"), [
     ["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["type", true, "string"],
     ["value", true, "string"], ["description", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"],
-    ["decided-in", false, "string"],
+    ["decided-in", false, "string"], ["timeout-ms", false, "integer"],
   ]);
   assert.equal(entry("variable-remove").mutates, true);
-  assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"], ["project-id", false, "string"], ["decided-in", false, "string"]]);
+  assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"], ["project-id", false, "string"], ["decided-in", false, "string"], ["timeout-ms", false, "integer"]]);
   // The refusal of a model's write (MODEL_WRITE_REFUSED) is the dispatcher's, not a flag: the settings
   // writes keep their flags, and take --decided-in to cite an Owner decision (TCRN-CROSS-SUB-453).
-  assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor", "project-id", "decided-in"]);
-  assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor", "project-id", "decided-in"]);
+  assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor", "project-id", "decided-in", "timeout-ms"]);
+  assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor", "project-id", "decided-in", "timeout-ms"]);
 });
 
 test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --id and --at, and resolve the project from --project or the current directory", () => {
@@ -359,11 +359,11 @@ test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --
   // TCRN-CROSS-STORY-527 (Q6): --status declared|pending|rejected.
   assert.deepEqual(flags("rule-list"), [["workspace", false, "string"], ["project", false, "string"], ["project-id", false, "string"], ["status", false, "string"]]);
   assert.equal(entry("rule-enable").mutates, true);
-  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"], ["decided-in", false, "string"]]);
+  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"], ["decided-in", false, "string"], ["timeout-ms", false, "integer"]]);
   assert.equal(entry("rule-disable").mutates, true);
   assert.deepEqual(flags("rule-disable"), [
     ["id", true, "string"], ["force", false, "boolean"], ["at", true, "instant"], ["project", false, "string"], ["actor", false, "string"], ["project-id", false, "string"],
-    ["decided-in", false, "string"],
+    ["decided-in", false, "string"], ["timeout-ms", false, "integer"],
   ]);
   // Managed writes resolve their stable project through the registry or explicit project-id.
   // rule-list additionally permits an explicit library-only read.
@@ -425,5 +425,22 @@ test("527 Q6: the proposal verbs are cataloged with their required flags, and no
       ["key", true, "string"], ["proposed-at", true, "instant"], ["at", true, "instant"], ["workspace", false, "string"], ["project", false, "string"],
       ["actor", true, "string"], ["project-id", false, "string"],
     ], name);
+  }
+});
+
+test("529 GWT2 (TCRN-CROSS-SUB-480): every write that takes the library write lock takes an optional integer --timeout-ms", () => {
+  const lockWrites = ["agents-render", "artifact-put", "chain-declare", "gates-config-remove", "gates-config-set",
+    "knowledge-article-create", "knowledge-article-refresh", "knowledge-batch", "knowledge-bodies-migrate", "knowledge-capture",
+    "knowledge-create", "knowledge-init", "knowledge-rebase", "knowledge-recover", "knowledge-remove", "knowledge-reverify",
+    "minutes-record", "project-bindings-remove", "project-bindings-set", "project-create", "project-delete", "project-update",
+    "recover", "rule-disable", "rule-enable", "rule-resolve", "settings-remove", "settings-set", "template-admit",
+    "variable-remove", "variable-set", "work-annotate", "work-batch", "work-claim", "work-create", "work-delete",
+    "work-gate-release", "work-release", "work-transition", "workspace-relocate"];
+  const carriers = COMMAND_CATALOG.filter((entry) => entry.flags.some((flag) => flag.name === "timeout-ms")).map((entry) => entry.name);
+  assert.deepEqual(carriers.filter((name) => name !== "host-probe").sort(), [...lockWrites].sort());
+  for (const name of lockWrites) {
+    const entry = COMMAND_CATALOG.find((candidate) => candidate.name === name);
+    assert.equal(entry.mutates, true, `${name} writes`);
+    assert.deepEqual(entry.flags.find((flag) => flag.name === "timeout-ms"), { name: "timeout-ms", required: false, valueKind: "integer" }, name);
   }
 });

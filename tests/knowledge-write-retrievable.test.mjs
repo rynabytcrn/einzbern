@@ -215,7 +215,7 @@ test("476-R1, R2: the promotion and retirement verbs are gone from the catalog a
     const refused = await refusalOf(() => runCli([verb, "--workspace", fx.workspace, "--at", AT], { write() {} }));
     assert.equal(refused?.reasonCode, "CLI_COMMAND_UNKNOWN", verb);
   }
-  assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === "knowledge-rebase")?.flags.map((flag) => flag.name), ["workspace", "at"]);
+  assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === "knowledge-rebase")?.flags.map((flag) => flag.name), ["workspace", "at", "timeout-ms"]);
   const retireInvalid = await refusalOf(() => runCli(["knowledge-rebase", "--workspace", fx.workspace, "--at", AT, "--retire-invalid", "true"], { write() {} }));
   assert.equal(retireInvalid?.reasonCode, "CLI_ARGUMENT_UNKNOWN");
   // The conflict and freshness verbs stay.

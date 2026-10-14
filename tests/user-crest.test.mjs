@@ -1353,7 +1353,7 @@ test("476-R5: a library write never reaches the user crest, and a user card name
   await assert.rejects(stat(join(home, "crest")), { code: "ENOENT" }, "a refused user card lays nothing out");
 });
 
-test("476-R5: a write and a read of the user crest each wait for this machine's locks/user-crest.lock", async (context) => {
+test("476-R5: a write of the user crest waits for this machine's locks/user-crest.lock, and a read does not (529 GWT3)", async (context) => {
   const { base, home } = await device(context);
   const first = await library(base, "first");
   await mkdir(join(home, "locks"), { recursive: true });
@@ -1371,10 +1371,12 @@ test("476-R5: a write and a read of the user crest each wait for this machine's 
   await held.release();
   assert.equal((await write.promise).reasonCode, "KNOWLEDGE_UNIT_CREATED");
 
+  // TCRN-CROSS-STORY-529 GWT3 (TCRN-CROSS-SUB-482): a read takes no lock; it answers from the snapshot
+  // the write left, while another process holds the lock.
   held = await acquireFileLock(userCrestLockPath(home));
   const read = settle(listKnowledgeMetadata(first.workspace, { at, scope: "user" }));
   await pause();
-  assert.equal(read.state.done, false, "the read waits too");
-  await held.release();
+  assert.equal(read.state.done, true, "the read answers while the lock is held");
   assert.equal((await read.promise).total, 1);
+  await held.release();
 });

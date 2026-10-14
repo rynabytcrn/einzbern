@@ -60,11 +60,14 @@ import {
   userCrestEventsPath,
   userCrestLockPath,
   userCrestPath,
+  userCrestSnapshotPath,
+  USER_CREST_SNAPSHOT_SCHEMA_VERSION,
 } from "./device-home.js";
 import { isAtomicTemporaryName, writeFileAtomic } from "./atomic-file.js";
 import { assertActorId } from "./actor-attestation.js";
 import { readDevice, readOrCreateDevice } from "./device-identity.js";
-import { FileLockError, withFileLock } from "./file-lock.js";
+import { FileLockError, acquireFileLock, withFileLock } from "./file-lock.js";
+import type { FileLock } from "./file-lock.js";
 import { readUserCrestPath } from "./machine-settings.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
 import { assertKnowledgeNotRecorded } from "./knowledge-duplicates.js";
@@ -1197,6 +1200,65 @@ function libraryKnowledgeView(storeRoot: string, options: KnowledgeReadOptions =
 export async function withCrestWriteLock<T>(workspaceRoot: string, operation: () => Promise<T>): Promise<T> {
   if (!(await hasLibraryManifest(resolve(workspaceRoot)))) return operation();
   return withWorkspaceWriteLock(workspaceRoot, () => operation());
+}
+
+// TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-481): a library crest write scans the crest, digests its sources
+// and judges the card outside the lock, and holds the lock for the append alone: under it, the crest's
+// device streams must stand where the scan found them, or the write scans again. A write another
+// writer outran CREST_OPTIMISTIC_ATTEMPTS times scans under the lock, as every write once did.
+const CREST_OPTIMISTIC_ATTEMPTS = 4;
+
+// How a crest write commits what it built from `scan`: under the lock, after the heads check.
+type CrestCommit = <T>(scan: CrestScan, commit: () => Promise<T>) => Promise<T>;
+
+class CrestMovedSinceScan extends Error {}
+
+async function optimisticCrestWrite<T>(workspaceRoot: string, write: (commitUnderLock: CrestCommit) => Promise<T>): Promise<T> {
+  const checked: CrestCommit = (scan, commit) => withCrestWriteLock(workspaceRoot, async () => {
+    if (await currentCrestHeads(scan.storeRoot) !== crestHeadsKey(scan.eventHeads)) throw new CrestMovedSinceScan();
+    return commit();
+  });
+  for (let attempt = 1; attempt <= CREST_OPTIMISTIC_ATTEMPTS; attempt += 1) {
+    try {
+      return await write(checked);
+    } catch (error) {
+      if (!(error instanceof CrestMovedSinceScan)) throw error;
+    }
+  }
+  return withCrestWriteLock(workspaceRoot, () => write((_scan, commit) => commit()));
+}
+
+function crestHeadsKey(heads: readonly CrestEventHead[]): string {
+  return JSON.stringify(heads.filter((head) => head.sequence > 0)
+    .map((head) => [head.deviceId, head.sequence, head.eventHash])
+    .sort((left, right) => compareCanonicalText(String(left[0]), String(right[0]))));
+}
+
+// The head of every device stream of a crest from its file names alone -- no event is read -- in the
+// form crestHeadsKey gives a scan's heads. An absent events/ directory has none.
+async function currentCrestHeads(storeRoot: string): Promise<string> {
+  const eventsPath = userCrestEventsPath(storeRoot);
+  let devices;
+  try {
+    devices = await readdir(eventsPath, { withFileTypes: true });
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return crestHeadsKey([]);
+    throw error;
+  }
+  const heads: CrestEventHead[] = [];
+  for (const entry of devices) {
+    if (isAtomicTemporaryName(entry.name) || !entry.isDirectory()) continue;
+    let head: CrestEventHead | null = null;
+    for (const name of await readdir(join(eventsPath, entry.name))) {
+      if (isAtomicTemporaryName(name)) continue;
+      const match = CREST_EVENT_FILE_PATTERN.exec(name);
+      if (match === null) continue;
+      const sequence = Number(match[1]);
+      if (head === null || sequence > head.sequence) head = { deviceId: entry.name, sequence, eventHash: match[2] as string };
+    }
+    if (head !== null) heads.push(head);
+  }
+  return crestHeadsKey(heads);
 }
 
 /**
@@ -3409,6 +3471,7 @@ async function scanUserCrest(
   options: KnowledgeReadOptions = {},
   allowClaim = false,
   bodyMode: "full" | "metadata-only" = "full",
+  projectView = true,
 ): Promise<UserCrestScan> {
   const parent = await userCrestParent(location, false);
   const storeRoot = await boundDirectory(join(parent, basename(location.root)), parent);
@@ -3467,7 +3530,7 @@ async function scanUserCrest(
     eventHighWaterDigest,
   };
   const index = knowledgeIndex(projectedMarker, records);
-  await projectKnowledgeView(userCrestKnowledgeView(storeRoot, location.device, options), index);
+  if (projectView) await projectKnowledgeView(userCrestKnowledgeView(storeRoot, location.device, options), index);
   return {
     storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index,
     unresolvedConflicts, duplicates, awaitingChain: [], unresolvedScopes: [], removals, streamBodies,
@@ -3692,13 +3755,173 @@ async function crestInitializationIncomplete(storeRoot: string, user: boolean): 
 }
 
 /**
- * The user crest as a read sees it, under this machine's lock of it; `read` runs inside the lock.
- * Before the crest's first card there is nothing to read, and `read` is handed null.
+ * The user crest as a read sees it. Before the crest's first card there is nothing to read, and `read`
+ * is handed null. TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-482): a read takes no lock. It answers from this
+ * device's snapshot of the crest while the crest's folder stands as the snapshot found it. A
+ * snapshot missing or behind the crest is rebuilt under the lock when the lock is free; while a
+ * writer holds it, the read answers from the snapshot it has -- the writer replaces it once its event
+ * is down -- or, with none, from a scan of the crest as it stands that leaves the view alone.
  */
 async function readUserCrest<T>(options: KnowledgeReadOptions, read: (scan: UserCrestScan | null) => Promise<T>): Promise<T> {
   const location = await locateUserCrest();
   if (!(await userCrestInitialized(location.root))) return read(null);
-  return withUserCrestLock(location, async () => read(await scanUserCrest(location, options, false, "metadata-only")));
+  const snapshot = await loadUserCrestSnapshot(location, options);
+  if (snapshot !== null && snapshot.current) return read(snapshot.scan);
+  const lock = await tryUserCrestLock(location);
+  if (lock === null) {
+    return read(snapshot?.scan ?? await scanUserCrest(location, options, false, "metadata-only", false));
+  }
+  let scan: UserCrestScan;
+  try {
+    scan = await scanForUserCrestSnapshot(location, options);
+  } finally {
+    await lock.release().catch(() => undefined);
+  }
+  return read(scan);
+}
+
+// The user crest lock when no one holds it, or null at once when someone does.
+async function tryUserCrestLock(location: UserCrestLocation): Promise<FileLock | null> {
+  const path = userCrestLockPath(location.device);
+  await ensureDeviceDirectory(dirname(path));
+  try {
+    return await acquireFileLock(path, { timeoutMs: 0, command: "einzbern user-crest-snapshot" });
+  } catch (error) {
+    if (error instanceof FileLockError && error.reasonCode === "FILE_LOCK_TIMEOUT") return null;
+    throw error;
+  }
+}
+
+// What a unit of the snapshot keeps: everything but its body and body reader, which a load rebuilds.
+function snapshotUnitDocument(unit: CrestUnit): Readonly<Record<string, unknown>> {
+  return {
+    metadataPath: unit.metadataPath, bodyPath: unit.bodyPath, metadata: unit.metadata, lineage: unit.lineage, event: unit.event,
+    replaces: unit.replaces, chain: unit.chain, storedDigest: unit.storedDigest, streamBody: unit.streamBody,
+  };
+}
+
+// The user crest's folder, resolved as a scan resolves it.
+async function userCrestStoreRoot(location: UserCrestLocation): Promise<string> {
+  const parent = await userCrestParent(location, false);
+  return boundDirectory(join(parent, basename(location.root)), parent);
+}
+
+// What a snapshot is current against: every entry of the crest's folder, of events/ and of each device
+// stream, with its size, modification time and inode. A new or forked event, an altered or removed
+// file, another layout's folders -- anything a scan would read differently -- changes it; no event is read.
+async function userCrestFingerprint(storeRoot: string): Promise<string> {
+  const entries: (string | number)[][] = [];
+  const walk = async (directory: string, prefix: string, depth: number): Promise<void> => {
+    const listed = (await readdir(directory, { withFileTypes: true })).sort((left, right) => compareCanonicalText(left.name, right.name));
+    for (const entry of listed) {
+      if (isAtomicTemporaryName(entry.name) || CREST_TEMP_NAME.test(entry.name)) continue;
+      const entryPath = join(directory, entry.name);
+      if (entry.isDirectory() && depth < 2) {
+        entries.push([`${prefix}${entry.name}/`]);
+        await walk(entryPath, `${prefix}${entry.name}/`, depth + 1);
+        continue;
+      }
+      const info = await lstat(entryPath);
+      entries.push([`${prefix}${entry.name}`, info.size, info.mtimeMs, info.ino]);
+    }
+  };
+  await walk(storeRoot, "", 0);
+  return sha256(JSON.stringify(entries));
+}
+
+// A scan for the snapshot, under the user crest lock. The fingerprint is taken first, so a change
+// during the scan leaves the snapshot behind the crest, to be rebuilt, and never ahead of it.
+async function scanForUserCrestSnapshot(location: UserCrestLocation, options: KnowledgeReadOptions): Promise<UserCrestScan> {
+  const fingerprint = await userCrestFingerprint(await userCrestStoreRoot(location));
+  const scan = await scanUserCrest(location, options, false, "metadata-only");
+  await writeUserCrestSnapshot(scan, fingerprint);
+  return scan;
+}
+
+/** Replace this device's snapshot of an event-stream user crest with `scan`, by an atomic rename. */
+async function writeUserCrestSnapshot(scan: UserCrestScan, fingerprint: string): Promise<void> {
+  if (!scan.eventOnly) return;
+  const path = userCrestSnapshotPath(scan.device);
+  await ensureDeviceDirectory(dirname(path));
+  const document = {
+    schemaVersion: USER_CREST_SNAPSHOT_SCHEMA_VERSION,
+    storeRoot: scan.storeRoot,
+    fingerprint,
+    eventHeads: scan.eventHeads,
+    marker: scan.marker,
+    index: scan.index,
+    units: scan.units.map(snapshotUnitDocument),
+    duplicates: scan.duplicates.map((duplicate) => ({ id: duplicate.id, externalKey: duplicate.externalKey, versions: duplicate.versions.map(snapshotUnitDocument) })),
+    unresolvedConflicts: scan.unresolvedConflicts,
+    removals: [...scan.removals.entries()],
+    streamBodies: scan.streamBodies,
+  };
+  await writeFileAtomic(path, `${JSON.stringify(document)}\n`);
+}
+
+// After a write, under the lock: the snapshot the next read answers from. The write itself has
+// landed; a crest this scan cannot read leaves no snapshot, so the next read scans and names it.
+async function refreshUserCrestSnapshot(location: UserCrestLocation, options: KnowledgeReadOptions): Promise<void> {
+  try {
+    await scanForUserCrestSnapshot(location, options);
+  } catch {
+    await rm(userCrestSnapshotPath(location.device), { force: true }).catch(() => undefined);
+  }
+}
+
+// A unit of the snapshot with the body reader the scan gave it: a removed card's refuses, a card
+// whose event names a body reads that file, and any other is not admitted.
+function snapshotUnit(value: CrestUnit, removals: ReadonlyMap<string, CrestRemoval>, options: KnowledgeReadOptions): CrestUnit {
+  const unit: CrestUnit = { ...value, body: null };
+  if (unit.event === null) return unit;
+  const id = unit.metadata.id;
+  const reference = unit.streamBody;
+  const readBody = removals.has(id)
+    ? async (): Promise<Buffer> => fail("KNOWLEDGE_CARD_REMOVED", id)
+    : reference === null
+      ? async (): Promise<Buffer> => fail("KNOWLEDGE_RECORD_INVALID", `${id}:body was not admitted`)
+      : async (): Promise<Buffer> => readUserCrestFile(reference.path, KNOWLEDGE_LIMITS.maximumBodyBytes, options);
+  return { ...unit, readBody };
+}
+
+/**
+ * This device's snapshot of the user crest, and whether it is current: the crest's folder as the
+ * snapshot found it (userCrestFingerprint). Null when there is none, it is unreadable, or it is of a crest in another place.
+ */
+async function loadUserCrestSnapshot(location: UserCrestLocation, options: KnowledgeReadOptions): Promise<{ readonly scan: UserCrestScan; readonly current: boolean } | null> {
+  let value: Record<string, unknown>;
+  let storeRoot: string;
+  try {
+    value = JSON.parse(await readFile(userCrestSnapshotPath(location.device), "utf8")) as Record<string, unknown>;
+    storeRoot = await userCrestStoreRoot(location);
+  } catch {
+    return null;
+  }
+  if (value === null || typeof value !== "object" || value.schemaVersion !== USER_CREST_SNAPSHOT_SCHEMA_VERSION || value.storeRoot !== storeRoot || typeof value.fingerprint !== "string" ||
+    !Array.isArray(value.eventHeads) || !Array.isArray(value.units) || !Array.isArray(value.duplicates) || !Array.isArray(value.removals) ||
+    !Array.isArray(value.unresolvedConflicts) || !Array.isArray(value.streamBodies) || value.marker === null || typeof value.marker !== "object" ||
+    value.index === null || typeof value.index !== "object") {
+    return null;
+  }
+  const removals = new Map(value.removals as [string, CrestRemoval][]);
+  const eventHeads = value.eventHeads as CrestEventHead[];
+  const scan: UserCrestScan = {
+    storeRoot, device: location.device, eventOnly: true, eventHeads,
+    marker: value.marker as KnowledgeStoreMarker,
+    units: (value.units as CrestUnit[]).map((unit) => snapshotUnit(unit, removals, options)),
+    index: value.index as KnowledgeIndex,
+    unresolvedConflicts: value.unresolvedConflicts as string[][],
+    duplicates: (value.duplicates as CrestDuplicate[]).map((duplicate) => ({ ...duplicate, versions: duplicate.versions.map((unit) => snapshotUnit(unit, removals, options)) })),
+    awaitingChain: [], unresolvedScopes: [], removals,
+    streamBodies: value.streamBodies as CrestStreamBody[],
+  };
+  let current: boolean;
+  try {
+    current = await userCrestFingerprint(storeRoot) === value.fingerprint;
+  } catch {
+    current = false;
+  }
+  return { scan, current };
 }
 
 function assertStoreScope(scope: unknown): asserts scope is KnowledgeStoreScope | undefined {
@@ -3760,7 +3983,11 @@ export async function recoverKnowledgeStore(workspaceRoot: string, options: Know
     if (!(await userCrestInitialized(location.root))) {
       return { schemaVersion: "tcrn.knowledge-recovery-result.v1", reasonCode: "KNOWLEDGE_RECOVERY_NOT_NEEDED", recovered: false, scope: "user" };
     }
-    return withUserCrestLock(location, () => recoverUserCrestUnlocked(location, options));
+    return withUserCrestLock(location, async () => {
+      const recovered = await recoverUserCrestUnlocked(location, options);
+      await refreshUserCrestSnapshot(location, options);
+      return recovered;
+    });
   }
   return withCrestWriteLock(workspaceRoot, () => recoverKnowledgeStoreUnlocked(workspaceRoot, options));
 }
@@ -4194,9 +4421,13 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
 export async function createKnowledgeUnit(workspaceRoot: string, input: CreateKnowledgeUnitInput, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   if (input.scope === "user") {
     const location = await locateUserCrest();
-    return withUserCrestLock(location, () => createUserCrestEvent(workspaceRoot, input, options, location));
+    return withUserCrestLock(location, async () => {
+      const created = await createUserCrestEvent(workspaceRoot, input, options, location);
+      await refreshUserCrestSnapshot(location, options);
+      return created;
+    });
   }
-  return withCrestWriteLock(workspaceRoot, () => createLibraryCrestEvent(workspaceRoot, input, options));
+  return optimisticCrestWrite(workspaceRoot, (commitUnderLock) => createLibraryCrestEvent(workspaceRoot, input, options, commitUnderLock));
 }
 
 async function createUserCrestEvent(
@@ -4431,6 +4662,7 @@ async function createLibraryCrestEvent(
   workspaceRoot: string,
   input: CreateKnowledgeUnitInput,
   options: KnowledgeMutationOptions,
+  commitUnderLock: CrestCommit,
 ): Promise<Readonly<Record<string, JsonValue>>> {
   assertBoundedString(input.body, KNOWLEDGE_LIMITS.maximumBodyBytes, "body");
   await assertKnowledgeWritable(resolve(workspaceRoot));
@@ -4491,9 +4723,11 @@ async function createLibraryCrestEvent(
   if (records.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
     fail("KNOWLEDGE_DUPLICATE", metadata.id);
   }
-  const head = await appendLibraryCrestEvent(scan, written, body, null, options.faultAt);
-  await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
-  await projectViewAfterWrite(scan, projectedMetadata, options);
+  await commitUnderLock(scan, async () => {
+    const head = await appendLibraryCrestEvent(scan, written, body, null, options.faultAt);
+    await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
+    await projectViewAfterWrite(scan, projectedMetadata, options);
+  });
   return {
     schemaVersion: "tcrn.knowledge-create-result.v1",
     reasonCode: "KNOWLEDGE_UNIT_CREATED",
@@ -4625,21 +4859,28 @@ export async function removeKnowledgeUnit(workspaceRoot: string, input: Knowledg
   if (options.scope === "user") {
     const location = await locateUserCrest();
     if (!(await userCrestInitialized(location.root))) fail("KNOWLEDGE_NOT_FOUND", removal.id);
-    return withUserCrestLock(location, () => removeUserCrestCard(location, removal, options));
+    return withUserCrestLock(location, async () => {
+      const removed = await removeUserCrestCard(location, removal, options);
+      await refreshUserCrestSnapshot(location, options);
+      return removed;
+    });
   }
-  return withCrestWriteLock(workspaceRoot, () => removeLibraryCrestCard(workspaceRoot, removal, options));
+  return optimisticCrestWrite(workspaceRoot, (commitUnderLock) => removeLibraryCrestCard(workspaceRoot, removal, options, commitUnderLock));
 }
 
-async function removeLibraryCrestCard(workspaceRoot: string, removal: NormalizedRemoval, options: KnowledgeRemoveOptions): Promise<Readonly<Record<string, JsonValue>>> {
+async function removeLibraryCrestCard(workspaceRoot: string, removal: NormalizedRemoval, options: KnowledgeRemoveOptions, commitUnderLock: CrestCommit): Promise<Readonly<Record<string, JsonValue>>> {
   await assertKnowledgeWritable(resolve(workspaceRoot));
   const scan = await mutationAdmissionScan(workspaceRoot, options);
   const card = assertRemovable(scan, removal);
-  const stream = await libraryCrestStream(scan);
-  const head = await appendCrestRemovalEvent(stream.streamRoot, stream.deviceId, stream.prior, removal, options.faultAt);
-  const removed = eventRemoval(removal, head);
-  const removalsAfter = new Map<string, CrestRemoval>([...scan.removals, [removal.id, removed]]);
-  const clearedBodies = await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
-  await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((unit) => unit.metadata), removalsAfter), options);
+  const { removed, clearedBodies } = await commitUnderLock(scan, async () => {
+    const stream = await libraryCrestStream(scan);
+    const head = await appendCrestRemovalEvent(stream.streamRoot, stream.deviceId, stream.prior, removal, options.faultAt);
+    const appended = eventRemoval(removal, head);
+    const removalsAfter = new Map<string, CrestRemoval>([...scan.removals, [removal.id, appended]]);
+    const cleared = await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
+    await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((unit) => unit.metadata), removalsAfter), options);
+    return { removed: appended, clearedBodies: cleared };
+  });
   return removalAnswer(card, removed, scan.marker.version + 1, clearedBodies, {});
 }
 

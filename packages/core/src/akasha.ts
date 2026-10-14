@@ -484,7 +484,11 @@ export async function clockHighWater(libraryRoot: string, options: StreamReadOpt
   return highest;
 }
 
-/** Run `operation` while holding this machine's write lock of the library. */
+/**
+ * Run `operation` while holding this machine's write lock of the library. TCRN-CROSS-SUB-480: the
+ * options go to the lock as given, so a caller's timeoutMs bounds the wait and its command is what the
+ * lock file records the holder runs.
+ */
 export async function withLibraryWriteLock<T>(library: Library, operation: () => Promise<T>, options: FileLockOptions & { readonly home?: string } = {}): Promise<T> {
   const path = options.home === undefined ? lockPath(library.manifest.libraryId) : lockPath(library.manifest.libraryId, options.home);
   await ensureDeviceDirectory(dirname(path));

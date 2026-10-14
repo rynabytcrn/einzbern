@@ -43,6 +43,8 @@ import {
 } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import * as core from "../dist/build/packages/core/src/index.js";
+// TCRN-CROSS-SUB-481: writtenRecordIds left the public core exports when the CLI stopped calling it.
+import { writtenRecordIds } from "../dist/build/packages/core/src/workspace.js";
 import {
   appendHistoricalAttestationEnable,
   appendHistoricalConferenceCancel,
@@ -1460,21 +1462,21 @@ test("SUB-388: the write receipt ids use the collection and key from each config
     const initial = await core.materializeWorkspace(fixture.workspace);
     const gate = { command: ["pnpm", "verify:links"], root: ".", covers: ["**"], required: true, enabled: true, releaseOnly: false };
     const first = await core.setConfigRecord(fixture.workspace, { occurredAt: instant(1), collection: "gate", key: "links", value: gate });
-    assert.deepEqual(core.writtenRecordIds(first, initial.version), ["gate:links"]);
+    assert.deepEqual(writtenRecordIds(first, initial.version), ["gate:links"]);
 
     const variable = await core.setConfigRecord(fixture.workspace, { occurredAt: instant(2), collection: "variable", key: "links", value: { type: "string", value: "tokens", description: "" } });
-    assert.deepEqual(core.writtenRecordIds(variable, first.version), ["variable:links"], "equal keys in other collections stay distinct");
+    assert.deepEqual(writtenRecordIds(variable, first.version), ["variable:links"], "equal keys in other collections stay distinct");
 
     const rule = await core.setConfigRecord(fixture.workspace, { occurredAt: instant(3), collection: "rule", key: "autonomy", value: { enabled: false, version: 1 } });
-    assert.deepEqual(core.writtenRecordIds(rule, variable.version), ["rule:autonomy"]);
+    assert.deepEqual(writtenRecordIds(rule, variable.version), ["rule:autonomy"]);
 
     const managedSection = await core.setConfigRecord(fixture.workspace, {
       occurredAt: instant(4), collection: "managed-section", key: "AGENTS.md#navigation",
       value: { file: "AGENTS.md", id: "navigation", rev: 1, digest: "a".repeat(64), state: "managed" },
     });
-    assert.deepEqual(core.writtenRecordIds(managedSection, rule.version), ["managed-section:AGENTS.md#navigation"]);
+    assert.deepEqual(writtenRecordIds(managedSection, rule.version), ["managed-section:AGENTS.md#navigation"]);
 
     const removed = await core.removeConfigRecord(fixture.workspace, { occurredAt: instant(5), collection: "gate", key: "links" });
-    assert.deepEqual(core.writtenRecordIds(removed, managedSection.version), ["gate:links"], "a removal reports its actual record identity");
+    assert.deepEqual(writtenRecordIds(removed, managedSection.version), ["gate:links"], "a removal reports its actual record identity");
   });
 });

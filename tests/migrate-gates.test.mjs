@@ -295,7 +295,7 @@ test("489 (TCRN-CROSS-SUB-365): the two gate verbs are cataloged, neither starts
   assert.equal(entry("work-gate-list").mutates, false);
   assert.deepEqual(flags("work-gate-list"), [["workspace", false, "string"], ["work-id", false, "string"], ["status", false, "string"], ["limit", false, "integer"], ["offset", false, "integer"]]);
   assert.equal(entry("work-gate-release").mutates, true);
-  assert.deepEqual(flags("work-gate-release"), [["workspace", false, "string"], ["at", true, "instant"], ["id", true, "string"], ["reason", true, "string"], ["actor", true, "string"]]);
+  assert.deepEqual(flags("work-gate-release"), [["workspace", false, "string"], ["at", true, "instant"], ["id", true, "string"], ["reason", true, "string"], ["actor", true, "string"], ["timeout-ms", false, "integer"]]);
   assert.equal(GATE_RELEASE_VERB, "work-gate-release", "the refusal names the cataloged verb");
   for (const name of ["work-gate-list", "work-gate-release"]) assert.equal(/^(gate|minutes)-/u.test(name), false, name);
 });

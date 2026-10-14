@@ -156,6 +156,20 @@ event is complete because its body is written first. Older metadata and body use
 crests remain readable, and new events can be appended without rewriting their
 existing records.
 
+Only a write takes the user crest lock (TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-482). A
+write of an event-stream crest, once its event is down and still under the lock,
+replaces this device's snapshot of the crest -- `snapshot.json` in the crest's cache
+directory, `einzbern.user-crest-snapshot.v1`, written to a temporary name and renamed
+-- and a read (list, snippet, body, and so recall) answers from that snapshot without
+the lock while the crest's folder still stands as the snapshot found it: the same
+entries in the folder, in `events/` and in each device stream, each with the same
+size, modification time and inode. A read that finds the snapshot missing or behind
+the crest (another device's events arrived, or a stream was forked or altered)
+rebuilds it under the lock when the lock is free; while a writer holds the
+lock it answers from the snapshot it has, or, with none, from a scan of the crest as
+it stands, and waits for nothing. The snapshot is a projection, not authority, and an
+older metadata and body crest is read under the lock as before.
+
 The user crest's root manifest, `store.json`, is written by exactly one operation
 of this engine (TCRN-CROSS-SUB-310, MIN-235 D7):
 

@@ -23,7 +23,7 @@ import { checkManagedSectionRecordValue } from "./managed-sections.js";
 import { checkRuleRecordValue } from "./rules.js";
 import { checkVariableRecordValue } from "./variables.js";
 import { checkLeaseRecordValue } from "./work-lease.js";
-import { appendEvents, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
+import { appendEvents, projectConfiguration } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 import { projectLineage } from "./project-scope.js";
 
@@ -290,19 +290,13 @@ export function removeConfigRecordDelta(input: ConfigRecordRemoveInput): (state:
  */
 export async function setConfigRecord(workspaceRoot: string, input: ConfigRecordSetInput & WorkspaceMutationOptions): Promise<WorkspaceState> {
   const delta = setConfigRecordDelta(input);
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const committed = await appendEvents(root, [delta], input);
-    await projectConfiguration(root, committed);
-    return committed;
-  });
+  // TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-481): only the append and the projection that follows it hold
+  // the lock; the merged state is read and the delta built outside it.
+  return appendEvents(workspaceRoot, [delta], input, (root, committed) => projectConfiguration(root, committed));
 }
 
 /** Remove one record from a library, the same way; a key the merged state does not hold is refused. */
 export async function removeConfigRecord(workspaceRoot: string, input: ConfigRecordRemoveInput & WorkspaceMutationOptions): Promise<WorkspaceState> {
   const delta = removeConfigRecordDelta(input);
-  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const committed = await appendEvents(root, [delta], input);
-    await projectConfiguration(root, committed);
-    return committed;
-  });
+  return appendEvents(workspaceRoot, [delta], input, (root, committed) => projectConfiguration(root, committed));
 }

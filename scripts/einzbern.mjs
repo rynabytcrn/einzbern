@@ -31,8 +31,9 @@ try {
   // TCRN-CROSS-STORY-528, TCRN-CROSS-SUB-457). A model's write refused for the decision it cites
   // names that decision and the check it failed (MODEL_WRITE_AUTHORIZATION_INVALID,
   // TCRN-CROSS-STORY-526, TCRN-CROSS-SUB-466); a gate declaration refused for one of its covers now
-  // names that reason too (GATES_CONFIG_INVALID).
-  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest", "check", "workId", "cardId", "query", "holder", "expiresAt", "leasedWorkId", "decidedIn", "reason"];
+  // names that reason too (GATES_CONFIG_INVALID). A write that ran out of --timeout-ms waiting for the
+  // library write lock names its holder: pid, command and since when (WORKSPACE_LOCKED, TCRN-CROSS-SUB-480).
+  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest", "check", "workId", "cardId", "query", "holder", "expiresAt", "leasedWorkId", "decidedIn", "reason", "holderPid", "holderCommand", "heldSince"];
   const numberDetails = ["bodyBytes", "limit"];
   const listDetails = ["allowedValues", "conflicts", "reds", "stories"];
   const details = error?.details !== null && typeof error?.details === "object"

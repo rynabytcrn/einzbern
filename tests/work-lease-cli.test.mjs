@@ -36,8 +36,8 @@ const leasedBy = (error) => ({ reasonCode: error.reasonCode, holder: error.detai
 test("528 SUB-458: work-claim and work-release are cataloged writes with their flags, and --help answers for them", async () => {
   const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
   const flags = (name) => Object.fromEntries(entry(name).flags.map((flag) => [flag.name, [flag.required, flag.valueKind]]));
-  assert.deepEqual(flags("work-claim"), { workspace: [false, "string"], at: [true, "instant"], id: [true, "string"], actor: [true, "string"], ttl: [false, "string"] });
-  assert.deepEqual(flags("work-release"), { workspace: [false, "string"], at: [true, "instant"], id: [true, "string"], actor: [true, "string"], force: [false, "boolean"] });
+  assert.deepEqual(flags("work-claim"), { workspace: [false, "string"], at: [true, "instant"], id: [true, "string"], actor: [true, "string"], ttl: [false, "string"], "timeout-ms": [false, "integer"] });
+  assert.deepEqual(flags("work-release"), { workspace: [false, "string"], at: [true, "instant"], id: [true, "string"], actor: [true, "string"], force: [false, "boolean"], "timeout-ms": [false, "integer"] });
   for (const name of ["work-claim", "work-release"]) {
     assert.equal(entry(name).mutates, true, `${name} writes`);
     assert.equal(entry(name).availability, "cli");

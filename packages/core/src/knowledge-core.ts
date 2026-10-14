@@ -72,7 +72,7 @@ import { readUserCrestPath } from "./machine-settings.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
 import { assertKnowledgeNotRecorded } from "./knowledge-duplicates.js";
 import { readRegistry } from "./registry.js";
-import { familiesApart, referenceFamilies } from "./work-family.js";
+import { cardFamilies, familiesApart } from "./work-family.js";
 
 export const KNOWLEDGE_CORE_VERSION = "tcrn.knowledge-core.v1" as const;
 export const KNOWLEDGE_STORE_SCHEMA_VERSION = "tcrn.knowledge-store.v1" as const;
@@ -4415,8 +4415,8 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
 /**
  * TCRN-CROSS-STORY-531 (MIN-256 D6 C5; TCRN-CROSS-SUB-485): one card a write was admitted beside
  * although it scores as a possible conflict, because it is of another INIT family (`families`, the
- * Initiatives its source references lead to). The receipt names each under `warnings`; the card
- * records it in coexistsWith.
+ * Initiatives its source references lead to, and since TCRN-CROSS-SUB-503 its linked work). The
+ * receipt names each under `warnings`; the card records it in coexistsWith.
  */
 interface KnowledgeConflictWarning {
   readonly reasonCode: "KNOWLEDGE_POSSIBLE_CONFLICT";
@@ -4434,7 +4434,9 @@ interface ConflictFamilyVerdict {
 // TCRN-CROSS-SUB-485: a write that names neither --supersedes nor --coexist is refused only for the
 // conflicts of its own INIT family. The families are read from the source references
 // (referenceFamilies, Q11): the new card's, and those of every scored version of a conflicting card,
-// since a duplicate's versions can point at different work. A conflict all of whose versions are of
+// since a duplicate's versions can point at different work. TCRN-CROSS-SUB-503 (STORY-539): and from
+// the linked work (cardFamilies) on both sides, a reference that is the external key of a work record
+// this library holds naming that record's family. A conflict all of whose versions are of
 // families apart from the new card's is stood beside; one of a shared family, or one either side of
 // which has no known family, refuses the write as before. A write that names --supersedes or
 // --coexist is admitted beside every conflict, as it always was.
@@ -4446,7 +4448,7 @@ function conflictFamilyVerdict(
   input: Pick<CreateKnowledgeUnitInput, "coexist">,
 ): ConflictFamilyVerdict {
   if (conflicts.length === 0 || metadata.supersedes !== null || input.coexist === true) return { blocking: [], otherFamily: [] };
-  const own = referenceFamilies(state, metadata.sourceReferences);
+  const own = cardFamilies(state, metadata);
   const blocking: string[] = [];
   const otherFamily: KnowledgeConflictWarning[] = [];
   for (const id of conflicts) {
@@ -4455,7 +4457,7 @@ function conflictFamilyVerdict(
     for (const version of scored) {
       if (!apart) break;
       if (version.id !== id) continue;
-      const theirs = referenceFamilies(state, version.sourceReferences);
+      const theirs = cardFamilies(state, version);
       if (theirs === null || !familiesApart(own, theirs)) apart = false;
       else for (const family of theirs) families.add(family);
     }

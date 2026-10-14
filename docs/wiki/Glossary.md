@@ -62,6 +62,8 @@
 
 写卡前，卡片与工单正文和有效决策比对，重复即拒写（`KNOWLEDGE_ALREADY_RECORDED`），内容应写进工单或纪要。新纪要的决策与某条有效决策主题相近而未声明取代、撤回或并存（`--coexists`）时拒写（`MINUTES_POSSIBLE_CONFLICT`），并点名候选。工单 decided-by 或卡片关联的决策已过时，`work-show` 与召回提示已被哪条取代。完整规则见 `specs/minutes-v1.md`。
 
+知识卡与纪要的冲突守卫按 INIT 族分流（TCRN-CROSS-STORY-531、TCRN-CROSS-STORY-539）：族是工单父链顶端的 Initiative。卡的族取自来源引用与关联工单（`--work-ids`）：工单 id、纪要 id（取该纪要关联的工单）、本库工单的外部键（整串相等、区分大小写，如 `TCRN-CROSS-STORY-529`）；文件路径、URL 与本库没有的外部键不给族。纪要的族取自它关联的工单。与其他族的卡或决策相近时照常写入，回执的 `warnings` 给出 `KNOWLEDGE_POSSIBLE_CONFLICT` 或 `MINUTES_POSSIBLE_CONFLICT`；同族、或任一方族不明时照旧拒写。完整规则见 `packages/core/spec/knowledge-core-v1.md`。
+
 ## 工单租约
 
 租约是一个行动者对一张工单的占用（TCRN-CROSS-STORY-528，MIN-256），记在库的 `lease` 配置记录里：键是工单 id，作用域是工单所属的项目，值是持有者 `holder`、申领时刻 `claimedAt` 与到期时刻 `expiresAt`。租约随库同步，不写进 `config/project.json`。

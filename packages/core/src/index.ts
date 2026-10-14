@@ -585,7 +585,9 @@ export {
   validateCorePersonaProfileShape,
 } from "./reference-profiles.js";
 export type { CorePersonaBundle, CorePersonaProfile, CorePersonaReasonCode } from "./reference-profiles.js";
-export { WORK_BATCH_SCHEMA_VERSION, WORK_BATCH_VERBS, applyWorkBatch, workBatchReceipt } from "./work-batch.js";
+// TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-472): work-batch holds its transition and annotation members to
+// the leases before it judges the gates.
+export { WORK_BATCH_SCHEMA_VERSION, WORK_BATCH_VERBS, applyWorkBatch, assertWorkBatchLeases, workBatchReceipt } from "./work-batch.js";
 export type { WorkBatchOptions, WorkBatchProblem } from "./work-batch.js";
 // TCRN-CROSS-STORY-472 R2, R3: relations between work records; the forward direction is stored,
 // the reverse projected when read.
@@ -737,7 +739,9 @@ export { configRecord, configRecords, removeConfigRecord, setConfigRecord } from
 export type { ConfigRecord } from "./config-records.js";
 // TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-456): work leases, records of the library's lease
 // collection. work-claim and work-release write them; work-show, work-list and Atelier show them.
-export { claimWork, releaseWork, workLeaseView } from "./work-lease.js";
+// TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-471): work-transition to done holds the item to the leases
+// before it judges the gates.
+export { assertWorkLeaseAdmits, claimWork, releaseWork, workLeaseView } from "./work-lease.js";
 // TCRN-CROSS-STORY-478 R1, R2, R6 (TCRN-CROSS-SUB-316): the managed-section writer.
 export { applyManagedWrite, managedSectionRecordsFor, parseManagedFile, planManagedWrite } from "./managed-sections.js";
 export type { ManagedSectionRecord } from "./managed-sections.js";

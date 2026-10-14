@@ -18,6 +18,7 @@ import {
   createProject,
   applyKnowledgeBatch,
   applyWorkBatch,
+  assertWorkBatchLeases,
   createWork,
   deleteProject,
   deleteWork,
@@ -45,6 +46,7 @@ import {
   verifySnapshotManifest,
   transitionWork,
   assertWorkGatesClear,
+  assertWorkLeaseAdmits,
   releaseGate,
   annotateWork,
   claimWork,
@@ -852,6 +854,17 @@ function batchDoneWorkIds(document: unknown): readonly string[] {
     if (id !== null && !ids.includes(id)) ids.push(id);
   }
   return ids;
+}
+
+// TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-472): whether a work-batch document transitions or annotates a
+// record; those are the members a lease can bind.
+function batchTransitionsOrAnnotates(document: unknown): boolean {
+  const members = (document as { readonly members?: unknown } | null)?.members;
+  if (!Array.isArray(members)) return false;
+  return (members as readonly unknown[]).some((member) => {
+    const verb = member !== null && typeof member === "object" ? (member as { readonly verb?: unknown }).verb : undefined;
+    return verb === "work-transition" || verb === "work-annotate";
+  });
 }
 
 // TCRN-CROSS-STORY-476 (problem list #18): every knowledge verb that writes a card answers the ids
@@ -3328,13 +3341,21 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     }
     const members = Array.isArray((document as { members?: unknown }).members) ? (document as { members: unknown[] }).members.length : 0;
     const doneIds = batchDoneWorkIds(document);
+    const leaseBound = batchTransitionsOrAnnotates(document);
     const { state, gates } = await withWriteLock(workspace, at, async () => {
       // TCRN-CROSS-STORY-485 R4: a Story the batch takes to done passes the gates first; a refusal
       // writes no member. TCRN-CROSS-STORY-489: before those, a gate a migration carried over that
       // still holds a member is named (WORKSPACE_GATE_PENDING, with work-gate-release).
-      const before = doneIds.length === 0 ? null : await materializeWorkspace(workspace);
-      if (before !== null) assertWorkGatesClear(before, doneIds);
-      const verdict: DoneGatesVerdict | null = before === null
+      // TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-472): before either, every transition and annotation
+      // member is held to the leases as the apply pass would hold it; the first one another actor's
+      // unexpired lease binds refuses the whole batch (WORK_BATCH_REFUSED, failed.reasonCode
+      // WORK_LEASED) and no gate is judged. A batch with no such member skips the check.
+      const before = doneIds.length === 0 && !leaseBound ? null : await materializeWorkspace(workspace);
+      if (before !== null && leaseBound) {
+        assertWorkBatchLeases(before, document, { occurredAt: at, ...(values.actor ? { actorId: values.actor } : {}) });
+      }
+      if (before !== null && doneIds.length > 0) assertWorkGatesClear(before, doneIds);
+      const verdict: DoneGatesVerdict | null = before === null || doneIds.length === 0
         ? null
         : await doneGates(before, doneIds, batchCreatedKinds(document), values.project);
       return {
@@ -3368,8 +3389,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // are green on the tree as it is; the refusal names every red required gate.
       // TCRN-CROSS-STORY-489: before those, a gate a migration carried over that still holds the work
       // item is named (WORKSPACE_GATE_PENDING, with work-gate-release).
+      // TCRN-CROSS-STORY-536 (TCRN-CROSS-SUB-471): before either, the item is held to the leases as the
+      // write itself would hold it: while another actor's unexpired lease binds the item, the
+      // transition is refused with WORK_LEASED and no gate is judged.
       const before = values.status === "done" ? await materializeWorkspace(workspace) : null;
-      if (before !== null) assertWorkGatesClear(before, [values.id ?? ""]);
+      if (before !== null) {
+        assertWorkLeaseAdmits(before, values.id ?? "", values.actor ? values.actor : undefined, at);
+        assertWorkGatesClear(before, [values.id ?? ""]);
+      }
       const verdict: DoneGatesVerdict | null = before === null
         ? null
         : await doneGates(before, [values.id ?? ""], [], values.project);

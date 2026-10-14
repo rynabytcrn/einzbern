@@ -118,6 +118,18 @@ export function userCrestCachePath(home: string = deviceHome()): string {
   return join(home, DEVICE_HOME_ENTRIES.cache, USER_CREST_DEVICE_NAME);
 }
 
+/**
+ * TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-482): the user crest as this device last read it whole, which a
+ * read answers from without taking the user crest lock. A write replaces it under the lock, by an
+ * atomic rename, once its event is down; a read that finds it missing or behind the crest's streams
+ * rebuilds it. A file of this device's cache, never of the crest.
+ */
+export const USER_CREST_SNAPSHOT_SCHEMA_VERSION = "einzbern.user-crest-snapshot.v1" as const;
+
+export function userCrestSnapshotPath(home: string = deviceHome()): string {
+  return join(userCrestCachePath(home), "snapshot.json");
+}
+
 export function backupsPath(home: string = deviceHome()): string {
   return join(home, DEVICE_HOME_ENTRIES.backups);
 }

@@ -12,7 +12,7 @@ import test from "node:test";
 import { materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { cli, cliProcess, instant, workspaceFixture } from "./helpers/workspace-fixture.mjs";
 
-const coreModule = new URL("../dist/build/packages/core/src/index.js", import.meta.url).href;
+const coreModule = new URL("../dist/build/packages/core/src/workspace.js", import.meta.url).href;
 
 // Another process that takes the library's write lock, as a write verb does, and gives it back after
 // `milliseconds`.

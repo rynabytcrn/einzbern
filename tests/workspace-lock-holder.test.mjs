@@ -16,12 +16,12 @@ import {
   FILE_LOCK_SCHEMA_VERSION,
   lockPath as libraryLockPath,
   materializeWorkspace,
-  withWorkspaceWriteLock,
   withWriteLockOptions,
 } from "../dist/build/packages/core/src/index.js";
+import { withWorkspaceWriteLock } from "../dist/build/packages/core/src/workspace.js";
 import { cliProcess, deviceHome, instant, workspaceFixture } from "./helpers/workspace-fixture.mjs";
 
-const coreModule = new URL("../dist/build/packages/core/src/index.js", import.meta.url).href;
+const coreModule = new URL("../dist/build/packages/core/src/workspace.js", import.meta.url).href;
 
 // Another process that holds the library's write lock, as a write verb does, until it is stopped.
 async function holdLibraryLock(context, workspace, command) {

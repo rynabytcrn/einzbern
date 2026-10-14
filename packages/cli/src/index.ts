@@ -529,9 +529,9 @@ let lastWrittenIds: readonly string[] | null = null;
 // TCRN-CROSS-STORY-529 (TCRN-CROSS-SUB-481): a write verb no longer holds the library write lock for
 // its whole sequence. Its before-reads, its checks and a Story's done judgement run outside the lock,
 // so they hold up no other writer and no reader; the engine write functions take the lock for their
-// append alone and check under it that the state they built against is still the latest
-// (appendEvents). A check a verb makes before writing is made again where the write builds its event
-// -- a work lease, for one, by transitionWorkDelta (Q21). The receipt names exactly the records this
+// append alone and check under it that the state they built against is still the latest (the
+// engine's event append). A check a verb makes before writing is made again where the write builds its
+// event -- a work lease, for one, by the transition's own delta (Q21). The receipt names exactly the records this
 // verb's appends wrote (recordAppends), whatever another writer appended meanwhile. A library the
 // write would refuse is refused first, before anything is read or judged.
 async function withWriteLock<T>(workspace: string, _at: string, operation: () => Promise<T>): Promise<T> {

@@ -5,6 +5,22 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Knowledge and Minutes
+
+A coordination library's knowledge writes no longer take the write language policy
+(TCRN-CROSS-STORY-543, TCRN-CROSS-SUB-523 and TCRN-CROSS-SUB-524, EPIC-151 R11, MIN-262 D1). Its
+`artifact.language` decides only the language of its managed sections and variable sections; it has
+no `models.*` (MIN-243 D1), so no economy-tier model can translate for it, and once it recorded a
+language 2.2.0 refused every `knowledge-capture`, `knowledge-create` and `knowledge-batch` card
+there with `KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE`. Its cards, and the article indexes of
+`knowledge-article-create` and `knowledge-article-refresh`, are now written in the words they were
+handed, untranslated and with no phrasings, as before it recorded a language; a `--language-bundle`
+is still read and checked, and its answers are not used. recall still answers a query in another
+language with the translation it is owed (`queryTranslation`, its `model` null), and the managed
+sections still follow `artifact.language`. A project library, and a library with no chain identity,
+keep the policy: once it records `artifact.language`, a card write there needs its economy-tier model
+and a language bundle. No event, record, library format, flag, receipt field or reason code changes.
+
 ## 2.2.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.2.0. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

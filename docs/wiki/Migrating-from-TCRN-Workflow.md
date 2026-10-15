@@ -313,9 +313,12 @@ coordination library's library level; a `"write"` row is written there by the
 apply, signed `agent:setup`, once. An `artifact.language` the old chain does not
 declare is listed as `"legacy-default"` with `action: "default"` and is written
 nowhere: the coordination library reads the catalog default and records no
-language, so its card writes need no language bundle, as before the migration (a
-recorded `artifact.language` turns on the write language policy, after which a
-card write needs the economy-tier model and `--language-bundle`). These values are never written into a project
+language, so its card writes need no language bundle, as before the migration
+(from 2.2.1 a coordination library's `artifact.language` decides only the
+language of its managed and variable sections, and its card writes take no write
+language policy at all, TCRN-CROSS-STORY-543; it is a project library that, once
+it records `artifact.language`, needs the economy-tier model and
+`--language-bundle` for a card write). These values are never written into a project
 chain, and no project chain reads them. Never infer a coordination role from a Cross Project label,
 a partition name or a path, or copy its old development settings into a newly
 created product as implicit consent. The real Einzbern/Mana product identity and

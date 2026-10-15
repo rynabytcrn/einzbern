@@ -131,6 +131,8 @@ proposal-reject --key rule:<规则 id> --proposed-at <提交时刻> --actor <行
 
 引擎第一次接管容器时，文件里已有带标记、标记里的摘要与正文相符、但库里还没有记录的段，按引擎的正文替换：先备份原文件，修订号在原标记的基础上加 1，并记下记录，不进入待处理。正文与标记摘要不符的段视为你改过，照旧原样保留并转为 `pending`，用 `rule-resolve` 处置。
 
+协调库的 `artifact.language` 只决定它的受管段与变量段用哪种语言：协调库没有 `models.*`（MIN-243 D1），也就没有经济档模型，所以它的知识写入（`knowledge-capture`、`knowledge-create`、`knowledge-batch` 的新建、`knowledge-article-create` 与 `knowledge-article-refresh`）不套用写入语言策略，卡按传入的原文写入、不带问法扩展，带了 `--language-bundle` 也只读取校验、不使用；`recall` 的查询语言回答照旧按它判定，项目库照旧套用写入语言策略（TCRN-CROSS-STORY-543，MIN-262 D1）。
+
 ## Project-bound output
 
 Managed output uses the selected project's effective settings and provenance.

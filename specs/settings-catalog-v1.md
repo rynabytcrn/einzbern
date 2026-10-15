@@ -607,6 +607,23 @@ bindings, registered output, language and gates. Publication verification stays
 unverified until separately established. A gate operation requires its own
 registered root and declarations, not unrelated design/model readiness.
 
+A coordination library's `artifact.language` decides only the language of its
+managed sections and its variable sections. The write language policy of
+TCRN-CROSS-STORY-364 does not apply to its knowledge writes (`knowledge-capture`,
+`knowledge-create`, the new cards of `knowledge-batch`, `knowledge-article-create`
+and `knowledge-article-refresh`): a coordination library has no `models.*`
+(MIN-243 D1), so it has no economy-tier model to translate for it. Its cards are
+written in the words they were handed, untranslated and with no phrasings
+(`expansions` empty), and a `--language-bundle`, when one is given, is still read
+and checked but not used. recall's query-language answer still reads it: an
+English query against a `zh-CN` coordination library is answered with
+`queryTranslation` `{from: "en", to: "zh-CN", model: null}` and one counted
+query translation. A project library, and a library with no chain identity, keep
+the policy: once it records `artifact.language`, a card write there needs its
+economy-tier model and a language bundle, and is refused with
+`KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE` without them (TCRN-CROSS-STORY-543,
+MIN-262 D1).
+
 `settings-catalog --project-id` no longer refuses a target whose common default
 does not resolve (TCRN-CROSS-INIT-053 R46): it names that default in
 `commonDefault` (`reference`, `status` `unresolved`, the reference's own

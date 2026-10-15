@@ -126,7 +126,7 @@ test("483-AC1: enabling batch processing writes its v3 text into AGENTS.md as a 
   const batch = rules.find((rule) => rule.id === "batch");
   assert.deepEqual(batch, { id: "batch", version: 3, recordedVersion: 3, fileVersion: 1, section: "rule:batch", state: "enabled" });
   assert.deepEqual(change.status, batch, "the change reports the state listRules reads");
-  assert.deepEqual(rules.filter((rule) => rule.id !== "batch").map((rule) => rule.state), ["disabled", "disabled", "disabled", "disabled"]);
+  assert.deepEqual(rules.filter((rule) => rule.id !== "batch").map((rule) => rule.state), BUILT_IN_RULES.filter((rule) => rule.id !== "batch").map(() => "disabled"));
 
   const again = await enable(paths, "batch");
   assert.deepEqual([again.result, again.written, again.recorded, again.backupPath, again.status.state], ["unchanged", false, 0, null, "enabled"]);
@@ -706,5 +706,44 @@ test("INIT-053 R40: a same-version revision replaces an unchanged rule section a
     assert.deepEqual(refused.pending, [{ id: "rule:batch", file: "AGENTS.md" }]);
     assert.equal(await readFile(changed.agents, "utf8"), edited, "the user's text stays");
     assert.equal((await ruleOf(changed, "batch")).state, "pending");
+  }
+});
+
+// TCRN-CROSS-STORY-540 (MIN-258 D3(c), MIN-259 D1): the Owner's two immediate rules, residue-cleanup
+// and goal-writing, are switched on and off like every other rule. Enabling one records it at v1 and
+// writes its text, in the project's artifact language, into AGENTS.md as its own managed section
+// after the user's text; disabling it takes that section away with its markers and leaves the other
+// rule's section and the user's text as they were.
+test("540 (MIN-259 D1): residue-cleanup and goal-writing are enabled with their v1 sections in the project's language, and disabled again", async (context) => {
+  for (const language of ["zh-CN", "en"]) {
+    const paths = await scratch(context, language);
+    for (const id of ["residue-cleanup", "goal-writing"]) {
+      const body = builtInRule(id).body[language === "zh-CN" ? "zh" : "en"];
+      const change = await enable(paths, id);
+      assert.deepEqual([change.action, change.section, change.file, change.result, change.written], ["enable", `rule:${id}`, "AGENTS.md", "create", true], `${id} ${language}`);
+      assert.deepEqual(change.status, { id, version: 1, recordedVersion: 1, fileVersion: 1, section: `rule:${id}`, state: "enabled" }, `${id} ${language}`);
+      const section = sectionOf(await readFile(paths.agents, "utf8"), `rule:${id}`);
+      assert.deepEqual([section.body, section.rev, section.digest], [body, 1, sectionDigest(body)], `${id} ${language}: the section holds the v1 text`);
+      assert.deepEqual(await ruleRecord(paths, id), { enabled: true, version: 1 });
+      assert.deepEqual(await sectionRecord(paths, id), { file: "AGENTS.md", id: `rule:${id}`, rev: 1, digest: sectionDigest(body), state: "managed" });
+    }
+    const both = await readFile(paths.agents, "utf8");
+    assert.equal(both.startsWith(`${USER_TEXT}\n`), true, "the user's text stays where it was");
+    if (language === "zh-CN") {
+      for (const id of ["residue-cleanup", "goal-writing"]) {
+        assert.equal(sectionOf(both, `rule:${id}`).body, await readFile(join(fixtures, `${id}.zh.md`), "utf8"), `${id}: the Owner's Chinese text`);
+      }
+    }
+
+    const off = await disable(paths, "residue-cleanup");
+    assert.deepEqual([off.action, off.result, off.written], ["disable", "disabled", true]);
+    assert.deepEqual(off.status, { id: "residue-cleanup", version: 1, recordedVersion: 1, fileVersion: null, section: "rule:residue-cleanup", state: "disabled" });
+    assert.deepEqual(await ruleRecord(paths, "residue-cleanup"), { enabled: false, version: 1 });
+    assert.equal(await sectionRecord(paths, "residue-cleanup"), null, "the section is no longer recorded");
+    const after = await readFile(paths.agents, "utf8");
+    assert.equal(sectionOf(after, "rule:residue-cleanup"), null);
+    assert.equal(sectionOf(after, "rule:goal-writing").raw, sectionOf(both, "rule:goal-writing").raw, "the other rule's section stays");
+    assert.equal(after.startsWith(USER_TEXT), true);
+    assert.deepEqual((await list(paths)).filter((rule) => ["residue-cleanup", "goal-writing"].includes(rule.id)).map((rule) => [rule.id, rule.state]), [["residue-cleanup", "disabled"], ["goal-writing", "enabled"]]);
   }
 });

@@ -15,6 +15,9 @@
 // clause 9 (evidence is read in excerpts) at the same version; the Chinese fixture is the archive
 // again, byte for byte, batch-v3-rev3 keeps the R48 text in both languages, and the English of both
 // additions is an agent's translation that awaits the Owner's correction.
+// TCRN-CROSS-STORY-540 (MIN-258 D3(c), MIN-259 D1): the Owner's two immediate rules join the catalog
+// at v1, residue-cleanup and goal-writing; their Chinese fixtures are the Owner's wording, byte for
+// byte, under the catalog's heading.
 
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -36,13 +39,15 @@ function absolutePath(text) {
   return ABSOLUTE_PATH.exec(text)?.[0] ?? null;
 }
 
-test("the engine ships five built-in rules at their versions, batch processing at v3", () => {
+test("the engine ships seven built-in rules at their versions, batch processing at v3", () => {
   assert.deepEqual(BUILT_IN_RULES.map((rule) => [rule.id, rule.version]), [
     ["autonomy", 1],
     ["batch", 3],
     ["unattended-commands", 1],
     ["silent-reporting", 1],
     ["design-authority", 1],
+    ["residue-cleanup", 1],
+    ["goal-writing", 1],
   ]);
   assert.deepEqual([...BUILT_IN_RULE_IDS], BUILT_IN_RULES.map((rule) => rule.id));
   assert.equal(builtInRule("batch")?.version, 3);
@@ -166,4 +171,47 @@ test("INIT-053 R40: silent-reporting v1 ends with the sentence that no report fa
   for (const language of LANGUAGES) {
     assert.equal(rule.body[language].split("\n\n").length, 3, `${language}: heading and two paragraphs`);
   }
+});
+
+// TCRN-CROSS-STORY-540 (MIN-258 D3(c), MIN-259 D1): residue-cleanup v1 and goal-writing v1 follow
+// design-authority. Each body is a heading, an opening paragraph and its numbered clauses, in both
+// languages and clause for clause. The Chinese is the Owner's wording (the fixtures); the English of
+// residue-cleanup is an agent's translation, and the three clauses of goal-writing are the English
+// original of TCRN-CROSS-INC-225 "FIX, TYPE LEVEL" that the Owner adopted, without the last sentence
+// of its clause 3, which the Chinese does not carry.
+const INC_225_CLAUSES = Object.freeze([
+  "1. A goal states a verifiable end state of work — a file exists, a suite is green, a record has landed. It never states authorization or agreement. Authorization is expressed in conversation and is not a goal clause; putting it in one creates a condition the working party cannot reach.",
+  "2. Every goal carries a satisfiable escape clause: \"or: blocked on a decision only the Owner can make, and the blocking point has been stated\".",
+  "3. On encountering a speech-act condition, the working party explains once, replies minimally thereafter, and names the single exit.",
+]);
+
+test("540 (MIN-259 D1): residue-cleanup v1 and goal-writing v1 carry the Owner's Chinese and their English, clause for clause", async () => {
+  assert.deepEqual(BUILT_IN_RULE_IDS.slice(-3), ["design-authority", "residue-cleanup", "goal-writing"]);
+  const residue = builtInRule("residue-cleanup");
+  const goal = builtInRule("goal-writing");
+  assert.deepEqual([residue.version, { ...residue.title }], [1, { zh: "无效残余收尾原则", en: "Residue Cleanup Principle" }]);
+  assert.deepEqual([goal.version, { ...goal.title }], [1, { zh: "目标书写契约", en: "Goal Writing Contract" }]);
+  for (const [rule, count] of [[residue, 8], [goal, 3]]) {
+    assert.equal(rule.body.zh, await readFile(join(fixtures, `${rule.id}.zh.md`), "utf8"), `${rule.id}: the Owner's Chinese, byte for byte`);
+    for (const language of LANGUAGES) {
+      const parts = rule.body[language].split("\n\n");
+      assert.equal(parts.length, 3, `${rule.id} ${language}: the heading, the opening paragraph and the clauses`);
+      const numbers = parts[2].trimEnd().split("\n").map((line) => line.slice(0, line.indexOf(". ") + 2));
+      assert.deepEqual(numbers, Array.from({ length: count }, (_, index) => `${index + 1}. `), `${rule.id} ${language}: clauses 1 to ${count}`);
+    }
+  }
+  const leads = {
+    zh: ["创建者负责，主代理接续。", "按用途判定残余。", "结束即收尾，失败也收尾。", "证据与可重建副本分开。", "限定清理边界。", "工作树通过管理入口退出。", "容量与下一轮接续。", "核验实际结果，合并一次汇报。"],
+    en: ["The creator is responsible; the main agent takes over.", "Judge residue by its purpose.", "Clean up when work ends, and when it fails.", "Keep evidence apart from copies that can be rebuilt.", "Bound what is cleaned.", "Retire worktrees through their management entry.", "Capacity and the next round.", "Verify the actual result and report it once."],
+  };
+  for (const language of LANGUAGES) {
+    const clauses = residue.body[language].split("\n\n")[2].trimEnd().split("\n");
+    assert.deepEqual(clauses.map((line) => /^\d\. \*\*([^*]+)\*\* \S/u.exec(line)?.[1] ?? null), leads[language], `residue-cleanup ${language}: each clause leads with its title in bold`);
+  }
+  for (const fragment of ["2026-10-05", "不另开规划轮、子代理或验收门", "`tmp`、`cache`、`test`", "`finally`", "`df`", "`du`"]) assert.ok(residue.body.zh.includes(fragment), `residue-cleanup zh: ${fragment}`);
+  for (const fragment of ["2026-10-05", "opens no planning round, subagent or acceptance gate", "`tmp`, `cache` or `test`", "`finally`", "`df`", "`du`"]) assert.ok(residue.body.en.includes(fragment), `residue-cleanup en: ${fragment}`);
+  assert.deepEqual(goal.body.en.split("\n\n")[2].trimEnd().split("\n"), INC_225_CLAUSES, "goal-writing en: the three clauses are INC-225's English, as the Owner adopted it");
+  assert.equal(goal.body.en.includes("This is the behaviour that reduced this instance's cost"), false, "the last sentence of INC-225 clause 3 is not carried");
+  assert.ok(goal.body.zh.includes("TCRN-CROSS-INC-225「FIX, TYPE LEVEL」") && goal.body.en.includes('TCRN-CROSS-INC-225 "FIX, TYPE LEVEL"'), "both name the Incident and its fix");
+  for (const fragment of ["goal 只写可验证的工作终态", "可满足的退出分支", "言语行为条件"]) assert.ok(goal.body.zh.includes(fragment), `goal-writing zh: ${fragment}`);
 });

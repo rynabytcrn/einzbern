@@ -504,7 +504,7 @@ repository actions remain outside this story's scope.
 `design-authority` v1 is the fifth system rule. Its approved Chinese and English
 bodies are in `rules-catalog.ts` and exact text fixtures. It follows the same
 enable/read/render/explicit-upgrade, keep/overwrite/unmanage and user-modified
-protection as the other four rules. It is disabled until explicitly enabled.
+protection as the other built-in rules. It is disabled until explicitly enabled.
 
 The seven actual catalog variables are `design.authority`, `design.repository`,
 `design.pullRequestTarget`, `design.productionDocs`, `design.buildService`,
@@ -526,6 +526,29 @@ policy to the host; a host default is still an effective host limit, not proof
 of unbounded execution. Existing unrelated host entries and their user-chosen
 timeouts remain intact. Explicit user byte budgets remain distinct from these
 execution policies and from representation or protocol bounds.
+
+## Built-in rule catalog (TCRN-CROSS-STORY-540, MIN-259 D1)
+
+The engine ships seven system rules, in this order. Each is disabled until it is
+enabled and follows the same enable/read/render/explicit-upgrade,
+keep/overwrite/unmanage and user-modified protection.
+
+| id | version | Chinese title | English title |
+| --- | --- | --- | --- |
+| `autonomy` | 1 | 自主运行原则 | Autonomous Operation Principle |
+| `batch` | 3 | 批量处理原则 | Batch Processing Principle |
+| `unattended-commands` | 1 | 无人值守指令原则 | Unattended Commands Principle |
+| `silent-reporting` | 1 | 静默汇报原则 | Silent Reporting Principle |
+| `design-authority` | 1 | 设计权威与一致性原则 | Design Authority and Consistency Principle |
+| `residue-cleanup` | 1 | 无效残余收尾原则 | Residue Cleanup Principle |
+| `goal-writing` | 1 | 目标书写契约 | Goal Writing Contract |
+
+`residue-cleanup` and `goal-writing` are the Owner's two immediate rules
+(MIN-258 D3(c), MIN-259 D1). Their Chinese bodies are the Owner's wording, word
+for word, with exact text fixtures. The English of `residue-cleanup` is an
+agent's translation; the three clauses of `goal-writing` are the English
+original of TCRN-CROSS-INC-225 that the Owner adopted, and its opening paragraph
+is an agent's translation. Both translations await the Owner's correction.
 
 ## Coordination and target provenance
 

@@ -33,6 +33,7 @@ import {
   resolveSection,
 } from "../dist/build/packages/core/src/agents-sections.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
+import { builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
 import { HOST_HOOK_POINTER_EVENTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { AGENTS_NAVIGATION_SETTING, MACHINE_SETTINGS_CATALOG, applyMachineSettingSet, readAgentsNavigation } from "../dist/build/packages/core/src/machine-settings.js";
 import { absolutePathLine, managedSectionRecordsFor, parseManagedFile, renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
@@ -388,9 +389,12 @@ test("508-R7: agents-render arranges the rule sections by order across the place
   const root = await library(paths.base);
   const record = (key, value) => setConfigRecord(root, { collection: "rule", key, value, occurredAt: at() });
   const render = () => renderAgentsSections(root, { projectRoot: paths.project, navigation: null, backupRoot: paths.backups, occurredAt: at() });
-  await record("autonomy", { enabled: true, version: 1, order: 3 });
-  await record("batch", { enabled: true, version: 3, order: 1 });
-  await record("unattended-commands", { enabled: true, version: 1 });
+  // Each rule is recorded at the version this engine ships: the case is about order, not version
+  // (a rule recorded at a lower version reads update-available, and agents-render does not write it).
+  const shipped = (key) => builtInRule(key).version;
+  await record("autonomy", { enabled: true, version: shipped("autonomy"), order: 3 });
+  await record("batch", { enabled: true, version: shipped("batch"), order: 1 });
+  await record("unattended-commands", { enabled: true, version: shipped("unattended-commands") });
   await render();
   const created = await readFile(agents, "utf8");
   assert.deepEqual(ruleSectionIds(created), ["rule:batch", "rule:autonomy", "rule:unattended-commands"], "by order, then the rule without one");
@@ -400,8 +404,8 @@ test("508-R7: agents-render arranges the rule sections by order across the place
   const withNotes = created.replace(endOfBatch, `${endOfBatch}\n## Between\n\nNotes the engine never moves.\n`);
   assert.notEqual(withNotes, created);
   await writeFile(agents, withNotes);
-  await record("autonomy", { enabled: true, version: 1, order: 1 });
-  await record("batch", { enabled: true, version: 3, order: 2 });
+  await record("autonomy", { enabled: true, version: shipped("autonomy"), order: 1 });
+  await record("batch", { enabled: true, version: shipped("batch"), order: 2 });
   const result = await render();
   assert.equal(result.files.find((file) => file.file === AGENTS_FILE).written, true);
   assert.deepEqual(result.sections.filter((section) => section.id.startsWith("rule:")).map((section) => section.result), ["unchanged", "unchanged", "unchanged"], "no section's text is rewritten");

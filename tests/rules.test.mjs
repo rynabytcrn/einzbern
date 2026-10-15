@@ -747,3 +747,37 @@ test("540 (MIN-259 D1): residue-cleanup and goal-writing are enabled with their 
     assert.deepEqual((await list(paths)).filter((rule) => ["residue-cleanup", "goal-writing"].includes(rule.id)).map((rule) => [rule.id, rule.state]), [["residue-cleanup", "disabled"], ["goal-writing", "enabled"]]);
   }
 });
+
+// TCRN-CROSS-STORY-541 (MIN-258 D3, MIN-259 D2): unattended-commands rose to v2. A project that enabled
+// it at v1 reads update-available; neither the read nor agents-render writes its v1 section, and only
+// rule-enable takes v2.
+test("541 (MIN-259 D2): unattended-commands enabled at v1 reads update-available, agents-render leaves the v1 section byte for byte, and rule-enable takes v2", async (context) => {
+  const paths = await scratch(context);
+  // Existing render owns its non-rule system sections before the v1 baseline is captured.
+  await renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
+  const v1 = { zh: await readFile(join(fixtures, "unattended-commands-v1.zh.md"), "utf8"), en: await readFile(join(fixtures, "unattended-commands-v1.en.md"), "utf8") };
+  const catalog = BUILT_IN_RULES.map((rule) => rule.id !== "unattended-commands" ? rule : { ...rule, version: 1, body: v1 });
+  const v2 = await readFile(join(fixtures, "unattended-commands.zh.md"), "utf8");
+  assert.equal(builtInRule("unattended-commands").version, 2);
+
+  // Enabled while the engine shipped unattended commands v1.
+  const first = await enable(paths, "unattended-commands", { catalog });
+  assert.deepEqual([first.result, first.status.state, first.status.version], ["create", "enabled", 1]);
+  assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:unattended-commands").body, v1.zh);
+  assert.deepEqual(await ruleRecord(paths, "unattended-commands"), { enabled: true, version: 1 });
+
+  // The engine now ships v2: the rule reads update-available, and nothing is written.
+  const before = await readFile(paths.agents);
+  assert.deepEqual(await ruleOf(paths, "unattended-commands"), { id: "unattended-commands", version: 2, recordedVersion: 1, fileVersion: 1, section: "rule:unattended-commands", state: "update-available" });
+  assert.deepEqual(await readFile(paths.agents), before, "reading the state writes nothing");
+  const rendered = await renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
+  assert.equal(rendered.sections.find((section) => section.id === "rule:unattended-commands").result, "unchanged");
+  assert.deepEqual(await readFile(paths.agents), before, "agents-render keeps the v1 section byte for byte");
+  assert.equal((await ruleOf(paths, "unattended-commands")).state, "update-available");
+
+  // Enabling it again takes v2.
+  const updated = await enable(paths, "unattended-commands");
+  assert.deepEqual([updated.result, updated.written, updated.recorded], ["replace", true, 2]);
+  assert.deepEqual(updated.status, { id: "unattended-commands", version: 2, recordedVersion: 2, fileVersion: 2, section: "rule:unattended-commands", state: "enabled" });
+  assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:unattended-commands").body, v2);
+});

@@ -43,6 +43,14 @@
 // of its clause 3, which the Chinese does not carry; its opening paragraph is an agent's
 // translation that awaits the Owner's correction.
 //
+// TCRN-CROSS-STORY-541 (MIN-258 D3, MIN-259 D2): unattended-commands rises to v2. Clause 1 gains
+// one sentence: with the Owner's authorization, the trash-empty tool that ships with the skill
+// empties the named trash directories under the session's scratch directory, and each
+// authorization covers one report of their paths and sizes. Everything else is v1 word for word.
+// The Chinese sentence is the wording the Owner agreed to; its English is an agent's translation
+// that awaits the Owner's correction. A new version is not a correction: a project that enabled
+// v1 reads update-available and keeps its v1 section until rule-enable takes v2.
+//
 // Every text is a constant in this file, and this module reads no file: a packaged engine is one
 // script, and a text kept anywhere else would not travel with it. A body is the whole rule as it
 // is written into a project file: a heading that names the rule and its version, the text, and
@@ -131,11 +139,11 @@ A cycle in which fixing one red result turns up another is itself a sign that th
 4. Avoid empty polling while waiting. Use completion notifications and blocking waits supported by the host. Lengthen query intervals when there is repeatedly no new state, respect the host's wait limit and user interruption requirements, and continue independent work when it is available.
 `;
 
-const UNATTENDED_COMMANDS_ZH = `## 无人值守指令原则 v1
+const UNATTENDED_COMMANDS_ZH = `## 无人值守指令原则 v2
 
 无人值守时，弹出确认框等于停摆：确认框不返回错误，会话只是无限等待。凡是可能弹框的写法按禁止处理，改用等价写法，不要先试试看。
 
-1. 删除改为移动。要清掉的文件或目录先 mv 到本会话 scratch 目录下的 trash 子目录。仓库里已跟踪的文件用 git rm。不用 rm 与 rmdir。
+1. 删除改为移动。要清掉的文件或目录先 mv 到本会话 scratch 目录下的 trash 子目录。仓库里已跟踪的文件用 git rm。不用 rm 与 rmdir。经 Owner 授权后，用技能自带的 trash-empty 工具清空会话 scratch 下点名的 trash 目录（只删名为 trash 或 trash-<名>、位于给定 scratch 根下、不是符号链接的目录，先列计划再执行）；授权的粒度为每次汇报列出路径与体积、Owner 答复一次。
 2. 命令里不 cd。一律绝对路径。对别的目录跑 git 用 git -C 那个目录。
 3. 只写工作目录与 scratch 目录。要在别处建克隆或镜像，先用启动参数或 /add-dir 把那个目录加入会话再动手。
 4. 权限规则里 deny 或 ask 列出的路径与命令一概不碰，也不把它们复制到别处再处理。
@@ -144,12 +152,13 @@ const UNATTENDED_COMMANDS_ZH = `## 无人值守指令原则 v1
 宿主说明。Claude Code：rm 或 rmdir 指向根目录、home、工作目录本身会弹框，cd 进另一个目录再跑 git 会弹框，两者在 bypass 下同样弹。
 `;
 
-// Translated when this module was written; awaits the Owner's correction.
-const UNATTENDED_COMMANDS_EN = `## Unattended Commands Principle v1
+// Translated when this module was written, and the sentence clause 1 gains at v2 (MIN-259 D2) is an
+// agent's translation as well; awaits the Owner's correction.
+const UNATTENDED_COMMANDS_EN = `## Unattended Commands Principle v2
 
 When running unattended, a confirmation dialog is a stall: the dialog returns no error, and the session simply waits forever. Treat every way of writing a command that might raise a dialog as forbidden and use an equivalent form instead; do not try it first to see what happens.
 
-1. Move instead of deleting. To clear away a file or directory, first mv it into the trash subdirectory of this session's scratch directory. For files a repository tracks, use git rm. Do not use rm or rmdir.
+1. Move instead of deleting. To clear away a file or directory, first mv it into the trash subdirectory of this session's scratch directory. For files a repository tracks, use git rm. Do not use rm or rmdir. With the Owner's authorization, empty the named trash directories under the session's scratch directory with the trash-empty tool that ships with the skill (it deletes only directories named trash or trash-<name> that sit under the given scratch root and are not symbolic links, and it lists its plan before it acts); each authorization covers one report that lists the paths and sizes, answered once by the Owner.
 2. No cd in commands. Always use absolute paths. To run git against another directory, use git -C with that directory.
 3. Write only to the working directory and the scratch directory. To create a clone or a mirror somewhere else, first add that directory to the session with a launch argument or /add-dir, and only then begin.
 4. Never touch a path or command that the permission rules list under deny or ask, and do not copy them elsewhere to deal with them there.
@@ -237,7 +246,7 @@ export const BUILT_IN_RULES: readonly BuiltInRule[] = Object.freeze([
   builtIn("batch", 3, { zh: "批量处理原则", en: "Batch Processing Principle" }, { zh: BATCH_ZH, en: BATCH_EN }),
   builtIn(
     "unattended-commands",
-    1,
+    2,
     { zh: "无人值守指令原则", en: "Unattended Commands Principle" },
     { zh: UNATTENDED_COMMANDS_ZH, en: UNATTENDED_COMMANDS_EN },
   ),

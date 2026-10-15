@@ -18,6 +18,8 @@
 // TCRN-CROSS-STORY-540 (MIN-258 D3(c), MIN-259 D1): the Owner's two immediate rules join the catalog
 // at v1, residue-cleanup and goal-writing; their Chinese fixtures are the Owner's wording, byte for
 // byte, under the catalog's heading.
+// TCRN-CROSS-STORY-541 (MIN-258 D3, MIN-259 D2): unattended-commands rises to v2, one sentence added
+// to the end of clause 1; unattended-commands-v1 keeps the v1 text in both languages.
 
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -43,7 +45,7 @@ test("the engine ships seven built-in rules at their versions, batch processing 
   assert.deepEqual(BUILT_IN_RULES.map((rule) => [rule.id, rule.version]), [
     ["autonomy", 1],
     ["batch", 3],
-    ["unattended-commands", 1],
+    ["unattended-commands", 2],
     ["silent-reporting", 1],
     ["design-authority", 1],
     ["residue-cleanup", 1],
@@ -214,4 +216,29 @@ test("540 (MIN-259 D1): residue-cleanup v1 and goal-writing v1 carry the Owner's
   assert.equal(goal.body.en.includes("This is the behaviour that reduced this instance's cost"), false, "the last sentence of INC-225 clause 3 is not carried");
   assert.ok(goal.body.zh.includes("TCRN-CROSS-INC-225「FIX, TYPE LEVEL」") && goal.body.en.includes('TCRN-CROSS-INC-225 "FIX, TYPE LEVEL"'), "both name the Incident and its fix");
   for (const fragment of ["goal 只写可验证的工作终态", "可满足的退出分支", "言语行为条件"]) assert.ok(goal.body.zh.includes(fragment), `goal-writing zh: ${fragment}`);
+});
+
+// TCRN-CROSS-STORY-541 (MIN-258 D3, MIN-259 D2): unattended-commands v2 is v1 with one sentence at
+// the end of clause 1. With the Owner's authorization, the trash-empty tool that ships with the skill
+// empties the named trash directories under the session's scratch directory; each authorization
+// covers one report of their paths and sizes. Every other line is v1's, in both languages.
+test("541 (MIN-259 D2): unattended-commands v2 is v1 with its heading at v2 and one sentence at the end of clause 1, in both languages", async () => {
+  const rule = builtInRule("unattended-commands");
+  assert.equal(rule.version, 2);
+  assert.equal(rule.body.zh, await readFile(join(fixtures, "unattended-commands.zh.md"), "utf8"));
+  for (const language of LANGUAGES) {
+    const before = (await readFile(join(fixtures, `unattended-commands-v1.${language}.md`), "utf8")).split("\n");
+    const after = rule.body[language].split("\n");
+    assert.equal(after.length, before.length, `${language}: no line is added or taken away`);
+    const clause1 = after.findIndex((line) => line.startsWith("1. "));
+    assert.deepEqual(after.map((_, index) => index).filter((index) => after[index] !== before[index]), [0, clause1], `${language}: only the heading and clause 1 change`);
+    assert.equal(after[0], before[0].replace(/ v1$/u, " v2"), `${language}: the heading names v2`);
+    assert.ok(after[clause1].startsWith(before[clause1]) && after[clause1].length > before[clause1].length, `${language}: clause 1 keeps its v1 text and adds to its end`);
+    const added = after[clause1].slice(before[clause1].length);
+    for (const fragment of language === "zh"
+      ? ["经 Owner 授权后", "trash-empty", "点名的 trash 目录", "trash-<名>", "给定 scratch 根下", "不是符号链接", "先列计划再执行", "每次汇报列出路径与体积", "Owner 答复一次"]
+      : ["With the Owner's authorization", "trash-empty", "named trash directories", "trash-<name>", "under the given scratch root", "not symbolic links", "lists its plan before it acts", "lists the paths and sizes", "answered once by the Owner"]) {
+      assert.ok(added.includes(fragment), `${language} added sentence: ${fragment}`);
+    }
+  }
 });

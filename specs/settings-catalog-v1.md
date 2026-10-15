@@ -537,7 +537,7 @@ keep/overwrite/unmanage and user-modified protection.
 | --- | --- | --- | --- |
 | `autonomy` | 1 | 自主运行原则 | Autonomous Operation Principle |
 | `batch` | 3 | 批量处理原则 | Batch Processing Principle |
-| `unattended-commands` | 1 | 无人值守指令原则 | Unattended Commands Principle |
+| `unattended-commands` | 2 | 无人值守指令原则 | Unattended Commands Principle |
 | `silent-reporting` | 1 | 静默汇报原则 | Silent Reporting Principle |
 | `design-authority` | 1 | 设计权威与一致性原则 | Design Authority and Consistency Principle |
 | `residue-cleanup` | 1 | 无效残余收尾原则 | Residue Cleanup Principle |
@@ -549,6 +549,13 @@ for word, with exact text fixtures. The English of `residue-cleanup` is an
 agent's translation; the three clauses of `goal-writing` are the English
 original of TCRN-CROSS-INC-225 that the Owner adopted, and its opening paragraph
 is an agent's translation. Both translations await the Owner's correction.
+
+`unattended-commands` v2 (TCRN-CROSS-STORY-541, MIN-259 D2) is v1 with one
+sentence at the end of clause 1: with the Owner's authorization, the skill's
+`scripts/trash-empty.mjs` empties the named trash directories under the
+session's scratch directory, after it has listed its plan. A project that
+enabled v1 reads `update-available` and keeps its v1 section until `rule-enable`
+takes v2.
 
 ## Coordination and target provenance
 

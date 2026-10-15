@@ -105,6 +105,24 @@ and run the same command with `--yes true` only once the user agreed: it deletes
 clears, each checked again, and `DEVICE_CLEANED` names each entry it deleted with its size, and any
 it could not (`failed`). Without `engine/current` it judges nothing (`DEVICE_CLEAN_ENGINE_UNKNOWN`).
 
+## Emptying a session's trash
+
+An unattended session never runs rm or rmdir: whatever it clears it moves into a `trash` directory
+under its scratch directory (the unattended-commands principle). Emptying that trash needs the
+Owner's authorization, given once for each report that lists the paths and sizes. The skill's
+`scripts/trash-empty.mjs` makes the report: `node <skill directory>/scripts/trash-empty.mjs
+--scratch <scratch root> <trash directory>...` prints the plan and deletes nothing
+(`TRASH_EMPTY_PLAN_READY`): each named directory's real path, how many entries it holds and their
+size in bytes. A named directory is a path relative to the scratch root whose last segment is
+`trash` or `trash-<name>`. It is refused (`TRASH_EMPTY_REFUSED`), and then nothing at all is deleted,
+when it is written with a wildcard, an absolute path or a `.` or `..` segment, when it is a symbolic
+link or not a directory, when its real path leads out of the scratch root, or when it is the same
+as another named directory or lies inside one. A scratch root that is the filesystem root, the
+user's home or a directory above it is refused as well (`TRASH_EMPTY_SCRATCH_ROOT_REFUSED`). Only
+once the Owner has answered the report, run the same command with `--yes`: it checks each directory
+again, deletes what it holds, keeps the directory itself, and answers `TRASH_EMPTIED` with how many
+entries of each it deleted, or `TRASH_EMPTY_INCOMPLETE` with each one it could not.
+
 ## Flags
 
 | Answer | `setup` flag |
@@ -117,6 +135,7 @@ it could not (`failed`). Without `engine/current` it judges nothing (`DEVICE_CLE
 | Navigation section, for a repair | `--navigation true` or `--navigation false` |
 | Yes at the final confirmation | `--yes true` |
 | Clear old stagings and the backups that can be rebuilt after a version change: older pre-update backups and the skill copies an update replaced, never originals or what the migration moved | `device-clean --at <UTC>`, then `--yes true` once the user agreed |
+| Empty the named trash directories under a session's scratch directory, never anything else | `node <skill directory>/scripts/trash-empty.mjs --scratch <scratch root> <trash directory>...`, then `--yes` once the Owner authorized the report |
 
 ## Boundaries
 
@@ -126,3 +145,5 @@ directory. The one deletion is `device-clean --yes true`, after the update and o
 agreed: only the stagings and backups its plan clears, inside the device directory; a backup that
 holds an original stays, the `launchers` and `registry` a write replaced and the old helper's copies
 and install markers the migration moved among them, and so does a backup it does not know.
+Emptying a session's trash is not part of this task: `trash-empty.mjs --yes` runs only after the
+Owner authorized the report its plan made, and deletes only what the named trash directories hold.

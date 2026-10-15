@@ -104,7 +104,7 @@ La plupart des solutions de mémoire sont un magasin de vecteurs ou une pile de 
 | Changer d'hôte | Chacun garde sa mémoire | Claude Code et Codex lisent le même .ether |
 | Changer d'appareil | Synchronisation manuelle, ou aucune | Dans un dossier cloud ; un flux par appareil ; écrire en même temps ne crée aucun conflit |
 | Voir et changer | Ouvrir des fichiers | Atelier : variables, règles, configuration des portes et état du dépôt sur une seule page ; un changement est rendu aussitôt dans AGENTS.md |
-| La façon de travailler du modèle | Pas l'affaire du plugin | Non policée ; quatre principes, désactivés par défaut, choisis projet par projet |
+| La façon de travailler du modèle | Pas l'affaire du plugin | Non policée ; sept principes, désactivés par défaut, choisis projet par projet |
 | L'enregistrement peut-il être falsifié | Oui | Une chaîne de hachage en ajout seul ; modifiez une entrée et tout ce qui suit cesse de correspondre |
 
 Les variables sont l'autre moitié qui le distingue : le tableau des paliers de modèles par hôte, l'adresse du design system, vos propres paires clé-valeur, tous édités dans Atelier et rendus dans AGENTS.md, si bien qu'un même texte de règle se traduit sur chaque hôte vers ses propres modèles.
@@ -133,7 +133,7 @@ Quand vous voulez voir ou changer quelque chose, ouvrez Atelier. L'atelier d'un 
 
 AGENTS.md vous appartient. Einzbern n'y écrit que des sections balisées : les principes que vous avez activés et les variables rendues pour le modèle. Dès que vous modifiez une section, il cesse de la réécrire, et vous choisissez dans Atelier la suite à donner.
 
-Il y a quatre principes intégrés, appelés Command Spells, les sceaux de commandement auxquels un Servant ne peut se soustraire. Ils ne sont pas obligatoires : tous sont désactivés par défaut, vous les activez projet par projet dans Atelier, et la mémoire fonctionne de la même façon sans eux.
+Il y a sept principes intégrés, appelés Command Spells, les sceaux de commandement auxquels un Servant ne peut se soustraire. Ils ne sont pas obligatoires : tous sont désactivés par défaut, vous les activez projet par projet dans Atelier, et la mémoire fonctionne de la même façon sans eux.
 
 - Fonctionnement autonome : pas de « je continue ? » en cours de tâche ; les actions réversibles se font simplement ; seules les actions destructrices et les changements de périmètre arrêtent.
 - Traitement par lots : les éléments issus d'un même découpage forment un lot ; les rouges sont notés, pas corrigés sur-le-champ ; la fin du lot les traite en une fois ; un rapport par lot.
@@ -152,7 +152,7 @@ C'est ainsi qu'Einzbern se développe lui-même, et c'est l'usage que nous sugg�
 
 **Un lot à la fois.** La conversation d'implémentation envoie un sous-agent du palier économique découper d'un coup toutes les Stories de l'Initiative en Subtasks, chacune nommant les fichiers touchés et ses dépendances. Puis elle forme des paquets par dépendance et chevauchement de fichiers : les Subtasks liées vont dans un même paquet, dans l'ordre ; les indépendantes forment chacune leur paquet. Chaque paquet reçoit un sous-agent du palier économique qui travaille dans son propre worktree git, en parallèle, et se retire une fois le paquet fini. Quand tous les paquets sont finis, un sous-agent d'intégration les fusionne dans l'ordre des dépendances ; les portes tournent une fois et l'acceptation a lieu une fois en fin de lot, et les défauts sont repris par lot.
 
-**Les quatre principes activés.** Fonctionnement autonome : les actions réversibles se font simplement. Traitement par lots : les rouges sont notés, pas corrigés sur-le-champ, et traités une fois en fin de lot. Commandes sans surveillance : aucune forme de commande qui déclenche une boîte de confirmation. Rapport silencieux : on rend compte seulement quand tout est terminé ou que tout ce qui reste est bloqué.
+**Les quatre principes de l'époque activés.** Fonctionnement autonome : les actions réversibles se font simplement. Traitement par lots : les rouges sont notés, pas corrigés sur-le-champ, et traités une fois en fin de lot. Commandes sans surveillance : aucune forme de commande qui déclenche une boîte de confirmation. Rapport silencieux : on rend compte seulement quand tout est terminé ou que tout ce qui reste est bloqué.
 
 **Vous n'apparaissez qu'à deux moments.** Pour décider dans la conversation de conception, et pour lire un rapport quand la conversation d'implémentation clôt un lot, avec chaque point en attente de votre décision listé d'un coup, accompagné d'une recommandation.
 
@@ -184,7 +184,7 @@ Le tableau ci-dessous est celui que nous utilisons en ce moment ; les noms de mo
 
 ## Comment les principes intégrés font durer vos tokens
 
-Les quatre principes ne sont pas seulement une discipline ; chacun bouche une fuite mesurée. Les chiffres viennent du journal de développement d'Einzbern lui-même, 2026-09-26, même lot de travail, même modèle.
+Les quatre principes de l'époque ne sont pas seulement une discipline ; chacun bouche une fuite mesurée. Les chiffres viennent du journal de développement d'Einzbern lui-même, 2026-09-26, même lot de travail, même modèle.
 
 | Où ça fuit | Mesuré | Le principe qui bouche |
 |---|---|---|
@@ -222,7 +222,7 @@ Le parallélisme en lui-même n'économise aucun token ; il change seulement la 
 | Ether | Le répertoire des artefacts `.ether` | L'éther, le milieu qui permet au mana de prendre forme dans le monde réel |
 | Akasha | `.ether/akasha/`, l'enregistrement d'événements en ajout seul dont tout état dérivé est reconstruit | Akasha, la Racine, où résident tous les enregistrements |
 | Crest | `.ether/crest/`, le dépôt de connaissances ; les dépôts de projet et d'utilisateur portent le même nom | L'emblème magique, l'art hérité de génération en génération |
-| Command Spell | Les quatre principes intégrés, désactivés par défaut, activés au choix | Les sceaux de commandement auxquels un Servant ne peut se soustraire |
+| Command Spell | Les sept principes intégrés, désactivés par défaut, activés au choix | Les sceaux de commandement auxquels un Servant ne peut se soustraire |
 | Atelier | La page de gestion locale | L'atelier d'un mage |
 
 ## Documentation complète

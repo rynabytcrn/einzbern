@@ -104,7 +104,7 @@ Most memory solutions are a vector store or a stack of notes: they save fragment
 | Switching hosts | Each keeps its own | Claude Code and Codex read the same .ether |
 | Switching devices | Manual sync, or none | Put it in a cloud folder; one stream per device; simultaneous writes never conflict |
 | Looking and changing | Open files | Atelier: variables, rules, gate configuration and store state on one page; changes render into AGENTS.md at once |
-| How the model works | Not the plugin's concern | Not policed; four principles, off by default, chosen per project |
+| How the model works | Not the plugin's concern | Not policed; seven principles, off by default, chosen per project |
 | Can the record be tampered with | Yes | An append-only hash chain; change one entry and everything after it stops matching |
 
 Variables are the other half that sets it apart: the model tier table per host, the design system address, your own key-value pairs, all edited in Atelier and rendered into AGENTS.md, so one rule text resolves on each host to its own models.
@@ -133,7 +133,7 @@ When you want to look or change something, open Atelier. A magus's workshop; her
 
 AGENTS.md is yours. Einzbern writes only marked sections: the principles you enabled and the variables rendered for the model. Once you edit a section, it stops overwriting it, and you choose in Atelier what happens next.
 
-There are four built-in principles, called Command Spells, the commands a Servant cannot refuse. They are not mandatory: all are off by default, you enable them per project in Atelier, and memory works the same without them.
+There are seven built-in principles, called Command Spells, the commands a Servant cannot refuse. They are not mandatory: all are off by default, you enable them per project in Atelier, and memory works the same without them.
 
 - Autonomous operation: no "shall I continue?" mid-task; reversible actions are simply done; only destructive actions and scope changes stop.
 - Batch processing: the work items from one split are one batch; reds are recorded, not fixed on the spot; the batch end handles them once; one report per batch.
@@ -152,7 +152,7 @@ This is how Einzbern develops itself, and the usage we suggest. You can adopt an
 
 **One batch at a time.** The implementation conversation sends one economy-tier subagent to split every Story of the Initiative into Subtasks at once, each naming the files it touches and what it depends on. Then it packages by dependency and file overlap: related Subtasks go into one package in order, unrelated ones into packages of their own. Each package gets one economy-tier subagent working in its own git worktree, in parallel, retired when the package is done. When all packages are done, one integration subagent merges them in dependency order; gates run once and acceptance happens once at the end of the batch, and defects are reworked as a batch.
 
-**All four principles on.** Autonomous operation: reversible actions are simply done. Batch processing: reds are recorded, not fixed on the spot, and handled once at the batch end. Unattended commands: no command forms that raise confirmation dialogs. Silent reporting: report only when everything is done or everything left is blocked.
+**All four principles of the time on.** Autonomous operation: reversible actions are simply done. Batch processing: reds are recorded, not fixed on the spot, and handled once at the batch end. Unattended commands: no command forms that raise confirmation dialogs. Silent reporting: report only when everything is done or everything left is blocked.
 
 **You appear at two moments.** Deciding in the design conversation, and reading one report when the implementation conversation closes a batch, with every item awaiting your decision listed at once, each with a recommendation.
 
@@ -184,7 +184,7 @@ The tier table below is what we run right now; model names go stale as vendors u
 
 ## How the preset rules make your tokens go further
 
-The four principles are not only discipline; each one plugs a measured leak. The numbers come from Einzbern's own development record, 2026-09-26, same batch of work, same model.
+The four principles of the time are not only discipline; each one plugs a measured leak. The numbers come from Einzbern's own development record, 2026-09-26, same batch of work, same model.
 
 | Where it leaks | Measured | The rule that plugs it |
 |---|---|---|
@@ -222,7 +222,7 @@ Parallelism by itself saves no tokens; it only changes how fast they are spent. 
 | Ether | The artifacts directory `.ether` | Ether, the medium that lets mana take a fixed form in the real world |
 | Akasha | `.ether/akasha/`, the append-only event record from which every derived state is rebuilt | Akasha, the Root, where every record resides |
 | Crest | `.ether/crest/`, the knowledge store; the project-level and user-level stores share the name | The Magic Crest, craft inherited across generations |
-| Command Spell | The four built-in principles, off by default, enabled by choice | Command Spells, the commands a Servant cannot refuse |
+| Command Spell | The seven built-in principles, off by default, enabled by choice | Command Spells, the commands a Servant cannot refuse |
 | Atelier | The local management page | A magus's workshop |
 
 ## Full documentation

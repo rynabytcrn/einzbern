@@ -232,6 +232,81 @@ export async function copyHistoricalTypeScriptRuntime(sourcePackagePath, destina
   ]);
 }
 
+// KB-20261010-INC-155-REPLAY-PINS-WHOLE-LOCKFILE (TCRN-CROSS-EPIC-150 R9 PF-1). A replay
+// with a typescriptVersion copies only the TypeScript runtime into its snapshot, so the
+// lockfile entries it depends on are the ones that decide that TypeScript: each importer's
+// typescript specifier and version, and the packages and snapshots entries for
+// typescript@<version>. It used to compare the whole lockfile, which turned it red for every
+// dependency change it never loads. The entries are compared as the lines that carry them;
+// a lockfile in which any of them cannot be found refuses as a mismatch.
+function lockfileKey(line) {
+  const match = /^\s*('(?:[^']|'')*'|[^\s'][^:]*?):(?: |$)/u.exec(line);
+  if (!match) return null;
+  return match[1].startsWith("'") ? match[1].slice(1, -1).replace(/''/gu, "'") : match[1];
+}
+
+function typescriptLockEntries(lockText) {
+  const importers = [];
+  const entries = { packages: new Map(), snapshots: new Map() };
+  let section = null;
+  let importer = null;
+  let group = null;
+  let collecting = null;
+  for (const line of String(lockText).split(/\r?\n/u)) {
+    if (line.trim() === "") continue;
+    const indent = line.length - line.trimStart().length;
+    if (collecting && indent > collecting.indent) {
+      collecting.lines.push(line);
+      continue;
+    }
+    collecting = null;
+    const key = lockfileKey(line);
+    if (indent === 0) {
+      section = key;
+    } else if (section === "importers") {
+      if (indent === 2) {
+        importer = key;
+        group = null;
+      } else if (indent === 4) {
+        group = key;
+      } else if (indent === 6 && key === "typescript") {
+        collecting = { indent, lines: [] };
+        importers.push({ importer, group, lines: collecting.lines });
+      }
+    } else if ((section === "packages" || section === "snapshots") && indent === 2 && key?.startsWith("typescript@")) {
+      collecting = { indent, lines: [line] };
+      entries[section].set(key, collecting.lines);
+    }
+  }
+  const field = (lines, name) => {
+    const found = lines.map((line) => line.trim()).find((line) => line.startsWith(`${name}: `));
+    return found === undefined ? null : found.slice(name.length + 2);
+  };
+  const decided = importers.map((entry) => ({
+    importer: entry.importer,
+    group: entry.group,
+    specifier: field(entry.lines, "specifier"),
+    version: field(entry.lines, "version"),
+  }));
+  if (decided.length === 0 || decided.some((entry) => entry.specifier === null || entry.version === null)) return null;
+  const versions = [...new Set(decided.map((entry) => entry.version))].sort(compareCanonicalText);
+  const pick = (map) => versions.map((version) => map.get(`typescript@${version}`)?.join("\n") ?? null);
+  const packages = pick(entries.packages);
+  const snapshots = pick(entries.snapshots);
+  if (packages.includes(null) || snapshots.includes(null)) return null;
+  return JSON.stringify({ importers: decided, packages, snapshots });
+}
+
+export function historicalTypeScriptDependencyCheck({ typescriptVersion, historicalManifest, currentManifest, installedManifest, historicalLock, currentLock }) {
+  const historicalEntries = typescriptLockEntries(historicalLock);
+  const matches = historicalManifest?.devDependencies?.typescript === typescriptVersion
+    && currentManifest?.devDependencies?.typescript === typescriptVersion
+    && installedManifest?.version === typescriptVersion
+    && historicalEntries !== null
+    && historicalEntries === typescriptLockEntries(currentLock);
+  return matches ? { ok: true } : { ok: false, reasonCode: "EVIDENCE_HISTORY_DEPENDENCY_MISMATCH" };
+}
+
 function historicalEvidenceSummary() {
   return [...HISTORICAL_EVIDENCE.entries()].map(([path, evidence]) => ({
     path,
@@ -388,15 +463,18 @@ async function replayHistoricalBlock(block, evidence) {
       stage = "historical-dependency-check";
       const historicalManifest = JSON.parse(runGit(["show", `${evidence.commit}:package.json`], { encoding: "utf8" }));
       const currentManifest = JSON.parse(await readFile(resolve(repositoryRoot, "package.json"), "utf8"));
-      const historicalLock = runGit(["show", `${evidence.commit}:pnpm-lock.yaml`], { encoding: "buffer", maxBuffer: 8 * 1024 * 1024 });
-      const currentLock = await readFile(resolve(repositoryRoot, "pnpm-lock.yaml"));
+      const historicalLock = runGit(["show", `${evidence.commit}:pnpm-lock.yaml`], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+      const currentLock = await readFile(resolve(repositoryRoot, "pnpm-lock.yaml"), "utf8");
       const installedManifest = JSON.parse(await readFile(resolve(repositoryRoot, "node_modules/typescript/package.json"), "utf8"));
-      if (historicalManifest.devDependencies?.typescript !== evidence.typescriptVersion
-        || currentManifest.devDependencies?.typescript !== evidence.typescriptVersion
-        || installedManifest.version !== evidence.typescriptVersion
-        || !historicalLock.equals(currentLock)) {
-        return { ok: false, reasonCode: "EVIDENCE_HISTORY_DEPENDENCY_MISMATCH" };
-      }
+      const dependencies = historicalTypeScriptDependencyCheck({
+        typescriptVersion: evidence.typescriptVersion,
+        historicalManifest,
+        currentManifest,
+        installedManifest,
+        historicalLock,
+        currentLock,
+      });
+      if (!dependencies.ok) return dependencies;
       stage = "historical-dependency-copy";
       await copyHistoricalTypeScriptRuntime(
         resolve(repositoryRoot, "node_modules/typescript"),

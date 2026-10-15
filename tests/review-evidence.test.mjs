@@ -20,7 +20,7 @@ import { assessEvidenceReuse, assessDynamicEvidenceReuse, buildDevelopmentPlan, 
 import { classifyProcess } from "../scripts/operational-batch-entry.mjs";
 import * as operationalBatchEntry from "../scripts/operational-batch-entry.mjs";
 import { appendProgressEvent, readProgressDelta, summarizeProgress, waitForProgress } from "../scripts/lib/incremental-output.mjs";
-import { copyHistoricalTypeScriptRuntime, runHistoricalCommand } from "../scripts/verbatim-evidence-proof.mjs";
+import { copyHistoricalTypeScriptRuntime, historicalTypeScriptDependencyCheck, runHistoricalCommand } from "../scripts/verbatim-evidence-proof.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { LOCAL_DIRECTORY_NAMES, initializeLibrary } from "../dist/build/packages/core/src/index.js";
 
@@ -107,6 +107,102 @@ test("INC-391 copies only the TypeScript runtime and ignores a package self-link
   assert.equal(readFileSync(join(destination, "package.json"), "utf8"), manifest);
   assert.equal(readFileSync(join(destination, "lib", "typescript.js"), "utf8"), runtime);
   assert.equal(existsSync(join(destination, "typescript")), false);
+});
+
+// KB-20261010-INC-155-REPLAY-PINS-WHOLE-LOCKFILE: the INC-155 replay copies only the TypeScript
+// runtime, so it compares only the lockfile entries that decide which TypeScript that is.
+const INC155_MANIFESTS = {
+  typescriptVersion: "5.9.3",
+  historicalManifest: { devDependencies: { typescript: "5.9.3" } },
+  currentManifest: { devDependencies: { typescript: "5.9.3" } },
+  installedManifest: { version: "5.9.3" },
+};
+const INC155_MISMATCH = { ok: false, reasonCode: "EVIDENCE_HISTORY_DEPENDENCY_MISMATCH" };
+
+function inc155Lockfile({
+  fastUri = "3.1.6",
+  fastUriIntegrity = "sha512-fastUriSix",
+  typesNode = "24.13.2",
+  typescriptSpecifier = "5.9.3",
+  typescriptIntegrity = "sha512-typescriptFiveNineThree",
+  typescriptSnapshot = ["  typescript@5.9.3: {}"],
+} = {}) {
+  return [
+    "lockfileVersion: '9.0'",
+    "",
+    "settings:",
+    "  autoInstallPeers: true",
+    "  excludeLinksFromLockfile: false",
+    "",
+    "overrides:",
+    `  fast-uri: '>=${fastUri}'`,
+    "",
+    "importers:",
+    "",
+    "  .:",
+    "    devDependencies:",
+    "      '@types/node':",
+    `        specifier: ${typesNode}`,
+    `        version: ${typesNode}`,
+    "      ajv:",
+    "        specifier: 8.20.0",
+    "        version: 8.20.0",
+    "      typescript:",
+    `        specifier: ${typescriptSpecifier}`,
+    "        version: 5.9.3",
+    "",
+    "  packages/cli: {}",
+    "",
+    "packages:",
+    "",
+    `  '@types/node@${typesNode}':`,
+    "    resolution: {integrity: sha512-typesNode}",
+    "",
+    "  ajv@8.20.0:",
+    "    resolution: {integrity: sha512-ajv}",
+    "",
+    `  fast-uri@${fastUri}:`,
+    `    resolution: {integrity: ${fastUriIntegrity}}`,
+    "",
+    "  typescript@5.9.3:",
+    `    resolution: {integrity: ${typescriptIntegrity}}`,
+    "    engines: {node: '>=14.17'}",
+    "    hasBin: true",
+    "",
+    "snapshots:",
+    "",
+    `  '@types/node@${typesNode}': {}`,
+    "",
+    "  ajv@8.20.0:",
+    "    dependencies:",
+    `      fast-uri: ${fastUri}`,
+    "",
+    `  fast-uri@${fastUri}: {}`,
+    "",
+    ...typescriptSnapshot,
+    "",
+  ].join("\n");
+}
+
+test("INC-155 replay: a lockfile that differs only outside TypeScript passes the dependency check", () => {
+  const historicalLock = inc155Lockfile();
+  const currentLock = inc155Lockfile({ fastUri: "3.1.7", fastUriIntegrity: "sha512-fastUriSeven", typesNode: "24.13.3" });
+  assert.notEqual(currentLock, historicalLock);
+  assert.deepEqual(historicalTypeScriptDependencyCheck({ ...INC155_MANIFESTS, historicalLock, currentLock }), { ok: true });
+});
+
+test("INC-155 replay: a different TypeScript lockfile entry is EVIDENCE_HISTORY_DEPENDENCY_MISMATCH", () => {
+  const historicalLock = inc155Lockfile();
+  for (const currentLock of [
+    inc155Lockfile({ typescriptSpecifier: "^5.9.3" }),
+    inc155Lockfile({ typescriptIntegrity: "sha512-typescriptRepacked" }),
+    inc155Lockfile({ typescriptSnapshot: ["  typescript@5.9.3:", "    dependencies:", "      tslib: 2.8.1"] }),
+    inc155Lockfile({ typescriptSnapshot: [] }),
+  ]) {
+    assert.deepEqual(historicalTypeScriptDependencyCheck({ ...INC155_MANIFESTS, historicalLock, currentLock }), INC155_MISMATCH);
+  }
+  // The package.json and node_modules versions are still compared on their own.
+  assert.deepEqual(historicalTypeScriptDependencyCheck({ ...INC155_MANIFESTS, installedManifest: { version: "5.9.2" }, historicalLock, currentLock: historicalLock }), INC155_MISMATCH);
 });
 
 function gitFixture(t) {

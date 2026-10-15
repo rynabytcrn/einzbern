@@ -21,6 +21,7 @@
 每个版本的发行说明放在本 Wiki 发行说明一章的对应版本下，并按功能模块分为子章节。
 
 - [各版本发行说明](Release-Notes.md)
+- [Einzbern 2.2.0](Release-Notes-2.2.0.md)
 - [Einzbern 2.1.0](Release-Notes-2.1.0.md)
 - [Einzbern 2.0.3](Release-Notes-2.0.3.md)
 - [Einzbern 2.0.2](Release-Notes-2.0.2.md)

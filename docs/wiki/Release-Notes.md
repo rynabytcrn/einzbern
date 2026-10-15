@@ -4,6 +4,7 @@
 
 | 版本 | 发行说明 | 完整版本说明 |
 | --- | --- | --- |
+| 2.2.0 | [Einzbern 2.2.0](Release-Notes-2.2.0.md) | 引擎仓库 tag `v2.2.0` 中的 `docs/releases/2.2.0.md` |
 | 2.1.0 | [Einzbern 2.1.0](Release-Notes-2.1.0.md) | 引擎仓库 tag `v2.1.0` 中的 `docs/releases/2.1.0.md` |
 | 2.0.3 | [Einzbern 2.0.3](Release-Notes-2.0.3.md) | 引擎仓库 tag `v2.0.3` 中的 `docs/releases/2.0.3.md` |
 | 2.0.2 | [Einzbern 2.0.2](Release-Notes-2.0.2.md) | 引擎仓库 tag `v2.0.2` 中的 `docs/releases/2.0.2.md` |

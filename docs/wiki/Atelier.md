@@ -62,9 +62,12 @@ Atelier 在前台运行，没有停止命令：在启动它的终端按 Ctrl-C�
 | 规则 | 版本 | 初始状态 |
 | --- | --- | --- |
 | `autonomy` | `v1` | `disabled` |
-| `batch` | `v2` | `disabled` |
-| `unattended-commands` | `v1` | `disabled` |
+| `batch` | `v3` | `disabled` |
+| `unattended-commands` | `v2` | `disabled` |
 | `silent-reporting` | `v1` | `disabled` |
+| `design-authority` | `v1` | `disabled` |
+| `residue-cleanup` | `v1` | `disabled` |
+| `goal-writing` | `v1` | `disabled` |
 
 规则状态包括 `disabled`、`enabled`、`user-modified`、`removed-from-file`、`update-available` 和 `pending`。启用前先阅读规则正文；规则本身不会授权更改已批准的工作步骤。
 

@@ -1,6 +1,6 @@
 # 受管段与 Command Spell
 
-AGENTS.md 与 CLAUDE.md 是你的文件。Einzbern 只写它自己标记出来的几段，叫受管段；段外的文字一个字节都不改。Command Spell 是随引擎提供的四条原则，按项目逐条启用，启用的原则以受管段写进 AGENTS.md。
+AGENTS.md 与 CLAUDE.md 是你的文件。Einzbern 只写它自己标记出来的几段，叫受管段；段外的文字一个字节都不改。Command Spell 是随引擎提供的一组内置原则，按项目逐条启用，启用的原则以受管段写进 AGENTS.md。
 
 ## 段的格式
 
@@ -95,7 +95,7 @@ proposal-reject --key rule:<规则 id> --proposed-at <提交时刻> --actor <行
 库里有原则记着顺序（TCRN-CROSS-STORY-508 R7）时，AGENTS.md 里的原则段按顺序排列：
 
 - 有顺序的在前，按从小到大。
-- 没有顺序的在后，按引擎目录的次序：`autonomy`、`batch`、`unattended-commands`、`silent-reporting`。
+- 没有顺序的在后，按引擎目录的次序，即上面内置原则表自上而下的次序。
 - 本机引擎不带的原则排最后，按 id。
 
 排列只在原则段已经占着的位置之间进行，所以这些位置不动，段外文字一个字节都不动；每一段整段移动，正文与标记都不变。你改过、正等待处置、保留过或接管过的段留在原位，其余的段按顺序填满剩下的位置。

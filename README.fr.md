@@ -139,6 +139,9 @@ Il y a sept principes intégrés, appelés Command Spells, les sceaux de command
 - Traitement par lots : les éléments issus d'un même découpage forment un lot ; les rouges sont notés, pas corrigés sur-le-champ ; la fin du lot les traite en une fois ; un rapport par lot.
 - Commandes sans surveillance : aucune forme de commande qui déclenche une boîte de confirmation ; supprimer en déplaçant, pas de cd dans les commandes, n'écrire que dans le répertoire de travail.
 - Rapport silencieux : aucun rapport tant que le travail est en cours ; on rend compte seulement quand tout est terminé ou que tout ce qui reste est bloqué.
+- Autorité et cohérence du design : lire d'abord l'autorité de design du projet et ses spécifications de composants publiées ; les changements de composants et de visuel se font d'abord dans l'autorité et ne sont repris qu'après sa publication ; les composants d'un même type restent cohérents.
+- Nettoyage des résidus : qui crée un répertoire temporaire, une copie, un worktree ou un processus d'arrière-plan en répond ; à la fin du lot, même en échec, on les nettoie selon leur usage ; les preuves restent séparées des copies reconstructibles.
+- Contrat de rédaction des objectifs : un objectif n'énonce qu'un état final vérifiable, jamais une autorisation ; chacun porte l'issue « bloqué sur une décision que vous seul pouvez prendre ».
 
 ## Plusieurs appareils et dossiers cloud
 

@@ -139,6 +139,9 @@ There are seven built-in principles, called Command Spells, the commands a Serva
 - Batch processing: the work items from one split are one batch; reds are recorded, not fixed on the spot; the batch end handles them once; one report per batch.
 - Unattended commands: no command forms that raise confirmation dialogs; delete by moving, no cd inside commands, write only inside the working directory.
 - Silent reporting: no reports while work is in progress; report only when everything is done or everything left is blocked.
+- Design authority and consistency: read the project's design authority and its published component specifications first; component and visual changes go to the authority first and are taken up only once it is published; components of one kind stay consistent.
+- Residue cleanup: whoever creates a temporary directory, copy, worktree or background process answers for it; when a batch ends, failed batches included, clear them by what they were for; keep evidence apart from copies that can be rebuilt.
+- Goal writing contract: a goal states only a verifiable end state, never an authorization; every goal carries the exit "blocked on a decision only you can make".
 
 ## Several devices and cloud folders
 

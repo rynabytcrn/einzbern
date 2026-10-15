@@ -27,13 +27,14 @@ const LOCAL_PATH_REASONS = new Set(["LOCAL_ABSOLUTE_PATH", "LINUX_HOME_PATH", "W
 // two changes made to it since: MIN-238 D4 names the helper repository at the final address in its
 // `npx skills add` line instead of the placeholder, and TCRN-CROSS-MIN-260 D1 counts seven built-in
 // principles where the text counts them in general (comparison table, Command Spell introduction,
-// glossary), and says the four of the 2026-09-26 measurements are the four of that time.
+// glossary), lists all seven under the Command Spell introduction, and says the four of the
+// 2026-09-26 measurements are the four of that time.
 const FINAL_README_TEMPLATE_SHA256 = Object.freeze({
-  "README.md": "e78d60efb6ba9f7f22e33c636e52adddae459e239dcb4fc18c3c7ac3d9f05898",
-  "README.en.md": "925904593b35d3b76a4db695ec96a31250722aaaef2f3284eefd03d5ab8ea90f",
-  "README.ja.md": "5c3009cac50fcd69bffd18c177de495da2372413bbf1b157eb27d23d2d7e4735",
-  "README.ko.md": "9992fb2dfd01d28763d17f966482872b555fda5ff14207955271ef091c4fbb4a",
-  "README.fr.md": "b146ae8f8e21f54c6b55ba21ddaba7da16685d2b2096cc783fd973f3762dbcfd",
+  "README.md": "8a9389ef3d3beac9ed3dacc8dfa6eb5f216c0fe42efb25babf8cf8b89db649f4",
+  "README.en.md": "f1753013e1addd76f96d527d35a745591a57be184fcbc49d326d11c1031c93e4",
+  "README.ja.md": "5aa0368716a04354259e9d392c479a958d964717ae84d8f2e64fc0d9d991b473",
+  "README.ko.md": "5e42eaed33d54674c15e38dd9a75c4a97e4a7b35f17213b65d7b61c0560ddad0",
+  "README.fr.md": "ba3313c9f621ea9e068aec5e4ae2522e0da7d7f1d830d645e86205278091ec3c",
 });
 
 async function packageVersion() {

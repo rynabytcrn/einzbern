@@ -5,6 +5,224 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Concurrency and Device State
+
+More writes now hold the library write lock for their append alone, as work and configuration writes
+have since 2.1.0 (TCRN-CROSS-STORY-538, TCRN-CROSS-SUB-497 to TCRN-CROSS-SUB-501, EPIC-150 R7,
+MIN-256 D6, MIN-257 D6, MIN-258 D1): gate and rule proposals with their approval and rejection,
+`work-delete` and `project-delete`, the managed-section writes (`agents-render`, `rule-resolve`,
+`rule-enable`, `rule-disable` and the variable sections), `artifact-put`, and `knowledge-reverify`,
+`knowledge-article-refresh` and the knowledge staleness policy write. Each reads and checks outside
+the lock, so a refusal waits for no other writer; under the lock it checks that no stream moved
+since its read and appends, or reads again, and after four tries the whole write runs under one
+hold. A managed-section write plans AGENTS.md and CLAUDE.md from its read, and writes them only
+while every file it read still holds what it read, so an AGENTS.md that another process changed
+after the plan is not written over and the write plans again.
+
+An approval's conditions are judged again against the state its append is built on, with the same
+reason codes: an approval that another approval overtook is `PROPOSAL_NOT_FOUND` at its append, and
+when a rule proposal is recorded again at the same instant with another change, the rule's approval
+is `PROPOSAL_STALE` and AGENTS.md is put back (TCRN-CROSS-SUB-497). The deletes judge the leases
+again at the append: a lease claimed on the item between the read and the append that still runs at
+`--at` refuses `work-delete` with `WORK_LEASED`, whoever asks, and nothing is written; a lease
+released in between is not removed a second time (TCRN-CROSS-SUB-498). `recover` keeps holding the
+lock for its whole run.
+
+`artifact-put` copies the blob into the library and reads it back before the lock, and holds the
+lock only to replace the manifest (TCRN-CROSS-SUB-500). `snapshot-manifest` takes no lock: it stamps
+every file it covers (path, inode, size, modification time) before it reads the state and after it
+walks the tree, and reads under the lock only after four unsteady reads. `workspace-relocate` still
+holds the lock from the copy to the tombstone; a blob that an `artifact-put` writes into the source
+library while the relocation copies now makes the relocation fail safe with
+`RELOCATE_COPY_MISMATCH`, taking its copy back, and a put that arrives after the tombstone is
+refused, so no recorded data is lost.
+
+`knowledge-batch` no longer holds the lock from its first member to its last: each member takes the
+lock as its verb does, and `--align-first` takes it for its own rebase (TCRN-CROSS-SUB-501).
+`knowledge-rebase`, `knowledge-bodies-migrate`, `knowledge-recover` and `knowledge-init` keep
+holding it for their whole run. The CLI catalog spec lists what each write holds the lock for, and
+the other specs, the file-lock header and the agent-integration reference now describe the lock as
+the engine holds it (TCRN-CROSS-SUB-517 and TCRN-CROSS-SUB-522, EPIC-150 R8 and R9).
+
+### Knowledge and Minutes
+
+The INIT family of a record is now also read from a reference that is the whole external key of a
+work record this library holds, and from a card's linked work, in the knowledge card guard and in
+the `minutes-record` guard alike (TCRN-CROSS-STORY-539, TCRN-CROSS-SUB-503, EPIC-150 R7, MIN-256 D6,
+MIN-258 D1). A key the library holds no work under names no family, as a file or a URL does.
+
+Reads now set aside an unresolved pair of cards whose INIT families are both known and differ
+(TCRN-CROSS-STORY-539, TCRN-CROSS-SUB-504, EPIC-150 R7): `knowledge-list` neither names such a pair
+nor withholds its cards from default selection, and recall and a checkpoint follow. The crest scan
+and its cache still find every pair, and a pair of one family, or of no known family, stands as
+before. The knowledge hint leaves out the cards of a family apart from its target's and says how
+many: its line ends with that count, and the receipts of `work-transition`, `work-batch` and
+`minutes-record` carry it as `filteredByFamily`. A target of no known family keeps every card. The
+minutes spec's topic comparison and the governed-loop tutorial describe the split and the count
+(TCRN-CROSS-SUB-520, EPIC-150 R8).
+
+### Managed Sections, Rules and Variables
+
+A coordination library now writes managed sections too, into the one project root this device's
+registry holds for it outside every library: the container it coordinates (TCRN-CROSS-STORY-540,
+TCRN-CROSS-SUB-505, EPIC-150 R7, MIN-258 D3, which replaces MIN-245 D6). `agents-render`,
+`rule-resolve`, `rule-enable`, `rule-disable` and the variable sections write that root's AGENTS.md
+from the coordination library's own configuration and record each section, as they do for a project,
+and `rule-list` reads a coordination library against that root. A root within a library is refused
+with `MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY`, for a project library too, and a root that the
+registry does not hold for the library with `MANAGED_SECTION_OUTPUT_UNREGISTERED`. A coordination
+library that this device registered no such root for records a rule change alone and says
+`outputBindingStatus: "unconfigured"` in the receipt; there an enabled rule reads
+`removed-from-file`, and the receipt and Atelier's Rules page say why.
+
+A coordination library's system variable section lists the settings that hold for it, each with its
+effective value and source: `execution.maxConcurrentSubagents`, the four `quota.*` settings and the
+seven `design.*` bindings, and no `models.*` or `execution.dispatchTiers` (TCRN-CROSS-STORY-540,
+TCRN-CROSS-SUB-506, EPIC-150 R7). Both variable sections, for any library, now follow
+`artifact.language`: `zh-CN` writes their headings, notes, table headers and placeholders in
+Chinese, and any other value, or none, the English they always had. `variable-set` and
+`variable-remove` on a coordination library render its sections again into its registered root;
+`settings-set` still renders nothing.
+
+Setup's repair now plans and writes the managed sections of a coordination library's registered
+container, from the coordination library's own configuration, and an update still writes no project
+file (TCRN-CROSS-STORY-540, TCRN-CROSS-SUB-507, EPIC-150 R7). The managed-sections check of `doctor`
+lists every recorded section with its state in `detail.sections`, and reads a coordination library's
+container against that library's records.
+
+Two rules join the built-in catalog after `design-authority`, at version 1 and off until a project
+enables them (TCRN-CROSS-STORY-540, TCRN-CROSS-SUB-509, EPIC-150 R9, MIN-258 D3, MIN-259 D1):
+`residue-cleanup`, the Owner's rule for clearing what a task or a batch leaves behind, and
+`goal-writing`, the contract for writing a session goal. Their Chinese text is the Owner's wording;
+the English of `residue-cleanup` and the opening paragraph of `goal-writing` are translations that
+await the Owner's correction. The catalog now holds seven rules.
+
+`unattended-commands` is now at version 2 (TCRN-CROSS-STORY-541, TCRN-CROSS-SUB-514, EPIC-150 R9,
+MIN-258 D3, MIN-259 D2). Its first clause gains one sentence: with the Owner's authorization, the
+skill's trash-empty tool empties the named trash directories under the session's scratch directory,
+plan first, one authorization per report of paths and sizes. Every other line is version 1's. A
+project that enabled version 1 reads `update-available`, and neither that read nor `agents-render`
+changes its AGENTS.md; `rule-enable` takes version 2.
+
+### Configuration Writes and Owner Decisions
+
+Four more writes take `--decided-in minutes:<id>#D<n>` (TCRN-CROSS-STORY-541, TCRN-CROSS-SUB-510,
+EPIC-150 R7, MIN-258 D3): `work-gate-release`, whose decision names the gate by its id;
+`project-bindings-set` and `project-bindings-remove`, whose decision names the binding's key; and
+`work-release --force`, whose decision names the work item by its id or its whole external key,
+never through `<prefix>.*`. The decision is checked and recorded as it is for the configuration
+writes of 2.0.3, so `gate.updated` joins the operations that may carry the optional authorization
+extras: a release records `surface`, `atelier` for Atelier's, and for a cited decision `decidedIn`
+and `decidedInLibraryId`. Without a decision a model's run is still `MODEL_WRITE_REFUSED`, its
+remedy naming Atelier and `--decided-in`. `chain-declare` takes no decision and stays with Atelier;
+its remedy now names Atelier's library page. The specs, the Wiki and the CLI comments now say that a
+cited decision is checked before the write takes the lock, against the state the write reads
+(TCRN-CROSS-SUB-518, EPIC-150 R8).
+
+### Device Maintenance
+
+`library-unregister --project <path> --at <UTC>` removes the one registry entry whose project path
+is the one given, which need not exist any more (TCRN-CROSS-STORY-541, TCRN-CROSS-SUB-511,
+EPIC-150 R7, MIN-258 D3). Without `--yes true` it answers `LIBRARY_UNREGISTER_PLAN_READY` and writes
+nothing; with it, `registry.json` is copied into `backups/<UTC>-library-unregister/` of the device
+directory and replaced without that entry under the registry lock, and it answers
+`LIBRARY_UNREGISTERED`. Other entries of the same library stay, and a path that no entry has is
+`LIBRARY_NOT_REGISTERED`. The registry check of `doctor` lists each entry whose library path no
+longer exists in `detail.hints`, with `REGISTRY_LIBRARY_MISSING` and the verb, and keeps its answer.
+
+`device-clean --at <UTC>` lists each install and update staging in the device directory's `trash/`
+and each entry of its `backups/`, with kind, version, size and reason, judged against
+`engine/current` (TCRN-CROSS-STORY-541, TCRN-CROSS-SUB-512, EPIC-150 R7, MIN-258 D3). It keeps the
+pre-update backups of the current and the previous version, the stagings of the current version and
+any other entry of `trash/`, and clears the other stagings and pre-update backups. Any other backup
+is judged by what it holds, read with `lstat` alone and no link followed, and lists those names as
+`contents` (TCRN-CROSS-SUB-519 and TCRN-CROSS-SUB-521, EPIC-150 R8 and R9). A backup of the skill
+copies alone, in the layout an update leaves (each host's copy at `<host skill root>/<skill id>`),
+is cleared as `skill-copies-backup`. A backup that holds originals a write replaced (host hooks,
+writable roots, managed sections, crest bodies, launchers, a registry, or the old helper's copies
+and the install markers a migration moved) is kept as `holds-originals`, and anything else as
+`unrecognised-backup`. A symbolic link, or an area whose real path leaves the device directory, is
+refused and never touched. Without `--yes true` it answers `DEVICE_CLEAN_PLAN_READY` and writes
+nothing; with it, each cleared entry is checked again and deleted, and `DEVICE_CLEANED` names each
+with its size, or why it was not deleted. Without `engine/current` it answers
+`DEVICE_CLEAN_ENGINE_UNKNOWN`.
+
+### Atelier
+
+Atelier now manages a coordination library's rules, variables and AGENTS.md through its registered
+container (TCRN-CROSS-STORY-540, TCRN-CROSS-SUB-508, EPIC-150 R7, MIN-258 D3): the Rules page shows
+the container's AGENTS.md, names the file a coordination library writes or says why it writes none,
+and its saves and resolutions reach that file. A write of `execution.maxConcurrentSubagents` or of a
+`quota.*` setting renders a coordination library's sections again, and a write of
+`artifact.language` renders every library's.
+
+Three writes that a model makes only with an Owner decision now have their place in Atelier
+(TCRN-CROSS-STORY-541, TCRN-CROSS-SUB-513, EPIC-150 R7, MIN-258 D3). A Library tab on the status
+page declares the chain identity after a confirmation step, and removes a registry entry with
+`library-unregister`, the plan first and the removal once confirmed, never for the selected entry. A
+Migrated gates section on the Gates page lists the gates still holding work back and the released
+ones with who, when and why, and releases one with `work-gate-release` for a reason that is not
+blank. The copy is in all five locales, and the Rules page titles `residue-cleanup` and
+`goal-writing` in all five as it titles the other rules (TCRN-CROSS-SUB-509, EPIC-150 R9).
+
+### Mana Orchestrate Skill
+
+The skill now ships `scripts/trash-empty.mjs` (TCRN-CROSS-STORY-541, TCRN-CROSS-SUB-514,
+EPIC-150 R9, MIN-259 D2). It takes a scratch root and the trash directories to empty, each relative
+to it. Each must end in `trash` or `trash-<name>`, be a directory and not a symbolic link, and lie
+inside the scratch root by its real path; wildcards, absolute paths, dot segments and overlapping
+names are refused, and so is a scratch root that is the filesystem root, the home or above it.
+Without `--yes` it prints the plan (path, entries, bytes) and deletes nothing; with `--yes` it
+checks again, deletes what each named directory holds, keeps the directory and prints the receipt.
+Any refusal deletes nothing. The update reference says that it runs only after the Owner authorized
+the report, and how to clear the device directory with `device-clean` once the user agreed; the
+doctor reference asks for the user's go-ahead before `library-unregister --yes true`.
+
+### Release and Repository Tooling
+
+The portal proof's replay of TCRN-CROSS-INC-155 no longer compares the whole historical
+`pnpm-lock.yaml` with the current one (TCRN-CROSS-EPIC-150 R9 PF-1): it compares only the entries
+that decide TypeScript, the importers' `typescript` specifiers and versions and the
+`typescript@<version>` entries under packages and snapshots, beside `package.json` and the installed
+`typescript` as before. A difference is still `EVIDENCE_HISTORY_DEPENDENCY_MISMATCH`.
+
+The `fast-uri` override is now `^3.1.7` and resolves to 3.1.8, within the `^3.0.1` range that `ajv`
+declares (TCRN-CROSS-EPIC-150 R9 PF-1). `fast-uri` is a development dependency and is not in the
+release package.
+
+The coordination and human-only panels portal tests reach the loopback Atelier through an alias of
+`globalThis.fetch`, as the proposals portal test does, so the offline boundary scan passes them
+(TCRN-CROSS-SUB-515 and TCRN-CROSS-SUB-516, EPIC-150 R8).
+
+### Upgrading from 2.1.0
+
+- Readers need 2.2.0. Once 2.2.0 releases a migrated gate in a library, 2.1.0 still opens that
+  library without an error and can still write to it, but it counts that `gate.updated`, which
+  carries the new authorization extras, in `rejectedEventCount` and skips it, so it reads the gate
+  as still pending and holding its work back while 2.2.0 reads it satisfied. 2.1.0 reads the
+  managed-section and rule records that 2.2.0 writes for a coordination library, an enabled rule as
+  enabled, but writes no section into the coordination library's container: there its `rule-list`
+  says `outputBindingStatus: "unconfigured"` and its `agents-render` is refused with
+  `WORKSPACE_INPUT_INVALID`. A library that 2.2.0 creates records `minEngineVersion` 2.2.0, and
+  2.1.0 refuses to open it with `ENGINE_TOO_OLD`. Install 2.2.0 on every device that reads the same
+  library, together.
+- Rolling back to 2.1.0 is safe only before the first such write.
+- A gate run that 2.1.0 recorded still counts toward done: 2.2.0 records and reads runs in the same
+  shapes (`einzbern.gate-run.v1`, with `einzbern.gate-tree.v3` roots), and still skips only a run
+  whose roots name their paths without content digests, as 2.0.x recorded them.
+- A coordination library's managed sections: the first `agents-render` into its registered container
+  replaces each marked section whose markers agree with its text and that the library never
+  recorded, after AGENTS.md is copied into `backups/<UTC>/managed-sections/` of the device
+  directory, and records it; a section changed by hand stays as it is, pending. `settings-set`
+  renders nothing, so run `agents-render` after it. The variable sections follow
+  `artifact.language`.
+- `library-unregister` and `device-clean` only plan by default; they act with `--yes true`, and
+  `device-clean` keeps every backup that holds originals.
+- Built-in rules: `residue-cleanup` and `goal-writing` are new and off by default.
+  `unattended-commands` is at version 2: a project that enabled version 1 reads `update-available`
+  and its file is not touched until the rule is enabled again with `rule-enable`, which writes
+  version 2.
+
 ## 2.1.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.1.0. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

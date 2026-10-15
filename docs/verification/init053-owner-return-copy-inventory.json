@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "epic150-r9-pf-init053",
+  "pack": "epic151-r11-pf-init053",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "cf3937c7ce3c6d649a930a0e5b6dbbd25aed75ea850c1225718438d7c8930813"
+      "sha256": "47260219600711a485952d202814bdb25878a7069ff3290e51e324588cb1949a"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -115,7 +115,7 @@
     },
     {
       "path": "packages/core/src/framework-version.ts",
-      "sha256": "565af777c290cc1b2cbda1fb8e44c64a3332ff385355047685b5ff7a9c6b0299"
+      "sha256": "37e9d7c490a1bd76a0c40f2bb6276b0656cd49ff9135f61afb832f2727983ebc"
     },
     {
       "path": "packages/core/src/gate-identity.ts",
@@ -179,7 +179,7 @@
     },
     {
       "path": "packages/core/src/knowledge-core.ts",
-      "sha256": "bfd03ee5206895c02c83b7ae046f180a842bb301288a1cefbd36b089780cb58c"
+      "sha256": "7867d04728e1e58fcc00668b04795375305786bf3b72fdfb68d7a6aa72aed717"
     },
     {
       "path": "packages/core/src/knowledge-duplicates.ts",
@@ -223,7 +223,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "3bb8f083a0a22626258b076bc9dc9afa8fb966a68fad39d98c9f8992b22e0adc"
+      "sha256": "e1b8114ad1258b6b3e4bde88d461cd8aa3e31a2dab98328e470316c100ee3be0"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -611,7 +611,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "f506673a319a65d52cd9c1ba4a61f9f00a0e7507fccc6b924d9a5e8a29c10e4e"
+      "sha256": "6c72cb04c189cbef3128a3d68ed70f51bfcb6e899538f763171e1957303478ad"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -838,7 +838,7 @@
       "sha256": "8ed5912fa1fa13d2c52afe8829168f599887601e69bc66cdae7daefbbbc119c3"
     }
   ],
-  "evidenceDisposition": "EPIC-150 R9 PF-3 package regeneration (TCRN-CROSS-EPIC-150 R9 PF-3, MIN-236 D2 and MIN-246 D8: the 2.2.0 release preparation on E main d514c7d1 in the package worktree before any merge, where PF-1 narrows the INC-155 replay to the lockfile entries that decide TypeScript, raises the fast-uri override and regenerates the current Portal proof block, and PF-2 writes the 2.2.0 CHANGELOG with the upgrade notes from 2.1.0, counts seven built-in principles in the READMEs and classifies the exact reviewed 2.2.0 package members (d3bbebfd); since the EPIC-149 R5 PF regeneration (940a6f14) the 2.1.0 release and EPIC-150 R7 to R9 (TCRN-CROSS-SUB-497 to TCRN-CROSS-SUB-522 under TCRN-CROSS-STORY-538 to TCRN-CROSS-STORY-542) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at d3bbebfd in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1991 of 1991 tests in 225 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "EPIC-151 R11 PF-3 package regeneration (TCRN-CROSS-EPIC-151 R11 PF-3, MIN-236 D2 and MIN-246 D8: the 2.2.1 release preparation on E main a98561ae in the package worktree before any merge, where PF-2 writes the upgrade notes from 2.2.0 for the 2.2.1 CHANGELOG and classifies the exact reviewed 2.2.1 package members (9ebe2ac9); since the EPIC-150 R9 PF-3 regeneration (669409ac) the 2.2.0 release and EPIC-151 R11 (TCRN-CROSS-SUB-523 under TCRN-CROSS-STORY-543) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at 9ebe2ac9 in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1996 of 1996 tests in 226 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -974,7 +974,7 @@
       "input": "inventory-values.json",
       "sha256": "de05e9d89e10e073bc707fb87736485118b7f4a1e8bf846e628ce3e7d8be6762",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -990,9 +990,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "0f611c90d5fd8405c932b2e7f3924f6a4a7fadbc7be5e51a8e5fa4b466bf3e0f",
+      "sha256": "695b6126bac4ea0223af29f7d5e7378ff7f953040258565e4257636a09f87e79",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -1002,15 +1002,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "3afb80d87a4ffefd89540391eab9643f90915761fbf4cb10c995d3bc42962fa1",
+      "sha256": "bd914131627656bda3e3097a2644e9776da1d11212b49fd9a5b915389d1f10b0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "433a8b7a511616daba69a13fbee3706c2eb8a549096a9df8d40dc85aecce220d",
+      "sha256": "3f91ffc653c57b1ab4da4cf99b2b8bdbcf5d15053930cdf492d699603507e70b",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -1022,7 +1022,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1052,13 +1052,13 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1991,
-      "pass": 1991,
+      "tests": 1996,
+      "pass": 1996,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 225,
+    "wholeFiles": 226,
     "original61Retained": false,
     "necessaryAddedWholeFiles": [
       "tests/act11-adapter-acceptance.test.mjs",
@@ -1080,6 +1080,7 @@
       "tests/config-proposals.test.mjs",
       "tests/config-records.test.mjs",
       "tests/conflict-family.test.mjs",
+      "tests/coordination-knowledge-language.test.mjs",
       "tests/coordination-managed-sections.test.mjs",
       "tests/cross-repo-privacy.test.mjs",
       "tests/decided-in-cli.test.mjs",
@@ -1230,10 +1231,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-15T08:26:29.646714+00:00",
+  "generationTimeUtc": "2026-10-15T15:26:08.838919+00:00",
   "supportedLocales": [
     "en",
     "zh-CN",
@@ -18865,7 +18866,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 445,
+      "line": 447,
       "call": "fail",
       "argument": 1,
       "template": "`${path}: ${(error as { message?: string }).message ?? \"unreadable\"}`",
@@ -18873,7 +18874,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 499,
+      "line": 501,
       "call": "fail",
       "argument": 1,
       "template": "`decisions-file ${path}: ${(error as { message?: string }).message ?? \"unreadable\"}`",
@@ -18881,7 +18882,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 502,
+      "line": 504,
       "call": "fail",
       "argument": 1,
       "text": "decisions-file holds a JSON array of decision texts",
@@ -18889,7 +18890,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 514,
+      "line": 516,
       "call": "fail",
       "argument": 1,
       "template": "`supersedes ${entry}: give <decision>=<decision that supersedes it>`",
@@ -18897,7 +18898,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 525,
+      "line": 527,
       "call": "fail",
       "argument": 1,
       "template": "`status=${value}; one of ${DECISION_STATUS_FILTERS.join(\", \")}`",
@@ -18905,7 +18906,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 683,
+      "line": 685,
       "call": "fail",
       "argument": 1,
       "template": "`work-list page exceeds the canonical byte budget; ${remedy}`",
@@ -18913,7 +18914,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 753,
+      "line": 755,
       "call": "fail",
       "argument": 1,
       "text": "offset",
@@ -18921,7 +18922,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 809,
+      "line": 811,
       "call": "fail",
       "argument": 1,
       "template": "`${(page.records as readonly unknown[]).length} events do not fit one canonical page; lower --limit`",
@@ -18929,7 +18930,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 913,
+      "line": 915,
       "call": "fail",
       "argument": 1,
       "template": "`scope=${value}`",
@@ -18937,7 +18938,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 921,
+      "line": 923,
       "call": "fail",
       "argument": 1,
       "template": "`status=${value}`",
@@ -18945,7 +18946,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 940,
+      "line": 942,
       "call": "fail",
       "argument": 1,
       "template": "`status=${value}; one of ${RECALL_STATUS_FILTERS.join(\", \")}`",
@@ -18953,7 +18954,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 951,
+      "line": 953,
       "call": "fail",
       "argument": 1,
       "text": "command is a JSON array of strings: the gate's argv, run with no shell",
@@ -18961,7 +18962,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 991,
+      "line": 993,
       "call": "WorkflowCliError",
       "argument": 1,
       "template": "`--project-id names ${projectId}, but ${workId} belongs to ${record.projectId ?? \"no project\"}, the scope its gates in this library are declared in`",
@@ -18969,7 +18970,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1065,
+      "line": 1067,
       "call": "Error",
       "argument": 0,
       "text": "target identity or configuration changed; resolve again",
@@ -18977,7 +18978,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1067,
+      "line": 1069,
       "call": "Error",
       "argument": 0,
       "text": "no registered repository matches this operation",
@@ -18985,7 +18986,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1071,
+      "line": 1073,
       "call": "Error",
       "argument": 0,
       "text": "work revision changed; resolve again",
@@ -18993,7 +18994,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1134,
+      "line": 1136,
       "call": "WorkflowCliError",
       "argument": 1,
       "text": "the gate root is not registered to this library and stable project",
@@ -19001,7 +19002,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1257,
+      "line": 1259,
       "call": "fail",
       "argument": 1,
       "template": "`setting ${key} is not registered`",
@@ -19009,7 +19010,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1367,
+      "line": 1369,
       "call": "WorkflowCliError",
       "argument": 1,
       "template": "`${target} is changed in Atelier; a model does not write it through the CLI`",
@@ -19017,7 +19018,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1426,
+      "line": 1428,
       "call": "fail",
       "argument": 1,
       "text": "the project directory has no stable project binding; managed output remains pending",
@@ -19025,7 +19026,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1433,
+      "line": 1435,
       "call": "fail",
       "argument": 1,
       "text": "project-id conflicts with this registered project directory",
@@ -19033,7 +19034,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1468,
+      "line": 1470,
       "call": "fail",
       "argument": 1,
       "text": "status",
@@ -19041,7 +19042,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1480,
+      "line": 1482,
       "call": "fail",
       "argument": 1,
       "text": "the project and library bindings conflict",
@@ -19049,7 +19050,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1538,
+      "line": 1540,
       "call": "fail",
       "argument": 1,
       "template": "`template ${templateId}@${templateVersion} was not materialized after admission`",
@@ -19057,7 +19058,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1760,
+      "line": 1762,
       "call": "fail",
       "argument": 1,
       "template": "`${entry.name}: a command is either a governed write or authority-bearing output, never both`",
@@ -19065,7 +19066,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1856,
+      "line": 1858,
       "call": "fail",
       "argument": 1,
       "template": "`${command} emits host trust state (${fields.join(\",\")}) without a catalog mutates or authorityBearing declaration`",
@@ -19073,7 +19074,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1863,
+      "line": 1865,
       "call": "fail",
       "argument": 1,
       "text": "A governed command is required",
@@ -19081,7 +19082,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1882,
+      "line": 1884,
       "call": "fail",
       "argument": 1,
       "template": "`${command} is a retired replay-only path; use settings-catalog or vocabulary for read-only state`",
@@ -19089,7 +19090,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1973,
+      "line": 1975,
       "call": "fail",
       "argument": 1,
       "template": "`${join(source, part.name)} does not exist: the skill template beside this engine is incomplete`",
@@ -19097,7 +19098,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1978,
+      "line": 1980,
       "call": "fail",
       "argument": 1,
       "template": "`no skill/${BRAND.helper.id}/ beside this engine: skill-render runs only in the engine's source tree or in a release`",
@@ -19105,7 +19106,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1989,
+      "line": 1991,
       "call": "fail",
       "argument": 1,
       "template": "`${out} is a file; --out names a missing or empty directory`",
@@ -19113,7 +19114,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 1992,
+      "line": 1994,
       "call": "fail",
       "argument": 1,
       "template": "`${out} is not empty; --out names a missing or empty directory`",
@@ -19121,7 +19122,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2043,
+      "line": 2045,
       "call": "fail",
       "argument": 1,
       "text": "managed-sections",
@@ -19129,7 +19130,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2119,
+      "line": 2121,
       "call": "fail",
       "argument": 1,
       "text": "A governed command is required",
@@ -19137,7 +19138,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2307,
+      "line": 2309,
       "call": "WorkflowCliError",
       "argument": 1,
       "template": "`the library records rule ${ruleId} at version ${status.recordedVersion}; this engine ships version ${status.version}`",
@@ -19145,7 +19146,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2368,
+      "line": 2370,
       "call": "fail",
       "argument": 1,
       "text": "rule-list project and library bindings conflict",
@@ -19153,7 +19154,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2443,
+      "line": 2445,
       "call": "fail",
       "argument": 1,
       "text": "action",
@@ -19161,7 +19162,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2445,
+      "line": 2447,
       "call": "fail",
       "argument": 1,
       "text": "order",
@@ -19169,7 +19170,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2568,
+      "line": 2570,
       "call": "WorkflowCliError",
       "argument": 1,
       "text": "--legacy must name exactly one old workspace in --mapping",
@@ -19177,7 +19178,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2572,
+      "line": 2574,
       "call": "WorkflowCliError",
       "argument": 1,
       "text": "--target must be the matched mapping entry's project library",
@@ -19185,7 +19186,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 2980,
+      "line": 2982,
       "call": "fail",
       "argument": 1,
       "template": "`category=${values.category ?? \"\"}`",
@@ -19193,7 +19194,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3053,
+      "line": 3055,
       "call": "fail",
       "argument": 1,
       "template": "`${flag}=${provided}`",
@@ -19201,7 +19202,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3106,
+      "line": 3108,
       "call": "fail",
       "argument": 1,
       "template": "`${flag}=${provided}`",
@@ -19209,7 +19210,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3109,
+      "line": 3111,
       "call": "fail",
       "argument": 1,
       "template": "`role-scopes names roles of a role card, not of scope=${values.scope}`",
@@ -19217,7 +19218,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3215,
+      "line": 3217,
       "call": "fail",
       "argument": 1,
       "template": "`reason=${values.reason ?? \"\"}`",
@@ -19225,18 +19226,10 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3237,
+      "line": 3239,
       "call": "fail",
       "argument": 1,
       "template": "`${values[\"from-file\"] ?? \"\"}: ${(error as { message?: string }).message ?? \"unreadable\"}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/cli/src/index.ts",
-      "line": 3270,
-      "call": "fail",
-      "argument": 1,
-      "text": "query",
       "version": "current"
     },
     {
@@ -19244,12 +19237,20 @@
       "line": 3272,
       "call": "fail",
       "argument": 1,
+      "text": "query",
+      "version": "current"
+    },
+    {
+      "file": "packages/cli/src/index.ts",
+      "line": 3274,
+      "call": "fail",
+      "argument": 1,
       "text": "limit",
       "version": "current"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3281,
+      "line": 3283,
       "call": "fail",
       "argument": 1,
       "text": "tau",
@@ -19257,7 +19258,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3465,
+      "line": 3467,
       "call": "fail",
       "argument": 1,
       "text": "key",
@@ -19265,7 +19266,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3472,
+      "line": 3474,
       "call": "fail",
       "argument": 1,
       "text": "key",
@@ -19273,7 +19274,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3487,
+      "line": 3489,
       "call": "WorkflowCliError",
       "argument": 1,
       "text": "a library's chain identity is declared on its page in Atelier; a model does not declare it through the CLI, citing a decision or not",
@@ -19281,7 +19282,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3492,
+      "line": 3494,
       "call": "fail",
       "argument": 1,
       "text": "role",
@@ -19289,7 +19290,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3517,
+      "line": 3519,
       "call": "fail",
       "argument": 1,
       "template": "`status=${values.status}`",
@@ -19297,7 +19298,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3566,
+      "line": 3568,
       "call": "fail",
       "argument": 1,
       "template": "`${values[\"from-file\"] ?? \"\"}: ${(error as { message?: string }).message ?? \"unreadable\"}`",
@@ -19305,7 +19306,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3610,
+      "line": 3612,
       "call": "fail",
       "argument": 1,
       "template": "`status=${values.status}`",
@@ -19313,7 +19314,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3658,
+      "line": 3660,
       "call": "fail",
       "argument": 1,
       "text": "annotation-field",
@@ -19321,7 +19322,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3749,
+      "line": 3751,
       "call": "fail",
       "argument": 1,
       "text": "search",
@@ -19329,7 +19330,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3752,
+      "line": 3754,
       "call": "fail",
       "argument": 1,
       "template": "`kind=${values.kind}`",
@@ -19337,7 +19338,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3753,
+      "line": 3755,
       "call": "fail",
       "argument": 1,
       "template": "`status=${values.status}`",
@@ -19345,7 +19346,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3763,
+      "line": 3765,
       "call": "fail",
       "argument": 1,
       "text": "scope-bytes",
@@ -19353,7 +19354,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3802,
+      "line": 3804,
       "call": "fail",
       "argument": 1,
       "template": "`project ${values[\"project-id\"] ?? \"\"} does not exist in this workspace`",
@@ -19361,7 +19362,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3815,
+      "line": 3817,
       "call": "fail",
       "argument": 1,
       "text": "work-show takes exactly one of --id and --external-key",
@@ -19369,7 +19370,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3820,
+      "line": 3822,
       "call": "fail",
       "argument": 1,
       "template": "`work ${values.id ?? values[\"external-key\"] ?? \"\"} is unavailable`",
@@ -19377,7 +19378,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3867,
+      "line": 3869,
       "call": "fail",
       "argument": 1,
       "template": "`status=${status}`",
@@ -19385,7 +19386,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3927,
+      "line": 3929,
       "call": "fail",
       "argument": 1,
       "text": "minutes-record takes exactly one of --decisions and --decisions-file",
@@ -19393,7 +19394,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3994,
+      "line": 3996,
       "call": "fail",
       "argument": 1,
       "text": "minutes-show takes exactly one of --id and --external-key",
@@ -19401,7 +19402,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 3999,
+      "line": 4001,
       "call": "fail",
       "argument": 1,
       "text": "a decision named by its number is read whatever its status; --status goes with a record",
@@ -19409,18 +19410,10 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 4052,
+      "line": 4054,
       "call": "fail",
       "argument": 1,
       "text": "command",
-      "version": "current"
-    },
-    {
-      "file": "packages/cli/src/index.ts",
-      "line": 4100,
-      "call": "fail",
-      "argument": 1,
-      "text": "action",
       "version": "current"
     },
     {
@@ -19428,12 +19421,20 @@
       "line": 4102,
       "call": "fail",
       "argument": 1,
+      "text": "action",
+      "version": "current"
+    },
+    {
+      "file": "packages/cli/src/index.ts",
+      "line": 4104,
+      "call": "fail",
+      "argument": 1,
       "text": "a gate's removal takes no declaration flags",
       "version": "current"
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 4113,
+      "line": 4115,
       "call": "fail",
       "argument": 1,
       "text": "command",
@@ -19441,7 +19442,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 4145,
+      "line": 4147,
       "call": "WorkflowCliError",
       "argument": 1,
       "template": "`the proposal ${key} is ${approve ? \"approved\" : \"rejected\"} in Atelier; a model does not settle it through the CLI`",
@@ -19449,7 +19450,7 @@
     },
     {
       "file": "packages/cli/src/index.ts",
-      "line": 4154,
+      "line": 4156,
       "call": "fail",
       "argument": 1,
       "text": "proposed-at",
@@ -22257,7 +22258,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 905,
+      "line": 906,
       "call": "fail",
       "argument": 1,
       "text": "knowledge.articlesPath has no default",
@@ -22265,7 +22266,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 912,
+      "line": 913,
       "call": "fail",
       "argument": 1,
       "text": "article path",
@@ -22273,7 +22274,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 916,
+      "line": 917,
       "call": "fail",
       "argument": 1,
       "text": "article path",
@@ -22281,7 +22282,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 931,
+      "line": 932,
       "call": "fail",
       "argument": 1,
       "template": "`${root}:${String(error)}`",
@@ -22289,7 +22290,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 956,
+      "line": 957,
       "call": "fail",
       "argument": 1,
       "template": "`${dirname(file)}:${String(filesystemError)}`",
@@ -22297,7 +22298,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 968,
+      "line": 969,
       "call": "fail",
       "argument": 1,
       "text": "article file",
@@ -22305,7 +22306,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 972,
+      "line": 973,
       "call": "fail",
       "argument": 1,
       "text": "article file is not canonical UTF-8",
@@ -22313,7 +22314,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 979,
+      "line": 980,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String(error)}`",
@@ -22321,7 +22322,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 987,
+      "line": 988,
       "call": "fail",
       "argument": 1,
       "text": "article file",
@@ -22329,7 +22330,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1001,
+      "line": 1002,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String(error)}`",
@@ -22337,7 +22338,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1016,
+      "line": 1017,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:article front matter`",
@@ -22345,7 +22346,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1052,
+      "line": 1053,
       "call": "fail",
       "argument": 1,
       "template": "`${label} must be an object`",
@@ -22353,7 +22354,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1057,
+      "line": 1058,
       "call": "fail",
       "argument": 1,
       "template": "`${label} fields are not exact`",
@@ -22361,7 +22362,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1063,
+      "line": 1064,
       "call": "fail",
       "argument": 1,
       "template": "`${label} must be a string`",
@@ -22369,7 +22370,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1087,
+      "line": 1088,
       "call": "fail",
       "argument": 1,
       "template": "`${label} must be sorted`",
@@ -22377,7 +22378,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1097,
+      "line": 1098,
       "call": "fail",
       "argument": 1,
       "template": "`${label}:${String(error)}`",
@@ -22385,7 +22386,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1100,
+      "line": 1101,
       "call": "fail",
       "argument": 1,
       "template": "`${label}:${value}`",
@@ -22393,7 +22394,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1110,
+      "line": 1111,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String((error as { code?: string }).code ?? error)}`",
@@ -22401,7 +22402,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1288,
+      "line": 1289,
       "call": "fail",
       "argument": 1,
       "text": "--at is taken only with --clear-removed true",
@@ -22409,7 +22410,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1291,
+      "line": 1292,
       "call": "fail",
       "argument": 1,
       "text": "--clear-removed true takes --at, the instant its backup is named by",
@@ -22417,7 +22418,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1306,
+      "line": 1307,
       "call": "fail",
       "argument": 1,
       "text": "the local segmented knowledge backend is unavailable",
@@ -22425,7 +22426,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1344,
+      "line": 1345,
       "call": "fail",
       "argument": 1,
       "text": "the local segmented knowledge backend is unavailable",
@@ -22433,7 +22434,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1371,
+      "line": 1372,
       "call": "fail",
       "argument": 1,
       "template": "`${named.filter((deviceId) => deviceId !== device?.deviceId).join(\",\")} also write this library: only its sole writer clears the metadata/body layout`",
@@ -22441,7 +22442,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1385,
+      "line": 1386,
       "call": "fail",
       "argument": 1,
       "template": "`${storeRoot}:${String(error)}`",
@@ -22449,7 +22450,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1398,
+      "line": 1399,
       "call": "fail",
       "argument": 1,
       "template": "`${directory}: a backup of this second is already there; run again with a later --at`",
@@ -22457,7 +22458,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1400,
+      "line": 1401,
       "call": "fail",
       "argument": 1,
       "template": "`${directory}:${String(error)}`",
@@ -22465,7 +22466,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1482,
+      "line": 1483,
       "call": "fail",
       "argument": 1,
       "template": "`${path}: publication did not become single-linked`",
@@ -22473,7 +22474,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1556,
+      "line": 1557,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String(error)}`",
@@ -22481,7 +22482,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1570,
+      "line": 1571,
       "call": "fail",
       "argument": 1,
       "template": "`${workspaceRoot} is an old-layout workspace; its knowledge store is read-only`",
@@ -22489,7 +22490,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1581,
+      "line": 1582,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String(error)}`",
@@ -22497,7 +22498,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1594,
+      "line": 1595,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String(error)}`",
@@ -22505,7 +22506,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1603,
+      "line": 1604,
       "call": "fail",
       "argument": 1,
       "template": "`${label} must be an object`",
@@ -22513,18 +22514,10 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1623,
+      "line": 1624,
       "call": "fail",
       "argument": 1,
       "text": "knowledge marker fields are invalid",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 1626,
-      "call": "fail",
-      "argument": 1,
-      "text": "knowledge marker lastSweepAt",
       "version": "current"
     },
     {
@@ -22537,7 +22530,15 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1636,
+      "line": 1628,
+      "call": "fail",
+      "argument": 1,
+      "text": "knowledge marker lastSweepAt",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 1637,
       "call": "fail",
       "argument": 1,
       "template": "`accountable owner:${String(error)}`",
@@ -22545,7 +22546,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1639,
+      "line": 1640,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:accountable owner is required`",
@@ -22553,7 +22554,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1643,
+      "line": 1644,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:source and evidence are required for ${metadata.kind} knowledge`",
@@ -22561,7 +22562,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1655,
+      "line": 1656,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:promotion requires at least one tag and a non-empty snippet`",
@@ -22569,7 +22570,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1674,
+      "line": 1675,
       "call": "fail",
       "argument": 1,
       "text": "retirement record",
@@ -22577,7 +22578,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1684,
+      "line": 1685,
       "call": "fail",
       "argument": 1,
       "text": "retirement record fields",
@@ -22585,7 +22586,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1687,
+      "line": 1688,
       "call": "fail",
       "argument": 1,
       "text": "retirement record instant",
@@ -22593,7 +22594,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1703,
+      "line": 1704,
       "call": "fail",
       "argument": 1,
       "text": "artifact reference must be a bounded printable string",
@@ -22601,7 +22602,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1720,
+      "line": 1721,
       "call": "fail",
       "argument": 1,
       "text": "unsupported hierarchical URL userinfo",
@@ -22609,7 +22610,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1729,
+      "line": 1730,
       "call": "fail",
       "argument": 1,
       "text": "malformed hierarchical URL userinfo",
@@ -22617,7 +22618,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1738,
+      "line": 1739,
       "call": "fail",
       "argument": 1,
       "text": "redacted artifact reference is empty or oversized",
@@ -22625,7 +22626,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1786,
+      "line": 1787,
       "call": "fail",
       "argument": 1,
       "text": "staleness policy is invalid",
@@ -22633,7 +22634,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1797,
+      "line": 1798,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:supersedes`",
@@ -22641,7 +22642,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1805,
+      "line": 1806,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:identity binding`",
@@ -22649,7 +22650,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1833,
+      "line": 1834,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:${String(error)}`",
@@ -22657,7 +22658,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1847,
+      "line": 1848,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:freshness`",
@@ -22665,7 +22666,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1913,
+      "line": 1914,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:scope`",
@@ -22673,7 +22674,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1944,
+      "line": 1945,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:${dangling[0]}`",
@@ -22681,7 +22682,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1961,
+      "line": 1962,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:scope`",
@@ -22689,7 +22690,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1964,
+      "line": 1965,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:${workId}`",
@@ -22697,7 +22698,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1977,
+      "line": 1978,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:supersedes:${metadata.supersedes}`",
@@ -22705,7 +22706,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1984,
+      "line": 1985,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:body binding`",
@@ -22713,7 +22714,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 1998,
+      "line": 1999,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:body is not canonical UTF-8`",
@@ -22721,7 +22722,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2134,
+      "line": 2135,
       "call": "fail",
       "argument": 1,
       "text": "mutation claim is unsafe",
@@ -22729,7 +22730,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2153,
+      "line": 2154,
       "call": "fail",
       "argument": 1,
       "text": "mutation claim is unsafe",
@@ -22737,7 +22738,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2160,
+      "line": 2161,
       "call": "fail",
       "argument": 1,
       "text": "knowledge mutation claim fields",
@@ -22745,7 +22746,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2162,
+      "line": 2163,
       "call": "fail",
       "argument": 1,
       "text": "knowledge mutation claim acquiredAt",
@@ -22753,7 +22754,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2172,
+      "line": 2173,
       "call": "fail",
       "argument": 1,
       "text": "knowledge store root entries are not exact",
@@ -22761,7 +22762,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2175,
+      "line": 2176,
       "call": "fail",
       "argument": 1,
       "text": "mutation claim is present",
@@ -22769,7 +22770,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2222,
+      "line": 2223,
       "call": "fail",
       "argument": 1,
       "text": "knowledge metadata/body sets differ",
@@ -22777,7 +22778,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2253,
+      "line": 2254,
       "call": "fail",
       "argument": 1,
       "template": "`${id}:live record is missing its body`",
@@ -22785,7 +22786,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2321,
+      "line": 2322,
       "call": "fail",
       "argument": 1,
       "text": "knowledge store is not under the Workspace authority root",
@@ -22793,7 +22794,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2437,
+      "line": 2438,
       "call": "fail",
       "argument": 1,
       "text": "knowledge views are not exact",
@@ -22801,7 +22802,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2446,
+      "line": 2447,
       "call": "fail",
       "argument": 1,
       "text": "knowledge index is stale",
@@ -22809,7 +22810,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2511,
+      "line": 2512,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: chain`",
@@ -22817,7 +22818,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2518,
+      "line": 2519,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: chain`",
@@ -22825,7 +22826,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2539,
+      "line": 2540,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: event fields`",
@@ -22833,7 +22834,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2545,
+      "line": 2546,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: event binding`",
@@ -22841,7 +22842,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2549,
+      "line": 2550,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: event binding`",
@@ -22849,7 +22850,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2555,
+      "line": 2556,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: event binding`",
@@ -22857,7 +22858,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2558,
+      "line": 2559,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: occurredAt`",
@@ -22865,7 +22866,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2560,
+      "line": 2561,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: event hash`",
@@ -22873,7 +22874,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2596,
+      "line": 2597,
       "call": "fail",
       "argument": 1,
       "text": "knowledge store root entries are not exact",
@@ -22881,7 +22882,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2598,
+      "line": 2599,
       "call": "fail",
       "argument": 1,
       "text": "mutation claim is present",
@@ -22889,7 +22890,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2632,
+      "line": 2633,
       "call": "fail",
       "argument": 1,
       "template": "`${unadmitted}:live record is missing its body`",
@@ -22897,7 +22898,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2671,
+      "line": 2672,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:scope`",
@@ -22905,7 +22906,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2747,
+      "line": 2748,
       "call": "fail",
       "argument": 1,
       "text": "another process on this machine holds the user crest lock",
@@ -22913,7 +22914,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2762,
+      "line": 2763,
       "call": "fail",
       "argument": 1,
       "template": "`${root}:${String((error as { code?: string }).code ?? error)}`",
@@ -22921,7 +22922,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2776,
+      "line": 2777,
       "call": "fail",
       "argument": 1,
       "template": "`${parent}:${String((error as { code?: string }).code ?? error)}`",
@@ -22929,7 +22930,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2813,
+      "line": 2814,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String((error as { code?: string }).code ?? error)}`",
@@ -22937,7 +22938,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2845,
+      "line": 2846,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String((error as { code?: string }).code ?? error)}`",
@@ -22945,7 +22946,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2856,
+      "line": 2857,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String((error as { code?: string }).code ?? error)}`",
@@ -22953,7 +22954,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2859,
+      "line": 2860,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:body reference size`",
@@ -22961,7 +22962,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2870,
+      "line": 2871,
       "call": "fail",
       "argument": 1,
       "template": "`${deviceId}/${filename}: event fields`",
@@ -22969,7 +22970,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2880,
+      "line": 2881,
       "call": "fail",
       "argument": 1,
       "template": "`${deviceId}/${filename}: event binding`",
@@ -22977,7 +22978,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2882,
+      "line": 2883,
       "call": "fail",
       "argument": 1,
       "template": "`${deviceId}/${filename}: occurredAt`",
@@ -22985,7 +22986,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2885,
+      "line": 2886,
       "call": "fail",
       "argument": 1,
       "template": "`${deviceId}/${filename}: event hash`",
@@ -22993,7 +22994,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2910,
+      "line": 2911,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: removal event fields`",
@@ -23001,7 +23002,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2918,
+      "line": 2919,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: removal`",
@@ -23009,7 +23010,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2921,
+      "line": 2922,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: removal actor`",
@@ -23017,7 +23018,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2922,
+      "line": 2923,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: occurredAt`",
@@ -23025,7 +23026,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2924,
+      "line": 2925,
       "call": "fail",
       "argument": 1,
       "template": "`${where}: event hash`",
@@ -23033,7 +23034,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2951,
+      "line": 2952,
       "call": "fail",
       "argument": 1,
       "template": "`${path}:${String((error as { code?: string }).code ?? error)}`",
@@ -23041,7 +23042,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2977,
+      "line": 2978,
       "call": "fail",
       "argument": 1,
       "template": "`${eventsPath}:${String((error as { code?: string }).code ?? error)}`",
@@ -23049,7 +23050,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 2989,
+      "line": 2990,
       "call": "fail",
       "argument": 1,
       "template": "`${eventsPath}: unexpected entry ${entry.name}`",
@@ -23057,7 +23058,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3008,
+      "line": 3009,
       "call": "fail",
       "argument": 1,
       "template": "`${eventsPath}/${deviceId}: unexpected entry ${streamEntry.name}`",
@@ -23065,7 +23066,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3014,
+      "line": 3015,
       "call": "fail",
       "argument": 1,
       "template": "`${deviceId}: event stream has a gap or fork at sequence ${index + 1}`",
@@ -23073,7 +23074,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3021,
+      "line": 3022,
       "call": "fail",
       "argument": 1,
       "template": "`${deviceId}: event chain breaks at sequence ${file.sequence}`",
@@ -23081,7 +23082,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3030,
+      "line": 3031,
       "call": "fail",
       "argument": 1,
       "template": "`${deviceId}: event chain breaks at sequence ${file.sequence}`",
@@ -23089,7 +23090,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3040,
+      "line": 3041,
       "call": "fail",
       "argument": 1,
       "template": "`${event.metadata.id}:body was not admitted`",
@@ -23097,7 +23098,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3098,
+      "line": 3099,
       "call": "fail",
       "argument": 1,
       "template": "`${unit.lineage}/${basename(unit.metadataPath)}: body reference is missing`",
@@ -23105,7 +23106,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3251,
+      "line": 3252,
       "call": "fail",
       "argument": 1,
       "template": "`${id}: writer ${unit.lineage} holds conflicting events for one knowledge id`",
@@ -23113,7 +23114,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3257,
+      "line": 3258,
       "call": "fail",
       "argument": 1,
       "template": "`${id}: its records replace one another`",
@@ -23121,7 +23122,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3272,
+      "line": 3273,
       "call": "fail",
       "argument": 1,
       "template": "`${unit.metadata.id}:supersedes:${unit.metadata.supersedes}`",
@@ -23129,7 +23130,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3446,
+      "line": 3447,
       "call": "fail",
       "argument": 1,
       "template": "`${id} is removed (${removal.reason}): ${removal.basis}`",
@@ -23137,7 +23138,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3513,
+      "line": 3514,
       "call": "fail",
       "argument": 1,
       "text": "user crest root entries are not exact",
@@ -23145,7 +23146,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3514,
+      "line": 3515,
       "call": "fail",
       "argument": 1,
       "text": "mutation claim is present",
@@ -23153,7 +23154,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3537,
+      "line": 3538,
       "call": "fail",
       "argument": 1,
       "text": "user crest legacy metadata/body layout is incomplete",
@@ -23161,7 +23162,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3540,
+      "line": 3541,
       "call": "fail",
       "argument": 1,
       "text": "user crest event streams are missing",
@@ -23169,7 +23170,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3606,
+      "line": 3607,
       "call": "fail",
       "argument": 1,
       "template": "`${rootPath}:${String(error)}`",
@@ -23177,7 +23178,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3612,
+      "line": 3613,
       "call": "fail",
       "argument": 1,
       "text": "user crest has content without a root marker",
@@ -23185,7 +23186,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3618,
+      "line": 3619,
       "call": "fail",
       "argument": 1,
       "template": "`${eventsPath}:${String(error)}`",
@@ -23193,7 +23194,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3623,
+      "line": 3624,
       "call": "fail",
       "argument": 1,
       "text": "user crest events exist without a root marker",
@@ -23201,7 +23202,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3641,
+      "line": 3642,
       "call": "fail",
       "argument": 1,
       "text": "user crest root marker changed during initialization",
@@ -23209,7 +23210,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3660,
+      "line": 3661,
       "call": "fail",
       "argument": 1,
       "template": "`${eventsPath}:${String(error)}`",
@@ -23217,7 +23218,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3673,
+      "line": 3674,
       "call": "fail",
       "argument": 1,
       "template": "`${path}: immutable event data differs`",
@@ -23225,7 +23226,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3706,
+      "line": 3707,
       "call": "fail",
       "argument": 1,
       "template": "`${entry}: publisher pid`",
@@ -23233,7 +23234,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3707,
+      "line": 3708,
       "call": "fail",
       "argument": 1,
       "template": "`${entry}: publisher is still alive`",
@@ -23241,7 +23242,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3747,
+      "line": 3748,
       "call": "fail",
       "argument": 1,
       "template": "`${temporary}: staging digest`",
@@ -23249,7 +23250,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3749,
+      "line": 3750,
       "call": "fail",
       "argument": 1,
       "template": "`${temporary}: body digest`",
@@ -23257,7 +23258,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3930,
+      "line": 3931,
       "call": "fail",
       "argument": 1,
       "template": "`${id}:body was not admitted`",
@@ -23265,7 +23266,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3977,
+      "line": 3978,
       "call": "fail",
       "argument": 1,
       "template": "`scope=${String(scope)}`",
@@ -23273,7 +23274,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 3992,
+      "line": 3993,
       "call": "fail",
       "argument": 1,
       "text": "knowledge mutation claim exists",
@@ -23281,7 +23282,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4001,
+      "line": 4002,
       "call": "fail",
       "argument": 1,
       "text": "knowledge claim identity changed",
@@ -23289,7 +23290,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4007,
+      "line": 4008,
       "call": "fail",
       "argument": 1,
       "text": "released knowledge claim identity changed",
@@ -23297,7 +23298,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4053,
+      "line": 4054,
       "call": "fail",
       "argument": 1,
       "text": "knowledge mutation claim belongs to a live process",
@@ -23305,7 +23306,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4070,
+      "line": 4071,
       "call": "fail",
       "argument": 1,
       "text": "knowledge user-crest claim changed during recovery",
@@ -23313,7 +23314,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4094,
+      "line": 4095,
       "call": "fail",
       "argument": 1,
       "text": "knowledge mutation claim belongs to a live process",
@@ -23321,7 +23322,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4112,
+      "line": 4113,
       "call": "fail",
       "argument": 1,
       "text": "knowledge mutation claim changed during recovery",
@@ -23329,7 +23330,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4169,
+      "line": 4170,
       "call": "fail",
       "argument": 1,
       "text": "freshness evaluation precedes last verification",
@@ -23337,7 +23338,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4217,
+      "line": 4218,
       "call": "fail",
       "argument": 1,
       "text": "the candidate lifecycle is retired: a card is retrievable the moment it is written",
@@ -23345,7 +23346,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4222,
+      "line": 4223,
       "call": "fail",
       "argument": 1,
       "text": "a card is not written retired: it retires when a later card supersedes it",
@@ -23353,7 +23354,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4226,
+      "line": 4227,
       "call": "fail",
       "argument": 1,
       "template": "`lifecycle=${String(lifecycle)}`",
@@ -23361,7 +23362,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4238,
+      "line": 4262,
       "call": "fail",
       "argument": 1,
       "template": "`unknown project ${input.projectId}`",
@@ -23369,7 +23370,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4253,
+      "line": 4277,
       "call": "fail",
       "argument": 1,
       "template": "`${input.kind} knowledge requires source and evidence links`",
@@ -23377,7 +23378,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4356,
+      "line": 4388,
       "call": "fail",
       "argument": 1,
       "text": "knowledge store requires a non-empty Workspace authority",
@@ -23385,7 +23386,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4420,
+      "line": 4452,
       "call": "fail",
       "argument": 1,
       "template": "`${scan.awaitingChain.length} crest record(s) await chain events this device does not hold`",
@@ -23393,7 +23394,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4437,
+      "line": 4469,
       "call": "fail",
       "argument": 1,
       "template": "`${first.id}:scope`",
@@ -23401,7 +23402,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4590,
+      "line": 4622,
       "call": "fail",
       "argument": 1,
       "template": "`${streamPath}:${String(error)}`",
@@ -23409,7 +23410,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4596,
+      "line": 4628,
       "call": "fail",
       "argument": 1,
       "text": "user crest event sequence",
@@ -23417,7 +23418,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4610,
+      "line": 4642,
       "call": "fail",
       "argument": 1,
       "template": "`${metadata.id}:supersedes:${metadata.supersedes}`",
@@ -23425,34 +23426,10 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4633,
+      "line": 4665,
       "call": "fail",
       "argument": 1,
       "text": "knowledge create budget",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4711,
-      "call": "fail",
-      "argument": 1,
-      "template": "`${eventsPath}:${String(error)}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4719,
-      "call": "fail",
-      "argument": 1,
-      "template": "`${streamPath}:${String(error)}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4741,
-      "call": "fail",
-      "argument": 1,
-      "text": "crest event sequence",
       "version": "current"
     },
     {
@@ -23460,108 +23437,12 @@
       "line": 4743,
       "call": "fail",
       "argument": 1,
-      "text": "crest event chain",
+      "template": "`${eventsPath}:${String(error)}`",
       "version": "current"
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 4764,
-      "call": "fail",
-      "argument": 1,
-      "text": "crest event",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4827,
-      "call": "fail",
-      "argument": 1,
-      "template": "`${metadata.id}:supersedes:${metadata.supersedes}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4861,
-      "call": "fail",
-      "argument": 1,
-      "text": "knowledge create budget",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4901,
-      "call": "fail",
-      "argument": 1,
-      "template": "`id=${String(input.id)}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4903,
-      "call": "fail",
-      "argument": 1,
-      "template": "`reason=${String(input.reason)}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4904,
-      "call": "fail",
-      "argument": 1,
-      "text": "basis",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4905,
-      "call": "fail",
-      "argument": 1,
-      "text": "basis",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4906,
-      "call": "fail",
-      "argument": 1,
-      "template": "`actor=${String(input.actor)}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4910,
-      "call": "fail",
-      "argument": 1,
-      "text": "the reason superseded names the card that supersedes it (supersededBy)",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4913,
-      "call": "fail",
-      "argument": 1,
-      "template": "`supersededBy is named only for the reason superseded, not ${input.reason}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4926,
-      "call": "fail",
-      "argument": 1,
-      "template": "`${removal.id}:supersededBy:${removal.supersededBy}`",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 4943,
-      "call": "fail",
-      "argument": 1,
-      "text": "crest event sequence",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/knowledge-core.ts",
-      "line": 5043,
+      "line": 4751,
       "call": "fail",
       "argument": 1,
       "template": "`${streamPath}:${String(error)}`",
@@ -23569,10 +23450,114 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5071,
+      "line": 4773,
       "call": "fail",
       "argument": 1,
-      "text": "article category",
+      "text": "crest event sequence",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4775,
+      "call": "fail",
+      "argument": 1,
+      "text": "crest event chain",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4796,
+      "call": "fail",
+      "argument": 1,
+      "text": "crest event",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4859,
+      "call": "fail",
+      "argument": 1,
+      "template": "`${metadata.id}:supersedes:${metadata.supersedes}`",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4893,
+      "call": "fail",
+      "argument": 1,
+      "text": "knowledge create budget",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4933,
+      "call": "fail",
+      "argument": 1,
+      "template": "`id=${String(input.id)}`",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4935,
+      "call": "fail",
+      "argument": 1,
+      "template": "`reason=${String(input.reason)}`",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4936,
+      "call": "fail",
+      "argument": 1,
+      "text": "basis",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4937,
+      "call": "fail",
+      "argument": 1,
+      "text": "basis",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4938,
+      "call": "fail",
+      "argument": 1,
+      "template": "`actor=${String(input.actor)}`",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4942,
+      "call": "fail",
+      "argument": 1,
+      "text": "the reason superseded names the card that supersedes it (supersededBy)",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4945,
+      "call": "fail",
+      "argument": 1,
+      "template": "`supersededBy is named only for the reason superseded, not ${input.reason}`",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4958,
+      "call": "fail",
+      "argument": 1,
+      "template": "`${removal.id}:supersededBy:${removal.supersededBy}`",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 4975,
+      "call": "fail",
+      "argument": 1,
+      "text": "crest event sequence",
       "version": "current"
     },
     {
@@ -23580,12 +23565,28 @@
       "line": 5075,
       "call": "fail",
       "argument": 1,
+      "template": "`${streamPath}:${String(error)}`",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 5103,
+      "call": "fail",
+      "argument": 1,
+      "text": "article category",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/knowledge-core.ts",
+      "line": 5107,
+      "call": "fail",
+      "argument": 1,
       "text": "article content",
       "version": "current"
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5080,
+      "line": 5112,
       "call": "fail",
       "argument": 1,
       "template": "`accountable owner:${String(error)}`",
@@ -23593,7 +23594,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5082,
+      "line": 5114,
       "call": "fail",
       "argument": 1,
       "text": "article accountable owner",
@@ -23601,7 +23602,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5084,
+      "line": 5116,
       "call": "fail",
       "argument": 1,
       "text": "article evidence links",
@@ -23609,7 +23610,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5193,
+      "line": 5225,
       "call": "fail",
       "argument": 1,
       "text": "a project capture requires its stable project id; other scopes do not accept one",
@@ -23617,7 +23618,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5286,
+      "line": 5318,
       "call": "fail",
       "argument": 1,
       "template": "`status=${String(status)}`",
@@ -23625,7 +23626,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5300,
+      "line": 5332,
       "call": "fail",
       "argument": 1,
       "text": "search term",
@@ -23633,7 +23634,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5309,
+      "line": 5341,
       "call": "fail",
       "argument": 1,
       "text": "limit",
@@ -23641,7 +23642,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5316,
+      "line": 5348,
       "call": "fail",
       "argument": 1,
       "text": "offset",
@@ -23649,7 +23650,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5881,
+      "line": 5913,
       "call": "fail",
       "argument": 1,
       "text": "reverify versions",
@@ -23657,7 +23658,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5887,
+      "line": 5919,
       "call": "fail",
       "argument": 1,
       "template": "`${input.expectedRevision}:${unit.metadata.revision}`",
@@ -23665,7 +23666,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5890,
+      "line": 5922,
       "call": "fail",
       "argument": 1,
       "text": "only an eligible, non-retired record can be re-verified",
@@ -23673,7 +23674,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5936,
+      "line": 5968,
       "call": "fail",
       "argument": 1,
       "text": "article refresh versions",
@@ -23681,7 +23682,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5942,
+      "line": 5974,
       "call": "fail",
       "argument": 1,
       "template": "`${input.expectedRevision}:${unit.metadata.revision}`",
@@ -23689,7 +23690,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5944,
+      "line": 5976,
       "call": "fail",
       "argument": 1,
       "text": "only an active article index can be refreshed",
@@ -23697,7 +23698,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 5946,
+      "line": 5978,
       "call": "fail",
       "argument": 1,
       "text": "article identity does not match source path",
@@ -23705,7 +23706,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 6041,
+      "line": 6073,
       "call": "fail",
       "argument": 1,
       "text": "policy versions",
@@ -23713,7 +23714,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 6047,
+      "line": 6079,
       "call": "fail",
       "argument": 1,
       "text": "staleness policy",
@@ -23721,7 +23722,7 @@
     },
     {
       "file": "packages/core/src/knowledge-core.ts",
-      "line": 6053,
+      "line": 6085,
       "call": "fail",
       "argument": 1,
       "template": "`${input.expectedRevision}:${unit.metadata.revision}`",

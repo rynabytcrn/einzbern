@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "epic150-r9-pf-init053",
+  "pack": "epic151-r11-pf-init053",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "cf3937c7ce3c6d649a930a0e5b6dbbd25aed75ea850c1225718438d7c8930813"
+      "sha256": "47260219600711a485952d202814bdb25878a7069ff3290e51e324588cb1949a"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -115,7 +115,7 @@
     },
     {
       "path": "packages/core/src/framework-version.ts",
-      "sha256": "565af777c290cc1b2cbda1fb8e44c64a3332ff385355047685b5ff7a9c6b0299"
+      "sha256": "37e9d7c490a1bd76a0c40f2bb6276b0656cd49ff9135f61afb832f2727983ebc"
     },
     {
       "path": "packages/core/src/gate-identity.ts",
@@ -179,7 +179,7 @@
     },
     {
       "path": "packages/core/src/knowledge-core.ts",
-      "sha256": "bfd03ee5206895c02c83b7ae046f180a842bb301288a1cefbd36b089780cb58c"
+      "sha256": "7867d04728e1e58fcc00668b04795375305786bf3b72fdfb68d7a6aa72aed717"
     },
     {
       "path": "packages/core/src/knowledge-duplicates.ts",
@@ -223,7 +223,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "3bb8f083a0a22626258b076bc9dc9afa8fb966a68fad39d98c9f8992b22e0adc"
+      "sha256": "e1b8114ad1258b6b3e4bde88d461cd8aa3e31a2dab98328e470316c100ee3be0"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -611,7 +611,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "f506673a319a65d52cd9c1ba4a61f9f00a0e7507fccc6b924d9a5e8a29c10e4e"
+      "sha256": "6c72cb04c189cbef3128a3d68ed70f51bfcb6e899538f763171e1957303478ad"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -838,7 +838,7 @@
       "sha256": "8ed5912fa1fa13d2c52afe8829168f599887601e69bc66cdae7daefbbbc119c3"
     }
   ],
-  "evidenceDisposition": "EPIC-150 R9 PF-3 package regeneration (TCRN-CROSS-EPIC-150 R9 PF-3, MIN-236 D2 and MIN-246 D8: the 2.2.0 release preparation on E main d514c7d1 in the package worktree before any merge, where PF-1 narrows the INC-155 replay to the lockfile entries that decide TypeScript, raises the fast-uri override and regenerates the current Portal proof block, and PF-2 writes the 2.2.0 CHANGELOG with the upgrade notes from 2.1.0, counts seven built-in principles in the READMEs and classifies the exact reviewed 2.2.0 package members (d3bbebfd); since the EPIC-149 R5 PF regeneration (940a6f14) the 2.1.0 release and EPIC-150 R7 to R9 (TCRN-CROSS-SUB-497 to TCRN-CROSS-SUB-522 under TCRN-CROSS-STORY-538 to TCRN-CROSS-STORY-542) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at d3bbebfd in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1991 of 1991 tests in 225 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "EPIC-151 R11 PF-3 package regeneration (TCRN-CROSS-EPIC-151 R11 PF-3, MIN-236 D2 and MIN-246 D8: the 2.2.1 release preparation on E main a98561ae in the package worktree before any merge, where PF-2 writes the upgrade notes from 2.2.0 for the 2.2.1 CHANGELOG and classifies the exact reviewed 2.2.1 package members (9ebe2ac9); since the EPIC-150 R9 PF-3 regeneration (669409ac) the 2.2.0 release and EPIC-151 R11 (TCRN-CROSS-SUB-523 under TCRN-CROSS-STORY-543) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at 9ebe2ac9 in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1996 of 1996 tests in 226 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -974,7 +974,7 @@
       "input": "inventory-values.json",
       "sha256": "de05e9d89e10e073bc707fb87736485118b7f4a1e8bf846e628ce3e7d8be6762",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -990,9 +990,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "0f611c90d5fd8405c932b2e7f3924f6a4a7fadbc7be5e51a8e5fa4b466bf3e0f",
+      "sha256": "695b6126bac4ea0223af29f7d5e7378ff7f953040258565e4257636a09f87e79",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -1002,15 +1002,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "3afb80d87a4ffefd89540391eab9643f90915761fbf4cb10c995d3bc42962fa1",
+      "sha256": "bd914131627656bda3e3097a2644e9776da1d11212b49fd9a5b915389d1f10b0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "433a8b7a511616daba69a13fbee3706c2eb8a549096a9df8d40dc85aecce220d",
+      "sha256": "3f91ffc653c57b1ab4da4cf99b2b8bdbcf5d15053930cdf492d699603507e70b",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -1022,7 +1022,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1052,13 +1052,13 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1991,
-      "pass": 1991,
+      "tests": 1996,
+      "pass": 1996,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 225,
+    "wholeFiles": 226,
     "original61Retained": false,
     "necessaryAddedWholeFiles": [
       "tests/act11-adapter-acceptance.test.mjs",
@@ -1080,6 +1080,7 @@
       "tests/config-proposals.test.mjs",
       "tests/config-records.test.mjs",
       "tests/conflict-family.test.mjs",
+      "tests/coordination-knowledge-language.test.mjs",
       "tests/coordination-managed-sections.test.mjs",
       "tests/cross-repo-privacy.test.mjs",
       "tests/decided-in-cli.test.mjs",
@@ -1230,10 +1231,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-15T08:26:29.646714+00:00",
+  "generationTimeUtc": "2026-10-15T15:26:08.838919+00:00",
   "settings": [
     {
       "catalog": {
@@ -1287,8 +1288,13 @@
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 4267,
+          "line": 4291,
           "text": "// Fail-closed: a workspace that records artifact.language and cannot produce the"
+        },
+        {
+          "file": "packages/core/src/knowledge-core.ts",
+          "line": 4296,
+          "text": "// which takes no write language policy (writeLanguagePolicy). Its artifact.language picks the"
         },
         {
           "file": "packages/core/src/knowledge-language.ts",
@@ -1323,11 +1329,16 @@
         {
           "file": "packages/core/src/migrate-legacy.ts",
           "line": 231,
-          "text": "* artifact.language takes it. A recorded artifact.language turns on a library's fail-closed write"
+          "text": "* artifact.language takes it: the catalog default is never written as if declared. On a coordination"
         },
         {
           "file": "packages/core/src/migrate-legacy.ts",
-          "line": 1172,
+          "line": 232,
+          "text": "* library a recorded artifact.language picks the language of its managed and variables sections; up to"
+        },
+        {
+          "file": "packages/core/src/migrate-legacy.ts",
+          "line": 1174,
           "text": "const SETUP_CONFIGURATION_SETTINGS: readonly string[] = Object.freeze([\"artifact.language\"]);"
         },
         {
@@ -2855,7 +2866,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3292,
+          "line": 3294,
           "text": "const promptBytes = Number(settingValue(\"injection.perPromptBytes\") ?? \"1600\");"
         },
         {
@@ -3008,17 +3019,17 @@
       "consumerSites": [
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 902,
+          "line": 903,
           "text": "const configured = workspace.settings.find((entry) => entry.key === \"knowledge.articlesPath\")?.value;"
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 904,
+          "line": 905,
           "text": "const defaultValue = SETTINGS_CATALOG.find((entry) => entry.key === \"knowledge.articlesPath\")?.defaultValue;"
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 905,
+          "line": 906,
           "text": "if (typeof defaultValue !== \"string\" || defaultValue.length === 0) fail(\"KNOWLEDGE_PATH_INVALID\", \"knowledge.articlesPath has no default\");"
         },
         {
@@ -3159,7 +3170,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1248,
+          "line": 1250,
           "text": "// derived reads the same in both: an unset models.category is the default categories and every"
         },
         {
@@ -4007,7 +4018,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1249,
+          "line": 1251,
           "text": "// other category models.tiers names, not the default table. A set key is still its value and any"
         },
         {
@@ -5104,12 +5115,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3288,
+          "line": 3290,
           "text": "const scopeBytes = Number(settingValue(\"retrieval.scopeExcerptBytes\") ?? \"512\");"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3761,
+          "line": 3763,
           "text": "const configuredScopeBytes = scopedWorkspaceState(state, values[\"project-id\"]).settings.find((entry) => entry.key === \"retrieval.scopeExcerptBytes\")?.value;"
         },
         {
@@ -5250,7 +5261,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 3277,
+          "line": 3279,
           "text": "const configuredTau = Number(settingValue(\"retrieval.tau\") ?? String(RECALL_DEFAULT_TAU));"
         },
         {
@@ -5411,12 +5422,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1255,
+          "line": 1257,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources })"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2746,
+          "line": 2748,
           "text": "state.metadata.storageVersion === 2 ? { \"storage.segmentBytes\": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources });"
         },
         {
@@ -5730,12 +5741,12 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 1562,
+          "line": 1564,
           "text": "// TCRN-CROSS-STORY-380: the three verbs that make workspace.generatedArtifactsPath a"
         },
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2800,
+          "line": 2802,
           "text": "if (values.key === \"workspace.generatedArtifactsPath\") {"
         },
         {
@@ -5880,7 +5891,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 2257,
+          "line": 2259,
           "text": "// agents.navigation is written, the navigation section; CLAUDE.md's import section unless it"
         },
         {
@@ -6036,12 +6047,12 @@
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 2710,
+          "line": 2711,
           "text": "// project, role or work (validateUserCrestLinks). Its place is the device-level key crest.userPath,"
         },
         {
           "file": "packages/core/src/knowledge-core.ts",
-          "line": 2717,
+          "line": 2718,
           "text": "// crest.userPath named the place: the folder that holds it is then never created here, so a"
         },
         {
@@ -6134,7 +6145,7 @@
       "consumerSites": [
         {
           "file": "packages/cli/src/index.ts",
-          "line": 4214,
+          "line": 4216,
           "text": "// slot of execution.maxConcurrentHeavyRuns (scripts/lib/heavy-runs.mjs), waiting while every slot"
         },
         {

@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "epic150-r9-pf-init053",
+  "pack": "epic151-r11-pf-init053",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "cf3937c7ce3c6d649a930a0e5b6dbbd25aed75ea850c1225718438d7c8930813"
+      "sha256": "47260219600711a485952d202814bdb25878a7069ff3290e51e324588cb1949a"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -115,7 +115,7 @@
     },
     {
       "path": "packages/core/src/framework-version.ts",
-      "sha256": "565af777c290cc1b2cbda1fb8e44c64a3332ff385355047685b5ff7a9c6b0299"
+      "sha256": "37e9d7c490a1bd76a0c40f2bb6276b0656cd49ff9135f61afb832f2727983ebc"
     },
     {
       "path": "packages/core/src/gate-identity.ts",
@@ -179,7 +179,7 @@
     },
     {
       "path": "packages/core/src/knowledge-core.ts",
-      "sha256": "bfd03ee5206895c02c83b7ae046f180a842bb301288a1cefbd36b089780cb58c"
+      "sha256": "7867d04728e1e58fcc00668b04795375305786bf3b72fdfb68d7a6aa72aed717"
     },
     {
       "path": "packages/core/src/knowledge-duplicates.ts",
@@ -223,7 +223,7 @@
     },
     {
       "path": "packages/core/src/migrate-legacy.ts",
-      "sha256": "3bb8f083a0a22626258b076bc9dc9afa8fb966a68fad39d98c9f8992b22e0adc"
+      "sha256": "e1b8114ad1258b6b3e4bde88d461cd8aa3e31a2dab98328e470316c100ee3be0"
     },
     {
       "path": "packages/core/src/minutes.ts",
@@ -611,7 +611,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "f506673a319a65d52cd9c1ba4a61f9f00a0e7507fccc6b924d9a5e8a29c10e4e"
+      "sha256": "6c72cb04c189cbef3128a3d68ed70f51bfcb6e899538f763171e1957303478ad"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -838,7 +838,7 @@
       "sha256": "8ed5912fa1fa13d2c52afe8829168f599887601e69bc66cdae7daefbbbc119c3"
     }
   ],
-  "evidenceDisposition": "EPIC-150 R9 PF-3 package regeneration (TCRN-CROSS-EPIC-150 R9 PF-3, MIN-236 D2 and MIN-246 D8: the 2.2.0 release preparation on E main d514c7d1 in the package worktree before any merge, where PF-1 narrows the INC-155 replay to the lockfile entries that decide TypeScript, raises the fast-uri override and regenerates the current Portal proof block, and PF-2 writes the 2.2.0 CHANGELOG with the upgrade notes from 2.1.0, counts seven built-in principles in the READMEs and classifies the exact reviewed 2.2.0 package members (d3bbebfd); since the EPIC-149 R5 PF regeneration (940a6f14) the 2.1.0 release and EPIC-150 R7 to R9 (TCRN-CROSS-SUB-497 to TCRN-CROSS-SUB-522 under TCRN-CROSS-STORY-538 to TCRN-CROSS-STORY-542) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at d3bbebfd in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1991 of 1991 tests in 225 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "EPIC-151 R11 PF-3 package regeneration (TCRN-CROSS-EPIC-151 R11 PF-3, MIN-236 D2 and MIN-246 D8: the 2.2.1 release preparation on E main a98561ae in the package worktree before any merge, where PF-2 writes the upgrade notes from 2.2.0 for the 2.2.1 CHANGELOG and classifies the exact reviewed 2.2.1 package members (9ebe2ac9); since the EPIC-150 R9 PF-3 regeneration (669409ac) the 2.2.0 release and EPIC-151 R11 (TCRN-CROSS-SUB-523 under TCRN-CROSS-STORY-543) also changed bound sources; the Design System is unchanged and E still consumes d53f2305). The D1-equivalent pass ran the full engine suite once at 9ebe2ac9 in an isolated clone of the package head before this generation; its actual exit and counts are attached below: no leg was red (1996 of 1996 tests in 226 files), so there was no disposal and no second pass; the three Portal test files run in verify:portal, not in D1, and are left to the formal roster. Package verification is separate from the formal roster, acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the R46 DS lane inputs (PR 25, merge d53f2305), read in place; the native readbacks are the R50 integration ones, reused in place (this package reads no chain); no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "deb5cc3fcd2ba47a67f9baad4ce4f67755bc0013",
     "mergeCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
@@ -974,7 +974,7 @@
       "input": "inventory-values.json",
       "sha256": "de05e9d89e10e073bc707fb87736485118b7f4a1e8bf846e628ce3e7d8be6762",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/inventory-values.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -990,9 +990,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "0f611c90d5fd8405c932b2e7f3924f6a4a7fadbc7be5e51a8e5fa4b466bf3e0f",
+      "sha256": "695b6126bac4ea0223af29f7d5e7378ff7f953040258565e4257636a09f87e79",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -1002,15 +1002,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "3afb80d87a4ffefd89540391eab9643f90915761fbf4cb10c995d3bc42962fa1",
+      "sha256": "bd914131627656bda3e3097a2644e9776da1d11212b49fd9a5b915389d1f10b0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "433a8b7a511616daba69a13fbee3706c2eb8a549096a9df8d40dc85aecce220d",
+      "sha256": "3f91ffc653c57b1ab4da4cf99b2b8bdbcf5d15053930cdf492d699603507e70b",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -1022,7 +1022,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -1052,13 +1052,13 @@
   "currentWholeFileCadence": {
     "exit": 0,
     "counts": {
-      "tests": 1991,
-      "pass": 1991,
+      "tests": 1996,
+      "pass": 1996,
       "fail": 0,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 225,
+    "wholeFiles": 226,
     "original61Retained": false,
     "necessaryAddedWholeFiles": [
       "tests/act11-adapter-acceptance.test.mjs",
@@ -1080,6 +1080,7 @@
       "tests/config-proposals.test.mjs",
       "tests/config-records.test.mjs",
       "tests/conflict-family.test.mjs",
+      "tests/coordination-knowledge-language.test.mjs",
       "tests/coordination-managed-sections.test.mjs",
       "tests/cross-repo-privacy.test.mjs",
       "tests/decided-in-cli.test.mjs",
@@ -1230,10 +1231,10 @@
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/epic-149/r9/r9-pf-raw/u18/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/epic-149/r11/r11-pf-raw/u18/full-file-cadence-result.json",
     "failures": []
   },
-  "generationTimeUtc": "2026-10-15T08:26:29.646714+00:00",
+  "generationTimeUtc": "2026-10-15T15:26:08.838919+00:00",
   "currentApplicationCaseResults": [
     {
       "name": "target switch settles on matching response, UI authority and native inheritance",
@@ -11951,7 +11952,7 @@
     }
   },
   "actualBounds": [
-    "EPIC-150 R9 PF-3 reuses in place the R46 browser probe result (integration-r46-init053-raw/u18, run once on ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 with Playwright from the DS main checkout at the published merge d53f2305); between fbc3a073 and the EPIC-150 R9 PF-3 head d3bbebfd1345abe8fc16acdffe3ad0cbf5913118 Portal source files outside portal/tests changed under portal/ (README.md, index.html, locales.js, portal.mjs and scripts/generate-launchers.mjs: EPIC-149 R1 TCRN-CROSS-SUB-454 and TCRN-CROSS-SUB-459, R2 TCRN-CROSS-SUB-467, R4 TCRN-CROSS-SUB-479 and TCRN-CROSS-SUB-484, EPIC-150 R7 TCRN-CROSS-SUB-508 and TCRN-CROSS-SUB-513 (index.html, locales.js and portal.mjs) and R9 TCRN-CROSS-SUB-509 (index.html and locales.js); styles and snapshots unchanged), and the R46 probe was not run again, so it does not cover those changes; every case and failure is recorded individually in that application evidence; no canonical integration claim",
+    "EPIC-151 R11 PF-3 reuses in place the R46 browser probe result (integration-r46-init053-raw/u18, run once on ac53ca9ec382de5e2e467c7ed0b888b4cd39c473 with Playwright from the DS main checkout at the published merge d53f2305); between fbc3a073 and the EPIC-151 R11 PF-3 head 9ebe2ac9bb82a67be8e16d7d0e61cf39476640ee Portal source files outside portal/tests changed under portal/ (README.md, index.html, locales.js, portal.mjs and scripts/generate-launchers.mjs: EPIC-149 R1 TCRN-CROSS-SUB-454 and TCRN-CROSS-SUB-459, R2 TCRN-CROSS-SUB-467, R4 TCRN-CROSS-SUB-479 and TCRN-CROSS-SUB-484, EPIC-150 R7 TCRN-CROSS-SUB-508 and TCRN-CROSS-SUB-513 (index.html, locales.js and portal.mjs) and R9 TCRN-CROSS-SUB-509 (index.html and locales.js); EPIC-151 R11 changed no Portal file; styles and snapshots unchanged), and the R46 probe was not run again, so it does not cover those changes; every case and failure is recorded individually in that application evidence; no canonical integration claim",
     "actual wide/narrow/column and lifecycle outcomes are recorded individually in that application evidence; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
   ]

@@ -228,9 +228,11 @@ export interface MigrationPartitionPlan {
  *
  * R48 (J-2): default: neither the old chain nor the coordination library declares the key, so the
  * library reads the catalog default (value) and the apply writes nothing. Only a legacy-default
- * artifact.language takes it. A recorded artifact.language turns on a library's fail-closed write
- * language policy (knowledge-language.ts: a card write then needs the economy-tier model and a
- * language bundle), which the old chain never had; the catalog default is never written as if declared.
+ * artifact.language takes it: the catalog default is never written as if declared. On a coordination
+ * library a recorded artifact.language picks the language of its managed and variables sections; up to
+ * 2.2.0 it also turned on the fail-closed write language policy for its cards (knowledge-language.ts),
+ * which the old chain never had. From 2.2.1 a coordination library's card writes take no write language
+ * policy (knowledge-core.ts, TCRN-CROSS-STORY-543); a project library's still do.
  */
 export interface MigrationCoordinationSetting {
   readonly key: SettingKey;

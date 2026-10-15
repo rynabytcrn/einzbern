@@ -756,14 +756,23 @@ test("R46 I07 (fixture): --project at the coordination partition's root is refus
   assert.deepEqual(again.written.filter((entry) => entry.step === "library"), []);
   assert.equal((await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events).length, coordinationAfterCard, "the coordination chain is as it was");
 
-  // The control: once the coordination library records the same en at its library level, its write
-  // language policy is on, and the same kind of write without a language bundle is refused. Writing the
-  // default as a record (the apply before R48) did this to every migrated coordination library.
+  // The control: once the coordination library records the same en at its library level, the same kind
+  // of write without a language bundle is still written, as handed and with no phrasings. From 2.2.1 a
+  // coordination library takes no write language policy (TCRN-CROSS-STORY-543, MIN-262 D1): its
+  // artifact.language picks the language of its managed and variables sections, and it can never record
+  // the economy-tier model the policy needs. Up to 2.2.0 this write was refused with
+  // KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE, which writing the default as a record (the apply before R48)
+  // did to every migrated coordination library. Its subject is close to the card above, so it is written
+  // beside it (--coexist), which the refusal used to stop short of.
   await asDevice(m, () => setWorkspaceSetting(targets[0], { key: "artifact.language", value: "en", occurredAt: at(), actorId: "agent:setup" }));
-  const refusedCard = refusal(run(m, ["knowledge-capture", "--workspace", targets[0], "--at", at(), "--subject", "Coordination card once a language is recorded",
-    "--summary", "The same write once the library records its language", "--snippet", "language bundle needed now", "--tags", "lesson",
-    "--accountable-owner-id", deriveStableId("owner", "MIGRATE-APPLY-OWNER"), "--body", "Refused without a language bundle.", "--allow-trailing", "true"]));
-  assert.equal(refusedCard.reasonCode, "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE");
+  const languageCard = receipt(run(m, ["knowledge-capture", "--workspace", targets[0], "--at", at(), "--subject", "Coordination card once a language is recorded",
+    "--summary", "The same write once the library records its language", "--snippet", "still no language bundle needed", "--tags", "lesson",
+    "--accountable-owner-id", deriveStableId("owner", "MIGRATE-APPLY-OWNER"), "--body", "Written without a language bundle once en is recorded.", "--coexist", "true",
+    "--allow-trailing", "true"]));
+  assert.equal(languageCard.reasonCode, "KNOWLEDGE_UNIT_CREATED", JSON.stringify(languageCard));
+  const listedCard = receipt(run(m, ["knowledge-list", "--workspace", targets[0], "--at", at(), "--allow-trailing", "true"])).records.find((record) => record.id === languageCard.id);
+  assert.deepEqual([listedCard.subject, listedCard.snippet, listedCard.expansions ?? {}], ["Coordination card once a language is recorded", "still no language bundle needed", {}],
+    "written as handed, with no phrasings");
 });
 
 // TCRN-CROSS-INIT-053 R47 (R47-04; Owner 2026-10-09 round 7, c1-B; audit P6): the coordination chain keeps

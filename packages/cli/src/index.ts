@@ -432,9 +432,11 @@ function booleanValue(value: string | undefined, name: string): boolean {
 // TCRN-CROSS-STORY-364 requirement 3: the card write paths -- knowledge-capture,
 // knowledge-create and knowledge-batch's create members (conference-close --distill retired
 // with the conference write verbs, TCRN-CROSS-STORY-475 R3) --
-// all reach buildMetadata, which refuses fail-closed on a language-configured workspace
-// unless it is handed the economy-tier model's answers. The CLI is where those answers
-// enter: --language-bundle names a file the Agent wrote after asking the economy-tier model
+// all reach buildMetadata, which refuses fail-closed on a language-configured project library,
+// or a language-configured library with no chain identity, unless it is handed the economy-tier
+// model's answers. A coordination library takes no write language policy (TCRN-CROSS-STORY-543),
+// so there a bundle is still read and checked here, and its answers are not used. The CLI is where
+// those answers enter: --language-bundle names a file the Agent wrote after asking the economy-tier model
 // configured for the current host. The CLI reads a file and hands over data; it calls no model, and
 // the offline leg of verify:p1 still measures that nothing here can.
 function readLanguageBundle(path: string): KnowledgeLanguageBundle {

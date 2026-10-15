@@ -44,7 +44,8 @@ import {
   KnowledgeLanguageError,
   readKnowledgeLanguagePolicy,
 } from "./knowledge-language.js";
-import type { KnowledgeExpansions, KnowledgeLanguageProvider } from "./knowledge-language.js";
+import type { KnowledgeExpansions, KnowledgeLanguagePolicy, KnowledgeLanguageProvider } from "./knowledge-language.js";
+import { chainIdentity } from "./chain-identity.js";
 import { activeWorkspaceRoot, materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
 import type { ProjectRecord, WorkspaceState } from "./workspace.js";
 import { SETTINGS_CATALOG, resolveKnowledgeArticlesPath } from "./settings.js";
@@ -4226,6 +4227,29 @@ function assertWritableLifecycle(lifecycle: unknown): void {
   fail("KNOWLEDGE_INPUT_INVALID", `lifecycle=${String(lifecycle)}`);
 }
 
+// TCRN-CROSS-STORY-543 (Owner ruling TCRN-CROSS-MIN-262 D1): the policy a coordination library's card
+// writes take, the one a library that recorded no artifact language has, which
+// applyWriteLanguagePolicy passes through unchanged.
+const UNCONFIGURED_WRITE_LANGUAGE_POLICY: KnowledgeLanguagePolicy = Object.freeze({
+  artifactLanguage: null,
+  promptLanguages: Object.freeze([]),
+  economyModel: null,
+});
+
+/**
+ * TCRN-CROSS-STORY-543 (Owner ruling TCRN-CROSS-MIN-262 D1): the write language policy of a card
+ * written in this library, for the library's crest or for its writer's user crest. A coordination
+ * library (its chain identity's role is coordination) takes none; a project library, and a library
+ * with no chain identity, take the policy its settings record, as before. The scoped state is read
+ * first either way, so the project lineage is checked, and refused, as it always was; it reads the
+ * chain identity itself, so reading it again here adds no way to fail.
+ */
+function writeLanguagePolicy(workspace: WorkspaceState, projectId: string | null, host?: string): KnowledgeLanguagePolicy {
+  const scoped = scopedWorkspaceState(workspace, projectId ?? undefined);
+  if (chainIdentity(workspace)?.role === "coordination") return UNCONFIGURED_WRITE_LANGUAGE_POLICY;
+  return readKnowledgeLanguagePolicy(scoped.settings, host);
+}
+
 function buildMetadata(
   input: CreateKnowledgeUnitInput,
   body: Buffer,
@@ -4267,11 +4291,19 @@ function buildMetadata(
   // Fail-closed: a workspace that records artifact.language and cannot produce the
   // translation refuses here, with the reason code the caller can act on, rather than
   // storing prose in a language its own retrieval set does not cover.
+  //
+  // TCRN-CROSS-STORY-543 (Owner ruling TCRN-CROSS-MIN-262 D1): except in a coordination library,
+  // which takes no write language policy (writeLanguagePolicy). Its artifact.language picks the
+  // language of its managed and variables sections, but it can never record models.* (Owner ruling
+  // TCRN-CROSS-MIN-243 D1), so no economy-tier model can answer for it and the policy would refuse
+  // every card written there. Its cards keep the prose they were handed and carry no phrasings, as
+  // before it recorded a language. A project library, and a library with no chain identity, take
+  // the policy as before.
   let language;
   try {
     language = applyWriteLanguagePolicy(
       { subject: input.subject, summary: input.summary, snippet: input.snippet },
-      readKnowledgeLanguagePolicy(scopedWorkspaceState(workspace, input.projectId ?? undefined).settings, host),
+      writeLanguagePolicy(workspace, input.projectId, host),
       languageProvider,
     );
   } catch (error) {
@@ -5952,7 +5984,7 @@ async function refreshLibraryCrestArticle(
   try {
     language = applyWriteLanguagePolicy(
       { subject: article.title, summary: input.summary, snippet: truncateArticleUtf8(input.summary, KNOWLEDGE_LIMITS.maximumSnippetBytes) },
-      readKnowledgeLanguagePolicy(scopedWorkspaceState(scan.workspace, unit.metadata.projectId ?? undefined).settings, options.host),
+      writeLanguagePolicy(scan.workspace, unit.metadata.projectId, options.host),
       options.languageProvider,
     );
   } catch (error) {

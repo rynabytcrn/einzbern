@@ -40,13 +40,13 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "currentSources": [
     {
       "path": "portal/index.html",
-      "bytes": 428639,
-      "sha256": "5f88db446bc9250643481505afeac3cc7fd7a4355a7ffa0117f1777dd49c42e4"
+      "bytes": 428745,
+      "sha256": "db0e8700a6fa8bcc74211a3034b75a8c57242be109eb7b85a7db1fbb8765ae8f"
     },
     {
       "path": "portal/locales.js",
-      "bytes": 232886,
-      "sha256": "d7ab9e2057d26c20a4f4d399e86b309000e51979da5c337d2b427eb97a13742f"
+      "bytes": 233468,
+      "sha256": "23f5918002abcec100eaca2f1eda076d8456152e14cea7617bd2c7bb75a6675b"
     },
     {
       "path": "portal/portal.mjs",
@@ -65,13 +65,13 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/portal.test.mjs",
-      "bytes": 160144,
-      "sha256": "83316fea3de79d268bdb753e77d3030767191e0612eef1b054d805af77c8b262"
+      "bytes": 160512,
+      "sha256": "de8400fd41756c8c66db46f7eb4ce43454603d2531f413b32f3b851d035bdcfd"
     },
     {
       "path": "portal/tests/ui-presence.test.mjs",
-      "bytes": 280415,
-      "sha256": "79bb163027106a07e09028f1aec27c79e110c4d667f478c69ebb83198eb40f59"
+      "bytes": 280876,
+      "sha256": "9159e4a8b48a538e43a6dc32ae10d51546120d439ad1ccd4e06265c2aed3bc2a"
     },
     {
       "path": "packages/core/src/doctor.ts",
@@ -95,8 +95,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "scripts/verbatim-evidence-proof.mjs",
-      "bytes": 22608,
-      "sha256": "4d32995e777db39e8a6df99d82e5dc6f054d535a3ab7e0d1efe190632cae50f3"
+      "bytes": 26144,
+      "sha256": "c47a6b612329d28ec7056265eb642993d98161b2869d32f1991d4f61017fc650"
     }
   ],
   "hostRoleScan": {
@@ -139,9 +139,9 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
         "leg": "key-coverage",
         "ok": true,
         "reasonCode": "EVERY_KEY_TRANSLATED",
-        "keyCount": 543,
+        "keyCount": 545,
         "localeCount": 5,
-        "expectedStrings": 2715,
+        "expectedStrings": 2725,
         "gaps": []
       },
       {

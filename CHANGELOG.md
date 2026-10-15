@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 2.2.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 2.2.0. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.
+
 ### Concurrency and Device State
 
 More writes now hold the library write lock for their append alone, as work and configuration writes

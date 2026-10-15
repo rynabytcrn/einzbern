@@ -5,6 +5,14 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Release and Repository Tooling
+
+The `fast-uri` override is now `^3.1.8` (TCRN-CROSS-STORY-544, TCRN-CROSS-SUB-525, MIN-265 D1).
+GHSA-hrr3-gc8f-f4qj affects `fast-uri` from 3.0.0 up to but not including 3.1.8, and the previous
+`^3.1.7` still allowed the affected 3.1.7. The lockfile still resolves 3.1.8 with the same
+integrity; only the override lines of `pnpm-workspace.yaml` and `pnpm-lock.yaml` change. `fast-uri`
+is a development dependency and is not in the release package.
+
 ## 2.2.1
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.2.1. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

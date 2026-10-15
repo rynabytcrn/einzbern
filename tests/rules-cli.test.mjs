@@ -295,7 +295,8 @@ test("508-R7 via rule-enable --order: the rule's section takes its place, rule-l
   assert.deepEqual([ordered.result, ordered.written, ordered.recorded], ["unchanged", true, 1]);
   assert.deepEqual(await ruleSections(), ["rule:autonomy", "rule:batch"]);
   const listed = await list(project);
-  assert.deepEqual(listed.rules.map((rule) => [rule.id, rule.order ?? null]), [["autonomy", 1], ["batch", null], ["unattended-commands", null], ["silent-reporting", null], ["design-authority", null]]);
+  // Every rule the engine ships, in catalog order; only autonomy holds an order.
+  assert.deepEqual(listed.rules.map((rule) => [rule.id, rule.order ?? null]), BUILT_IN_RULES.map((rule) => [rule.id, rule.id === "autonomy" ? 1 : null]));
 
   // agents-render keeps the arrangement.
   await render(project);

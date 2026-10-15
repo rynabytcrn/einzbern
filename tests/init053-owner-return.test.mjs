@@ -150,9 +150,10 @@ test('R1/R4: project article consumers use their own folders and stable identiti
  const previous=process.env.EINZBERN_RENAME_RETRY_BUDGET;try{process.env.EINZBERN_RENAME_RETRY_BUDGET='19';assert.equal(renameRetryBudget(),19);assert.equal(renameRetryBudget(21),21);process.env.EINZBERN_RENAME_RETRY_BUDGET='-1';assert.throws(()=>renameRetryBudget(),/INVALID/);}finally{if(previous===undefined)delete process.env.EINZBERN_RENAME_RETRY_BUDGET;else process.env.EINZBERN_RENAME_RETRY_BUDGET=previous;}
 });
 
-test('R6: exact generic v1 ZH/EN bodies, five presets, explicit update, user edits preserved',async ctx=>{
+test('R6: exact generic v1 ZH/EN bodies, design-authority among the built-in presets, explicit update, user edits preserved',async ctx=>{
  const {workspace,projectId:p,base}=await workspaceFixture(ctx,{externalKey:'R27-PRESET'});const root=join(base,'project');await mkdir(root);await writeFile(join(root,'AGENTS.md'),'# Local notes\n');
- assert.deepEqual(BUILT_IN_RULE_IDS,['autonomy','batch','unattended-commands','silent-reporting','design-authority']);
+ // Which presets ship, and in what order, tests/rules-catalog.test.mjs pins once; R6 needs design-authority among them.
+ assert.ok(BUILT_IN_RULE_IDS.includes('design-authority'));
  const rule=builtInRule('design-authority');assert.equal(rule.version,1);
  for(const lang of ['zh','en'])assert.equal(rule.body[lang],await readFile(new URL('fixtures/rules/design-authority.'+lang+'.md',import.meta.url),'utf8'));
  assert.equal(ruleBody('design-authority','zh-CN'),rule.body.zh);assert.equal(ruleBody('design-authority','fr'),rule.body.en);

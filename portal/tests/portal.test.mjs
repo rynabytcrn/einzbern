@@ -1122,7 +1122,10 @@ test("AGENTS.md save writes the file, judges it without rendering, and reads it 
   assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
   assert.equal(written.body.matches, true);
   assert.equal(Object.hasOwn(written.body, "render"), false);
-  assert.deepEqual(written.body.rules.map((rule) => [rule.id, rule.state]), [["autonomy", "disabled"], ["batch", "disabled"], ["unattended-commands", "disabled"], ["silent-reporting", "disabled"], ["design-authority", "disabled"]]);
+  // Every rule the engine lists, in its order, reads disabled.
+  const engineRules = (await cli(["rule-list", "--project", fixture.proseRoot], fixture.deviceEnv)).rules.map((rule) => rule.id);
+  assert.ok(engineRules.includes("batch"), "the engine lists its built-in rules");
+  assert.deepEqual(written.body.rules.map((rule) => [rule.id, rule.state]), engineRules.map((id) => [id, "disabled"]));
   assert.deepEqual(written.body.pending, []);
   assert.equal(written.body.text, text, "no managed section was rendered into the saved text");
   assert.equal((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version, version, "a save writes nothing to the library");
@@ -1167,7 +1170,10 @@ test("rules routes expose state, enable a rule, judge a saved edit as user-modif
   const libraryVersion = async () => (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version;
   const listed = await request(url, "/api/rules", readOptions(boot.token));
   assert.equal(listed.body.reasonCode, "RULE_LIST_READY");
-  assert.deepEqual(listed.body.rules.map((rule) => rule.id), ["autonomy", "batch", "unattended-commands", "silent-reporting", "design-authority"]);
+  // The route lists every rule the engine lists, in its order.
+  const engineRules = (await cli(["rule-list", "--project", fixture.proseRoot], fixture.deviceEnv)).rules.map((rule) => rule.id);
+  assert.ok(engineRules.includes("batch"), "the engine lists its built-in rules");
+  assert.deepEqual(listed.body.rules.map((rule) => rule.id), engineRules);
   assert.ok(listed.body.rules.every((rule) => rule.state === "disabled"));
 
   const enabled = await request(url, "/api/rules/batch", writeOptions(boot.token, "POST", { action: "enable" }));

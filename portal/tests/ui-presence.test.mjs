@@ -1715,6 +1715,9 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
     for (const [id, order] of [["batch", ["--order", "3"]], ["autonomy", []]]) {
       await cli(["rule-enable", "--project", fixture.proseRoot, "--id", id, ...order, "--at", nextAt(), "--actor", "agent:test"], atelier);
     }
+    // Every rule the engine lists, in its order; the ones without an order follow the ordered ones in that order.
+    const engineRules = (await cli(["rule-list", "--project", fixture.proseRoot], fixture.deviceEnv)).rules.map((rule) => rule.id);
+    const withoutOrder = (...ordered) => engineRules.filter((id) => !ordered.includes(id)).map((id) => [id, ""]);
     const page = await loadExecutedDom(fixture);
     const document = page.document;
     const agents = () => readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8");
@@ -1727,9 +1730,10 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       // Each page lists its records as the engine renders or plans them, each order in a NumberInput.
       assert.deepEqual(variableRows(), [["beta", "5"], ["alpha", ""]]);
       assert.deepEqual(gateRows(), [["unit", "4"], ["lint", ""]]);
-      assert.deepEqual(ruleCards(), [["batch", "3"], ["autonomy", ""], ["unattended-commands", ""], ["silent-reporting", ""], ["design-authority", ""]]);
+      assert.ok(engineRules.includes("silent-reporting") && engineRules.includes("unattended-commands"), "the engine lists its built-in rules");
+      assert.deepEqual(ruleCards(), [["batch", "3"], ...withoutOrder("batch")]);
       const orderInputs = [...document.querySelectorAll('[data-variable-row] [data-variable-field="order"], [data-gate-row] [data-gate-order], [data-rule-card] [data-rule-order]')];
-      assert.ok(orderInputs.length === 9 && orderInputs.every((input) => input.getAttribute("data-number-input-component") === "NumberInput" && input.type === "number" && input.getAttribute("min") === "1"));
+      assert.ok(orderInputs.length === 2 + 2 + engineRules.length && orderInputs.every((input) => input.getAttribute("data-number-input-component") === "NumberInput" && input.type === "number" && input.getAttribute("min") === "1"));
       // An enabled rule saves its order; a disabled one takes it when it is switched on.
       assert.ok(document.querySelector('[data-rule-card="batch"] [data-rule-order-save][data-cli-action="rule-enable"]'));
       assert.equal(document.querySelector('[data-rule-card="silent-reporting"] [data-rule-order-save]'), null);
@@ -1799,7 +1803,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       toggle.checked = true;
       toggle.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await page.waitForSettled();
-      assert.deepEqual(ruleCards(), [["autonomy", "1"], ["silent-reporting", "2"], ["batch", "3"], ["unattended-commands", ""], ["design-authority", ""]]);
+      assert.deepEqual(ruleCards(), [["autonomy", "1"], ["silent-reporting", "2"], ["batch", "3"], ...withoutOrder("autonomy", "silent-reporting", "batch")]);
       const listed = (await cli(["rule-list", "--project", fixture.proseRoot], fixture.deviceEnv)).rules;
       assert.deepEqual(listed.filter((rule) => rule.order !== undefined).map((rule) => [rule.id, rule.state, rule.order]), [["autonomy", "enabled", 1], ["batch", "enabled", 3], ["silent-reporting", "enabled", 2]]);
       const text = await agents();

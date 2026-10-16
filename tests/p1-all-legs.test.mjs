@@ -51,6 +51,19 @@ test("467-R5: no red leg is P1_VERIFIED, and a red without a reason code is stil
   ]);
 });
 
+test("MIN-280 D2: every leg, green or red, is timed in its own list and the leg rows keep their shape", async () => {
+  let clock = 0;
+  const now = () => clock;
+  const outcome = await runAllP1Legs(async (task) => {
+    clock += 10;
+    if (task === "lint") throw Object.assign(new Error("red"), { reasonCode: "LINT_INJECTED" });
+    return { reasonCode: "GREEN" };
+  }, P1_TASKS, now);
+  assert.deepEqual(outcome.durations, P1_TASKS.map((task) => ({ task, durationMs: 10 })));
+  assert.deepEqual(Object.keys(outcome.legs.find((leg) => leg.task === "build")), ["task", "ok", "reasonCode"]);
+  assert.deepEqual(Object.keys(outcome.legs.find((leg) => leg.task === "lint")), ["task", "ok", "reasonCode"]);
+});
+
 async function p1Fixture(context) {
   // A disposable repository carrying only scripts/ and node_modules/, the shape the other
   // task-entry fixtures use; clean, so the runner's clean-basis precondition holds.

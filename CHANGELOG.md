@@ -42,6 +42,12 @@ GHSA-hrr3-gc8f-f4qj affects `fast-uri` from 3.0.0 up to but not including 3.1.8,
 integrity; only the override lines of `pnpm-workspace.yaml` and `pnpm-lock.yaml` change. `fast-uri`
 is a development dependency and is not in the release package.
 
+The privacy scan allows the reviewed identity lines of merge commit `72ae480e` (TCRN-CROSS-MIN-279
+D1). That web merge of PR #10 carries the account's primary address, and it is public history on
+`main`. The allowance is the commit's object id with the sha256 of each full `author` and
+`committer` line. The same lines on any other commit, or a changed line on this one, are still
+`EMAIL_IDENTIFIER` findings.
+
 ## 2.2.1
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.2.1. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

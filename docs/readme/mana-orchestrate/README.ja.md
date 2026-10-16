@@ -6,7 +6,7 @@
 
 [简体中文](README.md) · [English](README.en.md) · **日本語** · [한국어](README.ko.md) · [Français](README.fr.md)
 
-![release](https://img.shields.io/badge/release-{{version}}-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![skill](https://img.shields.io/badge/skill-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![engine](https://img.shields.io/badge/engine-Einzbern-9cf?style=flat-square)
+![release](https://img.shields.io/badge/release-{{version}}-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![skill](https://img.shields.io/badge/skill-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20Harness-informational?style=flat-square) ![engine](https://img.shields.io/badge/engine-Einzbern-9cf?style=flat-square)
 
 [やることは三つ](#やることは三つ) · [インストール](#インストール) · [入れたあと](#入れたあと) · [バージョン](#バージョン) · [中身](#中身)
 
@@ -17,7 +17,7 @@
 
 ---
 
-Einzbern（アインツベルン）を Claude Code と Codex に接続するスキルだ。Einzbern はその二つのホストのためのプロジェクト記憶で、作業項目、知識、議事録が、必要になるプロンプトの前にモデルの前へ現れる。Mana は巡る記憶、Orchestrate はそれをいつどこへ流すかの指揮。このスキルはモデルにエンジンのどの機能をいつ呼ぶかを教え、インストールウィザードを同梱する。
+Einzbern（アインツベルン）を Claude Code、Codex、DeepSeek Harness に接続するスキルだ。Einzbern はその三つのホストのためのプロジェクト記憶で、作業項目、知識、議事録が、必要になるプロンプトの前にモデルの前へ現れる。Mana は巡る記憶、Orchestrate はそれをいつどこへ流すかの指揮。このスキルはモデルにエンジンのどの機能をいつ呼ぶかを教え、インストールウィザードを同梱する。
 
 ## やることは三つ
 
@@ -37,7 +37,7 @@ npx skills add tpmoonchefryan/mana-orchestrate
 
 あるいはホストに言う。Mana Orchestrate というスキルを探して入れて。
 
-置き場所はホストの skills ディレクトリ。Claude Code は `~/.claude/skills`、Codex は `~/.agents/skills`。次にプロジェクトのディレクトリで言う。Einzbern をインストールして。
+置き場所はホストの skills ディレクトリ。Claude Code は `~/.claude/skills`、Codex と DeepSeek Harness は `~/.agents/skills`。DeepSeek Harness では各プロンプト前の想起をプラグイン dsh-mana-orchestrate が担い、フックファイルは書かない。次にプロジェクトのディレクトリで言う。Einzbern をインストールして。
 
 ウィザードが尋ねるのは、新規か既存の `.ether` からの復元か、生成物をどこに置くか、そこがクラウド同期フォルダか、言語は何か、AGENTS.md にナビゲーション節を書くか。最後に書き込む予定のファイルを全部列挙し、あなたが一度だけ確認する。エンジンはこのスキルと同じバージョンのリリースからダウンロードされ、ダイジェストを検証してから配置される。ローカルのアーカイブがあればオフラインでも入る。
 

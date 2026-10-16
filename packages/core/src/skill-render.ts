@@ -51,7 +51,7 @@ function fail(reasonCode: SkillRenderReasonCode, message: string, details: Reado
 }
 
 /** The finalized English description A of the skill (MIN-227), word for word. */
-export const SKILL_DESCRIPTION = "The Grail grants wishes; Mana Orchestrate makes the mana flow to the right place at the right moment. It brings Einzbern, project memory, into Claude Code and Codex: recall before you start, write results back to the work item, record decisions as minutes, keep lessons as cards. Where Einzbern is not installed yet, it is the wizard: install, restore, update, migrate, uninstall, health check. Use it whenever Einzbern, work items, knowledge cards, minutes, .ether, or Atelier come up, or when the user asks to install or update it." as const;
+export const SKILL_DESCRIPTION = "The Grail grants wishes; Mana Orchestrate makes the mana flow to the right place at the right moment. It brings Einzbern, project memory, into Claude Code, Codex and DeepSeek Harness: recall before you start, write results back to the work item, record decisions as minutes, keep lessons as cards. Where Einzbern is not installed yet, it is the wizard: install, restore, update, migrate, uninstall, health check. Use it whenever Einzbern, work items, knowledge cards, minutes, .ether, or Atelier come up, or when the user asks to install or update it." as const;
 
 /** One row of the navigation table: at this moment, run these verbs, like this. */
 export interface SkillNavigationEntry {

@@ -952,6 +952,30 @@ async function verifyPrivacy(options = {}) {
   }
 }
 
+// TCRN-CROSS-MIN-280 D3: EINZBERN_PRIVACY_HISTORY_BASE names the pull request's base commit (CI
+// sets it on pull_request events only). The increment starts at the merge-base of HEAD and that
+// commit; unset or empty means the full HEAD-reachable history, and so does a HEAD that has no
+// commit beyond the merge-base.
+function privacyIncrementBase() {
+  const raw = process.env.EINZBERN_PRIVACY_HISTORY_BASE;
+  if (raw === undefined || raw === "") return null;
+  assertion(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(raw), "PRIVACY_HISTORY_BASE_INVALID", raw);
+  const base = run("git", ["merge-base", "HEAD", raw]).trim();
+  assertion(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(base), "PRIVACY_HISTORY_BASE_INVALID", base);
+  return run("git", ["rev-list", "--count", "HEAD", `^${base}`]).trim() === "0" ? null : base;
+}
+
+// The historical path walk needs every tree of every scanned commit, including the subtrees it
+// shares with the base, so those trees join the objects the increment introduced.
+function incrementObjectIds(introduced, base) {
+  const ids = new Set(introduced);
+  for (const commit of run("git", ["rev-list", "HEAD", `^${base}`]).split("\n").filter(Boolean)) {
+    ids.add(run("git", ["rev-parse", `${commit}^{tree}`]).trim());
+    for (const tree of run("git", ["ls-tree", "-r", "-d", "--object-only", commit]).split("\n").filter(Boolean)) ids.add(tree);
+  }
+  return [...ids];
+}
+
 async function verifyPrivacyScan(options = {}, writePrivacyProgress) {
   const { requireP8Surfaces = false, historyScope = "head" } = options;
   writePrivacyProgress({ phase: "source-surface-scan", historicalPaths: 0 });
@@ -975,12 +999,19 @@ async function verifyPrivacyScan(options = {}, writePrivacyProgress) {
   // unreachable pre-hardening blobs; scanning that set makes a clean tip permanently
   // red for content that is not in the evaluated release. The explicit history command
   // below preserves the broader scan as a separately named local diagnostic.
-  const objectIds = historyScope === "head"
-    ? decodeGitMetadataBytes(run("git", ["rev-list", "--objects", "HEAD"], { raw: true }), "PRIVACY_REACHABLE_OBJECTS_UTF8_INVALID")
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => line.split(/\s+/u)[0])
-    : null;
+  // TCRN-CROSS-MIN-280 D3: on a pull request, history is scanned from the merge-base on; the
+  // whole tracked tree, the refs and the origin are still scanned above and below. The P8
+  // scan and the all-objects diagnostic never take the increment.
+  const incrementBase = requireP8Surfaces || historyScope !== "head" ? null : privacyIncrementBase();
+  const reachable = (range) => decodeGitMetadataBytes(run("git", ["rev-list", "--objects", ...range], { raw: true }), "PRIVACY_REACHABLE_OBJECTS_UTF8_INVALID")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.split(/\s+/u)[0]);
+  const objectIds = historyScope !== "head"
+    ? null
+    : incrementBase === null
+      ? reachable(["HEAD"])
+      : incrementObjectIds(reachable(["HEAD", `^${incrementBase}`]), incrementBase);
   if (objectIds !== null) {
     assertion(objectIds.length > 0, "PRIVACY_REACHABLE_OBJECTS_EMPTY");
     assertion(objectIds.every((object) => /^[a-f0-9]{40,64}$/u.test(object)), "PRIVACY_REACHABLE_OBJECTS_INVALID");
@@ -1066,7 +1097,7 @@ async function verifyPrivacyScan(options = {}, writePrivacyProgress) {
     p8Surfaces.sourceArchive = aggregatePrivacySurface([{ path: "dist/source/einzbern-source.tar", content: sourceArchive.content }]);
     p8Surfaces.releaseArtifacts = aggregatePrivacySurface(releaseRecords);
   }
-  const commits = run("git", historyScope === "all" ? ["rev-list", "--all"] : ["rev-list", "HEAD"]).split("\n").filter(Boolean);
+  const commits = run("git", historyScope === "all" ? ["rev-list", "--all"] : incrementBase === null ? ["rev-list", "HEAD"] : ["rev-list", "HEAD", `^${incrementBase}`]).split("\n").filter(Boolean);
   writePrivacyProgress({
     phase: "historical-tree-scan",
     completedCommits: 0,
@@ -1209,7 +1240,8 @@ async function verifyPrivacyScan(options = {}, writePrivacyProgress) {
     totalEntries: entries.length,
   });
   return success("PRIVACY_SOURCE_CLEAN", {
-    privacyScope: historyScope === "head" ? "HEAD-reachable" : "all-local-objects",
+    privacyScope: historyScope !== "head" ? "all-local-objects" : incrementBase === null ? "HEAD-reachable" : "pull-request-increment",
+    ...(incrementBase === null ? {} : { historyBase: incrementBase }),
     scannedEntries: entries.length,
     gitObjects: objectCount,
     historicalCommits: commits.length,
@@ -1386,6 +1418,7 @@ async function verifyP1() {
   const receipt = {
     commands: P1_TASKS,
     legs: outcome.legs,
+    durations: outcome.durations,
     ...(injected.length === 0 ? {} : { injected }),
   };
   if (outcome.reds.length > 0) {

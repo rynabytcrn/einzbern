@@ -43,7 +43,18 @@ The privacy scan allows the reviewed identity lines of merge commit `72ae480e` (
 D1). That web merge of PR #10 carries the account's primary address, and it is public history on
 `main`. The allowance is the commit's object id with the sha256 of each full `author` and
 `committer` line. The same lines on any other commit, or a changed line on this one, are still
-`EMAIL_IDENTIFIER` findings.
+`EMAIL_IDENTIFIER` findings. Merge commit `440f297d`, the web merge of PR #13, is allowed the same way
+(TCRN-CROSS-MIN-281 D1); from then on pull requests are merged locally under the noreply identity.
+
+CI is shorter (TCRN-CROSS-MIN-280). The portal remediation train runs once, as the `portal` leg of
+`pnpm verify:p1`; the workflow's second `pnpm verify:portal` step, which ran the same script again
+for about twelve minutes, is gone (D1). `verify:p1` reports a `durations` list with each leg's
+`durationMs`, red legs included; the leg rows keep their shape (D2). On a pull request the privacy
+leg scans the history increment only: the commits reachable from HEAD and not from the PR's base,
+named by `EINZBERN_PRIVACY_HISTORY_BASE`, with every tree they hold, plus the whole tracked tree,
+the refs and the origin as before; it reports `privacyScope: "pull-request-increment"` and the
+`historyBase`. Push to `main`, `workflow_dispatch`, the P8 scan and a run without the variable keep
+the full HEAD-reachable history (D3).
 
 ## 2.2.1
 

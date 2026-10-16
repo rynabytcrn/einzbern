@@ -26,19 +26,30 @@ test("CI acquires pinned pnpm online only after pinned Node and verifies it befo
 test("CI retains explicit safe dependency acquisition and offline P1 execution", async () => {
   const workflow = await readWorkflow();
   assert.match(workflow, /pnpm install --frozen-lockfile --ignore-scripts --config\.offline=false/u);
-  assert.match(workflow, /- name: Verify P1 offline\n        run: pnpm verify:p1/u);
+  assert.match(workflow, P1_STEP);
 });
+
+// TCRN-CROSS-MIN-280 D3: the P1 step names the pull request's base for the privacy increment.
+// The expression is empty on push and workflow_dispatch, where the full history is scanned.
+const P1_STEP = /- name: Verify P1 offline\n        env:\n          EINZBERN_PRIVACY_HISTORY_BASE: \$\{\{ github\.event\.pull_request\.base\.sha \}\}\n        run: pnpm verify:p1/u;
 
 // TCRN-CROSS-STORY-359. The `ci` verb and its `verify:ci` name retired with the rest of
 // the ticket-numbered and subset gates, but three of its assertions had no second home:
 // minimal workflow permissions, the pull_request_target ban, and the portal remediation
 // step. They are relocated verbatim rather than dropped -- `pnpm test` runs this file and
 // is on the P1 roster, so the checks kept their position in the train.
-test("CI keeps minimal permissions, refuses pull_request_target, and runs the portal remediation train", async () => {
+// TCRN-CROSS-MIN-280 D1: the portal remediation train runs once, as the `portal` leg of
+// `pnpm verify:p1`; the workflow no longer runs `pnpm verify:portal` as a second step.
+test("CI keeps minimal permissions, refuses pull_request_target, and runs the portal remediation train once, inside P1", async () => {
   const workflow = await readWorkflow();
   assert.match(workflow, /^permissions:\n  contents: read$/mu);
   assert.equal(workflow.includes("pull_request_target"), false);
-  assert.ok(workflow.includes("- name: Verify portal remediation train\n        run: pnpm verify:portal"));
+  assert.match(workflow, P1_STEP);
+  assert.equal(workflow.includes("run: pnpm verify:portal"), false, "the train is not run a second time");
+  const { P1_SEQUENCE } = await import("../scripts/p1-sequence.mjs");
+  const tasks = P1_SEQUENCE.map((entry) => entry.task);
+  assert.deepEqual(P1_SEQUENCE.find((entry) => entry.task === "portal")?.script, "verify:portal");
+  assert.ok(tasks.indexOf("portal") > tasks.indexOf("test"), "the train runs after the engine suite");
 });
 
 test("pull-request CI scans the contributor head, not GitHub's synthetic merge commit", async () => {

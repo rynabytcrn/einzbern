@@ -195,6 +195,25 @@ test("batch object framing is validated per record and as a whole stream", () =>
   );
 });
 
+// TCRN-CROSS-MIN-279 D1: the reviewed identity lines of 72ae480e are allowed only on that commit's
+// own object, line for line. The commit is read from this repository's history, so its address is
+// never written into a source file.
+test("a reviewed commit's identity lines are allowed only on that commit, unchanged", (context) => {
+  const reviewed = "72ae480e5ce142db481ecc65bccbdd3abe129643";
+  const read = spawnSync("git", ["cat-file", "commit", reviewed], { cwd: resolve(import.meta.dirname, ".."), encoding: "utf8" });
+  if (read.status !== 0) {
+    context.skip("the reviewed commit is not in this clone's history");
+    return;
+  }
+  const options = { owner: LEGACY_REPOSITORY_NAMES.owner };
+  const scan = (label, content) => scanPrivacyEntries([{ label, kind: "commit", content }], options);
+  assert.deepEqual(scan(`git-commit:${reviewed}`, read.stdout), [], "the reviewed commit is clean");
+  assert.ok(scan(`git-commit:${"b".repeat(40)}`, read.stdout).some((finding) => finding.startsWith("EMAIL_IDENTIFIER:")), "the same lines on another commit are a finding");
+  const changed = read.stdout.replace(/^(author [^\n]*?) (\d+) /mu, (_, head, time) => `${head} ${Number(time) + 1} `);
+  assert.notEqual(changed, read.stdout);
+  assert.ok(scan(`git-commit:${reviewed}`, changed).some((finding) => finding.startsWith("EMAIL_IDENTIFIER:")), "a changed identity line is a finding");
+});
+
 const publicIdentity = {
   login: "public-contributor",
   email: joinParts(["12345+public-contributor", "@", "users.noreply.github.com"], ""),

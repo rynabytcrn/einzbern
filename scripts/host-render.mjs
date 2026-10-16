@@ -18,10 +18,11 @@ import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 
 import { applyWritableRoots, deviceHome, planWritableRoots } from "../dist/build/packages/core/src/index.js";
-import { HOST_HOOK_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
+import { HOST_HOOK_FILE_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { readAgentsNavigation } from "../dist/build/packages/core/src/machine-settings.js";
 
-export const HOST_RENDER_HOSTS = HOST_HOOK_HOSTS;
+// TCRN-CROSS-STORY-548 R1: only the hosts with a hook file are rendered; DSH has none.
+export const HOST_RENDER_HOSTS = HOST_HOOK_FILE_HOSTS;
 export const HOST_RENDER_SCOPES = HOST_HOOK_SCOPES;
 export const HOST_RENDER_WRITABLE_ROOTS_SCOPE = "writable-roots";
 const VALUE_FLAGS = Object.freeze(["host", "scope", "root", "library", "at"]);

@@ -733,7 +733,7 @@ export { readLibraryTombstone } from "./workspace.js";
 export { applyWritableRoots, planWritableRoots } from "./host-writable-roots.js";
 // TCRN-CROSS-STORY-477 R1, R3, R4, R5: the one Einzbern hook a host's settings carry, rendered
 // with everything of the old harness taken out.
-export { HOST_HOOK_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
+export { HOST_HOOK_FILE_HOSTS, HOST_HOOK_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
 // TCRN-CROSS-STORY-477 R2, AC3: what that hook answers for a prompt in a registered project, and
 // (TCRN-CROSS-STORY-478 R4) what the two pointer hooks answer. TCRN-CROSS-SUB-483: the hook entry
 // reads the answer with the reason it carries (promptRecallOutcome), so that is what is exported.

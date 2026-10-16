@@ -13,7 +13,7 @@ import test from "node:test";
 
 import {
   FRAMEWORK_VERSION,
-  HOST_HOOK_HOSTS,
+  HOST_HOOK_FILE_HOSTS,
   acquireFileLock,
   applyHostHooks,
   applyMachineSettingSet,
@@ -66,7 +66,7 @@ async function healthy(context) {
   // The library writes below go through this device directory, as the engine's own writes do.
   process.env.EINZBERN_HOME = deviceHome;
   await writeEngine(deviceHome, FRAMEWORK_VERSION);
-  for (const host of HOST_HOOK_HOSTS) {
+  for (const host of HOST_HOOK_FILE_HOSTS) {
     await applyHostHooks(await readHostHooks(planHostHooks({ host, scope: "user", deviceHome }), { root: home, home }), { at: AT });
   }
   const skill = join(base, "skill");
@@ -133,7 +133,7 @@ test("480-AC5: a device and project as setup leaves them are green on all eight 
   assert.deepEqual(results.map((entry) => [entry.check, entry.ok, entry.reasonCode]), DOCTOR_CHECKS.map((check) => [check, true, null]));
   for (const entry of results) assert.deepEqual(entry.detail.causes, [], entry.check);
   assert.equal(byCheck(results, "engine-version").detail.current, FRAMEWORK_VERSION);
-  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_HOSTS.map((host) => [host, 1]));
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_FILE_HOSTS.map((host) => [host, 1]));
   assert.equal(byCheck(results, "registry").detail.via, "project-path");
   assert.equal(byCheck(results, "library-format").detail.source, "registry");
   assert.deepEqual(byCheck(results, "managed-sections").detail.pending, []);
@@ -176,14 +176,14 @@ test("478-AC5: hooks-present accepts declined-navigation pointers and reports a 
     occurredAt: AT,
     path: join(fixture.deviceHome, MACHINE_SETTINGS_FILE_NAME),
   });
-  for (const host of HOST_HOOK_HOSTS) {
+  for (const host of HOST_HOOK_FILE_HOSTS) {
     const plan = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome: fixture.deviceHome, navigation: "declined" }), { root: fixture.home, home: fixture.home });
     await applyHostHooks(plan, { at: AT });
   }
 
   const results = await doctor(fixture);
   assert.ok(results.every((entry) => entry.ok), JSON.stringify(results));
-  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_HOSTS.map((host) => [host, 1]));
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_FILE_HOSTS.map((host) => [host, 1]));
 
   const settings = join(fixture.home, ".claude", "settings.json");
   const document = JSON.parse(await readFile(settings, "utf8"));

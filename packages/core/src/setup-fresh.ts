@@ -59,7 +59,7 @@ import { runDoctor } from "./doctor.js";
 import { ENGINE_FILES, engineCurrentPath, engineVersionDirectory, readEngineCurrent } from "./engine-home.js";
 import type { EngineCurrent } from "./engine-home.js";
 import { hasLibraryManifest, openLibrary } from "./ether-library.js";
-import { HOST_HOOK_FILES, HOST_HOOK_HOSTS, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
+import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
 import {
   HostWritableRootsError,
   WRITABLE_ROOTS_FILES,
@@ -556,7 +556,7 @@ async function planLaunchers(recorder: SetupRecorder, launchers: EngineFiles["la
 
 /** The host-hooks step of a plan: each host's user files, rendered with (or, install false, without) the Einzbern hooks. */
 export async function planHooks(recorder: SetupRecorder, home: string, deviceHome: string, navigation: AgentsNavigationChoice | null, install = true): Promise<void> {
-  for (const host of HOST_HOOK_HOSTS) {
+  for (const host of HOST_HOOK_FILE_HOSTS) {
     const plan = await recorder.attempt("host-hooks", join(home, ...HOST_HOOK_FILES[host].split("/")),
       async () => readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install }), { root: home, home }));
     if (plan === null) continue;
@@ -790,7 +790,7 @@ export async function applyHooks(recorder: SetupRecorder, input: {
   readonly install?: boolean;
 }): Promise<void> {
   const { home, deviceHome, at, navigation } = input;
-  for (const host of HOST_HOOK_HOSTS) {
+  for (const host of HOST_HOOK_FILE_HOSTS) {
     const hooks = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install: input.install ?? true }), { root: home, home });
     await applyHostHooks(hooks, { at, backupRoot: backupsPath(deviceHome) });
     for (const file of hooks.files) {

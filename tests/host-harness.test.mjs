@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 
 import {
   HOST_HOOK_EVENTS,
+  HOST_HOOK_FILE_HOSTS,
   HOST_HOOK_HOSTS,
   isEinzbernHookCommand,
   isLegacyHookCommand,
@@ -32,10 +33,12 @@ const RETIRED_EVENTS = ["SessionStart", "PostToolUse", "PreToolUse", "Stop", "Su
 const DEVICE = Object.freeze({ darwin: "/srv/einzbern/device", linux: "/srv/einzbern/device", win32: "D:\\Einzbern\\device" });
 
 test("INC-220, 477-R1: both hosts carry the same one hook, on the same event, with the same command", () => {
-  assert.deepEqual([...HOST_HOOK_HOSTS], ["claude-code", "codex"]);
+  // TCRN-CROSS-STORY-548 R1: DSH runs the hook too, but only these two keep a hook file.
+  assert.deepEqual([...HOST_HOOK_HOSTS], ["claude-code", "codex", "dsh"]);
+  assert.deepEqual([...HOST_HOOK_FILE_HOSTS], ["claude-code", "codex"]);
   assert.deepEqual(Object.keys(HOST_HOOK_EVENTS), ["UserPromptSubmit"]);
   for (const [platform, deviceHome] of Object.entries(DEVICE)) {
-    const [claude, codex] = HOST_HOOK_HOSTS.map((host) => planHostHooks({ host, scope: "user", deviceHome, platform }));
+    const [claude, codex] = HOST_HOOK_FILE_HOSTS.map((host) => planHostHooks({ host, scope: "user", deviceHome, platform }));
     assert.deepEqual(codex.groups, claude.groups, `${platform}: a capability present on one host is present on the other`);
     assert.deepEqual(Object.keys(claude.groups), ["UserPromptSubmit"]);
     assert.equal(claude.groups.UserPromptSubmit.length, 1);
@@ -49,7 +52,7 @@ test("INC-220: every event the harness hooks exists on Codex", () => {
 
 test("477-R3: none of the six other events is rendered, and no hook names a checkout, a container or a host", () => {
   for (const [platform, deviceHome] of Object.entries(DEVICE)) {
-    for (const host of HOST_HOOK_HOSTS) {
+    for (const host of HOST_HOOK_FILE_HOSTS) {
       const expected = planHostHooks({ host, scope: "project", deviceHome, platform });
       for (const event of RETIRED_EVENTS) assert.equal(Object.hasOwn(expected.groups, event), false, `${platform}/${host}: no ${event}`);
       const [hook] = expected.groups.UserPromptSubmit[0].hooks;
@@ -65,7 +68,7 @@ test("477-R3: none of the six other events is rendered, and no hook names a chec
 });
 
 test("477-R1: the two hosts' files differ only in where they keep the hooks", () => {
-  const [claude, codex] = HOST_HOOK_HOSTS.map((host) => planHostHooks({ host, scope: "user", deviceHome: DEVICE.linux, platform: "linux" }));
+  const [claude, codex] = HOST_HOOK_FILE_HOSTS.map((host) => planHostHooks({ host, scope: "user", deviceHome: DEVICE.linux, platform: "linux" }));
   assert.deepEqual([claude.hooksFile, codex.hooksFile], [".claude/settings.json", ".codex/hooks.json"]);
   assert.deepEqual(mergeHostHooks(null, codex).document, mergeHostHooks(null, claude).document);
 });

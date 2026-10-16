@@ -54,8 +54,8 @@ import { LIBRARY_FILES, hasLibraryManifest, openLibrary, readLibraryVersionField
 import { acquireFileLock } from "./file-lock.js";
 import type { FileLock } from "./file-lock.js";
 import { ENGINE_FORMAT_VERSION, librarySupportRefusal } from "./format-version.js";
-import { HOST_HOOK_FILES, HOST_HOOK_HOSTS, hookLauncherPath, isEinzbernHookCommand, planHostHooks, readHostHooks } from "./host-hooks.js";
-import type { HostHookHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
+import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, hookLauncherPath, isEinzbernHookCommand, planHostHooks, readHostHooks } from "./host-hooks.js";
+import type { HostHookFileHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
 import { managedSectionRecordKey, managedSectionRecordsFor, planManagedWrite } from "./managed-sections.js";
 import { readAgentsNavigation } from "./machine-settings.js";
 import { DIRECTORY } from "./names.js";
@@ -282,7 +282,7 @@ function einzbernHookCount(text: string | null): number {
   return count;
 }
 
-async function readScope(host: HostHookHost, scope: HostHookScope, root: string, context: DoctorContext): Promise<ScopeRead> {
+async function readScope(host: HostHookFileHost, scope: HostHookScope, root: string, context: DoctorContext): Promise<ScopeRead> {
   const location = { root, home: context.home };
   const navigation = scope === "user" ? await readAgentsNavigation(context.deviceHome) : null;
   const request = { host, scope, deviceHome: context.deviceHome, platform: context.platform, navigation };
@@ -310,7 +310,7 @@ async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
     ? [{ scope: "user", root: context.home }]
     : [{ scope: "user", root: context.home }, { scope: "project", root: context.projectRoot }];
   const hosts: JsonValue[] = [];
-  for (const host of HOST_HOOK_HOSTS) {
+  for (const host of HOST_HOOK_FILE_HOSTS) {
     const hostCauses: string[] = [];
     const entries: ScopeEntry[] = [];
     for (const { scope, root } of scopes) {

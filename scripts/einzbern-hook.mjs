@@ -15,6 +15,11 @@
 // has the launcher's shape (einzbern.hook-log.v1) without container and marker, the launcher's
 // note for a prompt the registry does not cover. A line that cannot be written is dropped: the
 // hook's output, stderr and exit code stay what they were without it.
+// TCRN-CROSS-STORY-548 R3: each recall line also names the host the hook ran under (host:
+// claude-code, codex or dsh, as hookHost reads it), after reasonCode. It is an additive field of
+// einzbern.hook-log.v1: the schema version is unchanged, and a v1 reader that takes only
+// schemaVersion, at, event, cwd and reasonCode reads these lines as before. The launcher's own
+// lines for prompts the registry does not cover are unchanged and carry no host.
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -34,7 +39,7 @@ function absolute(value) {
 
 // One line in log/hook.ndjson for one recall, written as the launcher writes its note: the
 // directory 0700, the file 0600, and every failure dropped.
-function noteRecall(device, event, cwd, reasonCode) {
+function noteRecall(device, event, cwd, reasonCode, host) {
   try {
     const logDirectory = join(device, LOG_DIRECTORY);
     try {
@@ -42,7 +47,7 @@ function noteRecall(device, event, cwd, reasonCode) {
     } catch (error) {
       if (error?.code !== "EEXIST") return;
     }
-    const line = { schemaVersion: LOG_SCHEMA_VERSION, at: new Date().toISOString(), event, cwd, reasonCode };
+    const line = { schemaVersion: LOG_SCHEMA_VERSION, at: new Date().toISOString(), event, cwd, reasonCode, host };
     appendFileSync(join(logDirectory, LOG_FILE), `${JSON.stringify(line)}\n`, { mode: 0o600 });
   } catch {
     // A hook never blocks a session, and a line it cannot write changes nothing it answers.
@@ -66,6 +71,8 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   ]);
   const body = payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   const name = hookEventName(event);
+  // Read once, for the recall and for its log line alike.
+  const host = hookHost(process.env);
   switch (name) {
     case "UserPromptSubmit": {
       if (typeof libraryPath !== "string") return null;
@@ -77,19 +84,19 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
         outcome = await promptRecallOutcome({
           libraryPath,
           prompt: typeof body.prompt === "string" ? body.prompt : "",
-          host: hookHost(process.env),
+          host,
           cwd: directory,
         });
       } catch (error) {
-        noteRecall(device, event, directory, typeof error?.reasonCode === "string" ? error.reasonCode : UNCODED_FAILURE);
+        noteRecall(device, event, directory, typeof error?.reasonCode === "string" ? error.reasonCode : UNCODED_FAILURE, host);
         throw error;
       }
-      noteRecall(device, event, directory, outcome.reasonCode);
+      noteRecall(device, event, directory, outcome.reasonCode, host);
       return outcome.answer === null ? null : `${outcome.answer.output}\n`;
     }
     case "SessionStart":
     case "SubagentStart":
-      return `${navigationPointerAnswer(hookHost(process.env), name).output}\n`;
+      return `${navigationPointerAnswer(host, name).output}\n`;
     default:
       return null;
   }

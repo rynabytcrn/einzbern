@@ -143,7 +143,11 @@ The hook answers a prompt only in a project this device's registry holds; anywhe
 with exit code 0 and prints nothing. Either way it keeps a log: `log/hook.ndjson` in the device
 directory, which is `.einzbern` in the user's home unless `EINZBERN_HOME` names another place.
 Each line is one JSON object with `schemaVersion` (`einzbern.hook-log.v1`), `at`, `event`, `cwd`
-and `reasonCode`, and says why one prompt got what it got.
+and `reasonCode`, and says why one prompt got what it got. The lines of a registered project's
+recall also carry `host` after `reasonCode`: `claude-code`, `codex` or `dsh`, the host the hook ran
+under (`EINZBERN_HOST` when it names one of them, otherwise read from the environment). `host` is an
+additive field of `einzbern.hook-log.v1`; the launcher's lines for prompts outside a registered
+project do not carry it.
 
 Every prompt in a registered project leaves one line, written by the current engine's recall,
 whether it was answered or not:

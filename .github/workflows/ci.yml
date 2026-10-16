@@ -63,7 +63,12 @@ jobs:
           NO_UPDATE_NOTIFIER: "1"
         run: pnpm install --frozen-lockfile --ignore-scripts --config.offline=false
 
+      # TCRN-CROSS-MIN-280 D3: on a pull request the privacy leg scans history from the
+      # merge-base with the PR's base on; push to main and workflow_dispatch leave the
+      # variable empty and scan the full HEAD-reachable history.
       - name: Verify P1 offline
+        env:
+          EINZBERN_PRIVACY_HISTORY_BASE: ${{ github.event.pull_request.base.sha }}
         run: pnpm verify:p1
 
       # TCRN-CROSS-INIT-020 INC-079 — every test file must have an owner. This is
@@ -72,10 +77,10 @@ jobs:
       - name: Every test file is wired to a pipeline
         run: node scripts/test-wiring-proof.mjs
 
-      # INIT-028 remediation INC-140 — run the portal suite, proof legs, and
-      # coverage conservation in one serial train after the engine suite.
-      - name: Verify portal remediation train
-        run: pnpm verify:portal
+      # INIT-028 remediation INC-140 — the portal suite, proof legs, and coverage
+      # conservation run as one serial train after the engine suite. That train is
+      # the `portal` leg of `pnpm verify:p1` above (scripts/p1-sequence.mjs), so it
+      # is not run a second time here (TCRN-CROSS-MIN-280 D1).
 
       # TCRN-CROSS-STORY-481 (TCRN-CROSS-SUB-331): a device installs the release archive, not this
       # checkout. The archive is packed from a fresh build, checked against its .sha256 and unpacked

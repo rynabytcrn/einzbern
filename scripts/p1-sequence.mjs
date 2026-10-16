@@ -65,10 +65,14 @@ export const P1_TASKS = Object.freeze(P1_SEQUENCE.map((entry) => entry.task));
  * carry a `reasonCode`, or rejects with an error that carries one. A leg that rejects
  * without a reason code, or resolves without one, is still a named red.
  */
-export async function runAllP1Legs(runLeg, tasks = P1_TASKS) {
+export async function runAllP1Legs(runLeg, tasks = P1_TASKS, now = () => performance.now()) {
   const legs = [];
   const reds = [];
+  // TCRN-CROSS-MIN-280 D2: how long each leg took, in its own list so the leg rows keep their
+  // shape. A red leg is timed too; the time runs from the leg's start to its result or rejection.
+  const durations = [];
   for (const task of tasks) {
+    const started = now();
     try {
       const result = await runLeg(task);
       if (typeof result?.reasonCode !== "string" || result.reasonCode.length === 0) {
@@ -82,9 +86,11 @@ export async function runAllP1Legs(runLeg, tasks = P1_TASKS) {
       const reasonCode = typeof error?.reasonCode === "string" && error.reasonCode.length > 0 ? error.reasonCode : "P1_LEG_INTERNAL_ERROR";
       legs.push({ task, ok: false, reasonCode });
       reds.push({ task, reasonCode, message: String(error?.message ?? error).slice(0, 2000) });
+    } finally {
+      durations.push({ task, durationMs: Math.round(now() - started) });
     }
   }
-  return { reasonCode: reds.length === 0 ? "P1_VERIFIED" : "P1_RED", legs, reds };
+  return { reasonCode: reds.length === 0 ? "P1_VERIFIED" : "P1_RED", legs, reds, durations };
 }
 
 /** `[key, argv]` pairs — what preflight spawns, one process per gate. */

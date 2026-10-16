@@ -17,6 +17,13 @@ with `HOST_HOOKS_HOST_NOT_FILE_BASED`, and setup, doctor, migration cleanup and 
 carries `host` after `reasonCode`, an additive field of `einzbern.hook-log.v1`; the launcher's lines
 for prompts outside a registered project are unchanged.
 
+`EXECUTION_HOSTS` now lists `dsh` beside `claude-code` and `codex`, so execution configuration
+(host configurations, defaults and persona bindings) accepts `dsh`, and the vocabulary's `hosts` term
+list names it. The default `models.tiers` table is unchanged and still has rows for Claude Code and
+Codex only. doctor's `hooks-present` and the fresh setup plan read this home's DSH profiles, never
+writing them: a plugin that would run another launcher than this device directory's is red
+(`DSH_PLUGIN_HOOK_PATH_MISMATCH`); a profile without the plugin is a hint (`DSH_PLUGIN_MISSING`).
+
 ### Release and Repository Tooling
 
 The `fast-uri` override is now `^3.1.8` (TCRN-CROSS-STORY-544, TCRN-CROSS-SUB-525, MIN-265 D1).

@@ -55,7 +55,8 @@ import type { ModelPlanRecord } from "./model-plan.js";
  * Credentials discipline (references, never values) already says so.
  */
 export const EXECUTION_CONFIG_VERSION = "tcrn.execution-config.v1" as const;
-export const EXECUTION_HOSTS = Object.freeze(["claude-code", "codex"] as const);
+// TCRN-CROSS-STORY-548 R5 (MIN-268): DSH is a host too; execution configuration accepts it.
+export const EXECUTION_HOSTS = Object.freeze(["claude-code", "codex", "dsh"] as const);
 export type ExecutionHost = typeof EXECUTION_HOSTS[number];
 
 export const EXECUTION_CONFIG_REASON_CODES = Object.freeze([

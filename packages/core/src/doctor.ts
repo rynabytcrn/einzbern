@@ -7,7 +7,9 @@
 //   engine-version    engine/current names an installed version whose entry is there, the stable
 //                     entry engine/einzbern.mjs is there, and this Node.js meets the floor
 //   hooks-present     each host carries exactly one Einzbern hook, as host-hooks.ts renders it, and
-//                     the launcher that hook runs is there
+//                     the launcher that hook runs is there; with DSH profiles in the home, a dsh
+//                     entry says what each profile's plugin runs (dsh-plugin.ts): another launcher
+//                     is red, a profile without the plugin a hint (TCRN-CROSS-STORY-548 R4)
 //   skill-copies      both copies of the skill hold the tree skills.json records (skill-copies.ts)
 //   registry          the registry parses and resolves this project to the library it recorded;
 //                     an entry whose library path no longer exists is a hint (detail.hints), which
@@ -54,6 +56,7 @@ import { LIBRARY_FILES, hasLibraryManifest, openLibrary, readLibraryVersionField
 import { acquireFileLock } from "./file-lock.js";
 import type { FileLock } from "./file-lock.js";
 import { ENGINE_FORMAT_VERSION, librarySupportRefusal } from "./format-version.js";
+import { inspectDshPlugin } from "./dsh-plugin.js";
 import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, hookLauncherPath, isEinzbernHookCommand, planHostHooks, readHostHooks } from "./host-hooks.js";
 import type { HostHookFileHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
 import { managedSectionRecordKey, managedSectionRecordsFor, planManagedWrite } from "./managed-sections.js";
@@ -343,6 +346,30 @@ async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
     }
     causes.push(...hostCauses);
     hosts.push({ host, hooks: total, files, causes: [...unique(hostCauses)] });
+  }
+  // TCRN-CROSS-STORY-548 R4: DSH keeps no hook file; when this home has DSH profiles, its entry says
+  // what each profile's plugin would run. A launcher other than this device directory's is red; a
+  // profile without the plugin, or one that cannot be read, is a hint and leaves the check as it is.
+  if (launcher !== null) {
+    const dsh = await inspectDshPlugin({ home: context.home, deviceHome: context.deviceHome, platform: context.platform, env: context.cloud.env });
+    if (dsh.detected) {
+      const dshCauses = dsh.causes.filter((cause) => cause === "DSH_PLUGIN_HOOK_PATH_MISMATCH");
+      causes.push(...dshCauses);
+      hosts.push({
+        host: "dsh",
+        profilesRoot: dsh.profilesRoot,
+        profiles: dsh.profiles.map((profile) => ({
+          name: profile.name,
+          installed: profile.installed,
+          version: profile.version,
+          hookPath: profile.hookPath,
+          hookPathMatches: profile.hookPathMatches,
+          causes: [...profile.causes],
+        })),
+        causes: [...dshCauses],
+        hints: dsh.causes.filter((cause) => cause !== "DSH_PLUGIN_HOOK_PATH_MISMATCH"),
+      });
+    }
   }
   return result("hooks-present", causes, { launcher, hosts });
 }

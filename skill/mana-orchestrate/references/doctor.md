@@ -36,6 +36,16 @@ runs is there. Not ok: `DOCTOR_HOOKS_MISMATCH`. Missing (`HOOK_MISSING`), more t
 (`HOOK_LEGACY_PRESENT`), or no launcher (`HOOK_LAUNCHER_MISSING`): repair. A settings file that is
 a symbolic link (`HOST_HOOKS_FILE_UNSUPPORTED`) is left alone; ask the user what to do with it.
 
+DSH keeps no hook file: its Mana Orchestrate plugin runs the launcher. When the user's home has
+`.dsh/profiles/`, `detail.hosts` also has a `dsh` entry with one row per profile: whether its
+`package.json` lists `dsh-mana-orchestrate`, the installed version, and the launcher the plugin
+would run (the `deviceHome` of its entry in `cordis.patch.yml`, else `EINZBERN_HOME` or
+`~/.einzbern`). A plugin that would run another launcher than this device directory's is red
+(`DSH_PLUGIN_HOOK_PATH_MISMATCH`): point the plugin's `deviceHome` at this device directory in DSH.
+A profile without the plugin (`DSH_PLUGIN_MISSING`) or with an unreadable `package.json`
+(`DSH_PROFILE_UNREADABLE`) is only a hint in the entry's `hints`. Doctor and setup never write a
+DSH profile; installing or configuring the plugin is done in DSH.
+
 ### skill-copies
 
 The skill copies for both hosts match what this device recorded for them. Not ok:

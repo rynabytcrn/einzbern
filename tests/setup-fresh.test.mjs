@@ -515,3 +515,16 @@ test("385-R16: a library inside the project writes no host file, so tracked host
   assert.equal(await readFile(join(f.project, ".codex", "config.toml"), "utf8"), "[features]\nhooks = true\n");
   assert.equal(await readFile(join(f.project, ".claude", "settings.local.json"), "utf8"), "{}\n");
 });
+
+test("548-AC4: the fresh plan lists what the DSH profiles say about the plugin, and plans no write under .dsh", async (context) => {
+  const f = await fixture(context);
+  assert.equal(Object.hasOwn(await plan(f), "dshPlugin"), false, "no DSH profiles, no dshPlugin");
+  const profile = join(f.home, ".dsh", "profiles", "p1");
+  await mkdir(join(profile, "node_modules", "dsh-mana-orchestrate"), { recursive: true });
+  await writeFile(join(profile, "package.json"), `${JSON.stringify({ dependencies: { "dsh-mana-orchestrate": "^0.1.0" } })}\n`);
+  await writeFile(join(profile, "node_modules", "dsh-mana-orchestrate", "package.json"), `${JSON.stringify({ name: "dsh-mana-orchestrate", version: "0.1.0" })}\n`);
+  const planned = await plan(f);
+  assert.equal(planned.dshPlugin.detected, true);
+  assert.deepEqual(planned.dshPlugin.profiles.map((entry) => [entry.name, entry.installed, entry.version, entry.hookPathMatches]), [["p1", true, "0.1.0", true]]);
+  assert.deepEqual(planned.writes.filter((entry) => entry.path.startsWith(join(f.home, ".dsh"))), [], "no step writes a DSH profile");
+});

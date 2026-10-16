@@ -51,6 +51,7 @@ import { assertStrictInstant } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import { deviceFilePath, deviceHome as currentDeviceHome } from "./device-home.js";
 import type { DoctorCheck } from "./doctor.js";
+import type { DshPluginInspection } from "./dsh-plugin.js";
 import { readEngineCurrent } from "./engine-home.js";
 import { promptRecallContext } from "./hook-recall.js";
 import { HOST_HOOK_HOSTS } from "./host-hooks.js";
@@ -418,6 +419,10 @@ export interface SetupPlan {
   readonly coordination?: SetupCoordination | null;
   // What stops the apply. A plan with any is still a plan: it is shown, not applied.
   readonly blockers: readonly SetupBlocker[];
+  // fresh: what this home's DSH profiles say about the Mana Orchestrate plugin (dsh-plugin.ts),
+  // shown and never written; no step writes a DSH profile (TCRN-CROSS-STORY-548 R4). Left out when
+  // the home has no DSH profiles.
+  readonly dshPlugin?: DshPluginInspection;
   // What does not stop the apply but is shown before it: each project host file Git tracks while
   // the library sits outside the project, whether or not the apply changes the file.
   readonly warnings: readonly SetupWarning[];
@@ -551,7 +556,7 @@ export interface SetupModeInput {
 }
 
 /** What a mode's planner answers; planSetup puts it into the plan, with no warnings when the mode names none. */
-export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "migration" | "coordination">
+export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "migration" | "coordination" | "dshPlugin">
   & { readonly warnings?: readonly SetupWarning[] };
 
 interface SetupModeEntry {

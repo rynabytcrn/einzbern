@@ -59,6 +59,10 @@ never ask again for an answer the user already gave, and never guess an answer.
    `HOST_WRITABLE_ROOTS_TRACKED_BY_GIT` names a project host file, `.claude/settings.local.json`
    or `.codex/config.toml`, that Git tracks and that the apply writes this device's library path
    into, because the library sits outside the project; committing that file would publish the path.
+   When the user's home has DSH profiles, the plan also carries `dshPlugin`: for each profile,
+   whether the `dsh-mana-orchestrate` plugin is installed, its version, and whether the launcher it
+   would run is this device directory's (`hookPathMatches`). Show these facts; the wizard has no
+   step that writes a DSH profile, so a missing plugin or another launcher is set up in DSH.
 2. Ask the open questions on one screen, then plan again with the answers until none is open.
 3. Final confirmation. Show the decided answers and every file the plan would write, as the plan
    lists them, then each entry of `warnings` with its file and message, and ask once whether to

@@ -59,6 +59,7 @@ import { runDoctor } from "./doctor.js";
 import { ENGINE_FILES, engineCurrentPath, engineVersionDirectory, readEngineCurrent } from "./engine-home.js";
 import type { EngineCurrent } from "./engine-home.js";
 import { hasLibraryManifest, openLibrary } from "./ether-library.js";
+import { inspectDshPlugin } from "./dsh-plugin.js";
 import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
 import {
   HostWritableRootsError,
@@ -951,6 +952,8 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
     ? context.registered?.libraryPath ?? join(projectRoot, DIRECTORY.library)
     : resolve(projectRoot, answers.artifacts));
   const deviceNavigation = await readDeviceNavigation(recorder, deviceHome);
+  // TCRN-CROSS-STORY-548 R4: DSH's plugin, as facts for the plan; nothing here writes a DSH profile.
+  const dshPlugin = await inspectDshPlugin({ home, deviceHome });
 
   // device
   await planDevice(recorder, deviceHome);
@@ -1018,6 +1021,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
     coordination: binding,
     blockers: recorder.blockers,
     warnings: recorder.warnings,
+    ...(dshPlugin.detected ? { dshPlugin } : {}),
   };
 }
 

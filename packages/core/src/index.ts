@@ -873,6 +873,8 @@ export type { KeyAlias, LibraryReplay, LibraryStreamHead, RejectedEvent } from "
 // and one project, each green or naming its red; the doctor verb reads it, and every setup apply
 // reports it as its self-check.
 export { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_REASON_CODES, runDoctor } from "./doctor.js";
+export { DSH_PLUGIN_REASON_CODES, inspectDshPlugin } from "./dsh-plugin.js";
+export type { DshPluginInspection, DshProfileInspection } from "./dsh-plugin.js";
 export type { DoctorCheck, DoctorCheckName, DoctorInput, DoctorReasonCode } from "./doctor.js";
 // TCRN-CROSS-STORY-480 R1 to R6 (TCRN-CROSS-SUB-323 to SUB-327): setup, the installation wizard: a
 // plan that writes nothing and the apply of a confirmed plan, in six modes. fresh installs

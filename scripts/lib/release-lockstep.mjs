@@ -1029,6 +1029,15 @@ async function releaseNotes(engineRoot, version) {
   return `${headline}\n\nRelease notes, by functional module: ${await releaseWikiNotesAddress(version)}\n\nAttachments: \`${asset}\` and its SHA-256 file \`${asset}.sha256\`.\n`;
 }
 
+// TCRN-CROSS-MIN-277 D4: the helper repository gets its own GitHub Release for the same tag, with no
+// attachments: the skill is the tree at the tag. Its body names the lockstep, links the engine's
+// Release and gives the install line; the addresses are composed from the names module, as above.
+async function helperReleaseNotes(version) {
+  const { BRAND, LEGACY_REPOSITORY_NAMES } = await import("./names.mjs");
+  const engineRelease = `https://github.com/${LEGACY_REPOSITORY_NAMES.owner}/${BRAND.engine.id}/releases/tag/v${version}`;
+  return `${BRAND.helper.name} ${version} ships in lockstep with ${BRAND.engine.name} ${version}.\n\nEngine release and notes: ${engineRelease}\n\nInstall: \`npx skills add ${LEGACY_REPOSITORY_NAMES.owner}/${BRAND.helper.id}\`\n\nThis release adds no assets; the skill is the tree at tag \`v${version}\`.\n`;
+}
+
 export async function buildPublishPlan({ engineRoot, helperRoot, version, wikiDirectory, env = process.env }) {
   const checked = await checkRelease({ engineRoot, helperRoot, version, env });
   const engine = await assertRepository(checked.engine, ENGINE_PACKAGE_NAME, { clean: true, env });
@@ -1048,11 +1057,14 @@ export async function buildPublishPlan({ engineRoot, helperRoot, version, wikiDi
   const tagCommands = [engineInfo, helperInfo].map(({ root }) => ["git", "-C", root, "tag", tag]);
   const pushCommands = [engineInfo, helperInfo].map(({ root, branch, remote }) => ["git", "-C", root, "push", remote, `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`]);
   const releaseCommand = ["gh", "release", "create", tag, archive, checksum, "--title", `Einzbern ${version}`, "--notes", notes];
+  const { BRAND, LEGACY_REPOSITORY_NAMES } = await import("./names.mjs");
+  const helperReleaseCommand = ["gh", "release", "create", tag, "--repo", `${LEGACY_REPOSITORY_NAMES.owner}/${BRAND.helper.id}`, "--verify-tag", "--title", `${BRAND.helper.name} ${version}`, "--notes", await helperReleaseNotes(version)];
   const wikiCommand = wiki === null ? null : [process.execPath, join(engine.root, "scripts", "push-wiki.mjs"), "--wiki-dir", wiki, "--execute", "push"];
   const commands = {
     tag: tagCommands,
     push: pushCommands,
     release: releaseCommand,
+    helperRelease: helperReleaseCommand,
     wiki: wikiCommand,
   };
   return {
@@ -1066,6 +1078,7 @@ export async function buildPublishPlan({ engineRoot, helperRoot, version, wikiDi
       tag: tagCommands.map(commandLine),
       push: pushCommands.map(commandLine),
       release: commandLine(releaseCommand),
+      helperRelease: commandLine(helperReleaseCommand),
       wiki: wikiCommand === null ? null : commandLine(wikiCommand),
     },
   };
@@ -1127,7 +1140,14 @@ export async function executeReleaseAction({ action, engineRoot, helperRoot, ver
     const command = plan.commands.release;
     const result = writeResult(command[0], command.slice(1), { cwd: engineInfo.root, env, runner });
     if (result.status !== 0) refuse("RELEASE_ACTION_FAILED", "gh release create failed", { stderr: result.stderr.trim(), stdout: result.stdout.trim() });
-    return { ok: true, reasonCode: "RELEASE_PUBLISHED", version, tag, archive: command[4], checksum: command[5], output: result.stdout.trim() };
+    // The engine's Release is created first; a helper Release that fails after it is reported with the
+    // engine's output, so the caller can create the helper's alone from printable.helperRelease.
+    const helperCommand = plan.commands.helperRelease;
+    const helperResult = writeResult(helperCommand[0], helperCommand.slice(1), { cwd: helperInfo.root, env, runner });
+    if (helperResult.status !== 0) {
+      refuse("RELEASE_HELPER_ACTION_FAILED", "gh release create failed for the helper repository after the engine's Release was created", { engineOutput: result.stdout.trim(), stderr: helperResult.stderr.trim(), stdout: helperResult.stdout.trim() });
+    }
+    return { ok: true, reasonCode: "RELEASE_PUBLISHED", version, tag, archive: command[4], checksum: command[5], output: result.stdout.trim(), helperOutput: helperResult.stdout.trim() };
   }
 
   const command = plan.commands.wiki;

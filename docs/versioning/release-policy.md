@@ -166,6 +166,13 @@ with a lightweight tag, which would put the engine's tag on that documentation
 commit. `--execute push` pushes the tags made by hand.
 
 The release action requires the matching version tag at both repositories' origins.
+It creates the engine's GitHub Release and then the helper's, on the same tag
+(`gh release create v<version> --repo <owner>/mana-orchestrate --verify-tag`): the
+helper's has no attachments, and its body names the lockstep, links the engine's
+Release and gives the `npx skills add` line (TCRN-CROSS-MIN-277 D4). When the
+helper's fails after the engine's was created, the action refuses with
+`RELEASE_HELPER_ACTION_FAILED`, carrying the engine's output; run the
+`helperRelease` command that `publish-plan` prints to create the helper's alone.
 The Wiki action delegates to `scripts/push-wiki.mjs`, which rehearses and commits
 the local Wiki sync before pushing it.
 

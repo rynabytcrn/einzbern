@@ -32,6 +32,13 @@ GHSA-hrr3-gc8f-f4qj affects `fast-uri` from 3.0.0 up to but not including 3.1.8,
 integrity; only the override lines of `pnpm-workspace.yaml` and `pnpm-lock.yaml` change. `fast-uri`
 is a development dependency and is not in the release package.
 
+The release action now creates the helper repository's GitHub Release too (TCRN-CROSS-MIN-277 D4).
+After the engine's Release, `--execute release` runs `gh release create v<version> --repo
+<owner>/mana-orchestrate --verify-tag`, titled `Mana Orchestrate <version>`, with no attachments and
+a body that names the lockstep, links the engine's Release and gives the `npx skills add` line.
+`publish-plan` prints it as `helperRelease`. A helper Release that fails after the engine's is
+refused with `RELEASE_HELPER_ACTION_FAILED`, carrying the engine's output.
+
 ## 2.2.1
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.2.1. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

@@ -356,7 +356,7 @@ test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each 
   await mkdir(bin, { recursive: true });
   const capture = join(base, "fake-gh-args.json");
   const fakeGh = join(bin, "gh");
-  await writeFile(fakeGh, "#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(process.env.GH_CAPTURE, JSON.stringify(process.argv.slice(2)));\n");
+  await writeFile(fakeGh, "#!/usr/bin/env node\nimport { appendFileSync } from 'node:fs';\nappendFileSync(process.env.GH_CAPTURE, JSON.stringify(process.argv.slice(2)) + '\\n');\n");
   await chmod(fakeGh, 0o755);
   const releaseEnvironment = { ...environment, HOME: home, EINZBERN_HOME: join(home, ".einzbern"), GH_CAPTURE: capture, PATH: `${bin}:${process.env.PATH ?? ""}` };
   await mkdir(releaseEnvironment.EINZBERN_HOME, { recursive: true });
@@ -421,7 +421,15 @@ test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each 
 
   const released = await executeReleaseAction({ action: "release", ...repos, version: NEXT_VERSION, env: releaseEnvironment });
   assert.equal(released.reasonCode, "RELEASE_PUBLISHED");
-  const ghArgs = JSON.parse(await readFile(capture, "utf8"));
+  const ghCalls = (await readFile(capture, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(ghCalls.length, 2, "gh runs once for the engine and once for the helper");
+  const [ghArgs, helperArgs] = ghCalls;
+  // MIN-277 D4: the helper's Release follows the engine's, on the same tag, with no attachments.
+  assert.deepEqual(helperArgs, plan.commands.helperRelease.slice(1));
+  assert.deepEqual(helperArgs.slice(0, 7), ["release", "create", `v${NEXT_VERSION}`, "--repo", `${LEGACY_REPOSITORY_NAMES.owner}/${BRAND.helper.id}`, "--verify-tag", "--title"]);
+  assert.equal(helperArgs[7], `${BRAND.helper.name} ${NEXT_VERSION}`);
+  assert.ok(helperArgs[9].includes(`/${BRAND.engine.id}/releases/tag/v${NEXT_VERSION}`), "the helper body links the engine's Release");
+  assert.equal(released.helperOutput, "");
   assert.equal(ghArgs[0], "release");
   assert.equal(ghArgs[1], "create");
   assert.equal(ghArgs[2], `v${NEXT_VERSION}`);

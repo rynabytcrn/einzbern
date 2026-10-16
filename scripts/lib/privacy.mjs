@@ -731,6 +731,25 @@ export function normalizePrivacyText(content) {
   return normalized;
 }
 
+// TCRN-CROSS-MIN-279 D1: identity lines of individually reviewed commits that are already public
+// history on main and cannot be rewritten without a force push. Each entry is the commit's object
+// id and the sha256 of one full `author` or `committer` line, so the address itself is not kept
+// here; any other commit, any other line, or the same commit with a changed line stays a finding.
+// 72ae480e is the web merge of PR #10 (TCRN-CROSS-STORY-548), authored with the account's primary
+// address and committed by GitHub's web-flow identity.
+const REVIEWED_COMMIT_IDENTITY_LINES = new Set([
+  "72ae480e5ce142db481ecc65bccbdd3abe129643\u00006044624858c9b74e081c24d084d4cf0b24e2ecdbedc07a401a0e0621c4703d94",
+  "72ae480e5ce142db481ecc65bccbdd3abe129643\u00006ed6143fe0d2c0750b9cc4f94dff13095b84105b7ca8ca175ca91ff62f3b8497",
+]);
+
+function reviewedCommitIdentity(entry, line) {
+  if (entry.kind !== "commit" || !entry.label.startsWith("git-commit:")) return null;
+  const role = /^(author|committer) /u.exec(line)?.[1];
+  if (role === undefined) return null;
+  const object = entry.label.slice("git-commit:".length);
+  return REVIEWED_COMMIT_IDENTITY_LINES.has(`${object}\u0000${privacyDigest(line)}`) ? `${role} [ALLOWED_REVIEWED_COMMIT_IDENTITY]` : null;
+}
+
 function sanitizeAllowedPublicMetadata(entry, owner, repositories) {
   const p3Marker = joinParts([".", "context/platform/workflow-v3-capabilities/p3-local-work-graph.accepted.json"], "");
   const content = entry.content.split(p3Marker).join("[ALLOWED_PUBLIC_P3_MARKER_CONTRACT]");
@@ -748,7 +767,7 @@ function sanitizeAllowedPublicMetadata(entry, owner, repositories) {
     .map((line) => {
       const match = line.match(/^(author|committer|tagger) ([^<>\r\n]+) <((?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com)> \d+ [+-]\d{4}$/u);
       if (!match) {
-        return line;
+        return reviewedCommitIdentity(entry, line) ?? line;
       }
       const [, role, name, , login] = match;
       if (name !== login) {

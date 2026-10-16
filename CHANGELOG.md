@@ -39,6 +39,12 @@ a body that names the lockstep, links the engine's Release and gives the `npx sk
 `publish-plan` prints it as `helperRelease`. A helper Release that fails after the engine's is
 refused with `RELEASE_HELPER_ACTION_FAILED`, carrying the engine's output.
 
+The privacy scan allows the reviewed identity lines of merge commit `72ae480e` (TCRN-CROSS-MIN-279
+D1). That web merge of PR #10 carries the account's primary address, and it is public history on
+`main`. The allowance is the commit's object id with the sha256 of each full `author` and
+`committer` line. The same lines on any other commit, or a changed line on this one, are still
+`EMAIL_IDENTIFIER` findings.
+
 ## 2.2.1
 
 Einzbern and Mana Orchestrate ship in lockstep at 2.2.1. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.

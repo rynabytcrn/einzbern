@@ -6,7 +6,7 @@ Le Graal exauce les vœux. Einzbern se souvient des vœux que vous avez formulé
 
 [简体中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · **Français**
 
-![release](https://img.shields.io/badge/release-2.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+![release](https://img.shields.io/badge/release-2.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20Harness-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
 [Ce qui s'est passé mercredi après-midi](#ce-qui-sest-passé-mercredi-après-midi) · [Ce qu'il retient](#ce-quil-retient) · [Quand vous en aurez envie](#quand-vous-en-aurez-envie) · [Pourquoi lui, et pas un plugin de mémoire](#pourquoi-lui-et-pas-un-plugin-de-mémoire) · [Installation](#installation) · [Au quotidien](#au-quotidien) · [Plusieurs appareils et dossiers cloud](#plusieurs-appareils-et-dossiers-cloud) · [Comment nous l'utilisons nous-mêmes](#comment-nous-lutilisons-nous-mêmes) · [Comment les principes intégrés font durer vos tokens](#comment-les-principes-intégrés-font-durer-vos-tokens) · [Pourquoi cette conception](#pourquoi-cette-conception) · [Glossaire](#glossaire)
 
@@ -28,8 +28,8 @@ dépendance à l'exécution<br><sub>un seul fichier sans dépendance, ni base de
 </td>
 <td align="center" width="33%">
 
-### 2
-hôtes, une mémoire<br><sub>Claude Code et Codex lisent le même .ether</sub>
+### 3
+hôtes, une mémoire<br><sub>Claude Code, Codex et DeepSeek Harness lisent le même .ether</sub>
 
 </td>
 </tr>
@@ -87,7 +87,7 @@ S'il n'y a rien de fortement lié, il ne se passe rien. Le modèle va chercher l
 ## Quand vous en aurez envie
 
 - Une tâche s'étale sur trois jours et cinq sessions, et le modèle du quatrième jour sait encore ce qui a été décidé le premier.
-- Vous alternez entre Claude Code et Codex et voulez que les deux lisent la même mémoire.
+- Vous alternez entre Claude Code, Codex et DeepSeek Harness et voulez qu'ils lisent tous la même mémoire.
 - Un lot tourne sans surveillance pendant la nuit, et le matin vous pouvez retracer ce que chaque étape a fait et sur quelle décision elle s'appuyait.
 - Le poste fixe continue de travailler pendant que vous sortez avec le portable et reprenez là où vous en étiez.
 
@@ -101,7 +101,7 @@ La plupart des solutions de mémoire sont un magasin de vecteurs ou une pile de 
 |---|---|---|
 | Une décision et son origine | Un fragment de conversation similaire | Des comptes rendus numérotés ; éléments de travail et cartes pointent vers eux par numéro |
 | Où en est un travail | Rien | Quatre niveaux d'éléments ; les relations sont des champs : qui bloque quoi, qui remplace quoi, quel compte rendu l'a décidé |
-| Changer d'hôte | Chacun garde sa mémoire | Claude Code et Codex lisent le même .ether |
+| Changer d'hôte | Chacun garde sa mémoire | Claude Code, Codex et DeepSeek Harness lisent le même .ether |
 | Changer d'appareil | Synchronisation manuelle, ou aucune | Dans un dossier cloud ; un flux par appareil ; écrire en même temps ne crée aucun conflit |
 | Voir et changer | Ouvrir des fichiers | Atelier : variables, règles, configuration des portes et état du dépôt sur une seule page ; un changement est rendu aussitôt dans AGENTS.md |
 | La façon de travailler du modèle | Pas l'affaire du plugin | Non policée ; sept principes, désactivés par défaut, choisis projet par projet |

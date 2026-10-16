@@ -2,7 +2,7 @@
   "name": "einzbern",
   "version": "2.2.1",
   "private": true,
-  "description": "The Grail grants wishes. Einzbern remembers the wishes you made, the decisions you took, and the traps you fell into, and puts them in front of the model right before the prompt that needs them. For Claude Code and Codex.",
+  "description": "The Grail grants wishes. Einzbern remembers the wishes you made, the decisions you took, and the traps you fell into, and puts them in front of the model right before the prompt that needs them. For Claude Code, Codex and DeepSeek Harness.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

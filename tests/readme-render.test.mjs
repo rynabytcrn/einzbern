@@ -28,13 +28,15 @@ const LOCAL_PATH_REASONS = new Set(["LOCAL_ABSOLUTE_PATH", "LINUX_HOME_PATH", "W
 // `npx skills add` line instead of the placeholder, and TCRN-CROSS-MIN-260 D1 counts seven built-in
 // principles where the text counts them in general (comparison table, Command Spell introduction,
 // glossary), lists all seven under the Command Spell introduction, and says the four of the
-// 2026-09-26 measurements are the four of that time.
+// 2026-09-26 measurements are the four of that time. TCRN-CROSS-MIN-277 D2 counts three hosts and
+// names DeepSeek Harness in the hosts badge, the hosts-one-memory tile, the alternating-hosts case
+// and the switching-hosts row.
 const FINAL_README_TEMPLATE_SHA256 = Object.freeze({
-  "README.md": "8a9389ef3d3beac9ed3dacc8dfa6eb5f216c0fe42efb25babf8cf8b89db649f4",
-  "README.en.md": "f1753013e1addd76f96d527d35a745591a57be184fcbc49d326d11c1031c93e4",
-  "README.ja.md": "5aa0368716a04354259e9d392c479a958d964717ae84d8f2e64fc0d9d991b473",
-  "README.ko.md": "5e42eaed33d54674c15e38dd9a75c4a97e4a7b35f17213b65d7b61c0560ddad0",
-  "README.fr.md": "ba3313c9f621ea9e068aec5e4ae2522e0da7d7f1d830d645e86205278091ec3c",
+  "README.md": "19898b6903b73e98d13ae3b96adba92b85568bcecc4ea6c3274e48e545b291e3",
+  "README.en.md": "aec6a9e04101ef7831f2b62582c845e19db119f4ba644503bed27dc3d312f9dd",
+  "README.ja.md": "d70d35965fc7458a27ea7cbf3151d4ca8503196d12ce4cc03943e28618ccec69",
+  "README.ko.md": "9378c8b434f5fff75c128cb45c14004f51104d9de36d0ec7f65b4117c325711d",
+  "README.fr.md": "3c23466af98f1bc22ee9da90ecb664fe4660f000d2f18773564b76b02decf8c0",
 });
 
 async function packageVersion() {

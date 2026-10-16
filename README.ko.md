@@ -6,7 +6,7 @@
 
 [简体中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · **한국어** · [Français](README.fr.md)
 
-![release](https://img.shields.io/badge/release-2.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+![release](https://img.shields.io/badge/release-2.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20Harness-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
 [수요일 오후에 일어난 일](#수요일-오후에-일어난-일) · [무엇을 기억하나](#무엇을-기억하나) · [이럴 때 필요해진다](#이럴-때-필요해진다) · [기억 플러그인이 아니라 이것을 고르는 이유](#기억-플러그인이-아니라-이것을-고르는-이유) · [설치](#설치) · [평소 쓰는 법](#평소-쓰는-법) · [여러 기기와 클라우드 폴더](#여러-기기와-클라우드-폴더) · [우리는 이렇게 쓴다](#우리는-이렇게-쓴다) · [내장 원칙이 토큰을 아끼는 방식](#내장-원칙이-토큰을-아끼는-방식) · [왜 이렇게 설계했나](#왜-이렇게-설계했나) · [용어집](#용어집)
 
@@ -28,8 +28,8 @@
 </td>
 <td align="center" width="33%">
 
-### 2
-개 호스트에 하나의 기억<br><sub>Claude Code와 Codex가 같은 .ether를 읽는다</sub>
+### 3
+개 호스트에 하나의 기억<br><sub>Claude Code, Codex, DeepSeek Harness가 같은 .ether를 읽는다</sub>
 
 </td>
 </tr>
@@ -87,7 +87,7 @@ Einzbern은 이를 따른다. 강제하는 것은 딱 두 가지다. 작업 항�
 ## 이럴 때 필요해진다
 
 - 작업이 사흘 다섯 세션에 걸치는데, 나흘째의 모델이 첫날 정한 것을 여전히 알고 있다.
-- Claude Code와 Codex를 번갈아 쓰며 양쪽이 같은 기억을 읽기를 바란다.
+- Claude Code, Codex, DeepSeek Harness를 번갈아 쓰며 모두가 같은 기억을 읽기를 바란다.
 - 밤새 무인 배치 구현을 돌리고, 아침에 각 단계가 무엇을 어느 결정에 따라 했는지 되짚을 수 있다.
 - 데스크톱은 돌아가는 채로, 노트북을 들고 나가 이어서 쓴다.
 
@@ -101,7 +101,7 @@ Einzbern은 이를 따른다. 강제하는 것은 딱 두 가지다. 작업 항�
 |---|---|---|
 | 어떤 결정과 그 경위 | 비슷한 대화 조각 | 번호가 붙은 회의록. 작업 항목과 카드가 번호로 가리킨다 |
 | 어떤 일이 어디까지 됐는지 | 없음 | 작업 항목 네 단계. 관계는 필드: 무엇이 무엇을 막는지, 무엇이 무엇을 대체하는지, 어느 회의록이 결정했는지 |
-| 호스트 바꾸기 | 각자 따로 기억 | Claude Code와 Codex가 같은 .ether를 읽는다 |
+| 호스트 바꾸기 | 각자 따로 기억 | Claude Code, Codex, DeepSeek Harness가 같은 .ether를 읽는다 |
 | 기기 바꾸기 | 수동 동기화 또는 동기화 없음 | 클라우드 폴더에 둔다. 기기마다 스트림 하나, 동시에 써도 충돌 없음 |
 | 보고, 바꾸기 | 파일 열기 | Atelier: 변수, 규칙, 게이트 설정, 저장소 상태를 한 페이지에서 관리. 바꾸면 곧바로 AGENTS.md에 렌더링 |
 | 모델이 일하는 방식 | 플러그인은 관여하지 않음 | 묶지 않는다. 일곱 가지 원칙은 기본 꺼짐, 프로젝트별로 선택 |

@@ -1,1 +1,1 @@
-The Grail grants wishes. Einzbern remembers the wishes you made, the decisions you took, and the traps you fell into, and puts them in front of the model right before the prompt that needs them. For Claude Code and Codex.
+The Grail grants wishes. Einzbern remembers the wishes you made, the decisions you took, and the traps you fell into, and puts them in front of the model right before the prompt that needs them. For Claude Code, Codex and DeepSeek Harness.

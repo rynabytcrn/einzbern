@@ -6,7 +6,7 @@ The Grail grants wishes. Einzbern remembers the wishes you made, the decisions y
 
 [简体中文](README.md) · **English** · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md)
 
-![release](https://img.shields.io/badge/release-2.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+![release](https://img.shields.io/badge/release-2.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20Harness-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
 [What happened on Wednesday afternoon](#what-happened-on-wednesday-afternoon) · [What it remembers](#what-it-remembers) · [When you will want it](#when-you-will-want-it) · [Why this and not a memory plugin](#why-this-and-not-a-memory-plugin) · [Install](#install) · [Day to day](#day-to-day) · [Several devices and cloud folders](#several-devices-and-cloud-folders) · [How we use it ourselves](#how-we-use-it-ourselves) · [How the preset rules make your tokens go further](#how-the-preset-rules-make-your-tokens-go-further) · [Why it is designed this way](#why-it-is-designed-this-way) · [Glossary](#glossary)
 
@@ -28,8 +28,8 @@ runtime dependencies<br><sub>a single zero-dependency file, no database, no netw
 </td>
 <td align="center" width="33%">
 
-### 2
-hosts, one memory<br><sub>Claude Code and Codex read the same .ether</sub>
+### 3
+hosts, one memory<br><sub>Claude Code, Codex and DeepSeek Harness read the same .ether</sub>
 
 </td>
 </tr>
@@ -87,7 +87,7 @@ If nothing is strongly relevant, nothing happens. The model fetches full bodies 
 ## When you will want it
 
 - A task spans three days and five sessions, and the model on day four still knows what was settled on day one.
-- You alternate between Claude Code and Codex and want both reading the same memory.
+- You alternate between Claude Code, Codex and DeepSeek Harness and want all of them reading the same memory.
 - An unattended batch runs overnight, and in the morning you can trace what each step did and which decision it followed.
 - The desktop keeps working while you take the laptop out and continue.
 
@@ -101,7 +101,7 @@ Most memory solutions are a vector store or a stack of notes: they save fragment
 |---|---|---|
 | A decision and how it came about | A similar chat fragment | Numbered minutes; work items and cards point to them by number |
 | How far a piece of work has got | Nothing | Four levels of work items; relations are fields: what blocks what, what supersedes what, which minutes decided it |
-| Switching hosts | Each keeps its own | Claude Code and Codex read the same .ether |
+| Switching hosts | Each keeps its own | Claude Code, Codex and DeepSeek Harness read the same .ether |
 | Switching devices | Manual sync, or none | Put it in a cloud folder; one stream per device; simultaneous writes never conflict |
 | Looking and changing | Open files | Atelier: variables, rules, gate configuration and store state on one page; changes render into AGENTS.md at once |
 | How the model works | Not the plugin's concern | Not policed; seven principles, off by default, chosen per project |

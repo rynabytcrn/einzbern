@@ -24,6 +24,16 @@ Codex only. doctor's `hooks-present` and the fresh setup plan read this home's D
 writing them: a plugin that would run another launcher than this device directory's is red
 (`DSH_PLUGIN_HOOK_PATH_MISMATCH`); a profile without the plugin is a hint (`DSH_PLUGIN_MISSING`).
 
+### Mana Orchestrate Skill
+
+The skill's description and the five Mana Orchestrate READMEs name DeepSeek Harness beside Claude
+Code and Codex (MIN-275 D2). `SKILL_DESCRIPTION` reads "into Claude Code, Codex and DeepSeek
+Harness"; the READMEs' skill badge lists the three hosts, and their install section says that DSH
+reads the `~/.agents/skills` copy and recalls through the dsh-mana-orchestrate plugin, with no hook
+file written. The five Einzbern READMEs count three hosts and name DeepSeek Harness in their hosts
+badge, the hosts-one-memory tile, the alternating-hosts case and the switching-hosts row, and
+`package.json`'s description ends "For Claude Code, Codex and DeepSeek Harness." (MIN-277 D2).
+
 ### Release and Repository Tooling
 
 The `fast-uri` override is now `^3.1.8` (TCRN-CROSS-STORY-544, TCRN-CROSS-SUB-525, MIN-265 D1).

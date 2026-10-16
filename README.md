@@ -6,7 +6,7 @@
 
 **简体中文** · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md)
 
-![release](https://img.shields.io/badge/release-2.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+![release](https://img.shields.io/badge/release-2.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20Harness-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
 [周三下午发生的事](#周三下午发生的事) · [它记什么](#它记什么) · [什么时候你会想要它](#什么时候你会想要它) · [为什么是它，而不是一个记忆插件](#为什么是它而不是一个记忆插件) · [安装](#安装) · [日常怎么用](#日常怎么用) · [多设备与云文件夹](#多设备与云文件夹) · [我们自己怎么用它](#我们自己怎么用它) · [预设规则怎么帮你把 token 花在刀刃上](#预设规则怎么帮你把-token-花在刀刃上) · [为什么这样设计](#为什么这样设计) · [词汇表](#词汇表)
 
@@ -28,8 +28,8 @@
 </td>
 <td align="center" width="33%">
 
-### 2
-个宿主一份记忆<br><sub>Claude Code 与 Codex 读同一个 .ether</sub>
+### 3
+个宿主一份记忆<br><sub>Claude Code、Codex 与 DeepSeek Harness 读同一个 .ether</sub>
 
 </td>
 </tr>
@@ -87,7 +87,7 @@ Einzbern 照这个来。它只强制两件事：一张工单要写清目标，�
 ## 什么时候你会想要它
 
 - 任务跨了三天五个会话，第四天的模型还知道第一天定了什么。
-- Claude Code 和 Codex 换着用，两边读同一份记忆。
+- Claude Code、Codex 和 DeepSeek Harness 换着用，几边读同一份记忆。
 - 夜里跑无人值守的批量实施，早上能追溯每一步做了什么、依据哪条决定。
 - 桌面机在跑，你带着笔记本出门接着写。
 
@@ -101,7 +101,7 @@ Einzbern 照这个来。它只强制两件事：一张工单要写清目标，�
 |---|---|---|
 | 一条决定和它的来龙去脉 | 一段相似的聊天记录 | 有编号的纪要，工单和卡片用编号指向它 |
 | 一件事做到哪了 | 无 | 工单四级，关系是字段：谁阻塞谁、谁取代谁、由哪份纪要决定 |
-| 换宿主 | 各记各的 | Claude Code 与 Codex 读同一个 .ether |
+| 换宿主 | 各记各的 | Claude Code、Codex 与 DeepSeek Harness 读同一个 .ether |
 | 换设备 | 手动同步或不同步 | 放进云文件夹，每台设备一条流，同时写不冲突 |
 | 想看、想改 | 翻文件 | Atelier：变量、规则、门配置、库状态一页管理，改了立刻渲染进 AGENTS.md |
 | 模型的做事方式 | 插件不管 | 不管束；七条原则默认关闭，按项目自选 |

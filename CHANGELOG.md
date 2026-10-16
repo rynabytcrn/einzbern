@@ -30,7 +30,9 @@ The skill's description and the five Mana Orchestrate READMEs name DeepSeek Harn
 Code and Codex (MIN-275 D2). `SKILL_DESCRIPTION` reads "into Claude Code, Codex and DeepSeek
 Harness"; the READMEs' skill badge lists the three hosts, and their install section says that DSH
 reads the `~/.agents/skills` copy and recalls through the dsh-mana-orchestrate plugin, with no hook
-file written.
+file written. The five Einzbern READMEs count three hosts and name DeepSeek Harness in their hosts
+badge, the hosts-one-memory tile, the alternating-hosts case and the switching-hosts row, and
+`package.json`'s description ends "For Claude Code, Codex and DeepSeek Harness." (MIN-277 D2).
 
 ### Release and Repository Tooling
 

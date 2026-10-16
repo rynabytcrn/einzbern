@@ -6,7 +6,7 @@
 
 [简体中文](README.md) · [English](README.en.md) · **日本語** · [한국어](README.ko.md) · [Français](README.fr.md)
 
-![release](https://img.shields.io/badge/release-{{version}}-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+![release](https://img.shields.io/badge/release-{{version}}-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20Harness-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
 [水曜の午後に起きたこと](#水曜の午後に起きたこと) · [何を覚えるか](#何を覚えるか) · [こういうときに欲しくなる](#こういうときに欲しくなる) · [記憶プラグインではなく、これを選ぶ理由](#記憶プラグインではなくこれを選ぶ理由) · [インストール](#インストール) · [日々の使い方](#日々の使い方) · [複数デバイスとクラウドフォルダ](#複数デバイスとクラウドフォルダ) · [私たち自身の使い方](#私たち自身の使い方) · [内蔵の原則がトークンを無駄にしない仕組み](#内蔵の原則がトークンを無駄にしない仕組み) · [なぜこの設計か](#なぜこの設計か) · [用語集](#用語集)
 
@@ -28,8 +28,8 @@
 </td>
 <td align="center" width="33%">
 
-### 2
-つのホストに一つの記憶<br><sub>Claude Code と Codex が同じ .ether を読む</sub>
+### 3
+つのホストに一つの記憶<br><sub>Claude Code、Codex、DeepSeek Harness が同じ .ether を読む</sub>
 
 </td>
 </tr>
@@ -87,7 +87,7 @@ Einzbern はこれに倣う。強制するのは二つだけ。作業項目に�
 ## こういうときに欲しくなる
 
 - 作業が三日と五セッションにまたがり、四日目のモデルが初日に決めたことをまだ知っている。
-- Claude Code と Codex を交互に使い、両方に同じ記憶を読ませたい。
+- Claude Code、Codex、DeepSeek Harness を交互に使い、どれにも同じ記憶を読ませたい。
 - 夜間に無人でバッチ実装を走らせ、朝に各ステップが何をどの決定に基づいてやったか辿れる。
 - デスクトップが動いたまま、ノートを持って外に出て続きを書く。
 
@@ -101,7 +101,7 @@ Einzbern はこれに倣う。強制するのは二つだけ。作業項目に�
 |---|---|---|
 | ある決定とその経緯 | 似た会話の断片 | 番号付きの議事録。作業項目とカードが番号で指す |
 | ある仕事がどこまで進んだか | なし | 作業項目は四階層。関係はフィールド：何が何を塞ぐか、何が何に取って代わるか、どの議事録が決めたか |
-| ホストの切り替え | それぞれ別に記憶 | Claude Code と Codex が同じ .ether を読む |
+| ホストの切り替え | それぞれ別に記憶 | Claude Code、Codex、DeepSeek Harness が同じ .ether を読む |
 | デバイスの切り替え | 手動同期か、同期なし | クラウドフォルダに置く。デバイスごとに一つのストリーム、同時書き込みでも衝突しない |
 | 見る、変える | ファイルを開く | Atelier：変数、ルール、ゲート設定、保管庫の状態を一枚のページで管理。変更は即座に AGENTS.md へ描き出される |
 | モデルの仕事の仕方 | プラグインは関知しない | 縛らない。七つの原則は既定で無効、プロジェクトごとに選ぶ |

@@ -953,15 +953,16 @@ async function verifyPrivacy(options = {}) {
 }
 
 // TCRN-CROSS-MIN-280 D3: EINZBERN_PRIVACY_HISTORY_BASE names the pull request's base commit (CI
-// sets it on pull_request events only). The increment starts at the merge-base of HEAD and that
-// commit; unset or empty means the full HEAD-reachable history, and so does a HEAD that has no
-// commit beyond the merge-base.
+// sets it on pull_request events only). The increment is the commits reachable from HEAD and not
+// from that commit (`HEAD ^<base>`, the same set `HEAD ^<merge-base>` selects), read with rev-list
+// alone so the read-only Git boundary of local-command.mjs is unchanged. Unset or empty means the
+// full HEAD-reachable history, and so does a HEAD with no commit beyond the base.
 function privacyIncrementBase() {
   const raw = process.env.EINZBERN_PRIVACY_HISTORY_BASE;
   if (raw === undefined || raw === "") return null;
   assertion(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(raw), "PRIVACY_HISTORY_BASE_INVALID", raw);
-  const base = run("git", ["merge-base", "HEAD", raw]).trim();
-  assertion(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(base), "PRIVACY_HISTORY_BASE_INVALID", base);
+  const base = run("git", ["rev-parse", "--verify", `${raw}^{commit}`]).trim();
+  assertion(base === raw, "PRIVACY_HISTORY_BASE_INVALID", raw);
   return run("git", ["rev-list", "--count", "HEAD", `^${base}`]).trim() === "0" ? null : base;
 }
 

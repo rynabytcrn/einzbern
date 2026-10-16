@@ -36,6 +36,16 @@ runs is there. Not ok: `DOCTOR_HOOKS_MISMATCH`. Missing (`HOOK_MISSING`), more t
 (`HOOK_LEGACY_PRESENT`), or no launcher (`HOOK_LAUNCHER_MISSING`): repair. A settings file that is
 a symbolic link (`HOST_HOOKS_FILE_UNSUPPORTED`) is left alone; ask the user what to do with it.
 
+DSH keeps no hook file: its Mana Orchestrate plugin runs the launcher. When the user's home has
+`.dsh/profiles/`, `detail.hosts` also has a `dsh` entry with one row per profile: whether its
+`package.json` lists `dsh-mana-orchestrate`, the installed version, and the launcher the plugin
+would run (the `deviceHome` of its entry in `cordis.patch.yml`, else `EINZBERN_HOME` or
+`~/.einzbern`). A plugin that would run another launcher than this device directory's is red
+(`DSH_PLUGIN_HOOK_PATH_MISMATCH`): point the plugin's `deviceHome` at this device directory in DSH.
+A profile without the plugin (`DSH_PLUGIN_MISSING`) or with an unreadable `package.json`
+(`DSH_PROFILE_UNREADABLE`) is only a hint in the entry's `hints`. Doctor and setup never write a
+DSH profile; installing or configuring the plugin is done in DSH.
+
 ### skill-copies
 
 The skill copies for both hosts match what this device recorded for them. Not ok:
@@ -143,7 +153,11 @@ The hook answers a prompt only in a project this device's registry holds; anywhe
 with exit code 0 and prints nothing. Either way it keeps a log: `log/hook.ndjson` in the device
 directory, which is `.einzbern` in the user's home unless `EINZBERN_HOME` names another place.
 Each line is one JSON object with `schemaVersion` (`einzbern.hook-log.v1`), `at`, `event`, `cwd`
-and `reasonCode`, and says why one prompt got what it got.
+and `reasonCode`, and says why one prompt got what it got. The lines of a registered project's
+recall also carry `host` after `reasonCode`: `claude-code`, `codex` or `dsh`, the host the hook ran
+under (`EINZBERN_HOST` when it names one of them, otherwise read from the environment). `host` is an
+additive field of `einzbern.hook-log.v1`; the launcher's lines for prompts outside a registered
+project do not carry it.
 
 Every prompt in a registered project leaves one line, written by the current engine's recall,
 whether it was answered or not:

@@ -49,7 +49,7 @@
 ]
 ```
 
-- 默认表是两个宿主 `claude-code`、`codex` 与三个默认分类的组合，每条的 runner 就是它的宿主，`model`、`effort` 与 `note` 为空。
+- 默认表是两个宿主 `claude-code`、`codex` 与三个默认分类的组合（宿主 `dsh` 不在默认表里，可以自行添加它的记录），每条的 runner 就是它的宿主，`model`、`effort` 与 `note` 为空。
 - 默认表的编号从 10 起，每次加 10，按分类依次编号；同一分类内两个宿主交错，名字排在前面的宿主拿到较大的顺序。结果是：10 flagship 的 codex、20 flagship 的 claude-code、30 main 的 codex、40 main 的 claude-code、50 economy 的 codex、60 economy 的 claude-code。
 - 旧值照常读出，事件的字节不变：
   - 旧形状 `{宿主: {档名: {runner, model, effort}}}`，以及改名前的 `execution.dispatchTiers`（每一行以它所在的宿主作为 runner），都按上面的编号读成记录，档名就是分类。

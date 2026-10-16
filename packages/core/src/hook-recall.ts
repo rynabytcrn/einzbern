@@ -79,19 +79,24 @@ export function hookEventName(word: unknown): string | null {
 
 /**
  * The host running the hook. The command line names no host (477 R1), so it is read from the
- * environment: Claude Code gives every hook command it runs CLAUDE_PROJECT_DIR, and Codex is the
- * other host the hook is rendered for. Both read the same protocol (hookProtocolOutput), so the
- * answer never depends on this guess being right.
+ * environment. TCRN-CROSS-STORY-548 R2: EINZBERN_HOST, when it names one of HOST_HOOK_HOSTS, is
+ * the answer; the DSH plugin sets it to dsh on every spawn, because DSH's Claude Code hook bridge
+ * also gives the hook CLAUDE_PROJECT_DIR. Any other value, the empty string included, counts as
+ * unset and never fails the hook. Unset, Claude Code gives every hook command it runs
+ * CLAUDE_PROJECT_DIR, and Codex is the other host the hook is rendered for. Every host reads the
+ * same protocol (hookProtocolOutput), so the answer never depends on this guess being right.
  */
 export function hookHost(env: NodeJS.ProcessEnv = process.env): HostHookHost {
+  const declared = env["EINZBERN_HOST"];
+  if (typeof declared === "string" && (HOST_HOOK_HOSTS as readonly string[]).includes(declared)) return declared as HostHookHost;
   const projectDirectory = env["CLAUDE_PROJECT_DIR"];
   return typeof projectDirectory === "string" && projectDirectory.length > 0 ? "claude-code" : "codex";
 }
 
 /**
  * The JSON a host reads from the hook's standard output for `event`: `lines` joined by newlines as
- * the hookSpecificOutput's additionalContext. Claude Code and Codex read one shape, the one the
- * retired prompt-injection hook wrote for both.
+ * the hookSpecificOutput's additionalContext. Claude Code, Codex and DSH read one shape, the one
+ * the retired prompt-injection hook wrote for the first two.
  */
 export function hookProtocolOutput(host: HostHookHost, event: string, lines: readonly string[]): string {
   if (!HOST_HOOK_HOSTS.includes(host)) fail("HOOK_INPUT_INVALID", `host must be one of ${HOST_HOOK_HOSTS.join(", ")}`, { host: String(host) });

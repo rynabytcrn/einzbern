@@ -733,7 +733,7 @@ export { readLibraryTombstone } from "./workspace.js";
 export { applyWritableRoots, planWritableRoots } from "./host-writable-roots.js";
 // TCRN-CROSS-STORY-477 R1, R3, R4, R5: the one Einzbern hook a host's settings carry, rendered
 // with everything of the old harness taken out.
-export { HOST_HOOK_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
+export { HOST_HOOK_FILE_HOSTS, HOST_HOOK_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
 // TCRN-CROSS-STORY-477 R2, AC3: what that hook answers for a prompt in a registered project, and
 // (TCRN-CROSS-STORY-478 R4) what the two pointer hooks answer. TCRN-CROSS-SUB-483: the hook entry
 // reads the answer with the reason it carries (promptRecallOutcome), so that is what is exported.
@@ -873,6 +873,8 @@ export type { KeyAlias, LibraryReplay, LibraryStreamHead, RejectedEvent } from "
 // and one project, each green or naming its red; the doctor verb reads it, and every setup apply
 // reports it as its self-check.
 export { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_REASON_CODES, runDoctor } from "./doctor.js";
+export { DSH_PLUGIN_REASON_CODES, inspectDshPlugin } from "./dsh-plugin.js";
+export type { DshPluginInspection, DshProfileInspection } from "./dsh-plugin.js";
 export type { DoctorCheck, DoctorCheckName, DoctorInput, DoctorReasonCode } from "./doctor.js";
 // TCRN-CROSS-STORY-480 R1 to R6 (TCRN-CROSS-SUB-323 to SUB-327): setup, the installation wizard: a
 // plan that writes nothing and the apply of a confirmed plan, in six modes. fresh installs

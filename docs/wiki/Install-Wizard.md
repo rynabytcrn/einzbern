@@ -46,6 +46,8 @@ einzbern setup --mode fresh|restore|update|repair|migrate|uninstall --project <�
 
 向导不提交、不推送、不改 `.gitignore`，也不删除文件。更新引擎不会自动重写项目的 `AGENTS.md` 或 `CLAUDE.md`。完整健康检查使用 `doctor --project <项目目录>`。
 
+宿主钩子写给 Claude Code 与 Codex。DSH（DeepSeek Harness）也是宿主，但不保存由 Einzbern 写入的钩子文件，钩子由它的 Mana Orchestrate 插件运行，向导不为 DSH 写任何钩子文件，也不写 DSH profile。用户主目录下有 `.dsh/profiles/` 时，`fresh` 的计划带 `dshPlugin`：逐个 profile 列出是否装了 `dsh-mana-orchestrate`、版本，以及插件将运行的启动器是否就是本机设备目录的 `engine/hook.mjs`（`hookPathMatches`）。`doctor` 的 `hooks-present` 同样列出 `dsh` 一项：启动器不一致判红（`DSH_PLUGIN_HOOK_PATH_MISMATCH`），未装插件只作提示（`DSH_PLUGIN_MISSING`）。插件的安装与配置在 DSH 里完成。
+
 库放在项目外时，`fresh`、`restore` 与 `repair` 会把本机库的绝对路径写进项目的 `.claude/settings.local.json` 与 `.codex/config.toml`。其中已被 Git 跟踪（在索引中）的文件，计划会在任何写入之前逐个列入 `warnings`：每项含文件（相对项目根）、原因码 `HOST_WRITABLE_ROOTS_TRACKED_BY_GIT` 与说明，说明措辞与开发脚本 host-render 相同；`SETUP_APPLIED` 的 `warnings` 同样列出。警示不阻止应用：提交这些文件会公开本机的库路径，是否继续跟踪由用户决定，向导不改动 Git 索引。两个文件都未被跟踪，或库在项目内时，`warnings` 为空。
 
 ## Coordination initialization

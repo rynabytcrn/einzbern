@@ -59,6 +59,7 @@ import { LEGACY_CONTAINER_DIRECTORY, LEGACY_DEVICE_DIRECTORY, LEGACY_HOOK_SCRIPT
 export const HOST_HOOKS_REASON_CODES = Object.freeze([
   "HOST_HOOKS_CONCURRENT_MODIFICATION",
   "HOST_HOOKS_FILE_UNSUPPORTED",
+  "HOST_HOOKS_HOST_NOT_FILE_BASED",
   "HOST_HOOKS_INPUT_INVALID",
   "HOST_HOOKS_PATH_UNSUPPORTED",
 ] as const);
@@ -84,8 +85,13 @@ function unsupported(file: string, reason: string): never {
   return fail("HOST_HOOKS_FILE_UNSUPPORTED", `${file}: ${reason}`, { file });
 }
 
-export type HostHookHost = "claude-code" | "codex";
-export const HOST_HOOK_HOSTS: readonly HostHookHost[] = Object.freeze(["claude-code", "codex"]);
+// Every host the hook may run under. TCRN-CROSS-STORY-548 R1: DSH runs the same launcher through
+// its plugin and reads the same protocol, but keeps no hook file Einzbern writes; the hosts whose
+// hook file Einzbern renders, merges, reads and writes are HOST_HOOK_FILE_HOSTS.
+export type HostHookHost = "claude-code" | "codex" | "dsh";
+export const HOST_HOOK_HOSTS: readonly HostHookHost[] = Object.freeze(["claude-code", "codex", "dsh"]);
+export type HostHookFileHost = Exclude<HostHookHost, "dsh">;
+export const HOST_HOOK_FILE_HOSTS: readonly HostHookFileHost[] = Object.freeze(["claude-code", "codex"]);
 export type HostHookScope = "user" | "project";
 export const HOST_HOOK_SCOPES: readonly HostHookScope[] = Object.freeze(["user", "project"]);
 
@@ -109,7 +115,7 @@ export const HOST_HOOK_LAUNCHER = ENGINE_HOOK_LAUNCHER;
 // Do not impose a product deadline on generated host hooks. The host owns its
 // execution policy; omission does not claim that the host has no default timeout.
 // Where each host keeps its hooks, relative to the scope's root: the user's home or the project.
-export const HOST_HOOK_FILES: Readonly<Record<HostHookHost, string>> = Object.freeze({
+export const HOST_HOOK_FILES: Readonly<Record<HostHookFileHost, string>> = Object.freeze({
   "claude-code": ".claude/settings.json",
   codex: ".codex/hooks.json",
 });
@@ -143,7 +149,7 @@ export interface HostHooksRequest {
 }
 
 export interface HostHooksExpectation {
-  readonly host: HostHookHost;
+  readonly host: HostHookFileHost;
   readonly scope: HostHookScope;
   readonly platform: NodeJS.Platform;
   readonly deviceHome: string;
@@ -208,6 +214,11 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   if (!HOST_HOOK_HOSTS.includes(request.host)) {
     fail("HOST_HOOKS_INPUT_INVALID", `host must be one of ${HOST_HOOK_HOSTS.join(", ")}`, { host: String(request.host) });
   }
+  // TCRN-CROSS-STORY-548 R1: no hook file is ever planned for DSH; its plugin runs the launcher.
+  if (!(HOST_HOOK_FILE_HOSTS as readonly string[]).includes(request.host)) {
+    fail("HOST_HOOKS_HOST_NOT_FILE_BASED", `${request.host} keeps no hook file Einzbern writes; hook files are written for ${HOST_HOOK_FILE_HOSTS.join(", ")}`, { host: request.host });
+  }
+  const host = request.host as HostHookFileHost;
   if (!HOST_HOOK_SCOPES.includes(request.scope)) {
     fail("HOST_HOOKS_INPUT_INVALID", `scope must be one of ${HOST_HOOK_SCOPES.join(", ")}`, { scope: String(request.scope) });
   }
@@ -226,15 +237,15 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
     }
   }
   return {
-    host: request.host,
+    host,
     scope: request.scope,
     platform,
     deviceHome: request.deviceHome,
     install,
     navigation,
     launcher,
-    hooksFile: HOST_HOOK_FILES[request.host],
-    configFile: request.host === "codex" ? CODEX_CONFIG_FILE : null,
+    hooksFile: HOST_HOOK_FILES[host],
+    configFile: host === "codex" ? CODEX_CONFIG_FILE : null,
     groups: Object.freeze(groups),
   };
 }
@@ -670,7 +681,7 @@ export type HostHooksOutcome = "HOST_HOOKS_WRITTEN" | "HOST_HOOKS_CURRENT";
 
 export interface AppliedHostHooks {
   readonly reasonCode: HostHooksOutcome;
-  readonly host: HostHookHost;
+  readonly host: HostHookFileHost;
   readonly scope: HostHookScope;
   readonly root: string;
   // Where the replaced originals were copied; null when no existing file changed.

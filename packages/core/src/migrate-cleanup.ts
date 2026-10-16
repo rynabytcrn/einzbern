@@ -48,8 +48,8 @@ import { dirname, join, resolve } from "node:path";
 // evaluates it, whichever module a caller imports first.
 import "./index.js";
 import { backupsPath } from "./device-home.js";
-import { HOST_HOOK_FILES, HOST_HOOK_HOSTS, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
-import type { HostHookFile, HostHookHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
+import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
+import type { HostHookFile, HostHookFileHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
 import type { AgentsNavigationChoice } from "./machine-settings.js";
 import type { MigrationCleanupItem } from "./migrate-legacy.js";
 import { LEGACY_DEVICE_DIRECTORY, LEGACY_ENGINE_NAME, LEGACY_INJECTION_STATE_DIRECTORY } from "./names.js";
@@ -162,14 +162,14 @@ function addItem(items: MigrateCleanupItem[], item: MigrateCleanupItem): void {
 interface HostTarget {
   readonly root: string;
   readonly scope: HostHookScope;
-  readonly host: HostHookHost;
+  readonly host: HostHookFileHost;
 }
 
 // The user's files first, then each project's, each host in host-hooks.ts's order.
 function hostTargets(roots: CleanupRoots): readonly HostTarget[] {
   return [
-    ...HOST_HOOK_HOSTS.map((host): HostTarget => ({ root: roots.home, scope: "user", host })),
-    ...roots.projects.flatMap((root) => HOST_HOOK_HOSTS.map((host): HostTarget => ({ root, scope: "project", host }))),
+    ...HOST_HOOK_FILE_HOSTS.map((host): HostTarget => ({ root: roots.home, scope: "user", host })),
+    ...roots.projects.flatMap((root) => HOST_HOOK_FILE_HOSTS.map((host): HostTarget => ({ root, scope: "project", host }))),
   ];
 }
 

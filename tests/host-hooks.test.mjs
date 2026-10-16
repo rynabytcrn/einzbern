@@ -352,6 +352,11 @@ test("477-R1, R3: only UserPromptSubmit is rendered, the same for both hosts, an
   assert.deepEqual(clean.groups, {});
   assert.deepEqual(mergeHostHooks(null, clean).document, {});
   assert.throws(() => planHostHooks({ host: "cursor", scope: "user", deviceHome }), (error) => error?.reasonCode === "HOST_HOOKS_INPUT_INVALID");
+  // TCRN-CROSS-STORY-548 R1, AC1: DSH is a host the hook runs under, but no hook file is planned for it.
+  for (const scope of ["user", "project"]) {
+    assert.throws(() => planHostHooks({ host: "dsh", scope, deviceHome }), (error) => error?.reasonCode === "HOST_HOOKS_HOST_NOT_FILE_BASED" && error.details.host === "dsh");
+  }
+  assert.equal(Object.hasOwn(HOST_HOOK_FILES, "dsh"), false, "no hook file is named for DSH");
   assert.throws(() => planHostHooks({ host: "codex", scope: "machine", deviceHome }), (error) => error?.reasonCode === "HOST_HOOKS_INPUT_INVALID");
 });
 

@@ -6,14 +6,14 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   FRAMEWORK_VERSION,
-  HOST_HOOK_HOSTS,
+  HOST_HOOK_FILE_HOSTS,
   acquireFileLock,
   applyHostHooks,
   applyMachineSettingSet,
@@ -66,7 +66,7 @@ async function healthy(context) {
   // The library writes below go through this device directory, as the engine's own writes do.
   process.env.EINZBERN_HOME = deviceHome;
   await writeEngine(deviceHome, FRAMEWORK_VERSION);
-  for (const host of HOST_HOOK_HOSTS) {
+  for (const host of HOST_HOOK_FILE_HOSTS) {
     await applyHostHooks(await readHostHooks(planHostHooks({ host, scope: "user", deviceHome }), { root: home, home }), { at: AT });
   }
   const skill = join(base, "skill");
@@ -133,7 +133,7 @@ test("480-AC5: a device and project as setup leaves them are green on all eight 
   assert.deepEqual(results.map((entry) => [entry.check, entry.ok, entry.reasonCode]), DOCTOR_CHECKS.map((check) => [check, true, null]));
   for (const entry of results) assert.deepEqual(entry.detail.causes, [], entry.check);
   assert.equal(byCheck(results, "engine-version").detail.current, FRAMEWORK_VERSION);
-  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_HOSTS.map((host) => [host, 1]));
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_FILE_HOSTS.map((host) => [host, 1]));
   assert.equal(byCheck(results, "registry").detail.via, "project-path");
   assert.equal(byCheck(results, "library-format").detail.source, "registry");
   assert.deepEqual(byCheck(results, "managed-sections").detail.pending, []);
@@ -176,14 +176,14 @@ test("478-AC5: hooks-present accepts declined-navigation pointers and reports a 
     occurredAt: AT,
     path: join(fixture.deviceHome, MACHINE_SETTINGS_FILE_NAME),
   });
-  for (const host of HOST_HOOK_HOSTS) {
+  for (const host of HOST_HOOK_FILE_HOSTS) {
     const plan = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome: fixture.deviceHome, navigation: "declined" }), { root: fixture.home, home: fixture.home });
     await applyHostHooks(plan, { at: AT });
   }
 
   const results = await doctor(fixture);
   assert.ok(results.every((entry) => entry.ok), JSON.stringify(results));
-  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_HOSTS.map((host) => [host, 1]));
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_FILE_HOSTS.map((host) => [host, 1]));
 
   const settings = join(fixture.home, ".claude", "settings.json");
   const document = JSON.parse(await readFile(settings, "utf8"));
@@ -357,4 +357,88 @@ test("540-GWT4: managed-sections checks a coordination library's registered root
   const changed = await doctor(fixture);
   assertOnlyRed(changed, "managed-sections", "MANAGED_SECTION_PENDING");
   assert.deepEqual(byCheck(changed, "managed-sections").detail.pending, ["AGENTS.md#rule:autonomy"]);
+});
+
+// TCRN-CROSS-STORY-548 R4, AC4: with DSH profiles in the home, hooks-present carries a dsh entry
+// for what each profile's plugin would run. Another launcher than this device directory's is red;
+// a profile without the plugin is a hint and the check stays green. Nothing is written.
+async function dshProfile(fixture, name, { installed = true, version = "0.1.0", patch = null } = {}) {
+  const profile = join(fixture.home, ".dsh", "profiles", name);
+  await mkdir(profile, { recursive: true });
+  await writeFile(join(profile, "package.json"), `${JSON.stringify({ name: `profile-${name}`, dependencies: installed ? { "dsh-mana-orchestrate": `^${version}` } : { other: "1.0.0" } })}\n`);
+  if (installed) {
+    await mkdir(join(profile, "node_modules", "dsh-mana-orchestrate"), { recursive: true });
+    await writeFile(join(profile, "node_modules", "dsh-mana-orchestrate", "package.json"), `${JSON.stringify({ name: "dsh-mana-orchestrate", version })}\n`);
+  }
+  if (patch !== null) await writeFile(join(profile, "cordis.patch.yml"), patch);
+  return profile;
+}
+
+async function treeSnapshot(root) {
+  const entries = [];
+  async function walk(directory) {
+    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(directory, entry.name);
+      const info = await lstat(path);
+      entries.push([path, info.mtimeMs, info.size]);
+      if (entry.isDirectory()) await walk(path);
+    }
+  }
+  await walk(root);
+  return entries;
+}
+
+const dshEntry = (results) => byCheck(results, "hooks-present").detail.hosts.find((host) => host.host === "dsh");
+
+test("548-AC4: no DSH profiles, no dsh entry", async (context) => {
+  const fixture = await healthy(context);
+  const results = await doctor(fixture);
+  assert.ok(results.every((entry) => entry.ok));
+  assert.equal(dshEntry(results), undefined);
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => host.host), ["claude-code", "codex"]);
+});
+
+test("548-AC4: a profile whose plugin runs this device directory's launcher is green, and doctor writes nothing under .dsh", async (context) => {
+  const fixture = await healthy(context);
+  await dshProfile(fixture, "p1", { patch: `- id: locale\n  config:\n    preference: zh\n- insert:\n    - id: mana-orchestrate\n      name: dsh-mana-orchestrate\n      config:\n        deviceHome: "${fixture.deviceHome}"\n` });
+  await dshProfile(fixture, "p2", { version: "0.2.0" });
+  const before = await treeSnapshot(join(fixture.home, ".dsh"));
+  const results = await doctor(fixture);
+  assert.deepEqual(await treeSnapshot(join(fixture.home, ".dsh")), before, "mtime and size of every entry are unchanged");
+  assert.ok(results.every((entry) => entry.ok), JSON.stringify(results));
+  const dsh = dshEntry(results);
+  const launcher = join(fixture.deviceHome, "engine", "hook.mjs");
+  assert.deepEqual(dsh.profiles, [
+    { name: "p1", installed: true, version: "0.1.0", hookPath: launcher, hookPathMatches: true, causes: [] },
+    // No patch file: the plugin's default, EINZBERN_HOME, which the fixture points at its device directory.
+    { name: "p2", installed: true, version: "0.2.0", hookPath: launcher, hookPathMatches: true, causes: [] },
+  ]);
+  assert.deepEqual([dsh.causes, dsh.hints], [[], []]);
+});
+
+test("548-AC4: a profile without the plugin is a hint, and hooks-present stays green", async (context) => {
+  const fixture = await healthy(context);
+  await dshProfile(fixture, "p1", { installed: false });
+  const before = await treeSnapshot(join(fixture.home, ".dsh"));
+  const results = await doctor(fixture);
+  assert.deepEqual(await treeSnapshot(join(fixture.home, ".dsh")), before);
+  assert.ok(results.every((entry) => entry.ok), JSON.stringify(results));
+  const dsh = dshEntry(results);
+  assert.deepEqual(dsh.profiles, [{ name: "p1", installed: false, version: null, hookPath: null, hookPathMatches: null, causes: ["DSH_PLUGIN_MISSING"] }]);
+  assert.deepEqual([dsh.causes, dsh.hints], [[], ["DSH_PLUGIN_MISSING"]]);
+});
+
+test("548-AC4: a plugin that runs another launcher makes hooks-present red with DSH_PLUGIN_HOOK_PATH_MISMATCH", async (context) => {
+  const fixture = await healthy(context);
+  const elsewhere = join(fixture.base, "elsewhere-device");
+  await dshProfile(fixture, "p1", { patch: `- insert:\n    - id: mana-orchestrate\n      name: dsh-mana-orchestrate\n      config:\n        deviceHome: ${elsewhere}\n` });
+  const before = await treeSnapshot(join(fixture.home, ".dsh"));
+  const results = await doctor(fixture);
+  assert.deepEqual(await treeSnapshot(join(fixture.home, ".dsh")), before);
+  assertOnlyRed(results, "hooks-present", "DSH_PLUGIN_HOOK_PATH_MISMATCH");
+  const dsh = dshEntry(results);
+  assert.deepEqual(dsh.profiles, [{ name: "p1", installed: true, version: "0.1.0", hookPath: join(elsewhere, "engine", "hook.mjs"), hookPathMatches: false, causes: ["DSH_PLUGIN_HOOK_PATH_MISMATCH"] }]);
+  assert.deepEqual(dsh.causes, ["DSH_PLUGIN_HOOK_PATH_MISMATCH"]);
+  // The two file hosts are untouched by it.
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.slice(0, 2).map((host) => host.causes), [[], []]);
 });

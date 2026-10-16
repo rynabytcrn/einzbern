@@ -15,6 +15,8 @@ import {
 test("S369: vocabulary distinguishes open configuration strings from known renderers", () => {
   const vocabulary = readVocabulary();
   assert.deepEqual(vocabulary.hosts, EXECUTION_HOSTS);
+  // TCRN-CROSS-STORY-548 R5: execution configuration accepts dsh.
+  assert.deepEqual([...EXECUTION_HOSTS], ["claude-code", "codex", "dsh"]);
   assert.equal(vocabulary.hostValueKind, "string");
   assert.equal(vocabulary.effortValueKind, "string");
   assert.equal(Object.hasOwn(vocabulary, "roles"), false);

@@ -24,7 +24,7 @@ function test(name, optionsOrBody, maybeBody) {
 }
 
 import { coreExportedSymbols, inspectChainValidation, inspectPlatform } from "../scripts/platform-doctor.mjs";
-import { HOST_HOOK_HOSTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
+import { HOST_HOOK_FILE_HOSTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { BRAND, DEVICE_HOME_ENTRIES, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS } from "../dist/build/packages/protocol/src/index.js";
 
@@ -223,7 +223,7 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
     // real device directory. A fixture whose hook names an absent target would red on
     // executability and teach nothing about coverage.
     const deviceHome = join(home, DIRECTORY.device);
-    for (const host of HOST_HOOK_HOSTS) {
+    for (const host of HOST_HOOK_FILE_HOSTS) {
       const expected = planHostHooks({ host, scope: "project", deviceHome });
       await mkdir(join(expected.launcher, ".."), { recursive: true });
       await writeFile(expected.launcher, "export {}\n");

@@ -28,7 +28,10 @@ const QUIET = "rename parser module, rerun compiler";
 const at = (second) => `2026-10-14T12:00:${String(second).padStart(2, "0")}Z`;
 const idOf = (key) => deriveStableId("work", key);
 const STORY_LINE = `[Story planned] Zebrafish tank · HOOK-STORY · ${idOf("HOOK-STORY")} · Wetland epic ‹ Aviary initiative`;
-const RECALL_KEYS = ["schemaVersion", "at", "event", "cwd", "reasonCode"];
+// TCRN-CROSS-STORY-548 R3: host follows reasonCode, an additive field of einzbern.hook-log.v1.
+const RECALL_KEYS = ["schemaVersion", "at", "event", "cwd", "reasonCode", "host"];
+// What a v1 reader written before the host field takes from each line.
+const V1_KEYS = ["schemaVersion", "at", "event", "cwd", "reasonCode"];
 const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1" };
 
 async function scratch(context) {
@@ -81,14 +84,20 @@ async function registeredProject(base) {
   return { directory, library };
 }
 
-function runHook(launcherPath, { home, cwd, prompt = PROMPT, event = "user-prompt-submit" }) {
+function runHook(launcherPath, { home, cwd, prompt = PROMPT, event = "user-prompt-submit", env = {} }) {
   const payload = { session_id: "hook-recall-log-test", transcript_path: join(home, "transcript.jsonl"), cwd, hook_event_name: "UserPromptSubmit", prompt };
   return spawnSync(process.execPath, [launcherPath, event], {
     cwd,
     input: JSON.stringify(payload),
     encoding: "utf8",
-    env: { ...process.env, EINZBERN_HOME: home, CLAUDE_PROJECT_DIR: cwd },
+    env: { ...withoutHost(process.env), EINZBERN_HOME: home, CLAUDE_PROJECT_DIR: cwd, ...env },
   });
+}
+
+function withoutHost(env) {
+  const copy = { ...env };
+  delete copy.EINZBERN_HOST;
+  return copy;
 }
 
 async function hookLog(home) {
@@ -133,7 +142,7 @@ test("SUB-483 (GWT4): each prompt the launcher passes to a registered project's 
   let log = await hookLog(home);
   assert.equal(log.length, 1);
   assert.deepEqual(Object.keys(log[0]), RECALL_KEYS);
-  assert.deepEqual({ ...log[0], at: undefined }, { schemaVersion: "einzbern.hook-log.v1", at: undefined, event: "user-prompt-submit", cwd, reasonCode: "HOOK_RECALL_ANSWERED" });
+  assert.deepEqual({ ...log[0], at: undefined }, { schemaVersion: "einzbern.hook-log.v1", at: undefined, event: "user-prompt-submit", cwd, reasonCode: "HOOK_RECALL_ANSWERED", host: "claude-code" });
   assert.equal(new Date(log[0].at).toISOString(), log[0].at);
   if (process.platform !== "win32") {
     assert.equal((await stat(join(home, "log"))).mode & 0o777, 0o700, "the log directory is the user's alone");
@@ -196,4 +205,31 @@ test("SUB-483: a log that cannot be written changes nothing the hook prints, and
   await mkdir(join(home, "log", "hook.ndjson"), { recursive: true });
   for (const prompt of [PROMPT, QUIET]) assert.deepEqual(triple(runHook(launcherPath, { home, cwd: directory, prompt })), expected.get(prompt), prompt);
   assert.ok((await stat(join(home, "log", "hook.ndjson"))).isDirectory());
+});
+
+test("548-R3: a recall line names the host EINZBERN_HOST declares, and a v1 reader still reads every line", async (context) => {
+  const { base, home } = await scratch(context);
+  const launcherPath = await installEngine(home);
+  const { directory } = await registeredProject(base);
+  const claude = runHook(launcherPath, { home, cwd: directory });
+  const dsh = runHook(launcherPath, { home, cwd: directory, env: { EINZBERN_HOST: "dsh" } });
+  const codex = runHook(launcherPath, { home, cwd: directory, prompt: QUIET, env: { CLAUDE_PROJECT_DIR: "" } });
+  for (const run of [claude, dsh, codex]) assert.deepEqual([run.status, run.stderr], [0, ""]);
+  assert.equal(dsh.stdout, claude.stdout, "dsh reads the same protocol");
+  const log = await hookLog(home);
+  assert.deepEqual(log.map((line) => [line.reasonCode, line.host]), [
+    ["HOOK_RECALL_ANSWERED", "claude-code"],
+    ["HOOK_RECALL_ANSWERED", "dsh"],
+    ["HOOK_RECALL_NO_HITS", "codex"],
+  ]);
+  assert.ok(log.every((line) => line.schemaVersion === "einzbern.hook-log.v1"), "the schema version is unchanged");
+  // A v1 reader picks its five keys and ignores the rest; each line reads as it did before.
+  const v1 = log.map((line) => Object.fromEntries(V1_KEYS.map((key) => [key, line[key]])));
+  assert.deepEqual(v1.map((line) => Object.keys(line)), log.map(() => V1_KEYS));
+  assert.deepEqual(v1.map(summary), [
+    ["user-prompt-submit", directory, "HOOK_RECALL_ANSWERED"],
+    ["user-prompt-submit", directory, "HOOK_RECALL_ANSWERED"],
+    ["user-prompt-submit", directory, "HOOK_RECALL_NO_HITS"],
+  ]);
+  assert.ok(v1.every((line) => V1_KEYS.every((key) => typeof line[key] === "string" && line[key].length > 0)));
 });

@@ -733,21 +733,28 @@ export function normalizePrivacyText(content) {
 
 // TCRN-CROSS-MIN-279 D1: identity lines of individually reviewed commits that are already public
 // history on main and cannot be rewritten without a force push. Each entry is the commit's object
-// id and the sha256 of one full `author` or `committer` line, so the address itself is not kept
+// id and the sha256 of one full line (`author`, `committer`, or a named message line), so the text is not kept
 // here; any other commit, any other line, or the same commit with a changed line stays a finding.
 // 72ae480e is the web merge of PR #10 (TCRN-CROSS-STORY-548), authored with the account's primary
-// address and committed by GitHub's web-flow identity.
+// address and committed by GitHub's web-flow identity. 440f297d is the web merge of PR #13, authored
+// under the account's profile name and committed by the same web-flow identity (TCRN-CROSS-MIN-281
+// D1); from then on pull requests are merged locally under the noreply identity, so no further
+// web-merge commit is added here.
 const REVIEWED_COMMIT_IDENTITY_LINES = new Set([
   "72ae480e5ce142db481ecc65bccbdd3abe129643\u00006044624858c9b74e081c24d084d4cf0b24e2ecdbedc07a401a0e0621c4703d94",
   "72ae480e5ce142db481ecc65bccbdd3abe129643\u00006ed6143fe0d2c0750b9cc4f94dff13095b84105b7ca8ca175ca91ff62f3b8497",
+  "440f297d0f42c14714fea2063ec660f0017f4809\u0000a5cc6c26eb0ef10142478ed9dc7d381292d778114ca7ab4cb8dde4a5a20423a8",
+  "440f297d0f42c14714fea2063ec660f0017f4809\u0000f87537231a0e9a15350f8389f381a993ff8e7d343199aaec0b2d4e6cc71e4d98",
+  // The web merge's subject line, `Merge pull request #13 from <owner>/<branch>`, names the owner.
+  "440f297d0f42c14714fea2063ec660f0017f4809\u0000599e975185df05adbdd1d7a7f846beb540317c81d389db525e4f3462585f0aea",
 ]);
 
 function reviewedCommitIdentity(entry, line) {
   if (entry.kind !== "commit" || !entry.label.startsWith("git-commit:")) return null;
-  const role = /^(author|committer) /u.exec(line)?.[1];
-  if (role === undefined) return null;
   const object = entry.label.slice("git-commit:".length);
-  return REVIEWED_COMMIT_IDENTITY_LINES.has(`${object}\u0000${privacyDigest(line)}`) ? `${role} [ALLOWED_REVIEWED_COMMIT_IDENTITY]` : null;
+  if (!REVIEWED_COMMIT_IDENTITY_LINES.has(`${object}\u0000${privacyDigest(line)}`)) return null;
+  const role = /^(author|committer) /u.exec(line)?.[1];
+  return role === undefined ? "[ALLOWED_REVIEWED_COMMIT_LINE]" : `${role} [ALLOWED_REVIEWED_COMMIT_IDENTITY]`;
 }
 
 function sanitizeAllowedPublicMetadata(entry, owner, repositories) {
@@ -771,7 +778,7 @@ function sanitizeAllowedPublicMetadata(entry, owner, repositories) {
       }
       const [, role, name, , login] = match;
       if (name !== login) {
-        return line;
+        return reviewedCommitIdentity(entry, line) ?? line;
       }
       return `${role} [ALLOWED_PUBLIC_GIT_HOSTING_IDENTITY]`;
     })

@@ -36,7 +36,8 @@ The privacy scan allows the reviewed identity lines of merge commit `72ae480e` (
 D1). That web merge of PR #10 carries the account's primary address, and it is public history on
 `main`. The allowance is the commit's object id with the sha256 of each full `author` and
 `committer` line. The same lines on any other commit, or a changed line on this one, are still
-`EMAIL_IDENTIFIER` findings.
+`EMAIL_IDENTIFIER` findings. Merge commit `440f297d`, the web merge of PR #13, is allowed the same way
+(TCRN-CROSS-MIN-281 D1); from then on pull requests are merged locally under the noreply identity.
 
 ## 2.2.1
 

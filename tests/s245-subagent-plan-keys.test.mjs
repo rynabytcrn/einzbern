@@ -65,7 +65,8 @@ test("S369, STORY-484 R3: settings are sorted in source, the dispatch keys retir
   const vocabulary = await invoke(["vocabulary"]);
   assert.equal(vocabulary.hostValueKind, "string");
   assert.equal(vocabulary.effortValueKind, "string");
-  assert.deepEqual(vocabulary.hosts, ["claude-code", "codex"]);
+  // TCRN-CROSS-STORY-548 AC5: vocabulary.hosts is EXECUTION_HOSTS, which names dsh as well.
+  assert.deepEqual(vocabulary.hosts, ["claude-code", "codex", "dsh"]);
   assert.equal(Object.hasOwn(vocabulary, "roles"), false);
   assert.deepEqual(vocabulary.settingsEnums.map((term) => [term.key, term.valueSource]), [["artifact.language", "settings-catalog"]]);
 });

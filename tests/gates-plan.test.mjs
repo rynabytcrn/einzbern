@@ -16,7 +16,7 @@ import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { checkGateDeclaration, listGates, removeGate, setGate } from "../dist/build/packages/core/src/gates-config.js";
-import { changedFiles, compileGlob, gateDeclarationsDigest, matchesGlob, planGates } from "../dist/build/packages/core/src/gates-plan.js";
+import { changedFiles, compileGlob, gateDeclarationsDigest, matchesGlob, planGates, resolveGateRoot } from "../dist/build/packages/core/src/gates-plan.js";
 
 let second = 0;
 const at = () => {
@@ -239,6 +239,20 @@ test("485-R2: the changes are the base's difference plus staged, unstaged, delet
   for (const base of ["no-such-commit", "--output=x", "HEAD..HEAD~1 extra"]) {
     await assert.rejects(planGates({ projectRoot: root, gates: GATES, base }), { reasonCode: "GATES_BASE_INVALID" }, base);
   }
+});
+
+test("gate roots allow dot-prefixed children without permitting parent or symlink escapes", async (context) => {
+  const base = await scratch(context);
+  const root = join(base, "project");
+  await mkdir(join(root, "..cache"), { recursive: true });
+  await mkdir(join(base, "outside"));
+  assert.equal(await resolveGateRoot(root, "."), root);
+  assert.equal(await resolveGateRoot(root, "..cache"), join(root, "..cache"));
+  for (const escape of ["..", "../outside"]) {
+    await assert.rejects(resolveGateRoot(root, escape), { reasonCode: "GATES_ROOT_INVALID" }, escape);
+  }
+  await symlink(join(base, "outside"), join(root, "..linked"), "dir");
+  await assert.rejects(resolveGateRoot(root, "..linked"), { reasonCode: "GATES_ROOT_INVALID" });
 });
 
 test("485-R2: each root takes its own changes, relative to itself", async (context) => {

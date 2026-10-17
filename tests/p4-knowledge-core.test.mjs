@@ -39,6 +39,7 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   listKnowledgeMetadata,
+  materializeWorkspace,
   readKnowledgeBody,
   readKnowledgeSnippet,
   rebaseKnowledgeStore,
@@ -50,7 +51,7 @@ import {
   lockPath,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
-import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
+import { calculateKnowledgeSourceDigest, readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (day, second = 0) => `2026-07-${String(day).padStart(2, "0")}T14:00:${String(second).padStart(2, "0")}Z`;
@@ -1548,6 +1549,24 @@ test("INIT-047 source digest check reports changes without hiding metadata", asy
   } finally { await fx.close(); }
 });
 
+test("knowledge sources allow dot-prefixed children without permitting parent or symlink escapes", async () => {
+  const fx = await workspaceFixture({ externalKey: "FIXTURE-SOURCE-CONTAINMENT" });
+  try {
+    await mkdir(join(fx.workspace, "..cache"));
+    await writeFile(join(fx.workspace, "..cache/source.md"), "inside source");
+    await mkdir(join(fx.base, "outside"));
+    await writeFile(join(fx.base, "outside/source.md"), "outside source");
+    await symlink(join(fx.base, "outside"), join(fx.workspace, "..linked"), "dir");
+    await symlink(join(fx.base, "outside/source.md"), join(fx.workspace, "..cache/linked.md"), "file");
+    const workspace = await materializeWorkspace(fx.workspace);
+    const digest = (reference) => calculateKnowledgeSourceDigest(fx.workspace, workspace, [reference], "fallback");
+    assert.equal(await digest("..cache/source.md"), createHash("sha256").update("inside source").digest("hex"));
+    for (const reference of ["../outside/source.md", "..linked/source.md", "..cache/linked.md"]) {
+      assert.equal(await digest(reference), createHash("sha256").update("fallback").digest("hex"), reference);
+    }
+  } finally { await fx.close(); }
+});
+
 test("INIT-047 article index cards stay explicit-only for default context", async () => {
   const fx = await workspaceFixture({ externalKey: "FIXTURE-INIT047-ARTICLE-INDEX" });
   try {
@@ -1573,11 +1592,11 @@ test("STORY-366 GWT1: an article stores full Markdown outside the chain and only
     const content = "中文".repeat(1_500);
     const owner = deriveStableId("owner", "STORY-366-OWNER");
     const evidence = deriveStableId("evidence", "STORY-366-ARTICLE");
-    const created = await cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--at", instant(11, 3), "--path", "topology.md", "--category", "architecture", "--title", "分区 拓扑", "--summary", "迁移摘要", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]);
+    const created = await cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--at", instant(11, 3), "--path", "..cache/topology.md", "--category", "architecture", "--title", "分区 拓扑", "--summary", "迁移摘要", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]);
     assert.equal(created.reasonCode, "KNOWLEDGE_ARTICLE_CREATED");
     assert.ok(created.articleBytes > Buffer.byteLength(content, "utf8"));
     assert.ok(created.bodyBytes <= 8_192);
-    const articlePath = join(fx.workspace, "docs/knowledge/articles/topology.md");
+    const articlePath = join(fx.workspace, "docs/knowledge/articles/..cache/topology.md");
     const markdown = await readFile(articlePath, "utf8");
     assert.match(markdown, /^---\ncategory: architecture\ntitle: 分区 拓扑\n---\n/u);
     assert.ok(markdown.includes(content));
@@ -1587,7 +1606,7 @@ test("STORY-366 GWT1: an article stores full Markdown outside the chain and only
     const storedBody = await readFile(stored.bodyPath);
     assert.equal(metadata.kind, "reference");
     assert.equal(metadata.retrievalDisposition, "explicit-only");
-    assert.deepEqual(metadata.sourceReferences, ["topology.md"]);
+    assert.deepEqual(metadata.sourceReferences, ["..cache/topology.md"]);
     assert.deepEqual(metadata.linkedEvidenceIds, [evidence]);
     assert.equal(metadata.accountableOwnerId, owner);
     assert.ok(metadata.bodyBytes <= 8_192);
@@ -1596,7 +1615,7 @@ test("STORY-366 GWT1: an article stores full Markdown outside the chain and only
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12) })).records.length, 0);
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12), search: "分区 拓扑" })).records.length, 1);
     await assert.rejects(
-      () => cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--at", instant(11, 4), "--path", "topology.md", "--category", "architecture", "--title", "分区 拓扑", "--summary", "duplicate", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]),
+      () => cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--at", instant(11, 4), "--path", "..cache/topology.md", "--category", "architecture", "--title", "分区 拓扑", "--summary", "duplicate", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]),
       (error) => error?.reasonCode === "KNOWLEDGE_ALREADY_EXISTS",
     );
     await assert.rejects(

@@ -50,8 +50,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/portal.mjs",
-      "bytes": 84751,
-      "sha256": "3a71440f605d77eb083747868fee6fdb2ea3aee26096e25d43065ccf763fc660"
+      "bytes": 85932,
+      "sha256": "e4d142966aa8583db5885bbdd480b93d56ae200800c8ab870c8358e121316aad"
     },
     {
       "path": "portal/scripts/i18n-proof.mjs",
@@ -65,8 +65,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/portal.test.mjs",
-      "bytes": 160512,
-      "sha256": "de8400fd41756c8c66db46f7eb4ce43454603d2531f413b32f3b851d035bdcfd"
+      "bytes": 163026,
+      "sha256": "8c01c15120e066650e95f5c9a6e6cc49c57f9267072543049df1c4f0705a2eb7"
     },
     {
       "path": "portal/tests/ui-presence.test.mjs",

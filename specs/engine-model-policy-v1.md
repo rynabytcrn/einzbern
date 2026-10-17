@@ -70,9 +70,12 @@ metadata into the earlier receipt.
   device-engine catalogue plus the legacy model setting values and their source/declaration
   provenance. When both sources contain values, both remain visible and the device host record is
   identified as the model-policy source; the compatibility values are not silently rewritten.
-- Atelier exposes the same engine catalogue and governed write through `/api/model-policy`.
-  Reads and writes do not require a selected project target; the write still requires the cited
-  Owner decision and the portal's actual actor.
+- Atelier exposes the same engine catalogue and governed write through `/api/model-policy` and
+  an **Engine model policy** page. Its host selector queries the device catalogue, displays the
+  selected host's revision, source, audit decision, and legacy-precedence statement, and never
+  changes the selected project configuration target. The page reuses the portal's save and undo
+  controls; saving requires a cited Owner decision and sends the portal's actual actor through the
+  governed endpoint. Reads and writes do not require a selected project target.
 
 ## Compatibility
 

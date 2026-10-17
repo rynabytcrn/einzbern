@@ -188,7 +188,10 @@ test("INIT-056 SUB-539: Atelier model-policy API reads the engine source and wri
   const fixture = await scratch("tcrn-portal-model-policy-", "TCRN-PORTAL-MODEL-POLICY");
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
+  const { boot, page } = await readBoot(url);
+  assert.match(page, /data-page="engine-model-policy"/u, "Atelier exposes the engine-owned policy as a visible page");
+  assert.match(page, /data-engine-model-policy-host/u, "the visible policy page selects an engine host before reading or writing");
+  assert.match(page, /data-engine-model-policy-save/u, "the visible policy page uses the governed engine-policy write action");
   const policy = {
     categories: [
       { id: "flagship", name: "Flagship", description: "", order: 10 },

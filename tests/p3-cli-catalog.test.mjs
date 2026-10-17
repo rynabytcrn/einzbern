@@ -407,15 +407,19 @@ test("STORY-480: setup writes and takes the wizard's flags; doctor reads and tak
 // take --decided-in, a string whose valueShape says how a decision is cited; no other flag carries a
 // valueShape, and the catalog stays schema-valid with it (the schema test above).
 // TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): twelve, with project-bindings-set and -remove,
-// work-gate-release and work-release.
-test("526 GWT5, 541 GWT1: the twelve decided-in flags carry valueShape minutes:<id>#D<n>, and no other flag carries one", () => {
-  const writes = ["gates-config-remove", "gates-config-set", "project-bindings-remove", "project-bindings-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set", "work-gate-release", "work-release"];
+// work-gate-release and work-release. INIT-056 adds the engine-wide policy writer as the thirteenth.
+test("526 GWT5, 541 GWT1, INIT-056: the closed decided-in roster carries its documented valueShape", () => {
+  const optionalWrites = ["gates-config-remove", "gates-config-set", "project-bindings-remove", "project-bindings-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set", "work-gate-release", "work-release"];
+  const writes = ["engine-model-policy-set", ...optionalWrites];
   const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags.filter((flag) => flag.valueShape !== undefined).map((flag) => [entry.name, flag.name]));
   assert.deepEqual(shaped, writes.map((name) => [name, "decided-in"]));
-  for (const name of writes) {
+  for (const name of optionalWrites) {
     const flag = COMMAND_CATALOG.find((entry) => entry.name === name).flags.find((candidate) => candidate.name === "decided-in");
     assert.deepEqual({ ...flag }, { name: "decided-in", required: false, valueKind: "string", valueShape: "minutes:<id>#D<n>" }, name);
   }
+  const enginePolicy = COMMAND_CATALOG.find((entry) => entry.name === "engine-model-policy-set");
+  assert.deepEqual(enginePolicy.flags.find((flag) => flag.name === "decided-in"), { name: "decided-in", required: true, valueKind: "string", valueShape: "minutes:<id>#D<n>" });
+  assert.deepEqual(enginePolicy.flags.find((flag) => flag.name === "actor"), { name: "actor", required: true, valueKind: "string" });
 });
 
 // TCRN-CROSS-STORY-527 (MIN-257 D6, Q6; TCRN-CROSS-SUB-478): a model proposes with gates-config-propose

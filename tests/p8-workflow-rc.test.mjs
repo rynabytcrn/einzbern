@@ -45,7 +45,7 @@ import {
   staleReleaseArtifactMoves,
   validateP8ReleaseDocuments,
 } from "../scripts/lib/p8-workflow-rc.mjs";
-import { ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
+import { BRAND, ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
 import { scanPrivacyEntries } from "../scripts/lib/privacy.mjs";
 import { withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
 import { writeUstar } from "../scripts/lib/tar.mjs";

@@ -60,7 +60,7 @@ test("INIT-056 SUB-539: engine policy CLI requires a matching Owner decision and
   const project = await createProject(workspace, { occurredAt: at(1), externalKey: "INIT056-PROJECT", name: "Legacy project" });
   const projectId = project.projects[0].id;
   const legacyCategories = JSON.stringify(CATEGORIES);
-  await setWorkspaceSetting(workspace, { occurredAt: at(2), projectId, key: "models.category", value: legacyCategories });
+  await setWorkspaceSetting(workspace, { occurredAt: at(2), key: "models.category", value: legacyCategories });
   const decision = await recordMinutes(workspace, {
     occurredAt: at(3), projectId, externalKey: "INIT056-MINUTES", title: "Engine model policy",
     summary: "Owner authorizes models.engine-policy for this engine.",
@@ -105,7 +105,8 @@ test("INIT-056 SUB-539: engine policy CLI requires a matching Owner decision and
   assert.equal(catalog.modelPolicy.compatibility.projectOverrideAllowed, false);
   const legacy = catalog.modelPolicy.compatibility.legacySettings.find((entry) => entry.key === "models.category");
   assert.deepEqual(legacy, originalLegacy, "the engine policy write leaves the real legacy settings readback unchanged");
-  assert.equal(legacy.source.projectId, projectId);
+  assert.equal(legacy.source.scope, "library");
+  assert.equal(legacy.source.projectId, null);
 
   const finalState = await materializeWorkspace(workspace);
   assert.equal(finalState.version, originalVersion, "device model policy writes leave the project event version unchanged");

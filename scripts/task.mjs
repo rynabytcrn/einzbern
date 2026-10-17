@@ -1322,6 +1322,28 @@ function versionScopedInstallerFetchOffset(label, content) {
   return fetchOffset;
 }
 
+// Declare individual harness call sites, never whole-file exemptions. A declaration
+// only applies while its wrapper binding and loopback fixture setup still match;
+// extra fetch calls, transports and changed destinations remain findings.
+function loopbackHarnessSites(content, declaration) {
+  const result = { fetchOffsets: new Set(), modules: new Set() };
+  if (!declaration) return result;
+  const uniqueOffset = (source) => {
+    const offset = content.indexOf(source);
+    return offset >= 0 && content.indexOf(source, offset + source.length) < 0 ? offset : -1;
+  };
+  if (declaration.requiredSource.some((source) => uniqueOffset(source) < 0)) return result;
+  for (const source of declaration.fetchSites) {
+    const offset = uniqueOffset(source);
+    const call = /\bfetch\s*\(/u.exec(source);
+    if (offset >= 0 && call) result.fetchOffsets.add(offset + call.index);
+  }
+  for (const { module: moduleName, source } of declaration.moduleImports) {
+    if (uniqueOffset(source) >= 0 && content.split(moduleName).length === 2) result.modules.add(moduleName);
+  }
+  return result;
+}
+
 async function verifyOfflineBoundary() {
   const guardFiles = new Set(["scripts/no-network.mjs", "tests/offline-boundary.test.mjs"]);
   const localUnixSocketTest = "tests/output-session-lifecycle.test.mjs";
@@ -1340,6 +1362,7 @@ async function verifyOfflineBoundary() {
     "node:" + "dgram",
     ["un", "dici"].join(""),
   ];
+  const harnessDeclarations = await readJson(resolve(repositoryRoot, "scripts/policy/offline-loopback-harness.json"));
   const findings = [];
   for (const path of (await walkFiles()).filter((candidate) => [".mjs", ".ts"].includes(extname(candidate)))) {
     const label = toPosixPath(relative(repositoryRoot, path));
@@ -1347,14 +1370,15 @@ async function verifyOfflineBoundary() {
     if (!guardFiles.has(label) && !loopbackServerFiles.has(label)) {
       // Only the version-checked retrieval branch may contain this one fetch call.
       const permittedFetchOffset = versionScopedInstallerFetchOffset(label, content);
+      const harnessSites = loopbackHarnessSites(content, harnessDeclarations[label]);
       for (const moduleName of modules) {
         const localUnixSocketImport = label === localUnixSocketTest && moduleName === modules[2];
-        if (!localUnixSocketImport && (content.includes(`\"${moduleName}\"`) || content.includes(`'${moduleName}'`))) {
+        if (!localUnixSocketImport && !harnessSites.modules.has(moduleName) && (content.includes(`\"${moduleName}\"`) || content.includes(`'${moduleName}'`))) {
           findings.push(`NETWORK_MODULE:${label}:${moduleName}`);
         }
       }
       for (const match of content.matchAll(/\bfetch\s*\(/gu)) {
-        if (match.index !== permittedFetchOffset) findings.push("NETWORK_API:" + label);
+        if (match.index !== permittedFetchOffset && !harnessSites.fetchOffsets.has(match.index)) findings.push("NETWORK_API:" + label);
       }
       if (/\bWebSocket\s*\(/u.test(content)) {
         findings.push(`NETWORK_API:${label}`);

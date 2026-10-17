@@ -204,6 +204,39 @@ test("485-AC2 (CLI): a release plan lists every enabled gate, release-only inclu
   assert.ok(plan.gates.every((gate) => gate.reason === "release" && gate.matched.length === 0));
 });
 
+test("gate preparation: plan and run preserve refusal order before acquiring a heavy slot", async (context) => {
+  const { base, project, library } = await setup(context);
+  await declare(library, "unit", [node, "-e", "process.exit(0)"]);
+  // A slot would refuse this fixture's settings. Earlier preparation failures must still win,
+  // and a successful plan must not try to acquire a slot at all.
+  await writeFile(join(process.env.EINZBERN_HOME, "machine-settings.json"), "{");
+  const cases = [
+    [["--workspace", project, "--project-id", "unknown", "--release", "bad"], "LIBRARY_NOT_FOUND"],
+    [["--workspace", library, "--project-id", "unknown", "--work-id", ",", "--release", "bad"], "WORKSPACE_INPUT_INVALID"],
+    [["--workspace", library, "--work-id", ",", "--release", "bad"], "CLI_ARGUMENT_MALFORMED"],
+    [["--workspace", library, "--work-id", "invalid", "--release", "bad"], "GATES_PROJECT_UNKNOWN"],
+    [["--workspace", library, "--project", project, "--work-id", "invalid", "--release", "bad"], "CLI_ARGUMENT_MALFORMED"],
+    [["--workspace", library, "--project", join(base, "missing"), "--work-id", "invalid"], "GATES_ROOT_INVALID"],
+    [["--workspace", library, "--project", project, "--work-id", "invalid"], "GATES_WORK_ID_INVALID"],
+    [["--workspace", library, "--project", project], "GATES_BASE_REQUIRED"],
+    [["--workspace", library, "--project", project, "--base", "not-a-commit"], "GATES_BASE_INVALID"],
+  ];
+  for (const [args, reasonCode] of cases) {
+    const errors = [];
+    for (const verb of [["gates-plan"], ["gates-run", "--at", at()]]) {
+      let output = "";
+      const error = await runCli([...verb, ...args], { write(value) { output += value; } }).then(() => null, (error) => error);
+      assert.equal(error?.reasonCode, reasonCode, `${verb[0]} ${args.join(" ")}`);
+      assert.equal(output, "", "a preparation refusal writes no JSON result");
+      errors.push({ name: error.name, reasonCode: error.reasonCode, message: error.message, details: error.details });
+    }
+    assert.deepEqual(errors[1], errors[0], "plan and run preserve the same complete refusal");
+  }
+  const args = ["--workspace", library, "--project", project, "--release", "true"];
+  assert.equal((await raw(["gates-plan", ...args])).reasonCode, "GATES_PLAN_READY");
+  assert.equal((await refusal(["gates-run", ...args, "--at", at()]))?.reasonCode, "MACHINE_SETTINGS_FILE_INVALID", "the run acquires its slot only after the plan is ready");
+});
+
 test("485-AC3 (CLI): two gates red at once give two reds, and a red gate does not stop the next one", async (context) => {
   const { project, library, baseCommit } = await setup(context);
   await declare(library, "fail-a", [node, "-e", "process.stdout.write('a'); process.exit(3)"]);
@@ -473,6 +506,10 @@ test("530 (CLI): gates-run --work-id records the files the commits of the Story 
   const plan = await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit, "--work-id", storyId]);
   assert.deepEqual(plan.subjectKeys, ["GC-530-STORY", "GC-530-SUB"]);
   const ran = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
+  for (const key of ["workspaceId", "version", "headEventHash"]) assert.deepEqual(ran[key], plan[key], key);
+  for (const key of ["release", "base", "workIds", "declarationsDigest"]) assert.deepEqual(ran.run[key], plan[key], key);
+  const coverage = (gates) => gates.map(({ name, root, required, matched, matchedWorkIds }) => ({ name, root, required, matched, matchedWorkIds }));
+  assert.deepEqual(coverage(ran.run.gates), coverage(plan.gates), "the run uses the same subject-bound coverage as the plan");
   assert.deepEqual(ran.run.trees.map((tree) => [tree.root, tree.paths]), [[".", ["portal/index.html", "src/a.ts"]]], gateDiagnostic(ran.run, ran.recordPath));
   const unbound = await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit]);
   assert.equal(Object.hasOwn(unbound, "subjectKeys"), false, "a plan made for no Story names no key");
@@ -657,6 +694,29 @@ async function selectableTarget(base, coordinationLibraryId) {
 }
 
 const gateRunFiles = (recordPath) => readdirSync(dirname(recordPath)).filter((name) => name.endsWith(".json")).sort();
+
+test("gate preparation: work-target results return before single-project preparation for both verbs", async (context) => {
+  const { library, story } = await coordination(context);
+  const undecided = await story("CO-PREP-UNDECIDED");
+  const only = await story("CO-PREP-ONLY", ["--involved-projects", JSON.stringify({ state: "coordination-only", targets: [] })]);
+  // No work needs a gate, so neither the unrelated project scope nor the slot settings are read.
+  await writeFile(join(process.env.EINZBERN_HOME, "machine-settings.json"), "{");
+  const args = ["--workspace", library, "--project-id", "unknown", "--work-id", `${undecided},${only}`, "--release", "true"];
+  const planned = await raw(["gates-plan", ...args]);
+  const ran = await raw(["gates-run", ...args, "--at", at()]);
+  assert.equal(planned.reasonCode, "GATES_PLAN_READY");
+  assert.deepEqual(ran, { ...planned, reasonCode: "GATES_RUN_COMPLETED" });
+  assert.deepEqual(planned.targets, [
+    { workId: undecided, status: "undecided", ok: false, reasonCode: "PROJECT_SCOPE_UNDECIDED" },
+    { workId: only, status: "coordination-only", ok: true, reasonCode: "COORDINATION_ONLY" },
+  ]);
+  assert.equal(planned.ok, false);
+  assert.equal(Object.hasOwn(planned, "library"), false);
+  for (const verb of [["gates-plan"], ["gates-run", "--at", at()]]) {
+    const error = await refusal([...verb, "--workspace", library, "--project-id", "unknown", "--work-id", undecided, "--release", "bad"]);
+    assert.deepEqual([error?.reasonCode, error?.message], ["CLI_ARGUMENT_MALFORMED", "release"], "work-target validation precedes the single-project scope check");
+  }
+});
 
 // TCRN-CROSS-STORY-519 GWT1 (TCRN-CROSS-SUB-430; D-519-1, D-519-2): on a coordination library,
 // gates-plan and gates-run with --work-id plan and run a Story that the library's own gates cover by

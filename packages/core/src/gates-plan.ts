@@ -19,8 +19,9 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 
 import { execFileSync } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { join } from "node:path";
 
+import { pathIsInside as inside } from "./path-containment.js";
 import { canonicalSha256, compareCanonicalText } from "../../protocol/src/index.js";
 import type { NamedGate } from "./gates-config.js";
 
@@ -271,11 +272,6 @@ export interface GatesPlan {
   // Subtasks, sorted, when there is one: the run's tree digest then counts only the files their
   // commits touched (gateTreeState).
   readonly subjectKeys?: readonly string[];
-}
-
-function inside(parent: string, candidate: string): boolean {
-  const relation = relative(parent, candidate);
-  return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep) && !relation.includes(`${sep}..${sep}`));
 }
 
 /** A gate's root as a real directory inside the project, or GATES_ROOT_INVALID. */

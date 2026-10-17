@@ -302,7 +302,8 @@ interface PlannedCopy {
 
 // Copy the source into a temporary sibling of the target, check it, move what the target held to
 // its backup, and rename the temporary into place. A failure before the rename leaves the target as
-// it was; a failed rename puts the moved copy back.
+// it was; a failed rename tries to put the moved copy back with the same retry policy. If recovery
+// also fails, the previous copy stays at its backup path and the error names both failures.
 async function placeCopy(source: string, expected: string, copy: PlannedCopy): Promise<void> {
   const parent = dirname(copy.path);
   await mkdir(parent, { recursive: true });
@@ -324,9 +325,43 @@ async function placeCopy(source: string, expected: string, copy: PlannedCopy): P
   try {
     await moveEntry(temporary, copy.path, "SKILL_COPY_MOVE_FAILED");
   } catch (error) {
-    if (copy.backup !== null) await rename(copy.backup, copy.path).catch(() => undefined);
-    await rm(temporary, { recursive: true, force: true });
-    throw error;
+    let failure = error;
+    if (copy.backup !== null) {
+      try {
+        await moveEntry(copy.backup, copy.path, "SKILL_COPY_MOVE_FAILED");
+      } catch (rollbackError) {
+        const primaryMessage = error instanceof Error ? error.message : String(error);
+        const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+        // Keep the publication's reason and details: recovery must not replace the primary failure
+        // with its own from/to/code. Include the recovery path in the message too, for CLI callers.
+        failure = new SkillCopiesError(
+          error instanceof SkillCopiesError ? error.reasonCode : "SKILL_COPY_MOVE_FAILED",
+          `${primaryMessage}; rollback failed: ${rollbackMessage}; previous copy remains at ${copy.backup}`,
+          {
+            ...(error instanceof SkillCopiesError ? error.details : {}),
+            backup: copy.backup,
+            rollbackError: rollbackMessage,
+            ...(rollbackError instanceof SkillCopiesError ? { rollbackCode: rollbackError.details.code ?? "UNKNOWN" } : {}),
+          },
+        );
+      }
+    }
+    try {
+      await rm(temporary, { recursive: true, force: true });
+    } catch (cleanupError) {
+      const primaryMessage = failure instanceof Error ? failure.message : String(failure);
+      const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+      throw new SkillCopiesError(
+        failure instanceof SkillCopiesError ? failure.reasonCode : "SKILL_COPY_MOVE_FAILED",
+        `${primaryMessage}; temporary cleanup failed: ${cleanupMessage}; temporary path: ${temporary}`,
+        {
+          ...(failure instanceof SkillCopiesError ? failure.details : {}),
+          temporary,
+          cleanupError: cleanupMessage,
+        },
+      );
+    }
+    throw failure;
   }
 }
 

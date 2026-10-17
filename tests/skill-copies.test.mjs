@@ -9,9 +9,10 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import fsPromises, { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import test from "node:test";
 
 import { computeInstallTreeDigest } from "../dist/build/packages/core/src/install-tree-digest.js";
@@ -183,6 +184,107 @@ test("479-R4: installing the same tree again changes nothing, and a new tree mov
   const verified = await verifySkillCopies({ home, deviceHome: device });
   assert.deepEqual([verified.ok, verified.reasonCode], [true, "SKILL_COPIES_VERIFIED"]);
 });
+
+// Patch the builtin's ESM bindings, not the skill-copy implementation, so the real move policy and
+// filesystem run in every case. Restore both the bindings and the caller's retry budget on failure.
+async function withFilesystemFailures(replacements, retries, operation) {
+  const originals = Object.fromEntries(Object.keys(replacements).map((name) => [name, fsPromises[name]]));
+  const previousBudget = process.env.EINZBERN_RENAME_RETRY_BUDGET;
+  for (const [name, replacement] of Object.entries(replacements)) fsPromises[name] = replacement(originals[name]);
+  process.env.EINZBERN_RENAME_RETRY_BUDGET = String(retries);
+  syncBuiltinESMExports();
+  try {
+    return await operation();
+  } finally {
+    Object.assign(fsPromises, originals);
+    if (previousBudget === undefined) delete process.env.EINZBERN_RENAME_RETRY_BUDGET;
+    else process.env.EINZBERN_RENAME_RETRY_BUDGET = previousBudget;
+    syncBuiltinESMExports();
+  }
+}
+
+const ROLLBACK_CASES = [
+  { name: "restores immediately", code: null, failures: 0, retries: 2, attempts: 1, restored: true },
+  ...["EPERM", "EACCES", "EBUSY"].map((code) => ({ name: `retries transient ${code}`, code, failures: 2, retries: 2, attempts: 3, restored: true })),
+  { name: "reports exhausted EBUSY retries", code: "EBUSY", failures: 3, retries: 2, attempts: 3, restored: false },
+  { name: "honors a zero retry budget", code: "EPERM", failures: 1, retries: 0, attempts: 1, restored: false },
+  { name: "does not retry EXDEV", code: "EXDEV", failures: 1, retries: 2, attempts: 1, restored: false },
+  { name: "retains both failures when cleanup also fails", code: "EBUSY", failures: 3, retries: 2, attempts: 3, restored: false, cleanupFails: true },
+];
+
+for (const scenario of ROLLBACK_CASES) {
+  test(`a failed skill-copy publication ${scenario.name} during rollback`, async (context) => {
+    const { base, home, device, source } = await scratch(context);
+    const first = await installSkillCopies({ source, home, deviceHome: device, now: at() });
+    const recordBytes = await readFile(first.record, "utf8");
+    const before = await snapshot(home);
+    const target = copyPath(home, ".claude/skills");
+    const targetBefore = await snapshot(target);
+    const backup = copyPath(join(device, "backups", "20260926T180000Z", "skill-copies"), ".claude/skills");
+    const next = await writeTree(join(base, "source-next", SKILL), skillFiles("2"));
+    let publicationFrom;
+    let publicationAttempts = 0;
+    let rollbackAttempts = 0;
+
+    await withFilesystemFailures({
+      rename: (rename) => async (from, to) => {
+        if (to === target) {
+          if (from === backup) {
+            rollbackAttempts += 1;
+            if (rollbackAttempts <= scenario.failures) throw Object.assign(new Error("injected rollback failure"), { code: scenario.code });
+          } else {
+            publicationFrom = from;
+            publicationAttempts += 1;
+            throw Object.assign(new Error("injected publication failure"), { code: "EIO" });
+          }
+        }
+        return rename(from, to);
+      },
+      rm: (remove) => async (path, options) => {
+        if (scenario.cleanupFails && path === publicationFrom) throw Object.assign(new Error("injected cleanup failure"), { code: "EACCES" });
+        return remove(path, options);
+      },
+    }, scenario.retries, async () => {
+      await assert.rejects(
+        installSkillCopies({ source: next, home, deviceHome: device, now: "2026-09-26T18:00:00Z" }),
+        (error) => {
+          assert.ok(error instanceof SkillCopiesError);
+          assert.equal(error.name, "SkillCopiesError");
+          assert.equal(error.reasonCode, "SKILL_COPY_MOVE_FAILED");
+          let expectedMessage = `${publicationFrom} could not be moved to ${target} (EIO)`;
+          let expectedDetails = { from: publicationFrom, to: target, code: "EIO" };
+          if (!scenario.restored) {
+            const rollbackMessage = `${backup} could not be moved to ${target} (${scenario.code})`;
+            expectedMessage += `; rollback failed: ${rollbackMessage}; previous copy remains at ${backup}`;
+            expectedDetails = { ...expectedDetails, backup, rollbackError: rollbackMessage, rollbackCode: scenario.code };
+          }
+          if (scenario.cleanupFails) {
+            expectedMessage += `; temporary cleanup failed: injected cleanup failure; temporary path: ${publicationFrom}`;
+            expectedDetails = { ...expectedDetails, temporary: publicationFrom, cleanupError: "injected cleanup failure" };
+          }
+          assert.equal(error.message, expectedMessage);
+          assert.deepEqual(error.details, expectedDetails);
+          return true;
+        },
+      );
+    });
+
+    assert.equal(publicationAttempts, 1, "a non-retryable publication error is not retried");
+    assert.equal(rollbackAttempts, scenario.attempts);
+    assert.equal(await exists(publicationFrom), scenario.cleanupFails ?? false, "only a failed cleanup leaves the temporary behind");
+    if (scenario.cleanupFails) assert.equal(await digestOf(publicationFrom), await digestOf(next), "the retained temporary is identified, not confused with the backup");
+    assert.equal(await readFile(first.record, "utf8"), recordBytes, "a failed install never publishes a new record");
+    assert.equal(await digestOf(copyPath(home, ".agents/skills")), first.installTreeDigest, "the other host is untouched");
+    if (scenario.restored) {
+      assert.deepEqual(await snapshot(home), before);
+      assert.equal(await exists(backup), false, "the backup moved back into place");
+    } else {
+      assert.equal(await exists(target), false);
+      assert.deepEqual(await snapshot(backup), targetBefore, "the previous copy stays intact for manual recovery");
+    }
+    assert.deepEqual(await readdir(dirname(target)), scenario.restored ? [SKILL] : scenario.cleanupFails ? [basename(publicationFrom)] : []);
+  });
+}
 
 test("479-R4: a source that is not a skill tree is refused and nothing is written", async (context) => {
   const { home, device, source } = await scratch(context, { "references/install.md": "# install\n" });

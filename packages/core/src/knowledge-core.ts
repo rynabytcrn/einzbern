@@ -17,9 +17,10 @@ import {
   rm,
   unlink,
 } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { pathIsInside as inside } from "./path-containment.js";
 import { resolveStoreBackend, SegmentedKnowledgeStoreBackend } from "./store-backend.js";
 import type { FileStoreBackendProfile, StoreBackend } from "./store-backend.js";
 
@@ -797,11 +798,6 @@ function fail(reasonCode: KnowledgeReasonCode, message: string, details?: Readon
 
 function sameIdentity(left: FileIdentity, right: FileIdentity): boolean {
   return left.dev === right.dev && left.ino === right.ino;
-}
-
-function inside(parent: string, candidate: string): boolean {
-  const relation = relative(parent, candidate);
-  return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep));
 }
 
 function sha256(value: Buffer | string): string {

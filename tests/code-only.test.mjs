@@ -65,6 +65,78 @@ test("an escaped quote does not end its string early", () => {
   assert.equal(hasAny("const a = 'it is \\'any\\' again';"), false);
 });
 
+test("template interpolation remains code, including nested and tagged templates", () => {
+  for (const source of [
+    'const a = `value ${value as any}`;',
+    'const a = `first ${1} second ${value as any} last`;',
+    'const a = `outer ${`inner ${value as any} text`} text`;',
+    'const a = tag`outer ${tag`inner ${value as any}`} text`;',
+    'const a = `value ${(() => { const value: any = 1; return value; })()}`;',
+    'type Value = `prefix${any}`;',
+  ]) assert.equal(hasAny(source), true, source);
+  for (const source of [
+    'const a = `value ${eval("1")}`;',
+    'const a = `first ${1} second ${eval("1")} last`;',
+    'const a = `outer ${`inner ${eval("1")} text`} text`;',
+    'const a = tag`outer ${tag`inner ${eval("1")}`} text`;',
+    'const a = `value ${(() => { return { value: eval("1") }; })().value}`;',
+  ]) assert.equal(hasEval(source), true, source);
+});
+
+test("template text and non-code inside interpolations remain blank", () => {
+  for (const source of [
+    'const a = `any eval( ${1} any eval(`;',
+    'const a = `outer ${`any eval( ${1} any eval(`} text`;',
+    'const a = `escaped \\` any eval( \\${eval(1)}`;',
+    'const a = `value ${"any eval("} text`;',
+    'const a = `value ${/* any eval( */ 1} text`;',
+    'const a = `value ${\n// any eval(\n1\n} text`;',
+    'const a = `value ${/any|eval\\(/u.test("any")} text`;',
+  ]) {
+    assert.equal(hasAny(source), false, source);
+    assert.equal(hasEval(source), false, source);
+  }
+  assert.equal(hasAny('const a = `escaped \\` \\${ignored} ${value as any}`;'), true);
+  assert.equal(hasEval('const a = `escaped \\` \\${ignored} ${eval("1")}`;'), true);
+});
+
+test("regexp literals cannot imitate code, comments or template boundaries", () => {
+  const literal = '/["\'`{}]|\\/\\/|\\/\\*|any|eval\\(/u';
+  assert.equal(hasAny(`const pattern = ${literal};`), false);
+  assert.equal(hasEval(`const pattern = ${literal};`), false);
+  assert.equal(hasAny(`const pattern = ${literal}; const value: any = 1;`), true);
+  assert.equal(hasEval(`const pattern = ${literal}; eval("1");`), true);
+  assert.equal(hasAny('const a = `value ${/[}]/u.test("}") ? value as any : 1}`;'), true);
+  assert.equal(hasEval('const a = `value ${/[}]/u.test("}") ? eval("1") : 1}`;'), true);
+  assert.equal(hasAny('const a = total / divisor / (value as any);'), true);
+  assert.equal(hasEval('const a = `value ${total / eval("1")}`;'), true);
+});
+
+test("escaped strings inside interpolations do not consume following code", () => {
+  assert.equal(hasAny('const a = `value ${"escaped \\" any"} ${value as any}`;'), true);
+  assert.equal(hasEval('const a = `value ${"escaped \\" eval("} ${eval("1")}`;'), true);
+  assert.equal(hasAny('const a = "escaped \\\\"; const value: any = 1;'), true);
+  assert.equal(hasEval('const a = "escaped \\\\"; eval("1");'), true);
+});
+
+test("template blanking preserves UTF-16 offsets and every line terminator", () => {
+  const source = [
+    'const first = "🚀 any";\r\n',
+    'const text = `🚀 any\n${(() => {\n',
+    '  /* 🚀 any\u2028eval(\u2029 */\n',
+    '  return eval("🚀");\n',
+    '})()} end`;\n',
+    'const last: any = 1;\n',
+  ].join("");
+  const blanked = codeOnly(source);
+  assert.equal(blanked.length, source.length);
+  for (let index = 0; index < source.length; index += 1) {
+    if (/[\r\n\u2028\u2029]/u.test(source[index])) assert.equal(blanked[index], source[index]);
+  }
+  assert.equal(blanked.indexOf("eval("), source.lastIndexOf("eval("));
+  assert.equal(blanked.indexOf("any"), source.lastIndexOf("any"));
+});
+
 test("a raw control byte is reported by offset, while TAB and LF are not", () => {
   // This is the one rule that must NOT go through the blanker: both real INC-018
   // instances sat inside string literals, which codeOnly() erases. Bytes are

@@ -9,9 +9,9 @@
 
 import "../../tests/helpers/device-home.mjs";
 import { appendHistoricalGateCreate } from "../../tests/helpers/workspace-fixture.mjs";
-import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { portalFixture } from "./helpers/portal-fixture.mjs";
+import { execFile } from "node:child_process";
+import { mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -56,30 +56,15 @@ async function registeredLibrary(deviceEnv, project, library, externalKey) {
 // A device of its own with three registered libraries: the first, opened by Atelier and kept in its project;
 // a second kept outside its project; and a third whose library is later moved away. Atelier starts on the first.
 async function fixture(context, prefix) {
-  const base = await realpath(await mkdtemp(join(tmpdir(), prefix)));
+  const { base, start } = await portalFixture(context, prefix);
   const home = join(base, "home");
   await mkdir(home);
   const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
   const first = await registeredLibrary(deviceEnv, join(base, "project"), join(base, "project", ".ether"), "HUMAN-ONLY");
   const other = await registeredLibrary(deviceEnv, join(base, "second-project"), join(base, "second-library"), "HUMAN-ONLY-SECOND");
   const gone = await registeredLibrary(deviceEnv, join(base, "third-project"), join(base, "third-library"), "HUMAN-ONLY-THIRD");
-  const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), "--library", first.library, "--port", "0"], {
+  const { url } = await start([join(portalRoot, "portal.mjs"), "--library", first.library, "--port", "0"], {
     env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: ACTOR, ...deviceEnv, HOME: home },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  context.after(async () => {
-    if (child.exitCode === null) { const exited = new Promise((resolve) => child.once("exit", resolve)); child.kill(); await exited; }
-    await rm(base, { recursive: true, force: true });
-  });
-  const url = await new Promise((resolve, reject) => {
-    let buffer = "";
-    const timer = setTimeout(() => reject(new Error(`portal did not start: ${buffer}`)), 15000);
-    child.stdout.on("data", (chunk) => {
-      buffer += chunk;
-      const line = buffer.split("\n").find((entry) => entry.includes("PORTAL_LISTENING"));
-      if (line) { clearTimeout(timer); resolve(JSON.parse(line).url); }
-    });
-    child.on("exit", (code) => { clearTimeout(timer); reject(new Error(`portal exited ${code}: ${buffer}`)); });
   });
   const page = await (await loopback(url)).text();
   const boot = JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]);

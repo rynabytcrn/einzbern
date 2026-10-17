@@ -251,9 +251,6 @@ function fail(reasonCode: string, message: string): never {
 }
 
 function parseArguments(arguments_: readonly string[], allowed: readonly string[]): Readonly<Record<string, string>> {
-  if (arguments_.some((value) => value.length > RUNTIME_CAPACITY.stringCodeUnits)) {
-    fail("CLI_INPUT_OVERSIZED", "CLI arguments exceed the local input limit");
-  }
   const values: Record<string, string> = {};
   let index = 0;
   while (index < arguments_.length) {
@@ -1098,6 +1095,29 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
     ok: results.every(result => result.ok === true) && library.every(result => result.ok === true), targets: results,
     ...(library.length === 0 ? {} : { library }),
   };
+}
+
+// Work-target operations finish before single-project preparation. Keep the shared validation and
+// planning order here; only gates-run acquires a heavy slot after a single-project plan is ready.
+async function prepareGates(values: Readonly<Record<string, string>>, execute: boolean): Promise<
+  | { readonly targets: Record<string, unknown> }
+  | { readonly state: Awaited<ReturnType<typeof effectiveProjectState>>; readonly plan: Awaited<ReturnType<typeof planGates>> }
+> {
+  const native = await validateWorkspace(values.workspace ?? "");
+  const targets = await workGateTargets(native, values, execute);
+  if (targets !== null) return { targets };
+  const state = await effectiveProjectState(native, values["project-id"]);
+  const workIds = values["work-id"] === undefined ? [] : listValue(values["work-id"]);
+  const plan = await planGates({
+    projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"], native),
+    gates: listGates(state),
+    release: booleanValue(values.release, "release"),
+    ...(values.base === undefined ? {} : { base: values.base }),
+    workIds,
+    subjects: gateSubjects(native.work, workIds),
+    subjectKeys: workSubjectKeys(native.work, workIds),
+  });
+  return { state, plan };
 }
 
 type GatesLibrary = Pick<Awaited<ReturnType<typeof materializeWorkspace>>, "configRecords" | "metadata" | "projects">;
@@ -4186,20 +4206,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "gates-plan") {
     const values = parseArguments(rest, ["project-id", "workspace", "project", "base", "release", "work-id"]);
     required(values, ["workspace"]);
-    const native = await validateWorkspace(values.workspace ?? "");
-    const targets = await workGateTargets(native, values, false);
-    if (targets !== null) { io.write(canonicalJson(targets)); return; }
-    const state = await effectiveProjectState(native, values["project-id"]);
-    const workIds = values["work-id"] === undefined ? [] : listValue(values["work-id"]);
-    const plan = await planGates({
-      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"], native),
-      gates: listGates(state),
-      release: booleanValue(values.release, "release"),
-      ...(values.base === undefined ? {} : { base: values.base }),
-      workIds,
-      subjects: gateSubjects(native.work, workIds),
-      subjectKeys: workSubjectKeys(native.work, workIds),
-    });
+    const prepared = await prepareGates(values, false);
+    if ("targets" in prepared) { io.write(canonicalJson(prepared.targets)); return; }
+    const { state, plan } = prepared;
     io.write(canonicalJson({
       reasonCode: "GATES_PLAN_READY",
       workspaceId: state.metadata.workspaceId,
@@ -4219,20 +4228,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "gates-run") {
     const values = parseArguments(rest, ["project-id", "workspace", "at", "project", "base", "release", "work-id"]);
     required(values, ["workspace", "at"]);
-    const native = await validateWorkspace(values.workspace ?? "");
-    const targets = await workGateTargets(native, values, true);
-    if (targets !== null) { io.write(canonicalJson(targets)); return; }
-    const state = await effectiveProjectState(native, values["project-id"]);
-    const workIds = values["work-id"] === undefined ? [] : listValue(values["work-id"]);
-    const plan = await planGates({
-      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"], native),
-      gates: listGates(state),
-      release: booleanValue(values.release, "release"),
-      ...(values.base === undefined ? {} : { base: values.base }),
-      workIds,
-      subjects: gateSubjects(native.work, workIds),
-      subjectKeys: workSubjectKeys(native.work, workIds),
-    });
+    const prepared = await prepareGates(values, true);
+    if ("targets" in prepared) { io.write(canonicalJson(prepared.targets)); return; }
+    const { state, plan } = prepared;
     const slot = await acquireHeavySlot({ command: "gates-run" });
     let ran;
     try {

@@ -8,7 +8,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import type { Hash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import {
   PROTOCOL_LIMITS,
@@ -620,11 +620,6 @@ function exactFields(value: unknown, expected: readonly string[], reasonCode: Wo
   }
 }
 
-function inside(parent: string, candidate: string): boolean {
-  const relation = relative(parent, candidate);
-  return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep));
-}
-
 export function assertWorkspaceRelativePath(value: unknown): asserts value is string {
   if (typeof value !== "string" || value.length === 0 || isAbsolute(value) || value.includes("\\")) {
     fail("WORKSPACE_PATH_ESCAPE", String(value));
@@ -659,7 +654,7 @@ export function assertWorkspaceRecordCount(count: number): void {
 // directory check below stays here for root resolution and the write-lock gate; the
 // lease, recovery and mutation-claim machinery it once served was replaced by the
 // engine file lock (TCRN-CROSS-STORY-467).
-async function boundDirectory(path: string, workspaceRoot?: string): Promise<string> {
+async function boundDirectory(path: string): Promise<string> {
   let metadata;
   try {
     metadata = await lstat(path);
@@ -670,9 +665,6 @@ async function boundDirectory(path: string, workspaceRoot?: string): Promise<str
     fail("WORKSPACE_PATH_INVALID", `${path} must be a real directory`);
   }
   const resolved = await realpath(path);
-  if (workspaceRoot && !inside(workspaceRoot, resolved)) {
-    fail("WORKSPACE_PATH_ESCAPE", path);
-  }
   const after = await lstat(resolved);
   if (!after.isDirectory() || metadata.dev !== after.dev || metadata.ino !== after.ino) {
     fail("WORKSPACE_PATH_INVALID", `${path} changed while resolving`);

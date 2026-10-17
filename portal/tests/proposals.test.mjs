@@ -8,9 +8,9 @@
 // home directory here is a temporary one.
 
 import "../../tests/helpers/device-home.mjs";
-import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { portalFixture } from "./helpers/portal-fixture.mjs";
+import { execFile } from "node:child_process";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -42,8 +42,7 @@ async function cli(args, env = {}) {
 
 /** A registered project with its library, a scratch HOME and a device directory. */
 async function scratch(t) {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-proposals-")));
-  t.after(() => rm(base, { recursive: true, force: true }));
+  const { base, start } = await portalFixture(t, "tcrn-portal-proposals-");
   const home = join(base, "home");
   await mkdir(home, { recursive: true });
   const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
@@ -53,24 +52,12 @@ async function scratch(t) {
   await cli(["init", "--workspace", workspace, "--project-name", "PORTAL-PROPOSALS", "--at", at()], deviceEnv);
   const created = await cli(["project-create", "--workspace", workspace, "--external-key", "PORTAL-PROPOSALS-PROJECT", "--name", "PORTAL-PROPOSALS", "--at", at()], deviceEnv);
   await cli(["library-register", "--project", proseRoot, "--library", workspace, "--project-id", created.record.id, "--at", at()], deviceEnv);
-  return { base, home, deviceEnv, proseRoot, workspace, projectId: created.record.id };
+  return { base, home, deviceEnv, proseRoot, workspace, projectId: created.record.id, start };
 }
 
-async function startPortal(t, fixture) {
-  const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), "--library", fixture.workspace, "--port", "0"], {
+async function startPortal(fixture) {
+  const listening = await fixture.start([join(portalRoot, "portal.mjs"), "--library", fixture.workspace, "--port", "0"], {
     env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...fixture.deviceEnv, HOME: fixture.home },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  t.after(() => child.kill());
-  const listening = await new Promise((resolve, reject) => {
-    let buffer = "";
-    const timer = setTimeout(() => reject(new Error(`portal did not start: ${buffer}`)), 15000);
-    child.stdout.on("data", (chunk) => {
-      buffer += chunk;
-      const line = buffer.split("\n").find((entry) => entry.includes("PORTAL_LISTENING"));
-      if (line) { clearTimeout(timer); resolve(JSON.parse(line)); }
-    });
-    child.on("exit", (code) => { clearTimeout(timer); reject(new Error(`portal exited ${code}: ${buffer}`)); });
   });
   const page = await (await loopback(listening.url)).text();
   const boot = JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]);
@@ -106,7 +93,7 @@ const proposeGate = (fixture, name) => cli(["gates-config-propose", "--workspace
 test("527 GWT2: Atelier's approval of a proposed gate is the write; the gate list then holds it and the proposals are empty", async (t) => {
   const fixture = await scratch(t);
   const proposed = await proposeGate(fixture, "unit");
-  const { call } = await startPortal(t, fixture);
+  const { call } = await startPortal(fixture);
   const before = await call("/api/gates");
   assert.equal(before.status, 200, JSON.stringify(before.body));
   assert.deepEqual(before.body.gates, [], "a proposal is not a declaration");
@@ -130,7 +117,7 @@ test("527 GWT2: Atelier's approval of a proposed gate is the write; the gate lis
 test("527 GWT4: a rejected proposal stays on the page read only, without an Approve button, and its approval is refused", async (t) => {
   const fixture = await scratch(t);
   const proposed = await proposeGate(fixture, "unit");
-  const { call } = await startPortal(t, fixture);
+  const { call } = await startPortal(fixture);
   const rejected = await call(`/api/proposals/${encodeURIComponent("gate:unit")}`, "POST", { action: "reject", proposedAt: proposed.proposal.proposedAt });
   assert.equal(rejected.status, 200, JSON.stringify(rejected.body));
   assert.deepEqual(rejected.body.proposals.map((proposal) => [proposal.key, proposal.status, proposal.rejectedBy]), [["gate:unit", "rejected", TEST_ACTOR]]);
@@ -161,7 +148,7 @@ test("527 GWT2: Atelier's approval of a proposed rule enables it and writes its 
   const fixture = await scratch(t);
   const rule = "autonomy";
   const proposed = await cli(["rule-propose", "--project", fixture.proseRoot, "--id", rule, "--at", at(), "--actor", MODEL], fixture.deviceEnv);
-  const { call } = await startPortal(t, fixture);
+  const { call } = await startPortal(fixture);
   const before = await call("/api/rules");
   assert.equal(before.status, 200, JSON.stringify(before.body));
   assert.equal(before.body.rules.find((entry) => entry.id === rule).state, "disabled");

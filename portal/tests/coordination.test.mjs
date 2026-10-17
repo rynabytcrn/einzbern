@@ -9,9 +9,9 @@
 // the container, its library, the device directory and HOME of each fixture, removed with it.
 
 import "../../tests/helpers/device-home.mjs";
-import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { portalFixture } from "./helpers/portal-fixture.mjs";
+import { execFile } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -38,7 +38,7 @@ async function cli(args, env = {}) {
 // A container with a coordination library inside it, `.ether`, on a device of its own. `register` names the
 // project path the device's registry holds for the library: the container (the default) or the library itself.
 async function coordinationFixture(context, register = "container") {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "portal-coordination-")));
+  const { base, start } = await portalFixture(context, "portal-coordination-");
   const home = join(base, "home");
   await mkdir(home);
   const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
@@ -51,30 +51,10 @@ async function coordinationFixture(context, register = "container") {
   await cli(["library-register", "--project", register === "container" ? container : library, "--library", library, "--at", at()], deviceEnv);
   await writeFile(join(container, "AGENTS.md"), OWNER_TEXT, "utf8");
   const fixture = { base, home, deviceEnv, container, library, libraryId, agents: join(container, "AGENTS.md") };
-  const portal = await startPortal(fixture);
-  context.after(async () => {
-    if (portal.child.exitCode === null) { const exited = new Promise((resolve) => portal.child.once("exit", resolve)); portal.child.kill(); await exited; }
-    await rm(base, { recursive: true, force: true });
-  });
-  return { ...fixture, url: portal.url };
-}
-
-async function startPortal({ library, home, deviceEnv }) {
-  const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), "--library", library, "--port", "0"], {
+  const { url } = await start([join(portalRoot, "portal.mjs"), "--library", library, "--port", "0"], {
     env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: ACTOR, ...deviceEnv, HOME: home },
-    stdio: ["ignore", "pipe", "pipe"],
   });
-  const url = await new Promise((resolve, reject) => {
-    let buffer = "";
-    const timer = setTimeout(() => reject(new Error(`portal did not start: ${buffer}`)), 15000);
-    child.stdout.on("data", (chunk) => {
-      buffer += chunk;
-      const line = buffer.split("\n").find((entry) => entry.includes("PORTAL_LISTENING"));
-      if (line) { clearTimeout(timer); resolve(JSON.parse(line).url); }
-    });
-    child.on("exit", (code) => { clearTimeout(timer); reject(new Error(`portal exited ${code}: ${buffer}`)); });
-  });
-  return { child, url };
+  return { ...fixture, url };
 }
 
 async function readBoot(url) {

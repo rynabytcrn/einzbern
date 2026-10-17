@@ -5,6 +5,16 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 2.2.3
+
+Local source candidate for INIT-056; not published or installed. The device-level model policy
+store separates hosts and records actor, Owner decision, revision and digest. Formal catalog/set
+commands and the Atelier API expose the engine source, while legacy project values remain
+readable. Writes return the persisted lock-held snapshot so a later same-host writer cannot
+change an earlier receipt. The visible configuration and dispatch consumer work remain pending.
+The privacy classifier adds only the reviewed 2.2.2 compiled owner members; the actual 2.2.3
+package still needs its own review. See `docs/releases/2.2.3.md` for candidate scope and limits.
+
 ### Hosts and Hooks
 
 DSH is a host the hook runs under (TCRN-CROSS-STORY-548). `EINZBERN_HOST` names the host when it is

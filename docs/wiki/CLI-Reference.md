@@ -112,6 +112,29 @@
 
 无旗标。
 
+## `engine-model-policy-catalog`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--host` | 可选 | `string` |
+
+## `engine-model-policy-set`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--host` | 必填 | `string` |  |
+| `--policy` | 必填 | `json` |  |
+| `--at` | 必填 | `instant` |  |
+| `--actor` | 必填 | `string` |  |
+| `--decided-in` | 必填 | `string` | `minutes:<id>#D<n>` |
+
 ## `engine-rollback`
 
 - 可用范围：`cli`。

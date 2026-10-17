@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 
+import { appendProgressIfConfigured, readProgressDelta } from "../scripts/lib/incremental-output.mjs";
 import { admitLegacyOutputSessionReceipt, bindOutputSessionProcessGroup, readBoundClaim, recoverStaleOutputSessionLock, safeWriteOutput, withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
 
 const ownerSchema = "tcrn.output-session-owner.v1";
@@ -2817,6 +2818,25 @@ async function settleFixtureProcesses(root) {
   const fixtureProcesses = await fixtureProcessLister(root);
   await pollUntil(() => (fixtureProcesses().length === 0 ? true : undefined), () => false);
 }
+
+test("INC-394: a late reaper record appends but never recreates a removed progress file", async (context) => {
+  const directory = await runTemporaryDirectory(context);
+  const path = join(directory, "events.ndjson");
+  await writeFile(path, "", { mode: 0o600, flag: "wx" });
+  await appendProgressIfConfigured(path, "reaper-clean", { managedChildGroups: 0 }, { create: false });
+  const recorded = await readProgressDelta(path, 0);
+  assert.equal(recorded.events.length, 1);
+  assert.equal(recorded.events[0].type, "reaper-clean");
+
+  // The runner has unlinked the ledger but not yet removed its directory.
+  await rm(path);
+  await assert.rejects(
+    appendProgressIfConfigured(path, "reaper-clean", { managedChildGroups: 0 }, { create: false }),
+    { code: "ENOENT" },
+  );
+  assert.deepEqual(await readdir(directory), [], "a late record cannot repopulate the directory");
+  await rmdir(directory);
+});
 
 test("INC-394: an immediate pre-bind fail-closed leaves no reaper and no controller or progress directory", async (context) => {
   const { root, importPath } = await importGuardTaskFixture(context, 'test("a group probe never discovers this source", () => {});');

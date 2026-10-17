@@ -121,6 +121,8 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
   const coverageDirectory = typeof extraEnvironment?.NODE_V8_COVERAGE === "string" ? extraEnvironment.NODE_V8_COVERAGE : null;
   let child;
   try {
+    // The runner owns creation; a late reaper must never recreate this file during cleanup.
+    await writeFile(progressPath, "", { mode: 0o600, flag: "wx" });
     const controllerEnvironment = {
       ...process.env,
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",

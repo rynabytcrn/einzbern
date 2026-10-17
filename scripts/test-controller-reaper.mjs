@@ -182,7 +182,8 @@ let parentCleanupStarted = false;
 // has stopped reading it: after it joined this reaper's group, or at once when it failed closed
 // before joining it. A missing directory therefore means nobody is left to read the reaper-clean
 // record. It ends the record, never the cleanup, which is already confirmed when the record is
-// written; any other failure to record is retried as before.
+// written; any other failure to record is retried as before. The runner creates the ledger.
+// Append without O_CREAT so removal cannot race a late record recreating events.ndjson.
 async function progressDirectoryGone() {
   try {
     await lstat(dirname(progressPath));
@@ -195,7 +196,7 @@ async function progressDirectoryGone() {
 
 async function recordClean() {
   try {
-    await appendProgressIfConfigured(progressPath, "reaper-clean", { processGroup: controllerGroup, reaperProcessGroup: process.pid, managedChildGroups: cleanCount });
+    await appendProgressIfConfigured(progressPath, "reaper-clean", { processGroup: controllerGroup, reaperProcessGroup: process.pid, managedChildGroups: cleanCount }, { create: false });
   } catch (error) {
     if (error?.code !== "ENOENT" || !await progressDirectoryGone()) throw error;
   }

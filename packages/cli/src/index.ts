@@ -1,4 +1,5 @@
 import { ensureSetupProjectBinding } from "../../core/src/setup-fresh.js";
+import { engineModelPolicyCatalogFromSnapshot } from "../../core/src/engine-model-policy.js";
 import { setConfigRecord, removeConfigRecord } from "../../core/src/config-records.js";
 import { coordinationCatalogRows } from "../../core/src/project-scope.js";
 import { chainIdentity, declareChainIdentity, resolveProjectTarget, workProjectContexts, effectiveProjectState, ensureProjectCoordination, settingsCatalogState, markUnresolvedCommonDefault } from "../../core/src/project-chain.js";
@@ -12,6 +13,7 @@ import { acquireHeavySlot } from "../../../scripts/lib/heavy-runs.mjs";
 import {
   applyMachineSettingRemove,
   applyMachineSettingSet,
+  applyEngineModelPolicySet,
   withWriteLockOptions,
   assertLibraryWritable,
   recordAppends,
@@ -67,6 +69,7 @@ import {
   readSettingsCatalog,
   readInstallManifest,
   readMachineSettingsCatalog,
+  readEngineModelPolicyCatalog,
   readVocabulary,
   STORY_SCOPE_HEADINGS,
   machineSettingsPath,
@@ -181,6 +184,7 @@ import {
   DECIDED_IN_VALUE_SHAPE,
   parseDecidedIn,
   verifyWriteAuthorization,
+  ENGINE_MODEL_POLICY_WRITE_TARGET,
 } from "../../core/src/index.js";
 import type { WriteAuthorization, WriteSurface } from "../../core/src/index.js";
 import type { DecisionStatusFilter, KnowledgeLanguageBundle, KnowledgeLanguageProvider, RuleChange, RuleStatus, SectionAction, StoryFields, Variable, WithheldEntry, WorkRelationsInput } from "../../core/src/index.js";
@@ -1607,6 +1611,11 @@ export const COMMAND_CATALOG = Object.freeze([
   // installs an unpacked, digest-checked version and makes it current; engine-rollback makes the
   // previous one current again. Both rewrite engine/current alone, never a host file.
   { name: "engine-list", availability: "cli", mutates: false, flags: [] },
+  // TCRN-CROSS-INIT-056 (MIN-289 D1/D2): one device-wide model policy store with host-isolated rows.
+  // A set always cites and verifies an Owner decision naming models.engine-policy; --workspace only
+  // locates that decision and does not make the policy project-scoped.
+  { name: "engine-model-policy-catalog", availability: "cli", mutates: false, flags: [{ name: "host", required: false, valueKind: "string" }] },
+  { name: "engine-model-policy-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: true, valueKind: "string" }, { name: "policy", required: true, valueKind: "json" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "engine-rollback", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }] },
   { name: "engine-update", availability: "cli", mutates: true, flags: [{ name: "from", required: true, valueKind: "string" }, { name: "sha256", required: true, valueKind: "string" }, { name: "version", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "event-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
@@ -2757,6 +2766,40 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson({ reasonCode: "MACHINE_SETTINGS_WRITE_COMMITTED", ...file }));
     return;
   }
+  if (command === "engine-model-policy-catalog") {
+    const values = parseArguments(rest, ["host"]);
+    io.write(canonicalJson({ reasonCode: "ENGINE_MODEL_POLICY_CATALOG_READY", ...await readEngineModelPolicyCatalog(values.host) }));
+    return;
+  }
+  if (command === "engine-model-policy-set") {
+    const values = parseArguments(rest, ["workspace", "host", "policy", "at", "actor", "decided-in"]);
+    required(values, ["workspace", "host", "policy", "at", "actor", "decided-in"]);
+    let policy: unknown;
+    try { policy = JSON.parse(values.policy ?? ""); } catch { fail("CLI_ARGUMENT_MALFORMED", "policy"); }
+    const workspace = values.workspace ?? "";
+    const decidedIn = values["decided-in"] ?? "";
+    const authorization = await verifyWriteAuthorization({
+      state: await materializeWorkspace(workspace),
+      decidedIn,
+      target: ENGINE_MODEL_POLICY_WRITE_TARGET,
+    });
+    const written = await applyEngineModelPolicySet({
+      host: values.host ?? "",
+      policy,
+      occurredAt: values.at ?? "",
+      actor: values.actor ?? "",
+      authorization,
+    });
+    const readback = engineModelPolicyCatalogFromSnapshot(written, values.host);
+    io.write(canonicalJson({
+      reasonCode: "ENGINE_MODEL_POLICY_WRITE_COMMITTED",
+      host: values.host,
+      revision: written.revision,
+      policy: readback.selectedPolicy,
+      readback,
+    }));
+    return;
+  }
   if (command === "settings-catalog") {
     const values = parseArguments(rest, ["project-id", "workspace"]);
     required(values, ["workspace"]);
@@ -2767,10 +2810,27 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const catalog = readSettingsCatalog(state.metadata.workspaceId, state.settings,
       state.metadata.storageVersion === 2 ? { "storage.segmentBytes": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources });
     const chain = chainIdentity(state);
+    const engineModelPolicy = await readEngineModelPolicyCatalog();
+    const legacyModelSettings = catalog.settings.filter((entry) => entry.key.startsWith("models.")).map((entry) => ({
+      key: entry.key,
+      currentValue: entry.currentValue,
+      source: entry.source ?? null,
+      declaredValue: entry.declaredValue ?? null,
+      inheritedValue: entry.inheritedValue ?? null,
+    }));
+    const modelPolicy = {
+      ...engineModelPolicy,
+      compatibility: {
+        ...engineModelPolicy.compatibility,
+        legacySettings: legacyModelSettings,
+        resolution: "configured-device-host-policy-is-authoritative-if-present; legacy-settings-remain-readable" as const,
+      },
+    };
     io.write(canonicalJson({ ...catalog, reasonCode: "SETTINGS_CATALOG_READY", chain, projectId: state.configurationProjectId,
       ...(reading.commonDefault === null ? {} : { commonDefault: reading.commonDefault as unknown as JsonValue }),
       projects: state.projects.filter(entry => !entry.tombstone).map(entry => ({ id: entry.id, externalKey: entry.externalKey, name: entry.name, parentProjectId: entry.parentProjectId ?? null })),
       design: chain?.role === "coordination" ? null : designConfiguration(state),
+      modelPolicy,
       projectBindings: state.configRecords.filter(record => record.collection === "chain" && record.key !== "identity"),
       // TCRN-CROSS-INIT-053 R47 (c1-B): a coordination chain lists its own runtime settings, each for the whole library.
       settings: chain?.role === "coordination" ? coordinationCatalogRows(state, catalog.settings) : markUnresolvedCommonDefault(catalog.settings, reading) }));

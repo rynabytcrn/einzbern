@@ -74,6 +74,12 @@ export {
   validateMachineSettingsFile,
 } from "./machine-settings.js";
 export type { MachineSettingKey, MachineSettingsCatalogEntry, MachineSettingsFile, MachineSettingsReadback } from "./machine-settings.js";
+// TCRN-CROSS-INIT-056 (MIN-289 D1/D2): the single device-local engine model policy store.
+export {
+  ENGINE_MODEL_POLICY_WRITE_TARGET,
+  applyEngineModelPolicySet,
+  readEngineModelPolicyCatalog,
+} from "./engine-model-policy.js";
 // STORY-177: the knowledge/artifact store data-plane backend is part of the public
 // core surface so a future PG store backend can implement it. StoreBackendError is
 // the fail-closed refusal shape; FileStoreBackend is the converged file

@@ -165,6 +165,8 @@ test("portal boots from the live engine and exposes the new read surfaces", asyn
 
   const settings = await request(url, "/api/settings", readOptions(boot.token));
   assert.equal(settings.body.reasonCode, "SETTINGS_CATALOG_READY");
+  assert.equal(settings.body.modelPolicy.source.kind, "device-engine");
+  assert.equal(settings.body.modelPolicy.compatibility.projectOverrideAllowed, false);
   // TCRN-CROSS-STORY-484 R3: the two subagent-plan settings are retired with the dispatch keys.
   assert.deepEqual(settings.body.settings.filter((entry) => entry.key.includes("SubagentPlan") || entry.key.startsWith("execution.dispatch")).map((entry) => entry.key), []);
   // TCRN-CROSS-STORY-467 R3: the execution projection read the dispatch-* verbs and left with
@@ -180,6 +182,45 @@ test("portal boots from the live engine and exposes the new read surfaces", asyn
   const variables = await request(url, "/api/variables", readOptions(boot.token));
   assert.equal(variables.body.reasonCode, "VARIABLE_LIST_READY");
   assert.deepEqual(variables.body.variables, []);
+});
+
+test("INIT-056 SUB-539: Atelier model-policy API reads the engine source and writes only with Owner authorization", async (t) => {
+  const fixture = await scratch("tcrn-portal-model-policy-", "TCRN-PORTAL-MODEL-POLICY");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const policy = {
+    categories: [
+      { id: "flagship", name: "Flagship", description: "", order: 10 },
+      { id: "main", name: "Main", description: "", order: 20 },
+      { id: "economy", name: "Economy", description: "", order: 30 },
+    ],
+    tiers: [
+      { order: 10, category: "flagship", runner: "codex", model: "gpt-6-luna", effort: "max", note: "" },
+      { order: 20, category: "economy", runner: "codex", model: "gpt-6-luna", effort: "max", note: "" },
+    ],
+    escalation: { enabled: true, threshold: 2, ceiling: "main" },
+  };
+  const initial = await request(url, "/api/model-policy?host=codex", readOptions(boot.token));
+  assert.equal(initial.response.status, 200);
+  assert.equal(initial.body.selectedStatus, "unconfigured");
+
+  const wrong = await request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy, decidedIn: `minutes:${"d".repeat(24)}#D1` }));
+  assert.equal(wrong.response.status, 409);
+  assert.equal(wrong.body.reasonCode, "MODEL_WRITE_AUTHORIZATION_INVALID");
+
+  const meeting = await cli([
+    "minutes-record", "--workspace", fixture.workspace, "--at", "2026-10-17T03:00:00Z", "--project-id", fixture.projectId,
+    "--external-key", "PORTAL-MODEL-POLICY-OWNER-DECISION", "--title", "Engine model policy",
+    "--summary", "Owner authorizes the engine model policy write.", "--decisions", "Set models.engine-policy for Codex.",
+    "--decided-by", "owner:governance", "--actor", TEST_ACTOR,
+  ], fixture.deviceEnv);
+  const minutesId = meeting.id;
+  const saved = await request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy, decidedIn: `${minutesId}#D1` }));
+  assert.equal(saved.response.status, 200);
+  assert.equal(saved.body.reasonCode, "ENGINE_MODEL_POLICY_WRITE_COMMITTED");
+  assert.equal(saved.body.readback.selectedHost, "codex");
+  assert.equal(saved.body.readback.selectedPolicy.tiers[0].model, "gpt-6-luna");
 });
 
 test("STORY-379 read views use CLI projections and keep partial data visible", async (t) => {

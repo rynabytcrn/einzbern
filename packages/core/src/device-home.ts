@@ -21,6 +21,8 @@ export const DEVICE_HOME_ENTRIES = Object.freeze({
   device: "device.json",
   registry: "registry.json",
   machineSettings: "machine-settings.json",
+  // TCRN-CROSS-INIT-056: one device-local model policy, partitioned by host inside the file.
+  engineModelPolicy: "engine-model-policy.json",
   cache: "cache",
   locks: "locks",
   backups: "backups",
@@ -79,6 +81,16 @@ export function deviceFilePath(home: string = deviceHome()): string {
 
 export function registryPath(home: string = deviceHome()): string {
   return join(home, DEVICE_HOME_ENTRIES.registry);
+}
+
+/** The one device-local source for engine model policy. */
+export function engineModelPolicyPath(home: string = deviceHome()): string {
+  return join(home, DEVICE_HOME_ENTRIES.engineModelPolicy);
+}
+
+/** The lock shared by every process that replaces the engine model policy file. */
+export function engineModelPolicyLockPath(home: string = deviceHome()): string {
+  return join(home, DEVICE_HOME_ENTRIES.locks, `${DEVICE_HOME_ENTRIES.engineModelPolicy}.lock`);
 }
 
 /** This library's derived state on this machine: views, snapshots and indexes. */

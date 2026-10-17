@@ -66,13 +66,28 @@ test("unknown verbs fail closed and every cataloged verb dispatches", async () =
     // library-list lists this device's registry, empty or not (TCRN-CROSS-STORY-470 R1), and
     // engine-list its engine versions, none or some (TCRN-CROSS-STORY-471 R2). doctor checks this
     // device with the current directory as the project (TCRN-CROSS-STORY-480 R4).
-    if (entry.name === "commands" || entry.name === "doctor" || entry.name === "engine-list" || entry.name === "install-manifest" || entry.name === "library-list" || entry.name === "machine-settings-catalog" || entry.name === "vocabulary") {
+    if (entry.name === "commands" || entry.name === "doctor" || entry.name === "engine-list" || entry.name === "engine-model-policy-catalog" || entry.name === "install-manifest" || entry.name === "library-list" || entry.name === "machine-settings-catalog" || entry.name === "vocabulary") {
       assert.equal(outcome.ok, true, `${entry.name} resolves with no flags`);
       continue;
     }
     assert.equal(outcome.ok, false, `${entry.name} should reject with no flags`);
     assert.notEqual(outcome.reasonCode, "CLI_COMMAND_UNKNOWN", `${entry.name} must dispatch`);
   }
+});
+
+test("INIT-056: the engine policy catalog accepts no arguments and set requires audit fields while workspace may resolve from the registry", () => {
+  const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
+  const catalog = entry("engine-model-policy-catalog");
+  assert.equal(catalog.mutates, false);
+  assert.deepEqual(catalog.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["host", false, "string"]]);
+
+  const set = entry("engine-model-policy-set");
+  assert.equal(set.mutates, true);
+  assert.deepEqual(set.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [
+    ["workspace", false, "string"], ["host", true, "string"], ["policy", true, "json"], ["at", true, "instant"],
+    ["actor", true, "string"], ["decided-in", true, "string"],
+  ]);
+  assert.equal(set.flags.find((flag) => flag.name === "decided-in")?.valueShape, "minutes:<id>#D<n>");
 });
 
 test("required flags in the catalog match the dispatcher's missing-argument failure", async () => {

@@ -9,6 +9,13 @@ machine-readable read surface and `settings-set` is the governed write surface.
 This file documents the finite keys the engine is allowed to consume. A key is not in the
 engine catalog merely because it appears in helper or portal prose.
 
+The existing `models.*` rows remain workspace-compatible history. `settings-catalog` also returns
+`modelPolicy`, a device-engine catalogue with its host partitions and the current scope's legacy
+model values, declarations, inherited values, and source. This is a separate source projection,
+not another settings row: old records remain readable, while a configured device host policy is
+authoritative for that host and cannot be overridden by a project model setting. The CLI/API write
+surface and file contract are specified in `specs/engine-model-policy-v1.md`.
+
 ## Configuration scopes (INC-399 R1)
 
 Catalog `layer` and `scope` describe three ownership levels:

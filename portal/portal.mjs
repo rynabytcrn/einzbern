@@ -929,8 +929,8 @@ function isLoopbackHost(hostHeader) {
 // The routes that answer for this device or engine rather than for the selected target, and the two
 // switches, which name the target they select (TCRN-CROSS-INIT-053 R46 I05). The writes are the ones the
 // target check left alone before.
-const TARGET_EXEMPT_READS = Object.freeze(["/api/libraries", "/api/project-targets", "/api/machine-settings", "/api/vocabulary", "/api/commands"]);
-const TARGET_EXEMPT_WRITES = Object.freeze(["/api/library", "/api/configuration-scope", "/api/machine-settings"]);
+const TARGET_EXEMPT_READS = Object.freeze(["/api/libraries", "/api/project-targets", "/api/machine-settings", "/api/model-policy", "/api/vocabulary", "/api/commands"]);
+const TARGET_EXEMPT_WRITES = Object.freeze(["/api/library", "/api/configuration-scope", "/api/machine-settings", "/api/model-policy"]);
 
 const server = createServer((request, response) => requestContext.run({ epoch: selectionEpoch, library: { ...selectedLibrary, configurationProjectId: selectedConfigurationProjectId }, authenticated: false }, async () => {
   if (!isLoopbackHost(request.headers.host)) {
@@ -1017,6 +1017,13 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     // out from those three and keeps no grouping of its own.
     if (request.method === "GET" && pathname === "/api/settings") {
       send(response, 200, await settingsCatalog());
+      return;
+    }
+    // INIT-056's policy belongs to the engine on this device and is partitioned by host. It has no
+    // selected-project scope; the source projection still reports any legacy project records.
+    if (request.method === "GET" && pathname === "/api/model-policy") {
+      const result = await cliResult(["engine-model-policy-catalog", ...(url.searchParams.has("host") ? ["--host", url.searchParams.get("host")] : [])]);
+      send(response, result.ok ? 200 : 409, result.body);
       return;
     }
     if (request.method === "POST" && pathname === "/api/configuration-scope") {
@@ -1379,6 +1386,22 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
         : await cliResult(["machine-settings-set", "--at", now, "--key", key, "--value", String(body.value ?? "")]);
       const readback = result.ok ? await machineSettings() : null;
       send(response, result.ok ? 200 : 409, { ...result.body, readback: readback?.settings?.find((entry) => entry.key === key) ?? null });
+      return;
+    }
+    if (request.method === "POST" && pathname === "/api/model-policy") {
+      const body = await readJsonBody(request);
+      const host = String(body.host ?? "");
+      const decidedIn = String(body.decidedIn ?? "");
+      const result = await cliResult([
+        "engine-model-policy-set",
+        "--workspace", currentLibrary().libraryPath,
+        "--host", host,
+        "--policy", JSON.stringify(body.policy ?? null),
+        "--at", new Date().toISOString(),
+        "--actor", ACTOR,
+        "--decided-in", decidedIn,
+      ]);
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok });
       return;
     }
     if (request.method === "GET" && pathname === "/api/agents-md") {

@@ -479,10 +479,10 @@ test("P8 classifies only the exact reviewed 2.0.0 package members", async () => 
 
   const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
     .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
-  // 2.0.1, 2.0.2, 2.0.3, 2.1.0, 2.2.0 and 2.2.1 have their own reviewed rules (the tests below); the version after them has none.
-  const nextVersion = joinParts(["2", "2", "2"], ".");
+  // Later reviewed versions have their own exact rules; the draft 2.2.3 remains unclassified.
+  const nextVersion = joinParts(["2", "2", "3"], ".");
   for (const path of memberPaths) {
-    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.2 is not covered");
+    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.3 is not covered");
     assert.ok(ownerFinding({ ...entries[0], label: member(path, nextVersion), sourcePaths: p8ReleasePrivacySourcePaths(member(path, nextVersion)) }));
   }
   const adjacent = member("launchers/einzbern.mjs");
@@ -526,10 +526,10 @@ test("P8 classifies only the exact reviewed 2.0.1 package members", async () => 
 
   const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
     .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
-  // 2.0.2, 2.0.3, 2.1.0, 2.2.0 and 2.2.1 have their own reviewed rules (the tests below); the version after them has none.
-  const nextVersion = joinParts(["2", "2", "2"], ".");
+  // Later reviewed versions have their own exact rules; the draft 2.2.3 remains unclassified.
+  const nextVersion = joinParts(["2", "2", "3"], ".");
   for (const path of memberPaths) {
-    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.2 is not covered");
+    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.3 is not covered");
     assert.ok(ownerFinding({ ...entries[0], label: member(path, nextVersion), sourcePaths: p8ReleasePrivacySourcePaths(member(path, nextVersion)) }));
   }
   const adjacent = member("launchers/einzbern.mjs");
@@ -573,10 +573,10 @@ test("P8 classifies only the exact reviewed 2.0.2 package members", async () => 
 
   const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
     .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
-  // 2.0.3, 2.1.0, 2.2.0 and 2.2.1 have their own reviewed rules (the tests below); the version after them has none.
-  const nextVersion = joinParts(["2", "2", "2"], ".");
+  // Later reviewed versions have their own exact rules; the draft 2.2.3 remains unclassified.
+  const nextVersion = joinParts(["2", "2", "3"], ".");
   for (const path of memberPaths) {
-    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.2 is not covered");
+    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.3 is not covered");
     assert.ok(ownerFinding({ ...entries[0], label: member(path, nextVersion), sourcePaths: p8ReleasePrivacySourcePaths(member(path, nextVersion)) }));
   }
   const adjacent = member("launchers/einzbern.mjs");
@@ -620,10 +620,10 @@ test("P8 classifies only the exact reviewed 2.0.3 package members", async () => 
 
   const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
     .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
-  // 2.1.0, 2.2.0 and 2.2.1 have their own reviewed rules (the tests below); the version after them has none.
-  const nextVersion = joinParts(["2", "2", "2"], ".");
+  // Later reviewed versions have their own exact rules; the draft 2.2.3 remains unclassified.
+  const nextVersion = joinParts(["2", "2", "3"], ".");
   for (const path of memberPaths) {
-    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.2 is not covered");
+    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.3 is not covered");
     assert.ok(ownerFinding({ ...entries[0], label: member(path, nextVersion), sourcePaths: p8ReleasePrivacySourcePaths(member(path, nextVersion)) }));
   }
   const adjacent = member("launchers/einzbern.mjs");
@@ -667,10 +667,10 @@ test("P8 classifies only the exact reviewed 2.1.0 package members", async () => 
 
   const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
     .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
-  // 2.2.0 and 2.2.1 have their own reviewed rules (the tests below); the version after them has none.
-  const nextVersion = joinParts(["2", "2", "2"], ".");
+  // Later reviewed versions have their own exact rules; the draft 2.2.3 remains unclassified.
+  const nextVersion = joinParts(["2", "2", "3"], ".");
   for (const path of memberPaths) {
-    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.2 is not covered");
+    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.3 is not covered");
     assert.ok(ownerFinding({ ...entries[0], label: member(path, nextVersion), sourcePaths: p8ReleasePrivacySourcePaths(member(path, nextVersion)) }));
   }
   const adjacent = member("launchers/einzbern.mjs");
@@ -714,10 +714,10 @@ test("P8 classifies only the exact reviewed 2.2.0 package members", async () => 
 
   const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
     .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
-  // 2.2.1 has its own reviewed rules (the test below); the version after it has none.
-  const nextVersion = joinParts(["2", "2", "2"], ".");
+  // 2.2.1 and 2.2.2 have exact reviewed rules; the draft 2.2.3 version remains unclassified.
+  const nextVersion = joinParts(["2", "2", "3"], ".");
   for (const path of memberPaths) {
-    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.2 is not covered");
+    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.3 is not covered");
     assert.ok(ownerFinding({ ...entries[0], label: member(path, nextVersion), sourcePaths: p8ReleasePrivacySourcePaths(member(path, nextVersion)) }));
   }
   const adjacent = member("launchers/einzbern.mjs");
@@ -761,10 +761,10 @@ test("P8 classifies only the exact reviewed 2.2.1 package members", async () => 
 
   const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
     .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
-  // The version after 2.2.1 has no rules.
-  const nextVersion = joinParts(["2", "2", "2"], ".");
+  // The draft version after the reviewed 2.2.2 package has no rules yet.
+  const nextVersion = joinParts(["2", "2", "3"], ".");
   for (const path of memberPaths) {
-    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.2 is not covered");
+    assert.deepEqual(p8ReleasePrivacySourcePaths(member(path, nextVersion)), [], "2.2.3 is not covered");
     assert.ok(ownerFinding({ ...entries[0], label: member(path, nextVersion), sourcePaths: p8ReleasePrivacySourcePaths(member(path, nextVersion)) }));
   }
   const adjacent = member("launchers/einzbern.mjs");

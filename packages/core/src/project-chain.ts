@@ -87,7 +87,9 @@ export async function resolveProjectTarget(referenceInput: ProjectReference, hom
     const models = settings.find(entry => entry.key === "models.tiers");
     const language = settings.find(entry => entry.key === "artifact.language");
     const requirements = {
-      design: design.status === "declared" ? [] : ["design.bundle"],
+      // A design authority is optional. Its absence remains visible in `design.status`,
+      // but does not make unrelated development unavailable.
+      design: design.status === "conflicting" ? ["design.bundle"] : [],
       model: models?.value && JSON.parse(models.value).some((tier: { model?: string; runner?: string }) => Boolean(tier.model?.trim() && tier.runner?.trim())) ? [] : ["models.tiers"],
       repository: repositoryContexts.length > 0 && repositoryContexts.every(entry => entry.status === "bound") ? [] : ["registered.repository-build-binding"],
       output: repositoryContexts.length > 0 && repositoryContexts.every(entry => entry.outputReady) ? [] : ["registered.project-output"],

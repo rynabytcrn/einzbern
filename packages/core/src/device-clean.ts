@@ -212,10 +212,11 @@ async function heldBy(path: string): Promise<readonly Held[]> {
 // What one thing under skill-copies/ is, `at` its path below it, from its lstat alone: a copy an
 // update replaced (a directory), what the migration moved there (whatever it was, since it was moved
 // whole), a directory on the way to either, or something else.
-type SkillCopiesPlace = "update" | "migration" | "way" | "unknown";
+type SkillCopiesPlace = "update-record" | "update" | "migration" | "way" | "unknown";
 
 function skillCopiesPlace(at: readonly string[], stats: Stats): SkillCopiesPlace {
   const path = at.join("/");
+  if (path === SKILL_COPIES_FILES.record) return stats.isFile() ? "update-record" : "unknown";
   if (UPDATE_COPIES.includes(path)) return stats.isDirectory() ? "update" : "unknown";
   if (MIGRATED_COPIES.includes(path) || (at.length === 2 && at[0] === LEGACY_DEVICE_DIRECTORY)) return "migration";
   return SKILL_COPIES_WAYS.has(path) && stats.isDirectory() ? "way" : "unknown";

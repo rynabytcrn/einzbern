@@ -260,6 +260,7 @@ test("classified privacy samples stay path-and-line exact across source, history
     "packages/core/src/names.ts",
     "tests/agents-sections.test.mjs",
     "tests/cloud-roots.test.mjs",
+    "tests/configuration-projections.test.mjs",
     "tests/p1-all-legs.test.mjs",
     "tests/privacy-boundary.test.mjs",
     "tests/push-wiki.test.mjs",

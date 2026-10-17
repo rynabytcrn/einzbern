@@ -83,3 +83,13 @@ closed on a version left behind in `README.md` prose and on the CJK emphasis rul
 
 When to cut a release, and what the version number is allowed to track, are in
 `docs/versioning/release-policy.md`.
+
+## Package-manager configuration
+
+pnpm 11 reads non-registry settings from `pnpm-workspace.yaml`, not `.npmrc`.
+The workspace declares offline, frozen-lockfile and ignored lifecycle scripts as defaults.
+`.npmrc` remains for npm bootstrap policy; it is not evidence that pnpm adopted those values.
+`tests/ci-bootstrap.test.mjs` reads the effective pnpm values to guard this boundary.
+Only intentional dependency acquisition may override offline mode; the CI bootstrap names
+`--config.offline=false` explicitly and keeps the lockfile frozen and scripts disabled.
+See [pnpm configuration migration](https://github.com/pnpm/pnpm.io/blob/main/docs/migration.md).

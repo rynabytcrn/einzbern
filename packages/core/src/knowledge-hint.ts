@@ -18,7 +18,7 @@
 // line ends saying how many.
 
 import { PROTOCOL_LIMITS, compareCanonicalText } from "../../protocol/src/index.js";
-import { KNOWLEDGE_LIMITS, KNOWLEDGE_STORE_SCOPES, knowledgeConflictHits, knowledgeRelevanceScore, listKnowledgeMetadata } from "./knowledge-core.js";
+import { KNOWLEDGE_STORE_SCOPES, knowledgeConflictHits, knowledgeRelevanceScore, listKnowledgeMetadata } from "./knowledge-core.js";
 import type { KnowledgeUnitMetadata } from "./knowledge-core.js";
 import { minutesView } from "./minutes.js";
 import { storyFields } from "./story-fields.js";
@@ -26,6 +26,8 @@ import { cardFamilies, familiesApart, initFamilyOf, referenceFamilies } from "./
 import type { WorkspaceState } from "./workspace.js";
 
 /** The question every hint line opens with. */
+export const KNOWLEDGE_HINT_MAXIMUM_CANDIDATES = 5;
+
 export const KNOWLEDGE_HINT_QUESTION = "是否有可提取的知识";
 
 /**
@@ -69,7 +71,7 @@ function targetFamilies(state: HintState, target: KnowledgeHintTarget): readonly
  * The hint for one work record or minutes record: every live card that scores as a possible
  * conflict with its text, but for those of an INIT family apart from the target's
  * (TCRN-CROSS-SUB-504), ranked by that score (then by id) and cut to the length of a knowledge
- * answer (KNOWLEDGE_LIMITS.maximumQueryResults), the line that names them, or 「无」, and ends with
+ * completion hint (at most five cards), the line that names them, or 「无」, and ends with
  * how many were left out by family, and that number (`filteredByFamily`).
  */
 export function knowledgeHintFor(state: HintState, cards: readonly KnowledgeUnitMetadata[], target: KnowledgeHintTarget): KnowledgeHint {
@@ -89,7 +91,7 @@ export function knowledgeHintFor(state: HintState, cards: readonly KnowledgeUnit
   const filteredByFamily = hits.length - kept.length;
   const ranked = kept
     .sort((left, right) => score(right) - score(left) || compareCanonicalText(left, right))
-    .slice(0, KNOWLEDGE_LIMITS.maximumQueryResults);
+    .slice(0, KNOWLEDGE_HINT_MAXIMUM_CANDIDATES);
   return {
     line: `${KNOWLEDGE_HINT_QUESTION}；可能冲突的卡：${ranked.length === 0 ? "无" : ranked.join("、")}；按族滤掉 ${String(filteredByFamily)} 张`,
     conflictCandidateIds: ranked,

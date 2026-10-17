@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { appendHistoricalModelSetting, historicalValidationRefusal } from "./helpers/historical-model-settings.mjs";
 // TCRN-CROSS-STORY-484 R3, R4, R5 (TCRN-CROSS-SUB-339): the settings shrink.
 // execution.dispatchTiers is renamed models.tiers; a recorded execution.dispatchTiers value reads as
 // models.tiers, with the host a row sits under as its runner, until a models.tiers write supersedes
@@ -48,7 +49,8 @@ import { RENAMED_SETTING_KEYS, RETIRED_SETTING_KEYS, currentSettingRecord } from
 import { withWorkspacePerfInstrumentation } from "../dist/build/packages/core/src/workspace-perf-instrumentation.js";
 import { restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
 
-// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+// Historical model scenarios below use explicit archived-event fixtures; actual CLI writes
+// are separately asserted to refuse device-owned keys. Other CLI reads/writes remain real.
 standInForAtelier();
 
 let second = 0;
@@ -187,7 +189,7 @@ test("484-R3, AC3: a models.tiers write supersedes the carried-over value, and a
     record(20, "main", "claude-code", "fixture-main", "max"),
     record(25, "main", "claude-code", "fixture-main", "high"),
   ];
-  const written = await cli(setTiers(workspace, next));
+  const written = await appendHistoricalModelSetting(setTiers(workspace, next));
   assert.equal(written.setting.key, "models.tiers");
   assert.equal(written.setting.revision, 2, "the write follows the carried-over record");
   const sorted = [next[1], next[2], next[0]];
@@ -201,19 +203,19 @@ test("484-R3, AC3: a models.tiers write supersedes the carried-over value, and a
   assert.equal(baseModelsTier(JSON.parse(catalog.settings.find((setting) => setting.key === "models.tiers").currentValue), "economy").runner, "codex-cli");
 });
 
-test("508-AC3: a models.tiers record that names a missing category, or repeats another record's order, is refused, and nothing is recorded", async (context) => {
+test("Historical validator/replay 508-AC3: a models.tiers record that names a missing category, or repeats another record's order, is refused, and nothing is recorded", async (context) => {
   const { workspace } = await library(context);
-  const unknown = await refusalOf(setTiers(workspace, [record(10, "economy", "codex", "m", "low"), record(20, "cheap", "codex", "m", "low")]));
+  const unknown = await historicalValidationRefusal(setTiers(workspace, [record(10, "economy", "codex", "m", "low"), record(20, "cheap", "codex", "m", "low")]));
   assert.equal(unknown.reasonCode, "MODELS_CATEGORY_UNKNOWN");
   assert.deepEqual([unknown.details.path, unknown.details.category, unknown.details.references], ["models.tiers.20.category", "cheap", ["models.tiers.20"]]);
-  const repeated = await refusalOf(setTiers(workspace, [record(10, "economy", "codex", "m", "low"), record(10, "main", "codex", "m", "max")]));
+  const repeated = await historicalValidationRefusal(setTiers(workspace, [record(10, "economy", "codex", "m", "low"), record(10, "main", "codex", "m", "max")]));
   assert.equal(repeated.reasonCode, "MODELS_ORDER_DUPLICATE");
   assert.deepEqual([repeated.details.path, repeated.details.order], ["models.tiers[1].order", 10]);
   assert.equal((await validateWorkspace(workspace)).version, 0, "no refusal appended an event");
   // The category exists once models.category holds it, and the same record is then accepted.
   const categories = [...JSON.parse(MODELS_CATEGORY_DEFAULT_VALUE), { id: "cheap", name: "Cheap", description: "", order: 40 }];
-  await cli(["settings-set", "--workspace", workspace, "--at", at(), "--key", "models.category", "--value", JSON.stringify(categories)]);
-  const accepted = await cli(setTiers(workspace, [record(10, "economy", "codex", "m", "low"), record(20, "cheap", "codex", "m", "low")]));
+  await appendHistoricalModelSetting(["settings-set", "--workspace", workspace, "--at", at(), "--key", "models.category", "--value", JSON.stringify(categories)]);
+  const accepted = await appendHistoricalModelSetting(setTiers(workspace, [record(10, "economy", "codex", "m", "low"), record(20, "cheap", "codex", "m", "low")]));
   assert.deepEqual(JSON.parse(accepted.setting.value).map((entry) => entry.category), ["economy", "cheap"]);
   assert.equal((await validateWorkspace(workspace)).version, 2);
 });
@@ -245,7 +247,7 @@ test("484-R3: an old-layout workspace reads its execution.dispatchTiers as model
   }
 });
 
-test("508-R2: a models.tiers value TCRN-CROSS-STORY-484 recorded, one table per host, reads as records in every read, and its event keeps its bytes", async (context) => {
+test("Historical validator/replay 508-R2: a models.tiers value TCRN-CROSS-STORY-484 recorded, one table per host, reads as records in every read, and its event keeps its bytes", async (context) => {
   const { workspace } = await library(context);
   const perHost = {
     "claude-code": {
@@ -277,8 +279,8 @@ test("508-R2: a models.tiers value TCRN-CROSS-STORY-484 recorded, one table per 
   assert.deepEqual(JSON.parse(catalog.settings.find((setting) => setting.key === "models.category").currentValue).map((category) => [category.id, category.order]),
     [["flagship", 10], ["main", 20], ["economy", 30], ["review", 40]], "an unset models.category holds the tier name outside the defaults, by name after them");
   // The derived category exists for the next write, and a name that is nowhere is still refused.
-  await cli(setTiers(workspace, [record(40, "review", "claude-code", "fixture-review", "max")]));
-  assert.equal((await refusalOf(setTiers(workspace, [record(40, "audit", "claude-code", "fixture-review", "max")]))).reasonCode, "MODELS_CATEGORY_UNKNOWN");
+  await appendHistoricalModelSetting(setTiers(workspace, [record(40, "review", "claude-code", "fixture-review", "max")]));
+  assert.equal((await historicalValidationRefusal(setTiers(workspace, [record(40, "audit", "claude-code", "fixture-review", "max")]))).reasonCode, "MODELS_CATEGORY_UNKNOWN");
   // A snapshot another build wrote before the record table seeds the same records a replay holds.
   const legacy = { schemaVersion: "tcrn.workspace-setting.v1", key: "models.tiers", layerKind: "workspace_configuration", value, revision: 1, updatedAt: at(), tombstone: false };
   assert.deepEqual(currentSettingRecord(legacy), { ...legacy, value: canonicalJson(expected) });
@@ -363,7 +365,7 @@ test("484-R3: the history of every key 484 retires still replays, and none of it
   }
 });
 
-test("508-R2: models.tiers validation names the field it refuses", () => {
+test("Historical validator/replay 508-R2: models.tiers validation names the field it refuses", () => {
   const valid = [record(20, "economy", "codex-cli", "fixture-codex", "max"), record(10, "main", "claude-code", "fixture-main", "max", "the reviewer")];
   assert.deepEqual(validateModelsTiers(valid), [valid[1], valid[0]], "read in ascending order");
   assert.deepEqual(validateModelsTiers([]), [], "an empty table is a table");
@@ -396,18 +398,18 @@ test("508-R2: models.tiers validation names the field it refuses", () => {
   assert.deepEqual(parseModelsTiers(canonicalJson(HOST_DEFAULTS)), DEFAULT_RECORDS);
 });
 
-test("508-R2: a write refuses the per-host value and stores the array in canonical order", async (context) => {
+test("Historical validator/replay 508-R2: a write refuses the per-host value and stores the array in canonical order", async (context) => {
   const { workspace } = await library(context);
-  const perHost = await refusalOf(setTiers(workspace, { codex: { economy: { runner: "codex", model: "m", effort: "low" } } }));
+  const perHost = await historicalValidationRefusal(setTiers(workspace, { codex: { economy: { runner: "codex", model: "m", effort: "low" } } }));
   assert.deepEqual([perHost.reasonCode, perHost.details.path], ["SETTINGS_VALUE_INVALID", "models.tiers"]);
-  const noNote = await refusalOf(setTiers(workspace, [{ order: 10, category: "economy", runner: "codex", model: "m", effort: "low" }]));
+  const noNote = await historicalValidationRefusal(setTiers(workspace, [{ order: 10, category: "economy", runner: "codex", model: "m", effort: "low" }]));
   assert.deepEqual([noNote.reasonCode, noNote.details.path], ["SETTINGS_VALUE_INVALID", "models.tiers[0]"]);
-  const written = await cli(["settings-set", "--workspace", workspace, "--at", at(), "--key", "models.tiers",
+  const written = await appendHistoricalModelSetting(["settings-set", "--workspace", workspace, "--at", at(), "--key", "models.tiers",
     "--value", ` [ {"runner":"codex","order":20,"note":"","model":"m","effort":"low","category":"economy"}, {"order":10,"category":"main","runner":"codex","model":"m","effort":"max","note":""} ] `]);
   assert.equal(written.setting.value, canonicalJson([record(10, "main", "codex", "m", "max"), record(20, "economy", "codex", "m", "low")]));
 });
 
-test("508-R4: a category's base record is its largest order, whatever its runner; a category without a record is MODELS_CATEGORY_EMPTY", () => {
+test("Historical validator/replay 508-R4: a category's base record is its largest order, whatever its runner; a category without a record is MODELS_CATEGORY_EMPTY", () => {
   const tiers = validateModelsTiers([
     record(10, "main", "claude-code", "fixture-main", "max"),
     record(30, "economy", "codex-cli", "fixture-codex", "low"),
@@ -421,7 +423,7 @@ test("508-R4: a category's base record is its largest order, whatever its runner
   assert.deepEqual(baseModelsTier(defaultModelsTiers(), "economy"), record(60, "economy", "claude-code", "", ""), "the default economy base is claude-code's record");
 });
 
-test("508-R2: the default table is the TCRN-CROSS-STORY-484 default read as records, and the legacy mappings", () => {
+test("Historical validator/replay 508-R2: the default table is the TCRN-CROSS-STORY-484 default read as records, and the legacy mappings", () => {
   const defaults = defaultModelsTiers();
   assert.deepEqual(defaults, DEFAULT_RECORDS);
   assert.equal(MODELS_TIERS_DEFAULT_VALUE, canonicalJson(defaults));
@@ -449,8 +451,9 @@ test("484-R4, MIN-233 D2: every catalog entry says whether a model may write it,
     "quota.weeklyWaitPercent": [null, null, "number", 1, 100],
   });
   for (const value of ["0", "101", "7.5"]) {
-    assert.equal(await reasonOf(["settings-set", "--workspace", workspace, "--at", at(), "--key", "quota.weeklyWaitPercent", "--value", value]), "SETTINGS_VALUE_INVALID", value);
+    assert.equal((await historicalValidationRefusal(["settings-set", "--workspace", workspace, "--at", at(), "--key", "quota.weeklyWaitPercent", "--value", value])).reasonCode, "SETTINGS_VALUE_INVALID", value);
+    assert.equal(await reasonOf(["settings-set", "--workspace", workspace, "--at", at(), "--key", "quota.weeklyWaitPercent", "--value", value]), "SETTINGS_KEY_DEVICE_LEVEL");
   }
-  const set = await cli(["settings-set", "--workspace", workspace, "--at", at(), "--key", "quota.weeklyWaitPercent", "--value", "98"]);
+  const set = await appendHistoricalModelSetting(["settings-set", "--workspace", workspace, "--at", at(), "--key", "quota.weeklyWaitPercent", "--value", "98"]);
   assert.equal(set.setting.value, "98");
 });

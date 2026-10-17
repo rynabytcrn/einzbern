@@ -1,5 +1,12 @@
-import { readMachineSettingsCatalog, machineSettingsPath } from "./machine-settings.js";
 // SPDX-License-Identifier: Apache-2.0
+import { readExecutionAdmissionSnapshot, resolveExecutionAdmissionFromSnapshot } from "./execution-admission.js";
+import type { ExecutionAdmissionRequest, ExecutionAdmissionSnapshot } from "./execution-admission.js";
+import { variableExportDecision } from "./variables.js";
+import type { VariableRecordValue } from "./variables.js";
+import { engineModelPolicyCatalogFromSnapshot } from "./engine-model-policy.js";
+import { MACHINE_SETTINGS_FILE_NAME, MACHINE_SETTINGS_CATALOG } from "./machine-settings.js";
+import type { MachineSettingsReadback } from "./machine-settings.js";
+import { resolveExecutionConcurrency } from "./execution-policy.js";
 import { join, relative, isAbsolute } from "node:path";
 import { deviceHome } from "./device-home.js";
 import { realpath } from "node:fs/promises";
@@ -29,8 +36,30 @@ export async function declareChainIdentity(root: string, identity: ChainIdentity
   return setConfigRecord(root, { collection: "chain", key: "identity", value: identity, ...options });
 }
 export type ProjectTargetStatus = "unregistered" | "unavailable" | "invalid-chain" | "project-absent" | "project-deleted" | "ambiguous" | "unconfigured" | "conflicting" | "configured";
+
+function projectExecutionConfiguration(snapshot: ExecutionAdmissionSnapshot): {
+  readonly snapshot: ExecutionAdmissionSnapshot;
+  readonly enginePolicy: ReturnType<typeof engineModelPolicyCatalogFromSnapshot>;
+  readonly deviceSettings: MachineSettingsReadback;
+} {
+  const file = snapshot.machineSettings;
+  return Object.freeze({
+    snapshot,
+    enginePolicy: engineModelPolicyCatalogFromSnapshot(snapshot.enginePolicy, undefined, snapshot.home),
+    deviceSettings: Object.freeze({
+      schemaVersion: file.schemaVersion, layerKind: file.layerKind, path: join(snapshot.home, MACHINE_SETTINGS_FILE_NAME),
+      settings: Object.freeze(MACHINE_SETTINGS_CATALOG.map(entry => Object.freeze({ ...entry, currentValue: Object.hasOwn(file.values, entry.key) ? file.values[entry.key]! : null }))),
+      updatedAt: file.updatedAt,
+    }),
+  });
+}
+
 /** No caller-supplied path is opened. Repositories sharing one real library are one target. */
 export async function resolveProjectTarget(referenceInput: ProjectReference, home?: string, visited = new Set<string>()): Promise<Record<string, unknown>> {
+  return resolveProjectTargetFromSnapshot(referenceInput, home, visited);
+}
+
+async function resolveProjectTargetFromSnapshot(referenceInput: ProjectReference, home: string | undefined, visited: Set<string>, execution?: ReturnType<typeof projectExecutionConfiguration>): Promise<Record<string, unknown>> {
   const reference = projectReference(referenceInput);
   const base = { reference, writeAuthority: "not-granted" };
   const key = projectReferenceKey(reference);
@@ -62,7 +91,7 @@ export async function resolveProjectTarget(referenceInput: ProjectReference, hom
     const commonRecord = scoped.configRecords.find(entry => entry.collection === "chain" && entry.key === "common-default");
     let common: Record<string, unknown> | null = null;
     if (commonRecord) {
-      common = await resolveProjectTarget(projectReference(commonRecord.value), home, seen);
+      common = await resolveProjectTargetFromSnapshot(projectReference(commonRecord.value), home, seen, execution);
       if (!["configured", "unconfigured"].includes(String(common.status)) || !Array.isArray(common.settings)) return { ...base, status: "conflicting", reason: "common-default-unresolved", common };
       const defaults = common.settings as typeof settings;
       for (const entry of settings) {
@@ -84,13 +113,14 @@ export async function resolveProjectTarget(referenceInput: ProjectReference, hom
       try { const projectRoot = await realpath(entry.projectPath); const relation = relative(root, projectRoot); outputReady = relation !== "" && (relation.startsWith("..") || isAbsolute(relation)); } catch { /* unavailable output remains unready */ }
       return { projectPath: entry.projectPath, gitRemote: entry.gitRemote, outputReady, binding: matches.length === 1 ? matches[0]! : null, status: matches.length === 1 ? "bound" : matches.length > 1 ? "ambiguous" : "unconfigured" };
     }));
-    const models = settings.find(entry => entry.key === "models.tiers");
+    const { enginePolicy, deviceSettings } = execution ?? projectExecutionConfiguration(await readExecutionAdmissionSnapshot(home));
+    const configuredHosts = Object.entries(enginePolicy.hosts).filter(([, policy]) => policy.tiers.some(tier => tier.model.trim() && tier.effort.trim())).map(([host]) => host);
     const language = settings.find(entry => entry.key === "artifact.language");
     const requirements = {
       // A design authority is optional. Its absence remains visible in `design.status`,
       // but does not make unrelated development unavailable.
-      design: design.status === "conflicting" ? ["design.bundle"] : [],
-      model: models?.value && JSON.parse(models.value).some((tier: { model?: string; runner?: string }) => Boolean(tier.model?.trim() && tier.runner?.trim())) ? [] : ["models.tiers"],
+      design: design.status === "conflicting" ? ["design.bundle"] : design.bindings.some(binding => binding.key === "design.authority" && binding.value !== null) ? [...design.missing] : [],
+      model: configuredHosts.length > 0 ? [] : ["engine.host-policy"],
       repository: repositoryContexts.length > 0 && repositoryContexts.every(entry => entry.status === "bound") ? [] : ["registered.repository-build-binding"],
       output: repositoryContexts.length > 0 && repositoryContexts.every(entry => entry.outputReady) ? [] : ["registered.project-output"],
       gates: scoped.configRecords.some(entry => entry.collection === "gate" && entry.value.enabled !== false) ? [] : ["gate.declarations"],
@@ -99,7 +129,7 @@ export async function resolveProjectTarget(referenceInput: ProjectReference, hom
     const readiness = Object.fromEntries(Object.entries(requirements).map(([operation, missing]) => [operation, { ready: missing.length === 0, missing }]));
     const developmentMissing = [...requirements.design, ...requirements.model, ...requirements.repository, ...requirements.output, ...requirements.language];
     readiness.development = { ready: developmentMissing.length === 0, missing: developmentMissing };
-    return { ...base, status: design.status === "conflicting" ? "conflicting" : design.status === "unconfigured" ? "unconfigured" : "configured", name: project.name, libraryPath: root, chain: identity, version: state.version, readiness, repositoryContexts, commonDefaultsContract: "optional project scalar settings only; local gate roots and managed digests never inherit", settings, configRecords: scoped.configRecords, configSources: scoped.configSources, design, common, repositoryBindings: scoped.configRecords.find(entry => entry.collection === "chain" && entry.key === "repositories")?.value ?? null, deviceRepositories: entries.map(entry => ({ projectPath: entry.projectPath, gitRemote: entry.gitRemote })), deviceSettings: await readMachineSettingsCatalog(machineSettingsPath(home)), deviceSettingsSource: "device/user; not a chain default" };
+    return { ...base, status: design.status === "conflicting" ? "conflicting" : design.status === "unconfigured" ? "unconfigured" : "configured", name: project.name, libraryPath: root, chain: identity, version: state.version, readiness, enginePolicy, configuredHosts, modelCapabilityVerification: "requires-explicit-host-resolution", repositoryContexts, commonDefaultsContract: "optional project scalar settings only; local gate roots and managed digests never inherit", settings, configRecords: scoped.configRecords, configSources: scoped.configSources, design, common, repositoryBindings: scoped.configRecords.find(entry => entry.collection === "chain" && entry.key === "repositories")?.value ?? null, deviceRepositories: entries.map(entry => ({ projectPath: entry.projectPath, gitRemote: entry.gitRemote })), deviceSettings, deviceSettingsSource: "device/user; not a chain default" };
   } catch (error) { return { ...base, status: "conflicting", reason: String(error) }; }
 }
 /**
@@ -116,32 +146,50 @@ export function projectTargetHandoff(work: { readonly workId: string; readonly w
   const settings = context.settings as readonly { readonly key: string; readonly value: unknown }[];
   const value = (key: string): unknown => settings.find(entry => entry.key === key)?.value ?? null;
   const records = (Array.isArray(context.configRecords) ? context.configRecords : []) as readonly { readonly collection: string; readonly key: string; readonly value: Readonly<Record<string, unknown>> }[];
+  const variables = records.filter(record => record.collection === "variable").map(record => ({ record, reason: variableExportDecision(record.value as unknown as VariableRecordValue, "handoff") }));
   return {
     workId: work.workId, workRevision: work.workRevision, reference: context.reference, version: context.version, libraryPath: context.libraryPath,
-    repositories: context.repositoryContexts, settings: context.settings, design: context.design, repositoryBindings: context.repositoryBindings, readiness: context.readiness,
+    executionAdmission: context.executionAdmission ?? { status: "not-requested", reason: "read-only-context-is-not-dispatch-admission" },
+    enginePolicy: context.enginePolicy ?? null, executionConcurrency: context.executionConcurrency ?? null, repositories: context.repositoryContexts, settings: settings.filter(entry => !entry.key.startsWith("models.") && !entry.key.startsWith("quota.")), design: context.design, repositoryBindings: context.repositoryBindings, readiness: context.readiness,
     output: { language: value("artifact.language"), knowledgeArticlesPath: value("knowledge.articlesPath"), generatedArtifactsPath: value("workspace.generatedArtifactsPath") },
     rules: records.filter(record => record.collection === "rule" && record.value.enabled === true).map(record => ({ id: record.key, version: record.value.version, ...(record.value.order === undefined ? {} : { order: record.value.order }) })),
-    variables: records.filter(record => record.collection === "variable").map(record => ({ key: record.key, value: record.value })),
+    variables: variables.filter(entry => entry.reason === null).map(({ record }) => ({ key: record.key, value: record.value })),
+    withheldVariables: variables.filter(entry => entry.reason !== null).map(({ record, reason }) => ({ key: record.key, reason })),
     writeAuthority: "not-granted",
   };
 }
 
-export async function workProjectContexts(state: WorkspaceState, workId: string, home?: string): Promise<Record<string, unknown>> {
+export async function workProjectContexts(state: WorkspaceState, workId: string, home?: string, executionRequest?: ExecutionAdmissionRequest): Promise<Record<string, unknown>> {
   const work = state.work.find(entry => entry.id === workId && !entry.tombstone);
   if (!work) throw new ProjectChainError("work does not exist");
   const involvedProjects = involvedProjectsOf(work);
+  // Capture each device file once for this request. All target/common readbacks and admissions
+  // share these values; this is not a transaction across the independently stored device files.
+  const execution = projectExecutionConfiguration(await readExecutionAdmissionSnapshot(home));
+  const { enginePolicy, snapshot } = execution;
+  const evaluatedAt = new Date().toISOString();
   // Each target resolves on its own: one that fails is a result of its own, never the end of the others.
   const resolved = await Promise.all(involvedProjects.targets.map(async (reference): Promise<Record<string, unknown>> => {
-    try { return await resolveProjectTarget(reference, home); }
+    try { return await resolveProjectTargetFromSnapshot(reference, snapshot.home, new Set(), execution); }
     catch (error) { return { reference, writeAuthority: "not-granted", status: "invalid-chain", reason: String(error) }; }
   }));
-  const contexts: Record<string, unknown>[] = resolved.map(context => ({ ...context, handoff: projectTargetHandoff({ workId, workRevision: work.revision }, context) }));
+  const deviceLimit = Number(snapshot.machineSettings.values["execution.maxConcurrentAgents"] ?? MACHINE_SETTINGS_CATALOG.find(entry => entry.key === "execution.maxConcurrentAgents")!.defaultValue);
+  const contexts: Record<string, unknown>[] = resolved.map(context => {
+    const settings = context.settings as { key: string; value: unknown }[] | undefined;
+    const budget = settings?.find(entry => entry.key === "execution.maxConcurrentSubagents")?.value;
+    const executionConcurrency = Array.isArray(settings) ? resolveExecutionConcurrency(deviceLimit, budget == null ? undefined : Number(budget)) : null;
+    const executionAdmission = executionRequest === undefined ? { status: "not-requested", reason: "read-only-context-is-not-dispatch-admission" }
+      : !Array.isArray(settings) ? { status: "refused", reasons: ["project-context-unresolved"] }
+      : resolveExecutionAdmissionFromSnapshot(snapshot, executionRequest, { now: evaluatedAt, ...(budget == null ? {} : { projectLimit: Number(budget) }) });
+    const effective = { ...context, enginePolicy, executionConcurrency, executionAdmission };
+    return { ...effective, handoff: projectTargetHandoff({ workId, workRevision: work.revision }, effective) };
+  });
   const conflicts: string[] = [];
-  for (const key of ["design.authority", "design.buildProject", "models.tiers", "artifact.language"]) {
+  for (const key of ["design.authority", "design.buildProject", "artifact.language"]) {
     const values = contexts.map(context => (context.settings as { key: string; value: unknown }[] | undefined)?.find(setting => setting.key === key)?.value).filter(value => value !== undefined);
     if (new Set(values.map(value => canonicalJson(value))).size > 1) conflicts.push(key);
   }
-  return { workId, workRevision: work.revision, involvedProjects, contexts, conflicts, developmentReady: involvedProjects.state === "selected" && contexts.every(context => (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), coordinationReady: involvedProjects.state === "coordination-only", writeAuthority: "not-granted", explanation: "Each context applies only to its stable project reference; authorization and writable roots must be checked independently." };
+  return { workId, workRevision: work.revision, involvedProjects, enginePolicy, dispatchAdmitted: executionRequest !== undefined && involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.executionAdmission as { status: string }).status === "admitted" && (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), executionPolicyCommand: "execution-policy-resolve --host <host> --category <category> --rejections <count>", contexts, conflicts, developmentReady: involvedProjects.state === "selected" && contexts.every(context => (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), coordinationReady: involvedProjects.state === "coordination-only", writeAuthority: "not-granted", explanation: "Each context applies only to its stable project reference; authorization and writable roots must be checked independently." };
 }
 
 type RegisteredLocation = { readonly libraryId: string; readonly path: string };

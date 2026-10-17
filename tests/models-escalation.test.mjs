@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { appendHistoricalModelSetting, historicalValidationRefusal } from "./helpers/historical-model-settings.mjs";
 // TCRN-CROSS-STORY-508 R3, R4, AC1, AC5 (MIN-236 D5, D6; TCRN-CROSS-SUB-406): the three
 // models.escalation settings and the escalation along the order of models.tiers. The keys are
 // scalars of the models group, true, 1 and main by default; a model does not write them through the
@@ -34,8 +35,8 @@ import {
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 import { MODELS_ESCALATION_SETTING_KEYS } from "../dist/build/packages/core/src/models-escalation.js";
 
-// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does; a model's
-// shell is withSurface(undefined, ...).
+// Historical model cases use explicit archived-event fixtures and pure validators.
+// Actual CLI refusal is separately checked for both Atelier and a model shell.
 standInForAtelier();
 
 let second = 0;
@@ -94,7 +95,7 @@ function refusedWith(operation, reasonCode, details = {}) {
   });
 }
 
-test("508-AC1: GIVEN a new library WHEN settings-catalog THEN the three models.escalation keys are scalars of the models group, true, 1 and main by default", async (context) => {
+test("Historical validator/replay 508-AC1: GIVEN a new library WHEN settings-catalog THEN the three models.escalation keys are scalars of the models group, true, 1 and main by default", async (context) => {
   const workspace = await library(context);
   const catalog = await cli(["settings-catalog", "--workspace", workspace]);
   const rows = MODELS_ESCALATION_SETTING_KEYS.map((key) => catalog.settings.find((entry) => entry.key === key));
@@ -129,17 +130,17 @@ test("508-AC1: GIVEN a new library WHEN settings-catalog THEN the three models.e
 test("INC-399: the closed ceiling catalog follows the effective mother through add, rename, save, remove, and replay-only missing/empty states", async (context) => {
   const workspace = await library(context);
   const ceiling = async () => (await cli(["settings-catalog", "--workspace", workspace])).settings.find((entry) => entry.key === CEILING);
-  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("review", 40, "Review") ]));
+  await appendHistoricalModelSetting(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("review", 40, "Review") ]));
   assert.deepEqual((await ceiling()).allowedValues, ["flagship", "main", "economy", "review"], "a category needs no tier or runner to be a candidate");
-  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("review", 40, "Renamed review") ]));
+  await appendHistoricalModelSetting(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("review", 40, "Renamed review") ]));
   assert.deepEqual((await ceiling()).allowedValues, ["flagship", "main", "economy", "review"]);
-  await cli(set(workspace, CEILING, "review"));
+  await appendHistoricalModelSetting(set(workspace, CEILING, "review"));
   assert.deepEqual([(await ceiling()).currentValue, (await ceiling()).valueOrigin], ["review", "stored"]);
   const fresh = await materializeWorkspaceFromGenesis(workspace);
   assert.equal(readSettingsCatalog(fresh.workspaceId, fresh.settings).settings.find((entry) => entry.key === CEILING).currentValue, "review");
-  assert.equal((await refusalOf(set(workspace, "models.category", DEFAULT_CATEGORIES))).reasonCode, "MODELS_CATEGORY_IN_USE");
-  await cli(remove(workspace, CEILING));
-  await cli(set(workspace, "models.category", DEFAULT_CATEGORIES));
+  assert.equal((await historicalValidationRefusal(set(workspace, "models.category", DEFAULT_CATEGORIES))).reasonCode, "MODELS_CATEGORY_IN_USE");
+  await appendHistoricalModelSetting(remove(workspace, CEILING));
+  await appendHistoricalModelSetting(set(workspace, "models.category", DEFAULT_CATEGORIES));
   assert.deepEqual((await ceiling()).allowedValues, ["flagship", "main", "economy"]);
   const replay = (key, value) => ({ schemaVersion: "tcrn.workspace-setting.v1", key, value, layerKind: "workspace_configuration", revision: 1, updatedAt: at(), tombstone: false });
   const read = (settings) => readSettingsCatalog("fixture", settings).settings.find((entry) => entry.key === CEILING);
@@ -151,34 +152,20 @@ test("INC-399: the closed ceiling catalog follows the effective mother through a
   assert.equal(read([replay("models.category", "not-json")]).referenceStatus, "unavailable");
 });
 
-test("508-R3: GIVEN the CLI run from a model's shell WHEN it writes a models.escalation key THEN it is refused with the remedy of changing it in Atelier, and nothing is recorded", async (context) => {
+test("552: model and Atelier project writes cannot change device-owned escalation", async (context) => {
   const workspace = await library(context);
-  const writes = [
-    () => set(workspace, "models.escalation.enabled", "false"),
-    () => set(workspace, "models.escalation.threshold", "2"),
-    () => set(workspace, CEILING, "flagship"),
-  ];
-  for (const argv of writes) {
-    const args = argv();
-    const refused = await withSurface(undefined, () => refusalOf(args));
-    assert.deepEqual([refused.reasonCode, { ...refused.details }], ["MODEL_WRITE_REFUSED", { key: args[args.indexOf("--key") + 1], remedy: "change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>" }]);
-  }
-  assert.equal(await versionOf(workspace), 0, "no refused write appended an event");
-  // Run for Atelier the same writes commit, and a model may not remove them either.
-  for (const argv of writes) assert.equal((await cli(argv())).reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.deepEqual(readModelsEscalation((await materializeWorkspace(workspace)).settings), { enabled: false, threshold: 2, ceiling: "flagship" });
   for (const key of MODELS_ESCALATION_SETTING_KEYS) {
-    assert.equal((await withSurface(undefined, () => refusalOf(remove(workspace, key)))).reasonCode, "MODEL_WRITE_REFUSED", key);
+    for (const args of [set(workspace, key, "2"), remove(workspace, key)]) {
+      assert.equal((await refusalOf(args)).reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
+      assert.equal((await withSurface(undefined, () => refusalOf(args))).reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
+    }
   }
-  assert.equal(await versionOf(workspace), 3);
-  for (const key of MODELS_ESCALATION_SETTING_KEYS) await cli(remove(workspace, key));
-  assert.deepEqual(readModelsEscalation((await materializeWorkspace(workspace)).settings), DEFAULT_ESCALATION, "removed, each key reads as its default again");
-  // No catalog entry says a model may write it.
-  assert.deepEqual(SETTINGS_CATALOG.filter((entry) => entry.key.startsWith("models.escalation.")).map((entry) => [entry.key, entry.modelWritable]),
-    MODELS_ESCALATION_SETTING_KEYS.map((key) => [key, false]).sort(([left], [right]) => (left < right ? -1 : 1)));
+  assert.equal(await versionOf(workspace), 0);
+  assert.deepEqual(readModelsEscalation((await materializeWorkspace(workspace)).settings), DEFAULT_ESCALATION);
+  assert.ok(SETTINGS_CATALOG.filter((entry) => entry.key.startsWith("models.escalation.")).every((entry) => !entry.modelWritable));
 });
 
-test("508-R3: GIVEN a value outside its bounds, or a ceiling models.category does not hold, WHEN written THEN it is refused and nothing is recorded", async (context) => {
+test("Historical validator/replay 508-R3: GIVEN a value outside its bounds, or a ceiling models.category does not hold, WHEN written THEN it is refused and nothing is recorded", async (context) => {
   const workspace = await library(context);
   for (const [key, value] of [
     ["models.escalation.enabled", "yes"],
@@ -189,30 +176,30 @@ test("508-R3: GIVEN a value outside its bounds, or a ceiling models.category doe
     [CEILING, "Main"],
     [CEILING, "main tier"],
   ]) {
-    assert.equal((await refusalOf(set(workspace, key, value))).reasonCode, "SETTINGS_VALUE_INVALID", `${key} ${value}`);
+    assert.equal((await historicalValidationRefusal(set(workspace, key, value))).reasonCode, "SETTINGS_VALUE_INVALID", `${key} ${value}`);
   }
-  assert.equal((await refusalOf(set(workspace, CEILING, "Main"))).details.path, CEILING);
-  const unknown = await refusalOf(set(workspace, CEILING, "cheap"));
+  assert.equal((await historicalValidationRefusal(set(workspace, CEILING, "Main"))).details.path, CEILING);
+  const unknown = await historicalValidationRefusal(set(workspace, CEILING, "cheap"));
   assert.deepEqual([unknown.reasonCode, unknown.details.path, unknown.details.category], ["MODELS_CATEGORY_UNKNOWN", CEILING, "cheap"]);
   assert.equal(await versionOf(workspace), 0, "no refusal appended an event");
 
   // Once models.category holds the category, the same ceiling is accepted.
-  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 40)]));
-  assert.equal((await cli(set(workspace, CEILING, "cheap"))).setting.value, "cheap");
-  assert.equal((await cli(set(workspace, "models.escalation.threshold", "101"))).setting.value, "101");
+  await appendHistoricalModelSetting(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 40)]));
+  assert.equal((await appendHistoricalModelSetting(set(workspace, CEILING, "cheap"))).setting.value, "cheap");
+  assert.equal((await appendHistoricalModelSetting(set(workspace, "models.escalation.threshold", "101"))).setting.value, "101");
   // settings-remove puts main back, so it is checked the same way: refused while the table lacks main.
-  await cli(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "economy", "claude-code")]));
-  await cli(set(workspace, "models.category", [category("flagship", 10), category("economy", 30), category("cheap", 40)]));
+  await appendHistoricalModelSetting(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "economy", "claude-code")]));
+  await appendHistoricalModelSetting(set(workspace, "models.category", [category("flagship", 10), category("economy", 30), category("cheap", 40)]));
   const before = await versionOf(workspace);
-  const removal = await refusalOf(remove(workspace, CEILING));
+  const removal = await historicalValidationRefusal(remove(workspace, CEILING));
   assert.deepEqual([removal.reasonCode, removal.details.path, removal.details.category], ["MODELS_CATEGORY_UNKNOWN", CEILING, "main"]);
   assert.equal(await versionOf(workspace), before);
-  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 40)]));
-  await cli(remove(workspace, CEILING));
+  await appendHistoricalModelSetting(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 40)]));
+  await appendHistoricalModelSetting(remove(workspace, CEILING));
   assert.equal(readModelsEscalation((await materializeWorkspace(workspace)).settings).ceiling, "main");
 });
 
-test("508-R3: replay checks a recorded ceiling's name and not its category; a ceiling a merge left without its category is refused where it is used", async (context) => {
+test("Historical validator/replay 508-R3: replay checks a recorded ceiling's name and not its category; a ceiling a merge left without its category is refused where it is used", async (context) => {
   const workspace = await library(context);
   const occurredAt = at();
   const setting = { schemaVersion: "tcrn.workspace-setting.v1", key: CEILING, layerKind: "workspace_configuration", value: "review", revision: 1, updatedAt: occurredAt, tombstone: false };
@@ -232,38 +219,38 @@ test("508-R3: replay checks a recorded ceiling's name and not its category; a ce
   }
 });
 
-test("508-R3: GIVEN the category the ceiling names WHEN a models.category write drops it THEN it is refused with MODELS_CATEGORY_IN_USE naming the ceiling, and nothing is recorded; a category the ceiling does not name may go", async (context) => {
+test("Historical validator/replay 508-R3: GIVEN the category the ceiling names WHEN a models.category write drops it THEN it is refused with MODELS_CATEGORY_IN_USE naming the ceiling, and nothing is recorded; a category the ceiling does not name may go", async (context) => {
   const workspace = await library(context);
   const ids = (receipt) => JSON.parse(receipt.setting.value).map((entry) => entry.id);
   const refusedDrop = async (argv, ceiling) => {
     const before = await versionOf(workspace);
-    const refused = await refusalOf(argv);
+    const refused = await historicalValidationRefusal(argv);
     assert.deepEqual([refused.reasonCode, refused.details.path, refused.details.category, refused.details.categories, refused.details.references],
       ["MODELS_CATEGORY_IN_USE", "models.category", ceiling, [ceiling], [CEILING]]);
     assert.match(refused.message, new RegExp(`may not drop ${ceiling}: models\\.escalation\\.ceiling still names it`, "u"));
     assert.equal(await versionOf(workspace), before, "a refused drop appends no event");
   };
   // Tier records that still name a category are named first (508-AC4): the default tiers file two under main.
-  const named = await refusalOf(set(workspace, "models.category", [category("flagship", 10), category("economy", 30)]));
+  const named = await historicalValidationRefusal(set(workspace, "models.category", [category("flagship", 10), category("economy", 30)]));
   assert.deepEqual([named.reasonCode, named.details.references], ["MODELS_CATEGORY_IN_USE", ["models.tiers.30", "models.tiers.40"]]);
   // With no tier left, the ceiling alone names a category: main, while it is unset.
-  await cli(set(workspace, "models.tiers", []));
+  await appendHistoricalModelSetting(set(workspace, "models.tiers", []));
   await refusedDrop(set(workspace, "models.category", [category("flagship", 10), category("economy", 30)]), "main");
-  assert.deepEqual(ids(await cli(set(workspace, "models.category", [category("main", 20)]))), ["main"], "every category the ceiling does not name may go");
+  assert.deepEqual(ids(await appendHistoricalModelSetting(set(workspace, "models.category", [category("main", 20)]))), ["main"], "every category the ceiling does not name may go");
   // A recorded ceiling is the one checked: on cheap, main may go and cheap may not.
-  await cli(set(workspace, "models.category", [category("main", 20), category("cheap", 40)]));
-  await cli(set(workspace, CEILING, "cheap"));
-  assert.deepEqual(ids(await cli(set(workspace, "models.category", [category("cheap", 40)]))), ["cheap"]);
+  await appendHistoricalModelSetting(set(workspace, "models.category", [category("main", 20), category("cheap", 40)]));
+  await appendHistoricalModelSetting(set(workspace, CEILING, "cheap"));
+  assert.deepEqual(ids(await appendHistoricalModelSetting(set(workspace, "models.category", [category("cheap", 40)]))), ["cheap"]);
   await refusedDrop(set(workspace, "models.category", []), "cheap");
   // settings-remove puts the default table back, which lacks cheap, so it is refused the same way.
   await refusedDrop(remove(workspace, "models.category"), "cheap");
-  await cli(set(workspace, "models.category", [category("main", 20), category("cheap", 40)]));
-  await cli(set(workspace, CEILING, "main"));
-  await cli(remove(workspace, "models.category"));
+  await appendHistoricalModelSetting(set(workspace, "models.category", [category("main", 20), category("cheap", 40)]));
+  await appendHistoricalModelSetting(set(workspace, CEILING, "main"));
+  await appendHistoricalModelSetting(remove(workspace, "models.category"));
   assert.deepEqual(readModelsCategory((await materializeWorkspace(workspace)).settings).map((entry) => entry.id), ["flagship", "main", "economy"]);
 });
 
-test("508-R3: GIVEN a ceiling a merge left without its category WHEN models.category is written THEN the write is not refused for it", async (context) => {
+test("Historical validator/replay 508-R3: GIVEN a ceiling a merge left without its category WHEN models.category is written THEN the write is not refused for it", async (context) => {
   const workspace = await library(context);
   const occurredAt = at();
   const setting = { schemaVersion: "tcrn.workspace-setting.v1", key: CEILING, layerKind: "workspace_configuration", value: "review", revision: 1, updatedAt: occurredAt, tombstone: false };
@@ -273,19 +260,19 @@ test("508-R3: GIVEN a ceiling a merge left without its category WHEN models.cate
     work: state.work,
     settings: sortWorkspaceSettings([...state.settings, setting]),
   })], { occurredAt });
-  await cli(set(workspace, "models.tiers", []));
-  assert.equal((await cli(set(workspace, "models.category", [category("flagship", 10)]))).reasonCode, "SETTINGS_WRITE_COMMITTED", "the table lacked review before this write");
+  await appendHistoricalModelSetting(set(workspace, "models.tiers", []));
+  assert.equal((await appendHistoricalModelSetting(set(workspace, "models.category", [category("flagship", 10)]))).setting.key, "models.category", "historical validator permits the already-missing reference");
   assert.equal(readModelsEscalation((await materializeWorkspace(workspace)).settings).ceiling, "review");
 });
 
-test("508-AC5: GIVEN a rule naming economy, which files two records, WHEN resolved THEN it gets the one with the larger order", () => {
+test("Historical validator/replay 508-AC5: GIVEN a rule naming economy, which files two records, WHEN resolved THEN it gets the one with the larger order", () => {
   assert.deepEqual(resolve("economy", 0), { record: TIERS[4], steps: 0, atCeiling: false });
   assert.deepEqual(resolve("main", 0).record, TIERS[2]);
   // The base record is the largest order whatever the table's order in the value.
   assert.deepEqual(resolve("economy", 0, {}, [...TIERS].reverse()).record, TIERS[4]);
 });
 
-test("508-AC5: GIVEN rejections reaching the threshold WHEN resolved again THEN the record one order up, across categories, up to the ceiling category's smallest order and no further", () => {
+test("Historical validator/replay 508-AC5: GIVEN rejections reaching the threshold WHEN resolved again THEN the record one order up, across categories, up to the ceiling category's smallest order and no further", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 10].map((rejections) => orderOf(resolve("economy", rejections))), [
     [50, 0, false],
     [40, 1, false],
@@ -322,7 +309,7 @@ test("508-AC5: GIVEN rejections reaching the threshold WHEN resolved again THEN 
   assert.deepEqual(resolve("economy", 1, {}, owner), { record: owner[0], steps: 1, atCeiling: true });
 });
 
-test("508-R3, R4: GIVEN escalation disabled WHEN resolved THEN every rule keeps its category's base record, and the ceiling is not read", () => {
+test("Historical validator/replay 508-R3, R4: GIVEN escalation disabled WHEN resolved THEN every rule keeps its category's base record, and the ceiling is not read", () => {
   for (const rejections of [0, 1, 5]) {
     assert.deepEqual(resolve("economy", rejections, { enabled: false }), { record: TIERS[4], steps: 0, atCeiling: false }, String(rejections));
   }
@@ -330,7 +317,7 @@ test("508-R3, R4: GIVEN escalation disabled WHEN resolved THEN every rule keeps 
   assert.deepEqual(orderOf(resolve("flagship", 3, { enabled: false })), [10, 0, false], "atCeiling is false while escalation is off");
 });
 
-test("508-R4, D6: GIVEN the default tables WHEN economy escalates THEN it walks the interleaved hosts, no runner filter, and stops at main's smallest order", async (context) => {
+test("Historical validator/replay 508-R4, D6: GIVEN the default tables WHEN economy escalates THEN it walks the interleaved hosts, no runner filter, and stops at main's smallest order", async (context) => {
   // The call path of a caller outside core: the tables and the three keys as settings-catalog reports them.
   const workspace = await library(context);
   const catalog = await cli(["settings-catalog", "--workspace", workspace]);
@@ -353,10 +340,10 @@ test("508-R4, D6: GIVEN the default tables WHEN economy escalates THEN it walks 
   ]);
 });
 
-test("508-R4: the rejections come from the argument alone; resolving records nothing and remembers nothing", async (context) => {
+test("Historical validator/replay 508-R4: the rejections come from the argument alone; resolving records nothing and remembers nothing", async (context) => {
   const workspace = await library(context);
-  await cli(set(workspace, "models.tiers", TIERS));
-  await cli(set(workspace, "models.escalation.threshold", "2"));
+  await appendHistoricalModelSetting(set(workspace, "models.tiers", TIERS));
+  await appendHistoricalModelSetting(set(workspace, "models.escalation.threshold", "2"));
   const state = await materializeWorkspace(workspace);
   const input = { categories: readModelsCategory(state.settings), tiers: readModelsTiers(state.settings), escalation: readModelsEscalation(state.settings), category: "economy" };
   const snapshot = canonicalJson(input);
@@ -373,7 +360,7 @@ test("508-R4: the rejections come from the argument alone; resolving records not
   assert.deepEqual(SETTINGS_CATALOG.map((entry) => entry.key).filter((key) => key.startsWith("models.escalation.")).sort(), [...MODELS_ESCALATION_SETTING_KEYS].sort());
 });
 
-test("508-R4: what resolveModelsTier refuses, and with which reason code", () => {
+test("Historical validator/replay 508-R4: what resolveModelsTier refuses, and with which reason code", () => {
   refusedWith(() => resolve("cheap", 0), "MODELS_CATEGORY_UNKNOWN", { path: "category", category: "cheap" });
   refusedWith(() => resolve("economy", 0, {}, TIERS, [...DEFAULT_CATEGORIES.slice(0, 2)]), "MODELS_CATEGORY_UNKNOWN", { path: "category", category: "economy" });
   refusedWith(() => resolve("flagship", 0, {}, TIERS.slice(1)), "MODELS_CATEGORY_EMPTY", { category: "flagship" });

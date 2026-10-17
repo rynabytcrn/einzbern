@@ -51,6 +51,16 @@ test("467-R5: no red leg is P1_VERIFIED, and a red without a reason code is stil
   ]);
 });
 
+test("a long failing leg preserves its complete diagnostic, including the final assertion", async () => {
+  const message = `${"passing test output\n".repeat(300)}final assertion: expected readiness, received failure\n`;
+  const outcome = await runAllP1Legs(async () => {
+    throw Object.assign(new Error(message), { reasonCode: "COMMAND_FAILED" });
+  }, ["portal"]);
+  assert.equal(outcome.reasonCode, "P1_RED");
+  assert.deepEqual(outcome.reds, [{ task: "portal", reasonCode: "COMMAND_FAILED", message }]);
+  assert.equal(JSON.parse(JSON.stringify(outcome)).reds[0].message, message);
+});
+
 test("MIN-280 D2: every leg, green or red, is timed in its own list and the leg rows keep their shape", async () => {
   let clock = 0;
   const now = () => clock;

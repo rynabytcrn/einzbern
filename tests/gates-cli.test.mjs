@@ -933,3 +933,19 @@ test("519-GWT4 (CLI): a coordination library registered with no project has a ga
     }
   }
 });
+
+test("BL-45 CLI: explicit per-root bases reach planning and persist in gate runs", async (context) => {
+  const { project, library, baseCommit } = await setup(context);
+  await declare(library, "unit", [node, "-e", "process.exit(0)"], ["--covers", "**"]);
+  await put(project, "README.md", "changed\n");
+  const baseByRoot = { ".": baseCommit };
+  const args = ["--workspace", library, "--project", project, "--base", "no-such-default", "--base-by-root", JSON.stringify(baseByRoot)];
+  const plan = await cli(["gates-plan", ...args]);
+  assert.deepEqual(plan.baseByRoot, baseByRoot);
+  assert.deepEqual(names(plan), ["unit"]);
+  const result = await cli(["gates-run", ...args, "--at", at()]);
+  assert.deepEqual(result.run.baseByRoot, baseByRoot);
+  assert.equal(result.run.gates[0].ok, true);
+  assert.ok(Number.isSafeInteger(result.run.gates[0].durationMs));
+  assert.equal((await refusal(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit, "--base-by-root", "{"]))?.reasonCode, "CLI_ARGUMENT_MALFORMED");
+});

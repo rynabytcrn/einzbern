@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { appendHistoricalModelSetting, historicalValidationRefusal } from "./helpers/historical-model-settings.mjs";
 // TCRN-CROSS-STORY-508 R1, AC1, AC4 (MIN-236 D6; TCRN-CROSS-SUB-405): models.category, the parent
 // table of models.tiers. A category is {id, name, description, order}, ids and orders unique; its
 // default is flagship, main and economy; a write that drops a category tier records still name is
@@ -36,7 +37,8 @@ import {
 } from "../dist/build/packages/core/src/models-category.js";
 import { defaultModelsTiers } from "../dist/build/packages/core/src/models-tiers.js";
 
-// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+// Historical model scenarios below use explicit archived-event fixtures; actual CLI writes
+// are separately asserted to refuse device-owned keys. Other CLI reads/writes remain real.
 standInForAtelier();
 
 let second = 0;
@@ -75,12 +77,12 @@ const currentValueOf = async (workspace, key) => (await catalogRowOf(workspace, 
 
 // The settings write receipt as it stands (SUB-417 changes where effectiveValue comes from, nothing
 // else): these fields, and receiptDigest taken over all of them but reasonCode, ids and itself.
-const RECEIPT_FIELDS = ["effectiveValue", "headEventHash", "ids", "projectId", "reasonCode", "receiptDigest", "recordId", "schemaVersion", "setting", "source", "version", "workspaceId"];
+const RECEIPT_FIELDS = ["effectiveValue", "headEventHash", "ids", "persistence", "projectId", "projections", "reasonCode", "receiptDigest", "recordId", "schemaVersion", "setting", "source", "version", "workspaceId"];
 function assertReceiptShape(receipt) {
   assert.deepEqual(Object.keys(receipt).sort(), RECEIPT_FIELDS);
   assert.deepEqual([receipt.reasonCode, receipt.schemaVersion, receipt.ids], ["SETTINGS_WRITE_COMMITTED", "tcrn.settings-write-receipt.v1", [receipt.recordId]]);
-  const { schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue, projectId, source } = receipt;
-  assert.equal(receipt.receiptDigest, canonicalSha256({ schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue, projectId, source }));
+  const { schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue, projectId, source, persistence, projections } = receipt;
+  assert.equal(receipt.receiptDigest, canonicalSha256({ schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue, projectId, source, persistence, projections }));
 }
 
 // A settings event appended raw, as a device whose write the other never saw would leave it.
@@ -94,7 +96,7 @@ function recordedSetting(key, value, updatedAt) {
   });
 }
 
-test("508-R1, AC1: GIVEN a new library WHEN settings-catalog THEN models.category is a collection of the models group, flagship, main and economy by default", async (context) => {
+test("Historical validator/replay 508-R1, AC1: GIVEN a new library WHEN settings-catalog THEN models.category is a collection of the models group, flagship, main and economy by default", async (context) => {
   const workspace = await library(context);
   const catalog = await cli(["settings-catalog", "--workspace", workspace]);
   const row = catalog.settings.find((entry) => entry.key === "models.category");
@@ -110,7 +112,7 @@ test("508-R1, AC1: GIVEN a new library WHEN settings-catalog THEN models.categor
   assert.deepEqual(JSON.parse(tiers.defaultValue).filter((entry) => !DEFAULT_CATEGORIES.some((known) => known.id === entry.category)), []);
 });
 
-test("508-R1: models.category validation names the field it refuses; a repeated id or order has its own reason code", async (context) => {
+test("Historical validator/replay 508-R1: models.category validation names the field it refuses; a repeated id or order has its own reason code", async (context) => {
   const valid = [category("main", 20, "Main", "the implementing tier"), category("flagship", 10, "Flagship")];
   assert.deepEqual(validateModelsCategory(valid), [valid[1], valid[0]], "read in ascending order");
   assert.deepEqual(parseModelsCategory(JSON.stringify(valid)), [valid[1], valid[0]]);
@@ -137,58 +139,58 @@ test("508-R1: models.category validation names the field it refuses; a repeated 
     (error) => error?.reasonCode === "MODELS_ORDER_DUPLICATE" && error.details.path === "models.category[1].order" && error.details.order === 10);
   assert.throws(() => parseModelsCategory("["), (error) => error?.reasonCode === "MODELS_CATEGORY_INVALID");
 
-  // Through settings-set: the two repeats keep their codes, every other field is SETTINGS_VALUE_INVALID.
+  // The pure historical settings validator retains duplicate codes and wraps other field errors.
   const workspace = await library(context);
-  assert.equal((await refusalOf(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("main", 40)]))).reasonCode, "MODELS_CATEGORY_DUPLICATE");
-  assert.equal((await refusalOf(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 30)]))).reasonCode, "MODELS_ORDER_DUPLICATE");
-  const invalid = await refusalOf(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("Cheap", 40)]));
+  assert.equal((await historicalValidationRefusal(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("main", 40)]))).reasonCode, "MODELS_CATEGORY_DUPLICATE");
+  assert.equal((await historicalValidationRefusal(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 30)]))).reasonCode, "MODELS_ORDER_DUPLICATE");
+  const invalid = await historicalValidationRefusal(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("Cheap", 40)]));
   assert.deepEqual([invalid.reasonCode, invalid.details.path], ["SETTINGS_VALUE_INVALID", "models.category[3].id"]);
   assert.equal(await versionOf(workspace), 0, "no refusal appended an event");
-  const written = await cli(set(workspace, "models.category", [category("cheap", 40, "Cheap", "the low-cost tier"), ...DEFAULT_CATEGORIES]));
+  const written = await appendHistoricalModelSetting(set(workspace, "models.category", [category("cheap", 40, "Cheap", "the low-cost tier"), ...DEFAULT_CATEGORIES]));
   assert.equal(written.setting.value, canonicalJson([...DEFAULT_CATEGORIES, category("cheap", 40, "Cheap", "the low-cost tier")]), "stored as canonical JSON in ascending order");
   assert.equal(await currentValueOf(workspace, "models.category"), written.setting.value);
 });
 
-test("508-AC4: GIVEN a category tier records still name WHEN a models.category write drops it THEN it is refused, listing the records that name it", async (context) => {
+test("Historical validator/replay 508-AC4: GIVEN a category tier records still name WHEN a models.category write drops it THEN it is refused, listing the records that name it", async (context) => {
   const workspace = await library(context);
   // The default tiers file two records under economy, at 50 and 60.
-  const refused = await refusalOf(set(workspace, "models.category", [category("flagship", 10), category("main", 20)]));
+  const refused = await historicalValidationRefusal(set(workspace, "models.category", [category("flagship", 10), category("main", 20)]));
   assert.equal(refused.reasonCode, "MODELS_CATEGORY_IN_USE");
   assert.deepEqual([refused.details.category, refused.details.categories, refused.details.references], ["economy", ["economy"], ["models.tiers.50", "models.tiers.60"]]);
   assert.match(refused.message, /models\.tiers\.50, models\.tiers\.60/u, "the message lists them too");
   assert.equal(await versionOf(workspace), 0);
   // A category no record names may go; once no record names economy, economy may go as well.
-  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 40)]));
-  await cli(set(workspace, "models.category", DEFAULT_CATEGORIES));
-  await cli(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "main", "claude-code")]));
-  const dropped = await cli(set(workspace, "models.category", [category("flagship", 10), category("main", 20)]));
+  await appendHistoricalModelSetting(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 40)]));
+  await appendHistoricalModelSetting(set(workspace, "models.category", DEFAULT_CATEGORIES));
+  await appendHistoricalModelSetting(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "main", "claude-code")]));
+  const dropped = await appendHistoricalModelSetting(set(workspace, "models.category", [category("flagship", 10), category("main", 20)]));
   assert.deepEqual(JSON.parse(dropped.setting.value).map((entry) => entry.id), ["flagship", "main"]);
   assert.equal(await versionOf(workspace), 4);
 });
 
-test("508-R1, R2: settings-remove puts a default table back only when the other table agrees with it", async (context) => {
+test("Historical validator/replay 508-R1, R2: settings-remove puts a default table back only when the other table agrees with it", async (context) => {
   const workspace = await library(context);
-  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 40)]));
-  await cli(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "cheap", "codex-cli")]));
-  await cli(set(workspace, "models.category", [category("flagship", 10), category("main", 20), category("cheap", 40)]));
+  await appendHistoricalModelSetting(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 40)]));
+  await appendHistoricalModelSetting(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "cheap", "codex-cli")]));
+  await appendHistoricalModelSetting(set(workspace, "models.category", [category("flagship", 10), category("main", 20), category("cheap", 40)]));
   const before = await versionOf(workspace);
   // The default tiers file records under economy, which models.category no longer holds.
-  const refused = await refusalOf(remove(workspace, "models.tiers"));
+  const refused = await historicalValidationRefusal(remove(workspace, "models.tiers"));
   assert.equal(refused.reasonCode, "MODELS_CATEGORY_UNKNOWN");
   assert.deepEqual([refused.details.category, refused.details.references], ["economy", ["models.tiers.50", "models.tiers.60"]]);
   assert.equal(await versionOf(workspace), before);
   // An unset models.category holds the default categories and every other category the tiers name,
   // so removing it never strands a record; the tiers' default then fits.
-  await cli(remove(workspace, "models.category"));
+  await appendHistoricalModelSetting(remove(workspace, "models.category"));
   assert.deepEqual(JSON.parse(await currentValueOf(workspace, "models.category")), [...DEFAULT_CATEGORIES, category("cheap", 40)]);
-  await cli(remove(workspace, "models.tiers"));
+  await appendHistoricalModelSetting(remove(workspace, "models.tiers"));
   const state = await materializeWorkspace(workspace);
   assert.deepEqual(state.settings.filter((entry) => entry.key.startsWith("models.")), []);
   assert.deepEqual(readModelsTiers(state.settings), defaultModelsTiers());
   assert.deepEqual(readModelsCategory(state.settings), DEFAULT_CATEGORIES);
 });
 
-test("508-R1, R2: replay checks each table's shape and no reference, so tables a merge brought apart still read, and the next write names what is missing", async (context) => {
+test("Historical validator/replay 508-R1, R2: replay checks each table's shape and no reference, so tables a merge brought apart still read, and the next write names what is missing", async (context) => {
   const workspace = await library(context);
   const occurredAt = at();
   await appendEvents(workspace, [
@@ -202,13 +204,13 @@ test("508-R1, R2: replay checks each table's shape and no reference, so tables a
     assert.deepEqual(readModelsCategory(state.settings).map((entry) => entry.id), ["flagship"], read);
     assert.deepEqual(readModelsTiers(state.settings).map((entry) => entry.category), ["economy"], read);
   }
-  const unknown = await refusalOf(set(workspace, "models.category", [category("flagship", 10), category("main", 20)]));
+  const unknown = await historicalValidationRefusal(set(workspace, "models.category", [category("flagship", 10), category("main", 20)]));
   assert.deepEqual([unknown.reasonCode, unknown.details.category], ["MODELS_CATEGORY_UNKNOWN", "economy"], "a write that leaves the reference missing names it");
-  await cli(set(workspace, "models.category", [category("flagship", 10), category("economy", 30)]));
+  await appendHistoricalModelSetting(set(workspace, "models.category", [category("flagship", 10), category("economy", 30)]));
   assert.equal(await versionOf(workspace), 3);
 });
 
-test("508-R1: an unset table is derived: the default categories, then every other category the tiers name, by name", () => {
+test("Historical validator/replay 508-R1: an unset table is derived: the default categories, then every other category the tiers name, by name", () => {
   assert.deepEqual(deriveModelsCategory(), DEFAULT_CATEGORIES);
   assert.deepEqual(deriveModelsCategory(["review", "economy", "audit", "review"]),
     [...DEFAULT_CATEGORIES, category("audit", 40), category("review", 50)]);
@@ -218,36 +220,31 @@ test("508-R1: an unset table is derived: the default categories, then every othe
   assert.deepEqual(readModelsCategory([tiers, recorded]), [category("review", 5)], "a recorded table is the table");
 });
 
-test("510-R2 (SUB-417): GIVEN models.tiers names a category outside the default table WHEN settings-remove models.category THEN the receipt's effectiveValue is settings-catalog's currentValue, that category included", async (context) => {
+test("Historical removal readback 510-R2 (SUB-417): GIVEN models.tiers names a category outside the default table WHEN settings-remove models.category THEN the receipt's effectiveValue is settings-catalog's currentValue, that category included", async (context) => {
   const workspace = await library(context);
   // Recorded under another order, name and description than the unset table derives for it, so the
   // receipt cannot pass by echoing the value it removed.
-  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 45, "Cheap", "the low-cost tier")]));
-  await cli(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "cheap", "codex-cli")]));
-  const removed = await cli(remove(workspace, "models.category"));
-  assert.deepEqual([removed.recordId, removed.setting], ["models.category", null]);
+  await appendHistoricalModelSetting(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 45, "Cheap", "the low-cost tier")]));
+  await appendHistoricalModelSetting(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "cheap", "codex-cli")]));
+  const removed = await appendHistoricalModelSetting(remove(workspace, "models.category"));
+  assert.equal(removed.setting, null);
   assert.equal(removed.effectiveValue, await currentValueOf(workspace, "models.category"), "the receipt and settings-catalog agree");
   assert.deepEqual(JSON.parse(removed.effectiveValue), [...DEFAULT_CATEGORIES, category("cheap", 40)], "the default categories, then cheap");
   assert.notEqual(removed.effectiveValue, MODELS_CATEGORY_DEFAULT_VALUE, "not the default table, which the receipt used to echo and which lacks cheap");
-  assertReceiptShape(removed);
+  // Historical replay has no new-write receipt; active receipts are checked below.
 });
 
 test("510-R2 (SUB-417): GIVEN a set key and an unset ordinary key WHEN settings-set or settings-remove THEN the receipt's effectiveValue is what it was, the value or the default, and settings-catalog's currentValue", async (context) => {
   const workspace = await library(context);
   const writes = [
-    ["models.category", JSON.stringify([...DEFAULT_CATEGORIES, category("cheap", 40, "Cheap")])],
-    // With the tiers naming the default categories only, the unset table is the default table.
-    ["models.category", null],
-    ["models.tiers", JSON.stringify([record(10, "flagship", "claude-code"), record(20, "main", "claude-code")])],
-    ["models.tiers", null],
     ["retrieval.tau", "5"],
     ["retrieval.tau", null],
-    ["quota.weeklyWaitPercent", "80"],
-    ["quota.weeklyWaitPercent", null],
+    ["design.buildProject", "build-fixture"],
+    ["design.buildProject", null],
     ["storage.segmentBytes", "2097152"],
     ["storage.segmentBytes", null],
   ];
-  const expected = { "retrieval.tau": ["5", "3"], "quota.weeklyWaitPercent": ["80", null], "storage.segmentBytes": ["2097152", "1048576"] };
+  const expected = { "retrieval.tau": ["5", "3"], "design.buildProject": ["build-fixture", null], "storage.segmentBytes": ["2097152", "1048576"] };
   for (const [key, value] of writes) {
     const receipt = await cli(value === null
       ? remove(workspace, key)
@@ -261,4 +258,15 @@ test("510-R2 (SUB-417): GIVEN a set key and an unset ordinary key WHEN settings-
     assertReceiptShape(receipt);
   }
   assert.equal(await versionOf(workspace), writes.length);
+});
+
+// The archived validator cases above never authorize a new project-level model write.
+test("552: actual CLI refuses category and tier writes/removals without changing history", async (context) => {
+  const workspace = await library(context);
+  for (const key of ["models.category", "models.tiers"]) {
+    for (const argv of [set(workspace, key, []), remove(workspace, key)]) {
+      assert.equal((await refusalOf(argv)).reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
+    }
+  }
+  assert.equal(await versionOf(workspace), 0);
 });

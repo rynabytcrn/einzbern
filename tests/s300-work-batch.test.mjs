@@ -26,6 +26,7 @@ import {
   materializeWorkspaceFromGenesis,
   setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
+import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const at = (second = 0) => `2026-08-19T18:00:${String(second).padStart(2, "0")}Z`;
@@ -195,6 +196,11 @@ test("STORY-300: a batch that is not a batch is refused before anything else hap
         () => applyWorkBatch(fixture.root, document, { occurredAt: at(2) }),
         (error) => error?.reasonCode === "WORK_BATCH_MALFORMED", JSON.stringify(document));
     }
+    const nullFile = join(fixture.base, "null-batch.json");
+    await writeFile(nullFile, "null\n");
+    const before = await materializeWorkspace(fixture.root);
+    await assert.rejects(runCli(["work-batch", "--workspace", fixture.root, "--at", at(2), "--from-file", nullFile], { write() { assert.fail("malformed batch must not emit a success receipt"); } }), { reasonCode: "WORK_BATCH_MALFORMED" });
+    assert.equal((await materializeWorkspace(fixture.root)).headEventHash, before.headEventHash);
     // An empty members array is malformed rather than a no-op: a batch of nothing is a
     // caller mistake, and answering it with a receipt would say an act occurred.
     await assert.rejects(

@@ -4150,7 +4150,8 @@ button:disabled { cursor: not-allowed; }
 /* TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6, R7): the custom variables table leads with its order
    column as the collection tables do, and its fields fill their cells; a rule card and a gate row
    carry their order in the same NumberInput. The tier page's escalation summary is a read-only list. */
-[data-variable-table] { --tcrn-table-column-count: 6; --tcrn-table-shell-column-min-width: 5.5rem; --tcrn-table-shell-columns: minmax(5.5rem, 0.5fr) minmax(7rem, 1fr) minmax(5.5rem, 0.8fr) minmax(7rem, 1.1fr) minmax(6rem, 1.1fr) minmax(10.25rem, 1fr); }
+[data-variable-table] { --tcrn-table-column-count: 7; --tcrn-table-shell-column-min-width: 5.5rem; --tcrn-table-shell-columns: minmax(5.5rem, 0.5fr) minmax(7rem, 1fr) minmax(5.5rem, 0.8fr) minmax(7rem, 1.1fr) minmax(6rem, 1.1fr) minmax(8rem, 1fr) minmax(10.25rem, 1fr); }
+[data-model-policy-legacy-value] { max-inline-size: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 [data-variable-field] { min-inline-size: 0; inline-size: 100%; }
 [data-rule-card-order] { display: flex; flex-wrap: wrap; align-items: end; gap: var(--tcrn-space-2); }
 [data-rule-order-field] { flex: 0 1 8rem; }
@@ -4298,8 +4299,9 @@ button:disabled { cursor: not-allowed; }
         </div>
       </section>
       <section class="tcrn-page tcrn-product-shell-content-stack" data-page="engine-model-policy" hidden>
-        <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two">
+        <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header"><header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="settings.group.models">Models and escalation</h1><p class="tcrn-text tcrn-page__lede" data-i18n="settings.layer.device">This device</p></div><div class="tcrn-page-header__actions"><span class="tcrn-badge" id="engine-model-policy-source">device-engine</span></div></div></header></div>
+          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="modelTiers.scope">The engine stores this policy for the selected host.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content"><div id="engine-model-policy-view" data-ui="engine-model-policy-view"></div></div>
         </div>
       </section>
@@ -4386,7 +4388,7 @@ button:disabled { cursor: not-allowed; }
      read completes. -->
 <script src="/locales.js"></script>
 <script type="module">
-import { mountStaticMultiSelect, mountStaticOverlayBoundary } from "/ds-static-bridges.snapshot.js";
+import { mountStaticMultiSelect, mountStaticOverlayBoundary, mountStaticClipboardCopyButton } from "/ds-static-bridges.snapshot.js";
 const BOOT = __PORTAL_BOOT__;
 (() => {
   "use strict";
@@ -4397,8 +4399,10 @@ const BOOT = __PORTAL_BOOT__;
   // made no choice of its own.
   const storedLocale = tcrnReadPreference("locale", Object.keys(LOCALES), null);
   const storedTheme = tcrnReadPreference("theme", ["light", "dark"], null);
-  const machineTheme = ["light", "dark"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
-  if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme;
+  const machineTheme = ["light", "dark", "system"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
+  const systemTheme = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  let followSystemTheme = storedTheme === null && machineTheme === "system";
+  if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme === "system" ? (systemTheme?.matches ? "dark" : "light") : machineTheme;
   const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, modelPolicy: null, modelPolicyHost: "codex", modelPolicyDrafts: new Map(), modelPolicyWrites: new Map(), modelPolicyRead: 0, modelPolicyReadTarget: null, modelPolicyReadPending: false, modelPolicyLibraryId: BOOT.library?.libraryId ?? null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeStatus: "valid", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -4648,6 +4652,11 @@ const BOOT = __PORTAL_BOOT__;
     $$('[data-i18n]').forEach((node) => { node.textContent = t(node.dataset.i18n); });
     $$('[data-i18n-placeholder]').forEach((node) => { node.placeholder = t(node.dataset.i18nPlaceholder); });
     $$('[data-i18n-aria-label]').forEach((node) => { node.setAttribute("aria-label", t(node.dataset.i18nAriaLabel)); });
+    for (const selector of ["#theme-button", "#locale-trigger"]) {
+      const control = $(selector);
+      control?.setAttribute("title", t("configuration.browserPreference"));
+      control?.setAttribute("aria-description", t("configuration.browserPreference"));
+    }
     // The locale menu is the design system's shell control, not a native select: the
     // trigger shows the language in its own name, and the panel carries the selection.
     const localeNames = { en: "English", "zh-CN": "中文", ja: "日本語", ko: "한국어", fr: "Français" };
@@ -4704,6 +4713,9 @@ const BOOT = __PORTAL_BOOT__;
     const previousPage = document.activeElement?.closest('[data-page]');
     state.page = page;
     state.workspaceLabelPage = page;
+    if (page === "engine-model-policy") renderModelPolicy();
+    else if (page === "model-categories") renderModelCategories();
+    else if (page === "model-tiers") renderModelTiers();
     renderWorkspaceLabel();
     $$('[data-page]').forEach((section) => { section.hidden = section.dataset.page !== page; });
     $$('[data-page-target]').forEach((button) => { if (button.dataset.pageTarget) button.setAttribute("aria-current", button.dataset.pageTarget === page ? "page" : "false"); });
@@ -4867,7 +4879,7 @@ const BOOT = __PORTAL_BOOT__;
     if (entry.controlType === "number") return `<div class="tcrn-number-input-field"><label class="tcrn-field" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input tcrn-number-input" id="${esc(id)}" type="number" min="${esc(entry.min)}" ${entry.max === undefined ? "" : `max="${esc(entry.max)}"`} step="1" value="${esc(current)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" aria-label="${esc(label)}"></label><span class="tcrn-setting-choice__hint">${entry.max === undefined ? esc(t("scope.minimum", { value: entry.min })) : `${esc(entry.min)}–${esc(entry.max)}`}</span></div>`;
     if (entry.key === "retrieval.promptLanguages") return promptLanguageChoice(entry, label, id);
     if (entry.controlType === "reference") return referenceChoice(entry, label, id);
-    if (entry.controlType === "enum" && values.length > 0) return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(values, entry.key)}><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${values.map((value) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(entry.key === "artifact.language" ? promptLanguageLabel(value) : value || t("config.unset"))}</option>`).join("")}</select></label></div>`;
+    if (entry.controlType === "enum" && values.length > 0) return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(values, entry.key)}><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" aria-label="${esc(label)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${values.map((value) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(entry.key === "artifact.language" ? promptLanguageLabel(value) : value || t("config.unset"))}</option>`).join("")}</select></label></div>`;
     return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input" id="${esc(id)}" value="${esc(current)}" placeholder="${esc(entry.defaultValue ?? t("config.unset"))}" aria-label="${esc(label)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set"></label>`;
   };
   // INC-193: the design authority is a declaration, and what is behind it is an
@@ -4912,7 +4924,7 @@ const BOOT = __PORTAL_BOOT__;
     if (key === designAuthorityState.key) return;
     const epoch = ++designAuthorityState.epoch;
     designAuthorityState.key = key;
-    const result = declaration?.status === "unconfigured"
+    const result = !url ? { status: "unset", detail: null } : declaration?.status === "unconfigured"
       ? { status: "unconfigured", detail: t("design.missingBindings", { fields: declaration.missing.map(settingLabel).join(", ") }) }
       : declaration?.status === "conflicting"
         ? { status: "conflicting", detail: t("design.conflictingBindings") }
@@ -4937,7 +4949,54 @@ const BOOT = __PORTAL_BOOT__;
     if (source?.kind === "project") return source.inherited ? t("scope.inheritedProject", { name: source.projectName ?? source.projectId }) : t("scope.thisProject");
     return source?.kind === "library" ? t("scope.libraryDefaults") : t("scope.builtIn");
   };
-  const settingRowLabel = (entry, description) => `<div class="tcrn-setting-row__label"><code class="tcrn-setting-row__key">${esc(entry.key)}</code><span class="tcrn-setting-row__name">${esc(settingLabel(entry.key))}${conceptTip("setting." + entry.key)}</span><span class="tcrn-setting-row__description">${esc(description)}</span>${layerBadge(entry.layer)}<span class="tcrn-field__hint" data-effective-source="${esc(entry.source?.projectId ?? entry.source?.kind ?? entry.layer)}">${esc(settingSourceText(entry))}</span></div>`;
+  // The existing topic navigation is retained, but it never defines ownership. The
+  // engine dictionary and the selected readback name the scope of every row.
+  const configurationValue = (value) => value === null || value === undefined ? t("configuration.notDeclared") : JSON.stringify(value);
+  const configurationTarget = (scope) => scope === "device" ? t("scope.device")
+    : scope === "host" || scope === "device/host" ? t("modelPolicy.engineHostSource", { host: state.modelPolicyHost })
+      : [BOOT.library?.libraryId, scope === "library" ? null : state.settings?.projectId ?? BOOT.library?.configurationProjectId].filter(Boolean).join(" / ") || t("configuration.notDeclared");
+  const configurationFields = (fields) => {
+    const labels = {
+      target: t("configuration.target"), scope: t("configuration.scope"), owner: t("configuration.owner"),
+      source: t("configuration.source"), storageSource: t("configuration.storageSource"), sharing: t("configuration.sharing"), export: t("configuration.export"),
+      declaredValue: t("configuration.declaredValue"), effectiveValue: t("configuration.effectiveValue"), historicalSource: t("configuration.historicalSource"), effectiveSource: t("configuration.effectiveSource"),
+      valueRole: t("configuration.valueRole"), valueSource: t("configuration.valueSource"), inheritanceState: t("configuration.inheritanceState"),
+      inheritance: t("configuration.inheritance"), defaultValue: t("configuration.defaultValue"), effect: t("configuration.effect"), compatibility: t("configuration.compatibility"), editing: t("configuration.editing"),
+    };
+    return `<dl class="tcrn-definition-list tcrn-definition-list--dense">${Object.entries(fields).map(([key, value]) => `<div class="tcrn-definition-list__item" data-configuration-field="${esc(key)}"><dt class="tcrn-definition-list__term">${esc(labels[key] ?? key)}</dt><dd class="tcrn-definition-list__definition">${esc(value ?? t("configuration.unavailable"))}</dd></div>`).join("")}</dl>`;
+  };
+  const configurationOverview = (scope, sharing, role) => `<p class="tcrn-field__hint" data-configuration-overview><span data-configuration-scope>${esc(t("configuration.scope"))}: ${esc(scope)}</span> · <span data-configuration-sharing>${esc(t("configuration.sharing"))}: ${esc(sharing)}</span>${role ? ` · <span data-configuration-role>${esc(role)}</span>` : ""}</p>`;
+  const configurationMetadata = (entry) => {
+    const typed = state.settings?.typedValues?.find((row) => row.key === entry.key);
+    const contract = typed?.contract ?? state.settings?.configurationContract?.settings?.find((row) => row.key === entry.key);
+    if (!contract) return `<p class="tcrn-field__hint" data-configuration-unavailable="${esc(entry.key)}">${esc(t("configuration.unavailable"))}</p>`;
+    const effectiveScope = typed?.effectiveScope ?? entry.scope ?? contract.scope;
+    const historical = typed?.valueRole === "historical-declaration" || entry.key.startsWith("models.") || entry.key.startsWith("quota.");
+    const device = entry.layer === "device";
+    const declared = device ? entry.currentValue : entry.declaredValue;
+    // A machine catalog reports declarations, not every consumer's resolved value.
+    // In particular browser preferences and startup options can override defaults.
+    const effectiveValue = historical ? t("configuration.historicalNotEffective") : device ? t("configuration.consumerResolved") : configurationValue(typed ? typed.semanticValue : entry.currentValue);
+    const source = typed?.effectiveSource ?? entry.source;
+    const fields = {
+      target: configurationTarget(effectiveScope), scope: effectiveScope, owner: contract.owner,
+      source: contract.source, storageSource: contract.storageSource, sharing: contract.sharing, export: contract.export,
+      declaredValue: configurationValue(declared), effectiveValue,
+      [historical ? "historicalSource" : "effectiveSource"]: device ? t("configuration.consumerResolved") : source ? JSON.stringify(source) : t("scope.builtIn"),
+      valueRole: historical ? "historical-declaration" : typed?.valueRole ?? (device ? "device-declaration" : "resolved-setting"),
+      valueSource: typed?.valueSource ?? source?.kind ?? (device ? contract.storageSource : "default"),
+      inheritanceState: unresolvedCommon(entry) ? t("projects.commonUnavailable") : declared !== null && declared !== undefined ? t("configuration.declaredHere") : source?.inherited || source?.kind === "common" ? t("configuration.inherited") : t("configuration.noDeclaration"),
+      inheritance: contract.inheritance, defaultValue: configurationValue(contract.defaultValue), effect: contract.effect, compatibility: contract.compatibility,
+    };
+    return `${configurationOverview(effectiveScope, contract.sharing, historical ? t("configuration.historicalReadOnly") : t("configuration.editableDeclaration"))}<details class="tcrn-disclosure-panel" data-configuration-contract="${esc(entry.key)}" data-effective-scope="${esc(effectiveScope)}"><summary class="tcrn-disclosure-panel__title">${esc(t("configuration.details"))}</summary>${configurationFields(fields)}${typed ? `<p class="tcrn-field__hint">${esc(t("configuration.typedValue"))} (${esc(contract.semanticType)}): <span data-configuration-typed-value>${esc(configurationValue(typed.semanticValue))}</span></p>` : ""}</details>`;
+  };
+  const independentConfigurationMetadata = (kind, extra = {}) => {
+    const contract = state.settings?.configurationContract?.independentEntries?.find((entry) => entry.kind === kind);
+    if (!contract) return `<p class="tcrn-field__hint" data-configuration-unavailable="${esc(kind)}">${esc(t("configuration.unavailable"))}</p>`;
+    const scope = extra.scope ?? contract.scope;
+    return `${configurationOverview(scope, contract.sharing, t("configuration.editableDeclaration"))}<details class="tcrn-disclosure-panel" data-independent-configuration-contract="${esc(kind)}"><summary class="tcrn-disclosure-panel__title">${esc(t("configuration.details"))}</summary>${configurationFields({ target: configurationTarget(scope), scope, source: contract.source, storageSource: contract.source, sharing: contract.sharing, export: contract.export, effect: contract.effect, editing: contract.editing, compatibility: contract.compatibility, ...extra })}</details>`;
+  };
+  const settingRowLabel = (entry, description) => `<div class="tcrn-setting-row__label"><code class="tcrn-setting-row__key">${esc(entry.key)}</code><span class="tcrn-setting-row__name">${esc(settingLabel(entry.key))}${conceptTip("setting." + entry.key)}</span><span class="tcrn-setting-row__description">${esc(description)}</span>${layerBadge(entry.layer)}<span class="tcrn-field__hint" data-effective-source="${esc(entry.source?.projectId ?? entry.source?.kind ?? entry.layer)}">${esc(settingSourceText(entry))}</span>${configurationMetadata(entry)}</div>`;
   const projectSettingRow = (entry) => {
     const modified = entry.declaredValue != null;
     const reset = modified ? `<button type="button" class="tcrn-setting-row__reset" data-reset-setting="${esc(entry.key)}" data-cli-action="settings-remove">${esc(t("config.reset"))}</button>` : "";
@@ -4967,10 +5026,10 @@ const BOOT = __PORTAL_BOOT__;
   const modelPolicyCompatibilityRow = (entry) => {
     const catalog = state.modelPolicy?.selectedHost === state.modelPolicyHost ? state.modelPolicy : null;
     const configured = policyEntryFor(state.modelPolicyHost, catalog);
-    const stateText = configured ? t("modelPolicy.engineHostSource", { host: state.modelPolicyHost }) : t("modelPolicy.unconfigured");
-    return `<div class="tcrn-setting-row" data-setting-row="${esc(entry.key)}" data-setting-shape="compatibility" data-model-policy-legacy="true">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control"><span class="tcrn-field__hint" data-engine-policy-source="${esc(state.modelPolicyHost)}">${esc(t("modelPolicy.legacySource", { source: stateText }))}</span><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-model-policy-link="engine-model-policy">${esc(t("modelPolicy.openEditor"))}</button></div><div class="tcrn-setting-row__tools"></div></div>`;
+    const stateText = modelPolicyPendingFor(state.modelPolicyHost) ? t("modelPolicy.loading") : !catalog || catalog.ok === false || catalog.httpStatus >= 400 ? t("modelPolicy.unavailable") : configured ? t("modelPolicy.engineHostSource", { host: state.modelPolicyHost }) : t("modelPolicy.unconfigured");
+    return `<div class="tcrn-setting-row" data-setting-row="${esc(entry.key)}" data-setting-shape="compatibility" data-model-policy-legacy="true">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control"><span class="tcrn-field__hint" data-engine-policy-source="${esc(state.modelPolicyHost)}">${esc(t("modelPolicy.legacySource", { source: stateText }))}</span><pre data-model-policy-legacy-value>${esc(typeof entry.currentValue === "string" ? entry.currentValue : JSON.stringify(entry.currentValue ?? null))}</pre><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-model-policy-link="engine-model-policy">${esc(t("modelPolicy.openEditor"))}</button></div><div class="tcrn-setting-row__tools"></div></div>`;
   };
-  const settingRow = (entry) => entry.key.startsWith("models.") ? modelPolicyCompatibilityRow(entry) : entry.layer === "device" ? deviceSettingRow(entry) : entry.shape === "collection" ? collectionSettingRow(entry) : projectSettingRow(entry);
+  const settingRow = (entry) => (entry.key.startsWith("models.") || entry.key.startsWith("quota.")) ? modelPolicyCompatibilityRow(entry) : entry.layer === "device" ? deviceSettingRow(entry) : entry.shape === "collection" ? collectionSettingRow(entry) : projectSettingRow(entry);
   // Target labels (TCRN-CROSS-INIT-053 R45 U14, F08) begin.
   // What a library or a project target is called on the page. The project's own name comes first; a
   // project the engine names nothing is "Unnamed project", never the word an unconfigured state uses;
@@ -5019,7 +5078,7 @@ const BOOT = __PORTAL_BOOT__;
   // identity has a copy action built as the Clipboard family builds one (a Button that says its state
   // in a polite status region inside it, in the page's language).
   const copyStates = () => ({ idle: t("copy.idle"), copying: t("copy.copying"), copied: t("copy.copied"), failed: t("copy.failed"), unsupported: t("copy.unsupported") });
-  const identityDetails = (scope, targets, labels = distinctLabels(targets)) => targets.length === 0 ? "" : `<details class="tcrn-disclosure-panel" data-identity-details="${esc(scope)}"><summary class="tcrn-disclosure-panel__title">${esc(t("projects.identity"))}</summary><dl class="tcrn-definition-list tcrn-definition-list--dense">${targets.map((target, index) => `<div class="tcrn-definition-list__item" data-identity-row="${esc(JSON.stringify({ libraryId: target.libraryId, projectId: target.projectId }))}"><dt class="tcrn-definition-list__term">${esc(labels[index])}</dt><dd class="tcrn-definition-list__definition"><code data-identity-value>${esc(projectIdentity(target))}</code> <button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-copy-identity="${esc(projectIdentity(target))}" data-clipboard-copy-state="idle" aria-label="${esc(t("projects.copyIdentity", { name: labels[index] }))}"><span data-copy-label>${esc(copyStates().idle)}</span><span class="tcrn-sr-only" role="status" aria-live="polite" data-copy-status></span></button></dd></div>`).join("")}</dl></details>`;
+  const identityDetails = (scope, targets, labels = distinctLabels(targets)) => targets.length === 0 ? "" : (Promise.resolve().then(mountIdentityCopies), `<details class="tcrn-disclosure-panel" data-identity-details="${esc(scope)}"><summary class="tcrn-disclosure-panel__title">${esc(t("projects.identity"))}</summary><dl class="tcrn-definition-list tcrn-definition-list--dense">${targets.map((target, index) => `<div class="tcrn-definition-list__item" data-identity-row="${esc(JSON.stringify({ libraryId: target.libraryId, projectId: target.projectId }))}"><dt class="tcrn-definition-list__term">${esc(labels[index])}</dt><dd class="tcrn-definition-list__definition"><code data-identity-value>${esc(projectIdentity(target))}</code> <button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-copy-identity="${esc(projectIdentity(target))}" data-clipboard-copy-state="idle" aria-label="${esc(t("projects.copyIdentity", { name: labels[index] }))}"><span data-copy-label>${esc(copyStates().idle)}</span><span class="tcrn-sr-only" role="status" aria-live="polite" data-copy-status></span></button></dd></div>`).join("")}</dl></details>`);
   let bindingsEpoch = 0;
   const renderProjectBindings = async () => {
     const epoch = ++bindingsEpoch;
@@ -5370,7 +5429,8 @@ const BOOT = __PORTAL_BOOT__;
   const reconcileModelPolicyLibrary = (libraryId) => {
     if (state.modelPolicyLibraryId !== libraryId) {
       modelPolicyDrafts().clear();
-      modelPolicyWrites().clear();
+      // Writes belong to the device host, not the selected library. Keep the
+      // in-flight guard until its request settles, even across a library switch.
       state.modelPolicy = null;
       state.modelPolicyRead += 1;
       state.modelPolicyReadTarget = null;
@@ -5386,7 +5446,7 @@ const BOOT = __PORTAL_BOOT__;
   };
   const copyPolicy = (entry) => entry === null || entry === undefined
     ? { categories: [], tiers: [], escalation: { enabled: false, threshold: 2, ceiling: "main" } }
-    : { categories: (Array.isArray(entry.categories) ? entry.categories : []).map((row) => ({ ...row })), tiers: (Array.isArray(entry.tiers) ? entry.tiers : []).map((row) => ({ ...row })), escalation: { enabled: false, threshold: 2, ceiling: "main", ...(entry.escalation || {}) } };
+    : { categories: (Array.isArray(entry.categories) ? entry.categories : []).map((row) => ({ ...row })), tiers: (Array.isArray(entry.tiers) ? entry.tiers : []).map((row) => ({ ...row })), escalation: { enabled: false, threshold: 2, ceiling: "main", ...(entry.escalation || {}) }, ...(entry.quota ? { quota: { ...entry.quota } } : {}) };
   const policyDraft = (host) => {
     const drafts = modelPolicyDrafts();
     if (!drafts.has(host)) {
@@ -5408,6 +5468,8 @@ const BOOT = __PORTAL_BOOT__;
   const acceptModelPolicyRead = (target, result) => {
     if (!modelPolicyReadCurrent(target)) return false;
     state.modelPolicy = result;
+    const draft = modelPolicyDrafts().get(target.host);
+    if (draft && !draft.dirty && !modelPolicyWrites().has(target.host)) modelPolicyDrafts().delete(target.host);
     state.modelPolicyReadPending = false;
     return true;
   };
@@ -5417,9 +5479,9 @@ const BOOT = __PORTAL_BOOT__;
     const current = String(row.category ?? "");
     const options = draft.policy.categories.map((category) => `<option value="${esc(category.id ?? "")}"${String(category.id ?? "") === current ? " selected" : ""}>${esc(category.name || category.id || t("modelPolicy.unselectedCategory"))}</option>`);
     if (!draft.policy.categories.some((category) => String(category.id ?? "") === current)) options.unshift(`<option value="${esc(current)}" selected>${esc(current || t("modelPolicy.unselectedCategory"))}</option>`);
-    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(draft.policy.categories.map((category) => String(category.id ?? "")), "models.category")}><label class="tcrn-setting-choice__select-label"><span class="tcrn-sr-only">${esc(t("modelTiers.category"))}</span><select class="tcrn-select" aria-label="${esc(t("modelTiers.category"))}" data-engine-policy-field="category" data-engine-policy-kind="tiers" data-engine-policy-index="${index}">${options.join("")}</select></label></div>`;
+    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(draft.policy.categories.map((category) => String(category.id ?? "")), "models.category")} data-setting-choice-source="engine-model-policy.categories"><label class="tcrn-setting-choice__select-label"><span class="tcrn-sr-only">${esc(t("modelTiers.category"))}</span><select class="tcrn-select" aria-label="${esc(t("modelTiers.category"))}" data-engine-policy-field="category" data-engine-policy-kind="tiers" data-engine-policy-index="${index}">${options.join("")}</select></label></div>`;
   };
-  const modelPolicyTables = (host, draft, sections = ["categories", "tiers", "escalation"]) => {
+  const modelPolicyTables = (host, draft, sections = ["categories", "tiers", "escalation", "quota"]) => {
     const output = [];
     if (sections.includes("categories")) {
       const columns = [
@@ -5450,13 +5512,22 @@ const BOOT = __PORTAL_BOOT__;
       const categories = draft.policy.categories;
       const options = categories.map((category) => `<option value="${esc(category.id ?? "")}"${String(category.id ?? "") === ceiling ? " selected" : ""}>${esc(category.name || category.id || t("modelPolicy.unselectedCategory"))}</option>`);
       if (!categories.some((category) => String(category.id ?? "") === ceiling)) options.unshift(`<option value="${esc(ceiling)}" selected>${esc(ceiling || t("modelPolicy.unselectedCategory"))}</option>`);
-      output.push(`<section class="tcrn-surface" data-engine-model-policy-section="escalation"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h3>${esc(t("modelTiers.escalationTitle"))}</h3><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div></div><div class="tcrn-grid tcrn-grid--3"><label class="tcrn-switch" data-switch-state="${draft.policy.escalation.enabled ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-engine-policy-escalation="enabled" ${draft.policy.escalation.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("setting.models.escalation.enabled.label"))}</span></label><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("setting.models.escalation.threshold.label"))}</span><input class="tcrn-input tcrn-number-input" type="number" min="1" step="1" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" aria-label="${esc(t("setting.models.escalation.threshold.label"))}" data-engine-policy-escalation="threshold" value="${esc(draft.policy.escalation.threshold)}"></label><div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(categories.map((category) => String(category.id ?? "")), "models.escalation.ceiling")}><label class="tcrn-setting-choice__select-label"><span class="tcrn-field__label">${esc(t("setting.models.escalation.ceiling.label"))}</span><select class="tcrn-select" aria-label="${esc(t("setting.models.escalation.ceiling.label"))}" data-engine-policy-escalation="ceiling" ${categories.length === 0 ? "disabled" : ""}>${options.join("")}</select></label></div></div></section>`);
+      output.push(`<section class="tcrn-surface" data-engine-model-policy-section="escalation"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h3>${esc(t("modelTiers.escalationTitle"))}</h3><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div></div><div class="tcrn-grid tcrn-grid--3"><label class="tcrn-switch" data-switch-state="${draft.policy.escalation.enabled ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-engine-policy-escalation="enabled" ${draft.policy.escalation.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("setting.models.escalation.enabled.label"))}</span></label><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("setting.models.escalation.threshold.label"))}</span><input class="tcrn-input tcrn-number-input" type="number" min="1" step="1" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" aria-label="${esc(t("setting.models.escalation.threshold.label"))}" data-engine-policy-escalation="threshold" value="${esc(draft.policy.escalation.threshold)}"></label><div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(categories.map((category) => String(category.id ?? "")), "models.escalation.ceiling")} data-setting-choice-source="engine-model-policy.categories"><label class="tcrn-setting-choice__select-label"><span class="tcrn-field__label">${esc(t("setting.models.escalation.ceiling.label"))}</span><select class="tcrn-select" aria-label="${esc(t("setting.models.escalation.ceiling.label"))}" data-engine-policy-escalation="ceiling" ${categories.length === 0 ? "disabled" : ""}>${options.join("")}</select></label></div></div></section>`);
+    }
+    if (sections.includes("quota")) {
+      const quota = draft.policy.quota ?? { fiveHourParallelOffPercent: 75, fiveHourWaitPercent: 90, weeklyParallelOffPercent: 95, weeklyWaitPercent: null };
+      output.push(`<section class="tcrn-surface" data-engine-model-policy-section="quota"><h3>${esc(t("modelPolicy.quota"))}</h3><p class="tcrn-text">${esc(t("modelPolicy.quotaNote"))}</p><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-engine-policy-quota-enabled ${draft.policy.quota ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("modelPolicy.quotaOverride"))}</span></label><div class="tcrn-grid tcrn-grid--2">${Object.entries(quota).map(([key, value]) => `<label class="tcrn-field"><span class="tcrn-field__label">${esc(settingLabel("quota." + key))}</span><input class="tcrn-input tcrn-number-input" type="number" min="1" max="100" step="1" aria-label="${esc(settingLabel("quota." + key))}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-engine-policy-quota="${key}" value="${esc(value ?? "")}" ${draft.policy.quota ? "" : "disabled"}></label>`).join("")}</div></section>`);
     }
     return output.join("");
   };
   const modelPolicyAudit = (catalog, host, entry) => entry === null || entry === undefined
     ? `<p class="tcrn-text" data-engine-model-policy-status="unconfigured">${esc(t("modelPolicy.unconfigured"))}</p>`
     : `<dl class="tcrn-definition-list tcrn-definition-list--dense" data-engine-model-policy-audit><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.revision"))}</span><strong>${esc(entry.revision)}</strong></div><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.updated"))}</span><strong>${esc(entry.updatedAt)}</strong></div><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.source"))}</span><strong>${esc(t("modelPolicy.engineHostSource", { host }))}</strong></div><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.decision"))}</span><strong>${esc(entry.decidedIn)}</strong></div><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.compatibility"))}</span><strong>${esc(catalog.compatibility?.precedence ?? "")}</strong></div></dl>`;
+  const modelPolicyConfiguration = (host, entry) => independentConfigurationMetadata("engine-host-policy", {
+    target: t("modelPolicy.engineHostSource", { host }), declaredValue: configurationValue(entry ? copyPolicy(entry) : null),
+    effectiveSource: t("modelPolicy.engineHostSource", { host }), effectiveValue: entry ? t("configuration.policyResolution") : t("modelPolicy.unconfigured"),
+    valueRole: t("configuration.draftControls"),
+  });
   const focusModelPolicyField = (host, kind, index, field) => {
     state.modelPolicyFocus = { host, kind, index, field };
     queueMicrotask(() => {
@@ -5464,7 +5535,8 @@ const BOOT = __PORTAL_BOOT__;
       if (!focus || focus.host !== state.modelPolicyHost) return;
       const escapeSelector = (value) => globalThis.CSS?.escape ? globalThis.CSS.escape(String(value)) : String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
       const selector = field === "escalation" ? `[data-engine-policy-escalation="${escapeSelector(focus.kind)}"]` : `[data-engine-policy-kind="${escapeSelector(focus.kind)}"][data-engine-policy-index="${focus.index}"][data-engine-policy-field="${escapeSelector(focus.field)}"]`;
-      $(selector)?.focus?.();
+      const activePage = $$('[data-page]').find((page) => page.dataset.page === state.page && !page.hidden);
+      if (activePage) $(selector, activePage)?.focus?.();
       state.modelPolicyFocus = null;
     });
   };
@@ -5488,7 +5560,7 @@ const BOOT = __PORTAL_BOOT__;
   const resetModelPolicyDraft = (host) => { modelPolicyDrafts().delete(host); };
   const saveModelPolicy = async (host, render) => {
     const draft = policyDraft(host);
-    if (state.modelPolicyHost !== host || state.librarySwitching || modelPolicyPendingFor(host) || modelPolicyWrites().has(host)) return;
+    if (!draft.dirty || state.modelPolicyHost !== host || state.librarySwitching || modelPolicyPendingFor(host) || modelPolicyWrites().has(host)) return;
     const decidedIn = draft.decidedIn.trim();
     if (decidedIn === "") { draft.failure = { ok: false, reasonCode: "PORTAL_MODEL_POLICY_DECISION_REQUIRED" }; showReceipt(draft.failure); render(); return; }
     const version = draft.version;
@@ -5528,6 +5600,19 @@ const BOOT = __PORTAL_BOOT__;
     });
     $$('[data-engine-policy-field]', view).forEach((input) => input.addEventListener(input.tagName === "SELECT" ? "change" : "input", (event) => { updateModelPolicyField(host, event.currentTarget); render(); }));
     $$('[data-engine-policy-escalation]', view).forEach((input) => input.addEventListener(input.tagName === "SELECT" || input.type === "checkbox" ? "change" : "input", (event) => { updateModelPolicyEscalation(host, event.currentTarget); render(); }));
+    $("[data-engine-policy-quota-enabled]", view)?.addEventListener("change", (event) => {
+      const draft = policyDraft(host);
+      if (event.currentTarget.checked) draft.policy.quota = { fiveHourParallelOffPercent: 75, fiveHourWaitPercent: 90, weeklyParallelOffPercent: 95, weeklyWaitPercent: null };
+      else delete draft.policy.quota;
+      markPolicyDirty(draft); render();
+    });
+    $$('[data-engine-policy-quota]', view).forEach((input) => input.addEventListener("input", (event) => {
+      const draft = policyDraft(host);
+      const field = event.currentTarget.dataset.enginePolicyQuota;
+      if (!draft.policy.quota || !Object.hasOwn(draft.policy.quota, field)) return;
+      draft.policy.quota[field] = field === "weeklyWaitPercent" && event.currentTarget.value === "" ? null : orderValue(event.currentTarget.value);
+      markPolicyDirty(draft); render();
+    }));
     $("[data-engine-model-policy-decision]", view)?.addEventListener("input", (event) => { const draft = policyDraft(host); draft.decidedIn = event.currentTarget.value; markPolicyDirty(draft); render(); });
     $$('[data-engine-policy-add]', view).forEach((button) => button.addEventListener("click", () => {
       const draft = policyDraft(host);
@@ -5553,15 +5638,15 @@ const BOOT = __PORTAL_BOOT__;
     const pending = modelPolicyPendingFor(host) || state.librarySwitching;
     const focus = rememberFocus(view);
     setText("#engine-model-policy-source", catalog?.source?.kind ?? "device-engine");
-    if (!catalog || catalog.httpStatus >= 400) {
-      view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-unavailable><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}</div><div class="tcrn-inline-alert tcrn-inline-alert--${pending ? "neutral" : "danger"}" role="${pending ? "status" : "alert"}" data-engine-model-policy-status="${pending ? "loading" : "unavailable"}"><code>${esc(pending ? "PORTAL_MODEL_POLICY_LOADING" : catalog?.reasonCode ?? "PORTAL_MODEL_POLICY_UNAVAILABLE")}</code></div></section>`;
+    if (!catalog || catalog.ok === false || catalog.httpStatus >= 400) {
+      view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-unavailable><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}</div><div class="tcrn-inline-alert tcrn-inline-alert--${pending ? "neutral" : "danger"}" role="${pending ? "status" : "alert"}" data-engine-model-policy-status="${pending ? "loading" : "unavailable"}"><code>${esc(pending ? "PORTAL_MODEL_POLICY_LOADING" : catalog?.reasonCode ?? "PORTAL_MODEL_POLICY_UNAVAILABLE")}</code><span>${esc(t(pending ? "modelPolicy.loading" : "modelPolicy.unavailable"))}</span></div></section>`;
       wireModelPolicyEditor(view, host, renderModelPolicy); restoreFocus(view, focus); return;
     }
     const entry = policyEntryFor(host, catalog);
     const draft = policyDraft(host);
     const writing = modelPolicyWrites().has(host);
     const failure = draft.failure ? `<div class="tcrn-inline-alert tcrn-inline-alert--danger" role="alert" data-engine-model-policy-write-error><code>${esc(draft.failure.reasonCode ?? "PORTAL_MODEL_POLICY_WRITE_FAILED")}</code><span>${esc(reasonHint(draft.failure.reasonCode) || t("receipt.failureMessage"))}</span></div>` : "";
-    view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy data-engine-model-policy-host="${esc(host)}" data-engine-model-policy-pending="${writing || pending}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("settings.group.models"))}</h2><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div><span class="tcrn-badge" data-engine-model-policy-store-revision>v${esc(catalog.storeRevision)}</span></div><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("modelPolicy.decision"))}</span><input class="tcrn-input" data-engine-model-policy-decision aria-label="${esc(t("modelPolicy.decision"))}" value="${esc(draft.decidedIn)}" placeholder="minutes:&lt;id&gt;#D1" ${state.librarySwitching ? "disabled" : ""}></label></div>${modelPolicyAudit(catalog, host, entry)}<p class="tcrn-text" data-engine-model-policy-compatibility>${esc(t("modelPolicy.compatibilityNote"))}</p>${failure}${modelPolicyTables(host, draft)}<div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-engine-model-policy-undo ${pending || state.librarySwitching ? "disabled" : ""}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-engine-model-policy-save data-cli-action="engine-model-policy-set" ${draft.dirty && !writing && !pending ? "" : "disabled"} aria-busy="${writing}">${esc(writing ? t("collection.saving") : t("config.save"))}</button></div></section>`;
+    view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy data-engine-policy-selected-host="${esc(host)}" data-engine-model-policy-pending="${writing || pending}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("settings.group.models"))}</h2><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div><span class="tcrn-badge" data-engine-model-policy-store-revision>v${esc(catalog.storeRevision)}</span></div><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("modelPolicy.decision"))}</span><input class="tcrn-input" data-engine-model-policy-decision aria-label="${esc(t("modelPolicy.decision"))}" value="${esc(draft.decidedIn)}" placeholder="minutes:&lt;id&gt;#D1" ${state.librarySwitching ? "disabled" : ""}></label></div>${modelPolicyAudit(catalog, host, entry)}${modelPolicyConfiguration(host, entry)}<p class="tcrn-text" data-engine-model-policy-compatibility>${esc(t("modelPolicy.compatibilityNote"))}</p>${failure}${modelPolicyTables(host, draft)}<div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-engine-model-policy-undo ${pending || state.librarySwitching ? "disabled" : ""}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-engine-model-policy-save data-cli-action="engine-model-policy-set" ${draft.dirty && !writing && !pending ? "" : "disabled"} aria-busy="${writing}">${esc(writing ? t("collection.saving") : t("config.save"))}</button></div></section>`;
     wireModelPolicyEditor(view, host, renderModelPolicy); restoreFocus(view, focus);
   };
   const refreshModelPolicy = async () => {
@@ -5583,8 +5668,8 @@ const BOOT = __PORTAL_BOOT__;
     const focus = rememberFocus(view);
     const count = kind === "categories" ? catalog?.selectedPolicy?.categories?.length ?? 0 : catalog?.selectedPolicy?.tiers?.length ?? 0;
     setText(kind === "categories" ? "#model-categories-count" : "#model-tiers-count", t(kind === "categories" ? "modelCategories.count" : "modelTiers.count", { count }));
-    if (!catalog || catalog.httpStatus >= 400) {
-      view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-collection="${esc(kind)}"><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}</div><div class="tcrn-inline-alert tcrn-inline-alert--${pending ? "neutral" : "danger"}" role="${pending ? "status" : "alert"}" data-engine-model-policy-status="${pending ? "loading" : "unavailable"}"><code>${esc(pending ? "PORTAL_MODEL_POLICY_LOADING" : catalog?.reasonCode ?? "PORTAL_MODEL_POLICY_UNAVAILABLE")}</code></div></section>`;
+    if (!catalog || catalog.ok === false || catalog.httpStatus >= 400) {
+      view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-collection="${esc(kind)}"><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}</div><div class="tcrn-inline-alert tcrn-inline-alert--${pending ? "neutral" : "danger"}" role="${pending ? "status" : "alert"}" data-engine-model-policy-status="${pending ? "loading" : "unavailable"}"><code>${esc(pending ? "PORTAL_MODEL_POLICY_LOADING" : catalog?.reasonCode ?? "PORTAL_MODEL_POLICY_UNAVAILABLE")}</code><span>${esc(t(pending ? "modelPolicy.loading" : "modelPolicy.unavailable"))}</span></div></section>`;
       wireModelPolicyEditor(view, host, () => renderModelPolicyCollectionPage(kind)); restoreFocus(view, focus); return;
     }
     const entry = policyEntryFor(host, catalog);
@@ -5592,7 +5677,7 @@ const BOOT = __PORTAL_BOOT__;
     const writing = modelPolicyWrites().has(host);
     const title = kind === "categories" ? t("modelCategories.title") : t("modelTiers.title");
     const failure = draft.failure ? `<div class="tcrn-inline-alert tcrn-inline-alert--danger" role="alert" data-engine-model-policy-write-error><code>${esc(draft.failure.reasonCode ?? "PORTAL_MODEL_POLICY_WRITE_FAILED")}</code><span>${esc(reasonHint(draft.failure.reasonCode) || t("receipt.failureMessage"))}</span></div>` : "";
-    view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-collection="${esc(kind)}" data-engine-model-policy-host="${esc(host)}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(title)}</h2><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div><span class="tcrn-badge">v${esc(catalog.storeRevision)}</span></div><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("modelPolicy.decision"))}</span><input class="tcrn-input" data-engine-model-policy-decision aria-label="${esc(t("modelPolicy.decision"))}" value="${esc(draft.decidedIn)}" placeholder="minutes:&lt;id&gt;#D1" ${state.librarySwitching ? "disabled" : ""}></label></div>${modelPolicyAudit(catalog, host, entry)}<p class="tcrn-text" data-engine-model-policy-compatibility>${esc(t("modelPolicy.compatibilityNote"))}</p>${failure}${modelPolicyTables(host, draft, kind === "categories" ? ["categories"] : ["tiers", "escalation"])}<div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-engine-model-policy-undo ${pending || state.librarySwitching ? "disabled" : ""}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-engine-model-policy-save data-cli-action="engine-model-policy-set" ${draft.dirty && !writing && !pending ? "" : "disabled"} aria-busy="${writing}">${esc(writing ? t("collection.saving") : t("config.save"))}</button></div></section>`;
+    view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-collection="${esc(kind)}" data-engine-policy-selected-host="${esc(host)}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(title)}</h2><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div><span class="tcrn-badge">v${esc(catalog.storeRevision)}</span></div><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("modelPolicy.decision"))}</span><input class="tcrn-input" data-engine-model-policy-decision aria-label="${esc(t("modelPolicy.decision"))}" value="${esc(draft.decidedIn)}" placeholder="minutes:&lt;id&gt;#D1" ${state.librarySwitching ? "disabled" : ""}></label></div>${modelPolicyAudit(catalog, host, entry)}${modelPolicyConfiguration(host, entry)}<p class="tcrn-text" data-engine-model-policy-compatibility>${esc(t("modelPolicy.compatibilityNote"))}</p>${failure}${modelPolicyTables(host, draft, kind === "categories" ? ["categories"] : ["tiers", "escalation", "quota"])}<div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-engine-model-policy-undo ${pending || state.librarySwitching ? "disabled" : ""}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-engine-model-policy-save data-cli-action="engine-model-policy-set" ${draft.dirty && !writing && !pending ? "" : "disabled"} aria-busy="${writing}">${esc(writing ? t("collection.saving") : t("config.save"))}</button></div></section>`;
     wireModelPolicyEditor(view, host, () => renderModelPolicyCollectionPage(kind)); restoreFocus(view, focus);
   };
   const renderModelCategories = () => renderModelPolicyCollectionPage("categories");
@@ -5743,17 +5828,26 @@ const BOOT = __PORTAL_BOOT__;
     if (field === "type") return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><select class="tcrn-select" aria-label="${esc(label)}" ${selector}="type">${variableTypes.map((type) => `<option value="${type}" ${type === value ? "selected" : ""}>${esc(variableTypeLabel(type))}</option>`).join("")}</select></label>`;
     return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><input class="tcrn-input" value="${esc(value)}" aria-label="${esc(label)}" ${selector}="${field}"></label>`;
   };
+  const variableConfiguration = (variable, isNew) => `<details class="tcrn-disclosure-panel" data-variable-configuration><summary class="tcrn-disclosure-panel__title">${esc(t("configuration.details"))}</summary>${configurationFields({
+    target: configurationTarget(state.settings?.chain?.role === "coordination" ? "library" : "project"),
+    declaredValue: configurationValue(isNew || variable.declaredHere === false ? null : variable.value),
+    effectiveValue: isNew ? t("configuration.notDeclared") : configurationValue(variable.value),
+    effectiveSource: isNew ? t("configuration.notDeclared") : variable.source ? JSON.stringify(variable.source) : t("configuration.unavailable"),
+    inheritanceState: isNew ? t("configuration.notDeclared") : variable.declaredHere === false ? t("configuration.inherited") : t("configuration.declaredHere"),
+    export: configurationValue(variable.exports ?? (isNew ? [] : ["agents"])), valueRole: t("configuration.draftControls"),
+  })}</details>`;
   const variableRow = (variable, isNew = false) => `<div class="tcrn-table-shell__row" role="row" ${isNew ? 'data-variable-create-row' : `data-variable-row="${esc(variable.name)}"`}>
     ${variableField("order", variable.order ?? "")}
-    ${variableField("name", variable.name ?? "").replace("data-variable-field=\"name\"", `data-variable-field="name"${!isNew && variable.declaredHere === false ? " readonly" : ""}`).replace("</label>", `${!isNew ? `<span class="tcrn-text" data-variable-source="${esc(variable.name)}">${esc(settingSourceText({ source: variable.source }))}</span>` : ""}</label>`)}
+    ${variableField("name", variable.name ?? "").replace("<label ", "<div ").replace("data-variable-field=\"name\"", `data-variable-field="name"${!isNew && variable.declaredHere === false ? " readonly" : ""}`).replace("</label>", `${!isNew ? `<span class="tcrn-text" data-variable-source="${esc(variable.name)}">${esc(settingSourceText({ source: variable.source }))}</span>` : ""}${variableConfiguration(variable, isNew)}</div>`)}
     ${variableField("type", variable.type ?? "string")}
     ${variableField("value", variable.value ?? "")}
     ${variableField("description", variable.description ?? "")}
+    <span class="tcrn-table-shell__cell" role="cell" data-label="${esc(t("variables.exports"))}">${["agents", "handoff"].map((target) => `<label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-variable-export="${target}" ${(variable.exports ?? (isNew ? [] : ["agents"])).includes(target) ? "checked" : ""}><span class="tcrn-switch__label">${esc(target === "agents" ? t("variables.export.agents") : t("variables.export.handoff"))}</span></label>`).join("")}</span>
     <span class="tcrn-table-shell__cell" role="cell" data-label="${esc(t("variables.actions"))}">${isNew
       ? `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-variable-create data-cli-action="variable-set">${esc(t("variables.add"))}</button>`
       : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-variable-save data-cli-action="variable-set">${esc(t("config.save"))}</button> <button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-variable-delete data-cli-action="variable-remove"${variable.declaredHere === false ? " disabled" : ""}>${esc(t("config.reset"))}</button>`}</span>
   </div>`;
-  const variableFieldValues = (row) => Object.fromEntries([...row.querySelectorAll("[data-variable-field]")].map((field) => [field.dataset.variableField, field.value]));
+  const variableFieldValues = (row) => ({ ...Object.fromEntries([...row.querySelectorAll("[data-variable-field]")].map((field) => [field.dataset.variableField, field.value])), exports: [...row.querySelectorAll("[data-variable-export]")].filter((field) => field.checked).map((field) => field.dataset.variableExport) });
   const renderVariables = () => {
     const source = state.variables;
     // The rows follow the custom section of AGENTS.md: variables with an order first, then by name.
@@ -5761,10 +5855,10 @@ const BOOT = __PORTAL_BOOT__;
     setText("#variables-count", t("variables.count", { count: variables.length }));
     const unavailable = source?.ok === false;
     const rows = variables.length > 0 ? variables.map((variable) => variableRow(variable)).join("") : `<div class="tcrn-table-shell__row tcrn-table-shell__empty-row" role="row" data-variable-empty><span class="tcrn-table-shell__empty" role="cell">${esc(t("variables.empty"))}</span></div>`;
-    const headers = [t("collection.order"), t("variables.name"), t("variables.type"), t("variables.value"), t("variables.description"), t("variables.actions")];
+    const headers = [t("collection.order"), t("variables.name"), t("variables.type"), t("variables.value"), t("variables.description"), t("variables.exports"), t("variables.actions")];
     const content = unavailable
       ? `<div class="tcrn-state-surface" role="alert">${readFailureContent(source)}</div>`
-      : `<section class="tcrn-surface" data-content-scope="custom-variables"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("variables.title"))}</h2><p class="tcrn-text">${esc(t("variables.note"))}</p></div></div><div class="tcrn-table-shell tcrn-variable-table" role="table" aria-label="${esc(t("variables.title"))}" data-variable-table="true"><div class="tcrn-table-shell__head" role="row">${headers.map((label) => `<span role="columnheader">${esc(label)}</span>`).join("")}</div>${variableRow({ name: "", type: "string", value: "", description: "" }, true)}${rows}</div></section>${source?.withheld?.length ? `<p class="tcrn-text">${esc(t("variables.withheld", { count: source.withheld.length }))}</p>` : ""}`;
+      : `<section class="tcrn-surface" data-content-scope="custom-variables"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("variables.title"))}</h2><p class="tcrn-text">${esc(t("variables.note"))}</p><p class="tcrn-text">${esc(t("variables.replaceNote"))}</p>${independentConfigurationMetadata("variable", { scope: state.settings?.chain?.role === "coordination" ? "library" : "project" })}</div></div><div class="tcrn-table-shell tcrn-variable-table" role="table" aria-label="${esc(t("variables.title"))}" data-variable-table="true"><div class="tcrn-table-shell__head" role="row">${headers.map((label) => `<span role="columnheader">${esc(label)}</span>`).join("")}</div>${variableRow({ name: "", type: "string", value: "", description: "" }, true)}${rows}</div></section>${source?.withheld?.length ? `<p class="tcrn-text">${esc(t("variables.withheld", { count: source.withheld.length }))}</p>` : ""}`;
     $("#variables-view").innerHTML = content;
     $$('[data-variable-create]').forEach((button) => button.addEventListener("click", () => saveVariable(variableFieldValues(button.closest("[data-variable-create-row]")))));
     $$('[data-variable-save]').forEach((button) => button.addEventListener("click", () => {
@@ -6287,10 +6381,11 @@ const BOOT = __PORTAL_BOOT__;
     enabled: t("rule.state.enabled"),
     "user-modified": t("rule.state.user-modified"),
     "removed-from-file": t("rule.state.removed-from-file"),
+    "output-unconfigured": t("rule.state.output-unconfigured"),
     "update-available": t("rule.state.update-available"),
     pending: t("rule.state.pending"),
   })[value] || value;
-  const ruleIsEnabled = (rule) => ["enabled", "user-modified", "removed-from-file", "update-available", "pending"].includes(rule.state);
+  const ruleIsEnabled = (rule) => ["enabled", "user-modified", "removed-from-file", "update-available", "pending", "output-unconfigured"].includes(rule.state);
   const renderPending = () => {
     const pending = state.rules?.pending || [];
     if (!pending.some((entry) => entry.id === state.pendingSection)) state.pendingSection = pending[0]?.id || "";
@@ -6423,6 +6518,7 @@ const BOOT = __PORTAL_BOOT__;
     const copy = $("[data-copy-identity]", details);
     copy.setAttribute("data-copy-identity", path);
     copy.setAttribute("aria-label", t("prose.copyPath", { file }));
+    Promise.resolve().then(mountIdentityCopies);
     if (copy.dataset.clipboardCopyState === "idle") setText("#agents-path-details [data-copy-label]", t("copy.idle"));
     // TCRN-CROSS-STORY-540 GWT5 (MIN-258 D3(c); TCRN-CROSS-SUB-508): a coordination library's rules and variables
     // are rendered into the AGENTS.md of the directory it is registered for, the container it coordinates.
@@ -6432,7 +6528,7 @@ const BOOT = __PORTAL_BOOT__;
     note.dataset.bindingStatus = coordination ? (path === "" ? "unconfigured" : "bound") : "";
     note.textContent = !coordination ? "" : path === "" ? t("prose.coordinationUnconfigured") : t("prose.coordinationBound", { path: path.replace(/[\\/][^\\/]+$/u, "") });
   };
-  const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); if (unkept(documentResult, reconciliation, rules)) return; state.agentsText = documentResult.text || ""; state.agentsDocument = documentResult; state.rules = rules; $("#agents-md").value = state.agentsText; renderAgentsFile(documentResult); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
+  const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); if (unkept(documentResult, reconciliation, rules)) return; if (documentResult.ok === false && documentResult.reasonCode === "PORTAL_INTERNAL_ERROR") { showReceipt(documentResult); return; } state.agentsText = documentResult.text || ""; state.agentsDocument = documentResult; state.rules = rules; $("#agents-md").value = state.agentsText; renderAgentsFile(documentResult); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
   // TCRN-CROSS-STORY-508 R8 (C-R14-6): a write of a key the system variables section shows renders
   // AGENTS.md again (portal.mjs), so the Rules page reads the file back after it.
   // TCRN-CROSS-STORY-540 GWT2 (Q4, Q5; TCRN-CROSS-SUB-508): on a coordination library its orchestration limits
@@ -7019,7 +7115,18 @@ const BOOT = __PORTAL_BOOT__;
       $("#library-select").focus();
     }
   });
+  const applySystemTheme = () => {
+    if (!followSystemTheme) return;
+    state.theme = systemTheme?.matches ? "dark" : "light";
+    document.documentElement.dataset.tcrnTheme = state.theme;
+    const toggle = $("#theme-button");
+    toggle.dataset.currentTheme = state.theme;
+    toggle.dataset.themeNext = state.theme === "light" ? "dark" : "light";
+    toggle.setAttribute("aria-pressed", String(state.theme === "dark"));
+  };
+  systemTheme?.addEventListener?.("change", applySystemTheme);
   $("#theme-button").addEventListener("click", () => {
+    followSystemTheme = false;
     state.theme = state.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.tcrnTheme = state.theme;
     tcrnWritePreference("theme", state.theme);
@@ -7047,7 +7154,7 @@ const BOOT = __PORTAL_BOOT__;
       tcrnWritePreference("locale", state.locale);
       setLocaleMenuOpen(false);
       localeTrigger.focus();
-      applyLocale(); loadLibraries(); applyRailIdentity(); renderWorkspaceLabel(); applySideNavCollapsed(state.sideNavCollapsed); renderDashboard(); renderSettings(); renderCollections(); renderModelPolicy(); renderVariables(); renderVocabulary(); renderGates(); renderMigratedGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] }); renderAgentsFile(state.agentsDocument); renderTargetNotice();
+      applyLocale(); loadLibraries(); applyRailIdentity(); renderWorkspaceLabel(); applySideNavCollapsed(state.sideNavCollapsed); renderDashboard(); renderSettings(); renderCollections(); renderModelPolicy(); renderVariables(); renderVocabulary(); renderGates(); renderMigratedGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] }); renderAgentsFile(state.agentsDocument); mountIdentityCopies(); renderTargetNotice();
     });
   });
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });
@@ -7077,30 +7184,26 @@ const BOOT = __PORTAL_BOOT__;
     details.removeAttribute("open");
     details.querySelector("summary")?.focus();
   });
-  const copyResetTimers = new WeakMap();
-  const setCopyState = (button, copyState) => {
-    const labels = copyStates();
-    button.dataset.clipboardCopyState = copyState;
-    if (copyState === "copying") button.setAttribute("aria-busy", "true"); else button.removeAttribute("aria-busy");
-    const label = button.querySelector("[data-copy-label]");
-    if (label) label.textContent = labels[copyState] ?? labels.idle;
-    const status = button.querySelector("[data-copy-status]");
-    if (status) status.textContent = copyState === "idle" ? "" : labels[copyState] ?? "";
-  };
-  document.addEventListener("click", async (event) => {
-    const button = event.target?.closest?.("[data-copy-identity]");
-    if (!button || button.dataset.clipboardCopyState === "copying") return;
-    clearTimeout(copyResetTimers.get(button));
-    const clipboard = globalThis.navigator?.clipboard;
-    const writeText = typeof clipboard?.writeText === "function" ? clipboard.writeText.bind(clipboard) : null;
-    if (writeText === null) setCopyState(button, "unsupported");
-    else {
-      setCopyState(button, "copying");
-      try { await writeText(button.dataset.copyIdentity); setCopyState(button, "copied"); } catch { setCopyState(button, "failed"); }
+  const clipboardMounts = new WeakMap();
+  function mountIdentityCopies() {
+    for (const button of $$('[data-copy-identity]')) {
+      const text = button.dataset.copyIdentity ?? "";
+      const previous = clipboardMounts.get(button);
+      if (previous?.locale === state.locale && button.getAttribute("data-clipboard-text") === text) continue;
+      if (button.getAttribute("data-clipboard-text") !== text) button.setAttribute("data-clipboard-text", text);
+      const accessibleName = button.getAttribute("aria-label");
+      previous?.mount.destroy();
+      if (accessibleName !== null) button.setAttribute("aria-label", accessibleName);
+      const label = button.querySelector("[data-copy-label]");
+      if (label) label.replaceWith(document.createTextNode(label.textContent));
+      for (const [key, value] of Object.entries(copyStates())) button.setAttribute(`data-clipboard-${key}-label`, value);
+      button.setAttribute("data-clipboard-reset-delay-ms", "2000");
+      clipboardMounts.set(button, { locale: state.locale, mount: mountStaticClipboardCopyButton({ root: button, locale: state.locale }) });
     }
-    button.focus({ preventScroll: true });
-    copyResetTimers.set(button, setTimeout(() => { if (button.isConnected !== false) setCopyState(button, "idle"); }, 2000));
-  });
+  };
+  // Renderers schedule bridge mounts after inserting their identity controls.
+  // No mutation observer or duplicate clipboard execution path is necessary.
+  mountIdentityCopies();
   const applyRailIdentity = () => {
     setText("#rail-workspace-label", (BOOT.library ? libraryLabel(BOOT.library) : "") || BOOT.library?.libraryId || "");
     setText("#library-label", [BOOT.library?.libraryId, BOOT.library?.configurationProjectId, BOOT.library?.libraryPath].filter(Boolean).join("\n"));

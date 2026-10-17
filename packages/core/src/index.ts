@@ -610,7 +610,7 @@ export type { KnowledgeBatchOptions, KnowledgeBatchProblem } from "./knowledge-b
 // the selector and the tokenizers stay internal to ./recall.js, where the evaluation
 // harness and the tests import them directly; only what the CLI dispatches is barrelled.
 // TCRN-CROSS-STORY-364: the artefact-language policy is re-exported because the CLI reads
-// it on the recall path (the prompt-language fallback) and the migration executor reads it
+// its runtime resolver on the recall path and the migration executor reads it
 // on the write path. Both go through the barrel like every other core consumer.
 // TCRN-CROSS-SUB-311: expansionsText left the barrel when the recall verb began reading its
 // cards through readRecallCards, which flattens a card's phrasings inside core; the recorder
@@ -622,6 +622,7 @@ export {
   languageProviderFromBundle,
   parseLanguageBundle,
   readKnowledgeLanguagePolicy,
+  readRuntimeKnowledgeLanguagePolicy,
   resolveQueryLanguage,
 } from "./knowledge-language.js";
 export type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "./knowledge-language.js";
@@ -733,7 +734,7 @@ export { planLibraryUnregister, unregisterLibraryEntry } from "./registry.js";
 // TCRN-CROSS-STORY-470 R2: the cloud folders a cloud-hosted flag is suggested for.
 export { suggestCloudHosted } from "./cloud-roots.js";
 // TCRN-CROSS-STORY-470 R3: moving a library, and the tombstone its old place keeps.
-export { relocateLibrary } from "./relocate.js";
+export { relocateLibrary, discardRelocationPreparation } from "./relocate.js";
 export { readLibraryTombstone } from "./workspace.js";
 // TCRN-CROSS-STORY-470 R5: a project's own host settings naming a library that sits outside it.
 export { applyWritableRoots, planWritableRoots } from "./host-writable-roots.js";

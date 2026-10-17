@@ -74,6 +74,8 @@ const CURRENT_PORTAL_PROOF_FILES = [
   "portal/scripts/proof.mjs",
   "portal/tests/portal.test.mjs",
   "portal/tests/ui-presence.test.mjs",
+  "portal/tests/disposable-portal-fetch.test.mjs",
+  "portal/tests/helpers/disposable-portal-fetch.mjs",
   "packages/core/src/doctor.ts",
   "tests/doctor.test.mjs",
   "scripts/verify-portal.mjs",

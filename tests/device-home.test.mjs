@@ -52,6 +52,14 @@ test("469-R3: EINZBERN_HOME names the device directory and wins over the user ho
   assert.equal(deviceHome({ EINZBERN_HOME: "" }, "/users/someone"), join("/users/someone", DIRECTORY.device));
 });
 
+test("device roots are explicit absolute paths, never relative to the current working directory", () => {
+  for (const value of ["relative/device", ".", "../device", "~/.einzbern", " "]) {
+    assert.throws(() => deviceHome({ EINZBERN_HOME: value }, "/users/someone"), { reasonCode: "DEVICE_HOME_INVALID" }, value);
+  }
+  const absolute = join(process.cwd(), "device");
+  assert.equal(deviceHome({ EINZBERN_HOME: absolute }, "/other-home"), absolute);
+});
+
 test("469-R3: every device path is inside the device directory", async (t) => {
   const home = await withDeviceHome(t);
   const paths = {

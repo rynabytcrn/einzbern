@@ -417,3 +417,50 @@ test("508-R7: a declaration's order is a positive integer, checked on every writ
   const gates = listGates(await materializeWorkspace(library));
   assert.deepEqual(gates.map((entry) => [entry.name, entry.order]), [["links", undefined], ["portal", 2]], "listed by name, each with its order");
 });
+
+test("BL-45: release-only roots do not validate an unrelated ordinary-plan base; per-root bases support distinct repositories", async (context) => {
+  const container = await scratch(context);
+  const roots = [];
+  for (const name of ["one", "two"]) {
+    const parent = join(container, name);
+    await mkdir(parent);
+    const root = await project(parent);
+    await put(root, "identity.txt", name);
+    git(root, ["add", "identity.txt"]);
+    git(root, ["commit", "-q", "-m", name]);
+    roots.push(root);
+  }
+  const bases = roots.map(head);
+  assert.notEqual(bases[0], bases[1]);
+  for (const root of roots) await put(root, "README.md", "changed\n");
+  const declarations = [
+    { name: "one", ...gate(["**"], { root: "one/project" }) },
+    { name: "two", ...gate(["**"], { root: "two/project", releaseOnly: true }) },
+  ];
+  const ordinary = await planGates({ projectRoot: container, gates: declarations, base: bases[0] });
+  assert.deepEqual(names(ordinary), ["one"]);
+  assert.deepEqual(ordinary.roots, ["one/project", "two/project"], "all enabled roots still bind the run snapshot");
+  assert.equal(ordinary.declarationsDigest, gateDeclarationsDigest(declarations), "required/declaration coverage is unchanged");
+  const both = declarations.map((item) => ({ ...item, releaseOnly: false }));
+  await assert.rejects(planGates({ projectRoot: container, gates: both, base: bases[0] }), { reasonCode: "GATES_BASE_INVALID" });
+  const baseByRoot = { "two/project": bases[1] };
+  const plan = await planGates({ projectRoot: container, gates: both, base: bases[0], baseByRoot });
+  assert.deepEqual(names(plan), ["one", "two"]);
+  assert.deepEqual(plan.changed.map((entry) => entry.files), [["README.md"], ["README.md"]]);
+  assert.deepEqual(plan.baseByRoot, baseByRoot);
+  await assert.rejects(planGates({ projectRoot: container, gates: both, base: bases[0], baseByRoot: { missing: "HEAD" } }), { reasonCode: "GATES_BASE_INVALID" });
+});
+
+test("BL-45: a legal constructor root does not inherit an object member as its base", async (context) => {
+  const container = await scratch(context);
+  const root = join(container, "constructor");
+  await mkdir(root);
+  git(root, ["init", "-q"]);
+  await put(root, "README.md", "original");
+  git(root, ["add", "README.md"]);
+  git(root, ["commit", "-q", "-m", "initial"]);
+  const base = head(root);
+  await put(root, "README.md", "changed");
+  const plan = await planGates({ projectRoot: container, gates: [{ name: "unit", ...gate(["**"], { root: "constructor" }) }], base, baseByRoot: {} });
+  assert.deepEqual(names(plan), ["unit"]);
+});

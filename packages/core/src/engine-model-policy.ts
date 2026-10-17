@@ -12,11 +12,14 @@ import { assertStrictInstant, canonicalJson, canonicalSha256 } from "../../proto
 import { deviceHome, engineModelPolicyLockPath, engineModelPolicyPath } from "./device-home.js";
 import { withFileLock } from "./file-lock.js";
 import { assertActorId } from "./actor-attestation.js";
-import { MODELS_ESCALATION_THRESHOLD_MAX, validateModelsEscalationCeiling } from "./models-escalation.js";
+import { MODELS_ESCALATION_THRESHOLD_MAX, resolveModelsTier, validateModelsEscalationCeiling } from "./models-escalation.js";
 import { validateModelsCategory } from "./models-category.js";
 import { validateModelsTiers } from "./models-tiers.js";
 import type { ModelsCategories } from "./models-category.js";
 import type { ModelsTiers } from "./models-tiers.js";
+import { DEFAULT_ENGINE_QUOTA_POLICY, validateEngineQuotaPolicy } from "./execution-policy.js";
+import type { EngineQuotaPolicy } from "./execution-policy.js";
+import type { ModelsTierResolution } from "./models-escalation.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import type { VerifiedWriteAuthorization } from "./write-authorization.js";
 
@@ -29,6 +32,7 @@ export const ENGINE_MODEL_POLICY_REASON_CODES = Object.freeze([
   "ENGINE_MODEL_POLICY_FILE_INVALID",
   "ENGINE_MODEL_POLICY_HOST_INVALID",
   "ENGINE_MODEL_POLICY_INVALID",
+  "ENGINE_MODEL_POLICY_UNAVAILABLE",
 ] as const);
 export type EngineModelPolicyReasonCode = typeof ENGINE_MODEL_POLICY_REASON_CODES[number];
 
@@ -45,6 +49,8 @@ export class EngineModelPolicyError extends Error {
 }
 
 export interface EngineModelPolicyConfig {
+  /** Optional on historical entries; absence uses separately reported engine defaults. */
+  readonly quota?: EngineQuotaPolicy;
   readonly categories: ModelsCategories;
   readonly tiers: ModelsTiers;
   readonly escalation: {
@@ -126,14 +132,15 @@ function safeRevision(value: unknown, path: string, minimum: number): number {
 }
 
 function policyDigest(host: string, config: EngineModelPolicyConfig): string {
-  return canonicalSha256({ host, categories: config.categories, tiers: config.tiers, escalation: config.escalation });
+  return canonicalSha256({ host, categories: config.categories, tiers: config.tiers, escalation: config.escalation, ...(config.quota === undefined ? {} : { quota: config.quota }) });
 }
 
 /** Validate one closed host policy, including all category references and runner isolation. */
 export function validateEngineModelPolicy(hostValue: unknown, value: unknown): EngineModelPolicyConfig {
   const host = hostId(hostValue);
   const input = object(value, "policy");
-  exactFields(input, CONFIG_FIELDS, "policy");
+  exactFields(input, Object.hasOwn(input, "quota") ? "categories,escalation,quota,tiers" : CONFIG_FIELDS, "policy");
+  const quota = Object.hasOwn(input, "quota") ? validateEngineQuotaPolicy(input.quota) : undefined;
   const categories = validateModelsCategory(input.categories);
   const tiers = validateModelsTiers(input.tiers);
   const escalation = object(input.escalation, "policy.escalation");
@@ -144,7 +151,8 @@ export function validateEngineModelPolicy(hostValue: unknown, value: unknown): E
   if (typeof escalation.threshold !== "number" || !Number.isSafeInteger(escalation.threshold) || escalation.threshold < 1 || escalation.threshold > MODELS_ESCALATION_THRESHOLD_MAX) {
     fail("ENGINE_MODEL_POLICY_INVALID", `policy.escalation.threshold must be an integer from 1 to ${MODELS_ESCALATION_THRESHOLD_MAX}`, { path: "policy.escalation.threshold" });
   }
-  const ceiling = validateModelsEscalationCeiling(String(escalation.ceiling));
+  if (typeof escalation.ceiling !== "string") fail("ENGINE_MODEL_POLICY_INVALID", "policy.escalation.ceiling must be a category id string", { path: "policy.escalation.ceiling" });
+  const ceiling = validateModelsEscalationCeiling(escalation.ceiling);
   const categoriesById = new Set(categories.map((category) => category.id));
   if (!categoriesById.has(ceiling)) {
     fail("ENGINE_MODEL_POLICY_INVALID", `policy.escalation.ceiling ${ceiling} is not in this host's category table`, { path: "policy.escalation.ceiling", host, category: ceiling });
@@ -160,6 +168,7 @@ export function validateEngineModelPolicy(hostValue: unknown, value: unknown): E
   return Object.freeze({
     categories,
     tiers,
+    ...(quota === undefined ? {} : { quota }),
     escalation: Object.freeze({ enabled: escalation.enabled, threshold: escalation.threshold, ceiling }),
   });
 }
@@ -181,7 +190,7 @@ export function validateEngineModelPolicyFile(value: unknown): EngineModelPolicy
   for (const [rawHost, rawEntry] of Object.entries(hostsValue)) {
     const host = hostId(rawHost);
     const entry = object(rawEntry, `hosts.${host}`);
-    exactFields(entry, ENTRY_FIELDS, `hosts.${host}`);
+    exactFields(entry, Object.hasOwn(entry, "quota") ? "actor,categories,decidedIn,decidedInLibraryId,digest,escalation,quota,revision,tiers,updatedAt" : ENTRY_FIELDS, `hosts.${host}`);
     const entryRevision = safeRevision(entry.revision, `hosts.${host}.revision`, 1);
     if (entryRevision > revision) fail("ENGINE_MODEL_POLICY_FILE_INVALID", `hosts.${host}.revision exceeds file revision`, { host });
     if (typeof entry.updatedAt !== "string") fail("ENGINE_MODEL_POLICY_FILE_INVALID", `hosts.${host}.updatedAt must be an instant`, { host });
@@ -197,6 +206,7 @@ export function validateEngineModelPolicyFile(value: unknown): EngineModelPolicy
       categories: entry.categories,
       tiers: entry.tiers,
       escalation: entry.escalation,
+      ...(Object.hasOwn(entry, "quota") ? { quota: entry.quota } : {}),
     });
     const digest = policyDigest(host, config);
     if (entry.digest !== digest) fail("ENGINE_MODEL_POLICY_FILE_INVALID", `hosts.${host}.digest does not match its policy`, { host, expected: digest });
@@ -313,4 +323,73 @@ export async function applyEngineModelPolicySet(input: {
     // this write's revision or audit metadata.
     return await readEngineModelPolicyFile(home);
   });
+}
+
+/** Runtime provenance is deliberately separate from portable project configuration. */
+export interface EngineExecutionPolicyResolution extends ModelsTierResolution {
+  readonly host: string;
+  readonly category: string;
+  readonly rejections: number;
+  readonly escalation: EngineModelPolicyConfig["escalation"];
+  readonly quota: EngineQuotaPolicy;
+  readonly quotaOrigin: "device-host-policy" | "engine-default";
+  readonly capabilityStatus: "verified-by-caller" | "unchecked";
+  readonly origin: {
+    readonly kind: "device-engine";
+    readonly path: string;
+    readonly revision: number;
+    readonly storeRevision: number;
+    readonly digest: string;
+  };
+}
+
+export interface EngineExecutionPolicyInput {
+  /** Optional evidence supplied by a host adapter, not a baked-in vendor capability roster. */
+  readonly availableCombinations?: readonly { readonly runner: string; readonly model: string; readonly effort: string }[];
+  readonly host: string;
+  readonly category: string;
+  readonly rejections: number;
+  readonly home?: string;
+}
+
+/** One validated snapshot drives selection, escalation and provenance, never project models.*. */
+export function resolveEngineExecutionPolicyFromSnapshot(
+  snapshot: EngineModelPolicyFile,
+  input: EngineExecutionPolicyInput,
+): EngineExecutionPolicyResolution {
+  const host = hostId(input.host);
+  const file = validateEngineModelPolicyFile(snapshot);
+  const policy = Object.hasOwn(file.hosts, host) ? file.hosts[host] : undefined;
+  if (policy === undefined) {
+    fail("ENGINE_MODEL_POLICY_UNAVAILABLE", `No device engine policy is configured for host ${host}; project model settings are not a fallback`, { host });
+  }
+  const resolution = resolveModelsTier({ ...policy, category: input.category, rejections: input.rejections });
+  if (resolution.record.model.trim() === "" || resolution.record.effort.trim() === "") {
+    fail("ENGINE_MODEL_POLICY_UNAVAILABLE", `Selected tier is not configured with a callable model and effort for host ${host}`, { host, order: resolution.record.order });
+  }
+  if (input.availableCombinations !== undefined && !input.availableCombinations.some((combination) => combination.runner === resolution.record.runner && combination.model === resolution.record.model && combination.effort === resolution.record.effort)) {
+    fail("ENGINE_MODEL_POLICY_UNAVAILABLE", `Selected combination is unavailable for host ${host}`, { host, model: resolution.record.model, effort: resolution.record.effort });
+  }
+  return Object.freeze({
+    ...resolution,
+    capabilityStatus: input.availableCombinations === undefined ? "unchecked" : "verified-by-caller",
+    host,
+    category: input.category,
+    rejections: input.rejections,
+    escalation: policy.escalation,
+    quota: policy.quota ?? DEFAULT_ENGINE_QUOTA_POLICY,
+    quotaOrigin: policy.quota === undefined ? "engine-default" : "device-host-policy",
+    origin: Object.freeze({
+      kind: "device-engine",
+      path: engineModelPolicyPath(input.home ?? deviceHome()),
+      revision: policy.revision,
+      storeRevision: file.revision,
+      digest: policy.digest,
+    }),
+  });
+}
+
+/** Real device consumer; unavailable and corrupt policies fail rather than choosing a model. */
+export async function resolveEngineExecutionPolicy(input: EngineExecutionPolicyInput): Promise<EngineExecutionPolicyResolution> {
+  return resolveEngineExecutionPolicyFromSnapshot(await readEngineModelPolicyFile(input.home), input);
 }

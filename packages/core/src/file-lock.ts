@@ -19,7 +19,7 @@
 
 import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
-import { open, readFile, rm } from "node:fs/promises";
+import { lstat, open, readFile, rm } from "node:fs/promises";
 
 export const FILE_LOCK_SCHEMA_VERSION = "einzbern.file-lock.v1" as const;
 export const FILE_LOCK_REASON_CODES = Object.freeze([
@@ -121,11 +121,25 @@ async function createExclusive(path: string, content: string): Promise<boolean> 
     if ((error as { code?: string }).code === "EEXIST") return false;
     throw error;
   }
+  const identity = await handle.stat({ bigint: true }).catch(async (error: unknown) => {
+    await handle.close().catch(() => undefined);
+    throw error;
+  });
   try {
     await handle.writeFile(content, "utf8");
     await handle.sync();
-  } finally {
     await handle.close();
+  } catch (error) {
+    // An owner that was never fully initialized cannot be reclaimed by liveness.
+    // Only remove the exact regular file we created, never a replacement owner.
+    await lstat(path, { bigint: true }).then(async (named) => {
+      if (named.isFile() && !named.isSymbolicLink() && named.nlink === 1n &&
+        named.dev === identity.dev && named.ino === identity.ino) {
+        await rm(path, { force: true });
+      }
+    }).catch(() => undefined);
+    await handle.close().catch(() => undefined);
+    throw error;
   }
   return true;
 }

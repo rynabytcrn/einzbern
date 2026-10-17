@@ -91,6 +91,8 @@ async function atelier(args) {
 
 test("540-GWT1: a coordination library registered for its container writes and records a rule's section there, and reads its state from the file", async (context) => {
   const c = await container(context);
+  // Shared navigation is project/library policy, not the old per-call device hint.
+  await setWorkspaceSetting(c.library, { key: "agents.sharedNavigation", value: "declined", occurredAt: at() });
   await writeFile(c.agents, USER_TEXT);
   assert.equal(await managedOutputBinding(c.library, c.root, await materializeWorkspace(c.library)), "bound");
   const enabled = await enableRule({ libraryRoot: c.library, projectRoot: c.root, id: "autonomy", backupRoot: c.backups, occurredAt: at() });
@@ -196,4 +198,28 @@ test("540-GWT3: the first render replaces a marked section the library never rec
   const backups = await readdir(c.backups, { recursive: true });
   const copies = await Promise.all(backups.filter((entry) => entry.endsWith("AGENTS.md")).map((entry) => readFile(join(c.backups, entry), "utf8")));
   assert.ok(copies.includes(original), "the file as it was is in a backup");
+});
+
+test("configuration: coordinator owns shared generation without a project binding and reports contextual library scope", async context => {
+  const c = await container(context);
+  await writeFile(c.agents, USER_TEXT);
+  await setWorkspaceSetting(c.library, { key: "agents.generation", value: "none", occurredAt: at() });
+  await setWorkspaceSetting(c.library, { key: "agents.sharedNavigation", value: "declined", occurredAt: at() });
+  assert.deepEqual((await materializeWorkspace(c.library)).projects, [], "no synthetic project is needed");
+  const rendered = await renderAgentsSections(c.library, { projectRoot: c.root, navigation: "written", occurredAt: at() });
+  assert.ok(rendered.files.every(file => file.written === false));
+  assert.equal(await readFile(c.agents, "utf8"), USER_TEXT);
+  const rule = await enableRule({ libraryRoot: c.library, projectRoot: c.root, id: "autonomy", occurredAt: at() });
+  assert.equal(rule.written, false);
+  assert.equal(await readFile(c.agents, "utf8"), USER_TEXT);
+  let output = "";
+  await runCli(["settings-catalog", "--workspace", c.library], { write: value => { output += value; } });
+  const catalog = JSON.parse(output);
+  for (const key of ["artifact.language", "execution.maxConcurrentSubagents", "agents.generation", "agents.sharedNavigation"]) {
+    assert.equal(catalog.settings.find(row => row.key === key).scope, "library");
+    const typed = catalog.typedValues.find(row => row.key === key);
+    assert.equal(typed.effectiveScope, "library");
+    assert.equal(typed.contract.registeredScope, "project", "static registry scope remains explicit");
+  }
+  assert.equal(catalog.typedValues.length, catalog.settings.length);
 });

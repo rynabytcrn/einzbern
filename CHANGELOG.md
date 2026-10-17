@@ -7,13 +7,37 @@ Versioning after the first accepted release.
 
 ## 2.2.3
 
-Local source candidate for INIT-056; not published or installed. The device-level model policy
-store separates hosts and records actor, Owner decision, revision and digest. Formal catalog/set
-commands and the Atelier API expose the engine source, while legacy project values remain
-readable. Writes return the persisted lock-held snapshot so a later same-host writer cannot
-change an earlier receipt. The visible configuration and dispatch consumer work remain pending.
-The privacy classifier adds only the reviewed 2.2.2 compiled owner members; the actual 2.2.3
-package still needs its own review. See `docs/releases/2.2.3.md` for candidate scope and limits.
+Source candidate for INIT-056 and the integrated configuration/quality audit; not a published
+release or a deployment to the owner's device. Device-owned, host-partitioned execution policy
+now supplies model selection, quota admission and concurrency ceilings to work-context/handoff
+consumers. Generated Skill instructions gate dispatch on the admission receipt and bind returned
+review evidence to the request and policy. Native host invocation and account observations remain
+external, explicitly unverified inputs; this is not a cross-host scheduler.
+
+Configuration descriptors and Atelier distinguish device, library and project ownership,
+shared versus local persistence, effective sources and historical read-only declarations.
+Portable shared paths use validated local bindings; custom variables have typed, explicit export
+contracts. Governed projection refresh covers known dependent targets. Knowledge provenance is
+owned only by the installed engine. Shared generation is target-owned rather than a device
+preference. The quality fixes include segmented-store publication/integrity checks, recoverable
+relocation, lock-order corrections, hook rollback reporting, and setup rollback/pointer binding.
+
+### Upgrade and compatibility
+
+For upgrades from 2.2.1 or 2.2.2, retain a library/device backup and review the setup/update plan
+before applying it. This candidate does not silently migrate existing project model declarations
+into a device policy, reinterpret historical absolute paths as portable bindings, export private
+variables, or rewrite stored events. Legacy declarations remain readable but are not execution
+policy authority. Configure each host's device policy and local path bindings explicitly, then
+review the governed projection refresh plan. Existing library schemas and historical event bytes
+are preserved; there is no blanket reader-floor increase. The retired model-plan compatibility
+reader retains old events while correcting new unassign mutations.
+
+The version remains 2.2.3, distinct from the installed 2.2.2 baseline. Linux isolated package,
+installer, setup and doctor checks passed for candidate 8228e0f; that receipt does not verify a
+later source revision or a real device upgrade. Final-head P1 verification, original PF-2/PF-3
+method reconciliation, required dry-run receipts and native acceptance remain explicit pending
+items. See `docs/implementation/native-acceptance.md` and `docs/releases/2.2.3.md`.
 
 ### Hosts and Hooks
 
@@ -46,7 +70,7 @@ badge, the hosts-one-memory tile, the alternating-hosts case and the switching-h
 
 ### Release and Repository Tooling
 
-The `fast-uri` override is now `^3.1.8` (TCRN-CROSS-STORY-544, TCRN-CROSS-SUB-525, MIN-265 D1).
+The `fast-uri` override is now exactly `3.1.8` (TCRN-CROSS-STORY-544, TCRN-CROSS-SUB-525, MIN-265 D1).
 GHSA-hrr3-gc8f-f4qj affects `fast-uri` from 3.0.0 up to but not including 3.1.8, and the previous
 `^3.1.7` still allowed the affected 3.1.7. The lockfile still resolves 3.1.8 with the same
 integrity; only the override lines of `pnpm-workspace.yaml` and `pnpm-lock.yaml` change. `fast-uri`

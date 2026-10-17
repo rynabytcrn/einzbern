@@ -356,7 +356,7 @@ test("STORY-484 R1, R4: variable-list reads; variable-set and variable-remove wr
   assert.equal(entry("variable-set").mutates, true);
   assert.deepEqual(flags("variable-set"), [
     ["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["type", true, "string"],
-    ["value", true, "string"], ["description", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"],
+    ["value", true, "string"], ["description", false, "string"], ["order", false, "integer"], ["exports", false, "list"], ["actor", false, "string"], ["project-id", false, "string"],
     ["decided-in", false, "string"], ["timeout-ms", false, "integer"],
   ]);
   assert.equal(entry("variable-remove").mutates, true);
@@ -404,14 +404,15 @@ test("STORY-480: setup writes and takes the wizard's flags; doctor reads and tak
 });
 
 // TCRN-CROSS-STORY-526 GWT5 (Q15; TCRN-CROSS-SUB-455): the writes that may cite an Owner decision
-// take --decided-in, a string whose valueShape says how a decision is cited; no other flag carries a
-// valueShape, and the catalog stays schema-valid with it (the schema test above).
+// take --decided-in, a string whose valueShape says how a decision is cited. The catalog stays
+// schema-valid with it (the schema test above); the integrated engine also documents two JSON
+// inputs with valueShape, whose closed roster and exact contracts are checked separately below.
 // TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): twelve, with project-bindings-set and -remove,
 // work-gate-release and work-release. INIT-056 adds the engine-wide policy writer as the thirteenth.
 test("526 GWT5, 541 GWT1, INIT-056: the closed decided-in roster carries its documented valueShape", () => {
   const optionalWrites = ["gates-config-remove", "gates-config-set", "project-bindings-remove", "project-bindings-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set", "work-gate-release", "work-release"];
   const writes = ["engine-model-policy-set", ...optionalWrites];
-  const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags.filter((flag) => flag.valueShape !== undefined).map((flag) => [entry.name, flag.name]));
+  const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags.filter((flag) => flag.name === "decided-in" && flag.valueShape !== undefined).map((flag) => [entry.name, flag.name]));
   assert.deepEqual(shaped, writes.map((name) => [name, "decided-in"]));
   for (const name of optionalWrites) {
     const flag = COMMAND_CATALOG.find((entry) => entry.name === name).flags.find((candidate) => candidate.name === "decided-in");
@@ -420,6 +421,22 @@ test("526 GWT5, 541 GWT1, INIT-056: the closed decided-in roster carries its doc
   const enginePolicy = COMMAND_CATALOG.find((entry) => entry.name === "engine-model-policy-set");
   assert.deepEqual(enginePolicy.flags.find((flag) => flag.name === "decided-in"), { name: "decided-in", required: true, valueKind: "string", valueShape: "minutes:<id>#D<n>" });
   assert.deepEqual(enginePolicy.flags.find((flag) => flag.name === "actor"), { name: "actor", required: true, valueKind: "string" });
+});
+
+test("integrated engine: the only non-decision valueShapes document projection selection and execution admission", () => {
+  const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags
+    .filter((flag) => flag.name !== "decided-in" && flag.valueShape !== undefined)
+    .map((flag) => [entry.name, { ...flag }]));
+  assert.deepEqual(shaped, [
+    ["configuration-projections-refresh", {
+      name: "output-keys", required: false, valueKind: "string",
+      valueShape: "JSON array of stable registered output keys; omitted selects all known outputs, [] selects none",
+    }],
+    ["work-project-context", {
+      name: "execution-request", required: false, valueKind: "string",
+      valueShape: "ExecutionAdmissionRequest JSON: host, category, rejections, requestedAgents, availableCombinations, optional usage/expectedPolicy",
+    }],
+  ]);
 });
 
 // TCRN-CROSS-STORY-527 (MIN-257 D6, Q6; TCRN-CROSS-SUB-478): a model proposes with gates-config-propose

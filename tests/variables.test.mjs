@@ -2,10 +2,9 @@
 // TCRN-CROSS-STORY-484 R1, R2, AC1-AC3 (MIN-227 D12; TCRN-CROSS-SUB-340): custom variables and the
 // two variable sections of AGENTS.md. A variable is a configuration record of its own collection,
 // not a setting, so settings-catalog never lists one; a value or description shaped like a
-// credential is refused when written; the system section renders models.category and models.tiers
-// (TCRN-CROSS-STORY-508 R1, R2), each in ascending order, the three models.escalation settings
-// (TCRN-CROSS-STORY-508 R3, R8, AC7; TCRN-CROSS-SUB-407) and design.authority, and nothing else; the
-// custom section renders every variable;
+// credential is refused when written. Device models/quota stay in runtime lookup guidance;
+// historical model records remain readable diagnostics. The custom section renders only
+// explicitly exported variables, while legacy records retain their historical export contract;
 // both are managed sections, and neither ever renders an absolute path.
 
 import "./helpers/device-home.mjs";
@@ -16,7 +15,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { SETTINGS_CATALOG, createProject, declareChainIdentity, scopedWorkspaceState, initializeLibrary, materializeWorkspace, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { SETTINGS_LAYER_KIND, WORKSPACE_SETTING_VERSION, validateWorkspaceSettingRecord, readModelsTiers, readModelsCategory, readModelsEscalation, SETTINGS_CATALOG, createProject, declareChainIdentity, scopedWorkspaceState, initializeLibrary, materializeWorkspace, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { configRecord, setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { absolutePathLine, managedSectionRecordsFor, parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import {
@@ -86,7 +85,7 @@ async function sections(fx) {
 test("484-AC1: a new variable deploy.host is a row of the custom section and not a setting", async (context) => {
   const fx = await project(context);
   await writeFile(fx.agents, OWNER_TEXT);
-  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", description: "Where a release deploys", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", description: "Where a release deploys", occurredAt: at() });
   const result = await write(fx);
   assert.equal(result.written, true);
   assert.deepEqual(result.sections.map((decision) => [decision.id, decision.result]), [[VARIABLES_SYSTEM_SECTION_ID, "create"], [VARIABLES_CUSTOM_SECTION_ID, "create"]]);
@@ -98,7 +97,7 @@ test("484-AC1: a new variable deploy.host is a row of the custom section and not
   const catalog = await cli(["settings-catalog", "--workspace", fx.library]);
   assert.equal(catalog.settings.some((entry) => entry.key === "deploy.host"), false, "a variable is not in the settings catalog");
   const state = await materializeWorkspace(fx.library);
-  assert.deepEqual(listVariables(state), [{ name: "deploy.host", type: "string", value: "build.example.com", description: "Where a release deploys" }]);
+  assert.deepEqual(listVariables(state), [{ name: "deploy.host", type: "string", value: "build.example.com", description: "Where a release deploys", exports: ["agents"] }]);
   assert.deepEqual(managedSectionRecordsFor(state, "AGENTS.md").map((record) => [record.id, record.rev, record.state]),
     [[VARIABLES_CUSTOM_SECTION_ID, 1, "managed"], [VARIABLES_SYSTEM_SECTION_ID, 1, "managed"]], "the library records both sections");
 
@@ -115,24 +114,24 @@ test("484-R2/T15: CLI writes render safely, pending sections are readable, and a
   await registerLibrary({ projectPath: fx.root, libraryPath: fx.library, projectId, registeredAt: at() });
   const targetCli = argv => cli(argv.includes("--workspace") ? [...argv, "--project-id", projectId] : argv);
 
-  const first = await asAtelier(() => targetCli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.host", "--type", "string", "--value", "build.example.com"]));
+  const first = await asAtelier(() => targetCli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--at", at(), "--name", "deploy.host", "--type", "string", "--value", "build.example.com"]));
   assert.equal(first.variable.value, "build.example.com");
   assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu);
 
-  await asAtelier(() => targetCli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "/srv/build"]));
+  await asAtelier(() => targetCli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "/srv/build"]));
   assert.doesNotMatch((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /deploy\.path/u, "an absolute path stays out of the committed section");
   const withheld = await targetCli(["variable-list", "--workspace", fx.library]);
   assert.deepEqual(withheld.withheld, [{ name: "deploy.path", reason: "absolute-path" }]);
   assert.deepEqual(withheld.pendingSections, [VARIABLES_CUSTOM_SECTION_ID], "the withheld variable remains a persistent pending item");
   assert.equal(configRecord(scopedWorkspaceState(await materializeWorkspace(fx.library), projectId), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`).value.state, "pending");
-  await asAtelier(() => targetCli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "build/config"]));
+  await asAtelier(() => targetCli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "build/config"]));
   assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.path \| string \| build\/config \|  \|$/mu);
   assert.deepEqual((await targetCli(["variable-list", "--workspace", fx.library])).pendingSections, [], "making the variable safe settles the pending state");
 
   const beforeEdit = await readFile(fx.agents, "utf8");
   const edited = beforeEdit.replace("build.example.com", "hand.example.com");
   await writeFile(fx.agents, edited);
-  await asAtelier(() => targetCli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.port", "--type", "number", "--value", "8443"]));
+  await asAtelier(() => targetCli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--at", at(), "--name", "deploy.port", "--type", "number", "--value", "8443"]));
   assert.equal(await readFile(fx.agents, "utf8"), edited, "a variable write does not overwrite the user's changed managed section");
 
   const pending = await targetCli(["variable-list", "--workspace", fx.library]);
@@ -155,7 +154,7 @@ test("484-R2/T15: CLI writes render safely, pending sections are readable, and a
 test("484-AC2: a value shaped like a credential is refused, and nothing is recorded", async (context) => {
   const fx = await project(context);
   const before = (await materializeWorkspace(fx.library)).version;
-  const error = await refusal(() => setVariable(fx.library, { name: "api.key", type: "string", value: "sk-proj-0123456789abcdef", occurredAt: at() }));
+  const error = await refusal(() => setVariable(fx.library, { exports: ["agents"], name: "api.key", type: "string", value: "sk-proj-0123456789abcdef", occurredAt: at() }));
   assert.equal(error.reasonCode, "VARIABLE_SECRET_SHAPED");
   assert.deepEqual([error.details.name, error.details.field, error.details.matched], ["api.key", "value", "sk-"]);
   const inDescription = await refusal(() => setVariable(fx.library, { name: "api.note", type: "string", value: "see the vault", description: "old key ghp_0123456789abcdefABCDEF", occurredAt: at() }));
@@ -201,65 +200,41 @@ test("484-AC2: a value shaped like a credential is refused, and nothing is recor
 // ascending order with its order, category, runner, model, effort and note.
 const tierRecord = (order, category, runner, model, effort, note = "") => ({ order, category, runner, model, effort, note });
 
-// The lines of one subsection of the system section, from its heading to the next, and their table rows.
-function subsection(body, heading) {
-  const lines = body.split("\n");
-  const start = lines.indexOf(`### ${heading}`);
-  assert.notEqual(start, -1, `### ${heading}`);
-  const end = lines.findIndex((line, index) => index > start && line.startsWith("### "));
-  return lines.slice(start + 1, end === -1 ? lines.length : end);
+// Historical values are validated read fixtures, not new writes through the retired authority.
+async function legacyState(fx, entries) {
+  const state = await materializeWorkspace(fx.library);
+  return { ...state, settings: [...state.settings, ...entries.map(([key, value]) => validateWorkspaceSettingRecord({
+    key, value, schemaVersion: WORKSPACE_SETTING_VERSION, layerKind: SETTINGS_LAYER_KIND,
+    revision: 1, tombstone: false, updatedAt: at(),
+  }))] };
 }
-const tableRows = (lines) => lines.filter((line) => line.startsWith("| "));
 
-test("484-AC3, 508-R2: an economy record on codex-cli shows that runner in the system section, the records in ascending order", async (context) => {
+test("552: historical runner tiers remain readable in order but are never frozen into shared AGENTS", async (context) => {
   const fx = await project(context);
-  const tiers = [
-    tierRecord(30, "main", "codex", "fixture-codex-main", "high", "second opinion"),
-    tierRecord(10, "flagship", "claude-code", "fixture-flagship", "max"),
-    tierRecord(40, "economy", "codex-cli", "fixture-codex", "max"),
-    tierRecord(20, "main", "claude-code", "fixture-main", "max"),
-  ];
-  await setWorkspaceSetting(fx.library, { key: "models.tiers", value: JSON.stringify(tiers), occurredAt: at() });
-  const rendered = renderSystemVariablesSection(await materializeWorkspace(fx.library));
-  assert.deepEqual(tableRows(subsection(rendered.body, "models.tiers")), [
-    "| Order | Category | Runner | Model | Effort | Note |",
-    "| --- | --- | --- | --- | --- | --- |",
-    "| 10 | flagship | claude-code | fixture-flagship | max |  |",
-    "| 20 | main | claude-code | fixture-main | max |  |",
-    "| 30 | main | codex | fixture-codex-main | high | second opinion |",
-    "| 40 | economy | codex-cli | fixture-codex | max |  |",
-  ], "one row per record, by order; an empty note is an empty cell");
-  await write(fx);
-  assert.match((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], /^\| 40 \| economy \| codex-cli \| fixture-codex \| max \| {2}\|$/mu);
+  const tiers = [tierRecord(30, "main", "codex", "fixture-codex-main", "high"), tierRecord(10, "flagship", "claude-code", "fixture-flagship", "max"), tierRecord(40, "economy", "codex-cli", "fixture-codex", "max"), tierRecord(20, "main", "claude-code", "fixture-main", "max")];
+  const state = await legacyState(fx, [["models.tiers", JSON.stringify(tiers)]]);
+  assert.deepEqual(readModelsTiers(state.settings).map(row => [row.order, row.runner]), [[10, "claude-code"], [20, "claude-code"], [30, "codex"], [40, "codex-cli"]]);
+  const body = renderSystemVariablesSection(state).body;
+  assert.match(body, /execution-policy-resolve --host/u);
+  for (const tier of tiers) assert.equal(body.includes(tier.model), false);
+  assert.doesNotMatch(body, /### models\./u);
+  assert.equal((await refusal(() => setWorkspaceSetting(fx.library, { key: "models.tiers", value: JSON.stringify(tiers), occurredAt: at() }))).reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
 });
 
-const SYSTEM_HEADINGS = ["### models.category", "### models.tiers", "### models.escalation", "### design.authority"];
+const SYSTEM_HEADINGS = ["### Engine execution policy", "### design.authority"];
 
-test("484-R2, 508-R8: the system section holds the categories, the tiers, the three escalation settings and design.authority, and no other setting", async (context) => {
+test("552: the system section holds runtime lookup guidance and design bindings, not device values or unrelated settings", async (context) => {
   const fx = await project(context);
-  assert.deepEqual(SYSTEM_VARIABLE_KEYS, ["models.category", "models.tiers", "models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling", "design.authority", "design.repository", "design.pullRequestTarget", "design.productionDocs", "design.buildService", "design.buildProject", "design.consumedVersion"]);
+  assert.deepEqual(SYSTEM_VARIABLE_KEYS, ["design.authority", "design.repository", "design.pullRequestTarget", "design.productionDocs", "design.buildService", "design.buildProject", "design.consumedVersion"]);
   const unset = renderSystemVariablesSection(await materializeWorkspace(fx.library));
-  assert.deepEqual(unset.body.match(/^### .+$/gmu), SYSTEM_HEADINGS, "one subsection each, in this order");
-  assert.deepEqual(tableRows(subsection(unset.body, "models.category")), [
-    "| Order | Id | Name | Description |",
-    "| --- | --- | --- | --- |",
-    "| 10 | flagship | flagship |  |",
-    "| 20 | main | main |  |",
-    "| 30 | economy | economy |  |",
-  ], "the default categories, by order");
-  assert.match(unset.body, /^\| 60 \| economy \| claude-code \| \(unset\) \| \(unset\) \| {2}\|$/mu, "the default table, unfilled");
-  assert.deepEqual(tableRows(subsection(unset.body, "models.escalation")), [
-    "| Setting | Value |",
-    "| --- | --- |",
-    "| models.escalation.enabled | true |",
-    "| models.escalation.threshold | 1 |",
-    "| models.escalation.ceiling | main |",
-  ], "the escalation defaults");
+  assert.deepEqual(unset.body.match(/^### .+$/gmu), SYSTEM_HEADINGS);
+  assert.match(unset.body, /execution-policy-resolve --host/u);
+  assert.doesNotMatch(unset.body, /\| models\.|\| quota\./u);
   assert.match(unset.body, /Design bindings: unconfigured\. Production publication: unverified\./u);
   assert.match(unset.body, /^\| design\.authority \| \(unconfigured\) \| default \| false \|$/mu);
   await setWorkspaceSetting(fx.library, { key: "design.authority", value: "https://design.example/system", occurredAt: at() });
   await setWorkspaceSetting(fx.library, { key: "retrieval.tau", value: "3", occurredAt: at() });
-  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   const state = await materializeWorkspace(fx.library);
   const body = renderSystemVariablesSection(state).body;
   assert.match(body, /^\| design\.authority \| https:\/\/design\.example\/system \| library \| false \|$/mu);
@@ -271,82 +246,47 @@ test("484-R2, 508-R8: the system section holds the categories, the tiers, the th
   assert.equal(renderCustomVariablesSection(state).body.includes("design.authority"), false);
 });
 
-test("508-AC7: GIVEN categories, tiers, escalation settings and design.authority WHEN AGENTS.md is rendered THEN its system section holds the categories, the tiers in order and the three escalation settings beside design.authority, and no absolute path", async (context) => {
+test("552: legacy model tables and escalation remain diagnostic inputs while design bindings render without local paths", async (context) => {
   const fx = await project(context);
-  const categories = [
-    { id: "economy", name: "Economy", description: "routine work", order: 30 },
-    { id: "flagship", name: "Flagship", description: "", order: 10 },
-    { id: "main", name: "Main", description: "implementation | review", order: 20 },
-  ];
-  await setWorkspaceSetting(fx.library, { key: "models.category", value: JSON.stringify(categories), occurredAt: at() });
-  await setWorkspaceSetting(fx.library, { key: "models.tiers", value: JSON.stringify([
-    tierRecord(40, "economy", "claude-code", "fixture-main", "low", "cheap first"),
-    tierRecord(10, "flagship", "claude-code", "fixture-flagship", "max"),
-    tierRecord(30, "main", "claude-code", "fixture-main", "max"),
-  ]), occurredAt: at() });
-  await setWorkspaceSetting(fx.library, { key: "models.escalation.enabled", value: "false", occurredAt: at() });
-  await setWorkspaceSetting(fx.library, { key: "models.escalation.threshold", value: "2", occurredAt: at() });
-  await setWorkspaceSetting(fx.library, { key: "models.escalation.ceiling", value: "flagship", occurredAt: at() });
   await setWorkspaceSetting(fx.library, { key: "design.authority", value: "https://design.example/system", occurredAt: at() });
-  const result = await write(fx);
-  assert.deepEqual(result.withheld, []);
-  const body = (await sections(fx))[VARIABLES_SYSTEM_SECTION_ID];
+  const categories = [{ id: "economy", name: "Economy", description: "routine work", order: 30 }, { id: "flagship", name: "Flagship", description: "", order: 10 }, { id: "main", name: "Main", description: "implementation | review", order: 20 }];
+  const tiers = [tierRecord(40, "economy", "claude-code", "fixture-main", "low", "cheap first"), tierRecord(10, "flagship", "claude-code", "fixture-flagship", "max"), tierRecord(30, "main", "claude-code", "fixture-main", "max")];
+  const state = await legacyState(fx, [["models.category", JSON.stringify(categories)], ["models.tiers", JSON.stringify(tiers)], ["models.escalation.enabled", "false"], ["models.escalation.threshold", "2"], ["models.escalation.ceiling", "flagship"]]);
+  assert.deepEqual(readModelsCategory(state.settings).map(row => row.id), ["flagship", "main", "economy"]);
+  assert.deepEqual(readModelsTiers(state.settings).map(row => row.order), [10, 30, 40]);
+  assert.deepEqual(readModelsEscalation(state.settings), { enabled: false, threshold: 2, ceiling: "flagship" });
+  const body = renderSystemVariablesSection(state).body;
   assert.deepEqual(body.match(/^### .+$/gmu), SYSTEM_HEADINGS);
-  assert.deepEqual(tableRows(subsection(body, "models.category")).slice(2), [
-    "| 10 | flagship | Flagship |  |",
-    "| 20 | main | Main | implementation \\| review |",
-    "| 30 | economy | Economy | routine work |",
-  ], "by order; a pipe in a cell is escaped");
-  assert.deepEqual(tableRows(subsection(body, "models.tiers")).slice(2), [
-    "| 10 | flagship | claude-code | fixture-flagship | max |  |",
-    "| 30 | main | claude-code | fixture-main | max |  |",
-    "| 40 | economy | claude-code | fixture-main | low | cheap first |",
-  ], "by order");
-  assert.deepEqual(tableRows(subsection(body, "models.escalation")).slice(2), [
-    "| models.escalation.enabled | false |",
-    "| models.escalation.threshold | 2 |",
-    "| models.escalation.ceiling | flagship |",
-  ]);
-  assert.match(subsection(body, "design.authority").join("\n"), /^\| design\.authority \| https:\/\/design\.example\/system \| library \| false \|$/mu);
-  for (const key of ["design.repository", "design.pullRequestTarget", "design.productionDocs", "design.buildService", "design.buildProject", "design.consumedVersion"]) assert.ok(body.includes(`| ${key} | (unconfigured) | default | false |`));
-  assert.equal(absolutePathLine(body), null, "no line names an absolute path");
+  assert.doesNotMatch(body, /fixture-main|fixture-flagship|cheap first|implementation/u);
+  assert.match(body, /https:\/\/design.example\/system/u);
+  assert.equal(absolutePathLine(body), null);
+  await write(fx);
   const text = await readFile(fx.agents, "utf8");
-  for (const path of [fx.library, fx.root, fx.backupRoot]) assert.equal(text.includes(path), false, "not even the library's or the project's own");
+  for (const path of [fx.library, fx.root, fx.backupRoot]) assert.equal(text.includes(path), false);
 });
 
-test("508-R8: a category whose name or description would put an absolute path or a credential into AGENTS.md is withheld with its reason, and the rest is written", async (context) => {
+test("552: historical category paths and credential-shaped names remain readable but cannot leak into shared output", async (context) => {
   const fx = await project(context);
-  await setWorkspaceSetting(fx.library, { key: "models.category", value: JSON.stringify([
-    { id: "flagship", name: "Flagship", description: "see /opt/models/flagship", order: 10 },
-    { id: "main", name: "sk-proj-0123456789abcdef", description: "", order: 20 },
-    { id: "economy", name: "Economy", description: "routine work", order: 30 },
-  ]), occurredAt: at() });
-  const result = await write(fx);
-  assert.deepEqual(result.withheld, [
-    { name: "models.category.flagship", reason: "absolute-path" },
-    { name: "models.category.main", reason: "secret-shaped" },
-  ]);
-  assert.deepEqual(result.pendingSections, [], "a withheld system row leaves the section managed, as before");
-  assert.deepEqual(tableRows(subsection((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], "models.category")).slice(2), [
-    "| 10 | flagship | (withheld) | (withheld) |",
-    "| 20 | main | (withheld) | (withheld) |",
-    "| 30 | economy | Economy | routine work |",
-  ]);
-  const text = await readFile(fx.agents, "utf8");
-  for (const shown of ["/opt/models", "sk-proj"]) assert.equal(text.includes(shown), false, shown);
+  const categories = [{ id: "flagship", name: "Flagship", description: "see /opt/models/flagship", order: 10 }, { id: "main", name: "sk-proj-0123456789abcdef", description: "", order: 20 }, { id: "economy", name: "Economy", description: "routine work", order: 30 }];
+  const state = await legacyState(fx, [["models.category", JSON.stringify(categories)]]);
+  assert.equal(readModelsCategory(state.settings)[1].name, "sk-proj-0123456789abcdef");
+  const rendered = renderSystemVariablesSection(state);
+  assert.deepEqual(rendered.withheld, []);
+  assert.match(rendered.body, /execution-policy-resolve/u);
+  for (const shown of ["/opt/models", "sk-proj", "routine work"]) assert.equal(rendered.body.includes(shown), false);
 });
 
-test("508-R8: a changed escalation setting replaces the system section, and a system section the user edited is left as it is", async (context) => {
+test("508-R8: a changed design setting replaces the system section, and a system section the user edited is left as it is", async (context) => {
   const fx = await project(context);
   await write(fx);
-  await setWorkspaceSetting(fx.library, { key: "models.escalation.threshold", value: "3", occurredAt: at() });
+  await setWorkspaceSetting(fx.library, { key: "design.buildProject", value: "build-three", occurredAt: at() });
   const replaced = await write(fx);
   assert.deepEqual(replaced.sections.map((decision) => [decision.id, decision.result, decision.record.rev]), [[VARIABLES_SYSTEM_SECTION_ID, "replace", 2], [VARIABLES_CUSTOM_SECTION_ID, "unchanged", 1]]);
-  assert.match((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], /^\| models\.escalation\.threshold \| 3 \|$/mu);
+  assert.match((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], /build-three/u);
   // The three digests no longer agree once the user edits the section, so the next change does not replace it.
-  const edited = (await readFile(fx.agents, "utf8")).replace("| models.escalation.threshold | 3 |", "| models.escalation.threshold | 9 |");
+  const edited = (await readFile(fx.agents, "utf8")).replace("build-three", "hand-nine");
   await writeFile(fx.agents, edited);
-  await setWorkspaceSetting(fx.library, { key: "models.escalation.ceiling", value: "flagship", occurredAt: at() });
+  await setWorkspaceSetting(fx.library, { key: "design.buildProject", value: "build-next", occurredAt: at() });
   const kept = await write(fx);
   assert.deepEqual(kept.pendingSections, [VARIABLES_SYSTEM_SECTION_ID]);
   assert.equal(await readFile(fx.agents, "utf8"), edited, "the user's section stays as it is");
@@ -355,7 +295,7 @@ test("508-R8: a changed escalation setting replaces the system section, and a sy
 
 test("484-R1: variable names, types and values follow their rules, and a system setting's key is not a variable name", async (context) => {
   const fx = await project(context);
-  const set = (input) => setVariable(fx.library, { occurredAt: at(), ...input });
+  const set = (input) => setVariable(fx.library, { exports: ["agents"], occurredAt: at(), ...input });
   for (const name of ["Deploy.host", "1host", "deploy host", "", "models.tiers", "retrieval.tau"]) {
     assert.equal((await refusal(() => set({ name, type: "string", value: "x" }))).reasonCode, "VARIABLE_NAME_INVALID", name);
   }
@@ -376,9 +316,9 @@ test("484-R1: variable names, types and values follow their rules, and a system 
 
 test("484-R1: a variable is changed and removed; the next render follows, and removing it twice is refused", async (context) => {
   const fx = await project(context);
-  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   await write(fx);
-  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "release.example.com", description: "Where a release deploys", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "release.example.com", description: "Where a release deploys", occurredAt: at() });
   const changed = await write(fx);
   assert.deepEqual(changed.sections.map((decision) => [decision.id, decision.result, decision.record.rev]), [[VARIABLES_SYSTEM_SECTION_ID, "unchanged", 1], [VARIABLES_CUSTOM_SECTION_ID, "replace", 2]]);
   assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| release\.example\.com \| Where a release deploys \|$/mu);
@@ -391,14 +331,14 @@ test("484-R1: a variable is changed and removed; the next render follows, and re
 
 test("484-R2: a variable whose row would name an absolute path is withheld with its reason; the others are written", async (context) => {
   const fx = await project(context);
-  await setVariable(fx.library, { name: "build.root", type: "string", value: "/srv/build/output", occurredAt: at() });
-  await setVariable(fx.library, { name: "build.share", type: "string", value: "C:\\builds", occurredAt: at() });
-  await setVariable(fx.library, { name: "build.note", type: "string", value: "fast", description: "cache in /var/cache/build", occurredAt: at() });
-  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
-  await setWorkspaceSetting(fx.library, { key: "models.tiers", value: JSON.stringify([tierRecord(10, "economy", "codex-cli", "/opt/models/local", "low")]), occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "build.root", type: "string", value: "/srv/build/output", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "build.share", type: "string", value: "C:\\builds", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "build.note", type: "string", value: "fast", description: "cache in /var/cache/build", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  const historical = await legacyState(fx, [["models.tiers", JSON.stringify([tierRecord(10, "economy", "codex-cli", "/opt/models/local", "low")])]]);
+  assert.equal(renderSystemVariablesSection(historical).body.includes("/opt/models/local"), false);
   const result = await write(fx);
   assert.deepEqual(result.withheld, [
-    { name: "models.tiers.10", reason: "absolute-path" },
     { name: "build.note", reason: "absolute-path" },
     { name: "build.root", reason: "absolute-path" },
     { name: "build.share", reason: "absolute-path" },
@@ -409,18 +349,18 @@ test("484-R2: a variable whose row would name an absolute path is withheld with 
   for (const path of ["/srv/build", "C:\\builds", "/var/cache", "/opt/models"]) assert.equal(text.includes(path), false, path);
   const bodies = await sections(fx);
   assert.match(bodies[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu, "an empty description is an empty cell");
-  assert.match(bodies[VARIABLES_SYSTEM_SECTION_ID], /^\| 10 \| economy \| codex-cli \| \(withheld\) \| \(withheld\) \| \(withheld\) \|$/mu);
+  assert.doesNotMatch(bodies[VARIABLES_SYSTEM_SECTION_ID], /\| models\./u);
 });
 
 test("484-R2: a section the user edited is left as it is and goes pending in the library", async (context) => {
   const fx = await project(context);
-  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   await write(fx);
   const text = await readFile(fx.agents, "utf8");
   const edited = text.replace("| deploy.host | string | build.example.com |", "| deploy.host | string | hand.example.com |");
   assert.notEqual(edited, text);
   await writeFile(fx.agents, edited);
-  await setVariable(fx.library, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
   const result = await write(fx);
   assert.deepEqual(result.pendingSections, [VARIABLES_CUSTOM_SECTION_ID]);
   assert.equal(await readFile(fx.agents, "utf8"), edited, "nothing else changed, so the file is not written");
@@ -454,15 +394,15 @@ const customRows = async (fx) => (await sections(fx))[VARIABLES_CUSTOM_SECTION_I
 
 test("508-R7: GIVEN variables with an order WHEN AGENTS.md is rendered THEN they come first, by order, and the rest by name", async (context) => {
   const fx = await project(context);
-  await setVariable(fx.library, { name: "alpha", type: "string", value: "a", occurredAt: at() });
-  await setVariable(fx.library, { name: "bravo", type: "string", value: "b", order: 2, occurredAt: at() });
-  await setVariable(fx.library, { name: "charlie", type: "string", value: "c", order: 1, occurredAt: at() });
-  await setVariable(fx.library, { name: "delta", type: "string", value: "d", occurredAt: at() });
-  await setVariable(fx.library, { name: "echo", type: "string", value: "e", order: 2, occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "alpha", type: "string", value: "a", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "bravo", type: "string", value: "b", order: 2, occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "charlie", type: "string", value: "c", order: 1, occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "delta", type: "string", value: "d", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "echo", type: "string", value: "e", order: 2, occurredAt: at() });
   const state = await materializeWorkspace(fx.library);
   // The records hold the order only when one was given; variable-list stays by name.
-  assert.deepEqual(configRecord(state, "variable", "charlie").value, { type: "string", value: "c", description: "", order: 1 });
-  assert.deepEqual(configRecord(state, "variable", "alpha").value, { type: "string", value: "a", description: "" });
+  assert.deepEqual(configRecord(state, "variable", "charlie").value, { type: "string", value: "c", description: "", exports: ["agents"], order: 1 });
+  assert.deepEqual(configRecord(state, "variable", "alpha").value, { type: "string", value: "a", description: "", exports: ["agents"] });
   assert.deepEqual(listVariables(state).map((variable) => [variable.name, variable.order]), [["alpha", undefined], ["bravo", 2], ["charlie", 1], ["delta", undefined], ["echo", 2]]);
   assert.deepEqual(variablesInRenderOrder(state).map((variable) => variable.name), ["charlie", "bravo", "echo", "alpha", "delta"], "one order keeps name order among its variables");
 
@@ -472,7 +412,7 @@ test("508-R7: GIVEN variables with an order WHEN AGENTS.md is rendered THEN they
   assert.match(body, /^\| Name \| Type \| Value \| Description \|$/mu, "the order is not a column");
 
   // variable-set writes the whole record: set again without an order, the variable has none.
-  await setVariable(fx.library, { name: "charlie", type: "string", value: "c", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "charlie", type: "string", value: "c", occurredAt: at() });
   assert.equal(Object.hasOwn(configRecord(await materializeWorkspace(fx.library), "variable", "charlie").value, "order"), false);
   const moved = await write(fx);
   assert.deepEqual(moved.sections.map((decision) => [decision.id, decision.result]), [[VARIABLES_SYSTEM_SECTION_ID, "unchanged"], [VARIABLES_CUSTOM_SECTION_ID, "replace"]]);
@@ -486,7 +426,7 @@ test("508-R7: GIVEN variables with an order WHEN AGENTS.md is rendered THEN they
 
 test("508-R7: GIVEN no variable holds an order THEN the custom section renders by name as before", async (context) => {
   const fx = await project(context);
-  for (const name of ["zulu", "alpha", "mike"]) await setVariable(fx.library, { name, type: "string", value: name, occurredAt: at() });
+  for (const name of ["zulu", "alpha", "mike"]) await setVariable(fx.library, { exports: ["agents"], name, type: "string", value: name, occurredAt: at() });
   const state = await materializeWorkspace(fx.library);
   assert.deepEqual(variablesInRenderOrder(state), listVariables(state));
   await write(fx);
@@ -495,12 +435,12 @@ test("508-R7: GIVEN no variable holds an order THEN the custom section renders b
 
 test("508-R7: a reorder is a change of the custom section, so a section the user edited is not overwritten by it", async (context) => {
   const fx = await project(context);
-  await setVariable(fx.library, { name: "alpha", type: "string", value: "a", occurredAt: at() });
-  await setVariable(fx.library, { name: "bravo", type: "string", value: "b", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "alpha", type: "string", value: "a", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "bravo", type: "string", value: "b", occurredAt: at() });
   await write(fx);
   const edited = (await readFile(fx.agents, "utf8")).replace("| alpha | string | a |", "| alpha | string | hand |");
   await writeFile(fx.agents, edited);
-  await setVariable(fx.library, { name: "bravo", type: "string", value: "b", order: 1, occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "bravo", type: "string", value: "b", order: 1, occurredAt: at() });
   const result = await write(fx);
   assert.deepEqual(result.pendingSections, [VARIABLES_CUSTOM_SECTION_ID]);
   assert.equal(await readFile(fx.agents, "utf8"), edited, "the user's section stays as it is");
@@ -516,7 +456,7 @@ test("508-R7: the variable collection checks an order on every write and replay"
   // A fraction is not canonical JSON, so the record is refused before its collection looks at it.
   const fraction = await refusal(() => setConfigRecord(fx.library, { collection: "variable", key: "deploy.host", value: { type: "string", value: "x", description: "", order: 1.5 }, occurredAt: at() }));
   assert.equal(fraction.reasonCode, "CONFIG_RECORD_VALUE_INVALID");
-  const input = await refusal(() => setVariable(fx.library, { name: "deploy.host", type: "string", value: "x", order: 0, occurredAt: at() }));
+  const input = await refusal(() => setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "x", order: 0, occurredAt: at() }));
   assert.deepEqual([input.reasonCode, input.details.name, input.details.field], ["VARIABLE_RECORD_INVALID", "deploy.host", "order"]);
   assert.equal((await materializeWorkspace(fx.library)).version, before, "no refused order was recorded");
   await setConfigRecord(fx.library, { collection: "variable", key: "deploy.host", value: { type: "string", value: "x", description: "", order: 7 }, occurredAt: at() });
@@ -559,7 +499,7 @@ async function backedUp(fx, bytes) {
 
 test("489: a variable-section write whose records cannot be committed leaves AGENTS.md byte for byte, and takes away one it created", async (context) => {
   const fx = await project(context);
-  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   const head = await libraryHead(fx);
   // No AGENTS.md: the file the render created is not there afterwards.
   const created = await refusal(() => write(fx, OVER_BUDGET));
@@ -580,7 +520,7 @@ test("489: a variable-section write whose records cannot be committed leaves AGE
   await write(fx);
   const written = await readFile(fx.agents);
   const records = managedSectionRecordsFor(await materializeWorkspace(fx.library), "AGENTS.md");
-  await setVariable(fx.library, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
   const recorded = await libraryHead(fx);
   const again = await refusal(() => write(fx, OVER_BUDGET));
   assert.equal(again.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
@@ -597,7 +537,7 @@ test("489: a variable-section write whose records cannot be committed leaves AGE
 test("489: a variable-section write whose records went in before the failure (a crash after the event commit) keeps AGENTS.md as written", async (context) => {
   const fx = await project(context);
   await writeFile(fx.agents, OWNER_TEXT);
-  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   const head = await libraryHead(fx);
   const error = await refusal(() => write(fx, AFTER_COMMIT));
   assert.equal(error.reasonCode, "WORKSPACE_FAULT_INJECTED");
@@ -613,7 +553,7 @@ test("489: a variable-section write whose records went in before the failure (a 
 
 // ---- TCRN-CROSS-STORY-540 GWT2, Q4, Q5 (MIN-243 D1; TCRN-CROSS-SUB-506) ----
 
-const COORDINATION_LIMITS = ["execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent"];
+const COORDINATION_LIMITS = ["execution.maxConcurrentSubagents"];
 const DESIGN_KEYS = ["design.authority", "design.repository", "design.pullRequestTarget", "design.productionDocs", "design.buildService", "design.buildProject", "design.consumedVersion"];
 
 // The project fixture's library as a coordination library, registered on this device for the project
@@ -637,7 +577,7 @@ test("540-GWT2: a coordination library's system section lists its limits and the
   for (const key of COORDINATION_SYSTEM_VARIABLE_KEYS) assert.match(body, new RegExp(`^\\| ${key.replace(/\./gu, "\\.")} \\|`, "mu"), key);
   assert.ok(body.includes("Written by Einzbern from the coordination library's configuration."));
   // Each limit at its effective value: the engine's default while the library declares none.
-  for (const [key, value] of [["execution.maxConcurrentSubagents", "8"], ["quota.fiveHourParallelOffPercent", "75"], ["quota.weeklyWaitPercent", "(unset)"]]) {
+  for (const [key, value] of [["execution.maxConcurrentSubagents", "8"]]) {
     assert.ok(body.includes(`| ${key} | ${value} |`), `${key} reads ${value}`);
   }
   assert.ok(body.includes("| design.authority | (unconfigured) | default | false |"));
@@ -656,12 +596,12 @@ test("540-GWT2: a coordination library's sections are written into its container
   for (const id of [VARIABLES_SYSTEM_SECTION_ID, VARIABLES_CUSTOM_SECTION_ID]) {
     assert.equal(managedSectionRecordsFor(await materializeWorkspace(fx.library), "AGENTS.md").find((record) => record.id === id)?.state, "managed", id);
   }
-  await setWorkspaceSetting(fx.library, { key: "quota.weeklyWaitPercent", value: "95", occurredAt: at() });
+  await setWorkspaceSetting(fx.library, { key: "execution.maxConcurrentSubagents", value: "2", occurredAt: at() });
   await write(fx);
   text = await readFile(fx.agents, "utf8");
-  assert.ok(text.includes("| quota.weeklyWaitPercent | 95 |"), "the next render takes the change");
+  assert.ok(text.includes("| execution.maxConcurrentSubagents | 2 |"), "the next render takes the change");
   // A variable written through the CLI renders into the container, from the coordination library.
-  const receipt = await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--name", "release-train", "--type", "string", "--value", "weekly", "--at", at()]));
+  const receipt = await asAtelier(() => cli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--name", "release-train", "--type", "string", "--value", "weekly", "--at", at()]));
   assert.equal(receipt.reasonCode, "VARIABLE_WRITE_COMMITTED");
   assert.ok((await readFile(fx.agents, "utf8")).includes("| release-train | string | weekly |"));
 });
@@ -669,24 +609,58 @@ test("540-GWT2: a coordination library's sections are written into its container
 test("540-Q4: the variable sections follow artifact.language: Chinese for zh-CN, English otherwise", async (context) => {
   const fx = await coordination(context);
   await setWorkspaceSetting(fx.library, { key: "artifact.language", value: "zh-CN", occurredAt: at() });
-  await setVariable(fx.library, { name: "owner", type: "string", value: "release-owner", occurredAt: at() });
+  await setVariable(fx.library, { exports: ["agents"], name: "owner", type: "string", value: "release-owner", occurredAt: at() });
   const state = await scoped(fx);
   const system = renderSystemVariablesSection(state).body;
   assert.ok(system.startsWith("## 系统变量\n\n由 Einzbern 按协调库的配置写入。"));
   assert.ok(system.includes("| 设置 | 取值 |"));
-  assert.ok(system.includes("| quota.weeklyWaitPercent | （未设置） |"));
+  assert.doesNotMatch(system, /\| quota\./u);
+  assert.match(system, /model policy|模型/u);
   assert.ok(system.includes("| design.authority | （未配置） | default | false |"));
   assert.ok(system.includes("| 系统设置 | 生效来源 | 继承 |"));
   const custom = renderCustomVariablesSection(state).body;
   assert.ok(custom.startsWith("## 自定义变量\n\n由 Einzbern 按协调库的配置写入。"));
   assert.ok(custom.includes("| 名称 | 类型 | 取值 | 说明 |"));
-  // A project library: the same language rule, the project's note, models.* kept.
+  // A project library uses the same language rule and runtime reference, never model copies.
   const other = await project(context);
   await setWorkspaceSetting(other.library, { key: "artifact.language", value: "zh-CN", occurredAt: at() });
   const projectBody = renderSystemVariablesSection(await scoped(other)).body;
   assert.ok(projectBody.startsWith("## 系统变量\n\n由 Einzbern 按项目配置写入。"));
-  assert.match(projectBody, /^### models\.category$/mu);
-  assert.ok(projectBody.includes("| 顺序 | 分类 | 运行方 | 模型 | 推理强度 | 备注 |") || projectBody.includes("（无）"));
+  assert.doesNotMatch(projectBody, /^### models\./mu);
+  assert.match(projectBody, /execution-policy-resolve/u);
   await setWorkspaceSetting(other.library, { key: "artifact.language", value: "fr", occurredAt: at() });
   assert.ok(renderSystemVariablesSection(await scoped(other)).body.startsWith("## System variables\n\nWritten by Einzbern from the project's configuration."), "any other language is English");
+});
+
+
+test("configuration contract: new variables export nowhere, legacy absence still exports, and deliberate omissions never create pending edits", async (context) => {
+  const fx = await project(context);
+  await setVariable(fx.library, { name: "private.note", type: "string", value: "private declaration", occurredAt: at() });
+  await setVariable(fx.library, { name: "handoff.note", type: "string", value: "runtime declaration", exports: ["handoff"], occurredAt: at() });
+  await setConfigRecord(fx.library, { collection: "variable", key: "legacy.note", value: { type: "string", value: "historical declaration", description: "" }, occurredAt: at() });
+  const state = await materializeWorkspace(fx.library);
+  assert.deepEqual(configRecord(state, "variable", "private.note").value.exports, []);
+  assert.equal(Object.hasOwn(configRecord(state, "variable", "legacy.note").value, "exports"), false);
+  const rendered = renderCustomVariablesSection(state);
+  assert.match(rendered.body, /historical declaration/u);
+  assert.doesNotMatch(rendered.body, /private declaration|runtime declaration/u);
+  assert.deepEqual(rendered.withheld, [{ name: "handoff.note", reason: "not-exported" }, { name: "private.note", reason: "not-exported" }]);
+  const result = await write(fx);
+  assert.deepEqual(result.pendingSections, []);
+  assert.equal(configRecord(await materializeWorkspace(fx.library), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`).value.state, "managed");
+});
+
+test("configuration contract: invalid or duplicate exports are rejected without committing and replacement clears omitted exports", async (context) => {
+  const fx = await project(context);
+  for (const exports of [["public"], ["agents", "agents"], "agents", null]) {
+    const error = await refusal(() => setVariable(fx.library, { name: "deploy.host", type: "string", value: "example.com", exports, occurredAt: at() }));
+    assert.equal(error.reasonCode, "VARIABLE_RECORD_INVALID");
+  }
+  assert.deepEqual(listVariables(await materializeWorkspace(fx.library)), []);
+  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "example.com", exports: ["agents"], description: "visible", order: 2, occurredAt: at() });
+  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "example.com", occurredAt: at() });
+  const record = configRecord(await materializeWorkspace(fx.library), "variable", "deploy.host").value;
+  assert.deepEqual(record.exports, []);
+  assert.equal(record.description, "");
+  assert.equal(Object.hasOwn(record, "order"), false);
 });

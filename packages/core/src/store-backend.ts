@@ -23,6 +23,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import {
   lstat,
+  link,
   mkdir,
   open,
   readdir,
@@ -220,11 +221,15 @@ export class FileStoreBackend implements StoreBackend {
   }
 
   async readKnowledgeBodyFile(name: string, maximumBytes = this.limits.viewBytes || this.limits.bodyBytes): Promise<Buffer> {
-    return (await this.readBoundRegularFile(this.path(`bodies/${name}`), maximumBytes)).bytes;
+    const path = this.path(`bodies/${name}`);
+    if (name === "manifest.json") await this.settleBodyManifest(path, maximumBytes).catch((error: unknown) => {
+      if ((error as { code?: string }).code !== "ENOENT") throw error;
+    });
+    return (await this.readBoundRegularFile(path, maximumBytes)).bytes;
   }
 
   async writeKnowledgeBodyFile(name: string, bytes: Buffer | string): Promise<void> {
-    await this.writeAtomic(this.path(`bodies/${name}`), bytes);
+    await this.writeAtomic(this.path(`bodies/${name}`), bytes, name === "manifest.json");
   }
 
   async removeKnowledgeBodyFile(name: string): Promise<void> {
@@ -414,7 +419,7 @@ export class FileStoreBackend implements StoreBackend {
     }
   }
 
-  private async writeAtomic(path: string, bytes: Buffer | string): Promise<void> {
+  private async writeAtomic(path: string, bytes: Buffer | string, atomicNewManifest = false): Promise<void> {
     let existing;
     try {
       existing = await lstat(path);
@@ -451,9 +456,98 @@ export class FileStoreBackend implements StoreBackend {
       }
       return;
     }
-    // Create branch: the exclusive-create call sites (a view or record written for the
-    // first time). Mirrors the stores' writeExclusiveFile.
+    // Only the segmented manifest opts into staged no-replace publication. Other
+    // callers retain their established exclusive-create behavior.
+    if (atomicNewManifest) {
+      await this.publishBodyManifest(path, bytes);
+      return;
+    }
     await this.writeExclusive(path, bytes);
+  }
+
+  private async publishBodyManifest(path: string, bytes: Buffer | string): Promise<void> {
+    const expected = Buffer.from(bytes);
+    const temporary = resolve(dirname(path), `.tmp-body-manifest-${segmentedBodySha256(expected)}-${randomBytes(12).toString("hex")}`);
+    const identity = await this.writeExclusive(temporary, expected);
+    try {
+      // No rename fallback: link atomically publishes complete bytes without
+      // replacing a competing final name. Unsupported filesystems fail closed.
+      await link(temporary, path);
+      await this.syncDirectory(dirname(path));
+      await this.settleBodyManifest(path, expected.length);
+      const published = await lstat(path);
+      if (!published.isFile() || published.isSymbolicLink() || published.nlink !== 1 || !this.sameIdentity(identity, published)) {
+        throw new StoreBackendError(this.codes.sourceChanged, path);
+      }
+    } catch (error) {
+      if (error instanceof StoreBackendError) throw error;
+      if ((error as { code?: string }).code === "EEXIST") throw new StoreBackendError(this.codes.alreadyExists, path);
+      throw new StoreBackendError(this.codes.pathInvalid, `${path}: atomic manifest publication requires filesystem hard-link support: ${String(error)}`);
+    } finally {
+      // Also covers a no-replace refusal. Never remove a swapped staging inode.
+      const named = await lstat(temporary).catch(() => undefined);
+      if (named?.isFile() && !named.isSymbolicLink() && this.sameIdentity(identity, named)) {
+        await rm(temporary, { force: true });
+      }
+    }
+  }
+
+  // A completed no-replace publication can retain its second, staging name after
+  // interruption. Only this manifest-specific, digest-bound pair can be settled;
+  // generic reads continue to refuse every multiply linked file.
+  private async settleBodyManifest(path: string, maximumBytes: number): Promise<void> {
+    const before = await lstat(path, { bigint: true });
+    if (before.nlink === 1n) return;
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 2n) throw new StoreBackendError(this.codes.linkUnsafe, path);
+    if (before.size > BigInt(maximumBytes)) throw new StoreBackendError(this.codes.limitExceeded, path);
+    const parent = await this.boundDirectory(dirname(path));
+    const parentBefore = await lstat(parent, { bigint: true });
+    let staging: { path: string; digest: string } | undefined;
+    for (const name of await readdir(parent)) {
+      const match = /^\.tmp-body-manifest-([a-f0-9]{64})-[a-f0-9]{24}$/u.exec(name);
+      if (match === null) continue;
+      const candidate = resolve(parent, name);
+      const named = await lstat(candidate, { bigint: true }).catch((error: unknown) => {
+        if ((error as { code?: string }).code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (named === undefined || !this.sameIdentity(before, named)) continue;
+      if (!named.isFile() || named.isSymbolicLink() || named.nlink !== 2n || staging !== undefined) throw new StoreBackendError(this.codes.linkUnsafe, candidate);
+      staging = { path: candidate, digest: match[1]! };
+    }
+    if (staging === undefined) {
+      const settled = await lstat(path, { bigint: true });
+      if (settled.isFile() && !settled.isSymbolicLink() && settled.nlink === 1n && this.sameIdentity(before, settled)) return;
+      throw new StoreBackendError(this.codes.linkUnsafe, `${path}: unrecognized manifest publication link`);
+    }
+    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const opened = await handle.stat({ bigint: true });
+      if (!this.sameSnapshot(this.snapshot(before), opened)) throw new StoreBackendError(this.codes.sourceChanged, path);
+      const content = await handle.readFile();
+      const after = await handle.stat({ bigint: true });
+      const named = await lstat(path, { bigint: true });
+      const staged = await lstat(staging.path, { bigint: true });
+      if (!this.sameSnapshot(this.snapshot(before), after) || !this.sameSnapshot(this.snapshot(before), named) ||
+        !this.sameSnapshot(this.snapshot(before), staged) || staged.isSymbolicLink() || staged.nlink !== 2n || named.nlink !== 2n ||
+        content.length !== Number(before.size) || segmentedBodySha256(content) !== staging.digest ||
+        !this.sameIdentity(parentBefore, await lstat(parent, { bigint: true }))) {
+        throw new StoreBackendError(this.codes.sourceChanged, path);
+      }
+      await rm(staging.path);
+      const settled = await lstat(path, { bigint: true });
+      if (!settled.isFile() || settled.isSymbolicLink() || settled.nlink !== 1n || !this.sameIdentity(before, settled)) throw new StoreBackendError(this.codes.sourceChanged, path);
+      await this.syncDirectory(parent);
+    } catch (error) {
+      // Another reader or the publisher may have finished the same settlement.
+      const settled = await lstat(path, { bigint: true }).catch(() => undefined);
+      if (settled?.isFile() && !settled.isSymbolicLink() && settled.nlink === 1n && this.sameIdentity(before, settled) &&
+        settled.size === before.size && settled.mode === before.mode && settled.mtimeNs === before.mtimeNs &&
+        this.sameIdentity(parentBefore, await lstat(parent, { bigint: true }))) return;
+      throw error;
+    } finally {
+      await handle.close();
+    }
   }
 
   private async writeExclusive(path: string, bytes: Buffer | string): Promise<FileIdentity> {
@@ -545,6 +639,10 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
   writeArtifactRecord(id: string, bytes: Buffer | string): Promise<void> { return this.delegate.writeArtifactRecord(id, bytes); }
 
   async listKnowledgeBodies(): Promise<string[]> {
+    return this.readStableManifest(() => this.listKnowledgeBodiesOnce());
+  }
+
+  private async listKnowledgeBodiesOnce(): Promise<string[]> {
     const manifest = await this.readSegmentedManifest();
     if (manifest === null) return this.delegate.listKnowledgeBodies();
     const ids = new Set<string>();
@@ -556,6 +654,10 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
   }
 
   async readKnowledgeBody(id: string): Promise<Buffer> {
+    return this.readStableManifest(() => this.readKnowledgeBodyOnce(id));
+  }
+
+  private async readKnowledgeBodyOnce(id: string): Promise<Buffer> {
     const manifest = await this.readSegmentedManifest();
     if (manifest === null) return this.delegate.readKnowledgeBody(id);
     for (const segment of manifest.segments) {
@@ -572,14 +674,36 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
     throw new StoreBackendError("KNOWLEDGE_PATH_INVALID", `body ${id} is unavailable`);
   }
 
+  // A single list/point read retries if publication changed its manifest while
+  // obsolete segments were reclaimed. This is not a transaction spanning calls.
+  private async readStableManifest<T>(operation: () => Promise<T>): Promise<T> {
+    const snapshot = async (): Promise<Buffer | null> => {
+      const names = await this.delegate.listKnowledgeBodyFiles();
+      return names.includes("manifest.json")
+        ? this.delegate.readKnowledgeBodyFile("manifest.json", RUNTIME_CAPACITY.bufferBytes) : null;
+    };
+    const equal = (left: Buffer | null, right: Buffer | null): boolean => left === null ? right === null : right !== null && left.equals(right);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const before = await snapshot();
+      try {
+        const result = await operation();
+        if (equal(before, await snapshot())) return result;
+      } catch (error) {
+        // Unknown IO failures and unsafe links are not evidence of publication.
+        const retryable = error instanceof StoreBackendError &&
+          (error.reasonCode === "KNOWLEDGE_RECORD_INVALID" ||
+            (error.reasonCode === "KNOWLEDGE_SOURCE_CHANGED" && !error.message.includes("Error:")) ||
+            (error.reasonCode === "KNOWLEDGE_PATH_INVALID" && error.message.endsWith(":ENOENT")));
+        if (!retryable || equal(before, await snapshot())) throw error;
+      }
+    }
+    throw new StoreBackendError("KNOWLEDGE_SOURCE_CHANGED", "body manifest changed during read");
+  }
+
   async writeKnowledgeBody(id: string, bytes: Buffer | string): Promise<void> {
     const manifest = await this.readSegmentedManifest();
     if (manifest === null) return this.delegate.writeKnowledgeBody(id, bytes);
-    const records: { readonly id: string; readonly bytes: Buffer }[] = [];
-    for (const name of await this.listKnowledgeBodies()) {
-      const currentId = name.endsWith(".body") ? name.slice(0, -5) : name;
-      records.push({ id: currentId, bytes: await this.readKnowledgeBody(currentId) });
-    }
+    const records = [...await this.readSegmentedBodies(manifest)].map(([currentId, body]) => ({ id: currentId, bytes: body }));
     const replacement = Buffer.from(bytes);
     const existing = records.findIndex((record) => record.id === id);
     if (existing < 0) records.push({ id, bytes: replacement });
@@ -590,11 +714,8 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
   async removeKnowledgeBody(id: string): Promise<void> {
     const manifest = await this.readSegmentedManifest();
     if (manifest === null) return this.delegate.removeKnowledgeBody(id);
-    const records: { readonly id: string; readonly bytes: Buffer }[] = [];
-    for (const name of await this.listKnowledgeBodies()) {
-      const currentId = name.endsWith(".body") ? name.slice(0, -5) : name;
-      if (currentId !== id) records.push({ id: currentId, bytes: await this.readKnowledgeBody(currentId) });
-    }
+    const records = [...await this.readSegmentedBodies(manifest)]
+      .filter(([currentId]) => currentId !== id).map(([currentId, body]) => ({ id: currentId, bytes: body }));
     await this.writeKnowledgeBodiesSegmented(records);
   }
 
@@ -655,7 +776,11 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
       for (const name of [...names].sort(compareCanonicalText)) files.push({ name, bytes: await this.delegate.readKnowledgeBodyFile(name, SEGMENTED_BODY_FILE_LIMIT) });
       await beforeWrite(files);
     }
-    await this.writeKnowledgeBodiesSegmented(kept, segmentBytes);
+    // If publication completed but flat-file cleanup did not, the validated
+    // manifest already owns every byte. Finish cleanup without another generation.
+    if (manifest === null || clearing > 0 || held.size !== manifest.count) {
+      await this.writeKnowledgeBodiesSegmented(kept, segmentBytes);
+    }
     const written = await this.readSegmentedManifest();
     const readback = written === null ? new Map<string, Buffer>() : await this.readSegmentedBodies(written);
     if (readback.size !== kept.length) throw new StoreBackendError("KNOWLEDGE_SOURCE_CHANGED", "body segments");
@@ -667,19 +792,25 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
   }
 
   // Every body the segments of a manifest hold, by id: each segment read once and checked against the
-  // manifest as a point read checks it. An id two segments name answers the first, as a point read does.
+  // manifest as a point read checks it. Coverage is checked before any rewrite so
+  // an omitted, overlapping or duplicate index entry cannot silently discard bytes.
   private async readSegmentedBodies(manifest: SegmentedKnowledgeBodyManifest): Promise<Map<string, Buffer>> {
     const bodies = new Map<string, Buffer>();
     for (const segment of manifest.segments) {
       const index = await this.readSegmentedIndex(segment.name);
       const bytes = await this.delegate.readKnowledgeBodyFile(segment.name, Math.max(SEGMENTED_BODY_FILE_LIMIT, segment.bytes));
       if (bytes.length !== segment.bytes || segmentedBodySha256(bytes) !== segment.sha256) throw new StoreBackendError("KNOWLEDGE_SOURCE_CHANGED", segment.name);
-      for (const [id, location] of Object.entries(index)) {
-        if (bodies.has(id)) continue;
+      let consumed = 0;
+      for (const [id, location] of Object.entries(index).sort((left, right) => left[1].offset - right[1].offset)) {
+        if (bodies.has(id) || location.offset !== consumed || location.length > bytes.length - consumed) {
+          throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", `${segment.name} index coverage`);
+        }
+        consumed += location.length;
         const value = assertCanonicalJson(bytes.subarray(location.offset, location.offset + location.length).toString("utf8"));
         if (!segmentedBodyObject(value) || value.id !== id || typeof value.body !== "string") throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", id);
         bodies.set(id, Buffer.from(value.body, "utf8"));
       }
+      if (consumed !== bytes.length) throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", `${segment.name} index coverage`);
     }
     return bodies;
   }
@@ -699,20 +830,38 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
     const segments: Array<SegmentedKnowledgeBodyManifest["segments"][number]> = [];
     for (const raw of value.segments) {
       if (!segmentedBodyObject(raw) || typeof raw.name !== "string" || !/^\d{6,}\.ndjson$/u.test(raw.name) ||
-        !Number.isSafeInteger(raw.bytes) || !Number.isSafeInteger(raw.records) || typeof raw.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(raw.sha256)) {
+        !Number.isSafeInteger(raw.bytes) || Number(raw.bytes) < 0 || !Number.isSafeInteger(raw.records) || Number(raw.records) < 0 || typeof raw.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(raw.sha256)) {
         throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", "segmented body manifest segment is invalid");
       }
       segments.push({ name: raw.name, bytes: Number(raw.bytes), records: Number(raw.records), sha256: raw.sha256 });
     }
+    const documents: JsonValue[] = [];
+    const namesSeen = new Set<string>();
+    const idsSeen = new Set<string>();
+    for (const segment of segments) {
+      if (namesSeen.has(segment.name)) throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", "duplicate body segment");
+      namesSeen.add(segment.name);
+      const index = await this.readSegmentedIndex(segment.name, documents);
+      const ids = Object.keys(index);
+      if (ids.length !== segment.records) throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", `${segment.name} record count`);
+      for (const id of ids) {
+        if (idsSeen.has(id)) throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", "duplicate body id");
+        idsSeen.add(id);
+      }
+    }
+    if (idsSeen.size !== value.count || canonicalSha256(documents) !== value.indexDigest) {
+      throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", "body manifest index integrity");
+    }
     return { schemaVersion: "tcrn.knowledge-body-manifest.v1", segments, count: Number(value.count), indexDigest: value.indexDigest };
   }
 
-  private async readSegmentedIndex(segmentName: string): Promise<Readonly<Record<string, SegmentedKnowledgeBodyLocation>>> {
+  private async readSegmentedIndex(segmentName: string, documents?: JsonValue[]): Promise<Readonly<Record<string, SegmentedKnowledgeBodyLocation>>> {
     const value = assertCanonicalJson((await this.delegate.readKnowledgeBodyFile(segmentName.replace(".ndjson", ".idx"), 1_048_576)).toString("utf8"));
     if (!segmentedBodyObject(value) || value.schemaVersion !== "tcrn.knowledge-body-index.v1" || !segmentedBodyObject(value.entries)) {
       throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", `${segmentName} index`);
     }
-    const entries: Record<string, SegmentedKnowledgeBodyLocation> = {};
+    documents?.push(value);
+    const entries: Record<string, SegmentedKnowledgeBodyLocation> = Object.create(null) as Record<string, SegmentedKnowledgeBodyLocation>;
     for (const [id, raw] of Object.entries(value.entries)) {
       if (!segmentedBodyObject(raw) || typeof raw.segment !== "string" || raw.segment !== segmentName || !Number.isSafeInteger(raw.offset) || !Number.isSafeInteger(raw.length) || Number(raw.offset) < 0 || Number(raw.length) < 1) {
         throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", `${segmentName} index entry`);
@@ -739,10 +888,21 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
       used += Buffer.byteLength(line, "utf8");
     }
     if (chunk.length > 0) chunks.push(chunk);
+    // Writers are serialized by the crest lock. Allocate beyond every existing
+    // segment (including abandoned generations), so committed bytes stay immutable
+    // until the manifest has atomically selected the complete new generation.
+    const previousFiles = await this.delegate.listKnowledgeBodyFiles();
+    let ordinal = 0n;
+    for (const name of previousFiles) {
+      if (/^\d{6,}\.(?:ndjson|idx)$/u.test(name)) {
+        const value = BigInt(name.slice(0, name.lastIndexOf(".")));
+        if (value > ordinal) ordinal = value;
+      }
+    }
     const segments: Array<SegmentedKnowledgeBodyManifest["segments"][number]> = [];
     const indexDocuments: JsonValue[] = [];
-    for (const [index, part] of chunks.entries()) {
-      const name = `${String(index + 1).padStart(6, "0")}.ndjson`;
+    for (const part of chunks) {
+      const name = `${String(++ordinal).padStart(6, "0")}.ndjson`;
       const content = Buffer.from(part.map((record) => canonicalJson({ id: record.id, body: record.bytes.toString("utf8") })).join(""), "utf8");
       const entries: Record<string, SegmentedKnowledgeBodyLocation> = {};
       let offset = 0;
@@ -757,12 +917,12 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
       indexDocuments.push(indexDocument);
       segments.push({ name, bytes: content.length, records: part.length, sha256: segmentedBodySha256(content) });
     }
-    for (const name of await this.delegate.listKnowledgeBodyFiles()) {
-      if ((/^\d{6,}\.(?:ndjson|idx)$/u.test(name)) && !segments.some((segment) => segment.name === name || segment.name.replace(".ndjson", ".idx") === name)) {
-        await this.delegate.removeKnowledgeBodyFile(name);
-      }
-    }
     const manifest = { schemaVersion: "tcrn.knowledge-body-manifest.v1", segments, count: sorted.length, indexDigest: canonicalSha256(indexDocuments) };
     await this.delegate.writeKnowledgeBodyFile("manifest.json", canonicalJson(manifest));
+    // Cleanup is post-commit: a failure can leave unused files, not invalidate the
+    // old manifest before the new one is available.
+    for (const name of previousFiles) {
+      if (/^\d{6,}\.(?:ndjson|idx)$/u.test(name)) await this.delegate.removeKnowledgeBodyFile(name);
+    }
   }
 }

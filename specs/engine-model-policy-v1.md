@@ -8,7 +8,7 @@ The top-level `hosts` object separates policy records by host id. A host policy 
 categories mother table, ordered tiers, and escalation `{enabled, threshold, ceiling}` tuple.
 An absent file is an empty store: the engine does not invent a model choice.
 
-This contract covers storage, validation, provenance, and the CLI/Atelier read and write surfaces.
+This contract covers storage, validation, provenance, runtime tier resolution, and the CLI/Atelier read and write surfaces.
 The catalogue identifies the policy source and preserves project `models.*` values as
 read-only compatibility inputs with their recorded source. A project value does not override a
 configured device policy. No write to the engine policy changes a project event or its old value.
@@ -50,7 +50,18 @@ a safe positive integer no larger than the engine's existing models escalation b
 are lowercase ids. The file rejects unknown fields, invalid host partitions, impossible revisions,
 invalid actor/decision/library identities, malformed UTC instants, and digest mismatches.
 
-The digest is SHA-256 of canonical JSON for `{host, categories, tiers, escalation}`. Each host
+A host entry may additionally declare `quota`, an exact object containing
+`fiveHourParallelOffPercent`, `fiveHourWaitPercent`, `weeklyParallelOffPercent`, and
+`weeklyWaitPercent`. Thresholds are integers from 1 through 100; `weeklyWaitPercent` also
+accepts null (no weekly wait). A wait threshold must not be below its parallel-off threshold.
+These are policy thresholds, never account usage or balances. Historical entries without quota
+remain valid and are not rewritten. The resolver reports separate engine defaults
+75 / 90 / 95 / null with `quotaOrigin: engine-default`; configured values report
+`quotaOrigin: device-host-policy`. Projects cannot override these host thresholds.
+
+The digest is SHA-256 of canonical JSON for `{host, categories, tiers, escalation}` when
+quota is absent, preserving every existing digest. When quota is present, it is included as
+the `quota` member in that digest object. Each host
 revision increases on replacement of that host; the file revision increases on every successful
 write. Writers serialize through the device lock for `engine-model-policy.json`, replace the
 single file atomically, and validate the persisted file again before releasing the lock. A write
@@ -114,3 +125,79 @@ re-emit them. The engine policy file is the only new global source. Consumers mu
 effective source and may not substitute a project's old Codex value when the device policy for
 Codex is unconfigured or invalid. Other host behavior remains attached to its own host-specific
 policy and existing consumer until that consumer is explicitly connected.
+
+## Runtime resolution and evidence boundary
+
+`resolveEngineExecutionPolicy({host, category, rejections, home?})` reads the current device
+file and delegates to the same ordered tier/escalation algorithm used by
+`resolveEngineExecutionPolicyFromSnapshot(snapshot, input)`. The snapshot version validates
+its complete input and binds the selected tier and origin to that single revision. Both return
+`record`, `steps`, `atCeiling`, host/category/rejections, escalation, effective quota,
+`quotaOrigin`, and origin `{kind: device-engine, path, revision, storeRevision, digest}`.
+The file and host revisions are separate. This is a runtime handoff, not a portable project
+configuration artifact, and does not alter a host application's default model.
+
+Resolution starts at the selected category's largest-order tier, moves toward smaller orders
+once per threshold rejections, and stops at the ceiling category's smallest-order tier.
+All tiers remain within the requested host. Disabled escalation returns the base tier.
+For a configured Codex table with flagship Astra, main Sol/max, and economy ordered
+Sol/low, Terra/max, Terra/medium, Luna/max, threshold 2 and ceiling main yield:
+
+- Returns 0–1: gpt-6-luna/max.
+- Returns 2–3: gpt-5.6-terra/medium.
+- Returns 4–5: gpt-5.6-terra/max.
+- Returns 6–7: gpt-6.1-sol/low.
+- Returns 8 onward: gpt-6.1-sol/max; no automatic Astra.
+
+This describes a supplied policy, not an installed default or hardcoded fallback. Missing
+hosts, blank selected model/effort, and a selected tuple absent from caller-supplied
+`availableCombinations` fail with `ENGINE_MODEL_POLICY_UNAVAILABLE`. Invalid stores,
+unknown categories, and malformed rejection counts retain their explicit validation errors.
+No error substitutes another model, runner, or project's historical Codex policy.
+
+Capability evidence is separate from policy validity. Without an adapter-supplied tuple list,
+`capabilityStatus` is `unchecked`; a match reports `verified-by-caller`, not a claim that the
+engine executed a live native tool. The resolver does not infer capabilities from a vendor roster.
+Historical model-plan and settings events remain unchanged and replayable.
+
+`resolveExecutionConcurrency(deviceLimit, projectLimit?)` computes the smaller positive
+integer and reports its origin; a project budget never raises the device cap.
+`evaluateExecutionQuota(policy, observation)` is a pure advisory decision with parallel,
+serial, wait, or unknown results. Observations are separately supplied percentages; missing
+windows are unknown, never zero. Known restrictions take priority in the order wait, serial, unknown, parallel; a missing
+window never erases a known wait or serial restriction. The function does not retrieve account usage, attest its freshness, or dispatch work.
+Tests of these helpers establish policy behavior, not actual account monitoring or native
+host acceptance.
+
+## Operator and dispatch integration
+
+Before preparing an agent invocation, use the read-only command:
+
+```
+einzbern execution-policy-resolve --host codex --category economy --rejections 4
+```
+
+Use the returned `record.runner`, `record.model`, and `record.effort` verbatim. Keep the
+returned origin revision and digest with the dispatch evidence, and retain the actual host
+acceptance or refusal separately. An unavailable policy is a blocker, not permission to select
+another model or use the host default. Rejection counts belong to the work's existing ledger;
+this command neither increments nor resets that ledger.
+
+`--project-budget <positive integer>` can tighten, never raise, the device
+`execution.maxConcurrentAgents` cap. `--usage <json>` can pass separately observed
+`fiveHourUsedPercent` and `weeklyUsedPercent`. The command returns the effective concurrency
+and quota decision alongside `observationSource`: absent usage is unavailable, supplied usage
+is caller-supplied-unverified. Do not interpret absent observations as spare quota. A returned
+wait decision means the orchestrator must defer dispatch; the read-only command itself does
+not acquire a slot, launch a process or wait for an account reset.
+
+`work-project-context` and handoff carry the engine-host source separately from project
+configuration. `settings-catalog` includes the configuration dictionary and typed declaration
+readback; historical project model/quota values there are not the runtime selected tier.
+Shared AGENTS content points to this runtime contract rather than embedding a device's chosen
+models. These source-level integrations do not modify an external Skill repository, install a
+live release, or prove native tool support.
+
+Runtime project handoffs carry `executionConcurrency` resolved from the device cap and
+the target project budget. This is a bounded scheduling contract, not proof that an external
+host acquired a slot. Quota observations and restrictions remain separately identified.

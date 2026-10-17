@@ -21,7 +21,7 @@ import { renderAgentsSections, resolveAgentsSection } from "../dist/build/packag
 import { configRecord, setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { managedSectionRecordsFor, parseManagedFile, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
 import { BUILT_IN_RULES, builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
-import { RULE_STATES, checkRuleRecordValue, disableRule, enableRule, listRules, ruleSectionId } from "../dist/build/packages/core/src/rules.js";
+import { RULE_STATES, checkRuleRecordValue, disableRule, enableRule, listRules, ruleSectionId, ruleState } from "../dist/build/packages/core/src/rules.js";
 import { setWorkspaceSetting } from "../dist/build/packages/core/src/workspace.js";
 import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
 
@@ -93,7 +93,7 @@ async function catalogWithBatchV1() {
 
 test("483-R2: every rule is off until it is enabled, and listing the rules writes nothing", async (context) => {
   const paths = await scratch(context);
-  assert.deepEqual([...RULE_STATES], ["disabled", "enabled", "user-modified", "removed-from-file", "update-available", "pending"]);
+  assert.deepEqual([...RULE_STATES], ["disabled", "enabled", "user-modified", "removed-from-file", "update-available", "pending", "output-unconfigured"]);
   const rules = await list(paths);
   assert.deepEqual(rules, BUILT_IN_RULES.map((rule) => ({
     id: rule.id,
@@ -780,4 +780,31 @@ test("541 (MIN-259 D2): unattended-commands enabled at v1 reads update-available
   assert.deepEqual([updated.result, updated.written, updated.recorded], ["replace", true, 2]);
   assert.deepEqual(updated.status, { id: "unattended-commands", version: 2, recordedVersion: 2, fileVersion: 2, section: "rule:unattended-commands", state: "enabled" });
   assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:unattended-commands").body, v2);
+});
+
+
+test("546: an enabled rule with no output binding does not assert its file was removed", () => {
+  const input = { record: { enabled: true, version: 1 }, shippedVersion: 1, section: null, sectionRecord: null };
+  assert.equal(ruleState({ ...input, outputConfigured: false }), "output-unconfigured");
+  assert.equal(ruleState({ ...input, outputConfigured: true }), "removed-from-file");
+  assert.equal(ruleState({ ...input, record: null, outputConfigured: false }), "disabled");
+});
+
+
+test("C04: agents.generation none records rule changes without creating or changing root files", async (context) => {
+  const paths = await scratch(context);
+  await setWorkspaceSetting(paths.library, { configurationProjectId: paths.projectId, key: "agents.generation", value: "none", occurredAt: at() });
+  const before = await readFile(paths.agents, "utf8");
+  const enabled = await enable(paths, "silent-reporting");
+  assert.equal(enabled.written, false);
+  assert.equal(enabled.status.state, "output-unconfigured");
+  assert.equal(await readFile(paths.agents, "utf8"), before);
+  const disabled = await disable(paths, "silent-reporting");
+  assert.equal(disabled.written, false);
+  assert.equal(disabled.status.state, "disabled");
+  assert.equal(await readFile(paths.agents, "utf8"), before);
+  await rm(paths.agents);
+  assert.equal((await enable(paths, "silent-reporting")).written, false);
+  await assert.rejects(readFile(paths.agents), { code: "ENOENT" });
+  await assert.rejects(readFile(join(paths.project, "CLAUDE.md")), { code: "ENOENT" });
 });

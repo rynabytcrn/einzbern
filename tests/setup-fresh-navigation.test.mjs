@@ -1,5 +1,5 @@
-// TCRN-CROSS-SUB-394: changing fresh setup to declined navigation removes only the managed
-// navigation section, installs the pointer hooks, and leaves user text intact.
+// Shared navigation policy removes only the managed navigation section; device preference
+// controls pointer hooks independently, and both preserve user text.
 
 import assert from "node:assert/strict";
 import { copyFile, cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, computeInstallTreeDigest, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, computeInstallTreeDigest, materializeWorkspace, readRegistry, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import { applySetup, planSetup } from "../dist/build/packages/core/src/setup.js";
@@ -86,7 +86,7 @@ function check(applied, name) {
   return applied.selfCheck.find((entry) => entry.check === name);
 }
 
-test("fresh mode removes managed navigation on decline and preserves user prose", async (t) => {
+test("fresh mode removes explicitly declined shared navigation, preserving user prose and local-only preferences", async (t) => {
   const f = await fixture(t);
   const agentsPath = join(f.project, "AGENTS.md");
   const userPrefix = "# Project guidance\n\nKeep the team's notes here.\n";
@@ -104,6 +104,13 @@ test("fresh mode removes managed navigation on decline and preserves user prose"
   const navigation = parseManagedFile(beforeDecline, "AGENTS.md").sections.find((section) => section.id === "navigation");
   assert.ok(navigation);
 
+  const localOnlyPlan = await freshPlan(f, false);
+  assert.ok(!localOnlyPlan.writes.some((entry) => entry.step === "managed-sections" || entry.step === "library"), "local preference does not rewrite shared navigation");
+  const binding = (await readRegistry(f.deviceHome)).entries.find((entry) => entry.projectPath === f.project);
+  const setSharedNavigation = (value) => setWorkspaceSetting(join(f.project, ".ether"), {
+    key: "agents.sharedNavigation", value, occurredAt: at(), configurationProjectId: binding.projectId,
+  });
+  await setSharedNavigation("declined");
   const declinedPlan = await freshPlan(f, false);
   assert.ok(declinedPlan.writes.some((entry) => entry.step === "managed-sections" && entry.path === agentsPath && entry.action === "update"));
   assert.ok(declinedPlan.backups.some((entry) => entry.path === agentsPath));
@@ -116,12 +123,15 @@ test("fresh mode removes managed navigation on decline and preserves user prose"
   const hooksCheck = check(declined, "hooks-present");
   assert.ok(hooksCheck.detail.hosts.every((host) => host.hooks === 1));
   const claudeHooks = JSON.parse(await readFile(join(f.home, ".claude", "settings.json"), "utf8")).hooks;
-  assert.deepEqual(Object.keys(claudeHooks).sort(), ["SessionStart", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual(Object.keys(claudeHooks).sort(), ["PreToolUse", "SessionStart", "SubagentStart", "UserPromptSubmit"]);
   assert.equal(JSON.parse(await readFile(join(f.deviceHome, "machine-settings.json"), "utf8")).values["agents.navigation"], "declined");
   const state = await materializeWorkspace(join(f.project, ".ether"));
   assert.equal(state.configRecords.some((record) => record.collection === "managed-section" && record.key === "AGENTS.md#navigation"), false);
 
-  // A later decline leaves a user-edited navigation block in place and reports it as pending.
+  assert.deepEqual((await freshPlan(f, false)).writes, [], "shared decline is idempotent");
+
+  // A later explicit shared decline preserves a user-edited block and reports it as pending.
+  await setSharedNavigation("written");
   const acceptedAgain = await applySetup(await freshPlan(f, true));
   assert.equal(acceptedAgain.reasonCode, "SETUP_APPLIED");
   const beforeEdit = await readFile(agentsPath, "utf8");
@@ -130,6 +140,7 @@ test("fresh mode removes managed navigation on decline and preserves user prose"
   const editedText = beforeEdit.replace(managedNavigation.raw, managedNavigation.raw.replace("This project is managed by Einzbern.", "The team edited this navigation section."));
   await writeFile(agentsPath, editedText);
 
+  await setSharedNavigation("declined");
   const editedDeclinePlan = await freshPlan(f, false);
   assert.ok(editedDeclinePlan.pendingSections.some((section) => section.file === "AGENTS.md" && section.id === "navigation"));
   const editedDecline = await applySetup(editedDeclinePlan);

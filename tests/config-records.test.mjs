@@ -389,16 +389,16 @@ test("526 (SUB-452): configuration and settings writes record their authorizatio
   await as(desk, () => removeConfigRecord(library, { collection: "gate", key: "plain", occurredAt: at(), authorization: { surface: "atelier" } }));
   assert.deepEqual(await lastPayload(), { operation: "config.record.removed", record: { collection: "gate", key: "plain" }, surface: "atelier" });
   const { removeWorkspaceSetting, setWorkspaceSetting } = await import("../dist/build/packages/core/src/index.js");
-  await as(desk, () => setWorkspaceSetting(library, { key: "models.escalation.threshold", value: "2", occurredAt: at(), authorization: { surface: "atelier" } }));
+  await as(desk, () => setWorkspaceSetting(library, { key: "execution.maxConcurrentSubagents", value: "2", occurredAt: at(), authorization: { surface: "atelier" } }));
   assert.equal((await lastPayload()).surface, "atelier");
-  await as(desk, () => removeWorkspaceSetting(library, { key: "models.escalation.threshold", occurredAt: at(), authorization: decided }));
+  await as(desk, () => removeWorkspaceSetting(library, { key: "execution.maxConcurrentSubagents", occurredAt: at(), authorization: decided }));
   const removal = await lastPayload();
   assert.deepEqual([removal.operation, removal.surface, removal.decidedIn, removal.decidedInLibraryId], ["settings.removed", "cli", decided.decidedIn, libraryId]);
 
   const replay = await as(desk, () => materializeWorkspaceFromGenesis(library));
   assert.deepEqual(replay.library.rejectedEvents, [], "every authorized event replays");
   assert.deepEqual(replay.configRecords.map((record) => record.key), ["unit"]);
-  assert.deepEqual(replay.settings.filter((setting) => setting.key === "models.escalation.threshold"), []);
+  assert.deepEqual(replay.settings.filter((setting) => setting.key === "execution.maxConcurrentSubagents"), []);
 
   // An authorization the write path would refuse, and the same shapes forged into the stream.
   await assert.rejects(as(desk, () => setConfigRecord(library, { collection: "gate", key: "web", value: gate("web", ["node", "--version"]), occurredAt: at(), authorization: { surface: "web" } })),

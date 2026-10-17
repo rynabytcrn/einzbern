@@ -96,7 +96,11 @@ function meetsNodeFloor(actual) {
 /** The device directory: EINZBERN_HOME when it is set and non-empty, otherwise .einzbern in the user's home (device-home.ts). */
 export function deviceDirectory(env = process.env, home = homedir()) {
   const configured = env.EINZBERN_HOME;
-  return typeof configured === "string" && configured.length > 0 ? resolve(configured) : join(home, DEVICE_DIRECTORY);
+  if (typeof configured === "string" && configured.length > 0) {
+    if (!isAbsolute(configured)) throw new HookLaunchError("DEVICE_HOME_INVALID", "EINZBERN_HOME must be an absolute device directory");
+    return resolve(configured);
+  }
+  return join(home, DEVICE_DIRECTORY);
 }
 
 function registryEntry(value) {

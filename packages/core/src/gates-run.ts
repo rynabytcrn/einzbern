@@ -143,6 +143,10 @@ export interface GateRunResult {
   readonly outputFile: string;
   readonly outputBytes: number;
   readonly truncated: boolean;
+  // Absent only on historical records written before per-gate timing was recorded.
+  readonly startedAt?: string;
+  readonly finishedAt?: string;
+  readonly durationMs?: number;
 }
 
 export interface GateRun {
@@ -153,6 +157,7 @@ export interface GateRun {
   readonly at: string;
   readonly release: boolean;
   readonly base: string | null;
+  readonly baseByRoot?: Readonly<Record<string, string>>;
   // The Stories the run was planned to cover; an unbound run cannot satisfy a Story's done check.
   readonly workIds: readonly string[];
   readonly treeDigest: string;
@@ -369,6 +374,7 @@ export async function runGates(plan: GatesPlan, options: {
     declarationsDigest: plan.declarationsDigest,
     release: plan.release,
     base: plan.base,
+    ...(plan.baseByRoot === undefined ? {} : { baseByRoot: plan.baseByRoot }),
     workIds: plan.workIds,
     gates: plan.gates.map((gate) => gate.name),
   }).slice(0, 12)}`;
@@ -380,7 +386,11 @@ export async function runGates(plan: GatesPlan, options: {
   for (const [index, gate] of plan.gates.entries()) {
     const cwd = await resolveGateRoot(plan.projectRoot, gate.root);
     const prior: GateRunPrior = { runId, gates: ended };
+    const startedAt = new Date().toISOString();
+    const started = performance.now();
     const outcome = await runGateProcess(gate.command, cwd, timeoutMs, outputBytes, { ...environment, [GATE_RUN_PRIOR_VARIABLE]: canonicalJson(prior) });
+    const durationMs = Math.max(0, Math.round(performance.now() - started));
+    const finishedAt = new Date().toISOString();
     const outputFile = `${runId}/${index + 1}-${gate.name.replace(/[^A-Za-z0-9._-]/gu, "_")}.log`;
     const outputPath = join(directory, ...outputFile.split("/"));
     await writeFileAtomic(outputPath, outcome.output);
@@ -398,6 +408,7 @@ export async function runGates(plan: GatesPlan, options: {
       outputFile,
       outputBytes: outcome.output.length,
       truncated: outcome.truncated,
+      startedAt, finishedAt, durationMs,
     });
     ended.push({ name: gate.name, root: gate.root, directory: cwd, command: [...gate.command], ok, truncated: outcome.truncated, outputFile: outputPath });
   }
@@ -409,6 +420,7 @@ export async function runGates(plan: GatesPlan, options: {
     at: options.at,
     release: plan.release,
     base: plan.base,
+    ...(plan.baseByRoot === undefined ? {} : { baseByRoot: plan.baseByRoot }),
     workIds: plan.workIds,
     treeDigest: tree.treeDigest,
     declarationsDigest: plan.declarationsDigest,
@@ -455,6 +467,8 @@ function isGateRun(value: unknown): value is GateRun {
   const gates = record.gates;
   const trees = record.trees;
   return record.schemaVersion === GATE_RUN_SCHEMA_VERSION && typeof record.runId === "string" && typeof record.libraryId === "string" &&
+    (record.baseByRoot === undefined || (record.baseByRoot !== null && typeof record.baseByRoot === "object" && !Array.isArray(record.baseByRoot) &&
+      Object.values(record.baseByRoot).every((value) => typeof value === "string"))) &&
     Array.isArray(trees) && trees.every(isGateRootTree) &&
     (record.projectId === undefined || (typeof record.projectId === "string" && /^project:[a-f0-9]{24}$/u.test(record.projectId))) &&
     typeof record.at === "string" && typeof record.treeDigest === "string" && typeof record.declarationsDigest === "string" &&
@@ -464,7 +478,11 @@ function isGateRun(value: unknown): value is GateRun {
       const result = gate as Readonly<Record<string, unknown>>;
       const matched = result.matched;
       const matchedWorkIds = result.matchedWorkIds;
-      return typeof result.name === "string" && typeof result.ok === "boolean" && typeof result.required === "boolean" &&
+      const timingAbsent = result.startedAt === undefined && result.finishedAt === undefined && result.durationMs === undefined;
+      const timingValid = typeof result.startedAt === "string" && instant(result.startedAt) !== null &&
+        typeof result.finishedAt === "string" && instant(result.finishedAt) !== null &&
+        typeof result.durationMs === "number" && Number.isSafeInteger(result.durationMs) && result.durationMs >= 0;
+      return (timingAbsent || timingValid) && typeof result.name === "string" && typeof result.ok === "boolean" && typeof result.required === "boolean" &&
         Array.isArray(matched) && matched.every((path: unknown) => typeof path === "string") &&
         Array.isArray(matchedWorkIds) && matchedWorkIds.every((workId: unknown) => typeof workId === "string" && /^work:[0-9a-f]{24}$/u.test(workId));
     });

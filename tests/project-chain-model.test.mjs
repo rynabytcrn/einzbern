@@ -5,7 +5,8 @@ import { mkdtemp, mkdir, readFile, rm, realpath, rename, cp, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { initializeLibrary, createProject, deleteProject, createWork, annotateWork, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting, removeWorkspaceSetting, setConfigRecord, removeConfigRecord, registerLibrary, readRegistry, registryPath, withFileLock, declareChainIdentity, chainIdentity, workProjectContexts, resolveProjectTarget, registeredCoordination, ensureProjectCoordination, effectiveProjectState, normalizeInvolvedProjects, involvedProjectsOf, projectLineage, scopedWorkspaceState, enableRule, disableRule, listRules, renderAgentsSections, readSettingsCatalog } from "../dist/build/packages/core/src/index.js";
+import { appendEvents, sortWorkspaceSettings, validateWorkspaceSettingRecord, applyEngineModelPolicySet, initializeLibrary, createProject, deleteProject, createWork, annotateWork, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting, removeWorkspaceSetting, setConfigRecord, removeConfigRecord, registerLibrary, readRegistry, registryPath, withFileLock, declareChainIdentity, chainIdentity, workProjectContexts, resolveProjectTarget, registeredCoordination, ensureProjectCoordination, effectiveProjectState, normalizeInvolvedProjects, involvedProjectsOf, projectLineage, scopedWorkspaceState, enableRule, disableRule, listRules, renderAgentsSections, readSettingsCatalog } from "../dist/build/packages/core/src/index.js";
+import { applyMachineSettingSet, readMachineSettingsCatalog } from "../dist/build/packages/core/src/machine-settings.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { unregisterLibrary } from "../dist/build/packages/core/src/registry.js";
 import { canonicalJson, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -36,6 +37,21 @@ async function configure(target, suffix) {
   for (const [key, value] of Object.entries({ "design.authority": `https://${suffix}.example.test`, "design.repository": `https://example.test/${suffix}`, "design.pullRequestTarget": "main", "design.productionDocs": `https://${suffix}.example.test/docs`, "design.buildService": "build", "design.buildProject": suffix, "design.consumedVersion": "1.0.0", "artifact.language": suffix === "alpha" ? "en" : "fr" })) {
     await setWorkspaceSetting(target.path, { key, value, configurationProjectId: target.reference.projectId, occurredAt: at });
   }
+}
+const policyDecision = { target: "models.engine-policy", decidedIn: `minutes:${"a".repeat(24)}#D1`, libraryId: `library:${"b".repeat(24)}` };
+async function configureDevicePolicy(f, host = "codex") {
+  return applyEngineModelPolicySet({ home: f.home, host, occurredAt: at, actor: "agent:fixture", authorization: policyDecision,
+    policy: { categories: [{ order: 10, id: "main", name: "Main", description: "" }],
+      tiers: [{ order: 10, category: "main", runner: host, model: "fixture-device-main", effort: "max", note: "" }],
+      escalation: { enabled: true, threshold: 2, ceiling: "main" } },
+  });
+}
+// Test-only historical event fixture: validate replay records without using today's retired write surface.
+async function appendHistoricalSetting(target, key, value) {
+  const record = validateWorkspaceSettingRecord({ schemaVersion: "tcrn.workspace-setting.v1", layerKind: "workspace_configuration",
+    key, value, projectId: target.reference.projectId, revision: 1, updatedAt: at, tombstone: false });
+  return appendEvents(target.path, [(state) => ({ payload: { operation: "settings.updated", record }, projects: state.projects,
+    work: state.work, settings: sortWorkspaceSettings([...state.settings, record]) })], { occurredAt: at });
 }
 test("Cross Project work reaches independent project settings and never grants access", async t => {
   const f = await fixture(t); await configure(f.a, "alpha"); await configure(f.b, "beta");
@@ -200,8 +216,7 @@ test("MIN291 D1: an optional design authority does not block development, while 
   const remote = "https://example.test/alpha";
   await registerLibrary({ projectPath: f.a.repo, libraryPath: f.a.path, projectId: f.a.reference.projectId, registeredAt: at, gitRemote: remote }, f.home);
   await setWorkspaceSetting(f.a.path, { key: "artifact.language", value: "en", configurationProjectId: f.a.reference.projectId, occurredAt: at });
-  await setWorkspaceSetting(f.a.path, { key: "models.category", value: JSON.stringify([{ order: 10, id: "main", name: "Main", description: "" }]), configurationProjectId: f.a.reference.projectId, occurredAt: at });
-  await setWorkspaceSetting(f.a.path, { key: "models.tiers", value: JSON.stringify([{ order: 10, category: "main", runner: "codex", model: "gpt-5.6-terra", effort: "max", note: "" }]), configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await configureDevicePolicy(f);
   await setConfigRecord(f.a.path, { collection: "chain", key: "repositories", projectId: f.a.reference.projectId, value: { bindings: [{ id: "alpha", name: "Alpha", repository: remote, buildService: "test", buildProject: "alpha" }] }, occurredAt: at });
   await setConfigRecord(f.a.path, { collection: "gate", key: "alpha", projectId: f.a.reference.projectId, value: { command: [process.execPath, "-e", "process.exit(0)"], root: ".", covers: ["**"], required: true, enabled: true, releaseOnly: false }, occurredAt: at });
 
@@ -214,6 +229,13 @@ test("MIN291 D1: an optional design authority does not block development, while 
   assert.equal(optional.readiness.language.ready, true);
   assert.equal(optional.readiness.development.ready, true, "all non-design development prerequisites are enough");
 
+  await setWorkspaceSetting(f.a.path, { key: "design.authority", value: "https://alpha.example.test", configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  const partial = await resolveProjectTarget(f.a.reference, f.home);
+  assert.equal(partial.readiness.design.ready, false, "declaring authority activates companion requirements");
+  assert.ok(partial.readiness.design.missing.includes("design.repository"));
+  assert.ok(partial.readiness.design.missing.includes("design.consumedVersion"));
+  assert.equal(partial.readiness.development.ready, false);
+  assert.equal(partial.readiness.model.ready, true);
   await configure(f.a, "alpha");
   const childState = await createProject(f.a.path, { externalKey: "ALPHA-CHILD", name: "Alpha child", parentProjectId: f.a.reference.projectId, occurredAt: at });
   const child = childState.projects.find(project => project.parentProjectId === f.a.reference.projectId);
@@ -239,9 +261,9 @@ test("coordination rule writes with no registered root record the rule alone and
   const f = await fixture(t);
   const input = { libraryRoot: f.coordination.path, projectRoot: f.coordination.path, id: "autonomy", occurredAt: at };
   const enabled = await enableRule(input);
-  assert.deepEqual([enabled.status.state, enabled.status.recordedVersion, enabled.outputBindingStatus], ["removed-from-file", 1, "unconfigured"]);
+  assert.deepEqual([enabled.status.state, enabled.status.recordedVersion, enabled.outputBindingStatus], ["output-unconfigured", 1, "unconfigured"]);
   assert.equal(enabled.written, false);
-  assert.equal((await listRules({ libraryRoot: f.coordination.path })).find(rule => rule.id === "autonomy").state, "removed-from-file");
+  assert.equal((await listRules({ libraryRoot: f.coordination.path })).find(rule => rule.id === "autonomy").state, "output-unconfigured");
   await assert.rejects(renderAgentsSections(f.coordination.path, { projectRoot: f.coordination.path, navigation: null, occurredAt: at }), { reasonCode: "MANAGED_SECTION_OUTPUT_UNREGISTERED" });
   const disabled = await disableRule(input);
   assert.equal(disabled.status.state, "disabled");
@@ -362,7 +384,7 @@ test("F06: unavailable registrations are listed by what was recorded, refused wi
 test("F07: common defaults inherit optional project scalars only, and an unresolved common default refuses", async t => {
   const f = await fixture(t); await configure(f.a, "alpha");
   const tiers = JSON.parse(readSettingsCatalog(f.a.reference.libraryId, []).settings.find(entry => entry.key === "models.tiers").currentValue).map(tier => ({ ...tier, model: "alpha-model" }));
-  await setWorkspaceSetting(f.a.path, { key: "models.tiers", value: JSON.stringify(tiers), configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await appendHistoricalSetting(f.a, "models.tiers", JSON.stringify(tiers));
   await setWorkspaceSetting(f.a.path, { key: "workspace.generatedArtifactsPath", value: "alpha-artifacts", occurredAt: at });
   await setConfigRecord(f.a.path, { collection: "gate", key: "alpha-gate", projectId: f.a.reference.projectId, value: { command: [process.execPath, "-e", "process.exit(0)"], root: ".", covers: ["**"], required: true, enabled: true, releaseOnly: false }, occurredAt: at });
   await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: f.a.reference, occurredAt: at });
@@ -408,10 +430,10 @@ test("F02: rule-enable and rule-disable through the CLI on a setup-made coordina
   // Atelier's surface, as its runtime rule write runs the CLI (no human-identity claim).
   process.env.EINZBERN_SURFACE = "atelier";
   const enabled = await cli(["rule-enable", "--id", "autonomy", "--project", coordination.path, "--project-id", entry.projectId, "--at", at]);
-  assert.deepEqual([enabled.reasonCode, enabled.written, enabled.recorded, enabled.result, enabled.rule.state, enabled.rule.recordedVersion, enabled.outputBindingStatus], ["RULE_ENABLED", false, 1, "unchanged", "removed-from-file", 1, "unconfigured"]);
-  assert.equal((await listRules({ libraryRoot: coordination.path, configurationProjectId: entry.projectId })).find(rule => rule.id === "autonomy").state, "removed-from-file");
+  assert.deepEqual([enabled.reasonCode, enabled.written, enabled.recorded, enabled.result, enabled.rule.state, enabled.rule.recordedVersion, enabled.outputBindingStatus], ["RULE_ENABLED", false, 1, "unchanged", "output-unconfigured", 1, "unconfigured"]);
+  assert.equal((await listRules({ libraryRoot: coordination.path, configurationProjectId: entry.projectId })).find(rule => rule.id === "autonomy").state, "output-unconfigured");
   const listed = await cli(["rule-list", "--project", coordination.path]);
-  assert.deepEqual([listed.rules.find(rule => rule.id === "autonomy").state, listed.outputBindingStatus], ["removed-from-file", "unconfigured"]);
+  assert.deepEqual([listed.rules.find(rule => rule.id === "autonomy").state, listed.outputBindingStatus], ["output-unconfigured", "unconfigured"]);
   const disabled = await cli(["rule-disable", "--id", "autonomy", "--project", coordination.path, "--project-id", entry.projectId, "--at", at]);
   assert.deepEqual([disabled.reasonCode, disabled.written, disabled.recorded, disabled.outputBindingStatus], ["RULE_DISABLED", false, 1, "unconfigured"]);
   assert.equal((await listRules({ libraryRoot: coordination.path, configurationProjectId: entry.projectId })).find(rule => rule.id === "autonomy").state, "disabled");
@@ -520,8 +542,8 @@ test("R46 I03: unregistered, unavailable and cyclic common defaults are read per
 // for itself, the four library settings with the artifact language and the orchestration limits of the work
 // dispatched from it. It lists and writes them for the whole library only; a project override of one refuses
 // in the library's words, and models.* and every development key keep the coordination refusal.
-const COORDINATION_RUNTIME_KEYS = ["artifact.language", "engine.requiredVersion", "execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"];
-test("R47 c1-B: a coordination chain lists and writes its ten runtime settings for the whole library only", async t => {
+const COORDINATION_RUNTIME_KEYS = ["agents.generation", "agents.sharedNavigation", "artifact.language", "engine.requiredVersion", "execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"];
+test("R47 c1-B: a coordination chain lists runtime settings but historical quota rows are read-only", async t => {
   const f = await fixture(t);
   const own = ["--workspace", f.coordination.path];
   const targeted = [...own, "--project-id", f.coordination.reference.projectId];
@@ -531,7 +553,7 @@ test("R47 c1-B: a coordination chain lists and writes its ten runtime settings f
     assert.deepEqual([...new Set(catalog.settings.flatMap(row => [row.scope, row.layer]))], ["library"]);
     assert.equal(catalog.design, null);
   }
-  const written = [["artifact.language", "fr"], ["execution.maxConcurrentSubagents", "3"], ["quota.weeklyWaitPercent", "90"]];
+  const written = [["artifact.language", "fr"], ["execution.maxConcurrentSubagents", "3"]];
   for (const [key, value] of written) await setWorkspaceSetting(f.coordination.path, { key, value, occurredAt: at });
   for (const args of [own, targeted]) {
     const catalog = await catalogAs(f, args);
@@ -543,18 +565,21 @@ test("R47 c1-B: a coordination chain lists and writes its ten runtime settings f
   assert.deepEqual(scopedWorkspaceState(native, f.coordination.reference.projectId).settings.map(record => [record.key, record.value]), written);
   const projectOverride = /this setting belongs to the whole library and cannot have a project override/u;
   for (const [key, value] of [["artifact.language", "ja"], ["execution.maxConcurrentSubagents", "2"], ["quota.fiveHourParallelOffPercent", "50"], ["quota.fiveHourWaitPercent", "50"], ["quota.weeklyParallelOffPercent", "50"], ["quota.weeklyWaitPercent", "50"], ["workspace.generatedArtifactsPath", "elsewhere"]]) {
-    await assert.rejects(setWorkspaceSetting(f.coordination.path, { key, value, configurationProjectId: f.coordination.reference.projectId, occurredAt: at }), projectOverride, key);
+    await assert.rejects(setWorkspaceSetting(f.coordination.path, { key, value, configurationProjectId: f.coordination.reference.projectId, occurredAt: at }), key.startsWith("quota.") ? { reasonCode: "SETTINGS_KEY_DEVICE_LEVEL" } : projectOverride, key);
   }
   await assert.rejects(removeWorkspaceSetting(f.coordination.path, { key: "artifact.language", configurationProjectId: f.coordination.reference.projectId, occurredAt: at }), /is not set/u);
   const runtimeOnly = /coordination chains expose runtime settings only/u;
   const tiers = readSettingsCatalog(f.coordination.reference.libraryId, []).settings.find(entry => entry.key === "models.tiers").currentValue;
   for (const projectId of [undefined, f.coordination.reference.projectId]) {
-    await assert.rejects(setWorkspaceSetting(f.coordination.path, { key: "models.tiers", value: tiers, ...(projectId === undefined ? {} : { configurationProjectId: projectId }), occurredAt: at }), runtimeOnly);
+    await assert.rejects(setWorkspaceSetting(f.coordination.path, { key: "models.tiers", value: tiers, ...(projectId === undefined ? {} : { configurationProjectId: projectId }), occurredAt: at }), { reasonCode: "SETTINGS_KEY_DEVICE_LEVEL" });
     await assert.rejects(setWorkspaceSetting(f.coordination.path, { key: "knowledge.articlesPath", value: "articles", ...(projectId === undefined ? {} : { configurationProjectId: projectId }), occurredAt: at }), runtimeOnly);
   }
-  // The library-level declaration is removed for the whole library.
-  await removeWorkspaceSetting(f.coordination.path, { key: "quota.weeklyWaitPercent", occurredAt: at });
-  assert.equal(rowOf(await catalogAs(f, targeted), "quota.weeklyWaitPercent").source.kind, "default");
+  for (const key of COORDINATION_RUNTIME_KEYS.filter(key => key.startsWith("quota."))) {
+    await assert.rejects(setWorkspaceSetting(f.coordination.path, { key, value: "90", occurredAt: at }), { reasonCode: "SETTINGS_KEY_DEVICE_LEVEL" });
+  }
+  // Active library declarations still remove normally without opening historical quota writes.
+  await removeWorkspaceSetting(f.coordination.path, { key: "execution.maxConcurrentSubagents", occurredAt: at });
+  assert.equal(rowOf(await catalogAs(f, targeted), "execution.maxConcurrentSubagents").source.kind, "default");
   // A project chain's catalog is as before: every key, each with its static scope and layer.
   const project = await catalogAs(f, ["--workspace", f.a.path, "--project-id", f.a.reference.projectId]);
   const statics = readSettingsCatalog(f.a.reference.libraryId, []).settings;
@@ -585,4 +610,148 @@ test("R47 c1-B: involved projects and common defaults never take the coordinatio
     assert.deepEqual([rowOf(catalog, key).currentValue, rowOf(catalog, key).source.kind, rowOf(catalog, key).source.status], [null, "common", "unresolved"], key);
   }
   await assert.rejects(effectiveProjectState(await materializeWorkspace(f.b.path), f.b.reference.projectId, f.home), /effective configuration unavailable/u);
+});
+
+
+test("552: projects with conflicting historical models consume one device policy and handoff exports only explicit variables", async t => {
+  const f = await fixture(t);
+  for (const [target, model] of [[f.a, "old-alpha"], [f.b, "old-beta"]]) {
+    await appendHistoricalSetting(target, "models.tiers", JSON.stringify([{ order: 10, category: "main", runner: "codex", model, effort: "max", note: "" }]));
+    await appendHistoricalSetting(target, "quota.fiveHourWaitPercent", target === f.a ? "80" : "90");
+  }
+  const legacyOnly = await resolveProjectTarget(f.a.reference, f.home);
+  assert.equal(legacyOnly.readiness.model.ready, false, "historical project models cannot satisfy device-policy readiness");
+  assert.deepEqual(legacyOnly.readiness.model.missing, ["engine.host-policy"]);
+  const policy = await configureDevicePolicy(f);
+  const variables = [
+    ["explicit.handoff", ["handoff"]],
+    ["explicit.both", ["agents", "handoff"]],
+    ["agents.only", ["agents"]],
+    ["private.only", []],
+    ["legacy.agents", undefined],
+    ["unsafe.absolute", ["handoff"], "/srv/private-output"],
+    ["unsafe.secret", ["handoff"], "sk-recorded-before"],
+    ["unsafe.description", ["handoff"], "plain-value", "stored at /var/private-info"],
+  ];
+  for (const [key, exports, value = `value-${key}`, description = ""] of variables) {
+    await setConfigRecord(f.a.path, { collection: "variable", key, projectId: f.a.reference.projectId,
+      value: { type: "string", value, description, ...(exports === undefined ? {} : { exports }) }, occurredAt: at });
+  }
+  const state = await createWork(f.coordination.path, { projectId: f.coordination.reference.projectId, externalKey: "SHARED-DEVICE-POLICY", kind: "Initiative", parentId: null,
+    involvedProjects: { state: "selected", targets: [f.a.reference, f.b.reference] }, occurredAt: at });
+  const work = state.work.find(entry => entry.externalKey === "SHARED-DEVICE-POLICY");
+  const result = await workProjectContexts(state, work.id, f.home);
+  assert.equal(result.enginePolicy.storeRevision, policy.revision);
+  assert.equal(result.conflicts.some(key => key.startsWith("models.") || key.startsWith("quota.")), false);
+  for (const context of result.contexts) {
+    assert.deepEqual(context.enginePolicy, result.enginePolicy);
+    assert.deepEqual(context.handoff.enginePolicy, result.enginePolicy);
+    assert.equal(context.readiness.model.ready, true);
+    assert.equal(context.enginePolicy.hosts.codex.digest, policy.hosts.codex.digest);
+    assert.equal(context.modelCapabilityVerification, "requires-explicit-host-resolution");
+    assert.equal(context.handoff.settings.some(entry => entry.key.startsWith("models.") || entry.key.startsWith("quota.")), false);
+    assert.equal(context.writeAuthority, "not-granted");
+  }
+  const alpha = result.contexts.find(context => context.reference.projectId === f.a.reference.projectId);
+  assert.deepEqual(alpha.handoff.variables.map(entry => entry.key), ["explicit.both", "explicit.handoff"]);
+  assert.deepEqual(alpha.handoff.withheldVariables, [
+    { key: "agents.only", reason: "not-exported" },
+    { key: "legacy.agents", reason: "not-exported" },
+    { key: "private.only", reason: "not-exported" },
+    { key: "unsafe.absolute", reason: "absolute-path" },
+    { key: "unsafe.description", reason: "absolute-path" },
+    { key: "unsafe.secret", reason: "secret-shaped" },
+  ]);
+  const handoffText = JSON.stringify(alpha.handoff);
+  for (const omitted of ["value-agents.only", "value-legacy.agents", "value-private.only", "/srv/private-output", "sk-recorded-before", "/var/private-info"]) assert.equal(handoffText.includes(omitted), false, omitted);
+  assert.equal((await materializeWorkspaceFromGenesis(f.a.path)).settings.find(entry => entry.key === "models.tiers").value.includes("old-alpha"), true, "historical model event is preserved");
+});
+
+
+test("552: project handoff resolves device concurrency cap against each project budget using device-directory semantics", async t => {
+  const f = await fixture(t);
+  await applyMachineSettingSet({ key: "execution.maxConcurrentAgents", value: "3", occurredAt: at, path: join(f.home, "machine-settings.json") });
+  await setWorkspaceSetting(f.a.path, { key: "execution.maxConcurrentSubagents", value: "99", configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await setWorkspaceSetting(f.b.path, { key: "execution.maxConcurrentSubagents", value: "2", configurationProjectId: f.b.reference.projectId, occurredAt: at });
+  const state = await createWork(f.coordination.path, { projectId: f.coordination.reference.projectId, externalKey: "DEVICE-CAP-HANDOFF", kind: "Initiative", parentId: null,
+    involvedProjects: { state: "selected", targets: [f.a.reference, f.b.reference] }, occurredAt: at });
+  const work = state.work.find(entry => entry.externalKey === "DEVICE-CAP-HANDOFF");
+  const result = await workProjectContexts(state, work.id, f.home);
+  for (const context of result.contexts) {
+    const alpha = context.reference.projectId === f.a.reference.projectId;
+    assert.equal(context.executionConcurrency.deviceLimit, 3, "home names the device directory, not a user's parent home");
+    assert.equal(context.deviceSettings.path, join(f.home, "machine-settings.json"));
+    assert.equal(context.deviceSettings.settings.find(entry => entry.key === "execution.maxConcurrentAgents").currentValue, "3");
+    assert.equal(context.executionConcurrency.projectLimit, alpha ? 99 : 2);
+    assert.equal(context.executionConcurrency.effectiveLimit, alpha ? 3 : 2);
+    assert.equal(context.executionConcurrency.origin, alpha ? "device" : "project-budget");
+    assert.deepEqual(context.handoff.executionConcurrency, context.executionConcurrency);
+    assert.equal(context.handoff.settings.find(entry => entry.key === "execution.maxConcurrentSubagents").value, alpha ? "99" : "2", "declaration remains distinct from resolved cap");
+    assert.equal(context.writeAuthority, "not-granted");
+  }
+});
+
+test("552: work handoff consumes a request-bound policy decision, never treating read-only context as dispatch permission", async t => {
+  const f = await fixture(t); await configureDevicePolicy(f);
+  await applyMachineSettingSet({ key: "execution.maxConcurrentAgents", value: "3", occurredAt: at, path: join(f.home, "machine-settings.json") });
+  await setWorkspaceSetting(f.a.path, { key: "execution.maxConcurrentSubagents", value: "1", configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  const state = await createWork(f.coordination.path, { projectId: f.coordination.reference.projectId, externalKey: "ADMISSION-HANDOFF", kind: "Initiative", parentId: null,
+    involvedProjects: { state: "selected", targets: [f.a.reference] }, occurredAt: at });
+  const id = state.work.find(entry => entry.externalKey === "ADMISSION-HANDOFF").id;
+  const reading = await workProjectContexts(state, id, f.home);
+  assert.equal(reading.dispatchAdmitted, false);
+  assert.equal(reading.contexts[0].handoff.executionAdmission.status, "not-requested");
+  const request = { host: "codex", category: "main", rejections: 4, requestedAgents: 1,
+    availableCombinations: [{ runner: "codex", model: "fixture-device-main", effort: "max" }] };
+  const resolved = await workProjectContexts(state, id, f.home, request);
+  const admission = resolved.contexts[0].executionAdmission;
+  assert.equal(admission.status, "admitted");
+  assert.equal(admission.selection.record.runner, "codex");
+  assert.equal(admission.selection.record.model, "fixture-device-main");
+  assert.equal(admission.selection.record.effort, "max");
+  assert.equal(admission.request.rejections, 4);
+  assert.equal(admission.concurrency.admissionLimit, 1);
+  assert.deepEqual(resolved.contexts[0].handoff.executionAdmission, admission);
+  assert.equal(resolved.dispatchAdmitted, false, "policy admission does not bypass unresolved repository/output readiness");
+  const refused = await workProjectContexts(state, id, f.home, { ...request, requestedAgents: 2 });
+  assert.equal(refused.contexts[0].handoff.executionAdmission.status, "refused");
+  assert.equal(refused.dispatchAdmitted, false);
+  const unsupported = await workProjectContexts(state, id, f.home, { ...request, availableCombinations: [] });
+  assert.equal(unsupported.contexts[0].handoff.executionAdmission.status, "refused");
+});
+
+test("552: work targets and common defaults share one captured engine/device view and admission timestamp", async t => {
+  const f = await fixture(t);
+  const policy = await configureDevicePolicy(f);
+  await applyMachineSettingSet({ key: "execution.maxConcurrentAgents", value: "3", occurredAt: at, path: join(f.home, "machine-settings.json") });
+  await setWorkspaceSetting(f.a.path, { key: "execution.maxConcurrentSubagents", value: "2", configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: f.a.reference, occurredAt: at });
+  const state = await createWork(f.coordination.path, { projectId: f.coordination.reference.projectId, externalKey: "CAPTURED-EXECUTION-VIEW", kind: "Initiative", parentId: null,
+    involvedProjects: { state: "selected", targets: [f.a.reference, f.b.reference] }, occurredAt: at });
+  const work = state.work.find(entry => entry.externalKey === "CAPTURED-EXECUTION-VIEW");
+  const result = await workProjectContexts(state, work.id, f.home, { host: "codex", category: "main", rejections: 0, requestedAgents: 2,
+    availableCombinations: [{ runner: "codex", model: "fixture-device-main", effort: "max" }] });
+  const expectedDevice = await readMachineSettingsCatalog(join(f.home, "machine-settings.json"));
+  const first = result.contexts[0];
+  for (const target of result.contexts) {
+    const admission = target.executionAdmission;
+    assert.equal(target.enginePolicy, result.enginePolicy);
+    assert.equal(target.deviceSettings, first.deviceSettings, "device catalog uses the same captured object for every target");
+    assert.deepEqual(target.deviceSettings, expectedDevice, "captured catalog preserves the public readback shape");
+    assert.equal(target.readiness.model.ready, true);
+    assert.equal(admission.status, "admitted");
+    assert.equal(admission.policy.digest, result.enginePolicy.hosts.codex.digest);
+    assert.equal(admission.policy.revision, policy.hosts.codex.revision);
+    assert.equal(admission.policy.storeRevision, result.enginePolicy.storeRevision);
+    assert.equal(admission.selection.origin.storeRevision, result.enginePolicy.storeRevision);
+    assert.equal(admission.evaluatedAt, first.executionAdmission.evaluatedAt);
+    assert.equal(admission.concurrency.deviceLimit, target.executionConcurrency.deviceLimit);
+    assert.equal(admission.concurrency.effectiveLimit, target.executionConcurrency.effectiveLimit);
+    assert.equal(admission.concurrency.effectiveLimit, 2, "common-default project budget still only tightens the shared device cap");
+    assert.equal(target.handoff.executionAdmission, admission);
+  }
+  const beta = result.contexts.find(target => target.reference.projectId === f.b.reference.projectId);
+  assert.equal(beta.common.enginePolicy, result.enginePolicy, "common defaults cannot reread another engine revision");
+  assert.equal(beta.common.deviceSettings, first.deviceSettings, "common defaults cannot reread another device cap");
+  assert.equal(beta.common.readiness.model.ready, true);
 });

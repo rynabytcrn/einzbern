@@ -11,6 +11,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
+import { validateEngineModelPolicy } from "../dist/build/packages/core/src/engine-model-policy.js";
 import { initializeLibrary } from "../dist/build/packages/core/src/index.js";
 
 // TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
@@ -43,7 +44,7 @@ test("S369, STORY-484 R3: settings are sorted in source, the dispatch keys retir
   const keyType = source.match(/export type SettingKey =([\s\S]*?);/u)?.[1] ?? "";
   const catalogSource = source.match(/const catalogEntries:[\s\S]*?= \[([\s\S]*?)\];\n\nexport const SETTINGS_CATALOG/u)?.[1] ?? "";
   const sourceTypeKeys = [...keyType.matchAll(/\|\s*"([^"]+)"/gu)].map((match) => match[1]);
-  const sourceCatalogKeys = [...catalogSource.matchAll(/^ {4}key:\s*"([^"]+)",$/gmu)].map((match) => match[1]);
+  const sourceCatalogKeys = [...catalogSource.matchAll(/(?:^ {4}|^ {2}\{ )key:\s*"([^"]+)",/gmu)].map((match) => match[1]);
   assert.deepEqual(sourceTypeKeys, [...sourceTypeKeys].sort(), "SettingKey union must be independently sorted in source");
   assert.deepEqual(sourceCatalogKeys, [...sourceCatalogKeys].sort(), "catalogEntries must be independently sorted in source");
   assert.deepEqual(sourceTypeKeys, sourceCatalogKeys, "SettingKey and catalogEntries must use the same source order");
@@ -68,14 +69,14 @@ test("S369, STORY-484 R3: settings are sorted in source, the dispatch keys retir
   // TCRN-CROSS-STORY-548 AC5: vocabulary.hosts is EXECUTION_HOSTS, which names dsh as well.
   assert.deepEqual(vocabulary.hosts, ["claude-code", "codex", "dsh"]);
   assert.equal(Object.hasOwn(vocabulary, "roles"), false);
-  assert.deepEqual(vocabulary.settingsEnums.map((term) => [term.key, term.valueSource]), [["artifact.language", "settings-catalog"]]);
+  assert.deepEqual(vocabulary.settingsEnums.map((term) => [term.key, term.valueSource]), [["agents.generation", "settings-catalog"], ["agents.sharedNavigation", "settings-catalog"], ["artifact.language", "settings-catalog"]]);
 });
 
 // The dispatch-* verbs that merged custom classes, modes and tiers are retired
 // (TCRN-CROSS-STORY-467 R3), and the dispatch settings with them (TCRN-CROSS-STORY-484 R3). What
 // stands: models.tiers written directly is validated, and the retired model-plan names point at
 // the reads that survive.
-test("S369, STORY-484 R3: models.tiers written directly is validated, and the retired model-plan names point at the surviving reads", async (t) => {
+test("S369, STORY-484 R3: legacy project model writes are refused, device policies validate tiers, and retired model-plan names point at surviving reads", async (t) => {
   const workspace = await fixture(t);
   const vocabulary = await invoke(["vocabulary"]);
   assert.equal(vocabulary.hosts.includes("gemini"), false);
@@ -84,8 +85,14 @@ test("S369, STORY-484 R3: models.tiers written directly is validated, and the re
   const retiredClasses = await invoke(write("settings-set", workspace, 0, 1, ["--key", "execution.dispatchClasses", "--value", JSON.stringify({ "bad-class": { dispatch: true } })]));
   assert.equal(retiredClasses.reasonCode, "SETTINGS_KEY_UNREGISTERED");
   const noRunner = await invoke(write("settings-set", workspace, 0, 1, ["--key", "models.tiers", "--value", JSON.stringify([{ order: 10, category: "economy", model: "m", effort: "low", note: "" }])]));
-  assert.equal(noRunner.reasonCode, "SETTINGS_VALUE_INVALID");
-  assert.equal(noRunner.details.path, "models.tiers[0]");
+  assert.equal(noRunner.reasonCode, "SETTINGS_KEY_DEVICE_LEVEL", "new model policy belongs to the installed device host, even for Atelier");
+  assert.throws(() => validateEngineModelPolicy("codex", {
+    categories: [{ id: "economy", name: "Economy", description: "", order: 10 }],
+    tiers: [{ order: 10, category: "economy", model: "m", effort: "low", note: "" }],
+    escalation: { enabled: false, threshold: 2, ceiling: "economy" },
+  }), error => error.reasonCode === "MODELS_TIERS_INVALID" && error.details?.path === "models.tiers[0]", "the device-policy boundary still validates the missing runner");
+  const engine = await invoke(["engine-model-policy-catalog", "--host", "codex"]);
+  assert.equal(engine.selectedStatus, "unconfigured", "legacy defaults do not become runtime policy");
   assert.equal((await invoke(["status", "--workspace", workspace])).version, 0);
   const retired = await invoke(["model-plan-list", "--workspace", workspace]);
   assert.equal(retired.reasonCode, "CLI_COMMAND_UNKNOWN");

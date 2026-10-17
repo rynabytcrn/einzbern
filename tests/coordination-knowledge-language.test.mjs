@@ -289,3 +289,17 @@ test("543-GWT3 (fresh processes): a project library that records zh-CN and no ec
   assert.deepEqual([batch.reasonCode, JSON.parse(batch.error).failed.reasonCode], ["WORK_BATCH_REFUSED", "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE"]);
   assert.deepEqual(await records(fixture.root), [], "the refusals leave no card behind");
 });
+
+test("545: article creates can explicitly coexist or supersede a conflicting card", async (context) => {
+  const fixture = await library(context, "coordination");
+  const original = await captureKnowledgeUnit(fixture.root, { ...englishCard, occurredAt: at(), externalKey: "ARTICLE-CONFLICT-ORIGINAL" });
+  const input = { occurredAt: at(), path: "coexist.md", category: "workflow", title: englishCard.subject,
+    summary: englishCard.summary, content: englishCard.body, accountableOwnerId: OWNER,
+    linkedEvidenceIds: [deriveStableId("evidence", "ARTICLE-CONFLICT")] };
+  await assert.rejects(createKnowledgeArticle(fixture.root, input), error => error.reasonCode === "KNOWLEDGE_POSSIBLE_CONFLICT");
+  const beside = await createKnowledgeArticle(fixture.root, { ...input, occurredAt: at(), coexist: true });
+  assert.equal(beside.reasonCode, "KNOWLEDGE_ARTICLE_CREATED");
+  const replacement = await createKnowledgeArticle(fixture.root, { ...input, occurredAt: at(), path: "replacement.md", supersedes: original.id });
+  assert.equal(replacement.reasonCode, "KNOWLEDGE_ARTICLE_CREATED");
+  assert.equal((await records(fixture.root)).find(card => card.id === replacement.id).supersedes, original.id);
+});

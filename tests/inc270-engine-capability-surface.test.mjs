@@ -16,7 +16,7 @@ function test(name, optionsOrBody, maybeBody) {
   queuedTests.push([name, { ...options, concurrency: true }, body]);
 }
 
-import { inspectPlatform } from "../scripts/platform-doctor.mjs";
+import { inspectLegacyPlatform as inspectPlatform } from "../scripts/platform-doctor.mjs";
 import { INSTALL_MANIFEST } from "../dist/build/packages/core/src/index.js";
 
 const launchdLabel = "com.tcrn.platform.local-snapshot";

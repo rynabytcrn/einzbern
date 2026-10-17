@@ -9,7 +9,10 @@ machine-readable read surface and `settings-set` is the governed write surface.
 This file documents the finite keys the engine is allowed to consume. A key is not in the
 engine catalog merely because it appears in helper or portal prose.
 
-The existing `models.*` rows remain workspace-compatible history. `settings-catalog` also returns
+The existing `models.*` and `quota.*` rows remain workspace-compatible history.
+New project set/remove operations on either family refuse with `SETTINGS_KEY_DEVICE_LEVEL`;
+historical events replay without mutation. Their values are diagnostics, not current
+device host policy authority. `settings-catalog` also returns
 `modelPolicy`, a device-engine catalogue with its host partitions and the current scope's legacy
 model values, declarations, inherited values, and source. This is a separate source projection,
 not another settings row: old records remain readable, while a configured device host policy is
@@ -101,6 +104,8 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `general` | `design.buildService` | project | scalar | 7 |
 | `general` | `design.buildProject` | project | scalar | 8 |
 | `general` | `design.consumedVersion` | project | scalar | 9 |
+| `general` | `agents.generation` | project | scalar | 20 |
+| `general` | `agents.sharedNavigation` | project | scalar | 21 |
 | `models` | `models.category` | project | collection | 1 |
 | `models` | `models.tiers` | project | collection | 2 |
 | `models` | `models.escalation.enabled` | project | scalar | 3 |
@@ -112,6 +117,7 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `execution` | `quota.weeklyParallelOffPercent` | project | scalar | 4 |
 | `execution` | `quota.weeklyWaitPercent` | project | scalar | 5 |
 | `execution` | `execution.maxConcurrentHeavyRuns` | device | scalar | 6 |
+| `execution` | `execution.maxConcurrentAgents` | device | scalar | 7 |
 | `knowledge` | `artifact.language` | project | scalar | 1 |
 | `knowledge` | `knowledge.articlesPath` | project | scalar | 2 |
 | `knowledge` | `crest.userPath` | device | scalar | 4 |
@@ -122,6 +128,8 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `storage` | `workspace.generatedArtifactsPath` | library | scalar | 1 |
 | `storage` | `storage.segmentBytes` | library | scalar | 2 |
 | `storage` | `storage.snapshotEveryEvents` | library | scalar | 3 |
+| `storage` | `paths.artifacts` | device | scalar | 10 |
+| `storage` | `paths.knowledgeArticles` | device | scalar | 11 |
 | `atelier` | `portal.defaultLocale` | device | scalar | 1 |
 | `atelier` | `portal.defaultTheme` | device | scalar | 2 |
 | `atelier` | `portal.defaultPartition` | device | scalar | 3 |
@@ -465,6 +473,29 @@ model may write the key through the CLI. It is `false` for every key.
     `machine-settings-remove` write it; a value outside the bounds refuses with
     `MACHINE_SETTING_VALUE_INVALID`. `scripts/lib/heavy-runs.mjs` reads it without the engine.
   - **Decision record:** MIN-257 D6 (TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-484).
+
+## Portable paths and generation controls
+
+The integrated configuration contract (`configuration-contract-v1.md`) adds these
+explicitly governed entries. All are Tier-1 Owner choices, written through their
+scope's existing set/remove verbs, never inferred from output files.
+
+- `agents.generation`: project enum, default `managed`, choices `managed` and `none`.
+  `none` suppresses future managed creation and updates without deleting existing files.
+- `agents.sharedNavigation`: project enum, default `written`, choices `written` and
+  `declined`. This portable declaration is separate from device host integration.
+- `paths.artifacts` and `paths.knowledgeArticles`: device absolute directory bindings,
+  default unset. `machine-settings-set` validates the absolute path before storage.
+  Shared writes use relative paths or `binding:paths.artifacts` /
+  `binding:paths.knowledgeArticles` with optional portable child suffixes. Historical
+  absolute-path events replay unchanged, but new shared absolute-path writes refuse.
+- `execution.maxConcurrentAgents`: device integer, default `8`, from `1` through
+  `Number.MAX_SAFE_INTEGER`. It caps host-policy agent concurrency independently of
+  the project subagent declaration and the heavy-run admission limit.
+
+These entries implement the approved integrated configuration migration; their
+catalog defaults, bounds and layout are the executable source of truth. A setting
+change does not claim remote projections have refreshed or move existing directories.
 
 ## Non-knob declarations
 

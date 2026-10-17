@@ -68,3 +68,11 @@ No. `work-project-context` resolves configuration and reports conflicts. Check
 authorization and writable roots independently for each target. An unresolved
 reference remains unresolved; it is never an empty success or a fallback to
 Cross Project's settings.
+
+## `work-list --status` 能传逗号分隔的多个状态吗？
+
+不能。当前契约一次只接受一个状态：`planned`、`ready`、`active`、`blocked`、`pending-owner-acceptance`、`done` 或 `cancelled`。例如 `work-list --workspace <库> --status active`。`--status active,blocked` 会报 `CLI_ARGUMENT_MALFORMED`，不是多状态查询；要查询多个状态，请分别调用并按记录 ID 合并结果，或者省略 `--status` 后在调用方筛选。每次调用仍需按 `--limit` 与 `--offset` 分页，不要把第一页当作完整结果。本次修订只澄清现有契约，不扩展 CLI 的旗标语义。
+
+## 没有配置输出项目根目录，为什么规则不显示为“文件已删除”？
+
+没有可检查的输出根目录时，已启用规则显示 `output-unconfigured`，不再推断 `removed-from-file`。只有实际检查了绑定根目录中的 AGENTS.md、且未找到对应标记时，才报告后者。`outputBindingStatus` 用于区分绑定是否就绪；协调库按项目路径或库加项目 ID 查询，应解析同一设备登记的容器根目录。

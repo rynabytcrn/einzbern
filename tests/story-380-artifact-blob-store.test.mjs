@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// TCRN-CROSS-STORY-380: workspace.generatedArtifactsPath accepts an absolute root and has
+// TCRN-CROSS-STORY-380: portable declarations resolve absolute roots through device bindings and have
 // a real consumer, and the consumer is a content-addressed blob store.
 //
 // Every workspace below is created with a NON-`FIXTURE-` externalKey on purpose. The
@@ -19,6 +19,7 @@ import { inflateSync } from "node:zlib";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
+  appendEvents,
   assertGeneratedArtifactsRoot,
   initializeLibrary,
   lockPath,
@@ -26,6 +27,9 @@ import {
   validateWorkspace,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+
+import { MACHINE_SETTINGS_VERSION, MACHINE_SETTINGS_LAYER_KIND } from "../dist/build/packages/core/src/machine-settings.js";
+import { createWorkspaceSettingRecord } from "../dist/build/packages/core/src/settings.js";
 
 // TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
 standInForAtelier();
@@ -54,9 +58,11 @@ function refusal(args) {
   return runCli(args, { write() {} }).then(() => null, (error) => error?.reasonCode);
 }
 
-function setArtifactsPath(workspace, version, second, value) {
+async function setArtifactsPath(workspace, version, second, value) {
+  await mkdir(deviceHome, { recursive: true });
+  await writeFile(join(deviceHome, "machine-settings.json"), JSON.stringify({ schemaVersion: MACHINE_SETTINGS_VERSION, layerKind: MACHINE_SETTINGS_LAYER_KIND, updatedAt: instant(second), values: { "paths.artifacts": value } }));
   return cli(["settings-set", "--workspace", workspace, "--at", instant(second),
-    "--actor", "agent:claude-opus-5", "--key", "workspace.generatedArtifactsPath", "--value", value]);
+    "--actor", "agent:claude-opus-5", "--key", "workspace.generatedArtifactsPath", "--value", "binding:paths.artifacts"]);
 }
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -73,15 +79,15 @@ function twoMegabytes() {
   return bytes;
 }
 
-test("GWT1: an absolute generatedArtifactsPath under a cloud mount is accepted and read back", async (t) => {
+test("GWT1: a portable artifact binding resolves a device cloud root and reads back without absolute shared data", async (t) => {
   const fx = await fixture(t, "gwt1");
   const receipt = await setArtifactsPath(fx.workspace, 0, 1, fx.cloud);
   assert.equal(receipt.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(receipt.setting.value, fx.cloud);
+  assert.equal(receipt.setting.value, "binding:paths.artifacts");
 
   const catalog = await cli(["settings-catalog", "--workspace", fx.workspace]);
   const entry = catalog.settings.find((candidate) => candidate.key === "workspace.generatedArtifactsPath");
-  assert.equal(entry.currentValue, fx.cloud);
+  assert.equal(entry.currentValue, "binding:paths.artifacts");
   assert.equal(entry.defaultValue, DIRECTORY.artifacts, "the relative default is the library's artifacts/ directory");
 });
 
@@ -96,17 +102,19 @@ test("GWT1: the path conditions are enforced, and each refusal names its own rul
   assert.equal(await refusal([...base, join(fx.workspace, "nested", "artifacts")]), "SETTINGS_VALUE_INVALID");
   assert.equal(await refusal([...base, `${fx.cloud}/./nested`]), "SETTINGS_VALUE_INVALID", "an unnormalized path is refused rather than normalized");
 
+  assert.equal(await refusal([...base, fx.cloud]), "SETTINGS_VALUE_INVALID", "new shared absolute declarations are refused even when valid on this device");
+
   // Absent, and a symbolic link to a real directory: filesystem rules, decided by
   // artifact-store.ts at the moment the value is declared.
-  assert.equal(await refusal([...base, join(fx.base, "not-created")]), "ARTIFACT_PATH_INVALID");
+  await assert.rejects(assertGeneratedArtifactsRoot(fx.workspace, join(fx.base, "not-created")), { reasonCode: "ARTIFACT_PATH_INVALID" });
   const link = join(fx.base, "linked-artifacts");
   await symlink(fx.cloud, link);
-  assert.equal(await refusal([...base, link]), "ARTIFACT_PATH_INVALID");
+  await assert.rejects(assertGeneratedArtifactsRoot(fx.workspace, link), { reasonCode: "ARTIFACT_PATH_INVALID" });
 
   // A regular file where a directory was named.
   const file = join(fx.base, "not-a-directory");
   await writeFile(file, "x");
-  assert.equal(await refusal([...base, file]), "ARTIFACT_PATH_INVALID");
+  await assert.rejects(assertGeneratedArtifactsRoot(fx.workspace, file), { reasonCode: "ARTIFACT_PATH_INVALID" });
 
   assert.equal((await materializeWorkspace(fx.workspace)).version, 0, "no refusal appended an event");
 });
@@ -295,7 +303,9 @@ test("neither the chain nor the lock follows the blob: artifact-put appends no e
 
 test("a chain carrying an absolute artifact root replays even where that directory does not exist", async (t) => {
   const fx = await fixture(t, "replay");
-  await setArtifactsPath(fx.workspace, 0, 1, fx.cloud);
+  // Historical event fixture, not a newly admitted settings write.
+  const record = { ...createWorkspaceSettingRecord("workspace.generatedArtifactsPath", "artifacts", 1, instant(1)), value: fx.cloud };
+  await appendEvents(fx.workspace, [(state) => ({ payload: { operation: "settings.updated", record }, projects: state.projects, work: state.work, settings: state.settings })], { occurredAt: instant(1) });
   // The other machine: same chain, no such mount. If the setting's admission rule asked
   // the filesystem on the replay path, this is where a portable chain would stop being
   // portable — so this test is the design decision in settings.ts, stated as a fact.

@@ -82,3 +82,25 @@ test("S239: semantic refusals identify the setting and leave the head unchanged"
     assert.equal(await version(), stable);
   }
 });
+
+test("configuration migration: shared generation choices have closed enums and stable layout", async (t) => {
+  const { workspace, version } = await fixture(t);
+  const entries = new Map((await json(["settings-catalog", "--workspace", workspace])).settings.map((entry) => [entry.key, entry]));
+  for (const [key, defaultValue, alternative, order] of [
+    ["agents.generation", "managed", "none", 20],
+    ["agents.sharedNavigation", "written", "declined", 21],
+  ]) {
+    const entry = entries.get(key);
+    assert.deepEqual([entry.layer, entry.group, entry.order, entry.defaultValue, entry.currentValue], ["project", "general", order, defaultValue, defaultValue]);
+    assert.deepEqual(entry.allowedValues, [defaultValue, alternative]);
+    const before = await version();
+    const rejected = await refusal(["settings-set", "--workspace", workspace, "--at", instant(1), "--key", key, "--value", "automatic"]);
+    assert.equal(rejected.reasonCode, "SETTINGS_VALUE_INVALID");
+    assert.equal(await version(), before, "invalid enum writes append no event");
+    const written = await json(["settings-set", "--workspace", workspace, "--at", instant(2), "--key", key, "--value", alternative]);
+    assert.equal(written.setting.value, alternative);
+    assert.equal(await version(), before + 1);
+    const readback = (await json(["settings-catalog", "--workspace", workspace])).settings.find((row) => row.key === key);
+    assert.equal(readback.currentValue, alternative);
+  }
+});

@@ -21,7 +21,7 @@
 //                               bundle carries the engine's registry lock and device-home modules, the
 //                               same builds register, unregister and repoint use, once each
 //   skill/mana-orchestrate/     the skill as skill-render writes it for this version
-//   README*.md, CHANGELOG.md, LICENSE, NOTICE
+//   README*.md, CHANGELOG.md, LICENSE, NOTICE, THIRD_PARTY_NOTICES.txt
 //   manifest.json               einzbern.release-manifest.v1: version, nodeFloor, installTreeDigest, files
 //
 // installTreeDigest is the install-tree digest (specs/release-trust-v1.md) of that directory
@@ -73,7 +73,7 @@ const registryLockBuildSpecifier = (module) => `"../../dist/build/packages/core/
 const registryLockStagedSpecifier = (module) => `"../../packages/core/src/${module}"`;
 const BUNDLED_CLI_DECLARATION = /^const BUNDLED_CLI = .*;$/gmu;
 const README = /^README(?:\.[A-Za-z-]+)?\.md$/u;
-const DOCUMENTS = Object.freeze(["CHANGELOG.md", "LICENSE", "NOTICE"]);
+const DOCUMENTS = Object.freeze(["CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt"]);
 
 class PackError extends Error {
   constructor(reasonCode, message, details = {}) {

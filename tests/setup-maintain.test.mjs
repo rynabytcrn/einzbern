@@ -18,7 +18,7 @@ import { gzipSync } from "node:zlib";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, readRegistry, registerLibrary } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, readRegistry, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
 import { MACHINE_SETTINGS_FILE_NAME } from "../dist/build/packages/core/src/machine-settings.js";
@@ -227,8 +227,8 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   assert.equal((await current(f)).version, NEWER);
   assert.equal((await current(f)).previous, FRAMEWORK_VERSION);
   assert.deepEqual(await copyDigests(f), [release.skillDigest, release.skillDigest], "both copies are the new version's skill");
-  assert.equal((await einzbernHooks(join(f.home, ".claude", "settings.json"))).length, 1);
-  assert.equal((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).length, 1);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
   assert.deepEqual(await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file)))), sections, "478-R6: no managed section is written");
   assert.ok(await exists(join(staging, `einzbern-${NEWER}`, "scripts", "einzbern.mjs")), "the unpacked release stays in the device directory's trash");
   assertSelfCheckGreen(updated);
@@ -249,8 +249,8 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   assert.equal((await current(f)).previous, NEWER);
   const original = (await computeInstallTreeDigest(join(f.deviceHome, "engine", FRAMEWORK_VERSION, "skill", "mana-orchestrate"))).sha256;
   assert.deepEqual(await copyDigests(f), [original, original]);
-  assert.equal((await einzbernHooks(join(f.home, ".claude", "settings.json"))).length, 1);
-  assert.equal((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).length, 1);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
   assertSelfCheckGreen(rolled);
 
   // The unpacked release directory installs too: the version is already there, so it is reused.
@@ -262,6 +262,57 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   assert.equal((await current(f)).version, NEWER);
   assert.deepEqual(await copyDigests(f), [release.skillDigest, release.skillDigest]);
   assertSelfCheckGreen(reused);
+});
+
+test("setup rollback refuses changed current or previous identities before changing the engine or wiring", async (context) => {
+  const f = await installed(context);
+  const engine = await engineTree(f.base, NEWER);
+  await cli(["engine-update", "--from", engine.tree, "--sha256", engine.sha256, "--version", NEWER, "--at", at()]);
+  const pointer = join(f.deviceHome, "engine", "current");
+  const initial = await current(f);
+  const planned = await plan(f, "update", { rollback: true });
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.engineSwitch, { source: null, from: NEWER, to: FRAMEWORK_VERSION, installTreeDigest: null });
+
+  const snapshot = async () => Promise.all([f.home, f.deviceHome, f.project].map((root) => treeFiles(root)));
+  const changes = [
+    { name: "current version", pointer: { ...initial, version: FRAMEWORK_VERSION } },
+    { name: "previous version", pointer: { ...initial, previous: NEWER } },
+    { name: "missing previous version", pointer: { ...initial, previous: null } },
+    { name: "missing pointer", pointer: null },
+  ];
+  for (const changed of changes) {
+    if (changed.pointer === null) await rm(pointer);
+    else await writeFile(pointer, `${JSON.stringify(changed.pointer)}\n`);
+    const before = await snapshot();
+    await assert.rejects(applySetup(planned), (error) => {
+      assert.equal(error.reasonCode, "ENGINE_CURRENT_CHANGED", changed.name);
+      assert.deepEqual(error.details, {
+        file: pointer,
+        expectedVersion: NEWER,
+        actualVersion: changed.pointer?.version ?? "none",
+        expectedPrevious: FRAMEWORK_VERSION,
+        actualPrevious: changed.pointer?.previous ?? "none",
+        remedy: "make a new rollback plan",
+      });
+      return true;
+    });
+    assert.deepEqual(await snapshot(), before, `${changed.name}: a stale rollback writes no engine, home or project bytes`);
+  }
+
+  // The bound identities still admit the confirmed switch. The timestamp is not a version identity.
+  await writeFile(pointer, `${JSON.stringify({ ...initial, switchedAt: at() })}\n`);
+  const rolled = await applySetup(planned);
+  assert.equal(rolled.engineSwitch.from, NEWER);
+  assert.equal(rolled.engineSwitch.to, FRAMEWORK_VERSION);
+  assert.equal((await current(f)).version, FRAMEWORK_VERSION);
+  assert.equal((await current(f)).previous, NEWER);
+  assertSelfCheckGreen(rolled);
+
+  // The low-level command still selects the current previous version when no plan is supplied.
+  const direct = await cli(["engine-rollback", "--at", at()]);
+  assert.equal(direct.current.version, NEWER);
+  assert.equal(direct.current.previous, FRAMEWORK_VERSION);
 });
 
 test("480-R4: repair puts back what is missing, and a second repair changes nothing", async (context) => {
@@ -304,7 +355,7 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
   assert.deepEqual(refused.blockers.map((blocker) => blocker.reasonCode), ["LIBRARY_NOT_REGISTERED"]);
 });
 
-test("478-AC5: repair removes this device's old navigation section when the answer changes to declined", async (context) => {
+test("shared navigation survives a declined device preference and repair remains idempotent", async (context) => {
   const f = await installed(context);
   const agents = join(f.project, "AGENTS.md");
   assert.match(await readFile(agents, "utf8"), /id=navigation/u);
@@ -312,18 +363,32 @@ test("478-AC5: repair removes this device's old navigation section when the answ
   const planned = await plan(f, "repair", { answers: { navigation: false } });
   assert.deepEqual(planned.blockers, []);
   assert.equal(planned.resolved.navigation, false);
-  assert.ok(planned.writes.some((entry) => entry.step === "managed-sections" && entry.path === agents && entry.action === "update"));
-  assert.ok(planned.writes.some((entry) => entry.step === "library" && entry.path === f.library && entry.action === "update"));
+  assert.ok(!planned.writes.some((entry) => entry.step === "managed-sections" || entry.step === "library"), "device preference does not mutate shared project files or declarations");
 
   const applied = await applySetup(planned);
-  assert.doesNotMatch(await readFile(agents, "utf8"), /id=navigation/u);
+  assert.match(await readFile(agents, "utf8"), /id=navigation/u);
   assert.equal(JSON.parse(await readFile(join(f.deviceHome, MACHINE_SETTINGS_FILE_NAME), "utf8")).values["agents.navigation"], "declined");
   assert.deepEqual(applied.pendingSections, []);
   assertSelfCheckGreen(applied);
 
   const again = await plan(f, "repair", { answers: { navigation: false } });
-  assert.ok(!again.writes.some((entry) => entry.step === "managed-sections" && entry.path === agents), "the removed section does not return on rerun");
+  assert.ok(!again.writes.some((entry) => entry.step === "managed-sections" && entry.path === agents), "unchanged shared navigation does not need another write");
+  assert.match(await readFile(agents, "utf8"), /id=navigation/u);
+});
+
+test("explicit shared navigation decline removes a managed section once, independent of device preference", async (context) => {
+  const f = await installed(context);
+  const agents = join(f.project, "AGENTS.md");
+  const entry = (await readRegistry(f.deviceHome)).entries.find((item) => item.projectPath === f.project);
+  await setWorkspaceSetting(f.library, { key: "agents.sharedNavigation", value: "declined", occurredAt: at(), configurationProjectId: entry.projectId });
+  const planned = await plan(f, "repair", { answers: { navigation: true } });
+  assert.ok(planned.writes.some((item) => item.step === "managed-sections" && item.path === agents));
+  const applied = await applySetup(planned);
+  assert.deepEqual(applied.pendingSections, []);
   assert.doesNotMatch(await readFile(agents, "utf8"), /id=navigation/u);
+  assertSelfCheckGreen(applied);
+  const again = await plan(f, "repair", { answers: { navigation: true } });
+  assert.deepEqual(again.writes, [], "explicit shared declination is settled after one repair");
 });
 
 test("478-AC1: the model-write refusal stays active, while a controlled Atelier setup write succeeds", async (context) => {

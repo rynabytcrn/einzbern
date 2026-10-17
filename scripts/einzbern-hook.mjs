@@ -7,8 +7,8 @@
 // The hook holds no rule of its own (D5): which event is answered and what the answer carries is
 // decided here, by the engine version that is current. In the development tree it reads the
 // build (dist/build); a release carries it as one file (TCRN-CROSS-STORY-481).
-// TCRN-CROSS-STORY-478 R4: session-start and subagent-start, the pointer hooks of a device that
-// declined the navigation section, are answered with the navigation lines alone; they read nothing.
+// BL-34: SubagentStart recalls from the native agent_type and includes navigation before work.
+// SessionStart remains a navigation-only fallback. BL-35 adds the narrowly bounded Read guard.
 // TCRN-CROSS-SUB-483 (TCRN-CROSS-STORY-529, MIN-257 D6): every prompt recalled here also leaves
 // one line in log/hook.ndjson in the device directory, naming why it got what it got, so a prompt
 // that was answered can be told from one that got nothing and from a hook that never ran. The line
@@ -21,8 +21,8 @@
 // schemaVersion, at, event, cwd and reasonCode reads these lines as before. The launcher's own
 // lines for prompts the registry does not cover are unchanged and carry no host.
 
-import { appendFileSync, mkdirSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { appendFileSync, mkdirSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 
 import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
 
@@ -65,7 +65,7 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   // file. Keep this guard for direct callers too: a hook answers nothing, and the CLI is where the
   // floor is reported (ENGINE_NODE_TOO_OLD).
   if (!meetsNodeFloor(process.versions.node)) return null;
-  const [{ hookEventName, hookHost, navigationPointerAnswer, promptRecallOutcome }, { deviceHome }] = await Promise.all([
+  const [{ hookEventName, hookHost, navigationPointerAnswer, promptRecallOutcome, hookProtocolOutput }, { deviceHome }] = await Promise.all([
     import("../dist/build/packages/core/src/hook-recall.js"),
     import("../dist/build/packages/core/src/device-home.js"),
   ]);
@@ -73,7 +73,16 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   const name = hookEventName(event);
   // Read once, for the recall and for its log line alike.
   const host = hookHost(process.env);
+  // DSH retains its existing navigation contract; its next feature batch is separate.
+  if (name === "SubagentStart" && host === "dsh") return `${navigationPointerAnswer(host, name).output}\n`;
   switch (name) {
+    case "PreToolUse": {
+      const directory = absolute(cwd) ?? absolute(body.cwd) ?? process.cwd();
+      const answer = readGuardAnswer(body, directory, host);
+      if (host !== "dsh") noteRecall(deviceHome(process.env), event, directory, answer === null ? "HOOK_READ_GUARD_OBSERVED" : "HOOK_READ_GUARD_DENIED", host);
+      return answer;
+    }
+    case "SubagentStart":
     case "UserPromptSubmit": {
       if (typeof libraryPath !== "string") return null;
       const directory = absolute(cwd) ?? absolute(body.cwd) ?? process.cwd();
@@ -83,7 +92,10 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
         // A payload without a prompt string is an empty prompt (HOOK_RECALL_PROMPT_EMPTY).
         outcome = await promptRecallOutcome({
           libraryPath,
-          prompt: typeof body.prompt === "string" ? body.prompt : "",
+          // Native SubagentStart has agent_type, not a task prompt. Never read
+          // arbitrary transcript paths or claim task-specific injection from a made-up field.
+          prompt: name === "SubagentStart" ? (typeof body.agent_type === "string" ? body.agent_type : "") : (typeof body.prompt === "string" ? body.prompt : ""),
+          event: name,
           host,
           cwd: directory,
         });
@@ -92,12 +104,37 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
         throw error;
       }
       noteRecall(device, event, directory, outcome.reasonCode, host);
+      if (name === "SubagentStart") {
+        const pointer = navigationPointerAnswer(host, name);
+        return `${hookProtocolOutput(host, name, [...pointer.lines, ...(outcome.answer?.lines ?? [])])}\n`;
+      }
       return outcome.answer === null ? null : `${outcome.answer.output}\n`;
     }
     case "SessionStart":
-    case "SubagentStart":
       return `${navigationPointerAnswer(host, name).output}\n`;
     default:
       return null;
+  }
+}
+
+/** BL-35: only a dedicated Read is enforceable. Shell commands are never interpreted. */
+export function readGuardAnswer(payload, cwd, host) {
+  if (host === "dsh") return null;
+  try {
+    if (payload?.tool_name !== "Read") return null;
+    const input = payload.tool_input;
+    if (input === null || typeof input !== "object" || Array.isArray(input)) return null;
+    if (typeof input.file_path !== "string" || input.file_path.length === 0) return null;
+    const file = statSync(resolve(cwd, input.file_path));
+    if (!file.isFile() || file.size <= 32 * 1024) return null;
+    if (Number.isSafeInteger(input.limit) && input.limit > 0 && input.limit <= 200) return null;
+    return `${JSON.stringify({ hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: "This file exceeds 32 KB. Read a bounded section with a positive limit of at most 200 lines.",
+    } })}\n`;
+  } catch {
+    // An unreadable path, invalid input or filesystem exception must never block a tool.
+    return null;
   }
 }

@@ -223,3 +223,8 @@ test("488-AC2 (MIN-238 D4): the install line and the fetch script name both repo
   assert.equal(helperOwner, engineOwner, "one account holds both repositories");
   assert.equal(engineOwner, LEGACY_REPOSITORY_NAMES.owner, "renamed under the existing account, not the placeholder");
 });
+
+test("552: generated dispatch workflow consumes admission rather than treating a catalog as permission", () => {
+  const row = tableRows(render()).find(([, verbs]) => verbs.includes("`work-project-context`"));
+  for (const phrase of ["--execution-request", "`dispatchAdmitted` is true", "Pass its selected runner/model/effort exactly", "never substitute", "not a global scheduler", "stdout, stderr and exit code"]) assert.ok(row[2].includes(phrase), phrase);
+});

@@ -23,6 +23,7 @@ import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
 import { DependencyGraphError, validateFrozenDependencyGraph } from "./lib/dependency-graph.mjs";
+import { validateVendoredRuntimeInventory, VENDORED_RUNTIME_NOTICES, VENDORED_RUNTIME_SOURCE } from "./lib/vendored-runtime.mjs";
 import { HeavyRunsError, acquireHeavySlot } from "./lib/heavy-runs.mjs";
 import {
   aggregatePrivacySurface,
@@ -819,9 +820,13 @@ async function sbom() {
   const policy = await readJson(resolve(repositoryRoot, "scripts/policy/dependency-policy.json"));
   const lockContent = await readSourceFile(resolve(repositoryRoot, "pnpm-lock.yaml"));
   const packageContent = await readSourceFile(resolve(repositoryRoot, "package.json"));
-  const basis = createHash("sha256").update(packageContent).update(lockContent).digest("hex");
+  const vendoredContent = await readSourceFile(resolve(repositoryRoot, "scripts/policy/vendored-runtime.json"));
+  const snapshotContent = await readSourceFile(resolve(repositoryRoot, VENDORED_RUNTIME_SOURCE));
+  const noticeContent = await readSourceFile(resolve(repositoryRoot, VENDORED_RUNTIME_NOTICES));
+  const vendored = validateVendoredRuntimeInventory(JSON.parse(vendoredContent.toString("utf8")), snapshotContent, noticeContent);
+  const basis = createHash("sha256").update(packageContent).update(lockContent).update(vendoredContent).update(snapshotContent).update(noticeContent).digest("hex");
   const graph = validateFrozenDependencyGraph({ packageJson, dependencyPolicy: policy, lockContent: lockContent.toString("utf8") });
-  const components = graph.records.map((record) => {
+  const components = [...graph.records.map((record) => {
     return {
       type: "library",
       name: record.name,
@@ -830,7 +835,7 @@ async function sbom() {
       licenses: [{ license: { id: record.license } }],
       purl: `pkg:npm/${encodeURIComponent(record.name)}@${record.version}`,
     };
-  });
+  }), ...vendored];
   const document = {
     bomFormat: "CycloneDX",
     specVersion: "1.6",
@@ -850,6 +855,9 @@ async function sbom() {
     directComponents: graph.directIdentities.length,
     transitiveComponents: graph.transitiveIdentities.length,
     dependencyGraphClosure: "complete",
+    dependencyGraphScope: "lockfile",
+    vendoredComponents: vendored.length,
+    vendoredInventory: "digest-bound-snapshot-and-notices",
     basis,
   });
 }

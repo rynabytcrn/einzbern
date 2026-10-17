@@ -444,14 +444,18 @@ test("R48-01 (R47-REG-1): an address or local path in a member, a header path or
 
   const unknownMember = `${BRAND.engine.id}-${reviewedVersion}/atelier/other.mjs`;
   const unknownMemberArchive = p8FormalPackagePrivacyEntries(formalPackage([{ path: unknownMember, bytes: ownerBytes }]), reviewedArchive);
-  assert.deepEqual(unknownMemberArchive.entries.find((entry) => entry.label === `${reviewedArchive}/${unknownMember}`)?.sourcePaths, []);
+  const unknownReleaseMembers = unknownMemberArchive.entries.filter((entry) => entry.label === `${reviewedArchive}/${unknownMember}` && entry.releaseArchiveMember === true);
+  assert.equal(unknownReleaseMembers.length, 1);
+  assert.deepEqual(unknownReleaseMembers[0].sourcePaths, []);
   assert.ok(unknownMemberArchive.entries.some((entry) => ownerFinding(entry)), "an unknown member in the reviewed version remains a finding");
 
   const draftVersion = "2.2.3";
   const draftArchive = `dist/release/${BRAND.engine.id}-${draftVersion}.tar.gz`;
   const draftMember = `${BRAND.engine.id}-${draftVersion}/atelier/portal.mjs`;
   const draftPackage = p8FormalPackagePrivacyEntries(formalPackage([{ path: draftMember, bytes: ownerBytes }]), draftArchive);
-  assert.deepEqual(draftPackage.entries.find((entry) => entry.label === `${draftArchive}/${draftMember}`)?.sourcePaths, []);
+  const draftReleaseMembers = draftPackage.entries.filter((entry) => entry.label === `${draftArchive}/${draftMember}` && entry.releaseArchiveMember === true);
+  assert.equal(draftReleaseMembers.length, 1);
+  assert.deepEqual(draftReleaseMembers[0].sourcePaths, []);
   assert.ok(draftPackage.entries.some((entry) => ownerFinding(entry)), "the draft 2.2.3 candidate has no package classification yet");
 
   // An entry this walk cannot label, and a package another reader would unpack differently, are refused.

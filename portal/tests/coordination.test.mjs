@@ -101,7 +101,7 @@ test("540 GWT5: a coordination library selected in Atelier shows the container's
   assert.deepEqual(events.filter((event) => event.surface === "atelier").map((event) => [event.record.collection, event.record.key]), [["rule", "autonomy"], ["managed-section", "AGENTS.md#rule:autonomy"]], "the rule and its managed section are recorded in the library, for Atelier");
 
   from = await eventCount(fixture);
-  const variable = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "hello", description: "A sample" }));
+  const variable = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "hello", description: "A sample", exports: ["agents"] }));
   assert.equal(variable.response.status, 200, JSON.stringify(variable.body));
   // The render is the engine's agents-render receipt for the container, not a pending binding.
   assert.deepEqual([variable.body.ok, variable.body.render.reasonCode, variable.body.render.projectPath], [true, "AGENTS_RENDERED", fixture.container], JSON.stringify(variable.body.render));
@@ -110,7 +110,7 @@ test("540 GWT5: a coordination library selected in Atelier shows the container's
   events = await eventsSince(fixture, from);
   assert.deepEqual(events.filter((event) => event.record?.collection === "variable").map((event) => [event.record.key, event.surface]), [["sample", "atelier"]]);
 
-  const changed = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "world", description: "A sample" }));
+  const changed = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "world", description: "A sample", exports: ["agents"] }));
   assert.equal(changed.response.status, 200, JSON.stringify(changed.body));
   text = await readFile(fixture.agents, "utf8");
   assert.match(section(text, "variables-custom") ?? "", /\| sample \| string \| world \| A sample \|/u, "a changed variable renders the section again");
@@ -147,7 +147,7 @@ test("540 GWT5: a coordination library registered only as its own path has no co
   assert.equal(enabled.body.outputBindingStatus, "unconfigured", "the engine says the rule was recorded alone");
   await assert.rejects(readFile(join(fixture.library, "AGENTS.md")), { code: "ENOENT" });
   assert.equal(await readFile(fixture.agents, "utf8"), OWNER_TEXT, "a directory the library is not registered for is left alone");
-  const variable = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "hello", description: "A sample" }));
+  const variable = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "hello", description: "A sample", exports: ["agents"] }));
   assert.equal(variable.response.status, 200, JSON.stringify(variable.body));
   assert.deepEqual([variable.body.render.reasonCode, variable.body.render.pending], ["PORTAL_PROJECT_BINDING_UNCONFIGURED", true], "the render waits for a registered directory");
   await assert.rejects(readFile(join(fixture.library, "AGENTS.md")), { code: "ENOENT" });

@@ -12,6 +12,7 @@ import { chmod, cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile }
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import test, { after } from "node:test";
 
 import {
@@ -33,6 +34,7 @@ import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
 import { setGate } from "../dist/build/packages/core/src/gates-config.js";
 import { gateTreeState } from "../dist/build/packages/core/src/gates-run.js";
 import { stripTypesWithScopedExperimentalWarning } from "../scripts/lib/scoped-strip-types.mjs";
+import { readUstar } from "../scripts/lib/tar.mjs";
 import { BRAND, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
 import { privateHeavyEnvironment } from "./helpers/heavy-slots.mjs";
 
@@ -47,7 +49,7 @@ const NEXT_VERSION = `${OLD_PARTS.major}.${OLD_PARTS.minor}.${BigInt(OLD_PARTS.p
 assert.ok(OLD_PARTS.prerelease.length === 0 && compareSemver(OLD_VERSION, NEXT_VERSION) < 0, "the prepared version is a stable version after the built one");
 const FIXTURE_SCHEMA_VERSION = "tcrn.fixture-contract.v1";
 const HELPER_READMES = ["README.md", "README.en.md", "README.ja.md", "README.ko.md", "README.fr.md"];
-const RELEASE_NOTES = "Einzbern renamed TCRN Workflow and Mana Orchestrate replaced tcrn-workflow-helper. The previous commands are retired.";
+const RELEASE_NOTES = "Improve configuration consistency and installation diagnostics.";
 const RELEASE_CLI = fileURLToPath(new URL("../scripts/release.mjs", import.meta.url));
 const REPOSITORY_ROOT = dirname(dirname(RELEASE_CLI));
 after(() => rm(base, { recursive: true, force: true }));
@@ -91,7 +93,7 @@ async function createRepos(name) {
   for (const directory of ["scripts", "portal", "skill"]) {
     await cp(join(REPOSITORY_ROOT, directory), join(engineRoot, directory), { recursive: true });
   }
-  for (const path of ["LICENSE", "NOTICE", "packages/core/src/names.ts"]) {
+  for (const path of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "packages/core/src/names.ts"]) {
     await writeText(engineRoot, path, await readFile(join(REPOSITORY_ROOT, path), "utf8"));
   }
   await writeText(engineRoot, "packages/core/src/framework-version.ts", await readFile(join(REPOSITORY_ROOT, "packages/core/src/framework-version.ts"), "utf8"));
@@ -254,9 +256,12 @@ test("488-R1/R2/R4, MIN-235 D13: prepare aligns both repositories, keeps schema 
   assert.equal(JSON.parse(await readFile(schemaPath, "utf8")).schemaVersion, FIXTURE_SCHEMA_VERSION);
   const changelog = await readFile(join(repos.engineRoot, "CHANGELOG.md"), "utf8");
   assert.match(changelog, new RegExp(`^## ${NEXT_VERSION}$`, "mu"));
-  assert.match(changelog, /TCRN Workflow and tcrn-workflow-helper release names are retired/u);
-  assert.match(changelog, /retired surfaces/iu);
+  assert.ok(changelog.includes(RELEASE_NOTES), "the actual changes survive release preparation");
+  assert.equal(changelog.includes("release names are retired"), false, "preparation invents no recurring retirement");
   const archive = await readFile(result.assets.archive);
+  const notices = readUstar(gunzipSync(archive)).find((entry) => entry.path === `einzbern-${NEXT_VERSION}/THIRD_PARTY_NOTICES.txt`);
+  assert.ok(notices, "the prepared archive retains vendored runtime license notices");
+  assert.deepEqual(notices.bytes, await readFile(join(REPOSITORY_ROOT, "THIRD_PARTY_NOTICES.txt")), "release preparation preserves the actual license notice bytes");
   const checksum = await readFile(result.assets.checksum, "utf8");
   assert.equal(checksum, `${result.assets.sha256}  einzbern-${NEXT_VERSION}.tar.gz\n`);
   const p8 = await import(pathToFileURL(join(repos.engineRoot, "scripts/lib/p8-workflow-rc.mjs")).href);
@@ -384,7 +389,11 @@ test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each 
 
   const plan = await buildPublishPlan({ ...repos, version: NEXT_VERSION, wikiDirectory, env: environment });
   assert.equal(plan.reasonCode, "RELEASE_PUBLISH_PLAN_READY");
-  assert.deepEqual(plan.commands.tag.map((args) => args.at(-1)), [`v${NEXT_VERSION}`, `v${NEXT_VERSION}`]);
+  for (const [index, command] of plan.commands.tag.entries()) {
+    const info = plan.repositories[index];
+    assert.deepEqual(command, ["git", "-C", info.root, "tag", "-a", `v${NEXT_VERSION}`, info.commit, "-m", `Release v${NEXT_VERSION}`]);
+    assert.equal(info.commit, git(info.root, ["rev-parse", "HEAD"]));
+  }
   assert.ok(plan.commands.push.every((args) => args.includes("push")));
   assert.ok(plan.commands.release.includes(join(repos.engineRoot, `dist/release/einzbern-${NEXT_VERSION}.tar.gz`)));
   assert.ok(plan.commands.release.includes(join(repos.engineRoot, `dist/release/einzbern-${NEXT_VERSION}.tar.gz.sha256`)));
@@ -407,6 +416,10 @@ test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each 
   assert.equal(tag.reasonCode, "RELEASE_TAGS_CREATED");
   assert.equal(git(repos.engineRoot, ["tag", "--list", `v${NEXT_VERSION}`]), `v${NEXT_VERSION}`);
   assert.equal(git(repos.helperRoot, ["tag", "--list", `v${NEXT_VERSION}`]), `v${NEXT_VERSION}`);
+  for (const info of plan.repositories) {
+    assert.equal(git(info.root, ["cat-file", "-t", `v${NEXT_VERSION}`]), "tag", "release tags are annotated");
+    assert.equal(git(info.root, ["rev-parse", `v${NEXT_VERSION}^{commit}`]), info.commit, "tag pins the recorded release commit");
+  }
   await assert.rejects(
     executeReleaseAction({ action: "tag", ...repos, version: NEXT_VERSION, env: environment }),
     (error) => error.reasonCode === "RELEASE_TAG_EXISTS",

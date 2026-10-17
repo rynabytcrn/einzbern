@@ -128,8 +128,8 @@ test("STORY-474 (CLI): recall no longer takes --partition", async (context) => {
   assert.equal(Object.hasOwn(answer, "partition"), false);
 });
 
-test("STORY-474 R4: the engine has no session-level injection entry; recall is asked per prompt", () => {
-  assert.deepEqual(Object.keys(HOST_HOOK_EVENTS), ["UserPromptSubmit"], "no SessionStart or PostToolUse hook is rendered");
+test("STORY-474 R4: the engine has no session-level injection entry; recall is asked per prompt or subagent start", () => {
+  assert.deepEqual(Object.keys(HOST_HOOK_EVENTS), ["UserPromptSubmit", "SubagentStart", "PreToolUse"], "no SessionStart or PostToolUse hook is rendered");
   assert.deepEqual(COMMAND_CATALOG.filter((entry) => /inject|session/u.test(entry.name)).map((entry) => entry.name), [],
     "no verb injects context into a session or keeps a session byte ledger");
 });

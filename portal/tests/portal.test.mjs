@@ -3,6 +3,7 @@
 
 // Every CLI and portal child inherits the test process's device directory, never the real one.
 import "../../tests/helpers/device-home.mjs";
+import { appendHistoricalModelSetting } from "../../tests/helpers/historical-model-settings.mjs";
 import { forgeOwnStream } from "../../tests/helpers/library-forge.mjs";
 // Another process on the device unregistering a library or bringing up the coordination chain is
 // stood in for through the helper, outside the portal tree (TCRN-CROSS-INIT-053 R45 PP-1).
@@ -555,12 +556,8 @@ test("portal writes carry the actor under the engine's write lock, then return t
     key: "models.tiers",
     value: JSON.stringify([{ order: 10, category: "main", runner: "claude-code", model: "opus-5", effort: "xhigh2", note: "" }]),
   }));
-  assert.equal(tiers.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(tiers.body.render.reasonCode, "AGENTS_RENDERED");
-  assert.equal(tiers.body.render.withheld.length, 0);
-  assert.deepEqual(tiers.body.findings, []);
-  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /\| 10 \| main \| claude-code \| opus-5 \| xhigh2 \| {2}\|/u);
-  // TCRN-CROSS-STORY-482 R4: a tiers write renders no host projection.
+  assert.equal(tiers.response.status, 409);
+  assert.equal(tiers.body.reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
   assert.equal(Object.hasOwn(tiers.body, "hostRender"), false);
   // The dispatch classes and modes retired with TCRN-CROSS-STORY-484 R3: a write is refused and appends nothing.
   const retiredClasses = await request(url, "/api/settings", writeOptions(boot.token, "POST", {
@@ -570,9 +567,9 @@ test("portal writes carry the actor under the engine's write lock, then return t
   assert.equal(retiredClasses.response.status, 409);
   assert.equal(retiredClasses.body.reasonCode, "SETTINGS_KEY_UNREGISTERED");
   const parallelOff = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "quota.fiveHourParallelOffPercent", value: "80" }));
-  assert.equal(parallelOff.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
+  assert.equal(parallelOff.body.reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
   const wait = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "quota.fiveHourWaitPercent", value: "95" }));
-  assert.equal(wait.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
+  assert.equal(wait.body.reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
   // TCRN-CROSS-STORY-467 R3: the execution write route carried the dispatch-* writes and the
   // retired plan and persona actions. It is gone, so those posts reach no writer and leave
   // nothing in the session audit.
@@ -586,11 +583,11 @@ test("portal writes carry the actor under the engine's write lock, then return t
   assert.equal(retiredPersona.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
 
   // TCRN-CROSS-STORY-482 R4: the session audit left with its page. Each settings write is answered
-  // by the engine's receipt; models.tiers additionally refreshes its managed system variables.
-  for (const receipt of [setting, tiers, parallelOff, wait, active]) assert.ok(receipt.body.receiptDigest && receipt.body.headEventHash && receipt.body.version);
-  const versions = [setting.body.version, tiers.body.version, parallelOff.body.version, wait.body.version, active.body.version];
+  // by the engine's receipt; compatibility-only policy writes append no version.
+  for (const receipt of [setting, active]) assert.ok(receipt.body.receiptDigest && receipt.body.headEventHash && receipt.body.version);
+  const versions = [setting.body.version, active.body.version];
   assert.ok(versions.every((version, index) => Number.isInteger(version) && (index === 0 || version > versions[index - 1])));
-  assert.ok(tiers.body.render.version > tiers.body.version && tiers.body.render.version < parallelOff.body.version, "the managed system-variable render is governed between the tier setting and the next write");
+
   const audit = await request(url, RETIRED_ROUTES.sessionAudit, readOptions(boot.token));
   assert.equal(audit.response.status, 404);
   assert.equal(audit.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
@@ -620,96 +617,65 @@ test("SUB-409 (STORY-508 R5): the settings routes carry every row's shape, group
   }
 });
 
-// TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6; contracts C-R14-2, C-R14-6): a collection key is written
-// whole through POST /api/settings. A refused table comes back with the engine's reason code on each row
-// it names, and nothing is recorded; a landed write of a system variables key renders AGENTS.md again
-// and names the stored row of every record the render withheld.
-test("SUB-409 (STORY-508 R6): a collection is written whole, and the engine's reason codes come back on the rows they name", async (t) => {
+// STORY-508 collection negatives migrate to INIT-056's one governed host-policy writer.
+// Historical project declarations remain readable and cannot configure a host or accept set/reset.
+test("SUB-409 (STORY-508 R6): historical collections remain readable and governed host writes preserve collection negatives", async (t) => {
   const fixture = await scratch("tcrn-portal-collections-", "TCRN-PORTAL-COLLECTIONS");
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
-  const write = (key, value) => request(url, "/api/settings", writeOptions(boot.token, "POST", { key, value: JSON.stringify(value) }));
   const version = async () => (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version;
-  const agents = () => readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8");
   const category = (order, id, name = id, description = "") => ({ order, id, name, description });
   const tier = (order, categoryId, runner, model, effort, note = "") => ({ order, category: categoryId, runner, model, effort, note });
   const categories = [category(10, "flagship"), category(20, "main"), category(25, "review", "Review", "A second look"), category(30, "economy")];
   const tiers = [tier(10, "flagship", "codex", "gpt-6", "high"), tier(20, "main", "claude-code", "opus-5", "max"), tier(35, "review", "claude-code", "opus-review", "high", "second look"), tier(40, "economy", "claude-code", "haiku-5", "low")];
 
-  // models.category is a system variables key too, so its write renders the managed sections.
-  const wroteCategories = await write("models.category", categories);
-  assert.equal(wroteCategories.response.status, 200);
-  assert.equal(wroteCategories.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(wroteCategories.body.render.reasonCode, "AGENTS_RENDERED");
-  assert.deepEqual(JSON.parse(wroteCategories.body.readback.currentValue), categories);
-  assert.deepEqual(wroteCategories.body.findings, []);
-  const wroteTiers = await write("models.tiers", tiers);
-  assert.equal(wroteTiers.response.status, 200);
-  assert.deepEqual(wroteTiers.body.findings, []);
-  assert.match(await agents(), /\| 35 \| review \| claude-code \| opus-review \| high \| second look \|/u);
-
-  // Refusals record nothing and name their rows: both rows of a repeated order,
+  // Historical records remain readable but cannot become a second active policy authority.
+  const occurredAt = "2026-10-17T04:00:00Z";
+  for (const [key, value] of [["models.category", categories], ["models.tiers", tiers]]) {
+    await appendHistoricalModelSetting(["settings-set", "--workspace", fixture.workspace, "--key", key, "--value", JSON.stringify(value), "--at", occurredAt]);
+  }
+  const historical = await request(url, "/api/settings", readOptions(boot.token));
+  assert.deepEqual(JSON.parse(historical.body.settings.find((row) => row.key === "models.tiers").currentValue), tiers);
   const before = await version();
-  const repeated = await write("models.tiers", [tiers[0], { ...tiers[1], order: 10 }, tiers[2]]);
-  assert.equal(repeated.response.status, 409);
-  assert.equal(repeated.body.reasonCode, "MODELS_ORDER_DUPLICATE");
-  assert.deepEqual(repeated.body.findings, [{ index: 0, field: "order", reasonCode: "MODELS_ORDER_DUPLICATE" }, { index: 1, field: "order", reasonCode: "MODELS_ORDER_DUPLICATE" }]);
-  assert.equal(repeated.body.readback, null);
-  // the row naming a category the category table lacks,
-  const unknown = await write("models.tiers", [tiers[0], tiers[1], { ...tiers[2], category: "ghost" }]);
-  assert.equal(unknown.response.status, 409);
-  assert.equal(unknown.body.reasonCode, "MODELS_CATEGORY_UNKNOWN");
-  assert.deepEqual(unknown.body.findings, [{ index: 2, field: "category", reasonCode: "MODELS_CATEGORY_UNKNOWN" }]);
-  // both rows of a repeated category id,
-  const twice = await write("models.category", [categories[0], categories[1], { ...categories[2], id: "main" }, categories[3]]);
-  assert.equal(twice.body.reasonCode, "MODELS_CATEGORY_DUPLICATE");
-  assert.deepEqual(twice.body.findings, [{ index: 1, field: "id", reasonCode: "MODELS_CATEGORY_DUPLICATE" }, { index: 2, field: "id", reasonCode: "MODELS_CATEGORY_DUPLICATE" }]);
-  // and a dropped category that tiers still name, with the records that name it.
-  const inUse = await write("models.category", [categories[0], categories[1], categories[3]]);
-  assert.equal(inUse.body.reasonCode, "MODELS_CATEGORY_IN_USE");
-  assert.deepEqual(inUse.body.findings, [{ index: null, field: "id", reasonCode: "MODELS_CATEGORY_IN_USE", category: "review", references: ["models.tiers.35"] }]);
-  // A field refused for its shape names no row here; the engine's own words say which.
-  const shape = await write("models.tiers", [{ ...tiers[0], runner: "Not A Name" }]);
-  assert.equal(shape.body.reasonCode, "SETTINGS_VALUE_INVALID");
-  assert.deepEqual(shape.body.findings, []);
-  assert.match(shape.body.error, /models\.tiers\[0\]\.runner/u);
-  assert.equal(await version(), before, "no refused table was recorded");
+  for (const key of ["models.category", "models.tiers", "models.escalation.ceiling", "quota.fiveHourWaitPercent"]) {
+    for (const body of [{ key, value: "[]" }, { key, reset: true }]) {
+      const refused = await request(url, "/api/settings", writeOptions(boot.token, "POST", body));
+      assert.equal(refused.response.status, 409);
+      assert.equal(refused.body.reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
+    }
+  }
+  assert.equal(await version(), before, "legacy set and reset append nothing");
+  const empty = await request(url, "/api/model-policy?host=codex", readOptions(boot.token));
+  assert.equal(empty.body.selectedStatus, "unconfigured", "historical tiers never configure Codex");
 
-  // A record shaped like a credential is stored and withheld from AGENTS.md, named by its stored row.
-  const secret = await write("models.tiers", [tiers[3], tiers[0], { ...tiers[1], note: "sk-proj-0123456789abcdef" }, tiers[2]]);
-  assert.equal(secret.response.status, 200);
-  assert.deepEqual(secret.body.render.withheld, [{ name: "models.tiers.20", reason: "secret-shaped" }]);
-  assert.deepEqual(JSON.parse(secret.body.readback.currentValue).map((record) => record.order), [10, 20, 35, 40]);
-  assert.deepEqual(secret.body.findings, [{ index: 1, field: null, reasonCode: "secret-shaped" }], "the index is the row's place in the stored table");
-  const rendered = await agents();
-  assert.match(rendered, /\| 20 \| main \| claude-code \| \(withheld\) \| \(withheld\) \| \(withheld\) \|/u);
-  assert.doesNotMatch(rendered, /sk-proj-0123456789abcdef/u);
-
-  // Removing a collection key puts its default table back and renders again.
-  const reset = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "models.tiers", reset: true }));
-  assert.equal(reset.response.status, 200);
-  assert.equal(reset.body.render.reasonCode, "AGENTS_RENDERED");
-  assert.deepEqual(JSON.parse(reset.body.readback.currentValue).map((record) => record.category), ["flagship", "flagship", "main", "main", "economy", "economy"]);
-  assert.deepEqual(reset.body.findings, []);
-  assert.doesNotMatch(await agents(), /\(withheld\)/u);
-
-  // TCRN-CROSS-SUB-406 (STORY-508 R3): the escalation ceiling (main, unset) names a category too, so a
-  // dropped main comes with the ceiling beside the tier records that still name it,
-  const ceiling = await write("models.category", [categories[0], categories[2], categories[3]]);
-  assert.equal(ceiling.body.reasonCode, "MODELS_CATEGORY_IN_USE");
-  assert.deepEqual(ceiling.body.findings, [{ index: null, field: "id", reasonCode: "MODELS_CATEGORY_IN_USE", category: "main", references: ["models.tiers.30", "models.tiers.40", "models.escalation.ceiling"] }]);
-  // and restoring the default table, which keeps only the categories the tiers name, may not drop the
-  // ceiling's own category either: the refusal names it against the table the restore would put back.
-  assert.equal((await write("models.category", [...categories, category(50, "spare")])).body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal((await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "models.escalation.ceiling", value: "spare" }))).body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  const restore = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "models.category", reset: true }));
-  assert.equal(restore.response.status, 409);
-  assert.equal(restore.body.reasonCode, "MODELS_CATEGORY_IN_USE");
-  assert.deepEqual(restore.body.findings, [{ index: null, field: "id", reasonCode: "MODELS_CATEGORY_IN_USE", category: "spare", references: ["models.escalation.ceiling"] }]);
-  const untokened =await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "models.tiers", value: "[]" }) });
+  // Whole-table validation now belongs to the governed host policy, not project settings.
+  const meeting = await cli(["minutes-record", "--workspace", fixture.workspace, "--at", "2026-10-17T04:01:00Z", "--project-id", fixture.projectId, "--external-key", "COLLECTION-POLICY-OWNER", "--title", "Host policy", "--summary", "Owner authorizes host policy.", "--decisions", "Set models.engine-policy for Codex.", "--decided-by", "owner:governance", "--actor", TEST_ACTOR], fixture.deviceEnv);
+  const policy = { categories, tiers: tiers.map((row) => ({ ...row, runner: "codex" })), escalation: { enabled: true, threshold: 2, ceiling: "main" } };
+  const writePolicy = (value) => request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy: value, decidedIn: `${meeting.id}#D1`, libraryId: boot.library.libraryId, libraryPath: boot.library.libraryPath }));
+  const saved = await writePolicy(policy);
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  assert.deepEqual(saved.body.readback.selectedPolicy.categories, categories);
+  for (const [invalid, code, path] of [
+    [{ ...policy, tiers: [policy.tiers[0], { ...policy.tiers[1], order: 10 }] }, "MODELS_ORDER_DUPLICATE", "order"],
+    [{ ...policy, categories: [categories[0], categories[1], { ...categories[2], id: "main" }] }, "MODELS_CATEGORY_DUPLICATE", "id"],
+    [{ ...policy, tiers: [{ ...policy.tiers[0], category: "ghost" }] }, "ENGINE_MODEL_POLICY_INVALID", "category"],
+    [{ ...policy, categories: categories.filter((row) => row.id !== "review") }, "ENGINE_MODEL_POLICY_INVALID", "category"],
+    [{ ...policy, categories: categories.filter((row) => row.id !== "main"), tiers: [policy.tiers[0]] }, "ENGINE_MODEL_POLICY_INVALID", "ceiling"],
+    [{ ...policy, tiers: [{ ...policy.tiers[0], runner: "Not A Name" }] }, "MODELS_TIERS_INVALID", "runner"],
+    [{ ...policy, tiers: [{ ...policy.tiers[0], runner: "claude-code" }] }, "ENGINE_MODEL_POLICY_INVALID", "runner"],
+  ]) {
+    const refused = await writePolicy(invalid);
+    assert.equal(refused.response.status, 409);
+    assert.equal(refused.body.reasonCode, code, JSON.stringify(refused.body));
+    assert.match(JSON.stringify(refused.body), new RegExp(path));
+    const unchanged = await request(url, "/api/model-policy?host=codex", readOptions(boot.token));
+    assert.deepEqual(unchanged.body.selectedPolicy, saved.body.readback.selectedPolicy, "invalid whole policy cannot partially replace stored tables");
+  }
+  const untokened = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "models.tiers", value: "[]" }) });
   assert.equal(untokened.response.status, 403);
   assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
+
 });
 
 test("STORY-484 variable routes write, read back and render safe values while withholding secrets", async (t) => {
@@ -719,18 +685,18 @@ test("STORY-484 variable routes write, read back and render safe values while wi
   const { boot } = await readBoot(url);
 
   const created = await request(url, "/api/variables", writeOptions(boot.token, "POST", {
-    name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint",
+    name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint", exports: ["agents"],
   }));
   assert.equal(created.response.status, 200);
   assert.equal(created.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
   assert.equal(created.body.readback.source.projectId, fixture.projectId);
-  assert.deepEqual(withoutSource(created.body.readback), { name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint" });
+  assert.deepEqual(withoutSource(created.body.readback), { name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint", exports: ["agents"] });
   assert.deepEqual(created.body.variables, [created.body.readback]);
   assert.equal(created.body.render.reasonCode, "AGENTS_RENDERED");
   assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host.*build\.example\.com/u);
 
   const updated = await request(url, "/api/variables", writeOptions(boot.token, "POST", {
-    name: "deploy.host", type: "string", value: "stage.example.com", description: "Staging endpoint",
+    name: "deploy.host", type: "string", value: "stage.example.com", description: "Staging endpoint", exports: ["agents"],
   }));
   assert.equal(updated.response.status, 200);
   assert.equal(updated.body.readback.value, "stage.example.com");
@@ -868,7 +834,7 @@ test("SUB-410 (STORY-508 R7): the variable, rule and gate routes write an order 
   const variable = await post("/api/variables", { name: "deploy.host", type: "string", value: "build.example.com", order: "3" });
   assert.equal(variable.response.status, 200);
   assert.equal(variable.body.readback.source.projectId, fixture.projectId);
-  assert.deepEqual(withoutSource(variable.body.readback), { name: "deploy.host", type: "string", value: "build.example.com", description: "", order: 3 });
+  assert.deepEqual(withoutSource(variable.body.readback), { name: "deploy.host", type: "string", value: "build.example.com", description: "", exports: [], order: 3 });
   const unordered = await post("/api/variables", { name: "deploy.host", type: "string", value: "build.example.com", order: "" });
   assert.equal(Object.hasOwn(unordered.body.readback, "order"), false, "variable-set writes the whole record, so no order is none");
   const malformed = await post("/api/variables", { name: "deploy.host", type: "string", value: "x", order: "0" });
@@ -877,7 +843,7 @@ test("SUB-410 (STORY-508 R7): the variable, rule and gate routes write an order 
   // The variable write rendered the system variables section too; its heading models.escalation names
   // the family of the three escalation keys, so the Rules page's check does not count it as a claim.
   const reconciled = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
-  assert.ok(reconciled.body.rows.some((row) => row.key === "models.escalation" && row.kind === "registered"));
+  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /execution-policy-resolve/u, "shared output names the runtime policy resolver instead of freezing a host choice");
   assert.deepEqual(reconciled.body.findings.filter((row) => row.key.startsWith("models.")), []);
 
   const rule = await post("/api/rules/batch", { action: "enable", order: 2 });
@@ -1247,7 +1213,7 @@ test("rules routes expose state, enable a rule, judge a saved edit as user-modif
 
   // An engine write renders the managed sections: the section the user changed is left as it is
   // and goes pending.
-  const variable = await request(url, "/api/variables", writeOptions(boot.token, "POST", { name: "deploy.host", type: "string", value: "build.example.com" }));
+  const variable = await request(url, "/api/variables", writeOptions(boot.token, "POST", { name: "deploy.host", type: "string", value: "build.example.com", exports: ["agents"] }));
   assert.equal(variable.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
   assert.deepEqual(variable.body.render.pending, [{ id: "rule:batch", file: "AGENTS.md" }]);
   const pending = await request(url, "/api/rules", readOptions(boot.token));
@@ -1260,7 +1226,7 @@ test("rules routes expose state, enable a rule, judge a saved edit as user-modif
   assert.equal(kept.body.reasonCode, "MANAGED_SECTION_RESOLVED");
   assert.deepEqual(kept.body.pending, []);
   assert.equal(batchOf(kept.body).state, "user-modified");
-  const again = await request(url, "/api/variables", writeOptions(boot.token, "POST", { name: "deploy.host", type: "string", value: "stage.example.com" }));
+  const again = await request(url, "/api/variables", writeOptions(boot.token, "POST", { name: "deploy.host", type: "string", value: "stage.example.com", exports: ["agents"] }));
   assert.equal(again.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
   assert.deepEqual(again.body.render.pending, []);
   const settled = await readFile(agentsPath, "utf8");
@@ -2003,7 +1969,7 @@ test("INIT-053 R46 I06: a chain's two repositories bind by registration, and a p
 // TCRN-CROSS-INIT-053 R47 (c1-B; Owner 2026-10-09, round 7): on a coordination chain /api/settings lists its ten
 // runtime settings, each for the whole library, and a write from a selection that names the chain's project is
 // made at the library level, as the catalog's scope says; a model table stays refused by the engine.
-const R47_COORDINATION_KEYS = ["artifact.language", "engine.requiredVersion", "execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"];
+const R47_COORDINATION_KEYS = ["agents.generation", "agents.sharedNavigation", "artifact.language", "engine.requiredVersion", "execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"];
 test("INIT-053 R47 c1-B: a coordination chain's /api/settings lists its runtime settings and writes them for the whole library", async t => {
   const fixture = await scratch("portal-r47-coordination-", "R47-COORDINATION");
   const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
@@ -2025,7 +1991,8 @@ test("INIT-053 R47 c1-B: a coordination chain's /api/settings lists its runtime 
   const refused = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "models.tiers", value: tiers }));
   assert.equal(refused.response.status, 409);
   assert.equal(refused.body.ok, false);
-  assert.match(JSON.stringify(refused.body), /coordination chains expose runtime settings only/u);
+  assert.equal(refused.body.reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
+  assert.match(refused.body.error, /historical compatibility data/u);
   const after = await cli(["settings-catalog", "--workspace", fixture.workspace, "--project-id", fixture.projectId], fixture.deviceEnv);
   assert.deepEqual(after.settings.map((entry) => entry.key), R47_COORDINATION_KEYS, "models.tiers is not listed and was not written");
 });
@@ -2136,4 +2103,46 @@ test("526 GWT4: without TCRN_PORTAL_ACTOR, or with it empty, Atelier and its gen
     child.on("exit", (code) => resolveRun({ status: code, lines: stderr.trim().split("\n") }));
   });
   assert.deepEqual([launched.status, launched.lines.length, JSON.parse(launched.lines[0]).reasonCode], [2, 1, "PORTAL_ACTOR_REQUIRED"]);
+});
+
+test("BL31 a busy loopback port returns a structured startup failure", async (t) => {
+  const fixture = await scratch("tcrn-portal-port-busy-", "PORTAL-PORT-BUSY");
+  const running = await startPortal(fixture);
+  t.after(async () => { running.child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const port = new URL(running.url).port;
+  await assert.rejects(execFileAsync(process.execPath, [join(portalRoot, "portal.mjs"), "--library", fixture.workspace, "--port", port], {
+    env: { ...process.env, ...fixture.deviceEnv, HOME: fixture.home, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR }, encoding: "utf8",
+  }), (error) => {
+    assert.equal(error.code, 1);
+    const failure = JSON.parse(error.stderr.trim());
+    assert.equal(failure.reasonCode, "PORTAL_PORT_IN_USE");
+    assert.equal(failure.port, Number(port));
+    assert.equal(failure.error, "EADDRINUSE");
+    assert.ok(failure.recovery.includes("--port"));
+    return true;
+  });
+  assert.equal((await fetch(running.url)).status, 200, "the existing listener remains available");
+});
+
+
+test("Portal rejects relative EINZBERN_HOME before library selection in every cwd", async (t) => {
+  const base = await mkdtemp(join(tmpdir(), "portal-relative-device-"));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const alternate = join(base, "other");
+  await mkdir(alternate);
+  for (const cwd of [base, alternate]) {
+    await assert.rejects(execFileAsync(process.execPath, [join(portalRoot, "portal.mjs"), "--library", join(base, "not-a-library"), "--port", "0"], {
+      cwd, env: { ...process.env, EINZBERN_HOME: "relative-device", HOME: base, TCRN_PORTAL_ACTOR: TEST_ACTOR }, encoding: "utf8",
+    }), (error) => {
+      assert.equal(error.code, 2, error.stderr);
+      assert.equal(error.stdout, "");
+      const lines = error.stderr.trim().split("\n");
+      assert.equal(lines.length, 1, error.stderr);
+      const failure = JSON.parse(lines[0]);
+      assert.deepEqual([failure.ok, failure.reasonCode], [false, "DEVICE_HOME_INVALID"]);
+      assert.match(failure.error, /absolute device directory/u);
+      return true;
+    });
+    await assert.rejects(lstat(join(cwd, "relative-device")), { code: "ENOENT" });
+  }
 });

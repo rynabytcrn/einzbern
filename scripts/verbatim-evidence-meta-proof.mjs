@@ -6,7 +6,10 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -25,20 +28,20 @@ async function runChecker(file, fileLabel = label) {
   }
   try {
     const result = await execFileAsync(process.execPath, ["scripts/verbatim-evidence-proof.mjs", "--check"], {
-      cwd: process.cwd(),
+      cwd: ROOT,
       encoding: "utf8",
       env,
       maxBuffer: 8 * 1024 * 1024,
     });
     return { exitCode: 0, report: JSON.parse(result.stdout) };
   } catch (error) {
-    return { exitCode: error.status ?? 1, report: JSON.parse(String(error.stdout ?? "{}")) };
+    return { exitCode: typeof error.code === "number" ? error.code : 1, report: JSON.parse(String(error.stdout ?? "{}")) };
   }
 }
 
 const directory = await mkdtemp(join(tmpdir(), "tcrn-inc156-verbatim-"));
 try {
-  const source = await readFile(evidencePath, "utf8");
+  const source = await readFile(join(ROOT, evidencePath), "utf8");
   // The number to mutate is read out of the evidence rather than written in here.
   // A literal anchor goes missing the moment a leg is added, and a meta-proof that
   // cannot find its anchor stops testing the checker instead of reporting on it —
@@ -52,7 +55,7 @@ try {
   await writeFile(mutatedPath, mutated, "utf8");
   const red = await runChecker(mutatedPath);
 
-  const historicalSource = await readFile(historicalEvidencePath, "utf8");
+  const historicalSource = await readFile(join(ROOT, historicalEvidencePath), "utf8");
   const historicalAnchor = historicalSource.match(/"matchCount": (\d+)/u);
   if (historicalAnchor === null) throw new Error("INC391_HISTORY_MUTATION_ANCHOR_MISSING");
   const historicalChanged = `matchCount ${historicalAnchor[1]} → ${Number(historicalAnchor[1]) + 1}`;

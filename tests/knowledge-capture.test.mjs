@@ -256,3 +256,14 @@ test("INC-282: a captured card naming a source is active and in default recall a
     await fixture.close();
   }
 });
+
+test("BL33 deferred: preserve existing single-character and contiguous Chinese token scoring", () => {
+  const card = { id: "knowledge:boundary", subject: "中文", summary: "", snippet: "", tags: [], lifecycle: "active", extensions: {} };
+  assert.equal(knowledgeRelevanceScore(card, "中"), 8, "one Han character remains a scoring token");
+  assert.equal(knowledgeRelevanceScore(card, "文"), 8, "matching is substring-based, not word-boundary segmentation");
+  assert.equal(knowledgeRelevanceScore(card, "中文"), 8, "a contiguous Han run remains one token");
+  assert.equal(knowledgeRelevanceScore(card, "中 文"), 16, "separated Han runs remain separate tokens");
+  assert.deepEqual(knowledgeConflictHits([card], "中"), []);
+  assert.deepEqual(knowledgeConflictHits([card], "中 文"), [card.id]);
+  assert.deepEqual(knowledgeConflictHits([{ ...card, subject: "中中" }], "中"), [card.id], "repeated single-character matches retain existing threshold behavior; this repair does not tune BL33");
+});

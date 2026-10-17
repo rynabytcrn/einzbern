@@ -186,3 +186,31 @@ test("S281 / 476-R5: crest.userPath is a device-level absolute path, stored as i
     await reason(readMachineSettings(path), "MACHINE_SETTING_VALUE_INVALID");
   } finally { await rm(base, { recursive: true, force: true }); }
 });
+
+
+test("configuration migration: path bindings and device agent cap validate and round-trip independently", async () => {
+  const path = await scratch();
+  try {
+    const cap = MACHINE_SETTINGS_CATALOG.find((entry) => entry.key === "execution.maxConcurrentAgents");
+    assert.deepEqual([cap.layer, cap.defaultValue, cap.min, cap.max], ["device", "8", 1, Number.MAX_SAFE_INTEGER]);
+    for (const value of ["0", "1.5", "9007199254740992"]) {
+      await reason(applyMachineSettingSet({ key: cap.key, value, occurredAt: at, path }), "MACHINE_SETTING_VALUE_INVALID");
+    }
+    for (const key of ["paths.artifacts", "paths.knowledgeArticles"]) {
+      const entry = MACHINE_SETTINGS_CATALOG.find((candidate) => candidate.key === key);
+      assert.deepEqual([entry.layer, entry.type, entry.defaultValue], ["device", "path", null]);
+      await reason(applyMachineSettingSet({ key, value: "relative/path", occurredAt: at, path }), "MACHINE_SETTING_VALUE_INVALID");
+    }
+    await assert.rejects(stat(path), { code: "ENOENT" }, "invalid device choices create no file");
+    for (const value of ["1", "8", String(Number.MAX_SAFE_INTEGER)]) {
+      await applyMachineSettingSet({ key: cap.key, value, occurredAt: at, path });
+      assert.equal((await readMachineSettings(path)).values[cap.key], value);
+    }
+    const base = await realpath(dirname(dirname(path)));
+    for (const key of ["paths.artifacts", "paths.knowledgeArticles"]) {
+      await applyMachineSettingSet({ key, value: base, occurredAt: at, path });
+      assert.equal((await readMachineSettings(path)).values[key], base);
+    }
+    assert.equal((await readMachineSettings(path)).values["execution.maxConcurrentHeavyRuns"], undefined, "the agent cap does not mutate the heavy-run choice");
+  } finally { await rm(join(path, "..", ".."), { recursive: true, force: true }); }
+});

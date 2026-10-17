@@ -85,6 +85,29 @@
 
 无旗标。
 
+## `configuration-projections-plan`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
+
+## `configuration-projections-refresh`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--actor` | 可选 | `string` |  |
+| `--output-keys` | 可选 | `string` | `JSON array of stable registered output keys; omitted selects all known outputs, [] selects none` |
+
 ## `device-clean`
 
 - 可用范围：`cli`。
@@ -166,6 +189,19 @@
 | `--workspace` | 可选 | `string` |
 | `--limit` | 可选 | `integer` |
 | `--offset` | 可选 | `integer` |
+
+## `execution-policy-resolve`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--host` | 必填 | `string` |
+| `--category` | 必填 | `string` |
+| `--rejections` | 必填 | `integer` |
+| `--project-budget` | 可选 | `integer` |
+| `--usage` | 可选 | `json` |
 
 ## `export`
 
@@ -256,6 +292,7 @@
 | `--workspace` | 可选 | `string` |
 | `--project` | 可选 | `string` |
 | `--base` | 可选 | `string` |
+| `--base-by-root` | 可选 | `json` |
 | `--release` | 可选 | `boolean` |
 | `--work-id` | 可选 | `list` |
 | `--project-id` | 可选 | `string` |
@@ -271,6 +308,7 @@
 | `--at` | 必填 | `instant` |
 | `--project` | 可选 | `string` |
 | `--base` | 可选 | `string` |
+| `--base-by-root` | 可选 | `json` |
 | `--release` | 可选 | `boolean` |
 | `--work-id` | 可选 | `list` |
 | `--project-id` | 可选 | `string` |
@@ -325,6 +363,8 @@
 | `--content` | 必填 | `string` |
 | `--accountable-owner-id` | 必填 | `string` |
 | `--evidence-ids` | 必填 | `list` |
+| `--coexist` | 可选 | `boolean` |
+| `--supersedes` | 可选 | `string` |
 | `--language-bundle` | 可选 | `string` |
 | `--timeout-ms` | 可选 | `integer` |
 
@@ -1132,6 +1172,7 @@
 | `--value` | 必填 | `string` |  |
 | `--description` | 可选 | `string` |  |
 | `--order` | 可选 | `integer` |  |
+| `--exports` | 可选 | `list` |  |
 | `--actor` | 可选 | `string` |  |
 | `--project-id` | 可选 | `string` |  |
 | `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
@@ -1314,10 +1355,11 @@
 - 可用范围：`cli`。
 - 是否写入：否。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--id` | 必填 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--id` | 必填 | `string` |  |
+| `--execution-request` | 可选 | `string` | `ExecutionAdmissionRequest JSON: host, category, rejections, requestedAgents, availableCombinations, optional usage/expectedPolicy` |
 
 ## `work-release`
 
@@ -1373,3 +1415,14 @@
 | `--at` | 必填 | `instant` |
 | `--cloud-hosted` | 可选 | `boolean` |
 | `--timeout-ms` | 可选 | `integer` |
+
+## `workspace-relocate-discard`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--to` | 必填 | `string` |
+| `--transaction-id` | 必填 | `string` |

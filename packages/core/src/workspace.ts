@@ -118,6 +118,7 @@ import {
   validateNote,
 } from "./execution-config.js";
 import type { ExecutionConfigState, ExecutionHost } from "./execution-config.js";
+import type { ModelPlanRecord } from "./model-plan.js";
 import type { GateRecord } from "./assignment-gate.js";
 import { GateIdentityError, validateGateIdentityDecision } from "./gate-identity.js";
 import type { GateIdentityDecision } from "./gate-identity.js";
@@ -2117,6 +2118,56 @@ function isReplayRejection(error: unknown): boolean {
   return error instanceof WorkspaceError || error instanceof ProtocolError;
 }
 
+// Historical unassign events could retain orphan efforts, which later set/assign
+// events inherited. Keep those exact records inside replay and its private cache;
+// callers and new mutations see only efforts with a corresponding assignment.
+function projectModelPlanState(state: ExecutionConfigState, target?: { readonly host: unknown; readonly name: unknown }): ExecutionConfigState {
+  const modelPlans = state.modelPlans.map((record) => {
+    if (target !== undefined && (record.host !== target.host || record.name !== target.name)) return record;
+    if (record.efforts === undefined) return record;
+    const retained = Object.entries(record.efforts).filter(([persona]) => Object.hasOwn(record.assignments, persona));
+    if (retained.length === Object.keys(record.efforts).length) return record;
+    const { efforts: _historicalEfforts, ...withoutEfforts } = record;
+    return Object.freeze({ ...withoutEfforts, ...(retained.length === 0 ? {} : { efforts: Object.freeze(Object.fromEntries(retained)) }) });
+  });
+  return modelPlans.every((record, index) => record === state.modelPlans[index]) ? state : { ...state, modelPlans: Object.freeze(modelPlans) };
+}
+
+function projectModelPlanWorkspaceState(state: WorkspaceState): WorkspaceState {
+  const executionConfig = projectModelPlanState(state.executionConfig);
+  return executionConfig === state.executionConfig ? state : { ...state, executionConfig };
+}
+
+type ModelPlanMutation = { readonly state: ExecutionConfigState; readonly record: ModelPlanRecord };
+
+function replayModelPlanMutation(
+  state: ExecutionConfigState,
+  recorded: Readonly<Record<string, unknown>>,
+  apply: (state: ExecutionConfigState) => ModelPlanMutation,
+  kind: "mutation" | "assignment" | "unassignment",
+): ExecutionConfigState {
+  const target = { host: recorded.host, name: recorded.name };
+  const currentState = projectModelPlanState(state, target);
+  const current = apply(currentState);
+  const canonical = canonicalJson(recorded as unknown as JsonValue);
+  if (canonicalJson(current.record) === canonical) return current.state;
+
+  const historical = currentState === state ? current : apply(state);
+  let historicalRecord = historical.record;
+  if (kind === "unassignment" && historicalRecord.efforts === undefined) {
+    const previous = state.modelPlans.find((record) => record.host === target.host && record.name === target.name);
+    // The old writer spread the prior record, then omitted an empty replacement,
+    // retaining its last effort (or its already-empty map). Derive that exact
+    // historical shape from prior state, never from unchecked recorded fields.
+    if (previous?.efforts !== undefined) historicalRecord = Object.freeze({ ...historicalRecord, efforts: previous.efforts });
+  }
+  if (canonicalJson(historicalRecord) !== canonical) fail("WORKSPACE_EVENT_CORRUPT", `model plan ${kind} record is not canonical`);
+  return historicalRecord === historical.record ? historical.state : {
+    ...historical.state,
+    modelPlans: Object.freeze(historical.state.modelPlans.map((record) => record === historical.record ? historicalRecord : record)),
+  };
+}
+
 function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[], snapshot?: ReplaySeed, merge?: MergeReplay): WorkspaceState {
   if (snapshot === undefined) {
     recordFullMaterialize();
@@ -2611,7 +2662,8 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
           requireEventBoundTimestamp(body.updatedAt, event, `persona ${String(body.name)}`);
           executionConfig = applyCustomPersonaRemove(executionConfig, { name: body.name });
         } else if (operation === "execution.model-plan.set") {
-          const applied = applyModelPlanSetInExecutionConfig(executionConfig, {
+          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan ${String(body.name)}`);
+          executionConfig = replayModelPlanMutation(executionConfig, body, (state) => applyModelPlanSetInExecutionConfig(state, {
             host: body.host,
             name: body.name,
             defaultModel: body.defaultModel,
@@ -2620,34 +2672,27 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
             // comparison below refuses the event as corrupt.
             ...(body.defaultEffort === undefined ? {} : { defaultEffort: body.defaultEffort }),
             updatedAt: String(body.updatedAt),
-          });
-          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan ${String(body.name)}`);
-          if (canonicalJson(applied.record) !== canonicalJson(body)) fail("WORKSPACE_EVENT_CORRUPT", `model plan ${String(body.name)} mutation record is not canonical`);
-          executionConfig = applied.state;
+          }), "mutation");
         } else if (operation === "execution.model-plan.assigned") {
-          const applied = applyModelPlanAssignInExecutionConfig(executionConfig, {
+          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan assignment ${String(body.persona)}`);
+          const canonicalBody = Object.fromEntries(Object.entries(body).filter(([key]) => key !== "persona" && key !== "model" && key !== "effort"));
+          executionConfig = replayModelPlanMutation(executionConfig, canonicalBody, (state) => applyModelPlanAssignInExecutionConfig(state, {
             host: body.host,
             name: body.name,
             persona: body.persona,
             model: body.model,
             ...(body.effort === undefined ? {} : { effort: body.effort }),
             updatedAt: String(body.updatedAt),
-          });
-          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan assignment ${String(body.persona)}`);
-          const canonicalBody = Object.fromEntries(Object.entries(body).filter(([key]) => key !== "persona" && key !== "model" && key !== "effort"));
-          if (canonicalJson(applied.record) !== canonicalJson(canonicalBody as unknown as JsonValue)) fail("WORKSPACE_EVENT_CORRUPT", "model plan assignment record is not canonical");
-          executionConfig = applied.state;
+          }), "assignment");
         } else if (operation === "execution.model-plan.unassigned") {
-          const applied = applyModelPlanUnassignInExecutionConfig(executionConfig, {
+          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan unassignment ${String(body.persona)}`);
+          const canonicalBody = Object.fromEntries(Object.entries(body).filter(([key]) => key !== "persona"));
+          executionConfig = replayModelPlanMutation(executionConfig, canonicalBody, (state) => applyModelPlanUnassignInExecutionConfig(state, {
             host: body.host,
             name: body.name,
             persona: body.persona,
             updatedAt: String(body.updatedAt),
-          });
-          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan unassignment ${String(body.persona)}`);
-          const canonicalBody = Object.fromEntries(Object.entries(body).filter(([key]) => key !== "persona"));
-          if (canonicalJson(applied.record) !== canonicalJson(canonicalBody as unknown as JsonValue)) fail("WORKSPACE_EVENT_CORRUPT", "model plan unassignment record is not canonical");
-          executionConfig = applied.state;
+          }), "unassignment");
         } else if (operation === "execution.model-plan.removed") {
           exactFields(body, ["host", "name", "updatedAt"], "WORKSPACE_EVENT_CORRUPT", "model plan removal record");
           requireEventBoundTimestamp(String(body.updatedAt), event, `model plan ${String(body.name)}`);
@@ -3024,7 +3069,11 @@ export async function withWorkspaceWriteLock<T>(
   try {
     return await withLibraryWriteLock(
       layout.library,
-      () => heldWriteLocks.run(new Set([...held, layout.root]), () => operation(layout.root)),
+      async () => {
+        // A relocation may have completed while this writer waited for the lock.
+        await refuseTombstonedWrite(layout.root);
+        return heldWriteLocks.run(new Set([...held, layout.root]), () => operation(layout.root));
+      },
       { ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(command === undefined ? {} : { command }) },
     );
   } catch (error) {
@@ -3227,6 +3276,7 @@ interface LibrarySeed {
 
 interface LibraryReplayResult {
   readonly state: WorkspaceState;
+  readonly replayExecutionConfig: ExecutionConfigState;
   readonly merge: MergeReplay;
 }
 
@@ -3241,7 +3291,8 @@ function replayLibrary(library: Library, read: LibraryReadShape, cached?: Librar
   const tail = cached === undefined ? read.events : read.events.slice(cached.seed.version);
   const origins = new Map<EventRecord, ReplayOrigin>(tail.map((entry) => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
   const merge = new MergeReplay(origins, cached?.merge);
-  const state = materialize(libraryWorkspaceMetadata(library), tail.map((entry) => entry.event), cached?.seed, merge);
+  const replayed = materialize(libraryWorkspaceMetadata(library), tail.map((entry) => entry.event), cached?.seed, merge);
+  const state = projectModelPlanWorkspaceState(replayed);
   const streams = read.streams.flatMap((stream) => (stream.manifest === null ? [] : [streamHead(stream.manifest)]));
   return {
     state: {
@@ -3255,6 +3306,7 @@ function replayLibrary(library: Library, read: LibraryReadShape, cached?: Librar
         aliases: merge.aliases,
       },
     },
+    replayExecutionConfig: replayed.executionConfig,
     merge,
   };
 }
@@ -3394,7 +3446,7 @@ async function refreshLibraryCache(
           minutes: replay.state.minutes,
           gates: replay.state.gates,
           settings: replay.state.settings,
-          executionConfig: replay.state.executionConfig,
+          executionConfig: replay.replayExecutionConfig,
           templates: replay.state.templates,
           configRecords: replay.state.configRecords,
           attestationEnabledAtSequence: replay.state.attestationEnabledAtSequence,
@@ -3472,7 +3524,7 @@ export function legacyWorkspaceEventId(streamId: string, sequence: number): stri
 
 /** Replay already-read events from genesis through the engine's own reducer. Pure. */
 export function materializeFromGenesis(metadata: WorkspaceMetadata, events: readonly EventRecord[]): WorkspaceState {
-  return materialize(metadata, events);
+  return projectModelPlanWorkspaceState(materialize(metadata, events));
 }
 
 /**

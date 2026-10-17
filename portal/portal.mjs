@@ -1390,11 +1390,19 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     }
     if (request.method === "POST" && pathname === "/api/model-policy") {
       const body = await readJsonBody(request);
+      const library = currentLibrary();
+      // The device policy is not scoped to a project target, but the Owner decision that
+      // authorizes its write is resolved from this library. A tab that changed libraries while a
+      // form was open must not have its old closure write against the new selection.
+      if (body.libraryId !== library.libraryId || body.libraryPath !== library.libraryPath) {
+        send(response, 409, { ok: false, reasonCode: "PORTAL_MODEL_POLICY_LIBRARY_CHANGED", library: publicLibrary(library) });
+        return;
+      }
       const host = String(body.host ?? "");
       const decidedIn = String(body.decidedIn ?? "");
       const result = await cliResult([
         "engine-model-policy-set",
-        "--workspace", currentLibrary().libraryPath,
+        "--workspace", library.libraryPath,
         "--host", host,
         "--policy", JSON.stringify(body.policy ?? null),
         "--at", new Date().toISOString(),

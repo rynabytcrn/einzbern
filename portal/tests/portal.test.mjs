@@ -208,7 +208,8 @@ test("INIT-056 SUB-539: Atelier model-policy API reads the engine source and wri
   assert.equal(initial.response.status, 200);
   assert.equal(initial.body.selectedStatus, "unconfigured");
 
-  const wrong = await request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy, decidedIn: `minutes:${"d".repeat(24)}#D1` }));
+  const writeScope = { libraryId: boot.library.libraryId, libraryPath: boot.library.libraryPath };
+  const wrong = await request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy, decidedIn: `minutes:${"d".repeat(24)}#D1`, ...writeScope }));
   assert.equal(wrong.response.status, 409);
   assert.equal(wrong.body.reasonCode, "MODEL_WRITE_AUTHORIZATION_INVALID");
 
@@ -219,7 +220,7 @@ test("INIT-056 SUB-539: Atelier model-policy API reads the engine source and wri
     "--decided-by", "owner:governance", "--actor", TEST_ACTOR,
   ], fixture.deviceEnv);
   const minutesId = meeting.id;
-  const saved = await request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy, decidedIn: `${minutesId}#D1` }));
+  const saved = await request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy, decidedIn: `${minutesId}#D1`, ...writeScope }));
   assert.equal(saved.response.status, 200);
   assert.equal(saved.body.reasonCode, "ENGINE_MODEL_POLICY_WRITE_COMMITTED");
   assert.equal(saved.body.readback.selectedHost, "codex");

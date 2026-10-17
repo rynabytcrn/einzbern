@@ -195,6 +195,43 @@ test("operation readiness separates gate declarations from models, repository an
   assert.equal(target.readiness.development.ready, false);
 });
 
+test("MIN291 D1: an optional design authority does not block development, while a declared conflict does", async t => {
+  const f = await fixture(t);
+  const remote = "https://example.test/alpha";
+  await registerLibrary({ projectPath: f.a.repo, libraryPath: f.a.path, projectId: f.a.reference.projectId, registeredAt: at, gitRemote: remote }, f.home);
+  await setWorkspaceSetting(f.a.path, { key: "artifact.language", value: "en", configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await setWorkspaceSetting(f.a.path, { key: "models.category", value: JSON.stringify([{ order: 10, id: "main", name: "Main", description: "" }]), configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await setWorkspaceSetting(f.a.path, { key: "models.tiers", value: JSON.stringify([{ order: 10, category: "main", runner: "codex", model: "gpt-5.6-terra", effort: "max", note: "" }]), configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await setConfigRecord(f.a.path, { collection: "chain", key: "repositories", projectId: f.a.reference.projectId, value: { bindings: [{ id: "alpha", name: "Alpha", repository: remote, buildService: "test", buildProject: "alpha" }] }, occurredAt: at });
+  await setConfigRecord(f.a.path, { collection: "gate", key: "alpha", projectId: f.a.reference.projectId, value: { command: [process.execPath, "-e", "process.exit(0)"], root: ".", covers: ["**"], required: true, enabled: true, releaseOnly: false }, occurredAt: at });
+
+  const optional = await resolveProjectTarget(f.a.reference, f.home);
+  assert.equal(optional.status, "unconfigured", "the absence stays visible");
+  assert.deepEqual(optional.readiness.design, { ready: true, missing: [] }, "an absent authority adds no artificial design requirement");
+  assert.equal(optional.readiness.model.ready, true);
+  assert.equal(optional.readiness.repository.ready, true);
+  assert.equal(optional.readiness.output.ready, true);
+  assert.equal(optional.readiness.language.ready, true);
+  assert.equal(optional.readiness.development.ready, true, "all non-design development prerequisites are enough");
+
+  await configure(f.a, "alpha");
+  const childState = await createProject(f.a.path, { externalKey: "ALPHA-CHILD", name: "Alpha child", parentProjectId: f.a.reference.projectId, occurredAt: at });
+  const child = childState.projects.find(project => project.parentProjectId === f.a.reference.projectId);
+  assert.ok(child);
+  const childRepo = join(f.root, "alpha-child-repo"); await mkdir(childRepo);
+  await registerLibrary({ projectPath: childRepo, libraryPath: f.a.path, projectId: child.id, registeredAt: at, gitRemote: remote }, f.home);
+  await setWorkspaceSetting(f.a.path, { key: "design.authority", value: "https://child.example.test", configurationProjectId: child.id, occurredAt: at });
+
+  const conflict = await resolveProjectTarget({ libraryId: f.a.reference.libraryId, projectId: child.id }, f.home);
+  assert.equal(conflict.status, "conflicting");
+  assert.deepEqual(conflict.readiness.design, { ready: false, missing: ["design.bundle"] });
+  assert.equal(conflict.readiness.model.ready, true, "a design conflict does not rewrite model readiness");
+  assert.equal(conflict.readiness.repository.ready, true, "a design conflict does not rewrite repository readiness");
+  assert.equal(conflict.readiness.output.ready, true, "a design conflict does not rewrite output readiness");
+  assert.equal(conflict.readiness.language.ready, true, "a design conflict does not rewrite language readiness");
+  assert.equal(conflict.readiness.development.ready, false);
+});
+
 // TCRN-CROSS-STORY-540 GWT1 (TCRN-CROSS-SUB-505): a coordination library this device registered no root
 // for outside a library (this fixture registers it in its own device directory, not the process's)
 // still records a rule change, with nowhere to write it, and its state is read against no file.

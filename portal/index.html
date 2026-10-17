@@ -4282,18 +4282,18 @@ button:disabled { cursor: not-allowed; }
       <section class="tcrn-page tcrn-product-shell-content-stack" data-page="model-categories" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.modelCategories">Model categories</h1><p class="tcrn-text tcrn-page__lede" data-i18n="modelCategories.lede" data-collection-purpose="models.category">The parent table of the model tiers. The order column ranks the categories: the lower the order, the stronger the category, and escalation climbs toward the lower orders.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="model-categories-count">—</span></div></div></header>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.modelCategories">Model categories</h1><p class="tcrn-text tcrn-page__lede" data-i18n="modelCategories.lede" data-collection-purpose="engine-model-policy.categories">Manage the selected engine host’s policy categories. A smaller order means a stronger category. Save sends the edited policy only to that host.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="model-categories-count">—</span></div></div></header>
           </div>
-          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="modelCategories.scope">Project level: stored with this library and synced with it. A rule names a category and is given the category's tier with the largest order.</p></div>
+          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="modelCategories.scope">Engine-host policy is stored by the engine for the selected host. Older project model tables remain compatibility records and are not writable Codex policy.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="model-categories-view" data-ui="model-categories-view" data-collection-view="models.category"></div></div>
         </div>
       </section>
       <section class="tcrn-page tcrn-product-shell-content-stack" data-page="model-tiers" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.modelTiers">Model tiers</h1><p class="tcrn-text tcrn-page__lede" data-i18n="modelTiers.lede" data-collection-purpose="models.tiers">Every model a rule can be given, one record per row. The order column ranks all records together: the lower the order, the stronger the record. A category's tier with the largest order is the one a rule gets, and escalation moves to the next smaller order.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="model-tiers-count">—</span></div></div></header>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.modelTiers">Model tiers</h1><p class="tcrn-text tcrn-page__lede" data-i18n="modelTiers.lede" data-collection-purpose="engine-model-policy.tiers">Each engine-host policy row defines a model, its runner and effort. Smaller orders are stronger. A rule starts with its category’s largest order; each escalation selects the next smaller order, up to the configured ceiling.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="model-tiers-count">—</span></div></div></header>
           </div>
-          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="modelTiers.scope">Project level: stored with this library and synced with it. Each tier is filed under a category from the model categories page.</p></div>
+          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="modelTiers.scope">The engine stores this policy for the selected host. Categories and the escalation ceiling are checked together when saving; historical project records are only compatibility data.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="model-tiers-view" data-ui="model-tiers-view" data-collection-view="models.tiers"></div></div>
         </div>
       </section>
@@ -4399,7 +4399,7 @@ const BOOT = __PORTAL_BOOT__;
   const storedTheme = tcrnReadPreference("theme", ["light", "dark"], null);
   const machineTheme = ["light", "dark"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
   if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme;
-  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, modelPolicy: null, modelPolicyHost: "codex", variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeStatus: "valid", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
+  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, modelPolicy: null, modelPolicyHost: "codex", modelPolicyDrafts: new Map(), modelPolicyWrites: new Map(), modelPolicyRead: 0, modelPolicyReadTarget: null, modelPolicyReadPending: false, modelPolicyLibraryId: BOOT.library?.libraryId ?? null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeStatus: "valid", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   // DS Tabs is a behavior contract, not a role decoration. Every tablist below
@@ -4964,7 +4964,13 @@ const BOOT = __PORTAL_BOOT__;
     const link = page === undefined ? "" : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-collection-link="${esc(page)}">${esc(t("settings.collectionOpen"))}</button>`;
     return `<div class="tcrn-setting-row" data-setting-row="${esc(entry.key)}" data-setting-shape="collection">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control">${link}${count}</div><div class="tcrn-setting-row__tools"></div></div>`;
   };
-  const settingRow = (entry) => entry.layer === "device" ? deviceSettingRow(entry) : entry.shape === "collection" ? collectionSettingRow(entry) : projectSettingRow(entry);
+  const modelPolicyCompatibilityRow = (entry) => {
+    const catalog = state.modelPolicy?.selectedHost === state.modelPolicyHost ? state.modelPolicy : null;
+    const configured = policyEntryFor(state.modelPolicyHost, catalog);
+    const stateText = configured ? t("modelPolicy.engineHostSource", { host: state.modelPolicyHost }) : t("modelPolicy.unconfigured");
+    return `<div class="tcrn-setting-row" data-setting-row="${esc(entry.key)}" data-setting-shape="compatibility" data-model-policy-legacy="true">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control"><span class="tcrn-field__hint" data-engine-policy-source="${esc(state.modelPolicyHost)}">${esc(t("modelPolicy.legacySource", { source: stateText }))}</span><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-model-policy-link="engine-model-policy">${esc(t("modelPolicy.openEditor"))}</button></div><div class="tcrn-setting-row__tools"></div></div>`;
+  };
+  const settingRow = (entry) => entry.key.startsWith("models.") ? modelPolicyCompatibilityRow(entry) : entry.layer === "device" ? deviceSettingRow(entry) : entry.shape === "collection" ? collectionSettingRow(entry) : projectSettingRow(entry);
   // Target labels (TCRN-CROSS-INIT-053 R45 U14, F08) begin.
   // What a library or a project target is called on the page. The project's own name comes first; a
   // project the engine names nothing is "Unnamed project", never the word an unconfigured state uses;
@@ -5119,6 +5125,7 @@ const BOOT = __PORTAL_BOOT__;
     }));
     $$('[data-machine-control]', rows).forEach((control) => control.addEventListener("change", () => saveMachineSetting(control.dataset.machineControl, control.value)));
     $$('[data-collection-link]', rows).forEach((button) => button.addEventListener("click", () => openCollection(button.dataset.collectionLink)));
+    $$('[data-model-policy-link]', rows).forEach((button) => button.addEventListener("click", () => { navigate(button.dataset.modelPolicyLink); renderModelPolicy(); }));
     $$('[data-vocabulary-link]', rows).forEach((button) => button.addEventListener("click", () => { state.selectedVocabulary = button.dataset.vocabularyLink; navigate("vocabulary"); renderVocabulary(); }));
     attachEcho(rows);
     for (const root of $$("[data-prompt-language-dropdown]", rows)) multiSelectMounts.add(mountStaticMultiSelect({ root }));
@@ -5191,7 +5198,7 @@ const BOOT = __PORTAL_BOOT__;
     const invalid = new Set(findings.map((finding) => finding.field).filter((field) => typeof field === "string" && field !== ""));
     const cells = columns.map((column) => {
       if (column.kind === "actions") return collectionCell(column, readOnly ? "" : `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-collection-remove="${index}" aria-label="${esc(t("collection.removeRow", { order: row.order ?? "" }))}">${esc(t("config.remove"))}</button>`);
-      if (typeof column.render === "function") return collectionCell(column, column.render(row, invalid.has(column.field)));
+      if (typeof column.render === "function") return collectionCell(column, column.render(row, invalid.has(column.field), index));
       return collectionInputCell(column, row[column.field] ?? "", invalid.has(column.field), readOnly);
     }).join("");
     const targetAttribute = highlighted ? ' data-transient-target="true"' : "";
@@ -5254,7 +5261,7 @@ const BOOT = __PORTAL_BOOT__;
     renderSettings();
   };
   const tierCounts = () => storedRecords("models.tiers").reduce((counts, record) => counts.set(record.category, (counts.get(record.category) ?? 0) + 1), new Map());
-  const renderModelCategories = () => {
+  const renderLegacyModelCategories = () => {
     const focus = rememberFocus($("#model-categories-view"));
     const key = "models.category";
     const rows = collectionRows(key);
@@ -5291,7 +5298,7 @@ const BOOT = __PORTAL_BOOT__;
     wireCollection(key, view);
     restoreFocus(view, focus);
   };
-  const renderModelTiers = () => {
+  const renderLegacyModelTiers = () => {
     const focus = rememberFocus($("#model-tiers-view"));
     const key = "models.tiers";
     const rows = collectionRows(key);
@@ -5350,62 +5357,246 @@ const BOOT = __PORTAL_BOOT__;
     if (!preserveTransientTarget) clearTransientTarget();
     renderModelCategories(); renderModelTiers();
   };
-  // INIT-056: unlike the project collection pages above, this surface talks to the single
-  // engine store. Its host selector changes only the device catalog query; it never selects or
-  // writes a project configuration target.
-  const modelPolicyHosts = () => [...new Set(["codex", ...Object.keys(state.modelPolicy?.hosts ?? {})])].sort();
-  const modelPolicyDrafts = () => state.modelPolicyDrafts ?? (state.modelPolicyDrafts = {});
+  // INIT-056: the engine policy is one device store partitioned by host. The legacy models.*
+  // rows remain a compatibility read surface, but they never become a second writable Codex
+  // authority. Every rendered collection and every write below therefore uses this host record.
+  const modelPolicyHosts = () => {
+    const hosts = state.modelPolicy?.hosts;
+    const configured = hosts !== null && typeof hosts === "object" ? Object.keys(hosts).filter((host) => Object.hasOwn(hosts, host)) : [];
+    return [...new Set(["codex", ...configured])].sort();
+  };
+  const modelPolicyDrafts = () => state.modelPolicyDrafts instanceof Map ? state.modelPolicyDrafts : (state.modelPolicyDrafts = new Map());
+  const modelPolicyWrites = () => state.modelPolicyWrites instanceof Map ? state.modelPolicyWrites : (state.modelPolicyWrites = new Map());
+  const reconcileModelPolicyLibrary = (libraryId) => {
+    if (state.modelPolicyLibraryId !== libraryId) {
+      modelPolicyDrafts().clear();
+      modelPolicyWrites().clear();
+      state.modelPolicy = null;
+      state.modelPolicyRead += 1;
+      state.modelPolicyReadTarget = null;
+      state.modelPolicyReadPending = false;
+      state.modelPolicyFocus = null;
+    }
+    state.modelPolicyLibraryId = libraryId;
+  };
+  const policyEntryFor = (host, catalog = state.modelPolicy) => {
+    if (catalog?.selectedHost === host && catalog.selectedPolicy !== undefined) return catalog.selectedPolicy;
+    const hosts = catalog?.hosts;
+    return hosts !== null && typeof hosts === "object" && Object.hasOwn(hosts, host) ? hosts[host] : null;
+  };
+  const copyPolicy = (entry) => entry === null || entry === undefined
+    ? { categories: [], tiers: [], escalation: { enabled: false, threshold: 2, ceiling: "main" } }
+    : { categories: (Array.isArray(entry.categories) ? entry.categories : []).map((row) => ({ ...row })), tiers: (Array.isArray(entry.tiers) ? entry.tiers : []).map((row) => ({ ...row })), escalation: { enabled: false, threshold: 2, ceiling: "main", ...(entry.escalation || {}) } };
   const policyDraft = (host) => {
     const drafts = modelPolicyDrafts();
-    if (!drafts[host]) {
-      const entry = state.modelPolicy?.selectedPolicy;
-      drafts[host] = { policy: entry ? { categories: entry.categories.map((row) => ({ ...row })), tiers: entry.tiers.map((row) => ({ ...row })), escalation: { ...entry.escalation } } : { categories: [], tiers: [], escalation: { enabled: false, threshold: 2, ceiling: "main" } }, decidedIn: "", dirty: false };
+    if (!drafts.has(host)) {
+      const entry = policyEntryFor(host);
+      drafts.set(host, { policy: copyPolicy(entry), decidedIn: entry?.decidedIn ?? "", dirty: false, version: 0, failure: null });
     }
-    return drafts[host];
+    return drafts.get(host);
+  };
+  const markPolicyDirty = (draft) => { draft.dirty = true; draft.version += 1; draft.failure = null; };
+  const beginModelPolicyRead = () => {
+    const target = Object.freeze({ host: state.modelPolicyHost, libraryId: BOOT.library?.libraryId ?? null, libraryEpoch: state.libraryEpoch || 0, sequence: (state.modelPolicyRead || 0) + 1 });
+    state.modelPolicyRead = target.sequence;
+    state.modelPolicyReadTarget = target;
+    state.modelPolicyReadPending = true;
+    return target;
+  };
+  const modelPolicyReadCurrent = (target) => state.modelPolicyReadTarget === target && state.modelPolicyRead === target.sequence && state.modelPolicyHost === target.host && (state.libraryEpoch || 0) === target.libraryEpoch && (BOOT.library?.libraryId ?? null) === target.libraryId;
+  const modelPolicyPendingFor = (host) => state.modelPolicyReadPending === true && state.modelPolicyReadTarget?.host === host && modelPolicyReadCurrent(state.modelPolicyReadTarget);
+  const acceptModelPolicyRead = (target, result) => {
+    if (!modelPolicyReadCurrent(target)) return false;
+    state.modelPolicy = result;
+    state.modelPolicyReadPending = false;
+    return true;
+  };
+  const modelPolicyHostControl = (host, pending) => `<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("modelPolicy.host"))}</span><select class="tcrn-select" data-engine-model-policy-host aria-label="${esc(t("modelPolicy.host"))}" ${pending ? "disabled" : ""}>${modelPolicyHosts().map((name) => `<option value="${esc(name)}"${name === host ? " selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`;
+  const policyInput = (kind, index, field, label, value, type = "text") => `<label class="tcrn-field"><input class="tcrn-input${type === "number" ? " tcrn-number-input" : ""}" type="${esc(type)}" ${type === "number" ? 'min="1" step="1" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value"' : ""} value="${esc(value ?? "")}" aria-label="${esc(label)}" data-engine-policy-field="${esc(field)}" data-engine-policy-kind="${esc(kind)}" data-engine-policy-index="${index}"></label>`;
+  const policyCategoryChoice = (draft, row, index) => {
+    const current = String(row.category ?? "");
+    const options = draft.policy.categories.map((category) => `<option value="${esc(category.id ?? "")}"${String(category.id ?? "") === current ? " selected" : ""}>${esc(category.name || category.id || t("modelPolicy.unselectedCategory"))}</option>`);
+    if (!draft.policy.categories.some((category) => String(category.id ?? "") === current)) options.unshift(`<option value="${esc(current)}" selected>${esc(current || t("modelPolicy.unselectedCategory"))}</option>`);
+    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(draft.policy.categories.map((category) => String(category.id ?? "")), "models.category")}><label class="tcrn-setting-choice__select-label"><span class="tcrn-sr-only">${esc(t("modelTiers.category"))}</span><select class="tcrn-select" aria-label="${esc(t("modelTiers.category"))}" data-engine-policy-field="category" data-engine-policy-kind="tiers" data-engine-policy-index="${index}">${options.join("")}</select></label></div>`;
+  };
+  const modelPolicyTables = (host, draft, sections = ["categories", "tiers", "escalation"]) => {
+    const output = [];
+    if (sections.includes("categories")) {
+      const columns = [
+        { field: "order", label: t("collection.order"), render: (row, _invalid, index) => policyInput("categories", index, "order", t("collection.order"), row.order, "number") },
+        { field: "id", label: t("modelCategories.id"), render: (row, _invalid, index) => policyInput("categories", index, "id", t("modelCategories.id"), row.id) },
+        { field: "name", label: t("modelCategories.name"), render: (row, _invalid, index) => policyInput("categories", index, "name", t("modelCategories.name"), row.name) },
+        { field: "description", label: t("modelCategories.description"), render: (row, _invalid, index) => policyInput("categories", index, "description", t("modelCategories.description"), row.description) },
+        { field: "actions", label: t("collection.actions"), render: (_row, _invalid, index) => `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-engine-policy-remove="categories" data-engine-policy-index="${index}" aria-label="${esc(t("collection.removeRow", { order: draft.policy.categories[index]?.order ?? "" }))}">${esc(t("config.remove"))}</button>` },
+      ];
+      const empty = emptyGuide(t("modelCategories.emptyTitle"), t("modelPolicy.emptyCategories"), `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-engine-policy-add="categories">${esc(t("modelCategories.add"))}</button>`);
+      output.push(`<section class="tcrn-surface" data-engine-model-policy-section="categories"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h3>${esc(t("page.modelCategories"))}</h3><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div></div>${collectionTable({ key: "engine-model-policy-categories", ui: "model-categories-table", label: t("modelCategories.title"), columns, rows: draft.policy.categories, findings: [], empty })}<div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-engine-policy-add="categories">${esc(t("modelCategories.add"))}</button></div></section>`);
+    }
+    if (sections.includes("tiers")) {
+      const columns = [
+        { field: "order", label: t("collection.order"), render: (row, _invalid, index) => policyInput("tiers", index, "order", t("collection.order"), row.order, "number") },
+        { field: "category", label: t("modelTiers.category"), render: (row, _invalid, index) => policyCategoryChoice(draft, row, index) },
+        { field: "runner", label: t("models.runner"), render: (row, _invalid, index) => policyInput("tiers", index, "runner", t("models.runner"), row.runner) },
+        { field: "model", label: t("models.model"), render: (row, _invalid, index) => policyInput("tiers", index, "model", t("models.model"), row.model) },
+        { field: "effort", label: t("models.effort"), render: (row, _invalid, index) => policyInput("tiers", index, "effort", t("models.effort"), row.effort) },
+        { field: "note", label: t("modelTiers.note"), render: (row, _invalid, index) => policyInput("tiers", index, "note", t("modelTiers.note"), row.note) },
+        { field: "actions", label: t("collection.actions"), render: (_row, _invalid, index) => `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-engine-policy-remove="tiers" data-engine-policy-index="${index}" aria-label="${esc(t("collection.removeRow", { order: draft.policy.tiers[index]?.order ?? "" }))}">${esc(t("config.remove"))}</button>` },
+      ];
+      const empty = emptyGuide(t("modelTiers.emptyTitle"), draft.policy.categories.length === 0 ? t("modelTiers.noCategoriesBody") : t("modelTiers.emptyBody"), `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-engine-policy-add="tiers" ${draft.policy.categories.length === 0 ? "disabled" : ""}>${esc(t("modelTiers.add"))}</button>`);
+      output.push(`<section class="tcrn-surface" data-engine-model-policy-section="tiers"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h3>${esc(t("page.modelTiers"))}</h3><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div></div>${collectionTable({ key: "engine-model-policy-tiers", ui: "model-tiers-table", label: t("modelTiers.title"), columns, rows: draft.policy.tiers, findings: [], empty })}<div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-engine-policy-add="tiers" ${draft.policy.categories.length === 0 ? "disabled" : ""}>${esc(t("modelTiers.add"))}</button></div></section>`);
+    }
+    if (sections.includes("escalation")) {
+      const ceiling = String(draft.policy.escalation.ceiling ?? "");
+      const categories = draft.policy.categories;
+      const options = categories.map((category) => `<option value="${esc(category.id ?? "")}"${String(category.id ?? "") === ceiling ? " selected" : ""}>${esc(category.name || category.id || t("modelPolicy.unselectedCategory"))}</option>`);
+      if (!categories.some((category) => String(category.id ?? "") === ceiling)) options.unshift(`<option value="${esc(ceiling)}" selected>${esc(ceiling || t("modelPolicy.unselectedCategory"))}</option>`);
+      output.push(`<section class="tcrn-surface" data-engine-model-policy-section="escalation"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h3>${esc(t("modelTiers.escalationTitle"))}</h3><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div></div><div class="tcrn-grid tcrn-grid--3"><label class="tcrn-switch" data-switch-state="${draft.policy.escalation.enabled ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-engine-policy-escalation="enabled" ${draft.policy.escalation.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("setting.models.escalation.enabled.label"))}</span></label><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("setting.models.escalation.threshold.label"))}</span><input class="tcrn-input tcrn-number-input" type="number" min="1" step="1" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" aria-label="${esc(t("setting.models.escalation.threshold.label"))}" data-engine-policy-escalation="threshold" value="${esc(draft.policy.escalation.threshold)}"></label><div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(categories.map((category) => String(category.id ?? "")), "models.escalation.ceiling")}><label class="tcrn-setting-choice__select-label"><span class="tcrn-field__label">${esc(t("setting.models.escalation.ceiling.label"))}</span><select class="tcrn-select" aria-label="${esc(t("setting.models.escalation.ceiling.label"))}" data-engine-policy-escalation="ceiling" ${categories.length === 0 ? "disabled" : ""}>${options.join("")}</select></label></div></div></section>`);
+    }
+    return output.join("");
+  };
+  const modelPolicyAudit = (catalog, host, entry) => entry === null || entry === undefined
+    ? `<p class="tcrn-text" data-engine-model-policy-status="unconfigured">${esc(t("modelPolicy.unconfigured"))}</p>`
+    : `<dl class="tcrn-definition-list tcrn-definition-list--dense" data-engine-model-policy-audit><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.revision"))}</span><strong>${esc(entry.revision)}</strong></div><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.updated"))}</span><strong>${esc(entry.updatedAt)}</strong></div><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.source"))}</span><strong>${esc(t("modelPolicy.engineHostSource", { host }))}</strong></div><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.decision"))}</span><strong>${esc(entry.decidedIn)}</strong></div><div class="tcrn-definition-list__item"><span>${esc(t("modelPolicy.compatibility"))}</span><strong>${esc(catalog.compatibility?.precedence ?? "")}</strong></div></dl>`;
+  const focusModelPolicyField = (host, kind, index, field) => {
+    state.modelPolicyFocus = { host, kind, index, field };
+    queueMicrotask(() => {
+      const focus = state.modelPolicyFocus;
+      if (!focus || focus.host !== state.modelPolicyHost) return;
+      const escapeSelector = (value) => globalThis.CSS?.escape ? globalThis.CSS.escape(String(value)) : String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
+      const selector = field === "escalation" ? `[data-engine-policy-escalation="${escapeSelector(focus.kind)}"]` : `[data-engine-policy-kind="${escapeSelector(focus.kind)}"][data-engine-policy-index="${focus.index}"][data-engine-policy-field="${escapeSelector(focus.field)}"]`;
+      $(selector)?.focus?.();
+      state.modelPolicyFocus = null;
+    });
+  };
+  const updateModelPolicyField = (host, input) => {
+    const draft = policyDraft(host);
+    const kind = input.dataset.enginePolicyKind;
+    const index = Number(input.dataset.enginePolicyIndex);
+    const field = input.dataset.enginePolicyField;
+    const row = kind === "categories" ? draft.policy.categories[index] : kind === "tiers" ? draft.policy.tiers[index] : null;
+    if (!row || !field) return;
+    row[field] = input.type === "number" ? orderValue(input.value) : input.value;
+    markPolicyDirty(draft);
+  };
+  const updateModelPolicyEscalation = (host, input) => {
+    const field = input.dataset.enginePolicyEscalation;
+    if (!field) return;
+    const draft = policyDraft(host);
+    draft.policy.escalation[field] = input.type === "checkbox" ? input.checked : input.type === "number" ? orderValue(input.value) : input.value;
+    markPolicyDirty(draft);
+  };
+  const resetModelPolicyDraft = (host) => { modelPolicyDrafts().delete(host); };
+  const saveModelPolicy = async (host, render) => {
+    const draft = policyDraft(host);
+    if (state.modelPolicyHost !== host || state.librarySwitching || modelPolicyPendingFor(host) || modelPolicyWrites().has(host)) return;
+    const decidedIn = draft.decidedIn.trim();
+    if (decidedIn === "") { draft.failure = { ok: false, reasonCode: "PORTAL_MODEL_POLICY_DECISION_REQUIRED" }; showReceipt(draft.failure); render(); return; }
+    const version = draft.version;
+    const libraryId = BOOT.library?.libraryId ?? null;
+    const libraryPath = BOOT.library?.libraryPath ?? null;
+    const request = Object.freeze({ version, libraryId, libraryPath });
+    modelPolicyWrites().set(host, request);
+    render();
+    let result;
+    try {
+      result = await api("/api/model-policy", { method: "POST", anyTarget: true, body: JSON.stringify({ host, policy: copyPolicy(draft.policy), decidedIn, libraryId, libraryPath }) });
+    } catch (error) {
+      result = { ok: false, reasonCode: "PORTAL_MODEL_POLICY_WRITE_UNAVAILABLE", error: String(error?.message ?? error) };
+    } finally {
+      if (modelPolicyWrites().get(host) === request) modelPolicyWrites().delete(host);
+    }
+    showReceipt(result);
+    if ((BOOT.library?.libraryId ?? null) !== libraryId) return;
+    const current = modelPolicyDrafts().get(host);
+    if (result.ok) {
+      if (current === draft && current.version === version) modelPolicyDrafts().delete(host);
+      else if (current) { current.dirty = true; current.failure = null; }
+      if (state.modelPolicyHost === host) await refreshModelPolicy();
+    } else if (current === draft) {
+      current.failure = result;
+      if (state.modelPolicyHost === host) render();
+    }
+  };
+  const wireModelPolicyEditor = (view, host, render) => {
+    const pending = modelPolicyPendingFor(host) || modelPolicyWrites().has(host) || state.librarySwitching;
+    const hostSelect = $("[data-engine-model-policy-host]", view);
+    hostSelect?.addEventListener("change", (event) => {
+      const next = event.currentTarget.value;
+      if (!next || next === state.modelPolicyHost || state.librarySwitching) return;
+      state.modelPolicyHost = next;
+      void refreshModelPolicy();
+    });
+    $$('[data-engine-policy-field]', view).forEach((input) => input.addEventListener(input.tagName === "SELECT" ? "change" : "input", (event) => { updateModelPolicyField(host, event.currentTarget); render(); }));
+    $$('[data-engine-policy-escalation]', view).forEach((input) => input.addEventListener(input.tagName === "SELECT" || input.type === "checkbox" ? "change" : "input", (event) => { updateModelPolicyEscalation(host, event.currentTarget); render(); }));
+    $("[data-engine-model-policy-decision]", view)?.addEventListener("input", (event) => { const draft = policyDraft(host); draft.decidedIn = event.currentTarget.value; markPolicyDirty(draft); render(); });
+    $$('[data-engine-policy-add]', view).forEach((button) => button.addEventListener("click", () => {
+      const draft = policyDraft(host);
+      const kind = button.dataset.enginePolicyAdd;
+      if (kind === "categories") { draft.policy.categories.push({ order: nextOrder(draft.policy.categories), id: "", name: "", description: "" }); markPolicyDirty(draft); render(); focusModelPolicyField(host, "categories", draft.policy.categories.length - 1, "id"); }
+      if (kind === "tiers" && draft.policy.categories.length > 0) { draft.policy.tiers.push({ order: nextOrder(draft.policy.tiers), category: draft.policy.categories[0].id ?? "", runner: host, model: "", effort: "", note: "" }); markPolicyDirty(draft); render(); focusModelPolicyField(host, "tiers", draft.policy.tiers.length - 1, "model"); }
+    }));
+    $$('[data-engine-policy-remove]', view).forEach((button) => button.addEventListener("click", () => {
+      const draft = policyDraft(host);
+      const kind = button.dataset.enginePolicyRemove;
+      const index = Number(button.dataset.enginePolicyIndex);
+      if (kind !== "categories" && kind !== "tiers") return;
+      draft.policy[kind].splice(index, 1); markPolicyDirty(draft); render();
+    }));
+    $("[data-engine-model-policy-undo]", view)?.addEventListener("click", () => { resetModelPolicyDraft(host); render(); });
+    $("[data-engine-model-policy-save]", view)?.addEventListener("click", () => { if (!pending) void saveModelPolicy(host, render); });
   };
   const renderModelPolicy = () => {
     const view = $("#engine-model-policy-view");
     if (!view) return;
-    const catalog = state.modelPolicy;
     const host = state.modelPolicyHost;
+    const catalog = state.modelPolicy?.selectedHost === host ? state.modelPolicy : null;
+    const pending = modelPolicyPendingFor(host) || state.librarySwitching;
+    const focus = rememberFocus(view);
     setText("#engine-model-policy-source", catalog?.source?.kind ?? "device-engine");
     if (!catalog || catalog.httpStatus >= 400) {
-      view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-unavailable><div class="tcrn-inline-alert tcrn-inline-alert--danger" role="alert"><code>${esc(catalog?.reasonCode ?? "PORTAL_MODEL_POLICY_UNAVAILABLE")}</code></div></section>`;
-      return;
+      view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-unavailable><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}</div><div class="tcrn-inline-alert tcrn-inline-alert--${pending ? "neutral" : "danger"}" role="${pending ? "status" : "alert"}" data-engine-model-policy-status="${pending ? "loading" : "unavailable"}"><code>${esc(pending ? "PORTAL_MODEL_POLICY_LOADING" : catalog?.reasonCode ?? "PORTAL_MODEL_POLICY_UNAVAILABLE")}</code></div></section>`;
+      wireModelPolicyEditor(view, host, renderModelPolicy); restoreFocus(view, focus); return;
     }
-    const entry = catalog.selectedPolicy;
+    const entry = policyEntryFor(host, catalog);
     const draft = policyDraft(host);
-    const focus = rememberFocus(view);
-    const audit = entry === null || entry === undefined
-      ? `<p class="tcrn-text" data-engine-model-policy-status="unconfigured">No policy is configured for this host.</p>`
-      : `<dl class="tcrn-definition-list tcrn-definition-list--dense" data-engine-model-policy-audit><div class="tcrn-definition-list__item"><span>Revision</span><strong>${esc(entry.revision)}</strong></div><div class="tcrn-definition-list__item"><span>Updated</span><strong>${esc(entry.updatedAt)}</strong></div><div class="tcrn-definition-list__item"><span>Source</span><strong>engine / ${esc(host)}</strong></div><div class="tcrn-definition-list__item"><span>Owner decision</span><strong>${esc(entry.decidedIn)}</strong></div><div class="tcrn-definition-list__item"><span>Legacy precedence</span><strong>${esc(catalog.compatibility?.precedence ?? "")}</strong></div></dl>`;
-    const categoryRows = draft.policy.categories.map((row, index) => `<tr><td><input class="tcrn-input" data-policy-category="${index}" data-policy-field="id" value="${esc(row.id ?? "")}"></td><td><input class="tcrn-input" data-policy-category="${index}" data-policy-field="name" value="${esc(row.name ?? "")}"></td><td><input class="tcrn-input" type="number" data-policy-category="${index}" data-policy-field="order" value="${esc(row.order ?? "")}"></td></tr>`).join("");
-    const tierRows = draft.policy.tiers.map((row, index) => `<tr><td><input class="tcrn-input" data-policy-tier="${index}" data-policy-field="category" value="${esc(row.category ?? "")}"></td><td><input class="tcrn-input" data-policy-tier="${index}" data-policy-field="runner" value="${esc(row.runner ?? "")}"></td><td><input class="tcrn-input" data-policy-tier="${index}" data-policy-field="model" value="${esc(row.model ?? "")}"></td><td><input class="tcrn-input" data-policy-tier="${index}" data-policy-field="effort" value="${esc(row.effort ?? "")}"></td></tr>`).join("");
-    view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("settings.group.models"))}</h2><p class="tcrn-text">${esc(t("settings.layer.device"))} · ${esc(host)}</p></div><span class="tcrn-badge" data-engine-model-policy-store-revision>v${esc(catalog.storeRevision)}</span></div><div class="tcrn-grid tcrn-grid--2"><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("settings.layer.device"))}</span><select class="tcrn-select" data-engine-model-policy-host>${modelPolicyHosts().map((name) => `<option value="${esc(name)}"${name === host ? " selected" : ""}>${esc(name)}</option>`).join("")}</select></label><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("receipt.record"))}</span><input class="tcrn-input" data-engine-model-policy-decision value="${esc(draft.decidedIn)}" placeholder="minutes:&lt;id&gt;#D1"></label></div>${audit}<div class="tcrn-surface"><h3>${esc(t("page.modelCategories"))}</h3><table class="tcrn-table" data-ui="engine-model-categories-table"><thead><tr><th>id</th><th>${esc(t("collection.actions"))}</th><th>${esc(t("collection.order"))}</th></tr></thead><tbody>${categoryRows}</tbody></table></div><div class="tcrn-surface"><h3>${esc(t("page.modelTiers"))}</h3><table class="tcrn-table" data-ui="engine-model-tiers-table"><thead><tr><th>category</th><th>runner</th><th>model</th><th>effort</th></tr></thead><tbody>${tierRows}</tbody></table></div><div class="tcrn-grid tcrn-grid--2"><label class="tcrn-switch"><input type="checkbox" data-policy-escalation="enabled" ${draft.policy.escalation.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("setting.models.escalation.enabled.label"))}</span></label><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("setting.models.escalation.threshold.label"))}</span><input class="tcrn-input" type="number" data-policy-escalation="threshold" value="${esc(draft.policy.escalation.threshold)}"></label></div><div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-engine-model-policy-undo>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-engine-model-policy-save data-cli-action="engine-model-policy-set" ${draft.dirty ? "" : "disabled"}>${esc(t("config.save"))}</button></div></section>`;
-    const change = (event) => { const input = event.currentTarget; const group = input.dataset.policyCategory !== undefined ? draft.policy.categories[input.dataset.policyCategory] : input.dataset.policyTier !== undefined ? draft.policy.tiers[input.dataset.policyTier] : draft.policy.escalation; group[input.dataset.policyField ?? input.dataset.policyEscalation] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value; draft.dirty = true; $("[data-engine-model-policy-save]", view).disabled = false; };
-    $$('[data-policy-category],[data-policy-tier],[data-policy-escalation]', view).forEach((input) => input.addEventListener("input", change));
-    $("[data-engine-model-policy-decision]", view).addEventListener("input", (event) => { draft.decidedIn = event.currentTarget.value; draft.dirty = true; $("[data-engine-model-policy-save]", view).disabled = false; });
-    $("[data-engine-model-policy-host]", view).addEventListener("change", async (event) => { state.modelPolicyHost = event.currentTarget.value; await refreshModelPolicy(); });
-    $("[data-engine-model-policy-undo]", view).addEventListener("click", () => { delete modelPolicyDrafts()[host]; renderModelPolicy(); });
-    $("[data-engine-model-policy-save]", view).addEventListener("click", async () => {
-      const decision = draft.decidedIn.trim();
-      const policy = draft.policy;
-      if (decision === "") { showReceipt({ ok: false, reasonCode: "PORTAL_MODEL_POLICY_DECISION_REQUIRED" }); return; }
-      const result = await api("/api/model-policy", { method: "POST", anyTarget: true, body: JSON.stringify({ host, policy, decidedIn: decision }) });
-      showReceipt(result);
-      if (result.ok) { delete modelPolicyDrafts()[host]; await refreshModelPolicy(); }
-    });
-    restoreFocus(view, focus);
+    const writing = modelPolicyWrites().has(host);
+    const failure = draft.failure ? `<div class="tcrn-inline-alert tcrn-inline-alert--danger" role="alert" data-engine-model-policy-write-error><code>${esc(draft.failure.reasonCode ?? "PORTAL_MODEL_POLICY_WRITE_FAILED")}</code><span>${esc(reasonHint(draft.failure.reasonCode) || t("receipt.failureMessage"))}</span></div>` : "";
+    view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy data-engine-model-policy-host="${esc(host)}" data-engine-model-policy-pending="${writing || pending}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("settings.group.models"))}</h2><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div><span class="tcrn-badge" data-engine-model-policy-store-revision>v${esc(catalog.storeRevision)}</span></div><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("modelPolicy.decision"))}</span><input class="tcrn-input" data-engine-model-policy-decision aria-label="${esc(t("modelPolicy.decision"))}" value="${esc(draft.decidedIn)}" placeholder="minutes:&lt;id&gt;#D1" ${state.librarySwitching ? "disabled" : ""}></label></div>${modelPolicyAudit(catalog, host, entry)}<p class="tcrn-text" data-engine-model-policy-compatibility>${esc(t("modelPolicy.compatibilityNote"))}</p>${failure}${modelPolicyTables(host, draft)}<div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-engine-model-policy-undo ${pending || state.librarySwitching ? "disabled" : ""}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-engine-model-policy-save data-cli-action="engine-model-policy-set" ${draft.dirty && !writing && !pending ? "" : "disabled"} aria-busy="${writing}">${esc(writing ? t("collection.saving") : t("config.save"))}</button></div></section>`;
+    wireModelPolicyEditor(view, host, renderModelPolicy); restoreFocus(view, focus);
   };
   const refreshModelPolicy = async () => {
-    const requestedHost = state.modelPolicyHost;
-    const sequence = (state.modelPolicyRead ?? 0) + 1;
-    state.modelPolicyRead = sequence;
-    const result = await api(`/api/model-policy?host=${encodeURIComponent(requestedHost)}`, { anyTarget: true });
-    if (state.modelPolicyHost !== requestedHost || state.modelPolicyRead !== sequence) return;
-    state.modelPolicy = result;
+    const target = beginModelPolicyRead();
     renderModelPolicy();
+    let result;
+    try { result = await api(`/api/model-policy?host=${encodeURIComponent(target.host)}`, { anyTarget: true }); }
+    catch (error) { result = { ok: false, httpStatus: 503, reasonCode: "PORTAL_MODEL_POLICY_READ_UNAVAILABLE", error: String(error?.message ?? error) }; }
+    if (!acceptModelPolicyRead(target, result)) return false;
+    renderModelPolicy(); renderModelCategories(); renderModelTiers(); renderSettings();
+    return true;
   };
+  const renderModelPolicyCollectionPage = (kind) => {
+    const view = $(kind === "categories" ? "#model-categories-view" : "#model-tiers-view");
+    if (!view) return;
+    const host = state.modelPolicyHost;
+    const catalog = state.modelPolicy?.selectedHost === host ? state.modelPolicy : null;
+    const pending = modelPolicyPendingFor(host) || state.librarySwitching;
+    const focus = rememberFocus(view);
+    const count = kind === "categories" ? catalog?.selectedPolicy?.categories?.length ?? 0 : catalog?.selectedPolicy?.tiers?.length ?? 0;
+    setText(kind === "categories" ? "#model-categories-count" : "#model-tiers-count", t(kind === "categories" ? "modelCategories.count" : "modelTiers.count", { count }));
+    if (!catalog || catalog.httpStatus >= 400) {
+      view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-collection="${esc(kind)}"><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}</div><div class="tcrn-inline-alert tcrn-inline-alert--${pending ? "neutral" : "danger"}" role="${pending ? "status" : "alert"}" data-engine-model-policy-status="${pending ? "loading" : "unavailable"}"><code>${esc(pending ? "PORTAL_MODEL_POLICY_LOADING" : catalog?.reasonCode ?? "PORTAL_MODEL_POLICY_UNAVAILABLE")}</code></div></section>`;
+      wireModelPolicyEditor(view, host, () => renderModelPolicyCollectionPage(kind)); restoreFocus(view, focus); return;
+    }
+    const entry = policyEntryFor(host, catalog);
+    const draft = policyDraft(host);
+    const writing = modelPolicyWrites().has(host);
+    const title = kind === "categories" ? t("modelCategories.title") : t("modelTiers.title");
+    const failure = draft.failure ? `<div class="tcrn-inline-alert tcrn-inline-alert--danger" role="alert" data-engine-model-policy-write-error><code>${esc(draft.failure.reasonCode ?? "PORTAL_MODEL_POLICY_WRITE_FAILED")}</code><span>${esc(reasonHint(draft.failure.reasonCode) || t("receipt.failureMessage"))}</span></div>` : "";
+    view.innerHTML = `<section class="tcrn-surface" data-engine-model-policy-collection="${esc(kind)}" data-engine-model-policy-host="${esc(host)}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(title)}</h2><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div><span class="tcrn-badge">v${esc(catalog.storeRevision)}</span></div><div class="tcrn-grid tcrn-grid--2">${modelPolicyHostControl(host, pending)}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("modelPolicy.decision"))}</span><input class="tcrn-input" data-engine-model-policy-decision aria-label="${esc(t("modelPolicy.decision"))}" value="${esc(draft.decidedIn)}" placeholder="minutes:&lt;id&gt;#D1" ${state.librarySwitching ? "disabled" : ""}></label></div>${modelPolicyAudit(catalog, host, entry)}<p class="tcrn-text" data-engine-model-policy-compatibility>${esc(t("modelPolicy.compatibilityNote"))}</p>${failure}${modelPolicyTables(host, draft, kind === "categories" ? ["categories"] : ["tiers", "escalation"])}<div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-engine-model-policy-undo ${pending || state.librarySwitching ? "disabled" : ""}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-engine-model-policy-save data-cli-action="engine-model-policy-set" ${draft.dirty && !writing && !pending ? "" : "disabled"} aria-busy="${writing}">${esc(writing ? t("collection.saving") : t("config.save"))}</button></div></section>`;
+    wireModelPolicyEditor(view, host, () => renderModelPolicyCollectionPage(kind)); restoreFocus(view, focus);
+  };
+  const renderModelCategories = () => renderModelPolicyCollectionPage("categories");
+  const renderModelTiers = () => renderModelPolicyCollectionPage("tiers");
   const resetCollections = () => {
     for (const status of Object.values(state.collections)) Object.assign(status, { draft: null, dirty: false, findings: [], refusal: null });
     clearTransientTarget();
@@ -6414,17 +6605,21 @@ const BOOT = __PORTAL_BOOT__;
     const epoch = state.libraryEpoch || 0;
     const read = (state.settingsRead || 0) + 1;
     state.settingsRead = read;
+    const policyTarget = beginModelPolicyRead();
+    renderModelPolicy(); renderModelCategories(); renderModelTiers();
     refreshWork();
     refreshRegistry();
     try {
-      const [settings, vocabularyResult, status, commandsResult, machine, modelPolicy, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api(`/api/model-policy?host=${encodeURIComponent(state.modelPolicyHost)}`, { anyTarget: true }), api(knowledgePath()), api("/api/variables")]);
+      const [settings, vocabularyResult, status, commandsResult, machine, modelPolicy, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api(`/api/model-policy?host=${encodeURIComponent(policyTarget.host)}`, { anyTarget: true }), api(knowledgePath()), api("/api/variables")]);
       if ((state.libraryEpoch || 0) !== epoch || state.settingsRead !== read) return;
+      if (modelPolicyReadCurrent(policyTarget)) acceptModelPolicyRead(policyTarget, modelPolicy);
       if (unkept(settings, vocabularyResult, status, commandsResult, machine, knowledge, variables)) return;
-      state.machineSettings = machine; state.modelPolicy = modelPolicy; state.settings = settings; renderConfigurationTargets(); state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || [];
+      state.machineSettings = machine; state.settings = settings; renderConfigurationTargets(); state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || [];
       for (const collection of Object.values(state.collections)) if (!collection.dirty) collection.draft = null;
       renderDashboard(); renderSettings(); renderCollections(); renderModelPolicy(); renderVariables(); renderVocabulary(); rebuildSearchIndex();
     } catch (error) {
       if ((state.libraryEpoch || 0) !== epoch || state.settingsRead !== read) return;
+      if (modelPolicyReadCurrent(policyTarget)) acceptModelPolicyRead(policyTarget, { ok: false, httpStatus: 503, reasonCode: "PORTAL_MODEL_POLICY_READ_UNAVAILABLE", error: String(error?.message ?? error) });
       state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [], library: null };
       renderDashboard(); renderSettings(); renderCollections(); renderModelPolicy();
       showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) });
@@ -6723,6 +6918,7 @@ const BOOT = __PORTAL_BOOT__;
   };
   // The page takes a selection it was answered with: the switch's own, or the one another tab made.
   const adoptSelection = async ({ library, epoch, libraries = null }) => {
+    reconcileModelPolicyLibrary(library.libraryId ?? null);
     Object.assign(BOOT, { epoch, library, workspace: library.libraryPath, libraryName: library.name ?? null });
     loadLibraries(Array.isArray(libraries) ? libraries : BOOT.libraries);
     state.workspaceLabelPage = null; renderWorkspaceLabel(); $("#workspace-label").title = BOOT.workspace;

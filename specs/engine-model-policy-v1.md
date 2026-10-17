@@ -77,6 +77,35 @@ metadata into the earlier receipt.
   controls; saving requires a cited Owner decision and sends the portal's actual actor through the
   governed endpoint. Reads and writes do not require a selected project target.
 
+## Portal interaction contract
+
+The settings compatibility rows for `models.category`, `models.tiers`, and the escalation keys
+identify their historical / non-Codex source and link to the engine-host editor. They do not render
+project-setting write controls for a compatible Codex policy. The category and tier pages use the
+same editor, table, choice, numeric-entry, focus, keyboard, and receipt behaviors as the portal
+collections; they are projections of the selected engine host rather than copies of project
+configuration.
+
+Every route that reads a model policy, including a full portal refresh, captures the requested
+host, selected library identity, library epoch, and monotonically increasing read sequence. A
+response is accepted only if all four still identify the same target. Switching hosts leaves an
+old host's save unavailable while its replacement reads; switching libraries clears the old
+library's drafts. A valid host id is an engine contract value, so per-host drafts and pending
+writes use own-entry maps rather than prototype-keyed objects.
+
+An unconfigured host can start with an empty category table. The editor can create the first
+category and then complete every policy field: category `order`, `id`, `name`, and `description`;
+tier `order`, `category`, `runner`, `model`, `effort`, and `note`; and escalation `enabled`,
+`threshold`, and `ceiling`. Reset / undo discards an unsubmitted draft only; it never invents a
+policy-delete operation.
+
+The portal permits one write per host at a time. It records the exact draft version sent, keeps
+Save unavailable until that request settles, and shows either the governed receipt or a failure
+receipt. A success clears a draft only when the draft is still the exact sent version. Edits,
+Owner-decision changes, Undo, locale changes, and refreshes made after send retain their newer
+draft. A write also names the library that resolved its Owner decision; the endpoint rejects a
+request if that library changed before the write begins.
+
 ## Compatibility
 
 Historical `settings.updated` events and existing `models.*` records stay readable through the

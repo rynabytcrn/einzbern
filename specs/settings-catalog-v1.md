@@ -14,7 +14,10 @@ The existing `models.*` rows remain workspace-compatible history. `settings-cata
 model values, declarations, inherited values, and source. This is a separate source projection,
 not another settings row: old records remain readable, while a configured device host policy is
 authoritative for that host and cannot be overridden by a project model setting. The CLI/API write
-surface and file contract are specified in `specs/engine-model-policy-v1.md`.
+surface and file contract are specified in `specs/engine-model-policy-v1.md`. The portal presents
+the old rows as historical / non-Codex compatibility information and routes compatible Codex
+editing to the engine-host policy API; it does not copy those rows into a host policy or change
+them as a side effect.
 
 ## Configuration scopes (INC-399 R1)
 
@@ -516,9 +519,13 @@ protection as the other built-in rules. It is disabled until explicitly enabled.
 The seven actual catalog variables are `design.authority`, `design.repository`,
 `design.pullRequestTarget`, `design.productionDocs`, `design.buildService`,
 `design.buildProject` and `design.consumedVersion`. They resolve independently per
-project and show inherited sources. Changing only an authority identity while
-inheriting companion bindings from another authority reports `conflicting`.
-Missing companions report `unconfigured`. Declared bindings report publication
+project and show inherited sources. Design authority is optional: a project or
+submodule without a declaration is `unconfigured`, and that absence does not by
+itself block general development readiness. When an authority is declared, its
+resolved source and inherited bindings remain visible. Changing only an authority
+identity while inheriting companion bindings from another authority reports
+`conflicting`; a conflict blocks work that depends on the declared authority.
+Missing companions of a declared authority report `unconfigured`. Declared bindings report publication
 `unverified`: offline reads, a reachable URL or matching text are not production
 release evidence. An authorized agent separately verifies PR merge, Production
 publish, build result and consumed commit/artifact identities. The generic rule

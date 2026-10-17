@@ -282,9 +282,15 @@ async function loadExecutedDom(fixture, env = {}, { hold = () => false, portal =
     if (!holding(String(path))) return send(path, options);
     return new Promise((resolveHeld, rejectHeld) => { held.push({ path, options, resolveHeld, rejectHeld }); });
   };
-  const release = ({ error } = {}) => {
-    holding = () => false;
-    const waiting = held.splice(0);
+  const release = ({ error, where = () => true, keepHolding = false, limit = Infinity } = {}) => {
+    if (!keepHolding) holding = () => false;
+    const waiting = [];
+    const remaining = [];
+    for (const entry of held.splice(0)) {
+      if (waiting.length < limit && where(entry.path, entry.options)) waiting.push(entry);
+      else remaining.push(entry);
+    }
+    held.push(...remaining);
     for (const entry of waiting) {
       if (error === undefined) entry.resolveHeld(send(entry.path, entry.options));
       else entry.rejectHeld(error);
@@ -1103,7 +1109,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         assert.deepEqual(shown.map(rowKey), expected.map((row) => row.key), `${group} shows its keys in their catalog order`);
         for (const [index, row] of shown.entries()) {
           assert.equal(row.querySelector("[data-setting-layer]")?.dataset.settingLayer, expected[index].layer, `${expected[index].key} names its layer`);
-          assert.equal(row.dataset.settingShape, expected[index].shape, `${expected[index].key} keeps its shape`);
+          const expectedShape = expected[index].key.startsWith("models.") ? "compatibility" : expected[index].shape;
+          assert.equal(row.dataset.settingShape, expectedShape, `${expected[index].key} keeps its rendered shape`);
           assert.equal(row.hasAttribute("data-machine-row"), expected[index].layer === "device", `${expected[index].key} is written through its own layer`);
         }
         assert.ok(page.document.querySelector("#settings-count")?.textContent.startsWith(`${expected.length} `), `${group} counts its keys`);
@@ -1111,15 +1118,17 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         assert.equal(page.document.querySelector(`[data-setting-row="${retiredEconomySettingKey}"]`), null, `the retired economy-tier model stays out of ${group}`);
       }
 
-      // The models group lists its two collections as links to their pages, never as editors.
+      // The models group is historical compatibility information. It has no project-setting
+      // controls and sends each record to the engine-host editor instead of an old collection API.
       page.document.querySelector('[data-setting-group="models"]')?.click();
-      for (const [key, target] of [["models.category", "model-categories"], ["models.tiers", "model-tiers"]]) {
+      for (const key of ["models.category", "models.tiers", "models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling"]) {
         const row = page.document.querySelector(`[data-setting-row="${key}"]`);
-        assert.equal(row?.dataset.settingShape, "collection");
+        assert.equal(row?.dataset.settingShape, "compatibility");
         assert.equal(row.querySelector("[data-setting-control], [data-collection-field]"), null, `${key} has no editor on the settings page`);
-        row.querySelector(`[data-collection-link="${target}"]`).click();
-        assert.equal(page.document.querySelector(`[data-page="${target}"]`)?.hidden, false, `${key} opens its own page`);
+        row.querySelector('[data-model-policy-link="engine-model-policy"]').click();
+        assert.equal(page.document.querySelector('[data-page="engine-model-policy"]')?.hidden, false, `${key} opens the engine-host editor`);
         page.document.querySelector('[data-page-target="settings"]')?.click();
+        page.document.querySelector('[data-setting-group="models"]')?.click();
       }
 
       // Every row names where it lives, in five languages; in Chinese 项目级（随库同步） or 本机.
@@ -1160,11 +1169,10 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       }
       page.document.querySelector('[data-locale-option="en"]')?.click();
 
-      page.document.querySelector('[data-setting-group="models"]')?.click();
-      const ceiling = page.document.querySelector('[data-setting-control="models.escalation.ceiling"]');
-      assert.equal(ceiling?.tagName, "SELECT", "the category reference cannot fall back to free text");
-      assert.equal(ceiling.closest('[data-setting-choice-component]').dataset.settingChoiceSource, "models.category");
-      assert.deepEqual([...ceiling.querySelectorAll('option:not([data-reference-missing])')].map((option) => option.value), JSON.parse(project.find((entry) => entry.key === "models.category").currentValue).map((category) => category.id), "the actual category mother supplies every candidate");
+      page.document.querySelector('[data-page-target="engine-model-policy"]')?.click();
+      const ceiling = page.document.querySelector('[data-engine-policy-escalation="ceiling"]');
+      assert.equal(ceiling?.tagName, "SELECT", "the engine policy ceiling cannot fall back to free text");
+      assert.equal(ceiling.closest('[data-setting-choice-component]').dataset.settingChoiceSource, "models.escalation.ceiling");
 
       page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
@@ -1259,86 +1267,44 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
-  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6; contract C-R14-6): model categories and model tiers are
-  // pages of their own, each one table component led by its order column under a header that says what
-  // the order is for. The tier table's category column chooses from the category table and links to
-  // it; each category counts its tiers and links to them. This replaces SUB-342's host-by-tier table.
-  test("SUB-409 (STORY-508 R6): model categories and model tiers are two linked pages, each a table led by its order column", async () => {
+  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6): the former project-model collection
+  // destinations now render a single engine-host policy through the existing table components.
+  test("SUB-409 (STORY-508 R6): model category and tier pages edit the selected engine host, not project settings", async () => {
     const page = await preparePage();
     try {
-      const catalog = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings;
-      const stored = (key) => JSON.parse(catalog.find((entry) => entry.key === key).currentValue);
-      const categories = stored("models.category");
-      const tiers = stored("models.tiers");
-      const table = (key) => page.document.querySelector(`[data-collection-table="${key}"]`);
-      const columns = (key) => [...table(key).querySelectorAll("[data-collection-column]")].map((column) => column.dataset.collectionColumn);
-      assert.deepEqual(columns("models.category"), ["order", "id", "name", "description", "tiers", "actions"]);
-      assert.deepEqual(columns("models.tiers"), ["order", "category", "runner", "model", "effort", "note", "actions"]);
-      for (const key of ["models.category", "models.tiers"]) {
-        assert.equal(table(key).getAttribute("data-collection-component"), "CollectionTable", `${key} uses the one table component`);
-        assert.equal(table(key).getAttribute("data-collection-columns"), String(columns(key).length));
-        assert.ok(page.document.querySelector(`[data-collection-save="${key}"][data-cli-action="settings-set"]`), `${key} is written whole through settings-set`);
+      const { document, window } = page;
+      const categoryTable = () => document.querySelector('[data-collection-table="engine-model-policy-categories"]');
+      const tierTable = () => document.querySelector('[data-collection-table="engine-model-policy-tiers"]');
+      const columns = (table) => [...table.querySelectorAll("[data-collection-column]")].map((column) => column.dataset.collectionColumn);
+      document.querySelector('[data-page-target="model-categories"]').click();
+      assert.deepEqual(columns(categoryTable()), ["order", "id", "name", "description", "actions"]);
+      assert.equal(categoryTable().getAttribute("data-collection-component"), "CollectionTable");
+      assert.equal(document.querySelector('[data-collection-save="models.category"]'), null, "the category page has no legacy settings write");
+      categoryTable().querySelector('[data-engine-policy-add="categories"]').click();
+      const category = (field) => categoryTable().querySelector('[data-engine-policy-kind="categories"][data-engine-policy-index="0"][data-engine-policy-field="' + field + '"]');
+      for (const [field, value] of [["id", "main"], ["name", "Main"], ["description", "Host policy category"]]) {
+        category(field).value = value;
+        category(field).dispatchEvent(new window.Event("input", { bubbles: true }));
       }
-      // The rows are the stored records in order, each order in a NumberInput.
-      const orders = (key) => [...table(key).querySelectorAll('[data-collection-row] [data-collection-field="order"]')].map((input) => Number(input.value));
-      assert.deepEqual(orders("models.category"), categories.map((category) => category.order));
-      assert.deepEqual(orders("models.tiers"), tiers.map((tier) => tier.order));
-      assert.ok([...page.document.querySelectorAll('[data-collection-table] [data-collection-field="order"]')].every((input) => input.getAttribute("data-number-input-component") === "NumberInput" && input.type === "number" && input.getAttribute("min") === "1"));
-      // The category column is a choice of the category ids, set to each tier's category.
-      const choices = [...table("models.tiers").querySelectorAll('select[data-collection-field="category"]')];
-      assert.equal(choices.length, tiers.length);
-      for (const [index, select] of choices.entries()) {
-        assert.deepEqual([...select.querySelectorAll("option")].map((option) => option.getAttribute("value")), categories.map((category) => category.id));
-        assert.equal(select.value, tiers[index].category);
+      document.querySelector('[data-page-target="model-tiers"]').click();
+      assert.deepEqual(columns(tierTable()), ["order", "category", "runner", "model", "effort", "note", "actions"]);
+      assert.equal(tierTable().getAttribute("data-collection-component"), "CollectionTable");
+      assert.equal(document.querySelector('[data-collection-save="models.tiers"]'), null, "the tier page has no legacy settings write");
+      const addTier = tierTable().querySelector('[data-engine-policy-add="tiers"]');
+      assert.equal(addTier.disabled, false, "the selected host's draft category enables its tier action");
+      addTier.click();
+      const categoryChoice = tierTable().querySelector('[data-engine-policy-kind="tiers"][data-engine-policy-index="0"][data-engine-policy-field="category"]');
+      assert.deepEqual([...categoryChoice.querySelectorAll("option")].map((option) => option.value), ["main"], "the engine-host category table supplies the tier reference choices");
+      assert.equal(categoryChoice.value, "main");
+      document.querySelector('[data-page-target="engine-model-policy"]').click();
+      assert.ok(document.querySelector('[data-engine-model-policy-save][data-cli-action="engine-model-policy-set"]'), "all three views use the governed engine-policy write");
+      for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
+        document.querySelector('[data-locale-option="' + locale + '"]').click();
+        assert.ok(categoryTable()?.querySelector('[data-collection-column="order"]')?.textContent.trim(), locale + " names the category order column");
+        assert.ok(tierTable()?.querySelector('[data-collection-column="order"]')?.textContent.trim(), locale + " names the tier order column");
       }
-      // Each category counts the tiers filed under it, and the count opens them on the tier page.
-      for (const category of categories) {
-        const count = tiers.filter((tier) => tier.category === category.id).length;
-        assert.equal(table("models.category").querySelector(`[data-model-category-tiers="${category.id}"]`)?.dataset.modelCategoryTierCount, String(count), `${category.id} counts its tiers`);
-      }
-      table("models.category").querySelector('[data-model-category-tiers="economy"]').click();
-      assert.equal(page.document.querySelector('[data-page="model-tiers"]').hidden, false, "a tier count opens the tier page");
-      const marked = (key, field) => [...table(key).querySelectorAll('[data-collection-row][data-transient-target="true"]')].map((row) => row.querySelector(`[data-collection-field="${field}"]`).value);
-      assert.deepEqual(marked("models.tiers", "category"), tiers.filter((tier) => tier.category === "economy").map((tier) => tier.category), "and marks that category's tiers");
-      // A tier's category links to its category on the category page.
-      table("models.tiers").querySelector('[data-collection-row="0"] [data-model-category-link]').click();
-      assert.equal(page.document.querySelector('[data-page="model-categories"]').hidden, false, "a tier's category link opens the category page");
-      assert.deepEqual(marked("models.category", "id"), [tiers[0].category]);
-      page.document.querySelector('[data-page-target="model-categories"]').click();
-      assert.equal(page.document.querySelectorAll('[data-transient-target="true"]').length, 0, "navigation clears transient target markers");
-      // Each page also links to the other from its head.
-      page.document.querySelector('[data-collection-view="models.category"] [data-collection-links] [data-collection-link="model-tiers"]').click();
-      assert.equal(page.document.querySelector('[data-page="model-tiers"]').hidden, false);
-      page.document.querySelector('[data-collection-view="models.tiers"] [data-collection-links] [data-collection-link="model-categories"]').click();
-      assert.equal(page.document.querySelector('[data-page="model-categories"]').hidden, false);
-      // Both pages are project level, and say so.
-      for (const key of ["models.category", "models.tiers"]) assert.equal(page.document.querySelector(`[data-collection-view="${key}"] [data-setting-layer]`)?.dataset.settingLayer, "project");
-
-      // Five languages: each page is named, its header says what the order is for, and its table
-      // and its order column carry their names.
-      const expected = {
-        en: ["Model categories", "Model tiers", "Order"],
-        "zh-CN": ["模型分类", "模型档位", "顺序"],
-        ja: ["モデル分類", "モデルティア", "順序"],
-        ko: ["모델 분류", "모델 티어", "순서"],
-        fr: ["Catégories de modèles", "Niveaux de modèle", "Ordre"],
-      };
-      for (const [locale, [categoriesName, tiersName, orderName]] of Object.entries(expected)) {
-        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
-        assert.equal(page.document.querySelector('[data-page-target="model-categories"] .tcrn-nav-item__label').textContent, categoriesName);
-        assert.equal(page.document.querySelector('[data-page-target="model-tiers"] .tcrn-nav-item__label').textContent, tiersName);
-        assert.equal(page.document.querySelector('[data-page="model-categories"] h1').textContent, categoriesName);
-        assert.equal(page.document.querySelector('[data-page="model-tiers"] h1').textContent, tiersName);
-        for (const [key, lede] of [["models.category", "modelCategories.lede"], ["models.tiers", "modelTiers.lede"]]) {
-          const purpose = page.document.querySelector(`[data-collection-purpose="${key}"]`).textContent;
-          assert.ok(purpose !== lede && purpose.toLocaleLowerCase().includes(orderName.toLocaleLowerCase()), `${locale} ${key}: the header says what the order is for`);
-          assert.equal(table(key).querySelector('[data-collection-column="order"]').textContent, orderName);
-          assert.ok(!table(key).getAttribute("aria-label").includes("."), `${locale} ${key}: the table is named`);
-        }
-      }
-      page.document.querySelector('[data-locale-option="en"]')?.click();
-      // The Rules page's save names the verb it calls since TCRN-CROSS-SUB-338: rule-list, not agents-render.
-      assert.equal(page.document.querySelector("#save-agents").getAttribute("data-cli-action"), "rule-list");
+      document.querySelector('[data-locale-option="en"]').click();
+      assert.equal(document.querySelector("#save-agents").getAttribute("data-cli-action"), "rule-list");
       assert.doesNotMatch(page.source, /agents-render/u);
     } finally { await page.cleanup(); }
   });
@@ -1443,218 +1409,88 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
-  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6; contracts C-R14-2, C-R14-6): the tier table is written
-  // whole and read back. A refused table stays on the page as it was sent, with the engine's reason code
-  // on each row it names (a repeated order, a category the category table lacks), and a record the
-  // system variables render withholds says so on its row. This replaces SUB-342's host-by-tier editor.
-  test("SUB-409 (STORY-508 R6): the tier table is saved whole, and each refused or withheld row shows its reason code", async () => {
+  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6): host-policy tier drafts are ordinary
+  // table rows, but their write path is the engine policy endpoint and never settings-set.
+  test("SUB-409 (STORY-508 R6): tier drafts use the selected engine host and Undo has no policy-delete side effect", async () => {
     const page = await preparePage();
     try {
-      const stored = async (key) => JSON.parse((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === key).currentValue);
-      const agents = () => readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8");
-      const original = await stored("models.tiers");
-      const table = () => page.document.querySelector('[data-collection-table="models.tiers"]');
-      const field = (index, name) => table().querySelector(`[data-collection-row="${index}"] [data-collection-field="${name}"]`);
-      const findings = () => [...table().querySelectorAll("[data-collection-finding]")].map((node) => [node.closest("[data-collection-finding-row]").dataset.collectionFindingRow, node.dataset.collectionFinding]);
-      // A save is one request and, when it lands, the reads that follow it; the page settles after all of them.
-      const save = async () => {
-        page.document.querySelector('[data-collection-save="models.tiers"]').click();
-        await page.waitForSettled();
-        return receiptText(page.document);
-      };
-      page.document.querySelector('[data-page-target="model-tiers"]').click();
-
-      // A new row takes the next order in steps of ten; filled in and saved, it reads back and renders.
-      page.document.querySelector('[data-collection-add="models.tiers"]').click();
-      const added = original.length;
-      const order = original.at(-1).order + 10;
-      assert.equal(field(added, "order").value, String(order));
-      field(added, "category").value = "economy";
-      field(added, "runner").value = "claude-code";
-      field(added, "model").value = "test-model";
-      field(added, "effort").value = "high";
-      field(added, "note").value = "portal";
-      assert.match(await save(), /^✓v\d+$/u);
-      const written = await stored("models.tiers");
-      assert.deepEqual(written.at(-1), { order, category: "economy", runner: "claude-code", model: "test-model", effort: "high", note: "portal" });
-      assert.match(await agents(), new RegExp(`\\| ${order} \\| economy \\| claude-code \\| test-model \\| high \\| portal \\|`, "u"));
-      assert.equal(table().querySelectorAll("[data-collection-row]").length, written.length);
-
-      // A repeated order is refused: both rows that share it carry the code, the table stays as sent,
-      // and nothing is written.
-      field(1, "order").value = field(0, "order").value;
-      assert.match(await save(), /^✕/u);
-      assert.deepEqual(findings(), [["0", "MODELS_ORDER_DUPLICATE"], ["1", "MODELS_ORDER_DUPLICATE"]]);
-      for (const index of [0, 1]) assert.equal(field(index, "order").getAttribute("aria-invalid"), "true");
-      assert.equal(field(1, "order").value, String(written[0].order), "the refused table stays on the page as it was sent");
-      assert.deepEqual(await stored("models.tiers"), written, "a refused table writes nothing");
-
-      // A tier naming a category the category table lacks is refused on its row.
-      field(1, "order").value = String(written[1].order);
-      const category = field(2, "category");
-      const ghost = page.document.createElement("option");
-      ghost.setAttribute("value", "ghost");
-      category.append(ghost);
-      category.value = "ghost";
-      assert.match(await save(), /^✕/u);
-      assert.deepEqual(findings(), [["2", "MODELS_CATEGORY_UNKNOWN"]]);
-      assert.equal(field(2, "category").getAttribute("aria-invalid"), "true");
-      assert.equal(field(2, "category").value, "ghost", "the row keeps the category it was sent with");
-      assert.deepEqual(await stored("models.tiers"), written);
-
-      // A note shaped like a credential is stored but withheld from AGENTS.md, and its row says so.
-      field(2, "category").value = written[2].category;
-      field(3, "note").value = "sk-proj-0123456789abcdef";
-      assert.match(await save(), /^✓v\d+$/u);
-      assert.deepEqual(findings(), [["3", "secret-shaped"]]);
-      assert.equal(table().querySelector('[data-collection-finding="secret-shaped"]').className.includes("tcrn-inline-alert--warning"), true, "a withheld record is a warning, not a refusal");
-      const rendered = await agents();
-      assert.match(rendered, new RegExp(`\\| ${written[3].order} \\| ${written[3].category} \\| ${written[3].runner} \\| \\(withheld\\) \\| \\(withheld\\) \\| \\(withheld\\) \\|`, "u"));
-      assert.doesNotMatch(rendered, /sk-proj-0123456789abcdef/u);
-
-      // Removing a row and saving drops its record.
-      table().querySelector(`[data-collection-remove="${added}"]`).click();
-      assert.equal(table().querySelectorAll("[data-collection-row]").length, original.length);
-      assert.match(await save(), /^✓v\d+$/u);
-      assert.equal((await stored("models.tiers")).some((tier) => tier.order === order), false);
-
-      // Restoring the default table puts the default records back, and the withheld note with them goes.
-      const reset = page.document.querySelector('[data-collection-reset="models.tiers"]');
-      assert.ok(reset, "a table that differs from the default can be restored");
-      reset.click();
-      await page.waitForSettled();
-      assert.match(receiptText(page.document), /^✓v\d+$/u);
-      assert.deepEqual(await stored("models.tiers"), original);
-      assert.deepEqual([...table().querySelectorAll('[data-collection-row] [data-collection-field="order"]')].map((input) => Number(input.value)), original.map((tier) => tier.order));
-      assert.deepEqual(findings(), []);
-      assert.equal(page.document.querySelector('[data-collection-reset="models.tiers"]'), null, "the default table offers no restore");
-      assert.doesNotMatch(await agents(), /\(withheld\)/u);
+      const { document, window } = page;
+      const legacyBefore = await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv);
+      const legacyTiers = legacyBefore.settings.find((entry) => entry.key === "models.tiers").currentValue;
+      const view = () => document.querySelector("#engine-model-policy-view");
+      const categories = () => view().querySelector('[data-engine-model-policy-section="categories"]');
+      const tiers = () => view().querySelector('[data-engine-model-policy-section="tiers"]');
+      const input = (kind, index, field) => view().querySelector('[data-engine-policy-kind="' + kind + '"][data-engine-policy-index="' + index + '"][data-engine-policy-field="' + field + '"]');
+      document.querySelector('[data-page-target="engine-model-policy"]').click();
+      view().querySelector('[data-engine-policy-add="categories"]').click();
+      for (const [field, value] of [["id", "main"], ["name", "Main"]]) {
+        input("categories", 0, field).value = value;
+        input("categories", 0, field).dispatchEvent(new window.Event("input", { bubbles: true }));
+      }
+      view().querySelector('[data-engine-policy-add="tiers"]').click();
+      for (const [field, value] of [["runner", "codex"], ["model", "gpt-5.6-terra"], ["effort", "max"], ["note", "draft only"]]) {
+        input("tiers", 0, field).value = value;
+        input("tiers", 0, field).dispatchEvent(new window.Event("input", { bubbles: true }));
+      }
+      assert.equal(categories().querySelectorAll('[data-collection-row]').length, 1);
+      assert.equal(tiers().querySelectorAll('[data-collection-row]').length, 1);
+      assert.equal(input("tiers", 0, "category").value, "main");
+      assert.equal(view().querySelectorAll('[data-engine-policy-remove="tiers"]').length, 1, "a draft row can be removed before save");
+      assert.equal(document.querySelector('[data-cli-action="settings-set"][data-collection-save="models.tiers"]'), null, "tiers have no legacy collection writer");
+      view().querySelector('[data-engine-model-policy-undo]').click();
+      assert.equal(view().querySelectorAll('[data-collection-row]').length, 0, "Undo returns an unconfigured host to its empty draft");
+      const legacyAfter = await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv);
+      assert.equal(legacyAfter.settings.find((entry) => entry.key === "models.tiers").currentValue, legacyTiers, "draft and Undo leave historical project data untouched");
     } finally { await page.cleanup(); }
-  });
-
-  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R1, R6): a category is added on its page and offered to the
-  // tiers at once; a repeated id is refused on both rows, and a category that tiers are still filed under
-  // cannot be dropped: the refusal names the tier records that keep it.
-  test("SUB-409 (STORY-508 R1, R6): the category table is saved whole; a repeated id and a category still in use are refused on the page", async () => {
+  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R1, R6): category ids and the tier relation are
+  // edited together in the selected host draft, with labels owned by the actual controls.
+  test("SUB-409 (STORY-508 R1, R6): engine policy category choices and table action names remain accessible", async () => {
     const page = await preparePage();
     try {
-      const stored = async (key) => JSON.parse((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === key).currentValue);
-      const table = (key) => page.document.querySelector(`[data-collection-table="${key}"]`);
-      const field = (key, index, name) => table(key).querySelector(`[data-collection-row="${index}"] [data-collection-field="${name}"]`);
-      for (const input of page.document.querySelectorAll('[data-collection-field]')) {
-        assert.equal(input.getAttribute("aria-label"), input.closest('[role="cell"]').getAttribute("data-label"));
-        assert.ok(input.getAttribute("aria-label"));
+      const { document, window } = page;
+      const view = () => document.querySelector("#engine-model-policy-view");
+      const input = (kind, index, field) => view().querySelector('[data-engine-policy-kind="' + kind + '"][data-engine-policy-index="' + index + '"][data-engine-policy-field="' + field + '"]');
+      const write = (node, value, event = "input") => { node.value = value; node.dispatchEvent(new window.Event(event, { bubbles: true })); };
+      document.querySelector('[data-page-target="engine-model-policy"]').click();
+      for (const [index, id, name] of [[0, "main", "Main"], [1, "review", "Review"]]) {
+        view().querySelector('[data-engine-policy-add="categories"]').click();
+        write(input("categories", index, "id"), id);
+        write(input("categories", index, "name"), name);
       }
-      // Typing sends the input event a reader's typing would, so the page's draft keeps the edit.
-      const type = (input, value) => { input.value = value; input.dispatchEvent(new page.window.Event("input", { bubbles: true })); };
-      const save = async (key) => {
-        page.document.querySelector(`[data-collection-save="${key}"]`).click();
-        await page.waitForSettled();
-        return receiptText(page.document);
-      };
-      const original = await stored("models.category");
-      page.document.querySelector('[data-page-target="model-categories"]').click();
-
-      page.document.querySelector('[data-collection-add="models.category"]').click();
-      assert.equal(field("models.category", original.length, "order").value, String(original.at(-1).order + 10));
-      type(field("models.category", original.length, "order"), "25");
-      type(field("models.category", original.length, "id"), "review");
-      type(field("models.category", original.length, "name"), "Review");
-      type(field("models.category", original.length, "description"), "A second look");
-      assert.match(await save("models.category"), /^✓v\d+$/u);
-      const categories = await stored("models.category");
-      assert.deepEqual(categories.map((entry) => [entry.order, entry.id]), [[10, "flagship"], [20, "main"], [25, "review"], [30, "economy"]]);
-      assert.deepEqual(categories[2], { order: 25, id: "review", name: "Review", description: "A second look" });
-      assert.equal(field("models.category", 2, "id").value, "review", "the page reads the table back in its order");
-      assert.equal(table("models.category").querySelector('[data-collection-row="2"] [data-model-category-tier-count]')?.dataset.modelCategoryTierCount, "0");
-      const offered = [...table("models.tiers").querySelector('[data-collection-row="0"] select[data-collection-field="category"]').querySelectorAll("option")].map((option) => option.getAttribute("value"));
-      assert.deepEqual(offered, ["flagship", "main", "review", "economy"], "the tier page offers the new category at once");
-
-      // A repeated id is refused on both rows that carry it.
-      type(field("models.category", 2, "id"), "main");
-      assert.match(await save("models.category"), /^✕/u);
-      assert.deepEqual([...table("models.category").querySelectorAll("[data-collection-finding]")].map((node) => [node.closest("[data-collection-finding-row]").dataset.collectionFindingRow, node.dataset.collectionFinding, node.dataset.collectionFindingField]), [["1", "MODELS_CATEGORY_DUPLICATE", "id"], ["2", "MODELS_CATEGORY_DUPLICATE", "id"]]);
-      assert.deepEqual(await stored("models.category"), categories);
-      type(field("models.category", 2, "id"), "review");
-
-      // File a tier under the new category, then try to drop it: the refusal names the tier.
-      page.document.querySelector('[data-page-target="model-tiers"]').click();
-      const tierCategory = field("models.tiers", 0, "category");
-      tierCategory.value = "review";
-      tierCategory.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      const tierOrder = Number(field("models.tiers", 0, "order").value);
-      assert.match(await save("models.tiers"), /^✓v\d+$/u);
-      assert.equal((await stored("models.tiers")).find((tier) => tier.order === tierOrder)?.category, "review");
-      page.document.querySelector('[data-page-target="model-categories"]').click();
-      assert.equal(field("models.category", 2, "id").value, "review", "the category page kept its unsaved edit across the tier write");
-      assert.equal(table("models.category").querySelector('[data-model-category-tiers="review"]')?.dataset.modelCategoryTierCount, "1");
-      table("models.category").querySelector('[data-collection-remove="2"]').click();
-      assert.match(await save("models.category"), /^✕/u);
-      const inUse = page.document.querySelector('[data-collection-alerts="models.category"] [data-collection-finding="MODELS_CATEGORY_IN_USE"]');
-      assert.ok(inUse, "a category still in use is refused above the table, since its row is the one removed");
-      assert.match(inUse.textContent, new RegExp(`review: models\\.tiers\\.${tierOrder}`, "u"));
-      assert.deepEqual(await stored("models.category"), categories, "the refused table writes nothing");
-    } finally { await page.cleanup(); }
-  });
-
-  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6): an empty table says what to do first, with the control
-  // that does it, and keeps its order column; a tier table with no category to file under sends the
-  // reader to the category page. TCRN-CROSS-SUB-406 (R3): a write may not drop the category the
-  // escalation ceiling names, so only a merge leaves the category table empty (the fixture records it as
-  // replay reads a merged value), and emptying it on the page is refused with the ceiling named.
-  test("SUB-409 (STORY-508 R6): an empty table guides the reader to its first record", async () => {
-    const fixture = await scratch("tcrn-409-empty-");
-    const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
-    // The tiers go first: a category that tiers are filed under cannot be dropped.
-    await cli(["settings-set", "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", "--key", "models.tiers", "--value", "[]"], atelier);
-    await mergedSetting(fixture, "models.category", "[]");
-    const page = await loadExecutedDom(fixture);
+      view().querySelector('[data-engine-policy-add="tiers"]').click();
+      const headers = [...view().querySelector('[data-collection-table="engine-model-policy-categories"]').querySelectorAll("[data-collection-column]")].map((node) => node.dataset.collectionColumn);
+      assert.deepEqual(headers, ["order", "id", "name", "description", "actions"], "the name field has its own header and actions remains last");
+      const choice = input("tiers", 0, "category");
+      assert.deepEqual([...choice.querySelectorAll("option")].map((option) => option.value), ["main", "review"]);
+      assert.equal(choice.getAttribute("aria-label"), choice.closest('[role="cell"]').getAttribute("data-label"));
+      for (const control of view().querySelectorAll('[data-engine-policy-field], [data-engine-policy-escalation]')) {
+        if (control.type === "checkbox") assert.ok(control.closest("label")?.textContent.trim(), "the switch has its visible label");
+  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6): an unconfigured engine host can create
+  // its first policy category; there is no project-table precondition or invented delete endpoint.
+  test("SUB-409 (STORY-508 R6): an empty engine host guides the reader to its first policy category", async () => {
+    const page = await preparePage();
     try {
-      for (const key of ["models.category", "models.tiers"]) {
-        assert.equal(page.document.querySelectorAll(`[data-collection-table="${key}"] [data-collection-row]`).length, 0);
-        assert.ok(page.document.querySelector(`[data-collection-table="${key}"] [data-collection-column="order"]`), `${key} keeps its order column when empty`);
-        assert.ok(page.document.querySelector(`[data-collection-empty="${key}"] .tcrn-state-surface__title`)?.textContent.trim(), `${key} says it is empty`);
+      const { document } = page;
+      document.querySelector('[data-page-target="engine-model-policy"]').click();
+      const view = () => document.querySelector("#engine-model-policy-view");
+      const categoryTable = () => view().querySelector('[data-collection-table="engine-model-policy-categories"]');
+      const tierTable = () => view().querySelector('[data-collection-table="engine-model-policy-tiers"]');
+      for (const table of [categoryTable(), tierTable()]) {
+        assert.ok(table.querySelector('[data-collection-column="order"]'), "an empty policy table retains its order column");
+        assert.ok(table.querySelector("[data-collection-empty] .tcrn-state-surface__description")?.textContent.trim(), "an empty policy table explains its next action");
       }
-      const categoriesGuide = page.document.querySelector('[data-collection-empty="models.category"]');
-      assert.ok(categoriesGuide.querySelector('[data-collection-add="models.category"]'), "an empty category table offers to add one");
-      const tiersGuide = page.document.querySelector('[data-collection-empty="models.tiers"]');
-      assert.equal(tiersGuide.querySelector("[data-collection-add]"), null, "a tier cannot be added before a category exists");
-      tiersGuide.querySelector('[data-collection-link="model-categories"]').click();
-      assert.equal(page.document.querySelector('[data-page="model-categories"]').hidden, false, "the tier table's guide opens the category page");
-      page.document.querySelector('[data-collection-empty="models.category"] [data-collection-add="models.category"]').click();
-      const first = page.document.querySelector('[data-collection-table="models.category"] [data-collection-row="0"] [data-collection-field="order"]');
-      assert.equal(first?.value, "10", "the first category takes the first order");
-      page.document.querySelector('[data-page-target="settings"]').click();
-      page.document.querySelector('[data-setting-group="models"]').click();
-      for (const key of ["models.category", "models.tiers"]) assert.equal(page.document.querySelector(`[data-setting-row="${key}"] [data-collection-count]`)?.textContent, "0 records");
+      assert.ok(categoryTable().querySelector('[data-engine-policy-add="categories"]'), "an empty host offers its first category action");
+      assert.equal(tierTable().querySelector('[data-engine-policy-add="tiers"]')?.disabled, true, "a tier waits for an actual host-policy category");
       for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
-        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
-        const guide = page.document.querySelector('[data-collection-empty="models.tiers"]');
-        assert.ok([...guide.querySelectorAll(".tcrn-state-surface__title, .tcrn-state-surface__description")].every((node) => node.textContent.trim() && !node.textContent.startsWith("modelTiers.")), `${locale} guides the reader`);
+        document.querySelector('[data-locale-option="' + locale + '"]').click();
+        const guide = categoryTable().querySelector("[data-collection-empty]");
+        assert.ok(guide.textContent.trim() && !guide.textContent.includes("modelPolicy."), locale + " translates the first-policy guide");
       }
-      // The first category is main, so the ceiling (main while unset) names a category again; emptying
-      // the table on the page shows its guide, and saving it is refused with the ceiling named above it.
-      page.document.querySelector('[data-locale-option="en"]')?.click();
-      page.document.querySelector('[data-page-target="model-categories"]').click();
-      for (const [name, value] of [["id", "main"], ["name", "Main"]]) {
-        const input = page.document.querySelector(`[data-collection-table="models.category"] [data-collection-row="0"] [data-collection-field="${name}"]`);
-        input.value = value;
-        input.dispatchEvent(new page.window.Event("input", { bubbles: true }));
-      }
-      const saveCategories = async () => {
-        page.document.querySelector('[data-collection-save="models.category"]').click();
-        await page.waitForSettled();
-        return receiptText(page.document);
-      };
-      assert.match(await saveCategories(), /^✓v\d+$/u);
-      page.document.querySelector('[data-collection-table="models.category"] [data-collection-remove="0"]').click();
-      assert.ok(page.document.querySelector('[data-collection-empty="models.category"]'), "the emptied table shows its guide before it is saved");
-      assert.match(await saveCategories(), /^✕/u);
-      const inUse = page.document.querySelector('[data-collection-alerts="models.category"] [data-collection-finding="MODELS_CATEGORY_IN_USE"]');
-      assert.match(inUse?.textContent ?? "", /main: models\.escalation\.ceiling/u, "the refusal names the ceiling that keeps the category");
-      const stored = JSON.parse((await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings.find((entry) => entry.key === "models.category").currentValue);
-      assert.deepEqual(stored.map((entry) => entry.id), ["main"], "the refused table writes nothing");
-    } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
+      document.querySelector('[data-locale-option="en"]').click();
+      categoryTable().querySelector('[data-engine-policy-add="categories"]').click();
+      assert.equal(tierTable().querySelector('[data-engine-policy-add="tiers"]')?.disabled, false, "the first category unlocks an in-memory tier draft");
+      assert.equal(document.querySelector('[data-cli-action="engine-model-policy-remove"]'), null, "the UI invents no policy-delete API");
+    } finally { await page.cleanup(); }
   });
 
   test("TCRN-CROSS-SUB-342 variables page creates, updates, renames, and deletes with an AGENTS.md readback", async () => {
@@ -1809,44 +1645,33 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const text = await agents();
       assert.ok(text.indexOf("rule:autonomy") < text.indexOf("rule:silent-reporting") && text.indexOf("rule:silent-reporting") < text.indexOf("rule:batch"), "a rule switched on with an order takes its place");
     } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
-  });
-
-  // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6; contract C-R14-3): the top of the tier page shows the
-  // three escalation settings as they stand, read only, and links to the settings group where they are
-  // changed; a change made there shows on the tier page.
-  test("SUB-410 (STORY-508 R6): the tier page shows the escalation settings read only and links to their settings group", async () => {
+  // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6): escalation belongs to the selected
+  // engine-host policy and is edited with its categories and tiers, not through legacy settings rows.
+  test("SUB-410 (STORY-508 R6): the tier page edits escalation in the governed engine-host policy", async () => {
     const page = await preparePage();
     try {
-      const document = page.document;
+      const { document, window } = page;
+      document.querySelector('[data-page-target="model-categories"]').click();
+      document.querySelector('[data-engine-policy-add="categories"]').click();
+      const categoryId = document.querySelector('[data-engine-policy-kind="categories"][data-engine-policy-index="0"][data-engine-policy-field="id"]');
+      categoryId.value = "main";
+      categoryId.dispatchEvent(new window.Event("input", { bubbles: true }));
       document.querySelector('[data-page-target="model-tiers"]').click();
-      const view = document.querySelector('[data-collection-view="models.tiers"]');
-      const summary = () => view.querySelector(":scope > [data-escalation-summary]");
-      assert.equal(view.firstElementChild, summary(), "the summary heads the tier page");
-      const shown = () => Object.fromEntries([...summary().querySelectorAll("[data-escalation-value]")].map((node) => [node.dataset.escalationValue, node.textContent]));
-      assert.deepEqual(shown(), { "models.escalation.enabled": "enabled", "models.escalation.threshold": "1", "models.escalation.ceiling": "main" });
-      assert.equal(summary().querySelectorAll("input, select, textarea").length, 0, "the summary is read only");
-      const keys = ["models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling"];
-      for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
-        document.querySelector(`[data-locale-option="${locale}"]`)?.click();
-        const labels = [...summary().querySelectorAll("[data-escalation-key] > span:first-child")].map((node) => node.textContent.trim());
-        assert.ok(labels.length === 3 && labels.every((label) => label !== "" && !label.startsWith("setting.")), `${locale} names the three settings`);
-        assert.ok(!summary().querySelector("h2").textContent.startsWith("modelTiers."), `${locale} names the summary`);
-      }
-      document.querySelector('[data-locale-option="en"]')?.click();
-
-      // The link opens the settings group that holds the three keys, and a change there shows here.
-      summary().querySelector("[data-escalation-settings-link]").click();
-      assert.equal(document.querySelector('[data-page="settings"]').hidden, false);
-      assert.equal(document.querySelector('[data-settings-layout-nav] [data-setting-group="models"]').getAttribute("aria-selected"), "true");
-      for (const key of keys) assert.ok(document.querySelector(`[data-setting-row="${key}"]`), `${key} is in the group`);
-      const before = receiptText(document);
-      const threshold = document.querySelector('[data-setting-control="models.escalation.threshold"]');
+      const escalation = document.querySelector('[data-engine-model-policy-section="escalation"]');
+      assert.ok(escalation, "the engine policy tier page renders escalation with its host data");
+      const enabled = escalation.querySelector('[data-engine-policy-escalation="enabled"]');
+      const threshold = escalation.querySelector('[data-engine-policy-escalation="threshold"]');
+      const ceiling = escalation.querySelector('[data-engine-policy-escalation="ceiling"]');
+      assert.equal(enabled.getAttribute("role"), "switch");
+      assert.equal(threshold.type, "number");
+      assert.equal(ceiling.tagName, "SELECT");
+      assert.deepEqual([...ceiling.querySelectorAll("option")].map((option) => option.value), ["main"]);
       threshold.value = "3";
-      threshold.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => receiptAdvanced(document, before)(), "the threshold write receipt");
-      await page.waitForSettled();
-      document.querySelector('[data-page-target="model-tiers"]').click();
-      assert.equal(shown()["models.escalation.threshold"], "3");
+      threshold.dispatchEvent(new window.Event("input", { bubbles: true }));
+      assert.equal(document.querySelector('[data-engine-model-policy-save]')?.disabled, false, "an escalation edit makes the one governed host save available");
+      document.querySelector('[data-page-target="settings"]').click();
+      document.querySelector('[data-setting-group="models"]').click();
+      assert.equal(document.querySelector('[data-setting-control="models.escalation.threshold"]'), null, "legacy escalation settings are not a second writable surface");
     } finally { await page.cleanup(); }
   });
 
@@ -3175,11 +3000,10 @@ if (!MUTATION) test("R46 I12: a refused relation shows its reason code, the engi
   } finally { await closePage(page, fixture); }
 });
 
-// TCRN-CROSS-INIT-053 R46 (I12; U20 D9, c1): on the coordination chain the model tables are read only and
-// say why, since its catalog lists its own runtime settings only; its gate page still saves.
-if (!MUTATION) test("R46 I12: the coordination chain's model pages are read only and say why, and its gate page still saves", async () => {
+// TCRN-CROSS-INIT-053 R46 (I12; U20 D9, c1): a coordination chain has no legacy project
+// model rows, while the device-level engine-host policy stays available independently of that scope.
+if (!MUTATION) test("R46 I12: coordination settings omit project model rows while the engine-host views and gates remain available", async () => {
   const fixture = await projectChainFixture("tcrn-r46-i12-coordination-");
-  const locales = await localeTable();
   const page = await loadExecutedDom(fixture);
   try {
     const { document, window } = page;
@@ -3188,26 +3012,19 @@ if (!MUTATION) test("R46 I12: the coordination chain's model pages are read only
     select.dispatchEvent(new window.Event("change", { bubbles: true }));
     await waitFor(() => document.querySelector("#rail-workspace-label").textContent === "TCRN-R45-COORDINATION", "the coordination chain");
     await page.waitForSettled();
-    for (const [page_, key] of [["model-categories", "models.category"], ["model-tiers", "models.tiers"]]) {
-      document.querySelector(`[data-page-target="${page_}"]`)?.click();
-      const view = document.querySelector(`#${page_}-view`);
-      const note = view.querySelector(`[data-collection-read-only-note="${key}"]`);
-      assert.ok(note, `${key}: the page says why it is read only`);
-      assert.equal(note.textContent, locales.en["collection.coordinationReadOnly"].replace("{chain}", "TCRN-R45-COORDINATION"));
-      assert.equal(view.querySelectorAll("[data-collection-save], [data-collection-add], [data-collection-reset], [data-collection-remove]").length, 0, `${key}: no control that would save`);
-      assert.equal(view.querySelectorAll("[data-collection-field]:not([disabled])").length, 0, `${key}: no editable field`);
-    }
-    assert.equal(document.querySelector("[data-escalation-summary]"), null, "no escalation settings the chain does not have");
+    document.querySelector('[data-page-target="settings"]')?.click();
+    assert.equal(document.querySelector('[data-setting-group="models"]'), null, "coordination settings expose no project model collection");
+    document.querySelector('[data-page-target="engine-model-policy"]')?.click();
+    assert.ok(document.querySelector('[data-engine-model-policy-host]'), "the device engine policy remains readable without a project-model scope");
+    document.querySelector('[data-page-target="model-categories"]')?.click();
+    assert.ok(document.querySelector('[data-collection-table="engine-model-policy-categories"]'), "the category projection still uses the engine source");
     document.querySelector('[data-page-target="gates"]')?.click();
     assert.ok(document.querySelector('#gate-add-form button[type="submit"][data-cli-action="gates-config-set"]'), "the gate page still adds a gate");
     document.querySelector('[data-locale-option="fr"]')?.click();
     document.querySelector('[data-page-target="model-tiers"]')?.click();
-    assert.equal(document.querySelector('[data-collection-read-only-note="models.tiers"]').textContent, locales.fr["collection.coordinationReadOnly"].replace("{chain}", "TCRN-R45-COORDINATION"));
+    assert.ok(document.querySelector('[data-collection-table="engine-model-policy-tiers"]')?.getAttribute("aria-label"), "the localized tier engine-policy table remains named");
   } finally { await closePage(page, fixture); }
 });
-
-// TCRN-CROSS-INIT-053 R47 (c1-B; Owner 2026-10-09, round 7): the coordination chain lists its own runtime
-// settings, so its settings page saves the artifact language, and the engine records it for the whole library
 // with no project; a fixture write of another of them names no project either. Its model pages stay as R46 I12.
 if (!MUTATION) test("R47 c1-B: the coordination chain's artifact language saves from its settings page, for the whole library", async () => {
   const fixture = await projectChainFixture("tcrn-r47-c1b-coordination-");
@@ -3532,6 +3349,191 @@ if (!MUTATION) test("540 SUB-508: a coordination library's Rules page names and 
     select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
     await waitFor(() => document.querySelector("#agents-path")?.textContent === join(fixture.proseRoot, "AGENTS.md"), "the page to switch to the project library");
     assert.equal(document.querySelector('[data-ui="prose-binding-note"]').hidden, true, "a project library's Rules page carries no coordination note");
+  } finally { await closePage(page, fixture); }
+});
+
+// INIT-056 R5: this exercises the actual browser state rather than matching policy tokens in HTML. It
+// covers an initially empty engine host, every policy field, governed failure and success receipts,
+// five locale renderings, refresh preservation, write de-duplication, post-send edits, and Undo.
+test("INIT-056 R5: the engine-host editor creates a complete policy and retains real drafts across receipts, locale, and refresh", async () => {
+  const fixture = await scratch("tcrn-init056-r5-policy-ui-");
+  const meeting = await cli([
+    "minutes-record", "--workspace", fixture.workspace, "--at", nextAt(), "--project-id", fixture.projectId,
+    "--external-key", "INIT056-R5-POLICY", "--title", "Engine policy editor",
+    "--summary", "Owner authorizes the test engine model policy write.", "--decisions", "Set models.engine-policy for the Codex host.",
+    "--decided-by", "owner:governance", "--actor", "agent:test",
+  ], fixture.deviceEnv);
+  const decision = `${meeting.id}#D1`;
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    const view = () => document.querySelector("#engine-model-policy-view");
+    const field = (kind, index, name) => view().querySelector(`[data-engine-policy-kind="${kind}"][data-engine-policy-index="${index}"][data-engine-policy-field="${name}"]`);
+    const escalation = (name) => view().querySelector(`[data-engine-policy-escalation="${name}"]`);
+    const type = (node, value, event = "input") => {
+      assert.ok(node, `the ${node?.dataset.enginePolicyField ?? node?.dataset.enginePolicyEscalation ?? "policy"} control exists`);
+      node.value = value;
+      node.dispatchEvent(new window.Event(event, { bubbles: true }));
+    };
+    const save = () => view().querySelector("[data-engine-model-policy-save]");
+
+    document.querySelector('[data-page-target="engine-model-policy"]').click();
+    assert.ok(view().querySelector('[data-engine-model-policy-status="unconfigured"]'), "an unconfigured host gives a first-policy state");
+    view().querySelector('[data-engine-policy-add="categories"]').click();
+    await waitFor(() => document.activeElement === field("categories", 0, "id"), "the first category id to receive focus");
+    type(field("categories", 0, "order"), "10");
+    type(field("categories", 0, "id"), "main");
+    type(field("categories", 0, "name"), "Main");
+    type(field("categories", 0, "description"), "Everyday governed work");
+    view().querySelector('[data-engine-policy-add="tiers"]').click();
+    await waitFor(() => field("tiers", 0, "model"), "the first tier row");
+    type(field("tiers", 0, "order"), "20");
+    type(field("tiers", 0, "category"), "main", "change");
+    type(field("tiers", 0, "runner"), "codex");
+    type(field("tiers", 0, "model"), "gpt-5.6-terra");
+    type(field("tiers", 0, "effort"), "max");
+    type(field("tiers", 0, "note"), "R5 economy implementation");
+    const enabled = escalation("enabled");
+    enabled.checked = true;
+    enabled.dispatchEvent(new window.Event("change", { bubbles: true }));
+    type(escalation("threshold"), "2");
+    type(escalation("ceiling"), "main", "change");
+
+    const invalid = `minutes:${"f".repeat(24)}#D1`;
+    type(view().querySelector("[data-engine-model-policy-decision]"), invalid);
+    save().click();
+    await page.waitForSettled();
+    await waitFor(() => view().querySelector("[data-engine-model-policy-write-error]"), "the rejected governed write receipt");
+    assert.equal(field("categories", 0, "description").value, "Everyday governed work", "a refusal keeps every category field");
+    assert.equal(field("tiers", 0, "note").value, "R5 economy implementation", "a refusal keeps every tier field");
+    assert.equal(view().querySelector("[data-engine-model-policy-decision]").value, invalid, "a refusal keeps its decision citation");
+
+    type(view().querySelector("[data-engine-model-policy-decision]"), decision);
+    const receiptBeforeFirstSave = receiptText(document);
+    save().click();
+    await waitFor(receiptAdvanced(document, receiptBeforeFirstSave), "the first governed engine-policy receipt");
+    await page.waitForSettled();
+    const stored = await cli(["engine-model-policy-catalog", "--host", "codex"], fixture.deviceEnv);
+    assert.deepEqual(stored.selectedPolicy.categories, [{ order: 10, id: "main", name: "Main", description: "Everyday governed work" }]);
+    assert.deepEqual(stored.selectedPolicy.tiers, [{ order: 20, category: "main", runner: "codex", model: "gpt-5.6-terra", effort: "max", note: "R5 economy implementation" }]);
+    assert.deepEqual(stored.selectedPolicy.escalation, { enabled: true, threshold: 2, ceiling: "main" });
+
+    document.querySelector('[data-page-target="settings"]').click();
+    document.querySelector('[data-setting-group="models"]').click();
+    for (const key of ["models.category", "models.tiers", "models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling"]) {
+      const row = document.querySelector(`[data-setting-row="${key}"]`);
+      assert.ok(row?.matches("[data-model-policy-legacy=\"true\"]"), `${key} is visibly a compatibility record`);
+      assert.equal(row.querySelector("[data-setting-control]"), null, `${key} exposes no project-setting write control`);
+      assert.ok(row.querySelector('[data-model-policy-link="engine-model-policy"]'), `${key} links to the engine-host editor`);
+    }
+    document.querySelector('[data-model-policy-link="engine-model-policy"]').click();
+    await waitFor(() => document.querySelector('[data-page="engine-model-policy"]')?.hidden === false, "the compatibility link to open the engine policy");
+
+    for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
+      document.querySelector(`[data-locale-option="${locale}"]`).click();
+      await waitFor(() => document.documentElement.lang === locale, `${locale} policy labels`);
+      assert.ok(view().querySelector("[data-engine-model-policy-host]")?.getAttribute("aria-label"), `${locale} host selector has an accessible name`);
+      assert.ok(field("categories", 0, "id")?.getAttribute("aria-label"), `${locale} category id has an accessible name`);
+      assert.ok(field("tiers", 0, "model")?.getAttribute("aria-label"), `${locale} model has an accessible name`);
+      assert.equal(escalation("enabled")?.getAttribute("role"), "switch", `${locale} escalation uses the existing switch semantics`);
+      assert.ok(view().textContent.trim() && !view().textContent.includes("modelPolicy."), `${locale} translates the engine policy surface`);
+    }
+    document.querySelector('[data-locale-option="en"]').click();
+    type(field("tiers", 0, "note"), "kept through locale and refresh");
+    document.querySelector('[data-locale-option="fr"]').click();
+    await waitFor(() => field("tiers", 0, "note")?.value === "kept through locale and refresh", "the draft through a locale redraw");
+    document.querySelector('[data-page-target="settings"]').click();
+    document.querySelector('[data-setting-group="execution"]').click();
+    const concurrency = document.querySelector('[data-setting-control="execution.maxConcurrentSubagents"]');
+    type(concurrency, "3", "change");
+    await page.waitForSettled();
+    document.querySelector('[data-page-target="engine-model-policy"]').click();
+    await waitFor(() => field("tiers", 0, "note")?.value === "kept through locale and refresh", "the draft through a shared refresh");
+
+    type(field("tiers", 0, "note"), "sent draft");
+    page.hold((path) => path === "/api/model-policy");
+    const postBefore = page.requests.filter((path) => path === "/api/model-policy").length;
+    save().click();
+    await waitFor(() => page.held() === 1, "the first engine-policy write to be held");
+    assert.equal(save().disabled, true, "Save is write-pending while the actual request is outstanding");
+    save().click();
+    assert.equal(page.requests.filter((path) => path === "/api/model-policy").length, postBefore + 1, "a pending Save never submits a duplicate write");
+    type(field("tiers", 0, "model"), "gpt-6.1-sol");
+    view().querySelector("[data-engine-model-policy-undo]").click();
+    type(field("tiers", 0, "note"), "after Undo while write pending");
+    assert.equal(page.release(), 1);
+    await page.waitForSettled();
+    await waitFor(() => field("tiers", 0, "note")?.value === "after Undo while write pending", "the post-send Undo draft after the old success returns");
+    assert.equal(save().disabled, false, "the newer draft remains available for a later governed write");
+  } finally { await closePage(page, fixture); }
+});
+
+// INIT-056 R5: real host switches use maps rather than prototype-keyed draft objects, and both the
+// host-specific read and a shared refresh participate in one monotonic read-generation protocol.
+test("INIT-056 R5: host changes reject an old Save and an older specialized read cannot replace a newer shared refresh", async () => {
+  const fixture = await scratch("tcrn-init056-r5-host-race-");
+  const meeting = await cli([
+    "minutes-record", "--workspace", fixture.workspace, "--at", nextAt(), "--project-id", fixture.projectId,
+    "--external-key", "INIT056-R5-HOSTS", "--title", "Engine policy host reads",
+    "--summary", "Owner authorizes the test engine model policy writes.", "--decisions", "Set models.engine-policy for the Codex host.",
+    "--decided-by", "owner:governance", "--actor", "agent:test",
+  ], fixture.deviceEnv);
+  const decision = `${meeting.id}#D1`;
+  const policy = (host, model, note) => ({
+    categories: [{ order: 10, id: "main", name: "Main", description: "" }],
+    tiers: [{ order: 10, category: "main", runner: host, model, effort: "max", note }],
+    escalation: { enabled: true, threshold: 2, ceiling: "main" },
+  });
+  for (const [host, model] of [["codex", "codex-initial"], ["constructor", "constructor-old"]]) {
+    await cli(["engine-model-policy-set", "--workspace", fixture.workspace, "--host", host, "--policy", JSON.stringify(policy(host, model, "seed")), "--at", nextAt(), "--actor", "agent:test", "--decided-in", decision], fixture.deviceEnv);
+  }
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    const view = () => document.querySelector("#engine-model-policy-view");
+    const host = () => view().querySelector("[data-engine-model-policy-host]");
+    const model = () => view().querySelector('[data-engine-policy-kind="tiers"][data-engine-policy-index="0"][data-engine-policy-field="model"]');
+    const note = () => view().querySelector('[data-engine-policy-kind="tiers"][data-engine-policy-index="0"][data-engine-policy-field="note"]');
+    const save = () => view().querySelector("[data-engine-model-policy-save]");
+    const type = (node, value) => { node.value = value; node.dispatchEvent(new window.Event("input", { bubbles: true })); };
+    const selectHost = (value) => { host().value = value; host().dispatchEvent(new window.Event("change", { bubbles: true })); };
+
+    document.querySelector('[data-page-target="engine-model-policy"]').click();
+    assert.ok([...host().querySelectorAll("option")].some((option) => option.value === "constructor"), "a legal constructor host is offered without prototype inheritance");
+    selectHost("constructor");
+    await page.waitForSettled();
+    await waitFor(() => model()?.value === "constructor-old", "the constructor host policy");
+    type(note(), "constructor draft remains distinct");
+    const oldSave = save();
+
+    page.hold((path) => path === "/api/model-policy?host=codex");
+    selectHost("codex");
+    await waitFor(() => page.held() === 1, "the target host policy read to be pending");
+    assert.equal(host().disabled, true, "a pending host read prevents another target switch");
+    const postsBeforeOldSave = page.requests.filter((path) => path === "/api/model-policy").length;
+    oldSave.click();
+    assert.equal(page.requests.filter((path) => path === "/api/model-policy").length, postsBeforeOldSave, "the old host Save closure cannot write after a host switch");
+    assert.equal(page.release(), 1);
+    await page.waitForSettled();
+    await waitFor(() => model()?.value === "codex-initial", "the selected codex host policy");
+
+    page.hold((path) => path.startsWith("/api/model-policy?host="));
+    selectHost("constructor");
+    await waitFor(() => page.held() === 1, "the specialized constructor read");
+    document.querySelector('[data-page-target="settings"]').click();
+    document.querySelector('[data-setting-group="execution"]').click();
+    const concurrency = document.querySelector('[data-setting-control="execution.maxConcurrentSubagents"]');
+    concurrency.value = "3";
+    concurrency.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => page.held() === 2, "the newer shared refresh policy read");
+    assert.equal(page.release({ where: (path) => path === "/api/model-policy?host=constructor", keepHolding: true, limit: 1 }), 1);
+    await page.waitForSettled();
+    await cli(["engine-model-policy-set", "--workspace", fixture.workspace, "--host", "constructor", "--policy", JSON.stringify(policy("constructor", "constructor-new", "newer shared read")), "--at", nextAt(), "--actor", "agent:test", "--decided-in", decision], fixture.deviceEnv);
+    assert.equal(page.release(), 1);
+    await page.waitForSettled();
+    document.querySelector('[data-page-target="engine-model-policy"]').click();
+    await waitFor(() => model()?.value === "constructor-new", "the newer shared refresh to win over the older specialized read");
+    assert.equal(note().value, "newer shared read");
   } finally { await closePage(page, fixture); }
 });
 

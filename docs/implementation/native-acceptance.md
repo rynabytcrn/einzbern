@@ -40,9 +40,11 @@ the final PR and the exact candidate archive. Do not replace these steps with ol
 
 4. Read `engine-model-policy-catalog --host codex` in a new process. Compare all category/tier
    values, ordering, escalation, quota declarations, host revision and digest exactly. Verify
-   non-Codex host entries and host application defaults did not change. From two registered
-   project directories, confirm the same device-host policy source/revision/digest rather than
-   their historical project model declarations. A future project must not need a copied table.
+   non-Codex host entries and host application defaults did not change. For ALL registered live
+   projects (the scope of original attachment 553), confirm the same device-host policy
+   source/revision/digest rather than historical project model declarations. Future projects
+   must inherit the policy without a copied table. This is pending native verification; a
+   two-project sample is not acceptance of the full scope.
 
 ## Selection versus actual dispatch
 
@@ -83,8 +85,8 @@ prove a native runner/model/effort invocation.
   no line bound or more than 200 requested lines must refuse; valid bounded reads are allowed.
   Shell remains observational. Verify installation/update/doctor ownership of these hooks and
   that retired Stop/SSH hooks are not restored.
-- Compare two projects' own output/language/design settings while confirming their shared engine
-  policy. Verify explicit variable exports and value-free withholding diagnostics, and verify
+- Compare ALL registered live projects' own output/language/design settings while confirming
+  their shared engine policy, and verify future-project inheritance without a copied table. Verify explicit variable exports and value-free withholding diagnostics, and verify
   generation=none does not erase existing owner text.
 - Before cloud sync, explicitly migrate shared absolute declarations to portable references and
   configure bindings separately on each device. Verify alternating writes and merged content on
@@ -124,8 +126,8 @@ as MIN-267 D1 / R10-N5; this source PR does not claim they were applied.
 ## PF-2 / PF-3 final evidence method
 
 After package preparation commits, freeze the final HEAD. PF-2 H1 runs once in an
-isolated build clone using the supplied original d1-runner.py with
-`--observe-controller`. Preserve complete controller stdout/stderr and outer
+isolated build clone using the reviewed `--mode pf2-h1` adaptation of the supplied
+original d1-runner.py observer, documented in `ci-p1-evidence.md`. Preserve complete controller stdout/stderr and outer
 stdout/stderr/meta with input/output identities, sizes, hashes and exact test-file,
 pass and fail counts. Prior generic test summaries are diagnostics, not substitutes.
 
@@ -145,8 +147,9 @@ method/input reconciliation remain pending. Do not overwrite the historical snap
 summaries as regenerated inventories. Required U18 historical inputs and dry-run/actual-generation
 receipts must be complete before claiming PF-3 closure.
 
-The generic CI observer described in `ci-p1-evidence.md` runs the existing single `verify:p1`
-train. It is independent P1 evidence, not literal PF-2 H1 (`script=test`) and not a replacement
-for PF-3's reuse of its specified PF-2 receipt. Actual upgrade/setup dry-run receipts and final
+The default CI observer described in `ci-p1-evidence.md` runs the existing single `verify:p1`
+train. It is independent P1 evidence. Only an explicitly selected `pf2-h1` run executes the
+literal H1 `script=test` command; its implementation or focused test pass is not an H1 receipt.
+Neither mode replaces PF-3's reuse of its specified PF-2 receipt. Actual upgrade/setup dry-run receipts and final
 package privacy evidence must also be bound to their exact candidate rather than inferred from
 source implementation or an earlier package smoke.

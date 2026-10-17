@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Retain independent CI P1 evidence, not PF2/PF3 closure evidence.
+"""Retain independent CI P1 or explicitly selected PF-2 H1 evidence.
 
 Adaptation of the supplied read-only-descriptor runner and fixture preflight:
-paths are CLI inputs and CI's already acquired pnpm replaces corepack dispatch.
+paths are CLI inputs; default P1 uses acquired pnpm, H1 preserves Corepack dispatch.
 No product command, controller, reaper, test selection, or cleanup is changed.
-Exactly one verify:p1 invocation; no install, build, retry, or repair here.
+Exactly one selected invocation; no install, retry, or repair here.
+The pf2-h1 mode preserves literal corepack pnpm@11.3.0 ... run test.
+Neither mode establishes whole PF-2, dry-run, PF-3, or native acceptance.
 """
 
 import argparse
@@ -23,6 +25,7 @@ from pathlib import Path
 
 NODE_VERSION = "v24.16.0"
 PNPM_VERSION = "11.3.0"
+COREPACK_VERSION = "0.34.6"
 # Do not serialize the inherited environment (including its key names). These
 # operational values are the entire metadata allowlist, not a redaction denylist.
 ENVIRONMENT_KEYS = (
@@ -78,8 +81,9 @@ def verify_retained_artifacts(evidence, meta):
     failures = []
     verified = set()
     retained = meta.get("retainedTestControllerOutput", {}).get("files", {})
-    expected = {f"p1.{kind}": meta.get(kind) for kind in ("stdout", "stderr")}
-    expected.update({f"p1-controller.{kind}": retained.get(kind) for kind in ("stdout", "stderr")})
+    label = mode_config(meta.get("mode", "p1"))["label"]
+    expected = {f"{label}.{kind}": meta.get(kind) for kind in ("stdout", "stderr")}
+    expected.update({f"{label}-controller.{kind}": retained.get(kind) for kind in ("stdout", "stderr")})
     for name in ("fixture-location.json", "source-before.json", "source-after.json"):
         expected[name] = meta.get("artifactFiles", {}).get(name)
     for name, record in expected.items():
@@ -221,7 +225,7 @@ class ControllerObserver:
         except OSError as error:
             self.errors.append({"at": utc(), "error": str(error)})
 
-    def retain(self, evidence):
+    def retain(self, evidence, label="p1"):
         retained = {
             "method": "read-only descriptors on earliest top-level tcrn-test-controller-* stdout/stderr under TMPDIR; reaper deletion unchanged",
             "observedTopLevelControllerDirs": self.observed_dirs,
@@ -230,7 +234,7 @@ class ControllerObserver:
         for kind, handle in self.held.items():
             try:
                 os.lseek(handle["fd"], 0, os.SEEK_SET)
-                target = Path(evidence) / f"p1-controller.{kind}"
+                target = Path(evidence) / f"{label}-controller.{kind}"
                 with open(target, "xb") as stream:
                     while chunk := os.read(handle["fd"], 1 << 20):
                         stream.write(chunk)
@@ -246,13 +250,13 @@ class ControllerObserver:
         return retained
 
 
-def capture_process(argv, repo, env, tmpdir, evidence):
+def capture_process(argv, repo, env, tmpdir, evidence, label="p1"):
     """One child. Also exercised with harmless fixtures, not product probes."""
     observer = ControllerObserver(tmpdir)
     started = time.monotonic()
     record = {"startUtc": utc(), "exitCode": None, "errors": []}
     try:
-        with open(Path(evidence) / "p1.stdout", "xb") as out, open(Path(evidence) / "p1.stderr", "xb") as err:
+        with open(Path(evidence) / f"{label}.stdout", "xb") as out, open(Path(evidence) / f"{label}.stderr", "xb") as err:
             process = subprocess.Popen(
                 argv, cwd=repo, env=env, stdin=subprocess.DEVNULL,
                 stdout=out, stderr=err, start_new_session=True,
@@ -270,9 +274,9 @@ def capture_process(argv, repo, env, tmpdir, evidence):
         record["errors"].append(f"Child capture: {error}")
     finally:
         record.update({"endUtc": utc(), "elapsedSeconds": time.monotonic() - started,
-                       "retainedTestControllerOutput": observer.retain(evidence)})
+                       "retainedTestControllerOutput": observer.retain(evidence, label)})
         for kind in ("stdout", "stderr"):
-            path = Path(evidence) / f"p1.{kind}"
+            path = Path(evidence) / f"{label}.{kind}"
             try:
                 record[kind] = file_receipt(path)
             except Exception as error:
@@ -313,14 +317,41 @@ def final_p1_receipt(data):
             continue
         if not text[match.start() + end:].strip() and isinstance(value, dict):
             return value
-    raise Refusal("Outer stdout is missing its final P1 JSON receipt")
+    raise Refusal("Outer stdout is missing its final JSON receipt")
+
+
+def mode_config(mode):
+    if mode == "p1":
+        return dict(label="p1", script="verify:p1", expected="P1_VERIFIED", receiptKey="finalP1Receipt")
+    if mode == "pf2-h1":
+        return dict(label="h1", script="test", expected="TESTS_VERIFIED", receiptKey="finalH1Receipt")
+    raise Refusal(f"Unsupported verification mode: {mode}")
+
+
+def command(mode, executable, repo):
+    config = mode_config(mode)
+    return [executable, *([f"pnpm@{PNPM_VERSION}"] if mode == "pf2-h1" else []),
+            "-C", str(repo), "run", config["script"]]
+
+
+def filter_leftovers(rows, tmpdir):
+    # Original process marks, excluding both the original and adapted observer.
+    marks = [str(tmpdir), "tcrn-workflow/scripts/", "tcrn-test-controller", "task.mjs"]
+    return [row.strip() for row in rows if any(mark in row for mark in marks)
+            and "d1-runner.py" not in row and "p1-evidence.py" not in row and " ps -axo" not in row]
+
+
+def leftovers(tmpdir):
+    rows = checked_output(["ps", "-axo", "pid=,ppid=,pgid=,command="]).splitlines()
+    return filter_leftovers(rows, tmpdir)
 
 
 def evaluate(meta):
     """A zero child exit alone is never enough to make retention green."""
+    config = mode_config(meta.get("mode", "p1"))
     failures = list(meta.get("errors", []))
     if meta.get("exitCode") != 0:
-        failures.append(f"P1 child did not succeed: {meta.get('exitCode')}")
+        failures.append(f"Verification child did not succeed: {meta.get('exitCode')}")
     for name in ("tmp", "device"):
         if meta.get("fixtures", {}).get(name, {}).get("checksPassed") is not True:
             failures.append(f"{name} fixture preflight missing or refused")
@@ -346,9 +377,15 @@ def evaluate(meta):
     totals = meta.get("testTotals")
     if not totals or totals.get("tests", 0) < 1 or totals.get("fail") != 0 or totals.get("cancelled") != 0:
         failures.append("Exact final test totals missing or not passing")
-    final = meta.get("finalP1Receipt", {})
-    if final.get("ok") is not True or final.get("reasonCode") != "P1_VERIFIED" or "injected" in final:
-        failures.append("Uninjected final P1_VERIFIED receipt is missing")
+    final = meta.get(config["receiptKey"], {})
+    if final.get("ok") is not True or final.get("reasonCode") != config["expected"] or "injected" in final:
+        failures.append(f"Uninjected final {config['expected']} receipt is missing")
+    if meta.get("mode") == "pf2-h1":
+        for key in ("leftoversBefore", "leftoversAfter"):
+            if not isinstance(meta.get(key), list) or meta[key]:
+                failures.append(f"H1 {key} missing or contains matching processes")
+        if final.get("tests") != meta.get("inputManifest", {}).get("coreTestFiles"):
+            failures.append("H1 receipt test-file roster differs from the source manifest")
     return failures
 
 
@@ -362,12 +399,15 @@ def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ("repo", "evidence", "tmp", "device", "node-bin"):
         parser.add_argument(f"--{key}", required=True, help="absolute path; evidence must not exist")
+    parser.add_argument("--mode", choices=("p1", "pf2-h1"), default="p1")
     return parser.parse_args()
 
 
 def main():
     args = arguments()
-    paths = vars(args)
+    config = mode_config(args.mode)
+    label = config["label"]
+    paths = {key: value for key, value in vars(args).items() if key != "mode"}
     if any(not os.path.isabs(value) or os.path.normpath(value) != value for value in paths.values()):
         raise Refusal("All CLI paths must be absolute and normalized")
     evidence = Path(args.evidence)
@@ -377,6 +417,11 @@ def main():
             "script": "verify:p1", "cwd": args.repo, "stdin": "/dev/null", "errors": [], "artifactFiles": {},
             "testTotalsScope": "individual tests in earliest top-level core controller; not core test files or Portal tests",
             "adaptation": "already acquired pinned pnpm replaces original corepack dispatch; CLI paths; fail-closed receipt and source manifests added"}
+    meta.update({"mode": args.mode, "label": label, "script": config["script"]})
+    if args.mode == "pf2-h1":
+        meta.update({"schemaVersion": "einzbern.pf2-h1-evidence.v1",
+                     "scope": "PF-2 H1 only; not whole PF-2, dry-run, PF-3 or native acceptance",
+                     "adaptation": "CLI paths; literal Corepack command; original process observations; fail-closed child, receipt and manifest verification added"})
     env = dict(os.environ)
     env.update({"PATH": args.node_bin + os.pathsep + env.get("PATH", ""),
                 "TMPDIR": args.tmp, "COREPACK_ENABLE_NETWORK": "0",
@@ -408,25 +453,43 @@ def main():
             raise Refusal("Repository requires a full .git directory, not a linked worktree")
         meta["input"] = identity(repo)
         if meta["input"]["statusPorcelainAll"]:
-            raise Refusal("Repository must be clean before P1")
-        pnpm = shutil.which("pnpm", path=env["PATH"])
+            raise Refusal("Repository must be clean before verification")
+        tool = "corepack" if args.mode == "pf2-h1" else "pnpm"
+        pnpm = shutil.which(tool, path=env["PATH"])
         if pnpm is None:
-            raise Refusal("Already acquired pnpm is not on PATH; no acquisition is performed")
+            raise Refusal("Already acquired package manager is not on PATH; no acquisition is performed")
         meta["nodeVersion"] = checked_output([str(node), "--version"], env=env).strip()
-        meta["pnpmVersion"] = checked_output([pnpm, "--version"], env=env).strip()
+        if args.mode == "pf2-h1":
+            meta["corepackVersion"] = checked_output([pnpm, "--version"], env=env).strip()
+            meta["corepackRealpath"] = os.path.realpath(pnpm)
+            if meta["corepackVersion"] != COREPACK_VERSION:
+                raise Refusal(f"Pinned Corepack {COREPACK_VERSION} required at {meta['corepackRealpath']}")
+        meta["pnpmVersion"] = checked_output([pnpm, *([f"pnpm@{PNPM_VERSION}"] if args.mode == "pf2-h1" else []), "--version"], env=env).strip()
         if meta["nodeVersion"] != NODE_VERSION or meta["pnpmVersion"] != PNPM_VERSION:
             raise Refusal(f"Pinned versions required: Node {NODE_VERSION}, pnpm {PNPM_VERSION}")
-        meta["pnpmRealpath"] = os.path.realpath(pnpm)
-        meta["argv"] = [pnpm, "-C", args.repo, "run", "verify:p1"]
+        meta["corepackRealpath" if args.mode == "pf2-h1" else "pnpmRealpath"] = os.path.realpath(pnpm)
+        meta["argv"] = command(args.mode, pnpm, args.repo)
+        if args.mode == "pf2-h1":
+            meta["argvLiteral"] = "corepack pnpm@11.3.0 -C <E> run test"
         meta["inputManifest"] = source_manifest(repo, node, env)
         write_json(evidence / "source-before.json", meta["inputManifest"])
         meta["artifactFiles"]["source-before.json"] = file_receipt(evidence / "source-before.json")
         meta["tmpdirEntriesBefore"] = sorted(os.listdir(args.tmp))
+        if args.mode == "pf2-h1":
+            meta["leftoversBefore"] = leftovers(args.tmp)
+            if meta["leftoversBefore"]:
+                raise Refusal("H1 refuses pre-existing matching processes")
         attempted = True
-        meta.update(capture_process(meta["argv"], repo, env, args.tmp, evidence))
+        meta.update(capture_process(meta["argv"], repo, env, args.tmp, evidence, label))
     except Exception as error:  # Preserve an actionable receipt for preflight and run errors.
         meta["errors"].append(str(error))
     finally:
+        if attempted and args.mode == "pf2-h1":
+            try:
+                time.sleep(1.0)  # Original post-child observation interval, not a retry.
+                meta["leftoversAfter"] = leftovers(args.tmp)
+            except Exception as error:
+                meta["errors"].append(f"Process observation: {error}")
         if "input" in meta:
             try:
                 meta["output"] = identity(repo)
@@ -442,13 +505,13 @@ def main():
         if attempted:
             try:
                 meta["tmpdirEntriesAfter"] = sorted(os.listdir(args.tmp))
-                meta["testTotals"] = parse_test_totals((evidence / "p1-controller.stdout").read_bytes())
+                meta["testTotals"] = parse_test_totals((evidence / f"{label}-controller.stdout").read_bytes())
             except Exception as error:
                 meta["errors"].append(f"Final controller totals: {error}")
             try:
-                meta["finalP1Receipt"] = final_p1_receipt((evidence / "p1.stdout").read_bytes())
+                meta[config["receiptKey"]] = final_p1_receipt((evidence / f"{label}.stdout").read_bytes())
             except Exception as error:
-                meta["errors"].append(f"Final P1 receipt: {error}")
+                meta["errors"].append(f"Final receipt: {error}")
     meta["outputMatchesInput"] = "input" in meta and meta.get("output") == meta["input"]
     meta["sourceManifestMatchesInput"] = "inputManifest" in meta and meta.get("outputManifest") == meta["inputManifest"]
     artifact_failures = verify_retained_artifacts(evidence, meta)
@@ -456,13 +519,14 @@ def main():
     meta["errors"].extend(artifact_failures)
     failures = evaluate(meta)
     status = wrapper_exit(meta.get("exitCode"), failures)
-    receipt = {"ok": status == 0, "reasonCode": "CI_P1_EVIDENCE_RETAINED" if status == 0 else "CI_P1_EVIDENCE_REFUSED",
+    prefix = "PF2_H1" if args.mode == "pf2-h1" else "CI_P1"
+    receipt = {"ok": status == 0, "reasonCode": prefix + ("_EVIDENCE_RETAINED" if status == 0 else "_EVIDENCE_REFUSED"),
                "evidence": str(evidence), "childExitCode": meta.get("exitCode"), "wrapperExitCode": status,
                "coreTestFileCount": meta.get("inputManifest", {}).get("coreTestFileCount"),
                "testTotals": meta.get("testTotals"), "failures": failures,
-               "nextAction": None if status == 0 else "Inspect p1.meta.json and retained streams; do not treat missing evidence as a pass or retry this directory."}
+               "nextAction": None if status == 0 else f"Inspect {label}.meta.json and retained streams; do not treat missing evidence as a pass or retry this directory."}
     meta["receipt"] = receipt
-    write_json(evidence / "p1.meta.json", meta)
+    write_json(evidence / f"{label}.meta.json", meta)
     write_json(evidence / "receipt.json", receipt)
     print(json.dumps(receipt))
     return status

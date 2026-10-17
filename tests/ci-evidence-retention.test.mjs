@@ -319,3 +319,94 @@ test("CLI retains actual preflight refusal, does not launch P1, omits secrets an
   assert.equal(await readFile(join(evidence, "p1.meta.json"), "utf8"), metadata);
   assert.equal(await readFile(join(evidence, "sentinel"), "utf8"), "retained");
 });
+
+for (const mode of ["p1", "pf2-h1"]) {
+  test(`${mode} component orchestration selects one exact command, correct receipt and fresh evidence only`, async (context) => {
+    const base = await scratch(context);
+    const result = python(`
+import argparse, contextlib, io
+base = pathlib.Path(sys.argv[2])
+mode = sys.argv[3]
+config = m.mode_config(mode)
+repo = base / "repo"
+repo.mkdir()
+(repo / ".git").mkdir()
+for name in ("tmp", "device", "bin"):
+    (base / name).mkdir()
+args = argparse.Namespace(repo=str(repo), tmp=str(base / "tmp"), device=str(base / "device"),
+                          node_bin=str(base / "bin"), evidence=str(base / "evidence"), mode=mode)
+# Injected component orchestration only: never an actual formal fixture or product test run.
+m.arguments = lambda: args
+m.fixture_location = lambda path: dict(checksPassed=True, checks=dict(entriesAtRecord=[]))
+m.identity = lambda repo: dict(head="a" * 40, tree="b" * 40, branch="fixture", statusPorcelainAll="")
+m.source_manifest = lambda *args: dict(files=["fixture"], coreTestFiles=["tests/fixture.test.mjs"], coreTestFileCount=1)
+m.shutil.which = lambda name, **kwargs: "/tools/" + name
+m.checked_output = lambda argv, **kwargs: (m.NODE_VERSION if argv[0].endswith("/node") else
+    m.COREPACK_VERSION if argv == ["/tools/corepack", "--version"] else m.PNPM_VERSION)
+m.leftovers = lambda path: []
+m.time.sleep = lambda seconds: None
+calls = []
+def capture(argv, repo, env, tmp, evidence, label):
+    calls.append(dict(argv=argv, offline=env["COREPACK_ENABLE_NETWORK"], label=label))
+    retained = dict(errors=[], files={})
+    record = dict(exitCode=0, errors=[], retainedTestControllerOutput=retained)
+    final = dict(ok=True, reasonCode=config["expected"], tests=["tests/fixture.test.mjs"])
+    for kind in ("stdout", "stderr"):
+        outer = evidence / f"{label}.{kind}"
+        outer.write_text(json.dumps(final) if kind == "stdout" else "")
+        record[kind] = m.file_receipt(outer)
+        controller = evidence / f"{label}-controller.{kind}"
+        controller.write_text(sys.argv[4] if kind == "stdout" else "")
+        retained["files"][kind] = m.file_receipt(controller)
+    return record
+m.capture_process = capture
+with contextlib.redirect_stdout(io.StringIO()):
+    status = m.main()
+meta = json.loads((base / "evidence" / (config["label"] + ".meta.json")).read_text())
+refused = False
+try:
+    m.main()
+except FileExistsError:
+    refused = True
+wrong = {**meta, config["receiptKey"]: dict(ok=True, reasonCode="TESTS_VERIFIED" if mode == "p1" else "P1_VERIFIED")}
+negatives = [bool(m.evaluate(wrong)), bool(m.evaluate({**meta, "exitCode": 9}))]
+if mode == "pf2-h1":
+    for key in ("leftoversBefore", "leftoversAfter"):
+        negatives.extend([bool(m.evaluate({**meta, key: None})), bool(m.evaluate({**meta, key: ["123 task.mjs"]}))])
+    negatives.append(bool(m.evaluate({**meta, config["receiptKey"]: dict(ok=True, reasonCode="TESTS_VERIFIED", tests=[])})))
+    args.evidence = str(base / "shadowed-corepack")
+    m.checked_output = lambda argv, **kwargs: m.NODE_VERSION if argv[0].endswith("/node") else "0.0.0"
+    with contextlib.redirect_stdout(io.StringIO()):
+        shadowed_status = m.main()
+    shadowed = json.loads((pathlib.Path(args.evidence) / "h1.meta.json").read_text())
+    negatives.append(shadowed_status == 1 and "argv" not in shadowed
+                     and any("Pinned Corepack" in error for error in shadowed["errors"]))
+print(json.dumps(dict(status=status, calls=calls, refused=refused, meta=meta, negatives=negatives)))
+`, [base, mode, summary()]);
+    assert.equal(result.status, 0);
+    assert.equal(result.calls.length, 1, "one core train only, no second execution on an occupied evidence directory");
+    assert.deepEqual(result.calls[0].argv, mode === "pf2-h1"
+      ? ["/tools/corepack", "pnpm@11.3.0", "-C", join(base, "repo"), "run", "test"]
+      : ["/tools/pnpm", "-C", join(base, "repo"), "run", "verify:p1"]);
+    assert.equal(result.calls[0].offline, "0");
+    assert.equal(result.meta.stdin, "/dev/null");
+    if (mode === "pf2-h1") {
+      assert.equal(result.meta.corepackVersion, "0.34.6");
+      assert.equal(result.meta.corepackRealpath, "/tools/corepack");
+    }
+    assert.equal(result.refused, true);
+    assert.ok(result.negatives.every(Boolean));
+    assert.equal(result.meta.receipt.reasonCode, mode === "pf2-h1" ? "PF2_H1_EVIDENCE_RETAINED" : "CI_P1_EVIDENCE_RETAINED");
+  });
+}
+
+test("H1 process observations preserve original marks while excluding observer and ps rows", () => {
+  const result = python(`
+rows = ["1 0 1 node /fixture/tmp/worker", "2 0 2 node tcrn-workflow/scripts/x", "3 0 3 node tcrn-test-controller",
+        "4 0 4 node task.mjs", "5 0 5 python d1-runner.py /fixture/tmp", "6 0 6 python p1-evidence.py /fixture/tmp",
+        "7 0 7 ps -axo /fixture/tmp", "8 0 8 unrelated"]
+print(json.dumps(m.filter_leftovers(rows, "/fixture/tmp")))
+`);
+  assert.equal(result.length, 4);
+  assert.deepEqual(result.map((row) => row.split(" ")[0]), ["1", "2", "3", "4"]);
+});

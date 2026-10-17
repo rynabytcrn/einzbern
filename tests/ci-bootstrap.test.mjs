@@ -112,3 +112,26 @@ test("CI retains one observed P1 train in an independent clone and always upload
   assert.match(workflow, /merge-base HEAD "\$EINZBERN_PRIVACY_HISTORY_BASE"/u);
   assert.ok(workflow.includes('node "$build_root/skill/mana-orchestrate/scripts/install.mjs"'));
 });
+
+test("manual H1 is bounded, bootstraps official Corepack, and does not append P1 or smoke", async () => {
+  const workflow = await readWorkflow();
+  assert.match(workflow, /workflow_dispatch:\n    inputs:\n      mode:/u);
+  assert.match(workflow, /options:\n          - p1\n          - pf2-h1/u);
+  assert.ok(workflow.includes("VERIFY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'p1' }}"));
+  assert.match(workflow, /corepack@0\.34\.6 --force --ignore-scripts --no-audit --no-fund/u);
+  assert.match(workflow, /corepack install --global pnpm@11\.3\.0/u);
+  assert.ok(workflow.indexOf('corepack install --global pnpm@11.3.0') < workflow.indexOf('--mode "$VERIFY_MODE"'));
+  assert.equal((workflow.match(/--mode "\$VERIFY_MODE"/gu) ?? []).length, 1);
+  assert.match(workflow, /Smoke the release archive unpacked without node_modules\n        if: env\.VERIFY_MODE == 'p1'/u);
+  assert.match(workflow, /lessons:\n    if: github\.event_name != 'workflow_dispatch' \|\| inputs\.mode != 'pf2-h1'/u);
+});
+
+test("ordinary smoke retains curated archive, digest manifest, source SHA and isolated install receipts", async () => {
+  const workflow = await readWorkflow();
+  assert.ok(workflow.includes('git rev-parse HEAD > "$smoke/evidence/source-head.txt"'));
+  assert.ok(workflow.includes('cp "$archive" "$archive.sha256" "$smoke/evidence/"'));
+  assert.ok(workflow.includes('cp "$smoke/unpacked/einzbern-$version/manifest.json" "$smoke/evidence/manifest.json"'));
+  assert.ok(workflow.includes('cd "$smoke/evidence"'));
+  assert.match(workflow, /Retain curated package and isolated install evidence\n        if: always\(\) && env\.VERIFY_MODE == 'p1'/u);
+  assert.match(workflow, /path: \$\{\{ runner.temp \}\}\/einzbern-release-smoke\/evidence\//u);
+});

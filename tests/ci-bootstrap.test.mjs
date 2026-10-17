@@ -11,7 +11,7 @@ async function readWorkflow() {
 
 test("CI acquires pinned pnpm online only after pinned Node and verifies it before dependencies", async () => {
   const workflow = await readWorkflow();
-  const node = workflow.indexOf("uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
+  const node = workflow.indexOf("uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1");
   const bootstrap = workflow.indexOf("- name: Acquire exact pnpm under explicit online bootstrap policy");
   const version = workflow.indexOf("- name: Verify acquired pnpm version");
   const dependencies = workflow.indexOf("- name: Acquire exact dependencies explicitly");

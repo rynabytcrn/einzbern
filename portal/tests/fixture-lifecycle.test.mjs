@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { existsSync } from "node:fs";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
@@ -31,20 +32,18 @@ test("fixture registers cleanup before setup and removes the directory when setu
 test("fixture accepts a split announcement, waits for exit before removal, and cleans up once", async (t) => {
   const fixture = await portalFixture(t, "portal-fixture-exit-");
   const source = `
-    const { existsSync } = require("node:fs");
-    process.on("SIGTERM", () => setTimeout(() => {
-      process.exit(existsSync(${JSON.stringify(fixture.base)}) ? 0 : 7);
-    }, 50));
     process.stdout.write(${JSON.stringify(announcement.slice(0, -2))});
     setTimeout(() => process.stdout.write(${JSON.stringify(announcement.slice(-2))}), 20);
     ${keepAlive}
   `;
   const portal = await fixture.start(["-e", source]);
   assert.equal(portal.url, url);
+  let directoryExistedAtClose = false;
+  portal.child.once("close", () => { directoryExistedAtClose = existsSync(fixture.base); });
   const first = fixture.cleanup();
   assert.strictEqual(fixture.cleanup(), first, "concurrent cleanup joins the same work");
   await first;
-  assert.equal(portal.child.exitCode, 0, "the scratch directory still existed during child shutdown");
+  assert.equal(directoryExistedAtClose, true, "the scratch directory still existed when the child closed");
   await missing(fixture.base);
   assert.strictEqual(fixture.cleanup(), first, "later cleanup is also idempotent");
   await fixture.cleanup();
@@ -121,13 +120,13 @@ test("fixture cleanup does not wait for another exit after the child already die
   const closed = once(child, "close");
   child.kill();
   await closed;
-  assert.equal(child.exitCode, null);
-  assert.equal(child.signalCode, "SIGTERM");
+  assert.ok(child.exitCode !== null || child.signalCode !== null, "the child has terminated");
   await fixture.cleanup();
   await missing(fixture.base);
 });
 
-test("fixture cleanup escalates when a child ignores SIGTERM", async (t) => {
+// Windows terminates the process unconditionally instead of invoking a SIGTERM handler.
+test("fixture cleanup escalates when a child ignores SIGTERM", { skip: process.platform === "win32" }, async (t) => {
   const fixture = await portalFixture(t, "portal-fixture-stubborn-");
   const { child } = await fixture.start(["-e", `process.on('SIGTERM', () => {}); ${ready} ${keepAlive}`]);
   await fixture.cleanup();

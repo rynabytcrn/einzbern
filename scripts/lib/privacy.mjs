@@ -148,8 +148,12 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
 // compiled owner line once each and get their own exact labels; the other owner occurrence, in
 // scripts/einzbern.mjs, is again the complete public helper repository address and is no finding.
 // TCRN-CROSS-INIT-056 R2 P1: the installed 2.2.2 package was read-only enumerated; only its three
-// compiled names.js owner-line members are classified below. The draft 2.2.3 candidate has no
-// package review here and receives no entry until its actual package is inspected.
+// compiled names.js owner-line members are classified below.
+// PF-2 2.2.3: reviewed the final CI package from source 4027ef77060946940ce5a6f5f4275ce37c4e70ab,
+// archive sha256 6ae035d988c92c3b89de79df005d9711939985144342f0dd754472efd8d8d0a5.
+// All 30 members were scanned; exactly these three carry the existing reviewed compiled
+// names.js owner line once each, with unchanged value and whole-line digests. The manifest,
+// install-tree digest and original LICENSE bytes were verified. No other match is classified.
 const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
@@ -178,6 +182,9 @@ const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-2.2.2.tar.gz/einzbern-2.2.2/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-2.2.2.tar.gz/einzbern-2.2.2/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-2.2.2.tar.gz/einzbern-2.2.2/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.2.3.tar.gz/einzbern-2.2.3/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.2.3.tar.gz/einzbern-2.2.3/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.2.3.tar.gz/einzbern-2.2.3/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
 ]);
 const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
   [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [

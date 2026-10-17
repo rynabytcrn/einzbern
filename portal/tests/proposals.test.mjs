@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { proposalRendererSource } from "./helpers/proposal-renderer-source.mjs";
 
 const execFileAsync = promisify(execFile);
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -73,8 +74,7 @@ async function startPortal(fixture) {
 /** The page's own renderer of the proposals, taken from index.html and run with the English copy. */
 async function proposalsRenderer() {
   const source = await readFile(join(portalRoot, "index.html"), "utf8");
-  const block = source.match(/\n {2}\/\/ Proposals \(TCRN-CROSS-STORY-527\) begin\.\n([\s\S]*?)\n {2}\/\/ Proposals end\./u)?.[1];
-  assert.ok(block, "the page renders its proposals in one marked block");
+  const block = proposalRendererSource(source);
   const sandbox = {};
   new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
   const english = sandbox.PORTAL_LOCALES.en;

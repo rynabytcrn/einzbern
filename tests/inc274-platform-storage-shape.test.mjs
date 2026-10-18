@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { realpath } from "node:fs/promises";
 import test from "node:test";
 
-import { inspectPlatform } from "../scripts/platform-doctor.mjs";
+import { inspectLegacyPlatform as inspectPlatform } from "../scripts/platform-doctor.mjs";
 import { WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES } from "../dist/build/packages/core/src/index.js";
 
 const FIXTURE_COMMIT = "f".repeat(40);

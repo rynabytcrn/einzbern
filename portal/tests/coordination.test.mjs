@@ -9,9 +9,9 @@
 // the container, its library, the device directory and HOME of each fixture, removed with it.
 
 import "../../tests/helpers/device-home.mjs";
-import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { portalFixture } from "./helpers/portal-fixture.mjs";
+import { execFile } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -38,7 +38,7 @@ async function cli(args, env = {}) {
 // A container with a coordination library inside it, `.ether`, on a device of its own. `register` names the
 // project path the device's registry holds for the library: the container (the default) or the library itself.
 async function coordinationFixture(context, register = "container") {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "portal-coordination-")));
+  const { base, start } = await portalFixture(context, "portal-coordination-");
   const home = join(base, "home");
   await mkdir(home);
   const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
@@ -51,30 +51,10 @@ async function coordinationFixture(context, register = "container") {
   await cli(["library-register", "--project", register === "container" ? container : library, "--library", library, "--at", at()], deviceEnv);
   await writeFile(join(container, "AGENTS.md"), OWNER_TEXT, "utf8");
   const fixture = { base, home, deviceEnv, container, library, libraryId, agents: join(container, "AGENTS.md") };
-  const portal = await startPortal(fixture);
-  context.after(async () => {
-    if (portal.child.exitCode === null) { const exited = new Promise((resolve) => portal.child.once("exit", resolve)); portal.child.kill(); await exited; }
-    await rm(base, { recursive: true, force: true });
-  });
-  return { ...fixture, url: portal.url };
-}
-
-async function startPortal({ library, home, deviceEnv }) {
-  const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), "--library", library, "--port", "0"], {
+  const { url } = await start([join(portalRoot, "portal.mjs"), "--library", library, "--port", "0"], {
     env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: ACTOR, ...deviceEnv, HOME: home },
-    stdio: ["ignore", "pipe", "pipe"],
   });
-  const url = await new Promise((resolve, reject) => {
-    let buffer = "";
-    const timer = setTimeout(() => reject(new Error(`portal did not start: ${buffer}`)), 15000);
-    child.stdout.on("data", (chunk) => {
-      buffer += chunk;
-      const line = buffer.split("\n").find((entry) => entry.includes("PORTAL_LISTENING"));
-      if (line) { clearTimeout(timer); resolve(JSON.parse(line).url); }
-    });
-    child.on("exit", (code) => { clearTimeout(timer); reject(new Error(`portal exited ${code}: ${buffer}`)); });
-  });
-  return { child, url };
+  return { ...fixture, url };
 }
 
 async function readBoot(url) {
@@ -121,7 +101,7 @@ test("540 GWT5: a coordination library selected in Atelier shows the container's
   assert.deepEqual(events.filter((event) => event.surface === "atelier").map((event) => [event.record.collection, event.record.key]), [["rule", "autonomy"], ["managed-section", "AGENTS.md#rule:autonomy"]], "the rule and its managed section are recorded in the library, for Atelier");
 
   from = await eventCount(fixture);
-  const variable = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "hello", description: "A sample" }));
+  const variable = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "hello", description: "A sample", exports: ["agents"] }));
   assert.equal(variable.response.status, 200, JSON.stringify(variable.body));
   // The render is the engine's agents-render receipt for the container, not a pending binding.
   assert.deepEqual([variable.body.ok, variable.body.render.reasonCode, variable.body.render.projectPath], [true, "AGENTS_RENDERED", fixture.container], JSON.stringify(variable.body.render));
@@ -130,7 +110,7 @@ test("540 GWT5: a coordination library selected in Atelier shows the container's
   events = await eventsSince(fixture, from);
   assert.deepEqual(events.filter((event) => event.record?.collection === "variable").map((event) => [event.record.key, event.surface]), [["sample", "atelier"]]);
 
-  const changed = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "world", description: "A sample" }));
+  const changed = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "world", description: "A sample", exports: ["agents"] }));
   assert.equal(changed.response.status, 200, JSON.stringify(changed.body));
   text = await readFile(fixture.agents, "utf8");
   assert.match(section(text, "variables-custom") ?? "", /\| sample \| string \| world \| A sample \|/u, "a changed variable renders the section again");
@@ -167,7 +147,7 @@ test("540 GWT5: a coordination library registered only as its own path has no co
   assert.equal(enabled.body.outputBindingStatus, "unconfigured", "the engine says the rule was recorded alone");
   await assert.rejects(readFile(join(fixture.library, "AGENTS.md")), { code: "ENOENT" });
   assert.equal(await readFile(fixture.agents, "utf8"), OWNER_TEXT, "a directory the library is not registered for is left alone");
-  const variable = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "hello", description: "A sample" }));
+  const variable = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "hello", description: "A sample", exports: ["agents"] }));
   assert.equal(variable.response.status, 200, JSON.stringify(variable.body));
   assert.deepEqual([variable.body.render.reasonCode, variable.body.render.pending], ["PORTAL_PROJECT_BINDING_UNCONFIGURED", true], "the render waits for a registered directory");
   await assert.rejects(readFile(join(fixture.library, "AGENTS.md")), { code: "ENOENT" });

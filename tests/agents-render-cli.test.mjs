@@ -70,6 +70,7 @@ async function scratch(context, navigation = "written") {
   const projectId = (await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "AGENTS-EXPLICIT-PROJECT", "--name", "Managed fixture"])).record.id;
   await cli(["library-register", "--project", project, "--library", library, "--project-id", projectId, "--at", at()]);
   if (navigation !== null) await cli(["machine-settings-set", "--key", "agents.navigation", "--value", navigation, "--at", at()]);
+  if (navigation !== "written") await withSurface(ATELIER_SURFACE, () => cli(["settings-set", "--workspace", library, "--key", "agents.sharedNavigation", "--value", "declined", "--at", at()]));
   return { base, device, project, projectId, library, agents: join(project, "AGENTS.md"), claude: join(project, "CLAUDE.md") };
 }
 
@@ -144,11 +145,6 @@ test("478-AC1 via agents-render: a section changed by one character stays as it 
     "",
     "| System setting | Effective source | Inherited |",
     "| --- | --- | --- |",
-    "| models.category | default | false |",
-    "| models.tiers | default | false |",
-    "| models.escalation.enabled | default | false |",
-    "| models.escalation.threshold | default | false |",
-    "| models.escalation.ceiling | default | false |",
     "| design.authority | library | true |",
     "| design.repository | default | false |",
     "| design.pullRequestTarget | default | false |",

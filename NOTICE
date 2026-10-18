@@ -5,3 +5,6 @@ This product includes software developed by Einzbern contributors.
 
 Source files that support comments use SPDX-License-Identifier: Apache-2.0.
 Generated archives must retain this NOTICE and the Apache-2.0 LICENSE.
+
+The bundled Atelier bridge also includes MIT-licensed React and ReactDOM.
+See THIRD_PARTY_NOTICES.txt for their versions and license notice.

@@ -1,0 +1,32 @@
+{
+  "portal/tests/ui-presence.test.mjs": {
+    "requiredSource": [
+      "import { disposablePortalFetch } from \"./helpers/disposable-portal-fetch.mjs\";",
+      "const fetch = disposablePortalFetch();"
+    ],
+    "fetchSites": [
+      "const nativeFetch = (input, options) => fetch(input, options).catch((error) => {"
+    ],
+    "moduleImports": []
+  },
+  "portal/tests/disposable-portal-fetch.test.mjs": {
+    "requiredSource": [
+      "import { disposablePortalFetch } from \"./helpers/disposable-portal-fetch.mjs\";",
+      "server.listen(0, \"127.0.0.1\");",
+      "const url = `http://127.0.0.1:${server.address().port}/api/settings?scope=project`;",
+      "const fetch = disposablePortalFetch();",
+      "const fetch = disposablePortalFetch((input, actual) => {"
+    ],
+    "fetchSites": [
+      "? await fetch(input, { method: \"PUT\", headers, body: '{\"value\":false}' })",
+      ": await fetch(input);",
+      "await assert.rejects(fetch(\"http://127.0.0.1:1/api/action\", options), (error) => error === failure);"
+    ],
+    "moduleImports": [
+      {
+        "module": "node:http",
+        "source": "import { createServer } from \"node:http\";"
+      }
+    ]
+  }
+}

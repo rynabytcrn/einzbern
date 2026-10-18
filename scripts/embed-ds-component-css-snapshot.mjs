@@ -24,7 +24,7 @@ export async function sync({ snapshotPath = SNAPSHOT_PATH, indexPath = INDEX_PAT
   const next = index.replace(INLINE_PATTERN, replacement);
   const matches = next === index;
   if (write && !matches) await writeFile(indexPath, next, "utf8");
-  return { ok: true, reasonCode: matches ? "DS_COMPONENT_CSS_INLINE_MATCHES_SNAPSHOT" : "DS_COMPONENT_CSS_INLINE_WRITTEN", snapshotBytes: Buffer.byteLength(snapshot) };
+  return { ok: matches || write, reasonCode: matches ? "DS_COMPONENT_CSS_INLINE_MATCHES_SNAPSHOT" : write ? "DS_COMPONENT_CSS_INLINE_WRITTEN" : "DS_COMPONENT_CSS_INLINE_DRIFT", snapshotBytes: Buffer.byteLength(snapshot) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -32,6 +32,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const checkOnly = process.argv.includes("--check");
     const result = await sync({ write: !checkOnly });
     process.stdout.write(`${JSON.stringify(result)}\n`);
+    if (!result.ok) process.exitCode = 1;
   } catch (error) {
     process.stdout.write(`${JSON.stringify({ ok: false, reasonCode: String(error?.message ?? error) })}\n`);
     process.exitCode = 1;

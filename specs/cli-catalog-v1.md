@@ -59,6 +59,24 @@ Each entry is `{name, availability, mutates, flags}`, optionally plus
     `project-bindings-remove` and `work-release` (for `--force true`) — as
     `minutes:<id>#D<n>`, so `--help` on any of them shows how to cite one.
 
+### Engine model policy
+
+`engine-model-policy-catalog` is a read of the single device-local model policy file. Its optional
+`host` flag selects one host record and reports `configured` or `unconfigured`; omission returns
+all host records. `engine-model-policy-set` replaces one host record in that device file. It
+requires `host`, `policy` (JSON), `at`, the actual `actor`, and `decided-in` in the shape
+`minutes:<id>#D<n>`; `workspace` is optional and, when omitted, the existing device registry
+resolves it from the current directory. The workspace only locates the decision. Before writing,
+the CLI checks that the cited valid Owner decision names `models.engine-policy`; the write
+serializes with the device policy lock, atomically replaces the file, and returns the validated
+readback captured under that same lock. It does not take a library write lock or append a project
+event. See `specs/engine-model-policy-v1.md` for the closed record and compatibility contract.
+
+`settings-catalog` adds a top-level `modelPolicy` source projection while preserving all existing
+setting rows. The projection names the device-engine source and carries the current workspace
+scope's legacy model values and source provenance, so coexisting values remain visible and their
+authority is not ambiguous.
+
 ### `--timeout-ms` on the writes that take the library write lock
 
 Every write that takes this machine's write lock of a library (TCRN-CROSS-STORY-529,

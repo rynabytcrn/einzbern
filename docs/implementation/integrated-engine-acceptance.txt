@@ -1,0 +1,115 @@
+Integrated configuration and engine completion
+
+Current status index: docs/implementation/post-merge-audit.md (2026-10-18). The entries below remain a historical ledger; older draft/red/pending statements are not the current status of merged PR #24. Original observations and receipt identities are preserved.
+
+First implementation commit: f7265086a4bf03980e36c084a16d4af81c8f4422.
+Base: bccf01697eb0a807c4353c847e5459978d84a3a8.
+This tracked ledger maps obligations and preserves diagnostic history. The PR's final verification receipts identify the exact tested commit and package; this file is not a self-updating completion receipt.
+Delivery is one pull request for independent acceptance. No merge, release or native installation is implied.
+Historical INIT-056 551 return count remains 4. This document is not a replacement for historical receipts.
+
+Configuration contract
+- The generated configuration-inventory.json contains 39 registered setting descriptors: 25 project, 4 library, 10 device. It also describes 14 independent configuration families. See specs/configuration-contract-v1.md for deterministic regeneration.
+- Project/library events own portable declarations. Device files own host execution policies, device caps and absolute path bindings. The installed engine owns schemas and knowledge provenance policy. Generated AGENTS and handoff are consumers, not configuration authority.
+- Historical model/quota declarations remain readable and explicitly labelled historical; new writes and removals refuse. Effective host policy is resolved separately, with revision/digest and an explicit host.
+- New custom variables export nowhere unless explicitly selected for agents and/or handoff. Historical records without exports retain only the agents compatibility default. Both outputs withhold unsafe values and return value-free reasons.
+- Shared path writes use relative locations or named binding references with safe child suffixes. Local bindings never enter shared event values. Historical absolute values retain their original meaning and require explicit migration before another device can use them reliably.
+- Project output policy is shared. Generation=none stops future managed writes without deleting existing files. Device navigation selects local host integration, not shared document ownership.
+
+Requirement -> implementation -> focused evidence
+C01 typed configuration/source contract -> configuration-contract.ts, settings.ts, machine-settings.ts, settings-catalog CLI, Portal metadata -> configuration-contract.test.mjs and catalog/settings/legacy replay tests. Complete key coverage and uniqueness; historical value role is separate from current family authority.
+C02 device-host execution authority -> engine-model-policy.ts, execution-policy.ts, execution-policy-resolve CLI, project-chain.ts -> engine-execution-policy.test.mjs and project-chain-model.test.mjs. Exact rejection staircase, missing/unsupported policy refusal, separate host partitions, quota unknown windows, monotonic restriction priority and project budgets bounded by device cap.
+C03 portable locations -> portable-path.ts, settings.ts, artifact-store.ts -> configuration-portability.test.mjs. Validated machine schema, missing binding refusal, safe suffixes, resolved containment, no implicit external-directory creation, old event replay. No files relocated automatically.
+C04 shared projections -> variables.ts, variables-sections.ts, agents-sections.ts, rules.ts, setup-fresh.ts -> variables tests, coordination-managed-sections and setup-fresh tests. Shared generation policy and affected-projection receipts; receipts do not assert all devices refreshed.
+C05 installed provenance -> knowledge-core.ts and installed resource bundling -> configuration-portability.test.mjs plus archive smoke. Missing/corrupt engine asset refuses; cwd and project copies do not override it.
+551 policy editor and optional design authority -> portal/index.html, locales.js, portal.mjs, project-chain.ts -> real UI policy/host/draft/async tests, backend C5/C6/R2 regressions, optional and explicit-partial design tests. Existing bilingual rules and historical byte fixtures remain preserved.
+552 engine consumption -> resolver CLI, work-project-context/handoff, knowledge create/refresh/recall/migration -> exact staircase tests plus controlled engine-consumer tests. These establish engine consumption, not a real external tool invocation. CapabilityStatus=unchecked is never native acceptance.
+553 packaging -> release-lockstep, CI install/setup/doctor smoke -> package identity and final digest must be bound to final commit. Intermediate Linux isolated archive install/setup/doctor passed; not yet final-candidate evidence.
+545 knowledge gaps -> directional conflict projection, article relations, language migration, hint cap -> knowledge conflict/article/hint and story-364 tests. Deterministic directional contract is a current technical choice, not a fabricated historical decision; existing scoring unchanged.
+546 rule output state -> rules.ts and five-locale Portal state labels -> missing output binding is output-unconfigured, not removed-from-file; project/root parity regressions.
+547 admission/cleanup/proof -> CLI init prevalidation, device-clean.ts, verbatim-evidence-meta-proof.mjs -> invalid init inputs leave no library bytes, skills.json classification, explicit proof working directory. Historical proof results remain historical.
+BL34/35 hooks -> host-hooks.ts, hook-recall.ts, einzbern-hook.mjs -> native-shaped subagent recall and bounded Read regression. Shell observational, errors fail open; no retired Stop/SSH hooks restored.
+BL41 doctor -> platform-doctor.mjs -> current .ether/engine/minimal-container checks and explicit legacy mode. Actual native host status remains separate.
+BL04 -> existing ClipboardCopyButton bridge mounted by Portal; no new fallback clipboard implementation.
+BL30/32 -> release plan creates annotated pinned-commit tag commands and version-specific summaries; no tag or release executed.
+BL31 -> Portal port occupancy produces structured PORTAL_PORT_IN_USE.
+BL36/40 -> shared output policy, transitive known-device parent/common-default projection discovery, explicit managed refresh with per-output outcomes, and value-redacted legacy path migration diagnostics. Unknown/offline devices are not claimed refreshed.
+BL38 -> retain single-status API and align documentation.
+BL39 -> four inventories explicitly historical; original bytes and hashes retained.
+BL45 -> gate eligibility and per-root base maps; required/enabled/releaseOnly semantics retained.
+BL47 -> optional-for-legacy per-gate timestamps/duration with validation.
+BL52 -> effective pnpm 11 YAML offline policy and consumer-read regression. Dependency hydration was explicitly online; this is not evidence of an initially complete offline cache.
+BL33 -> unchanged tokenizer/scoring with single Han character and Chinese boundary regression; algorithm change deferred.
+BL19/49 -> existing gate/privacy thresholds retained; no weakening to obtain a green result.
+
+Verification record
+- Focused results below are historical separate batches, not an additive unique-test total or a substitute for the final frozen-candidate receipts.
+- Policy/config/variables: 46/46; targeted project contexts: 7/7 before added cap-handoff regression.
+- Language/coordination/init: 42/42; portability: 4/4 before additional resolved-containment assertions.
+- Configuration/catalog/replay: 33/33 on f726508; later adapted projection/CLI fixtures: 43/43.
+- Context/catalog/gates integration: 79/79 on the 15:17 build. Hook/setup/migration/portability: 50/50 on that build, preserving local-only no-write and explicit shared-removal idempotence proofs.
+- Installer and language integration: 33/33 after relative environment-root admission was enforced. Portal uses the same validated core device-root bridge; final candidate verification follows.
+- The old pure language policy barrel reader remains deprecated historical compatibility API, never effective runtime authority. New internal constants are not exported, and obsolete consumer allowances were removed.
+- Release/CI/gates: 67/67 on the preceding 14:46 compiled candidate.
+- First full Portal diagnostic: 144 tests, 137 passed, 7 failed, no skips. The seven composition/fixture/optional-panel failures were corrected and passed focused regressions, together with new contextual-scope and five-locale unconfigured-output checks. A final frozen-candidate run is a separate receipt.
+- First standard 236-file core suite: 2083 tests, 1994 pass, 87 fail, 2 environment-dependent skips, 351 seconds. This diagnostic run exposed stale legacy fixtures and genuine integration bugs; source changed during the run, so it is not final-candidate evidence. Corrections and a clean rerun are required.
+- The existing pipe-truncation red-proof skips reported that the pipe drained fully and the condition could not be constructed; no skips were added for this implementation.
+- Existing lifecycle tests failed in the broad diagnostic and then passed 2/2 unchanged in isolation with an explicit temporary device home. Both observations remain recorded; no assertion or product guard was weakened.
+- Frozen a81db876 core suite: 2,088 tests, 2,062 passed, 23 failed, 3 existing conditional pipe-drained skips, 347 seconds. The remaining failures were 20 legacy doctor fixtures, a controller startup budget, an inherited release-member test selector, and a missed shared-navigation fixture. Privacy and navigation test-only corrections retain the original negative and ownership assertions. A speculative controller-fixture budget change was later removed because the aggregate run showed no demonstrated benefit.
+- Frozen a81db876 Portal suite: 146 tests, 145 passed, 1 failed, no skips, 1,205 seconds. The switch-clearing test required a design panel without declaring authority; its fixture now explicitly declares partial authority and retains every stale-panel, receipt and readiness clearing assertion. Absence remains separately optional/silent. A new full Portal run is required.
+- Clean standalone bccf01697eb0a807c4353c847e5459978d84a3a8 baseline, unchanged doctor tests, Node 24.16.0/pnpm 11.3.0 and 101-file build: 53 tests, 33 passed, the same 20 failed. Every named failure and assertion matched the candidate after random fixture-path normalization. These failures are reproduced on the unchanged handoff baseline in this environment, not passed or fixed; normal-runner CI remains required.
+- Frozen a81db876 deterministic packaging: 12/12 passed, including two byte-identical packs. Exact isolated Linux archive smoke passed 101-command loading, INSTALL_ENGINE_READY, SETUP_PLAN_READY, SETUP_APPLIED and doctor 8/8. Archive SHA-256: 157d2c2b16caa06fcf184b9d62a022c84ce0dfd5054c3b14041fd814159634dc; install-tree digest: 56ad5c52b206e4820441567e569ec580fb2ea0862834331215457584c22b7970. Subsequent final-commit receipts remain separate.
+- Frozen f9c48ba core suite: 2,088 tests, 2,065 passed, 21 failed, 2 existing conditional skips, 292 seconds. Only the 20 baseline-equivalent legacy doctor failures and the unresolved lifecycle start-marker timeout remained. The original lifecycle timeout is restored; no race fix or timeout-based success is claimed.
+- Frozen f9c48ba full supported verify-portal train passed, exit 0: complete Portal suite, design/i18n/dependency proof, cross-repository privacy, DS snapshot/reconciliation checks, verbatim evidence and meta proof. The buffered green receipt does not expose a per-test count. External DS source reconciliation remains explicitly unverified (candidate not a repository); snapshot validation passed.
+- Frozen f9c48ba packaging: deterministic suite 12/12, exact isolated Linux install/setup/doctor smoke passed. Archive SHA-256: 1e1ab90fe46e3a5d72bd3e267855de4dd9bdffddcc7081af21c80bc102f58799; install-tree digest: 0688effdb382de16bc5409093a1c20ec801d9bd9b3261e510da2350753f5dba0. Final commit verification is recorded separately, never by relabelling these executions.
+- Final static boundary review identified one additional read-side gap: a schema-valid host policy may omit economy or its tier. The language adapter normalizes only those exact unavailable economy selections to model:null for fail-open recall; direct execution resolution and corrupt, invalid or missing-ceiling policy errors remain strict. Focused regressions and fresh final trains are required for this source correction. The review was scoped static analysis, not a full security audit.
+- Earlier merged diagnostic logs are not separate-stream dispatch receipts. Final broad runs preserve stdout, stderr and exit status separately.
+
+Independent acceptance and migration
+1. Review the generated descriptor inventory and authority changes before applying settings.
+2. Preserve the original library/events and current installed engine. Do not rewrite historical events for migration.
+3. Declare local binding locations per device, then deliberately replace shared absolute declarations with portable references and re-render affected outputs.
+4. Configure each intended host policy through the governed device-policy interface with a real actor and valid decision; never substitute fixture authorization. Resolve and record the selected tuple, revision and digest before native invocation.
+5. Confirm external hosts actually accept intended runner/model/effort combinations. Store capability refusal separately; no silent fallback or host-default changes.
+6. Verify the final archive SHA and install-tree digest. In an isolated environment install, obtain SETUP_PLAN_READY, apply the reviewed plan and run doctor. Real macOS application is a separate acceptance step.
+7. Roll back engine selection to the preserved prior installation if needed. Do not delete the only backup or discard event history. New declarations remain in history; restoring an older engine requires compatibility review, not assuming it understands new keys.
+
+Remaining evidence and exclusions
+- Real macOS installation, live policy write/readback, native dispatch/Skill/hooks/trust, and real second-device/cloud-sync validation remain unverified. Linux fixtures do not replace them.
+- No complete security audit is claimed. Previously unavailable custom audit experiments are not part of this evidence.
+- The two container headings have now been identified by read-only native inspection. They are separate post-install container edits, not engine-template omissions; exact pending changes and verification are in native-acceptance.md. The implementable dispatch association now uses existing review-evidence dispatchEvidence; actual native host stream capture remains unverified.
+- DSH development, unrelated repositories, retired features, default-model changes, release publication and upstream merge are excluded.
+
+Reopened completeness closure after review of PR24 (source batch, not final acceptance)
+- Original7a evidence remains historical. The PR stays draft until these additions and audit fixes receive a new candidate verification.
+- M1/M2: execution-admission.ts consumes full request host/category/rejections/batch count, policy identity, caller capability tuples, quota freshness/completeness and device/project caps. work-project-context --execution-request attaches the decision to target handoff and requires both admission and existing readiness for dispatchAdmitted. Generated Skill gates dispatch and passes exact tuple. No scheduler, global occupancy reservation, native capability authentication or account reader is claimed.
+- Dispatch evidence: review-evidence.mjs accepts dispatchEvidence linking actual host streams/exit to work revision, project, request, selected tuple, policy and admission digest. Missing observations stay unavailable; legacy review is explicitly not-requested, not dispatch proof.
+- M3: runtime-input-contract adds 62 detailed runtime/browser/lifecycle/host controls, canonical command-catalog adaptation and a bounded product-owned environment-name scan. Tooling/test/proof controls and dynamic unknowns have explicit classification/limits; no fabricated runtime values or operational payload defaults.
+- M4/M5: configuration-projections-plan and configuration-projections-refresh discover known transitive registered dependents, recompute before execution, use existing managed writer protection and report refreshed/pending/unavailable/refused. Settings/variable receipts include impact plans. Legacy absolute declarations receive privacy-safe migration guidance without moving files or rewriting history.
+- Storage audit: unique numeric generations preserve committed bytes until manifest publication; index digest/count/coverage checks prevent silent omission; write/remove reuse validated bulk reads. Initial manifest publication is staged/no-replace with narrowly recognized identity/digest settlement, and per-operation manifest-change retries are bounded. Generic unexplained-link refusal remains. Lock initialization cleans only the file identity it created after caught initialization errors.
+- Exact fast-uri override now matches resolved3.1.8; frozen offline lock verification passed without dependency upgrade.
+- Focused107-file build: admission/context/CLI/config/Skill/evidence67/67; projection5/5; runtime registry12/12. Storage34/34 passed after preserving an existing idempotent migration contract; the prior33/34 observation remains recorded. Existing CLI/settings/variables/review compatibility26/26 also passed. These are distinct suites, not a final frozen gate receipt.
+- GitHub CI39049955283 at7a passed the complete core leg (TESTS_VERIFIED; no per-test count inferred), independently closing the environment-specific doctor failures there. Overall CI remained red on Portal/privacy and is being diagnosed; do not call the PR green.
+- Relocation now follows registry-to-library lock order, rechecks tombstones inside the write boundary, guards destination publication and retains identity-bound recovery receipts. Explicit preparation discard removes only exact attempt-owned entries. The first focused relocation/registry batch passed 15/15; final expanded 16-case rerun is pending the next build. See specs/relocation-recovery-v1.md.
+- Preliminary governance findings were not confirmed defects: current gate timestamp identity differs intentionally from rule content binding; current CLI authorization is specified before lock. Potential hardening remains documented rather than silently changing historical contracts.
+
+- F10/F12: segment-aware shared containment replaces prefix-only checks. Portal prose errors other than ENOENT are structured failures, not successful empty documents; editor state is preserved and ambiguous-binding rendering remains. Focused Portal regression5/5 passed, core boundary fixtures await coordinated build.
+- F11/Q13: null work-batch input reaches domain validation without dereference; invalid I/O budgets carry stable reason codes while preserving message compatibility and withholding supplied values. Focused tests await coordinated build.
+- Source refinements are implemented: equivalent UI ownership/persistence presentation, one per-request validated admission snapshot with normalized observation evidence, and complete host-hook rollback error reporting. Focused evidence is recorded below; final frozen acceptance remains pending.
+
+- Retrieved R14 method requires exact final-HEAD PF-2 controller evidence and PF-3 reuse/inventories, stronger than generic suite totals. All earlier broad runs remain diagnostics, not PF-2 compliance. The final isolated-clone run awaits supplied runner/adaptation and frozen source.
+- Reopened focused batch101 tests:100 passed,1 failed,0 skipped. Sole failure was literal source discovery treating structured I/O reason-code arguments as environment declarations. AST classification now excludes only that diagnostic argument context; real environment lookups are still discovered. Runtime/I/O rerun13/13 passed; relocation/registry final focused16/16 passed. Other new behavioral tests in the 101-case batch passed. No final candidate claim.
+
+- F15 now preserves exact historical model-plan transitions inside replay and cache while returning normalized public state; new mutations no longer retain the last removed effort. Nine new ordinary history/cache/refusal cases passed, plus 17 existing execution/model compatibility cases. No event bytes or digests were rewritten, and retired CLI verbs remain retired.
+- F14/F16 behavioral cases passed in the 101-case batch: hook rollback attempts all restores and preserves primary/secondary causes; planned engine rollback refuses changed current/previous identities before switching. Direct rollback remains compatible.
+- Equivalent configuration UI presentation is explicitly documented instead of claiming a top-navigation redesign: visible scope/sharing/read-only markers and complete field disclosures, machine consumer-resolved limits, host policy and variable draft context. Focused 16/16 and localization 8/8 passed. Current Portal proof block regenerated, historical proof files unchanged.
+
+- F17: unchanged vendored React/ReactDOM19.1.0 bridge now has digest-bound inventory, official MIT notices and separate SBOM provenance. Diagnostic validator3/3, packaging12/12 and27-component SBOM passed; official advisory query returned zero entries for these two packages. The25-package lockfile audit is explicitly not the whole shipped-runtime inventory.
+- Reopened source preflight passed typecheck107, format-check928 and lint390 before F17 additions; repeat final checks after all package preparation. Standalone Portal design/i18n/dependency proof also passed; this does not replace the final full Portal train or PF-2/PF-3 evidence.
+
+- F18: update/rollback construct full compatibility reports before atomic current-pointer publication; expected-current rollback binding is retained. Focused engine/setup19/19 passed, no skips, with invalid-registry and wrong-schema cases preserving pointer bytes. This ordering repair precedes final candidate freeze.
+
+8228e0f CI reconciliation (not final acceptance)
+- GitHub run39054904447 was red: core2167/2156pass/8fail/3skip; Portal160/159pass/1fail; privacy flagged the new synthetic legacy-path fixture in source/archive/history. These are current-candidate failures, not baseline exceptions.
+- Corrections preserve canonical command ordering, explicit flag-shape contracts, generated Wiki parity, no-target gate preparation without unrelated device reads, and mandatory third-party notice bytes in release fixtures. Legacy-path tests use neutral absolute fixture roots rather than user-home-shaped literals; privacy patterns and allowlists are unchanged.
+- Independent P1 raw-evidence retention is implemented for the next CI run. Its focused tests and earlier package smoke do not establish final P1 or original PF-2/PF-3 completion. The PR remains draft until final-candidate results and the separately documented acceptance gaps are reconciled.

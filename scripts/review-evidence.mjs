@@ -30,6 +30,10 @@ function text(value) {
   return typeof value === "string" ? value : "";
 }
 
+// One validator for source review and the installed public CLI.
+import { normalizeDispatchAdmissionEvidence } from "../packages/core/src/dispatch-evidence.ts";
+export { DISPATCH_EVIDENCE_VERSION, dispatchAdmissionDigest, normalizeDispatchAdmissionEvidence } from "../packages/core/src/dispatch-evidence.ts";
+
 function childEnvironment() {
   const environment = { ...process.env };
   // Node's test runner marks a worker with NODE_TEST_CONTEXT. Passing that
@@ -272,7 +276,7 @@ export function parseTestRunOutput(stdout, stderr = "", declaredTestFiles = []) 
       testCases,
       passed: passed ?? (structured.result === "passed" || structured.ok === true ? testCases : null),
       failed: failed ?? (structured.result === "passed" || structured.ok === true ? 0 : null),
-      parseable: true,
+      parseable: (structured.result === "passed" || structured.ok === true) && structured.ok !== false && (structured.result === undefined || structured.result === "passed"),
       source: "engine-test-result.file-list",
     };
   }
@@ -362,7 +366,7 @@ function readBoundVerify({ workspace, workId, engineCli }) {
   }
   if (output?.record?.id !== workId) return { status: "unavailable", reason: "work-show returned a different record", command: null };
   const command = output?.advisory?.verify;
-  if (typeof command === "string" && command.length > 0) return { status: "available", reason: "advisory:verify read from the bound work", command };
+  if (typeof command === "string" && command.length > 0) return { status: "available", reason: "advisory:verify read from the bound work", command, workRevision: output.record.revision };
   const nativeResult = output?.advisory?.result;
   if (nativeResult !== undefined && nativeResult !== null) {
     const normalized = normalizeNativeImplementationResult(nativeResult, {
@@ -374,6 +378,7 @@ function readBoundVerify({ workspace, workId, engineCli }) {
     });
     return {
       status: "native-only",
+      workRevision: output.record.revision,
       reason: normalized.valid ? "native result is the bound implementation evidence" : normalized.reason,
       command: normalized.command,
       nativeResult: normalized,
@@ -393,6 +398,7 @@ export function collectReviewEvidence({
   testFiles,
   engineCli = DEFAULT_ENGINE,
   commandTimeoutMs = REVIEW_COMMAND_TIMEOUT_MS,
+  dispatchEvidence,
 } = {}) {
   const root = resolve(repositoryRoot);
   let rootIsDirectory = false;
@@ -420,6 +426,13 @@ export function collectReviewEvidence({
   }
   const outOfBounds = diff.changedFiles.filter((path) => !allowed.files.includes(path));
   const binding = readBoundVerify({ workspace, workId, engineCli });
+  const dispatch = normalizeDispatchAdmissionEvidence(dispatchEvidence, { workId, workRevision: binding.workRevision ?? null });
+  if (dispatch.requested) {
+    if (!Number.isSafeInteger(binding.workRevision)) problems.push("dispatch association requires an available bound work revision");
+    problems.push(...dispatch.problems);
+    if (dispatch.valid && !dispatch.complete) problems.push(`dispatch host evidence unavailable: ${dispatch.unavailable.join(", ")}`);
+    if (dispatch.complete && dispatch.evidence.hostResult.exitCode.value !== 0) problems.push(`dispatch host exited ${dispatch.evidence.hostResult.exitCode.value}`);
+  }
   const verifyRun = binding.status === "available"
     ? runShell(binding.command, root, commandTimeoutMs)
     : null;
@@ -461,6 +474,7 @@ export function collectReviewEvidence({
       allowedFiles: allowed.files,
       testFiles: declaredTests.files,
       verify,
+      dispatch,
       testRun: { command: actualTestCommand, result: testRun, summary: testSummary },
       astCountCoverage: ast,
       diff: { ...diff, outOfBounds },
@@ -506,6 +520,7 @@ if (process.argv[1]?.endsWith("review-evidence.mjs")) {
     testCommand: request["test-command"] ?? request.testCommand,
     testFiles: request["test-files"] ?? request.testFiles,
     engineCli: request["engine-cli"] ?? request.engineCli,
+    dispatchEvidence: request.dispatchEvidence,
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (!result.ok) process.exitCode = 1;

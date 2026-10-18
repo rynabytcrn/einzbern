@@ -14,11 +14,11 @@ pnpm portal:test   # the portal suite, in its own session
 pnpm portal:proof  # design + i18n + dependency audit
 ```
 
-`portal:proof` compares the shipped `tokens.css` and `locale-contract.mjs`
-against the design system. That repository exists on the platform that authors
-the portal and on no user's machine, so both checks **skip** when it is absent
-rather than going red — a gate that fails where it was never meant to apply
-teaches people to ignore red. On the platform, they compare for real.
+`portal:proof` validates the checked-in design-system snapshots, their declared
+digests, the locale contract, and the product's literal translation references.
+It runs without a sibling design-system checkout and fails on missing or drifting
+inputs. Upstream synchronization is a separate, explicitly scheduled comparison;
+absence of that checkout is never a successful skip of these local checks.
 
 R43 regression inputs: independent libraries with equal names and distinct
 design/build/language/model settings; coordination work referencing both;

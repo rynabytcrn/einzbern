@@ -1,3 +1,4 @@
+import { absolutePathLine } from "./managed-sections.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -54,7 +55,12 @@ export const VARIABLE_TYPES = Object.freeze(["boolean", "number", "string"] as c
 export type VariableType = typeof VARIABLE_TYPES[number];
 
 /** What a variable's record holds; its name is the record's key. A record without an order has no order field. */
+export const VARIABLE_EXPORT_TARGETS = Object.freeze(["agents", "handoff"] as const);
+export type VariableExportTarget = typeof VARIABLE_EXPORT_TARGETS[number];
+
 export interface VariableRecordValue {
+  /** Missing on historical events means legacy AGENTS export; new declarations default to none. */
+  readonly exports?: readonly VariableExportTarget[];
   readonly type: VariableType;
   readonly value: string;
   readonly description: string;
@@ -140,10 +146,11 @@ function assertOrder(order: unknown, name: string): void {
 /** The check the variable collection of config-records.ts applies to a record: shape only, as a replay needs. */
 export function checkVariableRecordValue(value: Readonly<Record<string, unknown>>, key: string): void {
   assertName(key);
-  const fields = Object.keys(value).sort().join(",");
+  const fields = Object.keys(value).filter(key => key !== "exports").sort().join(",");
   if (fields !== RECORD_FIELDS && fields !== ORDERED_RECORD_FIELDS) {
     fail("VARIABLE_RECORD_INVALID", `a variable record holds exactly type, value and description, and may hold an order; ${key} does not`, { name: key });
   }
+  assertExports(value.exports, key);
   assertType(value.type, key);
   assertValue(value.type, value.value, key);
   assertDescription(value.description, key);
@@ -190,6 +197,19 @@ function isHighEntropyToken(token: string): boolean {
     entropyBitsPerCharacter(token) >= HIGH_ENTROPY_BITS;
 }
 
+function assertExports(value: unknown, name: string): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || new Set(value).size !== value.length ||
+      value.some(target => !VARIABLE_EXPORT_TARGETS.includes(target))) {
+    fail("VARIABLE_RECORD_INVALID", `${name} exports must be unique agents/handoff targets`, { name });
+  }
+}
+
+/** Historical records retain their original export contract without rewriting events. */
+export function variableExportTargets(variable: VariableRecordValue): readonly VariableExportTarget[] {
+  return variable.exports ?? ["agents"];
+}
+
 /**
  * Whether a text is shaped like a credential: a known key prefix (sk-, AKIA, ASIA, ghp_, gho_,
  * github_pat_, xoxb-, xoxp-), a PEM private-key header, a JSON web token, or a token of at least
@@ -203,6 +223,13 @@ export function looksSecretShaped(text: string): string | null {
     if (isHighEntropyToken(token.replace(/=+$/u, "")) || isHighEntropyToken(token)) return "high-entropy";
   }
   return null;
+}
+
+/** All portable variable consumers use the same allowlist and content withholding. */
+export function variableExportDecision(variable: VariableRecordValue, target: VariableExportTarget): "not-exported" | "absolute-path" | "secret-shaped" | null {
+  if (!variableExportTargets(variable).includes(target)) return "not-exported";
+  if (absolutePathLine(`${variable.value}\n${variable.description}`) !== null) return "absolute-path";
+  return looksSecretShaped(variable.value) !== null || looksSecretShaped(variable.description) !== null ? "secret-shaped" : null;
 }
 
 /** The variables a merged state holds, sorted by name; a variable with an order carries it. */
@@ -219,6 +246,7 @@ export function variablesInRenderOrder(state: Pick<WorkspaceState, "configRecord
 }
 
 export interface VariableSetInput {
+  readonly exports?: readonly VariableExportTarget[];
   readonly name: string;
   readonly type: string;
   readonly value: string;
@@ -234,7 +262,8 @@ export interface VariableSetInput {
  */
 export function checkVariableInput(input: VariableSetInput): Variable {
   assertName(input.name);
-  if (SETTINGS_CATALOG.some((entry) => entry.key === input.name)) {
+  assertExports(input.exports, input.name);
+  if (SETTINGS_CATALOG.some((entry) => entry.key === input.name) || /^(engine|models|quota|execution|storage|workspace|portal)\./u.test(input.name)) {
     fail("VARIABLE_NAME_INVALID", `${input.name} is a system setting's key; a variable needs a name of its own`, { name: input.name, reason: "system-setting" });
   }
   assertType(input.type, input.name);
@@ -248,7 +277,7 @@ export function checkVariableInput(input: VariableSetInput): Variable {
       fail("VARIABLE_SECRET_SHAPED", `the ${field} of ${input.name} looks like a credential (${matched}); a variable ends up in AGENTS.md, so it never holds one`, { name: input.name, field, matched });
     }
   }
-  return { name: input.name, type: input.type, value: input.value, description, ...(input.order === undefined ? {} : { order: input.order }) };
+  return { name: input.name, type: input.type, value: input.value, description, exports: [...(input.exports ?? [])], ...(input.order === undefined ? {} : { order: input.order }) };
 }
 
 /** Create or change one variable in a library: the record holds what the input says, an order only when it names one. */
@@ -258,6 +287,7 @@ export async function setVariable(workspaceRoot: string, input: VariableSetInput
     type: variable.type,
     value: variable.value,
     description: variable.description,
+    exports: variable.exports ?? [],
     ...(variable.order === undefined ? {} : { order: variable.order }),
   };
   return setConfigRecord(workspaceRoot, { ...input, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "variable", key: variable.name, value });

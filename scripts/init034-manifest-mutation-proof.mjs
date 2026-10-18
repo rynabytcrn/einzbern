@@ -77,8 +77,8 @@ async function proveMutation(mutation) {
     const distPath = join(scratch, "dist/build/packages/core/src/install-manifest.js");
     const dist = await readFile(distPath, "utf8");
     const idAbsentFromDist = !dist.includes(mutation.distId ?? mutation.id);
-    const test = await runAllowFailure(process.execPath, ["--test", "--test-name-pattern", "S261 independent required-item catalog", "tests/init033-install-surface.test.mjs"], scratch);
-    const intendedTestRed = test.status !== 0 && test.stdout.includes("S261 independent required-item catalog");
+    const test = await runAllowFailure(process.execPath, ["--test", "--test-reporter=tap", "--test-name-pattern", "S261 independent required-item catalog", "tests/init033-install-surface.test.mjs"], scratch);
+    const intendedTestRed = Number.isSafeInteger(test.status) && test.status !== 0 && !test.signal && /not ok \d+ - S261 independent required-item catalog[^\n]*\n(?:(?!\n\s*(?:not ok|ok) \d+)[\s\S])*?failureType: ['"]testCodeFailure['"](?:(?!\n\s*(?:not ok|ok) \d+)[\s\S])*?code: ['"]ERR_ASSERTION['"]/u.test(test.stdout);
     const reasonCode = /reasonCode: '([^']+)'/u.exec(test.stdout)?.[1] ?? null;
     return {
       name: mutation.name,

@@ -23,6 +23,7 @@ import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
 import { DependencyGraphError, validateFrozenDependencyGraph } from "./lib/dependency-graph.mjs";
+import { validateVendoredRuntimeInventory, VENDORED_RUNTIME_NOTICES, VENDORED_RUNTIME_SOURCE } from "./lib/vendored-runtime.mjs";
 import { HeavyRunsError, acquireHeavySlot } from "./lib/heavy-runs.mjs";
 import {
   aggregatePrivacySurface,
@@ -120,6 +121,8 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
   const coverageDirectory = typeof extraEnvironment?.NODE_V8_COVERAGE === "string" ? extraEnvironment.NODE_V8_COVERAGE : null;
   let child;
   try {
+    // The runner owns creation; a late reaper must never recreate this file during cleanup.
+    await writeFile(progressPath, "", { mode: 0o600, flag: "wx" });
     const controllerEnvironment = {
       ...process.env,
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
@@ -562,10 +565,12 @@ async function runTypecheck() {
   // Nothing here distinguishes an error from a warning or a suggestion.
   const invocation = [compiler, "--noEmit", "--pretty", "false", "--project", "tsconfig.json"];
   let diagnostics = "";
+  let compilerFailed = false;
   try {
     diagnostics = run(process.execPath, invocation);
   } catch (error) {
     if (!(error instanceof LocalCommandError)) throw error;
+    compilerFailed = true;
     diagnostics = error.message;
   }
   const reported = diagnostics
@@ -573,6 +578,7 @@ async function runTypecheck() {
     .map((line) => line.trim())
     .filter((line) => line !== "" && !line.startsWith(`${process.execPath} ${compiler}`));
   assertion(reported.length === 0, "TYPECHECK_DIAGNOSTIC", reported.join(" | "));
+  assertion(!compilerFailed, "TYPECHECK_COMPILER_FAILED", "compiler exited unsuccessfully without diagnostics");
   return success("TYPECHECK_VERIFIED", {
     files: files.length,
     engine: `typescript-${pinnedVersion}`,
@@ -819,9 +825,13 @@ async function sbom() {
   const policy = await readJson(resolve(repositoryRoot, "scripts/policy/dependency-policy.json"));
   const lockContent = await readSourceFile(resolve(repositoryRoot, "pnpm-lock.yaml"));
   const packageContent = await readSourceFile(resolve(repositoryRoot, "package.json"));
-  const basis = createHash("sha256").update(packageContent).update(lockContent).digest("hex");
+  const vendoredContent = await readSourceFile(resolve(repositoryRoot, "scripts/policy/vendored-runtime.json"));
+  const snapshotContent = await readSourceFile(resolve(repositoryRoot, VENDORED_RUNTIME_SOURCE));
+  const noticeContent = await readSourceFile(resolve(repositoryRoot, VENDORED_RUNTIME_NOTICES));
+  const vendored = validateVendoredRuntimeInventory(JSON.parse(vendoredContent.toString("utf8")), snapshotContent, noticeContent);
+  const basis = createHash("sha256").update(packageContent).update(lockContent).update(vendoredContent).update(snapshotContent).update(noticeContent).digest("hex");
   const graph = validateFrozenDependencyGraph({ packageJson, dependencyPolicy: policy, lockContent: lockContent.toString("utf8") });
-  const components = graph.records.map((record) => {
+  const components = [...graph.records.map((record) => {
     return {
       type: "library",
       name: record.name,
@@ -830,7 +840,7 @@ async function sbom() {
       licenses: [{ license: { id: record.license } }],
       purl: `pkg:npm/${encodeURIComponent(record.name)}@${record.version}`,
     };
-  });
+  }), ...vendored];
   const document = {
     bomFormat: "CycloneDX",
     specVersion: "1.6",
@@ -850,6 +860,9 @@ async function sbom() {
     directComponents: graph.directIdentities.length,
     transitiveComponents: graph.transitiveIdentities.length,
     dependencyGraphClosure: "complete",
+    dependencyGraphScope: "lockfile",
+    vendoredComponents: vendored.length,
+    vendoredInventory: "digest-bound-snapshot-and-notices",
     basis,
   });
 }
@@ -1314,6 +1327,28 @@ function versionScopedInstallerFetchOffset(label, content) {
   return fetchOffset;
 }
 
+// Declare individual harness call sites, never whole-file exemptions. A declaration
+// only applies while its wrapper binding and loopback fixture setup still match;
+// extra fetch calls, transports and changed destinations remain findings.
+function loopbackHarnessSites(content, declaration) {
+  const result = { fetchOffsets: new Set(), modules: new Set() };
+  if (!declaration) return result;
+  const uniqueOffset = (source) => {
+    const offset = content.indexOf(source);
+    return offset >= 0 && content.indexOf(source, offset + source.length) < 0 ? offset : -1;
+  };
+  if (declaration.requiredSource.some((source) => uniqueOffset(source) < 0)) return result;
+  for (const source of declaration.fetchSites) {
+    const offset = uniqueOffset(source);
+    const call = /\bfetch\s*\(/u.exec(source);
+    if (offset >= 0 && call) result.fetchOffsets.add(offset + call.index);
+  }
+  for (const { module: moduleName, source } of declaration.moduleImports) {
+    if (uniqueOffset(source) >= 0 && content.split(moduleName).length === 2) result.modules.add(moduleName);
+  }
+  return result;
+}
+
 async function verifyOfflineBoundary() {
   const guardFiles = new Set(["scripts/no-network.mjs", "tests/offline-boundary.test.mjs"]);
   const localUnixSocketTest = "tests/output-session-lifecycle.test.mjs";
@@ -1332,6 +1367,7 @@ async function verifyOfflineBoundary() {
     "node:" + "dgram",
     ["un", "dici"].join(""),
   ];
+  const harnessDeclarations = await readJson(resolve(repositoryRoot, "scripts/policy/offline-loopback-harness.json"));
   const findings = [];
   for (const path of (await walkFiles()).filter((candidate) => [".mjs", ".ts"].includes(extname(candidate)))) {
     const label = toPosixPath(relative(repositoryRoot, path));
@@ -1339,14 +1375,15 @@ async function verifyOfflineBoundary() {
     if (!guardFiles.has(label) && !loopbackServerFiles.has(label)) {
       // Only the version-checked retrieval branch may contain this one fetch call.
       const permittedFetchOffset = versionScopedInstallerFetchOffset(label, content);
+      const harnessSites = loopbackHarnessSites(content, harnessDeclarations[label]);
       for (const moduleName of modules) {
         const localUnixSocketImport = label === localUnixSocketTest && moduleName === modules[2];
-        if (!localUnixSocketImport && (content.includes(`\"${moduleName}\"`) || content.includes(`'${moduleName}'`))) {
+        if (!localUnixSocketImport && !harnessSites.modules.has(moduleName) && (content.includes(`\"${moduleName}\"`) || content.includes(`'${moduleName}'`))) {
           findings.push(`NETWORK_MODULE:${label}:${moduleName}`);
         }
       }
       for (const match of content.matchAll(/\bfetch\s*\(/gu)) {
-        if (match.index !== permittedFetchOffset) findings.push("NETWORK_API:" + label);
+        if (match.index !== permittedFetchOffset && !harnessSites.fetchOffsets.has(match.index)) findings.push("NETWORK_API:" + label);
       }
       if (/\bWebSocket\s*\(/u.test(content)) {
         findings.push(`NETWORK_API:${label}`);

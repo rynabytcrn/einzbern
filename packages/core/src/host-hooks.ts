@@ -1,23 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// TCRN-CROSS-STORY-477 R1, R3, R4, R5 (MIN-227 D4, D5): the hooks a host runs for Einzbern,
-// reduced to one. A host's hook file carries exactly one Einzbern hook group, on
-// UserPromptSubmit, and its one command runs the stable hook launcher in the device directory:
-//
-//   node "<device directory>/engine/hook.mjs" user-prompt-submit
-//
-// The launcher's path is absolute and double-quoted and nothing else is on the line: no shell
-// condition wraps it, and no argument names a checkout, a container or a host. So the same line
-// runs under a POSIX shell and on Windows, where it is written with backslashes (R5), and a path
-// that a shell would still read inside the quotes is refused rather than written wrong. Whether
-// the prompt's directory has a library, and what to inject, is the launcher's business (R2); its
-// bytes do not change when the engine does (engine/current), so a host file written once stays
-// current across engine updates.
-//
-// A device that declined the navigation section in AGENTS.md (agents.navigation, TCRN-CROSS-STORY-478
-// R4) gets two more Einzbern hooks of the same form, pointer hooks on SessionStart and
-// SubagentStart, whose launcher words are session-start and subagent-start: they hand the agent
-// the three navigation lines instead (hook-recall.ts), and nothing else runs on those events.
+// The installed engine owns prompt recall, first-work subagent recall and the bounded Read
+// guard. Each host file runs the stable device launcher, never a checkout or platform script.
+// SessionStart is added only when agents.navigation is declined. SubagentStart always carries
+// navigation and recalls against the host's documented agent_type (not a fabricated task field).
+// Stop, SSH and control-tree hooks remain retired. DSH keeps its separate plugin contract.
+// Engine updates change engine/current without rewriting host command paths.
 //
 // Rendering a file keeps everything that is not Einzbern's: other tools' hook groups, in their
 // order, and every other key. What is Einzbern's is taken out and written again: every hook that
@@ -62,6 +50,7 @@ export const HOST_HOOKS_REASON_CODES = Object.freeze([
   "HOST_HOOKS_HOST_NOT_FILE_BASED",
   "HOST_HOOKS_INPUT_INVALID",
   "HOST_HOOKS_PATH_UNSUPPORTED",
+  "HOST_HOOKS_ROLLBACK_FAILED",
 ] as const);
 export type HostHooksReasonCode = typeof HOST_HOOKS_REASON_CODES[number];
 
@@ -95,14 +84,14 @@ export const HOST_HOOK_FILE_HOSTS: readonly HostHookFileHost[] = Object.freeze([
 export type HostHookScope = "user" | "project";
 export const HOST_HOOK_SCOPES: readonly HostHookScope[] = Object.freeze(["user", "project"]);
 
-// Each event Einzbern hooks, with the word the launcher is given for it (R1). There is one:
-// SessionStart, PostToolUse, PreToolUse, Stop, SubagentStart and SubagentStop carry no hook (R3),
-// except the two pointer hooks below.
+// Events owned by the engine, independent of the navigation preference.
 export const HOST_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze({
   UserPromptSubmit: "user-prompt-submit",
+  SubagentStart: "subagent-start",
+  PreToolUse: "pre-tool-use",
 });
 // TCRN-CROSS-STORY-478 R4, AC5: the pointer hooks of a device whose agents.navigation is declined,
-// with their launcher words. They print the navigation lines and retrieve nothing.
+// with their launcher words. SubagentStart also recalls and is always installed.
 export const HOST_HOOK_POINTER_EVENTS: Readonly<Record<string, string>> = Object.freeze({
   SessionStart: "session-start",
   SubagentStart: "subagent-start",
@@ -143,8 +132,8 @@ export interface HostHooksRequest {
   // false: no Einzbern hook in this file, only what is ours taken out of it (a container's
   // settings once the hook lives in the user's). true when left out.
   readonly install?: boolean;
-  // This device's agents.navigation (machine-settings.ts): declined adds the two pointer hooks;
-  // written, or null while it is unset, adds none. null when left out.
+  // This device's agents.navigation: declined additionally installs SessionStart.
+  // SubagentStart remains installed regardless. null when left out.
   readonly navigation?: AgentsNavigationChoice | null;
 }
 
@@ -231,7 +220,7 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   const launcher = hookLauncherPath(request.deviceHome, platform);
   const groups: Record<string, readonly HostHookGroup[]> = {};
   if (install) {
-    const events = [...Object.keys(HOST_HOOK_EVENTS), ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : [])];
+    const events = [...new Set([...Object.keys(HOST_HOOK_EVENTS), ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : [])])];
     for (const event of events) {
       groups[event] = [{ hooks: [{ type: "command", command: hostHookCommand(launcher, event) }] }];
     }
@@ -710,7 +699,8 @@ async function exists(path: string): Promise<boolean> {
  * Write a plan. Every file that changes must still hold what was read; each existing one is copied
  * to backups/<UTC second>/host-hooks/<root digest>/ in the device directory (an earlier copy there
  * is kept), and then each is replaced atomically. When a write fails, the files this call already
- * replaced are put back.
+ * replaced are put back. Every restoration is attempted even if another fails; incomplete recovery
+ * reports the original failure, every rollback failure and the retained backup paths together.
  */
 export async function applyHostHooks(plan: HostHooksPlan, options: ApplyHostHooksOptions): Promise<AppliedHostHooks> {
   const stamp = utcStamp(options.at);
@@ -746,9 +736,35 @@ export async function applyHostHooks(plan: HostHooksPlan, options: ApplyHostHook
       written.push(file);
     }
   } catch (error) {
+    const rollbackErrors: { readonly path: string; readonly backup: string | null; readonly error: unknown }[] = [];
     for (const file of written) {
-      if (file.before === null) await rm(file.path, { force: true });
-      else await writeFileAtomic(file.path, file.before);
+      try {
+        if (file.before === null) await rm(file.path, { force: true });
+        else await writeFileAtomic(file.path, file.before);
+      } catch (rollbackError) {
+        const backup = file.before === null || backupDir === null ? null
+          : join(backupDir, createHash("sha256").update(file.root).digest("hex").slice(0, 16), file.name);
+        rollbackErrors.push({ path: file.path, backup, error: rollbackError });
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failures = rollbackErrors.map(({ path, backup, error: rollbackError }) => ({
+        path,
+        backup,
+        error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+      }));
+      const primary = error as { readonly reasonCode?: string; readonly details?: Readonly<Record<string, string>> } | null;
+      // Keep the primary reason and details for CLI callers, and the original error objects for
+      // programmatic callers. Backup files are never removed by rollback, successful or otherwise.
+      throw Object.assign(new AggregateError(
+        [error, ...rollbackErrors.map((failure) => failure.error)],
+        `${message}; rollback failed: ${failures.map((failure) => `${failure.path}: ${failure.error}; ${failure.backup === null ? "new file has no backup" : `backup: ${failure.backup}`}`).join("; ")}`,
+        { cause: error },
+      ), {
+        reasonCode: primary?.reasonCode ?? "HOST_HOOKS_ROLLBACK_FAILED",
+        details: { ...primary?.details, rollbackErrors: JSON.stringify(failures) },
+      });
     }
     throw error;
   }

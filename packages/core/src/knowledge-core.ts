@@ -17,9 +17,10 @@ import {
   rm,
   unlink,
 } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { pathIsInside as inside } from "./path-containment.js";
 import { resolveStoreBackend, SegmentedKnowledgeStoreBackend } from "./store-backend.js";
 import type { FileStoreBackendProfile, StoreBackend } from "./store-backend.js";
 
@@ -42,7 +43,7 @@ import {
   applyWriteLanguagePolicy,
   expansionsAreBounded,
   KnowledgeLanguageError,
-  readKnowledgeLanguagePolicy,
+  readRuntimeKnowledgeLanguagePolicy,
 } from "./knowledge-language.js";
 import type { KnowledgeExpansions, KnowledgeLanguagePolicy, KnowledgeLanguageProvider } from "./knowledge-language.js";
 import { chainIdentity } from "./chain-identity.js";
@@ -359,6 +360,8 @@ export interface CreateKnowledgeUnitInput {
 
 export interface KnowledgeArticleCreateInput {
   readonly occurredAt: string;
+  readonly coexist?: boolean;
+  readonly supersedes?: string | null;
   readonly projectId?: string;
   /** Markdown file path relative to the effective articles directory. */
   readonly path: string;
@@ -766,7 +769,6 @@ function extensionsAreBounded(value: unknown): boolean {
 // compiled CLI. There is no lookup by a sibling checkout folder name.
 function readKnowledgeProvenancePolicy(): Readonly<{ readonly relaxedKinds: readonly string[]; readonly strictKinds: readonly string[] }> {
   const candidates = [
-    resolve(process.cwd(), "scripts/policy/knowledge-provenance.json"),
     new URL("../../../scripts/policy/knowledge-provenance.json", import.meta.url),
     new URL("../../../../../scripts/policy/knowledge-provenance.json", import.meta.url),
   ];
@@ -774,12 +776,17 @@ function readKnowledgeProvenancePolicy(): Readonly<{ readonly relaxedKinds: read
     try {
       const parsed = JSON.parse(readFileSync(candidate, "utf8")) as { readonly schemaVersion?: unknown; readonly relaxedKinds?: unknown; readonly strictKinds?: unknown };
       if (parsed.schemaVersion === "tcrn.knowledge-provenance-policy.v1" && Array.isArray(parsed.relaxedKinds) && Array.isArray(parsed.strictKinds) &&
-        parsed.relaxedKinds.every((kind) => typeof kind === "string") && parsed.strictKinds.every((kind) => typeof kind === "string")) {
+        parsed.relaxedKinds.every((kind) => typeof kind === "string") && parsed.strictKinds.every((kind) => typeof kind === "string") &&
+        new Set([...parsed.relaxedKinds, ...parsed.strictKinds]).size === 5 &&
+        [...parsed.relaxedKinds, ...parsed.strictKinds].length === 5 &&
+        [...parsed.relaxedKinds, ...parsed.strictKinds].every(kind => ["fact", "decision", "summary", "guide", "reference"].includes(kind))) {
         return Object.freeze({ relaxedKinds: Object.freeze([...parsed.relaxedKinds] as string[]), strictKinds: Object.freeze([...parsed.strictKinds] as string[]) });
       }
-    } catch {
-      // Try the next repository-relative candidate; an absent policy is a hard
-      // source error below, never an implicit fallback to a stale code roster.
+      throw new Error("KNOWLEDGE_PROVENANCE_POLICY_INVALID");
+    } catch (error) {
+      // Only a missing layout candidate permits trying the compiled layout. A damaged
+      // installed asset must never select a different policy, especially not from cwd.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
   throw new Error("KNOWLEDGE_PROVENANCE_POLICY_UNREADABLE");
@@ -797,11 +804,6 @@ function fail(reasonCode: KnowledgeReasonCode, message: string, details?: Readon
 
 function sameIdentity(left: FileIdentity, right: FileIdentity): boolean {
   return left.dev === right.dev && left.ino === right.ino;
-}
-
-function inside(parent: string, candidate: string): boolean {
-  const relation = relative(parent, candidate);
-  return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep));
 }
 
 function sha256(value: Buffer | string): string {
@@ -3240,12 +3242,20 @@ function projectCrestUnits(
   const divergent = new Map<string, readonly CrestUnit[]>();
   // The writer that first wrote each card: the one whose record replaces nothing.
   const origins = new Map<string, string>();
+  const firstRecordedAt = new Map<string, string>();
   for (const [id, records] of written) {
     const distinct: CrestUnit[] = [];
     for (const unit of [...records].sort(compareCrestRecords)) {
       if (distinct.some((kept) => kept.storedDigest === unit.storedDigest)) continue;
       distinct.push(unit);
     }
+    // Original events retain their write instant in metadata.updatedAt even after refreshes.
+    // Legacy/incomplete histories have only the earliest available record, not a proven creation.
+    const originals = distinct.filter((unit) => unit.replaces === null);
+    const first = [...(originals.length === 0 ? distinct : originals)].sort((left, right) =>
+      parseStrictInstant(left.metadata.updatedAt) < parseStrictInstant(right.metadata.updatedAt) ? -1 :
+      parseStrictInstant(left.metadata.updatedAt) > parseStrictInstant(right.metadata.updatedAt) ? 1 : compareCrestRecords(left, right))[0]!;
+    firstRecordedAt.set(id, first.metadata.updatedAt);
     const latest = new Map<string, CrestUnit>();
     for (const unit of distinct) {
       if (latest.has(unit.lineage) && unit.replaces === null) {
@@ -3311,14 +3321,29 @@ function projectCrestUnits(
     for (let rightIndex = leftIndex + 1; rightIndex < projected.length; rightIndex += 1) {
       const right = projected[rightIndex] as CrestUnit;
       if (!live(right) || origins.get(left.metadata.id) === origins.get(right.metadata.id)) continue;
-      const conflicts = knowledgeConflictHits([left.metadata], right.metadata.subject, [right.metadata.id]).length > 0 ||
-        knowledgeConflictHits([right.metadata], left.metadata.subject, [left.metadata.id]).length > 0;
+      const conflicts = knowledgeProjectionConflict(left.metadata, right.metadata, firstRecordedAt.get(left.metadata.id)!, firstRecordedAt.get(right.metadata.id)!);
       const acknowledged = left.metadata.extensions.coexistsWith?.includes(right.metadata.id) === true ||
         right.metadata.extensions.coexistsWith?.includes(left.metadata.id) === true;
       if (conflicts && !acknowledged) unresolvedConflicts.push([left.metadata.id, right.metadata.id]);
     }
   }
   return { units: projected, unresolvedConflicts, duplicates, removals };
+}
+
+/**
+ * Deterministic projection direction: the later-recorded card's subject queries the earlier card,
+ * just as creation does. The caller supplies original-event instants (metadata.updatedAt on the
+ * original record), or earliest available instants for incomplete/legacy histories. Per-device
+ * sequences are not a global clock: this is comparison order, not proof of concurrent visibility.
+ * Canonical id breaks equal-time ties. Scoring and acknowledgement rules are unchanged.
+ */
+export function knowledgeProjectionConflict(left: KnowledgeUnitMetadata, right: KnowledgeUnitMetadata, leftWrittenAt: string, rightWrittenAt: string): boolean {
+  const leftAt = parseStrictInstant(leftWrittenAt);
+  const rightAt = parseStrictInstant(rightWrittenAt);
+  const order = leftAt === rightAt ? compareCanonicalText(left.id, right.id) : leftAt < rightAt ? -1 : 1;
+  const earlier = order <= 0 ? left : right;
+  const later = order <= 0 ? right : left;
+  return knowledgeConflictHits([earlier], later.subject, [later.id]).length > 0;
 }
 
 // The ids of the cards an unresolved conflict holds out of default selection.
@@ -3952,25 +3977,30 @@ async function loadUserCrestSnapshot(location: UserCrestLocation, options: Knowl
     value.index === null || typeof value.index !== "object") {
     return null;
   }
-  const removals = new Map(value.removals as [string, CrestRemoval][]);
-  const eventHeads = value.eventHeads as CrestEventHead[];
-  const scan: UserCrestScan = {
-    storeRoot, device: location.device, eventOnly: true, eventHeads,
-    marker: value.marker as KnowledgeStoreMarker,
-    units: (value.units as CrestUnit[]).map((unit) => snapshotUnit(unit, removals, options)),
-    index: value.index as KnowledgeIndex,
-    unresolvedConflicts: value.unresolvedConflicts as string[][],
-    duplicates: (value.duplicates as CrestDuplicate[]).map((duplicate) => ({ ...duplicate, versions: duplicate.versions.map((unit) => snapshotUnit(unit, removals, options)) })),
-    awaitingChain: [], unresolvedScopes: [], removals,
-    streamBodies: value.streamBodies as CrestStreamBody[],
-  };
-  let current: boolean;
+  // The whole reconstruction is disposable cache input, not authoritative data.
   try {
-    current = await userCrestFingerprint(storeRoot) === value.fingerprint;
+    const removals = new Map(value.removals as [string, CrestRemoval][]);
+    const eventHeads = value.eventHeads as CrestEventHead[];
+    const scan: UserCrestScan = {
+      storeRoot, device: location.device, eventOnly: true, eventHeads,
+      marker: value.marker as KnowledgeStoreMarker,
+      units: (value.units as CrestUnit[]).map((unit) => snapshotUnit(unit, removals, options)),
+      index: value.index as KnowledgeIndex,
+      unresolvedConflicts: value.unresolvedConflicts as string[][],
+      duplicates: (value.duplicates as CrestDuplicate[]).map((duplicate) => ({ ...duplicate, versions: duplicate.versions.map((unit) => snapshotUnit(unit, removals, options)) })),
+      awaitingChain: [], unresolvedScopes: [], removals,
+      streamBodies: value.streamBodies as CrestStreamBody[],
+    };
+    let current: boolean;
+    try {
+      current = await userCrestFingerprint(storeRoot) === value.fingerprint;
+    } catch {
+      current = false;
+    }
+    return { scan, current };
   } catch {
-    current = false;
+    return null;
   }
-  return { scan, current };
 }
 
 function assertStoreScope(scope: unknown): asserts scope is KnowledgeStoreScope | undefined {
@@ -4244,19 +4274,19 @@ const UNCONFIGURED_WRITE_LANGUAGE_POLICY: KnowledgeLanguagePolicy = Object.freez
  * first either way, so the project lineage is checked, and refused, as it always was; it reads the
  * chain identity itself, so reading it again here adds no way to fail.
  */
-function writeLanguagePolicy(workspace: WorkspaceState, projectId: string | null, host?: string): KnowledgeLanguagePolicy {
+async function writeLanguagePolicy(workspace: WorkspaceState, projectId: string | null, host?: string): Promise<KnowledgeLanguagePolicy> {
   const scoped = scopedWorkspaceState(workspace, projectId ?? undefined);
   if (chainIdentity(workspace)?.role === "coordination") return UNCONFIGURED_WRITE_LANGUAGE_POLICY;
-  return readKnowledgeLanguagePolicy(scoped.settings, host);
+  return readRuntimeKnowledgeLanguagePolicy(scoped.settings, host);
 }
 
-function buildMetadata(
+async function buildMetadata(
   input: CreateKnowledgeUnitInput,
   body: Buffer,
   workspace: WorkspaceState,
   languageProvider?: KnowledgeLanguageProvider,
   host?: string,
-): KnowledgeUnitMetadata {
+): Promise<KnowledgeUnitMetadata> {
   assertWritableLifecycle(input.lifecycle);
   if (input.projectId !== null && !workspace.projects.some((project) => project.id === input.projectId && !project.tombstone)) {
     fail("KNOWLEDGE_LINK_INVALID", `unknown project ${input.projectId}`);
@@ -4303,7 +4333,7 @@ function buildMetadata(
   try {
     language = applyWriteLanguagePolicy(
       { subject: input.subject, summary: input.summary, snippet: input.snippet },
-      writeLanguagePolicy(workspace, input.projectId, host),
+      await writeLanguagePolicy(workspace, input.projectId, host),
       languageProvider,
     );
   } catch (error) {
@@ -4612,7 +4642,7 @@ async function createUserCrestEvent(
   const sourceDigest = input.sourceDigest && input.sourceDigest.length > 0
     ? input.sourceDigest
     : await calculateKnowledgeSourceDigest(workspaceRoot, scopedWorkspaceState(workspace, input.projectId ?? undefined), input.sourceReferences, input.body);
-  const metadata = buildMetadata({ ...input, sourceDigest }, body, workspace, options.languageProvider, options.host);
+  const metadata = await buildMetadata({ ...input, sourceDigest }, body, workspace, options.languageProvider, options.host);
   const { eventsRoot } = await ensureUserCrestEventRoot(location);
   const { device } = await readOrCreateDevice({ home: location.device });
   const streamPath = resolve(eventsRoot, device.deviceId);
@@ -4846,7 +4876,7 @@ async function createLibraryCrestEvent(
   const sourceDigest = input.sourceDigest && input.sourceDigest.length > 0
     ? input.sourceDigest
     : await calculateKnowledgeSourceDigest(workspaceRoot, scopedWorkspaceState(workspace, input.projectId ?? undefined), input.sourceReferences, input.body);
-  const metadata = buildMetadata({ ...input, sourceDigest }, body, workspace, options.languageProvider, options.host);
+  const metadata = await buildMetadata({ ...input, sourceDigest }, body, workspace, options.languageProvider, options.host);
   const scan = await mutationAdmissionScan(workspaceRoot, options);
   // The chain the event will name is the one the scan read, so the card's links are held to it.
   validateMetadataLinks(metadata, scan.workspace);
@@ -5142,7 +5172,8 @@ export async function createKnowledgeArticle(
       accountableOwnerId: input.accountableOwnerId,
       sourceReferences: articleSourceReference(input.path),
       sourceDigest,
-      supersedes: null,
+      supersedes: input.supersedes ?? null,
+      ...(input.coexist === undefined ? {} : { coexist: input.coexist }),
       linkedWorkIds: [],
       linkedDecisionIds: [],
       linkedGateIds: [],
@@ -5984,7 +6015,7 @@ async function refreshLibraryCrestArticle(
   try {
     language = applyWriteLanguagePolicy(
       { subject: article.title, summary: input.summary, snippet: truncateArticleUtf8(input.summary, KNOWLEDGE_LIMITS.maximumSnippetBytes) },
-      writeLanguagePolicy(scan.workspace, unit.metadata.projectId, options.host),
+      await writeLanguagePolicy(scan.workspace, unit.metadata.projectId, options.host),
       options.languageProvider,
     );
   } catch (error) {

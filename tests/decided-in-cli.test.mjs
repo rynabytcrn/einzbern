@@ -78,7 +78,7 @@ async function scratch(context) {
   const owner = await record("DECIDED-MIN-1", [
     "Gate unit becomes required; gate lint retires.",
     "Command Spell rule batch may be switched from the CLI.",
-    "The Owner tunes models.escalation.* from the CLI.",
+    "The Owner tunes design.* from the CLI.",
     "Variables deploy.port and deploy.host follow the release plan.",
   ], [OWNER, "agent:claude-opus-5-5"]);
   const agents = await record("DECIDED-MIN-2", ["Agents asked for unit sooner."], ["agent:claude-opus-5-5"]);
@@ -177,30 +177,30 @@ test("526 (SUB-453): rule-enable and rule-disable write for a decision naming th
   for (const payload of disableEvents) authorizedBy(payload, fx, fx.owner(2));
 });
 
-test("526 (SUB-453): settings-set and settings-remove write for models.escalation.* and refuse models.tiers; a run for Atelier citing a decision records both", async (context) => {
+test("526 (SUB-453): settings-set and settings-remove write for ordinary design settings and refuse models.tiers; a run for Atelier citing a decision records both", async (context) => {
   const fx = await scratch(context);
   const set = (key, value, ...more) => ["settings-set", "--workspace", fx.library, "--at", at(), "--key", key, "--value", value, ...more];
   const remove = (key, ...more) => ["settings-remove", "--workspace", fx.library, "--at", at(), "--key", key, ...more];
-  assert.equal((await asModel(() => refusal(set("models.escalation.ceiling", "flagship")))).details.remedy, MODEL_WRITE_DECISION_REMEDY);
-  await assertInvalid(fx, set("models.tiers", "[]", "--decided-in", fx.owner(3)), fx.owner(3), "models.tiers", "target-not-named");
+  assert.equal((await asModel(() => refusal(set("design.buildProject", "flagship")))).details.remedy, MODEL_WRITE_DECISION_REMEDY);
+  assert.equal((await asModel(() => refusal(set("models.tiers", "[]", "--decided-in", fx.owner(3))))).reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
 
   const setBefore = await stateOf(fx.library);
-  assert.equal((await asModel(() => cli(set("models.escalation.ceiling", "flagship", "--decided-in", fx.owner(3))))).reasonCode, "SETTINGS_WRITE_COMMITTED");
+  assert.equal((await asModel(() => cli(set("design.buildProject", "flagship", "--decided-in", fx.owner(3))))).reasonCode, "SETTINGS_WRITE_COMMITTED");
   const [setEvent] = await appendedSince(fx.library, setBefore);
-  assert.deepEqual([setEvent.operation, setEvent.record.key], ["settings.updated", "models.escalation.ceiling"]);
+  assert.deepEqual([setEvent.operation, setEvent.record.key], ["settings.updated", "design.buildProject"]);
   authorizedBy(setEvent, fx, fx.owner(3));
 
   // Atelier citing a decision: checked the same way, recorded with surface atelier.
   const atelierBefore = await stateOf(fx.library);
-  await asAtelier(() => cli(set("models.escalation.threshold", "2", "--decided-in", fx.owner(3))));
+  await asAtelier(() => cli(set("design.consumedVersion", "2", "--decided-in", fx.owner(3))));
   const [atelierEvent] = await appendedSince(fx.library, atelierBefore);
   authorizedBy(atelierEvent, fx, fx.owner(3), "atelier");
 
-  await assertInvalid(fx, remove("models.escalation.threshold", "--decided-in", fx.owner(1)), fx.owner(1), "models.escalation.threshold", "target-not-named");
+  await assertInvalid(fx, remove("design.consumedVersion", "--decided-in", fx.owner(1)), fx.owner(1), "design.consumedVersion", "target-not-named");
   const removeBefore = await stateOf(fx.library);
-  assert.equal((await asModel(() => cli(remove("models.escalation.threshold", "--decided-in", fx.owner(3))))).reasonCode, "SETTINGS_WRITE_COMMITTED");
+  assert.equal((await asModel(() => cli(remove("design.consumedVersion", "--decided-in", fx.owner(3))))).reasonCode, "SETTINGS_WRITE_COMMITTED");
   const [removeEvent] = await appendedSince(fx.library, removeBefore);
-  assert.deepEqual([removeEvent.operation, removeEvent.record.key], ["settings.removed", "models.escalation.threshold"]);
+  assert.deepEqual([removeEvent.operation, removeEvent.record.key], ["settings.removed", "design.consumedVersion"]);
   authorizedBy(removeEvent, fx, fx.owner(3));
 });
 

@@ -248,6 +248,10 @@ function backfillPlan(status) {
   };
 }
 
+export function selectSimulatedTail(records, count) {
+  return count === 0 ? [] : records.slice(-count);
+}
+
 export async function runPrototype() {
   const workspaceInput = argument("workspace");
   assert(typeof workspaceInput === "string" && workspaceInput.length > 0, "PROTOTYPE_ARGUMENT_MISSING", "--workspace is required");
@@ -271,7 +275,7 @@ export async function runPrototype() {
   const statusTimings = [];
   for (let index = 0; index < runs; index += 1) statusTimings.push(readJson(["status", "--workspace", workspace]).elapsedMs);
   const simulatedTailTimings = [];
-  const tailRecords = initialEvents.records.slice(-projection.simulation.tailRecordCount);
+  const tailRecords = selectSimulatedTail(initialEvents.records, projection.simulation.tailRecordCount);
   for (let index = 0; index < runs; index += 1) {
     const started = process.hrtime.bigint();
     simulateTailLoad(tailRecords);

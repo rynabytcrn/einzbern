@@ -41,7 +41,8 @@ import { effectiveProjectState } from "./project-chain.js";
 
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isUtf8 } from "node:buffer";
-import { dirname, join, resolve, relative, isAbsolute } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { pathIsInside } from "./path-containment.js";
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
 import { removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
@@ -60,6 +61,7 @@ import {
 } from "./managed-sections.js";
 import type {
   AppliedManagedWrite,
+  ManagedSectionDecision,
   ManagedSectionRecord,
   ManagedSectionResult,
   ManagedSectionState,
@@ -75,6 +77,7 @@ import { BUILT_IN_RULES, builtInRule, ruleBody } from "./rules-catalog.js";
 import {
   VARIABLES_CUSTOM_SECTION_ID,
   VARIABLES_SYSTEM_SECTION_ID,
+  recordWithheldCustomVariablesAsPending,
   renderCustomVariablesSection,
   renderSystemVariablesSection,
 } from "./variables-sections.js";
@@ -536,10 +539,7 @@ export type ManagedOutputBinding = "bound" | "unconfigured";
 
 // Whether `path` is a library in `libraries` or lies within one.
 function insideLibrary(path: string, libraries: readonly string[]): boolean {
-  return libraries.some((library) => {
-    const relation = relative(library, path);
-    return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
-  });
+  return libraries.some((library) => pathIsInside(library, path));
 }
 
 /**
@@ -802,15 +802,16 @@ function enabledRuleSections(state: Pick<WorkspaceState, "settings" | "configRec
  * `navigation`: the navigation section on a device that chose written, the two variable sections,
  * and the section of every rule the library has enabled at the version this engine ships.
  */
-export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "configRecords">, navigation: AgentsNavigationChoice | null): {
+export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "configRecords">, _navigation: AgentsNavigationChoice | null): {
   readonly sections: readonly AgentsSection[];
   readonly withheld: readonly WithheldEntry[];
 } {
+  if (state.settings.find(entry => entry.key === "agents.generation")?.value === "none") return { sections: [], withheld: [] };
   const system = renderSystemVariablesSection(state);
   const custom = renderCustomVariablesSection(state);
   return {
     sections: [
-      ...(navigation === "written" ? [NAVIGATION_SECTION] : []),
+      ...((state.settings.find(entry => entry.key === "agents.sharedNavigation")?.value ?? "written") === "written" ? [NAVIGATION_SECTION] : []),
       { id: system.id, file: AGENTS_FILE, body: system.body },
       { id: custom.id, file: AGENTS_FILE, body: custom.body },
       ...enabledRuleSections(state),
@@ -845,15 +846,18 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
     plan: async (root, nativeState) => {
       await assertManagedOutputRoot(root, input.projectRoot, nativeState);
       const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+      if (state.settings.find(entry => entry.key === "agents.generation")?.value === "none") {
+        return { deltas: [], plan: { withheld: [], plans: [] as ManagedWritePlan[], decisions: [] as { plan: ManagedWritePlan; decision: ManagedSectionDecision }[], recorded: 0 } };
+      }
       const agents = agentsFileSections(state, input.navigation);
       const plans = [
         // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.
-        orderRuleSections(await planManagedWrite({
+        recordWithheldCustomVariablesAsPending(orderRuleSections(await planManagedWrite({
           filePath: join(input.projectRoot, AGENTS_FILE),
           file: AGENTS_FILE,
           desired: agents.sections.map((section) => ({ id: section.id, body: section.body })),
           records: managedSectionRecordsFor(state, AGENTS_FILE),
-        }), ruleOrders(state)),
+        }), ruleOrders(state)), state, renderCustomVariablesSection(state).withheld),
         await planClaudeImport(input.projectRoot, managedSectionRecordsFor(state, CLAUDE_FILE)),
       ];
       const decisions = plans.flatMap((plan) => plan.sections.map((decision) => ({ plan, decision })));

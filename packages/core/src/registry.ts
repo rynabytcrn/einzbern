@@ -407,16 +407,47 @@ export async function unregisterEntries(select: (registry: Registry) => Promise<
   });
 }
 
+/** A registry-first relocation transaction. The callback must not acquire the registry again.
+ * Keep this outermost whenever a flow also takes a library write lock (including Portal writes). */
+export async function withLibraryRepointLock<T>(operation: (transaction: {
+  readonly entries: readonly RegistryEntry[];
+  readonly repoint: (libraryId: string, libraryPath: string, cloudHosted: boolean | undefined) => Promise<readonly RegistryEntry[]>;
+}) => Promise<T>, home?: string): Promise<T> {
+  return mutateRegistry(home, async (initial, directory) => {
+    let registry = initial;
+    let active = true;
+    let pending: Promise<readonly RegistryEntry[]> = Promise.resolve([]);
+    try {
+      const result = await operation({
+        entries: initial.entries,
+        repoint: (libraryId, libraryPath, cloudHosted) => {
+          if (!active) throw new Error("registry relocation transaction is no longer active");
+          // Serialize even an accidentally unawaited call and drain accepted work before unlock.
+          pending = pending.then(async () => {
+            const target = await real(libraryPath);
+            const entries = registry.entries.map((entry) => (entry.libraryId === libraryId
+              ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }
+              : entry));
+            await writeRegistry({ ...registry, entries }, directory);
+            registry = { ...registry, entries };
+            return entries.filter((entry) => entry.libraryId === libraryId);
+          });
+          return pending;
+        },
+      });
+      active = false;
+      await pending;
+      return result;
+    } finally {
+      active = false;
+      await pending.catch(() => undefined);
+    }
+  });
+}
+
 /** Point an entry at the library's new location (a relocation moved it). */
 export async function repointLibrary(libraryId: string, libraryPath: string, cloudHosted: boolean | undefined, home?: string): Promise<readonly RegistryEntry[]> {
-  const target = await real(libraryPath);
-  return mutateRegistry(home, async (registry, directory) => {
-    const entries = registry.entries.map((entry) => (entry.libraryId === libraryId
-      ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }
-      : entry));
-    await writeRegistry({ ...registry, entries }, directory);
-    return entries.filter((entry) => entry.libraryId === libraryId);
-  });
+  return withLibraryRepointLock(({ repoint }) => repoint(libraryId, libraryPath, cloudHosted), home);
 }
 
 function ancestors(path: string): readonly string[] {

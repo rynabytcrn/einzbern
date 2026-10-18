@@ -10,19 +10,23 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Hold the same device registry lock used by register/unregister/repoint until
 // the CLI's library lock and all output writes finish. This is exclusion, not
-// another preflight or an authentication mechanism. The lock and its path come
+// another preflight or an authentication mechanism. Relocation takes this same
+// registry-before-library lock order. The lock and its path come
 // through the registry-lock bridge, as the names do through names.mjs.
 import { withFileLock, registryPath } from "../scripts/lib/registry-lock.mjs";
 
+import { canonicalJson } from "../scripts/lib/canonical-json.mjs";
+
+import { isGateRunRecord, compareGateRuns } from "../scripts/lib/gate-run.mjs";
+
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
-import { DIRECTORY, LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
+import { LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
 
 function execFileAsync(file, args, options) {
   return new Promise((resolve, reject) => {
@@ -77,6 +81,9 @@ function failStartup(error) {
 if (!ACTOR) {
   failStartup(startupError("PORTAL_ACTOR_REQUIRED", { variable: "TCRN_PORTAL_ACTOR" }, "Atelier starts with TCRN_PORTAL_ACTOR set to the actor its writes are recorded under"));
 }
+
+// Reject cwd-relative device roots before selecting any library or reading its cache.
+try { deviceHomePath(); } catch (error) { failStartup(error); }
 
 // TCRN-CROSS-STORY-482 R3, AC1: Atelier opens the libraries this device has registered, read
 // through library-list (the device directory's registry.json), and switches among them. It
@@ -433,7 +440,44 @@ async function knowledgeProjection(status = "valid") {
   const at = readInstant();
   // TCRN-CROSS-MIN-225 (TCRN-CROSS-SUB-259): the knowledge view never read the retire-proposals
   // answer fetched beside the list, so that call, a full telemetry read on every load, is gone.
-  const listing = await cliResult(["knowledge-list", "--workspace", selected.libraryPath, "--at", at, "--selection", "all", "--status", status, "--allow-trailing", "true"]);
+  const records = [];
+  let listing;
+  let total;
+  const seen = new Set();
+  const digest = createHash("sha256").update("[", "utf8");
+  // Page until the declared inventory is complete; never present a prefix as the inventory.
+  do {
+    listing = await cliResult(["knowledge-list", "--workspace", selected.libraryPath, "--at", at, "--selection", "all", "--status", status, "--allow-trailing", "true", "--limit", "100", "--offset", String(records.length)]);
+    if (!listing.ok) break;
+    if (listing.body?.knowledgeStore === "absent") {
+      if (records.length > 0) listing = { ok: false, body: { ok: false, reasonCode: "PORTAL_KNOWLEDGE_PAGINATION_CHANGED" } };
+      break;
+    }
+    const page = listing.body?.records;
+    const count = listing.body?.total;
+    if (!Array.isArray(page) || !Number.isSafeInteger(count) || count < 0 ||
+        (total !== undefined && total !== count) || records.length + page.length > count ||
+        (page.length === 0 && records.length < count) ||
+        page.some((record) => typeof record?.id !== "string")) {
+      listing = { ok: false, body: { ok: false, reasonCode: "PORTAL_KNOWLEDGE_PAGINATION_CHANGED" } };
+      break;
+    }
+    // selection=all keeps every differing version of an id. The engine coalesces identical
+    // stored metadata, not ids, revisions or body digests; compare the complete projected record.
+    // The shared serializer orders nested keys canonically and returns an entry without an LF.
+    const entries = page.map((record) => canonicalJson(record));
+    if (entries.some((entry) => seen.has(entry) || !seen.add(entry))) {
+      listing = { ok: false, body: { ok: false, reasonCode: "PORTAL_KNOWLEDGE_PAGINATION_CHANGED" } };
+      break;
+    }
+    total = count;
+    for (const [index, entry] of entries.entries()) {
+      if (records.length + index > 0) digest.update(",", "utf8");
+      digest.update(entry, "utf8");
+    }
+    records.push(...page);
+  } while (records.length < total);
+  if (listing.ok) listing = { ...listing, body: { ...listing.body, records, total: total ?? 0, offset: 0, truncated: false, resultDigest: digest.update("]\n", "utf8").digest("hex") } };
   return {
     ok: listing.ok,
     reasonCode: listing.ok ? "PORTAL_KNOWLEDGE_READY" : "PORTAL_KNOWLEDGE_PARTIAL",
@@ -654,6 +698,7 @@ const writeVariable = (body) => governedWrite((common) => [
   "--name", String(body.name ?? ""),
   "--type", String(body.type ?? ""),
   "--value", String(body.value ?? ""),
+  "--exports", (body.exports ?? []).join(","),
   ...(body.description === undefined ? [] : ["--description", String(body.description)]),
   ...orderArguments(body.order),
 ], ATELIER_SURFACE);
@@ -676,18 +721,12 @@ async function gatesProjection() {
 }
 
 function deviceHomePath() {
-  const configured = process.env.EINZBERN_HOME;
-  return typeof configured === "string" && configured.length > 0 ? resolve(configured) : join(homedir(), DIRECTORY.device);
+  // Reuse the validated core device-home path through the existing registry bridge.
+  return dirname(registryPath());
 }
 
 function isGateRun(value, libraryId, projectId) {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const run = value;
-  return run.schemaVersion === "einzbern.gate-run.v1" && run.libraryId === libraryId && (run.projectId ?? null) === projectId &&
-    typeof run.runId === "string" && typeof run.at === "string" && Number.isFinite(Date.parse(run.at)) &&
-    typeof run.treeDigest === "string" && typeof run.declarationsDigest === "string" && Array.isArray(run.gates) &&
-    run.gates.every((gate) => gate !== null && typeof gate === "object" && typeof gate.name === "string" && typeof gate.ok === "boolean" && typeof gate.required === "boolean") &&
-    Array.isArray(run.reds);
+  return isGateRunRecord(value) && value.libraryId === libraryId && (value.projectId ?? null) === projectId;
 }
 
 async function latestGateRunProjection() {
@@ -705,7 +744,7 @@ async function latestGateRunProjection() {
     let run;
     try { run = JSON.parse(await readFile(join(directory, entry.name), "utf8")); } catch { continue; }
     if (!isGateRun(run, libraryId, currentLibrary().configurationProjectId)) continue;
-    if (latest === null || Date.parse(run.at) > Date.parse(latest.at) || (Date.parse(run.at) === Date.parse(latest.at) && run.runId.localeCompare(latest.runId) > 0)) latest = run;
+    if (latest === null || compareGateRuns(run, latest) < 0) latest = run;
   }
   return { ok: true, reasonCode: "PORTAL_GATE_RUN_READY", run: latest };
 }
@@ -801,7 +840,10 @@ async function reconcile() {
     const path = proseTarget(name);
     if (!path) continue;
     let text = "";
-    try { text = await readFile(path, "utf8"); } catch { continue; }
+    try { text = await readFile(path, "utf8"); } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      return { ok: false, reasonCode: "PORTAL_PROSE_READ_FAILED", file: name, errorCode: error?.code ?? "UNKNOWN", rows: [], findings: [] };
+    }
     for (const [lineIndex, line] of text.split("\n").entries()) {
       for (const match of line.matchAll(KEY_PATTERN)) {
         const key = match[1];
@@ -878,7 +920,10 @@ async function agentsRead(name) {
   const path = proseTarget(name);
   if (!path) return { status: currentProseRoot() === null ? 200 : 404, body: { ok: currentProseRoot() === null, reasonCode: currentProseRoot() === null ? "PORTAL_PROJECT_BINDING_UNCONFIGURED" : "PORTAL_PATH_ESCAPE", file: name, text: "", outputBindingStatus: "unconfigured" } };
   let text = "";
-  try { text = await readFile(path, "utf8"); } catch { /* absent prose reads as an empty editor */ }
+  try { text = await readFile(path, "utf8"); } catch (error) {
+    // Only absence is an empty editor. Never return file contents or raw filesystem errors.
+    if (error?.code !== "ENOENT") return { status: 500, body: { ok: false, reasonCode: "PORTAL_INTERNAL_ERROR", file: name, error: "Unable to read project instructions." } };
+  }
   return { status: 200, body: { ok: true, reasonCode: "PORTAL_AGENTS_MD_READY", file: name, path, text } };
 }
 
@@ -929,17 +974,17 @@ function isLoopbackHost(hostHeader) {
 // The routes that answer for this device or engine rather than for the selected target, and the two
 // switches, which name the target they select (TCRN-CROSS-INIT-053 R46 I05). The writes are the ones the
 // target check left alone before.
-const TARGET_EXEMPT_READS = Object.freeze(["/api/libraries", "/api/project-targets", "/api/machine-settings", "/api/vocabulary", "/api/commands"]);
-const TARGET_EXEMPT_WRITES = Object.freeze(["/api/library", "/api/configuration-scope", "/api/machine-settings"]);
+const TARGET_EXEMPT_READS = Object.freeze(["/api/libraries", "/api/project-targets", "/api/machine-settings", "/api/model-policy", "/api/vocabulary", "/api/commands"]);
+const TARGET_EXEMPT_WRITES = Object.freeze(["/api/library", "/api/configuration-scope", "/api/machine-settings", "/api/model-policy"]);
 
 const server = createServer((request, response) => requestContext.run({ epoch: selectionEpoch, library: { ...selectedLibrary, configurationProjectId: selectedConfigurationProjectId }, authenticated: false }, async () => {
   if (!isLoopbackHost(request.headers.host)) {
     send(response, 403, { ok: false, reasonCode: "PORTAL_HOST_REJECTED" });
     return;
   }
-  const url = new URL(request.url, "http://127.0.0.1");
-  const pathname = apiAlias(url.pathname);
   try {
+    const url = new URL(request.url, "http://127.0.0.1");
+    const pathname = apiAlias(url.pathname);
     if (request.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
       const html = await readFile(join(portalRoot, "index.html"), "utf8");
       const library = currentLibrary();
@@ -1017,6 +1062,13 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     // out from those three and keeps no grouping of its own.
     if (request.method === "GET" && pathname === "/api/settings") {
       send(response, 200, await settingsCatalog());
+      return;
+    }
+    // INIT-056's policy belongs to the engine on this device and is partitioned by host. It has no
+    // selected-project scope; the source projection still reports any legacy project records.
+    if (request.method === "GET" && pathname === "/api/model-policy") {
+      const result = await cliResult(["engine-model-policy-catalog", ...(url.searchParams.has("host") ? ["--host", url.searchParams.get("host")] : [])]);
+      send(response, result.ok ? 200 : 409, result.body);
       return;
     }
     if (request.method === "POST" && pathname === "/api/configuration-scope") {
@@ -1312,6 +1364,9 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     if ((request.method === "POST" || request.method === "DELETE") && pathname === "/api/variables") {
       const body = await readJsonBody(request);
       const name = String(body.name ?? "");
+      if (request.method === "POST" && body.exports !== undefined && (!Array.isArray(body.exports) || body.exports.some((target) => !["agents", "handoff"].includes(target)) || new Set(body.exports).size !== body.exports.length)) {
+        send(response, 400, { ok: false, reasonCode: "VARIABLE_EXPORTS_INVALID" }); return;
+      }
       const mutation = request.method === "POST" ? await writeVariable(body) : await removeVariable(name);
       const result = await completeVariableWrite(name, mutation);
       send(response, result.ok ? 200 : 409, result.body);
@@ -1381,6 +1436,30 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       send(response, result.ok ? 200 : 409, { ...result.body, readback: readback?.settings?.find((entry) => entry.key === key) ?? null });
       return;
     }
+    if (request.method === "POST" && pathname === "/api/model-policy") {
+      const body = await readJsonBody(request);
+      const library = currentLibrary();
+      // The device policy is not scoped to a project target, but the Owner decision that
+      // authorizes its write is resolved from this library. A tab that changed libraries while a
+      // form was open must not have its old closure write against the new selection.
+      if (body.libraryId !== library.libraryId || body.libraryPath !== library.libraryPath) {
+        send(response, 409, { ok: false, reasonCode: "PORTAL_MODEL_POLICY_LIBRARY_CHANGED", library: publicLibrary(library) });
+        return;
+      }
+      const host = String(body.host ?? "");
+      const decidedIn = String(body.decidedIn ?? "");
+      const result = await cliResult([
+        "engine-model-policy-set",
+        "--workspace", library.libraryPath,
+        "--host", host,
+        "--policy", JSON.stringify(body.policy ?? null),
+        "--at", new Date().toISOString(),
+        "--actor", ACTOR,
+        "--decided-in", decidedIn,
+      ]);
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok });
+      return;
+    }
     if (request.method === "GET" && pathname === "/api/agents-md") {
       const result = await agentsRead(url.searchParams.get("file") ?? PROSE_FILES[0]);
       send(response, result.status, result.body);
@@ -1406,7 +1485,14 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
 }));
 
 const port = Number(portArgument || (await machineValue("portal.port")) || "4319");
-server.listen(port, "127.0.0.1", () => {
+const reportListenFailure = (error) => {
+  process.stderr.write(`${JSON.stringify({ ok: false, reasonCode: error.code === "EADDRINUSE" ? "PORTAL_PORT_IN_USE" : "PORTAL_LISTEN_FAILED", port, host: "127.0.0.1", error: String(error.code ?? error.message), recovery: "Choose an available port with --port or stop the existing listener." })}\n`);
+  process.exitCode = 1;
+};
+server.on("error", reportListenFailure);
+if (!Number.isSafeInteger(port) || port < 0 || port > 65535) {
+  reportListenFailure({ code: "PORTAL_PORT_INVALID" });
+} else server.listen(port, "127.0.0.1", () => {
   const bound = server.address().port;
   process.stdout.write(`${JSON.stringify({
     reasonCode: "PORTAL_LISTENING",

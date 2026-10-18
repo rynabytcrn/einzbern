@@ -9,6 +9,7 @@
 // rebuild writes, reads them back, and refuses the entries an unpacker must not follow.
 
 import "./helpers/device-home.mjs";
+import { runCaptureCliUpgradeMatrix } from "./helpers/capture-cli-upgrade.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -20,7 +21,7 @@ import { pathToFileURL } from "node:url";
 import { gzipSync, gunzipSync, constants as zlibConstants } from "node:zlib";
 import test, { after } from "node:test";
 
-import { FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
+import { BRAND, FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
 import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
 import {
   P8_RELEASE_ARTIFACTS,
@@ -158,11 +159,13 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
     "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
-    ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "manifest.json",
+    "specs/dispatch-admission-evidence-v1.md",
+    ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "manifest.json",
   ];
   assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());
   const byPath = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry]));
   assert.ok(byPath.get("atelier/ds-static-bridges.snapshot.js").bytes.equals(await readFile(join(repositoryRoot, "portal/ds-static-bridges.snapshot.js"))), "the archive retains exact published bridge bytes");
+  assert.ok(byPath.get("THIRD_PARTY_NOTICES.txt").bytes.equals(await readFile(join(repositoryRoot, "THIRD_PARTY_NOTICES.txt"))), "the archive retains vendored runtime license notices");
   assert.ok(byPath.get("launchers/einzbern.mjs").bytes.equals(await readFile(join(repositoryRoot, "scripts/einzbern-launcher.mjs"))));
   assert.ok(byPath.get("launchers/hook.mjs").bytes.equals(await readFile(join(repositoryRoot, "scripts/einzbern-hook-launcher.mjs"))));
   for (const path of template) {
@@ -463,4 +466,108 @@ test("481-R2: tar.mjs writes the bytes P8's independent rebuild writes, reads th
     archive,
   ]);
   assert.deepEqual(readUstar(withDirectory).map((entry) => entry.path), read.map((entry) => entry.path));
+});
+
+// PR24 P1-P4: execute the archive entry with product source and node_modules
+// reads denied by Node itself. Governed runs retain their mandatory, standalone
+// controller and offline preloads; uninstrumented runs allow only the isolated fixture tree.
+test("execution evidence is usable from the archive with product source denied and unchanged owner synthetic cases", async () => {
+  const { tree, report, archive, entries } = await packedRelease();
+  assert.equal(report.sha256, sha256(archive));
+  const isolated = await environment("execution-evidence");
+  const cli = join(tree, "scripts/einzbern.mjs");
+  // Allow only this empty temporary fixture tree. Missing layout candidates may
+  // return ENOENT here; repository source and dependencies remain denied.
+  const permission = ["--permission", `--allow-fs-read=${base}`];
+  assert.equal(existsSync(join(base, "scripts/policy/knowledge-provenance.json")), false, "missing layout candidate stays inside the isolated fixture, without copied policy assets");
+  const inheritedOptions = (process.env.NODE_OPTIONS ?? "").split(/\s+/u);
+  const mandatoryInstrumentation = ["test-controller-child-policy.mjs", "no-network.mjs"];
+  for (const file of mandatoryInstrumentation) {
+    const instrumentation = join(repositoryRoot, "scripts", file);
+    if (inheritedOptions.includes(`--import=${pathToFileURL(instrumentation).href}`)) {
+      // Closed, exact-file allowances for the controller's existing builtin-only
+      // instrumentation. Never allow arbitrary inherited imports or source trees.
+      permission.push(`--allow-fs-read=${instrumentation}`);
+    }
+  }
+  delete isolated.env.NODE_PATH;
+  const execute = (args) => node([...permission, cli, ...args], isolated);
+  if (inheritedOptions.includes(`--import=${pathToFileURL(join(repositoryRoot, "scripts/no-network.mjs")).href}`)) {
+    // Transport refusal behavior is covered by the dedicated offline-boundary suite.
+    const offline = node([...permission, "--input-type=module", "-e", "import assert from 'node:assert/strict'; assert.equal(globalThis.__TCRN_OFFLINE_GUARD__, true);"], isolated);
+    assert.equal(offline.status, 0, offline.stderr);
+  }
+  for (const path of [join(repositoryRoot, "package.json"), join(repositoryRoot, "packages/core/src/dispatch-evidence.ts"), join(repositoryRoot, "packages/cli/src/index.ts"), join(repositoryRoot, "node_modules/typescript/package.json")]) {
+    const denied = node([...permission, "--input-type=module", "-e", `import { readFileSync } from 'node:fs'; readFileSync(${JSON.stringify(path)});`], isolated);
+    assert.notEqual(denied.status, 0);
+    assert.match(denied.stderr, /ERR_ACCESS_DENIED/);
+    assert.ok(denied.stderr.includes(path), `the denial must name ${safeDiagnostic(path)}, not instrumentation: ${safeDiagnostic(denied.stderr)}`);
+  }
+  // This is the helper installed inside this archive, not a sibling checkout.
+  const skillEntry = entries.find(entry => entry.path === `${RELEASE}/skill/${BRAND.helper.id}/SKILL.md`);
+  assert.ok(skillEntry, "the canonical helper Skill is a member of this exact archive");
+  const skill = await readFile(join(tree, "skill", BRAND.helper.id, "SKILL.md"), "utf8");
+  assert.deepEqual(Buffer.from(skill, "utf8"), skillEntry.bytes, "the installed Skill read comes from this archive's member bytes");
+  assert.match(skill, /execution-evidence --from-file <json>/);
+  assert.doesNotMatch(skill, /scripts\/review-evidence\.mjs/);
+  assert.match(skill, /specs\/dispatch-admission-evidence-v1\.md/);
+  const format = await readFile(join(tree, "specs/dispatch-admission-evidence-v1.md"), "utf8");
+  assert.match(format, /hostResult/);
+  assert.match(format, /Exit 1/);
+  for (const args of [["commands"], ["execution-evidence", "--help"]]) {
+    const run = execute(args);
+    assert.equal(run.status, 0, run.stderr);
+    const command = JSON.parse(run.stdout).commands.find(entry => entry.name === "execution-evidence");
+    assert.equal(command.mutates, false);
+    assert.match(command.flags[0].valueShape, /handoff, hostResult/);
+  }
+  for (const name of ["associated", "refused", "mismatch", "unavailable"]) {
+    // Copy byte-for-byte; do not rebuild the receipt or repair a bad case.
+    const bytes = await readFile(join(repositoryRoot, "fixtures/dispatch-evidence", `dispatch-${name}.synthetic.json`));
+    const input = JSON.parse(bytes);
+    const path = join(isolated.cwd, `${name}.json`);
+    await writeFile(path, bytes);
+    const run = execute(["execution-evidence", "--from-file", path]);
+    assert.equal(run.status, input.expected.complete ? 0 : 1, run.stderr);
+    const actual = JSON.parse(run.stdout);
+    for (const key of ["valid", "complete", "status"]) assert.equal(actual[key], input.expected[key], name + ": " + key);
+    assert.deepEqual(actual.evidence, input);
+    assert.equal(actual.verification, "caller-supplied-host-return-not-independently-authenticated");
+    if (input.expected.complete) assert.equal(run.stderr, "");
+    else assert.match(run.stderr, /DISPATCH_EVIDENCE_(INVALID|UNAVAILABLE)/);
+  }
+  const malformed = join(isolated.cwd, "malformed.json");
+  await writeFile(malformed, "{");
+  const bad = execute(["execution-evidence", "--from-file", malformed]);
+  assert.equal(bad.status, 1);
+  assert.equal(bad.stdout, "");
+  assert.match(bad.stderr, /DISPATCH_EVIDENCE_INPUT_INVALID/);
+  assert.equal(existsSync(isolated.env.EINZBERN_HOME), false, "no device state was needed or created");
+});
+
+// PR24-1: exercise an upgraded synthetic historical library through the actual
+// release archive, not a core write or the checkout launcher. Only fixture writes
+// and the controller's exact mandatory preloads are available to the child.
+test("PR24-1: packed knowledge-capture preserves legacy language writes with explicit host", async () => {
+  const { tree } = await packedRelease();
+  const root = join(base, "capture-cli-upgrade");
+  const permission = ["--permission", `--allow-fs-read=${base}`, `--allow-fs-write=${root}`];
+  const inheritedOptions = (process.env.NODE_OPTIONS ?? "").split(/\s+/u);
+  for (const file of ["test-controller-child-policy.mjs", "no-network.mjs"]) {
+    const instrumentation = join(repositoryRoot, "scripts", file);
+    if (inheritedOptions.includes(`--import=${pathToFileURL(instrumentation).href}`)) permission.push(`--allow-fs-read=${instrumentation}`);
+  }
+  const cli = join(tree, "scripts/einzbern.mjs");
+  const execute = (args, options) => node([...permission, cli, ...args], options);
+  await runCaptureCliUpgradeMatrix({ root, execute });
+  const isolated = await environment("capture-catalog");
+  for (const args of [["commands"], ["knowledge-capture", "--help"]]) {
+    const result = execute(args, isolated);
+    assert.equal(result.status, 0, result.stderr);
+    const command = JSON.parse(result.stdout).commands.find(entry => entry.name === "knowledge-capture");
+    const host = command.flags.find(flag => flag.name === "host");
+    assert.ok(host, "archive catalog advertises host on knowledge-capture");
+    assert.equal(host.required, false, "host is conditional on language policy, not globally required");
+    assert.equal(host.valueKind, "string");
+  }
 });

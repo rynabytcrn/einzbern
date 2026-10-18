@@ -147,6 +147,13 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
 // end-to-end release dry run at the 2.2.1 release base. The same three members carry the same
 // compiled owner line once each and get their own exact labels; the other owner occurrence, in
 // scripts/einzbern.mjs, is again the complete public helper repository address and is no finding.
+// TCRN-CROSS-INIT-056 R2 P1: the installed 2.2.2 package was read-only enumerated; only its three
+// compiled names.js owner-line members are classified below.
+// PF-2 2.2.3: reviewed the final CI package from source 4027ef77060946940ce5a6f5f4275ce37c4e70ab,
+// archive sha256 6ae035d988c92c3b89de79df005d9711939985144342f0dd754472efd8d8d0a5.
+// All 30 members were scanned; exactly these three carry the existing reviewed compiled
+// names.js owner line once each, with unchanged value and whole-line digests. The manifest,
+// install-tree digest and original LICENSE bytes were verified. No other match is classified.
 const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
@@ -172,6 +179,12 @@ const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-2.2.1.tar.gz/einzbern-2.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-2.2.1.tar.gz/einzbern-2.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-2.2.1.tar.gz/einzbern-2.2.1/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.2.2.tar.gz/einzbern-2.2.2/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.2.2.tar.gz/einzbern-2.2.2/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.2.2.tar.gz/einzbern-2.2.2/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.2.3.tar.gz/einzbern-2.2.3/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.2.3.tar.gz/einzbern-2.2.3/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.2.3.tar.gz/einzbern-2.2.3/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
 ]);
 const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
   [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [
@@ -738,9 +751,13 @@ export function normalizePrivacyText(content) {
 // 72ae480e is the web merge of PR #10 (TCRN-CROSS-STORY-548), authored with the account's primary
 // address and committed by GitHub's web-flow identity. 440f297d is the web merge of PR #13, authored
 // under the account's profile name and committed by the same web-flow identity (TCRN-CROSS-MIN-281
-// D1); from then on pull requests are merged locally under the noreply identity, so no further
-// web-merge commit is added here.
+// D1). PR #24 and PR #25 carry noreply identities; their public merge subjects
+// repeat upstream and fork owner logins. Only the exact reviewed subjects are classified below.
 const REVIEWED_COMMIT_IDENTITY_LINES = new Set([
+  // PR #25 public fork merge subject; classification is also exact under fork-origin scanning.
+  "c653cc387e72fdcba55370676d7246cd8d2efacd\u0000de825bf72a84bbb476cb6557f6bc9fed6f7c8ea8e81acaf635e32fa20ffc98cb",
+  // PR #24 public merge subject, independently reviewed; all other lines remain scanned.
+  "b543cd4365fc388f1d217b8caecace24cf2836f1\u0000de36be9877b705c41d86e3aed18fc252925f93aebd432e8a789746f0a2a23751",
   "72ae480e5ce142db481ecc65bccbdd3abe129643\u00006044624858c9b74e081c24d084d4cf0b24e2ecdbedc07a401a0e0621c4703d94",
   "72ae480e5ce142db481ecc65bccbdd3abe129643\u00006ed6143fe0d2c0750b9cc4f94dff13095b84105b7ca8ca175ca91ff62f3b8497",
   "440f297d0f42c14714fea2063ec660f0017f4809\u0000a5cc6c26eb0ef10142478ed9dc7d381292d778114ca7ab4cb8dde4a5a20423a8",

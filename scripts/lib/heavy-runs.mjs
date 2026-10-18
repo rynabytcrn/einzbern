@@ -32,7 +32,7 @@
 import { randomBytes } from "node:crypto";
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
 export const HEAVY_RUNS_SETTING = "execution.maxConcurrentHeavyRuns";
 export const HEAVY_RUNS_DEFAULT = 1;
@@ -41,6 +41,7 @@ export const HEAVY_RUNS_MAX = 16;
 export const HEAVY_SLOT_VARIABLE = "EINZBERN_HEAVY_SLOT";
 export const HEAVY_LOCK_DIRECTORY_VARIABLE = "EINZBERN_HEAVY_LOCK_DIR";
 export const HEAVY_RUNS_REASON_CODES = Object.freeze([
+  "DEVICE_HOME_INVALID",
   "HEAVY_SLOT_OPTIONS_INVALID",
   "HEAVY_SLOT_TIMEOUT",
   "MACHINE_SETTINGS_FILE_INVALID",
@@ -76,7 +77,11 @@ function fail(reasonCode, message, details = {}) {
 /** The device directory: EINZBERN_HOME when it is set and non-empty, otherwise .einzbern in the user's home (device-home.ts). */
 export function deviceDirectory(env = process.env, home = homedir()) {
   const configured = env.EINZBERN_HOME;
-  return typeof configured === "string" && configured.length > 0 ? resolve(configured) : join(home, DEVICE_DIRECTORY);
+  if (typeof configured === "string" && configured.length > 0) {
+    if (!isAbsolute(configured)) fail("DEVICE_HOME_INVALID", "EINZBERN_HOME must be an absolute device directory");
+    return resolve(configured);
+  }
+  return join(home, DEVICE_DIRECTORY);
 }
 
 /** Where the slots are: EINZBERN_HEAVY_LOCK_DIR when it is set and non-empty, otherwise locks/ in the device directory. */

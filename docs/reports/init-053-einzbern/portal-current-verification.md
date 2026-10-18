@@ -40,23 +40,23 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "currentSources": [
     {
       "path": "portal/index.html",
-      "bytes": 428745,
-      "sha256": "db0e8700a6fa8bcc74211a3034b75a8c57242be109eb7b85a7db1fbb8765ae8f"
+      "bytes": 477799,
+      "sha256": "75186a750cc2c38f97edffbac5f0ea15495d53384490bc858e546774e4bd1e91"
     },
     {
       "path": "portal/locales.js",
-      "bytes": 234347,
-      "sha256": "12b55d0397da7ae466800a27a9e670969de09fa917759663af8e87d286b19b0f"
+      "bytes": 267436,
+      "sha256": "a4d50aa341795278703500dc7cf2a184a580ff2cfd154e908a16e1a79e18cdc7"
     },
     {
       "path": "portal/portal.mjs",
-      "bytes": 84751,
-      "sha256": "3a71440f605d77eb083747868fee6fdb2ea3aee26096e25d43065ccf763fc660"
+      "bytes": 89407,
+      "sha256": "239d665b0969dd9f03abc518dbfe16d12153e058c778dcaea1ab657cd3a4e559"
     },
     {
       "path": "portal/scripts/i18n-proof.mjs",
-      "bytes": 16499,
-      "sha256": "56895e7049afd72b76d4346f31446e8dacd04d8ca5143fe546a96eac17bb8079"
+      "bytes": 16967,
+      "sha256": "3fbed5d5a041c72051f844406dff582aa53ac509d6f30f3f75f7305661578903"
     },
     {
       "path": "portal/scripts/proof.mjs",
@@ -65,13 +65,23 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/portal.test.mjs",
-      "bytes": 160512,
-      "sha256": "de8400fd41756c8c66db46f7eb4ce43454603d2531f413b32f3b851d035bdcfd"
+      "bytes": 163008,
+      "sha256": "127ee852c8d8ff633a2e73ee7aaa4e1ebd22fdcf31ecf0e4e69dac7b53345582"
     },
     {
       "path": "portal/tests/ui-presence.test.mjs",
-      "bytes": 280876,
-      "sha256": "9159e4a8b48a538e43a6dc32ae10d51546120d439ad1ccd4e06265c2aed3bc2a"
+      "bytes": 304661,
+      "sha256": "c18793e23e31463777ec24d5e02e621e4ec3283c156cfefd97ac54f7781840af"
+    },
+    {
+      "path": "portal/tests/disposable-portal-fetch.test.mjs",
+      "bytes": 3592,
+      "sha256": "bd33b82655afc88abe8f3ad77b219cd03d1650a8ed4979da439cccd0dd4e1e80"
+    },
+    {
+      "path": "portal/tests/helpers/disposable-portal-fetch.mjs",
+      "bytes": 790,
+      "sha256": "8fb381787cc63f2286b462330f86f9aa69bb721680c9651aec01a75619c7a82b"
     },
     {
       "path": "packages/core/src/doctor.ts",
@@ -90,31 +100,38 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "scripts/verbatim-evidence-meta-proof.mjs",
-      "bytes": 4884,
-      "sha256": "e3a29d25a320bb07f4a93c5495b2cbcec7f4adf8957799c34c0c0d764bef106b"
+      "bytes": 5059,
+      "sha256": "ad03a232528f965b3522f9a278d3a62247dfbc488eca58e395898b0874638ebe"
     },
     {
       "path": "scripts/verbatim-evidence-proof.mjs",
-      "bytes": 26144,
-      "sha256": "c47a6b612329d28ec7056265eb642993d98161b2869d32f1991d4f61017fc650"
+      "bytes": 27411,
+      "sha256": "91a3bbb2727144556eca4c776f5d08002a59d3379b8f42be4e5f56f0c1981845"
     }
   ],
   "hostRoleScan": {
     "scan": "rg --no-line-number 'claude-code|codex|reviewer|role ===|host ===|host \\?' portal/index.html | sed 's/^ *//' | sort -u",
     "exitCode": 0,
-    "matchCount": 11,
+    "matchCount": 18,
     "matches": [
       "$(\"#design-authority\").hidden = state.settings?.chain?.role === \"coordination\" || state.settingGroup !== authorityGroup || designAuthorityState.status === \"unset\";",
+      ": `<section class=\"tcrn-surface\" data-content-scope=\"custom-variables\"><div class=\"tcrn-surface__head\"><div class=\"tcrn-surface__head-content\"><h2>${esc(t(\"variables.title\"))}</h2><p class=\"tcrn-text\">${esc(t(\"variables.note\"))}</p><p class=\"tcrn-text\">${esc(t(\"variables.replaceNote\"))}</p>${independentConfigurationMetadata(\"variable\", { scope: state.settings?.chain?.role === \"coordination\" ? \"library\" : \"project\" })}</div></div><div class=\"tcrn-table-shell tcrn-variable-table\" role=\"table\" aria-label=\"${esc(t(\"variables.title\"))}\" data-variable-table=\"true\"><div class=\"tcrn-table-shell__head\" role=\"row\">${headers.map((label) => `<span role=\"columnheader\">${esc(label)}</span>`).join(\"\")}</div>${variableRow({ name: \"\", type: \"string\", value: \"\", description: \"\" }, true)}${rows}</div></section>${source?.withheld?.length ? `<p class=\"tcrn-text\">${esc(t(\"variables.withheld\", { count: source.withheld.length }))}</p>` : \"\"}`;",
       ": target?.chain?.role === \"coordination\" ? t(\"projects.coordination\") : t(\"projects.unnamed\");",
+      "const catalog = state.modelPolicy?.selectedHost === host ? state.modelPolicy : null;",
       "const chainRoleLabel = (role) => role === \"coordination\" ? t(\"chainIdentity.roleCoordination\") : role === \"project\" ? t(\"chainIdentity.roleProject\") : t(\"chainIdentity.undeclared\");",
       "const collectionReadOnly = (key) => state.settings?.chain?.role === \"coordination\" && Array.isArray(state.settings?.settings) && currentSetting(key) === undefined;",
       "const declared = BOOT.library?.chain?.role === \"project\" ? BOOT.library.chain.coordinationLibraryId : null;",
+      "const modelPolicyHostControl = (host, pending) => `<label class=\"tcrn-field\"><span class=\"tcrn-field__label\">${esc(t(\"modelPolicy.host\"))}</span><select class=\"tcrn-select\" data-engine-model-policy-host aria-label=\"${esc(t(\"modelPolicy.host\"))}\" ${pending ? \"disabled\" : \"\"}>${modelPolicyHosts().map((name) => `<option value=\"${esc(name)}\"${name === host ? \" selected\" : \"\"}>${esc(name)}</option>`).join(\"\")}</select></label>`;",
+      "const modelPolicyPendingFor = (host) => state.modelPolicyReadPending === true && state.modelPolicyReadTarget?.host === host && modelPolicyReadCurrent(state.modelPolicyReadTarget);",
       "const registered = (BOOT.libraries || []).filter((library) => library.chain?.role === \"coordination\" && library.libraryId !== own).map((library) => library.libraryId);",
       "const rendersSystemVariables = (key) => String(key) === \"artifact.language\" || String(key).startsWith(\"design.\") || (state.settings?.chain?.role === \"coordination\"",
+      "const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? \"en\", theme: document.documentElement.dataset.tcrnTheme, page: \"dashboard\", dashboardTab: \"overview\", settingGroup: \"general\", collections: { \"models.category\": { draft: null, dirty: false, findings: [], refusal: null }, \"models.tiers\": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, modelPolicy: null, modelPolicyHost: \"codex\", modelPolicyDrafts: new Map(), modelPolicyWrites: new Map(), modelPolicyRead: 0, modelPolicyReadTarget: null, modelPolicyReadPending: false, modelPolicyLibraryId: BOOT.library?.libraryId ?? null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: \"\", knowledgeStatus: \"valid\", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: \"conferenceTypes\", receipt: null, operationDetailsOpen: false, agentsText: \"\", reconciliation: null, rules: null, pendingSection: \"\", searchIndex: [], searchResults: [], searchSelection: 0 };",
       "if (!state.chainDeclarePending) $(\"[data-chain-role]\", form).value = identity?.role === \"coordination\" ? \"coordination\" : \"project\";",
       "if (role === \"coordination\") return own ? [own] : [];",
+      "return [...new Set([\"codex\", ...configured])].sort();",
       "select.disabled = role === \"coordination\" || choices.length === 0;",
-      "select.hidden = state.settings?.chain?.role === \"coordination\";"
+      "select.hidden = state.settings?.chain?.role === \"coordination\";",
+      "target: configurationTarget(state.settings?.chain?.role === \"coordination\" ? \"library\" : \"project\"),"
     ]
   },
   "i18n": {
@@ -139,9 +156,9 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
         "leg": "key-coverage",
         "ok": true,
         "reasonCode": "EVERY_KEY_TRANSLATED",
-        "keyCount": 546,
+        "keyCount": 624,
         "localeCount": 5,
-        "expectedStrings": 2730,
+        "expectedStrings": 3120,
         "gaps": []
       },
       {

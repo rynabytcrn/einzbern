@@ -23,9 +23,9 @@ import { effectiveProjectState } from "./project-chain.js";
 // project's library.
 //
 // TCRN-CROSS-STORY-478 R4, AC5 (TCRN-CROSS-SUB-317): on a device that declined the navigation
-// section in AGENTS.md, the host also runs the launcher on SessionStart and SubagentStart. Those
-// pointer events are answered with the three navigation lines alone (navigationPointerAnswer):
-// nothing is retrieved and no library is read.
+// section in AGENTS.md, SessionStart supplies navigation alone. BL-34 always installs
+// SubagentStart: the entry recalls against its native agent_type and adds navigation.
+// navigationPointerAnswer itself reads nothing.
 //
 // TCRN-CROSS-SUB-483 (TCRN-CROSS-STORY-529, MIN-257 D6): every recall also says why it answered
 // what it did (promptRecallOutcome): HOOK_RECALL_ANSWERED with the hit lines, otherwise
@@ -124,6 +124,8 @@ export interface PromptRecallRequest {
   readonly cwd: string;
   // The instant card freshness is judged at; now, to the second, when left out.
   readonly at?: string;
+  // SubagentStart uses the same recall policy and its own host output envelope.
+  readonly event?: "UserPromptSubmit" | "SubagentStart";
 }
 
 export interface PromptRecallAnswer {
@@ -209,7 +211,7 @@ export async function promptRecallOutcome(request: PromptRecallRequest): Promise
   // recalls an obsolete one; a work or card hit that points at one says which decision replaced it.
   const lines = recallContextLines(recallDecisionHints(state, cards, result.records), perPromptBytes);
   if (lines.length === 0) return { answer: null, reasonCode: "HOOK_RECALL_NO_HITS" };
-  return { answer: { lines, output: hookProtocolOutput(request.host, "UserPromptSubmit", lines) }, reasonCode: "HOOK_RECALL_ANSWERED" };
+  return { answer: { lines, output: hookProtocolOutput(request.host, request.event ?? "UserPromptSubmit", lines) }, reasonCode: "HOOK_RECALL_ANSWERED" };
 }
 
 /**

@@ -49,17 +49,22 @@ proposal-reject --key gate:<门名> --proposed-at <提交时刻> --actor <行动
 ## gates-plan：这次改动要跑哪几道门
 
 ```text
-gates-plan [--project <目录>] [--base <提交>] [--work-id <work-id,...>] [--release true]
+gates-plan [--project <目录>] [--base <提交>] [--base-by-root <JSON 对象>] [--work-id <work-id,...>] [--release true]
 ```
 
 非 release 计划必须给有效 Git 提交 `--base`，不会隐式使用 `HEAD`。对每一道可在变更模式运行的启用门，取它 `root` 下相对该提交的改动文件：已提交、已暂存、未暂存、已删除、已改名的文件与未跟踪的文件都算；只要一个改动文件落在路径 glob `covers` 里，这道门就被选中，匹配的文件记在 `matched`。`--work-id` 可给一个或多个 Story id，计划还会选中适用于这些 Story 的每一道门：全部启用的必需门，Story 或其祖先 `gates` 字段点名的门，以及 `covers` 写了 Story 或其祖先 work id 的门；每道门在 `matchedWorkIds` 记下它适用的 Story，`reason` 依次取 `changed`、`work-id`、`work-field` 与 `required` 中最先成立的一项。路径匹配不把门绑定到 Story。字段点名、项目却没有声明的门名列在计划的 `unknownGates` 里。不带 `--work-id` 的计划与从前一样。只在发布时运行的门不会在变更模式中被选中。明确指定 `--release true` 时不要求 Git base，并列出全部启用的门，`matchedWorkIds` 同样记下每道门适用的 Story。
 
 计划按顺序列出选中的门，这也是显示与运行的顺序：有 `order` 的门在前，按顺序从小到大；没有的在后，按名字；顺序相同的几道之间也按名字。没有任何门带顺序时，计划与从前一样按名字排列。
 
+跨仓库时，`--base` 是各根的默认基线；可用 `--base-by-root '{"engine":"<engine SHA>","helper":"<helper SHA>"}'` 按门声明的相对 `root` 指定不同提交。映射只能包含已启用声明的根，每个值必须在对应仓库中解析为提交；不会把一个仓库的 SHA 默认为另一个仓库的提交。非发布计划只对可在本次模式运行的根比较基线，不要求仅发布门的仓库拥有该 SHA；所有启用声明与根仍保留在运行绑定摘要中，必需门语义不变。没有可运行根时仍校验项目自身的默认基线。
+
 ## gates-run：跑门
 
+每道实际运行的门记录 `startedAt`、`finishedAt` 与 `durationMs`。前两项是 UTC 墙钟时间，耗时来自单调时钟，单位毫秒，包含命令启动到结束但不含后续日志落盘。历史运行可没有这三项；新记录若只有部分计时字段则视为无效，不冒充旧记录。运行同时保存实际使用的 `baseByRoot`，便于复核跨仓基线。
+
+
 ```text
-gates-run [--project <目录>] [--base <提交>] [--work-id <work-id,...>] [--release true] --at <时刻>
+gates-run [--project <目录>] [--base <提交>] [--base-by-root <JSON 对象>] [--work-id <work-id,...>] [--release true] --at <时刻>
 ```
 
 - 按与 `gates-plan` 相同的方式选门，然后一道接一道地运行，每道门都是它 `root` 里的独立进程，不经过 shell。非 release 必须显式给有效 `--base`；传入的 `--work-id` 会绑定到这次运行并写入结果。

@@ -138,7 +138,7 @@ function writers(paths) {
 
 test("538 GWT3: while another process holds the library write lock for 3 seconds, agents-render plans at once and writes once the lock is free", async (context) => {
   const paths = await scratch(context);
-  await setVariable(paths.root, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(paths.root, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   const before = await libraryHead(paths.root);
   const holder = await holdLibraryLock(context, paths.root, 3000);
   const planned = [];
@@ -216,7 +216,7 @@ test("538 GWT3: while another process holds the lock, rule-enable, rule-disable,
       assert.deepEqual([change.result, change.written, change.record.state], ["overwritten", true, "managed"]);
       assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "navigation").body.includes(NAVIGATION_LINES[2]), true);
     }],
-    ["variable sections", () => setVariable(paths.root, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() }), async (result) => {
+    ["variable sections", () => setVariable(paths.root, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() }), async (result) => {
       assert.equal(result.written, true);
       assert.match(sectionOf(await readFile(paths.agents, "utf8"), "variables-custom").body, /deploy\.port/u);
     }],
@@ -237,7 +237,7 @@ test("538 GWT3: AGENTS.md changed by another process after the plan sends the re
   const paths = await scratch(context);
   const write = writers(paths);
   await write["agents-render"]();
-  await setVariable(paths.root, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(paths.root, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   // The user's change to the custom section, which the render planned to replace.
   const rendered = await readFile(paths.agents, "utf8");
   const custom = sectionOf(rendered, "variables-custom");
@@ -268,7 +268,7 @@ test("538 GWT3: a record another writer appended after the plan sends the render
   const result = await write["agents-render"]({
     plannedForTest: async () => {
       planned.push(Date.now());
-      if (planned.length === 1) setVariableFromAnotherProcess(paths.root, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+      if (planned.length === 1) setVariableFromAnotherProcess(paths.root, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
     },
   });
   assert.equal(planned.length, 2, "the render read the library again once it found a stream moved");
@@ -301,7 +301,7 @@ test("538 GWT3, 489: a write whose append fails after it wrote puts the files ba
   await unchanged("agents-render", () => write["agents-render"](failing));
   assert.equal(await textOrNull(paths.claude), null, "the CLAUDE.md the render created is taken away");
   await write["agents-render"]();
-  await setVariable(paths.root, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(paths.root, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   await unchanged("variable sections", () => write["variable sections"](failing));
   await unchanged("rule-enable", () => write["rule-enable"](failing));
   await write["rule-enable"]();
@@ -314,7 +314,7 @@ test("538 GWT3, 489: a write whose append fails after it wrote puts the files ba
 
   // A refusal of the records themselves comes, as it came while the whole write held the lock, once
   // the file was written: the file goes back as it was read, and the backup the write made stays.
-  await setVariable(paths.root, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+  await setVariable(paths.root, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
   await rm(paths.backups, { recursive: true, force: true });
   const before = await readFile(paths.agents, "utf8");
   const planned = [];

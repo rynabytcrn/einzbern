@@ -176,8 +176,11 @@ export function applyModelPlanUnassign(records: readonly ModelPlanRecord[], inpu
   delete assignments[persona];
   const efforts = existing.efforts === undefined ? undefined : { ...existing.efforts };
   if (efforts !== undefined) delete efforts[persona];
+  // Remove the old map before conditionally restoring it. Spreading `existing`
+  // here would retain the removed persona when its effort was the last entry.
+  const { efforts: _previousEfforts, ...withoutEfforts } = existing;
   const record = Object.freeze({
-    ...existing,
+    ...withoutEfforts,
     assignments: normalizeAssignments(assignments),
     ...(efforts === undefined || Object.keys(efforts).length === 0 ? {} : { efforts: normalizeEfforts(efforts) }),
     revision: existing.revision + 1,
@@ -215,7 +218,7 @@ function validateRecord(value: unknown): ModelPlanRecord {
   const defaultModel = validateModelPlanModel(record.defaultModel);
   if (record.schemaVersion !== MODEL_PLAN_VERSION || record.tombstone !== false || !Number.isSafeInteger(record.revision) || Number(record.revision) < 1) fail("MODEL_PLAN_RECORD_INVALID", "model plan record envelope is invalid");
   if (record.assignments === null || typeof record.assignments !== "object" || Array.isArray(record.assignments)) fail("MODEL_PLAN_RECORD_INVALID", "model plan assignments must be a map");
-  const assignments: Record<string, string> = {};
+  const assignments: Record<string, string> = Object.create(null);
   for (const [persona, model] of Object.entries(record.assignments)) {
     bounded(persona, "persona name", 64, "MODEL_PLAN_ASSIGNMENT_INVALID");
     assignments[persona] = validateModelPlanModel(model);
@@ -226,7 +229,7 @@ function validateRecord(value: unknown): ModelPlanRecord {
   let efforts: Readonly<Record<string, AgentEffortName>> | undefined;
   if (record.efforts !== undefined) {
     if (record.efforts === null || typeof record.efforts !== "object" || Array.isArray(record.efforts)) fail("MODEL_PLAN_RECORD_INVALID", "model plan efforts must be a map");
-    const normalized: Record<string, AgentEffortName> = {};
+    const normalized: Record<string, AgentEffortName> = Object.create(null);
     for (const [persona, effort] of Object.entries(record.efforts)) {
       bounded(persona, "persona name", 64, "MODEL_PLAN_ASSIGNMENT_INVALID");
       if (!Object.hasOwn(assignments, persona)) fail("MODEL_PLAN_RECORD_INVALID", `effort has no corresponding assignment for ${persona}`);
@@ -234,7 +237,8 @@ function validateRecord(value: unknown): ModelPlanRecord {
     }
     efforts = normalizeEfforts(normalized);
   }
-  assertAt(String(record.updatedAt));
+  if (typeof record.updatedAt !== "string") fail("MODEL_PLAN_RECORD_INVALID", "model plan updatedAt must be a string");
+  assertAt(record.updatedAt);
   return Object.freeze({
     schemaVersion: MODEL_PLAN_VERSION,
     host: record.host as ModelPlanHost,

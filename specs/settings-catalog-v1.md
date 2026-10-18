@@ -9,6 +9,19 @@ machine-readable read surface and `settings-set` is the governed write surface.
 This file documents the finite keys the engine is allowed to consume. A key is not in the
 engine catalog merely because it appears in helper or portal prose.
 
+The existing `models.*` and `quota.*` rows remain workspace-compatible history.
+New project set/remove operations on either family refuse with `SETTINGS_KEY_DEVICE_LEVEL`;
+historical events replay without mutation. Their values are diagnostics, not current
+device host policy authority. `settings-catalog` also returns
+`modelPolicy`, a device-engine catalogue with its host partitions and the current scope's legacy
+model values, declarations, inherited values, and source. This is a separate source projection,
+not another settings row: old records remain readable, while a configured device host policy is
+authoritative for that host and cannot be overridden by a project model setting. The CLI/API write
+surface and file contract are specified in `specs/engine-model-policy-v1.md`. The portal presents
+the old rows as historical / non-Codex compatibility information and routes compatible Codex
+editing to the engine-host policy API; it does not copy those rows into a host policy or change
+them as a side effect.
+
 ## Configuration scopes (INC-399 R1)
 
 Catalog `layer` and `scope` describe three ownership levels:
@@ -91,6 +104,8 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `general` | `design.buildService` | project | scalar | 7 |
 | `general` | `design.buildProject` | project | scalar | 8 |
 | `general` | `design.consumedVersion` | project | scalar | 9 |
+| `general` | `agents.generation` | project | scalar | 20 |
+| `general` | `agents.sharedNavigation` | project | scalar | 21 |
 | `models` | `models.category` | project | collection | 1 |
 | `models` | `models.tiers` | project | collection | 2 |
 | `models` | `models.escalation.enabled` | project | scalar | 3 |
@@ -102,6 +117,7 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `execution` | `quota.weeklyParallelOffPercent` | project | scalar | 4 |
 | `execution` | `quota.weeklyWaitPercent` | project | scalar | 5 |
 | `execution` | `execution.maxConcurrentHeavyRuns` | device | scalar | 6 |
+| `execution` | `execution.maxConcurrentAgents` | device | scalar | 7 |
 | `knowledge` | `artifact.language` | project | scalar | 1 |
 | `knowledge` | `knowledge.articlesPath` | project | scalar | 2 |
 | `knowledge` | `crest.userPath` | device | scalar | 4 |
@@ -112,6 +128,8 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `storage` | `workspace.generatedArtifactsPath` | library | scalar | 1 |
 | `storage` | `storage.segmentBytes` | library | scalar | 2 |
 | `storage` | `storage.snapshotEveryEvents` | library | scalar | 3 |
+| `storage` | `paths.artifacts` | device | scalar | 10 |
+| `storage` | `paths.knowledgeArticles` | device | scalar | 11 |
 | `atelier` | `portal.defaultLocale` | device | scalar | 1 |
 | `atelier` | `portal.defaultTheme` | device | scalar | 2 |
 | `atelier` | `portal.defaultPartition` | device | scalar | 3 |
@@ -456,6 +474,29 @@ model may write the key through the CLI. It is `false` for every key.
     `MACHINE_SETTING_VALUE_INVALID`. `scripts/lib/heavy-runs.mjs` reads it without the engine.
   - **Decision record:** MIN-257 D6 (TCRN-CROSS-STORY-529, TCRN-CROSS-SUB-484).
 
+## Portable paths and generation controls
+
+The integrated configuration contract (`configuration-contract-v1.md`) adds these
+explicitly governed entries. All are Tier-1 Owner choices, written through their
+scope's existing set/remove verbs, never inferred from output files.
+
+- `agents.generation`: project enum, default `managed`, choices `managed` and `none`.
+  `none` suppresses future managed creation and updates without deleting existing files.
+- `agents.sharedNavigation`: project enum, default `written`, choices `written` and
+  `declined`. This portable declaration is separate from device host integration.
+- `paths.artifacts` and `paths.knowledgeArticles`: device absolute directory bindings,
+  default unset. `machine-settings-set` validates the absolute path before storage.
+  Shared writes use relative paths or `binding:paths.artifacts` /
+  `binding:paths.knowledgeArticles` with optional portable child suffixes. Historical
+  absolute-path events replay unchanged, but new shared absolute-path writes refuse.
+- `execution.maxConcurrentAgents`: device integer, default `8`, from `1` through
+  `Number.MAX_SAFE_INTEGER`. It caps host-policy agent concurrency independently of
+  the project subagent declaration and the heavy-run admission limit.
+
+These entries implement the approved integrated configuration migration; their
+catalog defaults, bounds and layout are the executable source of truth. A setting
+change does not claim remote projections have refreshed or move existing directories.
+
 ## Non-knob declarations
 
 Some behaviors that look adjustable are frozen protocol (Tier-0) or engine
@@ -509,9 +550,13 @@ protection as the other built-in rules. It is disabled until explicitly enabled.
 The seven actual catalog variables are `design.authority`, `design.repository`,
 `design.pullRequestTarget`, `design.productionDocs`, `design.buildService`,
 `design.buildProject` and `design.consumedVersion`. They resolve independently per
-project and show inherited sources. Changing only an authority identity while
-inheriting companion bindings from another authority reports `conflicting`.
-Missing companions report `unconfigured`. Declared bindings report publication
+project and show inherited sources. Design authority is optional: a project or
+submodule without a declaration is `unconfigured`, and that absence does not by
+itself block general development readiness. When an authority is declared, its
+resolved source and inherited bindings remain visible. Changing only an authority
+identity while inheriting companion bindings from another authority reports
+`conflicting`; a conflict blocks work that depends on the declared authority.
+Missing companions of a declared authority report `unconfigured`. Declared bindings report publication
 `unverified`: offline reads, a reachable URL or matching text are not production
 release evidence. An authorized agent separately verifies PR merge, Production
 publish, build result and consumed commit/artifact identities. The generic rule

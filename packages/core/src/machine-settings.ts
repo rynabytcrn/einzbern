@@ -38,16 +38,18 @@ export const MACHINE_SETTINGS_FILE_NAME = DEVICE_HOME_ENTRIES.machineSettings;
 /** The machine-level engine home, as declared by install-manifest item machine.workflow-engine. */
 export const MACHINE_SETTINGS_DIRECTORY = DIRECTORY.device;
 
-// TCRN-CROSS-STORY-478 R4 (MIN-227 D17): whether the three navigation lines are written into a
-// project's AGENTS.md (written) or reach the agent through the SessionStart and SubagentStart
-// pointer hooks instead (declined). The installer asks once and stores the answer here; unset,
-// neither is rendered.
+// Device host-navigation integration preference. The legacy written/declined values stay
+// compatible; declined enables pointer hooks. Shared document generation is separately owned
+// by the target's agents.sharedNavigation and is never changed by this local preference.
 export const AGENTS_NAVIGATION_SETTING = "agents.navigation" as const;
 export const AGENTS_NAVIGATION_CHOICES = Object.freeze(["written", "declined"] as const);
 export type AgentsNavigationChoice = typeof AGENTS_NAVIGATION_CHOICES[number];
 
 export const MACHINE_SETTING_KEYS = Object.freeze([
   AGENTS_NAVIGATION_SETTING,
+  "paths.artifacts",
+  "paths.knowledgeArticles",
+  "execution.maxConcurrentAgents",
   USER_CREST_PATH_SETTING,
   HEAVY_RUNS_SETTING,
   "portal.defaultLocale",
@@ -112,9 +114,7 @@ export interface MachineSettingsCatalogEntry {
 }
 
 export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = Object.freeze([
-  // TCRN-CROSS-STORY-478 R4: written puts the navigation section into AGENTS.md when the managed
-  // sections are rendered (agents-sections.ts); declined leaves it out and has the host hooks carry
-  // the two pointer hooks (host-hooks.ts). Either takes effect the next time they are rendered.
+  // Local host integration only; shared AGENTS content follows project/library policy.
   Object.freeze({
     key: AGENTS_NAVIGATION_SETTING,
     type: "enum",
@@ -129,6 +129,14 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     appliesOn: "next-open",
     valueSource: "settings-catalog",
   }),
+  ...(["paths.artifacts", "paths.knowledgeArticles"] as const).map((key, index) => Object.freeze({
+    key, type: "path" as const, controlType: "text" as const, layer: "device" as const,
+    layerKind: MACHINE_SETTINGS_LAYER_KIND, defaultValue: null, shape: "scalar" as const,
+    group: "storage" as const, order: 10 + index, appliesOn: "next-open" as const, valueSource: "settings-catalog" as const,
+  })),
+  Object.freeze({ key: "execution.maxConcurrentAgents", type: "integer", controlType: "number", layer: "device",
+    layerKind: MACHINE_SETTINGS_LAYER_KIND, defaultValue: "8", shape: "scalar", group: "execution", order: 7,
+    min: 1, max: Number.MAX_SAFE_INTEGER, appliesOn: "next-open", valueSource: "settings-catalog" }),
   // TCRN-CROSS-STORY-476 R5: where this user's crest lives (device-home.ts userCrestPath). Unset,
   // it is `crest` in the device directory. A value is an absolute path and is stored as its real
   // path (applyMachineSettingSet), because the crest refuses a symbolic link on its way in and a
@@ -260,6 +268,7 @@ export function validateMachineSettingValue(key: MachineSettingKey, value: unkno
   if (entry.type === "integer") {
     if (!/^-?\d+$/u.test(value)) fail("MACHINE_SETTING_VALUE_INVALID", `${key} needs a whole number`);
     const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed)) fail("MACHINE_SETTING_VALUE_INVALID", `${key} needs a safe integer`);
     if (entry.min !== undefined && parsed < entry.min) fail("MACHINE_SETTING_VALUE_INVALID", `${key} must be at least ${entry.min}`);
     if (entry.max !== undefined && parsed > entry.max) fail("MACHINE_SETTING_VALUE_INVALID", `${key} must be at most ${entry.max}`);
   }
@@ -311,12 +320,17 @@ function orderedValues(values: Readonly<Record<string, string>>): Readonly<Recor
   return Object.freeze(ordered);
 }
 
+// Preserve the existing nonempty-string read contract, including historical timestamps.
+function assertUpdatedAt(value: unknown): asserts value is string {
+  if (typeof value !== "string" || value.length === 0) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings need an updatedAt");
+}
+
 export function validateMachineSettingsFile(value: unknown): MachineSettingsFile {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings must be an object");
   const record = value as Record<string, unknown>;
   if (record.schemaVersion !== MACHINE_SETTINGS_VERSION) fail("MACHINE_SETTINGS_FILE_INVALID", `machine settings schemaVersion must be ${MACHINE_SETTINGS_VERSION}`);
   if (record.layerKind !== MACHINE_SETTINGS_LAYER_KIND) fail("MACHINE_SETTINGS_FILE_INVALID", `machine settings layerKind must be ${MACHINE_SETTINGS_LAYER_KIND}`);
-  if (typeof record.updatedAt !== "string" || record.updatedAt.length === 0) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings need an updatedAt");
+  assertUpdatedAt(record.updatedAt);
   const values = record.values;
   if (values === null || typeof values !== "object" || Array.isArray(values)) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings values must be an object");
   const validated: Record<string, string> = {};
@@ -390,6 +404,7 @@ export async function applyMachineSettingSet(input: {
   readonly path?: string;
 }): Promise<MachineSettingsFile> {
   assertMachineSettingKey(input.key);
+  assertUpdatedAt(input.occurredAt);
   const validated = validateMachineSettingValue(input.key, input.value);
   const value = BY_KEY.get(input.key)?.type === "path" ? await realSettingPath(input.key, validated) : validated;
   const path = input.path ?? machineSettingsPath();
@@ -414,6 +429,7 @@ export async function applyMachineSettingRemove(input: {
   readonly path?: string;
 }): Promise<MachineSettingsFile> {
   assertMachineSettingKey(input.key);
+  assertUpdatedAt(input.occurredAt);
   const path = input.path ?? machineSettingsPath();
   const current = await readMachineSettings(path);
   if (!Object.hasOwn(current.values, input.key)) fail("MACHINE_SETTING_NOT_SET", `machine setting ${input.key} is not set`);

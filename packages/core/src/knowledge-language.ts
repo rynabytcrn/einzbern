@@ -1,3 +1,4 @@
+import { engineModelPolicyCatalogFromSnapshot, readEngineModelPolicyFile, resolveEngineExecutionPolicyFromSnapshot } from "./engine-model-policy.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -144,7 +145,10 @@ export interface SettingsView {
 }
 
 /**
- * The workspace's language policy. TCRN-CROSS-STORY-508 R4: the economy model is the model of the
+ * @deprecated Historical read-only compatibility API; use readRuntimeKnowledgeLanguagePolicy for execution.
+ * Historical/pure workspace language policy, not Codex runtime model authority. Current consumers use
+ * readRuntimeKnowledgeLanguagePolicy below, which preserves this consumer only for unmigrated non-Codex hosts.
+ * TCRN-CROSS-STORY-508 R4: the economy model is the model of the
  * economy category's base record in models.tiers (baseModelsTier: the record with the largest order,
  * whatever its runner), the record a rule naming the economy category gets. It no longer depends on a
  * host, so `_host`, which chose a host's table under TCRN-CROSS-STORY-484, decides nothing; it stays
@@ -171,6 +175,42 @@ export function readKnowledgeLanguagePolicy(settings: readonly SettingsView[], _
     promptLanguages,
     economyModel: economyModel === null || economyModel.length === 0 ? null : economyModel,
   });
+}
+
+/**
+ * Codex uses device authority only. Unmigrated non-Codex hosts retain the historical
+ * workspace language consumer until an explicit device/host policy takes precedence.
+ */
+export async function readRuntimeKnowledgeLanguagePolicy(settings: readonly SettingsView[], host?: string): Promise<KnowledgeLanguagePolicy> {
+  const language = readKnowledgeLanguagePolicy(settings.filter((setting) => !setting.key.startsWith("models.")));
+  // Unconfigured artifact language consumes no translation/expansion model. Missing explicit host
+  // never selects a project tier, guesses a host or silently uses another host's policy.
+  let economyModel: string | null = null;
+  if (language.artifactLanguage !== null && host !== undefined) {
+    // Read one verified snapshot: fallback is based on host-entry absence, not a selection error
+    // (which can also mean an explicitly configured but unusable tuple).
+    const snapshot = await readEngineModelPolicyFile();
+    const catalog = engineModelPolicyCatalogFromSnapshot(snapshot, host);
+    if (host !== "codex" && catalog.selectedStatus === "unconfigured") {
+      return readKnowledgeLanguagePolicy(settings);
+    }
+    try {
+      economyModel = resolveEngineExecutionPolicyFromSnapshot(snapshot, { host, category: "economy", rejections: 0 }).record.model;
+    } catch (error) {
+      // Unavailable is an explicit absence, not permission to select project or other-host tiers.
+      // Reads can report an owed translation with model:null; writes still refuse in apply below.
+      // Invalid/corrupt policy is not absence and must remain an error.
+      const selectionError = error as { readonly reasonCode?: unknown; readonly details?: { readonly category?: unknown; readonly path?: unknown } };
+      // A valid host policy need not offer economy. Normalize only absence of the requested
+      // base category/record, never a missing escalation ceiling or a malformed policy.
+      const economyAbsent = selectionError.details?.category === MODELS_ECONOMY_CATEGORY && (
+        (selectionError.reasonCode === "MODELS_CATEGORY_UNKNOWN" && selectionError.details.path === "category") ||
+        (selectionError.reasonCode === "MODELS_CATEGORY_EMPTY" && selectionError.details.path === undefined)
+      );
+      if (selectionError.reasonCode !== "ENGINE_MODEL_POLICY_UNAVAILABLE" && !economyAbsent) throw error;
+    }
+  }
+  return Object.freeze({ ...language, economyModel });
 }
 
 export function expansionsAreBounded(value: unknown): value is KnowledgeExpansions {
@@ -280,7 +320,7 @@ export function applyWriteLanguagePolicy(
   if (provider.model !== policy.economyModel) {
     throw new KnowledgeLanguageError(
       "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE",
-      "the answers name a model this workspace does not record as its economy tier",
+      "the answers name a model the effective language policy does not select as its economy tier",
       { economyModel: policy.economyModel, provided: provider.model },
     );
   }

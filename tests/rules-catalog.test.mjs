@@ -95,6 +95,22 @@ test("every Chinese body is the Owner's final text word for word, and the Englis
   assert.equal(builtInRule("silent-reporting")?.body.en, await readFile(join(fixtures, "silent-reporting.en.md"), "utf8"));
 });
 
+test("MIN291 D1: design authority is optional, but a configured conflict still stops dependent design work", () => {
+  const rule = builtInRule("design-authority");
+  assert.ok(rule);
+  for (const [language, optional, conflict] of [
+    ["zh", "设计权威是可选项", "已声明绑定冲突或无法解析时，停止依赖该权威的设计工作"],
+    ["en", "A design authority is optional", "When declared bindings conflict or cannot resolve, stop design work that depends on that authority"],
+  ]) {
+    const body = rule.body[language];
+    assert.ok(body.includes(optional), `${language}: a missing authority is explicitly optional`);
+    assert.ok(body.includes(conflict), `${language}: an actually declared conflict remains blocking for dependent work`);
+    assert.ok(body.includes(language === "zh" ? "继承值须显示来源" : "inherited values must identify their source"), `${language}: declared authority provenance remains visible`);
+    assert.ok(body.includes(language === "zh" ? "生产文档或组件库发布成功" : "production documentation or component library is published successfully"), `${language}: production release dependency remains explicit`);
+    assert.equal(/\b(?:Atelier|Einzbern)\b/u.test(body), false, `${language}: the generic rule names no product`);
+  }
+});
+
 test("ruleBody gives the Chinese body when artifact.language is zh-CN and the English body otherwise", () => {
   for (const rule of BUILT_IN_RULES) {
     assert.equal(ruleBody(rule.id, "zh-CN"), rule.body.zh, rule.id);

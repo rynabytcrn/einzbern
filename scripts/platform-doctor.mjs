@@ -23,6 +23,10 @@ import {
   compareEngineVersions,
   WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
 } from "../dist/build/packages/core/src/index.js";
+import { runDoctor } from "../dist/build/packages/core/src/doctor.js";
+import { openLibrary } from "../dist/build/packages/core/src/ether-library.js";
+import { readEngineCurrent, engineVersionDirectory } from "../dist/build/packages/core/src/engine-home.js";
+import { deviceHome } from "../dist/build/packages/core/src/device-home.js";
 import { PROTOCOL_LIMITS } from "../dist/build/packages/protocol/src/index.js";
 // Which hook commands are Einzbern's launcher or a script of the old harness: the engine's own
 // answer, read from the module that renders and reconciles host hooks (scripts/host-render.mjs
@@ -135,7 +139,7 @@ export async function inspectChainValidation(root, options = {}) {
         workspace: relative(root, workspacePath),
         exitCode: 0,
         reasonCode: output?.reasonCode ?? "WORKSPACE_COMMAND_COMPLETED",
-        ...(output === null ? { outputValid: false } : {}),
+        outputValid: output !== null && typeof output === "object" && !Array.isArray(output) && output.ok !== false && ["CHAIN_VALIDATED", "WORKSPACE_COMMAND_COMPLETED"].includes(output.reasonCode),
       };
     } catch (error) {
       const output = parseCommandJson(error?.stdout) ?? parseCommandJson(error?.stderr);
@@ -149,7 +153,7 @@ export async function inspectChainValidation(root, options = {}) {
     }
   }));
   const durationMs = Number(process.hrtime.bigint() - started) / 1_000_000;
-  const failed = results.filter((result) => result.exitCode !== 0);
+  const failed = results.filter((result) => result.exitCode !== 0 || result.outputValid !== true);
   if (failed.length > 0) {
     return check("chainValidation", false, {
       reasonCode: "PLATFORM_CHAIN_VALIDATION_FAILED",
@@ -463,8 +467,9 @@ async function inspectWorkspaceStorageShape(root, options) {
     } catch (error) {
       // ENOENT is expected in synthetic test fixtures that do not create workspace.json.
       // Only treat as a failure if the file should exist (real platform).
-      if (error?.code === "ENOENT") {
-        return check("workspaceStorageShape", true, { comparable: false, reason: "no readable workspace metadata; storage shape is unknown (synthetic fixture)" });
+      if (error?.code === "ENOENT" && options.acceptanceHeadCommit !== undefined) {
+        partitions.push({ partition: entry.name, ok: true, comparable: false, reason: "no readable workspace metadata (synthetic fixture)" });
+        continue;
       }
       partitions.push({
         partition: entry.name,
@@ -1371,6 +1376,11 @@ function engineCapabilitySurfaceVerdict(installedCatalog, worktreeCatalog, sourc
   for (const verbName of commonVerbs) {
     const iCmd = installedMap.get(verbName);
     const wCmd = worktreeMap.get(verbName);
+    if (iCmd.availability !== wCmd.availability || iCmd.mutates !== wCmd.mutates) {
+      attributeDifferences.push({ verb: verbName, flag: null,
+        installed: { availability: iCmd.availability, mutates: iCmd.mutates },
+        worktree: { availability: wCmd.availability, mutates: wCmd.mutates } });
+    }
     const iFlags = new Set(iCmd.flags.map((f) => f.name));
     const wFlags = new Set(wCmd.flags.map((f) => f.name));
 
@@ -1453,7 +1463,7 @@ function engineCapabilitySurfaceVerdict(installedCatalog, worktreeCatalog, sourc
       })),
       installedDigest: installedDigest.slice(0, 12),
       worktreeDigest: worktreeDigest.slice(0, 12),
-      reason: "verb and flag names match, but some flag attributes differ (e.g., required, valueKind); neither copy is strictly ahead and this cannot be judged by the authority model",
+      reason: "verb and flag names match, but some command or flag attributes differ (availability, mutates, required, valueKind); neither copy is strictly ahead and this cannot be judged by the authority model",
       source,
     };
     return check("engineCapabilitySurface", true, verdict);
@@ -1629,7 +1639,7 @@ async function readFreshnessReceipt(path, maxAgeHours, kind) {
       ? receipt.ok === true && receipt.readbackVerified === true
       : receipt.ok === true && typeof receipt.snapshotSha256 === "string" && receipt.chainVersions !== undefined;
     return {
-      ok: ok && Number.isFinite(ageHours) && ageHours <= maxAgeHours,
+      ok: ok && Number.isFinite(ageHours) && ageHours >= 0 && ageHours <= maxAgeHours,
       latestAt: timestamp,
       ageHours,
       receiptOk: receipt.ok === true,
@@ -1871,7 +1881,9 @@ async function inspectLaunchdDuty(options, manifest) {
   return check("launchd", true, { requiredLabel: probe.label, lastExitCode: status.lastExitCode, localFreshness, offsiteFreshness, declaredCadence: declared.cadences, cadenceSource: declared.source, source: "chain backup.cadence + install-manifest + launchctl + local/offsite receipts" });
 }
 
-export async function inspectPlatform(platformRootArgument, options = {}) {
+// Historical platform diagnostics remain explicitly addressable for migration investigations.
+// They are never the default CLI path and never certify a 2.x installation.
+export async function inspectLegacyPlatform(platformRootArgument, options = {}) {
   if (typeof platformRootArgument !== "string" || platformRootArgument.trim().length === 0) {
     return { ok: false, reasonCode: "PLATFORM_ROOT_REQUIRED", checks: [check("platformRoot", false, { reasonCode: "PLATFORM_ROOT_REQUIRED" })] };
   }
@@ -1928,6 +1940,83 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
   // (TCRN-CROSS-STORY-467 R3); the field stays so readers keep the same shape.
   const observations = [];
   return { ok: !firstFailure, reasonCode: firstFailure?.reasonCode ?? "PLATFORM_LAYOUT_HEALTHY", checks, observations };
+}
+
+/** BL-41: current layout, independent of the retired platform install manifest. */
+export async function inspectPlatform(platformRootArgument, options = {}) {
+  if (typeof platformRootArgument !== "string" || platformRootArgument.trim().length === 0) {
+    return { ok: false, reasonCode: "PLATFORM_ROOT_REQUIRED", checks: [check("platformRoot", false, { reasonCode: "PLATFORM_ROOT_REQUIRED" })], observations: [] };
+  }
+  let root;
+  try {
+    root = await realpath(resolve(platformRootArgument));
+    if (!(await lstat(root)).isDirectory()) throw new Error("not a directory");
+  } catch (error) {
+    return { ok: false, reasonCode: "PLATFORM_ROOT_INVALID", checks: [check("platformRoot", false, { reasonCode: "PLATFORM_ROOT_INVALID", error: error?.code ?? error.message })], observations: [] };
+  }
+  const home = resolve(options.homeRoot ?? process.env.HOME ?? "");
+  const device = options.deviceHome ?? deviceHome(process.env, home);
+  const checks = [check("platformRoot", true, { path: root })];
+  const library = join(root, ".ether");
+  try {
+    const opened = await openLibrary(library);
+    checks.push(check("libraryContainer", true, { path: ".ether", libraryId: opened.manifest.libraryId, formatVersion: opened.manifest.formatVersion }));
+  } catch (error) {
+    checks.push(check("libraryContainer", false, { path: ".ether", reasonCode: "PLATFORM_LIBRARY_INVALID", cause: error?.reasonCode ?? error?.code ?? "LIBRARY_UNREADABLE" }));
+  }
+  // A minimal container has no mandatory root bridge, MCP file, platform checkout or launchd job.
+  // If a root bridge exists, its imports still have to resolve. Do not inspect unrelated siblings.
+  const failures = [];
+  for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+    const file = join(root, name);
+    try {
+      const stats = await existingPath(file);
+      if (stats === null) continue;
+      if (!stats.isFile()) throw new Error("not a regular file");
+      for (const [index, raw] of (await readFile(file, "utf8")).split(/\r?\n/u).entries()) {
+        const line = raw.trim();
+        if (!line.startsWith("@")) continue;
+        const target = line.slice(1).trim();
+        if (line.startsWith("@@") || target.length === 0 || !(await existingPath(resolve(root, target)))?.isFile()) {
+          failures.push({ path: name, line: index + 1, target });
+        }
+      }
+    } catch (error) {
+      failures.push({ path: name, error: error?.code ?? error.message });
+    }
+  }
+  checks.push(check("minimalContainer", failures.length === 0, { ...(failures.length ? { reasonCode: "PLATFORM_BRIDGE_TARGET_UNAVAILABLE", failures } : {}), source: "optional root bridges" }));
+  if (options.includeInstallSurface !== false) {
+    // Reuse the engine's current install authority: pointer, host hooks, skill copies,
+    // registration, format compatibility and managed sections, rather than a second old catalog.
+    const deviceChecks = await runDoctor({ projectRoot: root, home, deviceHome: device, ...(options.lockTimeoutMs === undefined ? {} : { lockTimeoutMs: options.lockTimeoutMs }) });
+    checks.push(...deviceChecks.map(({ check: name, ...result }) => ({ name, ...result })));
+    const scripts = [];
+    const syntaxFailures = [];
+    try {
+      const current = await readEngineCurrent(device);
+      if (current === null) throw new Error("engine/current is missing");
+      const tree = engineVersionDirectory(current.version, device);
+      scripts.push(join(device, "engine", "einzbern.mjs"), join(device, "engine", "hook.mjs"), join(tree, "scripts", "einzbern.mjs"), join(tree, "scripts", "einzbern-hook.mjs"));
+      for (const file of scripts) {
+        try {
+          await execFileAsync(process.execPath, ["--check", file], { timeout: 30_000, maxBuffer: 1_048_576 });
+        } catch (error) {
+          syntaxFailures.push({ path: file, error: error?.code ?? "SYNTAX_INVALID" });
+        }
+      }
+    } catch (error) {
+      syntaxFailures.push({ path: "engine/current", error: error?.reasonCode ?? error?.message ?? "ENGINE_UNAVAILABLE" });
+    }
+    checks.push(check("engineExecutability", syntaxFailures.length === 0, { scripts, ...(syntaxFailures.length ? { reasonCode: "PLATFORM_ENGINE_NOT_EXECUTABLE", failures: syntaxFailures } : {}) }));
+  }
+  const firstFailure = checks.find((entry) => !entry.ok);
+  return {
+    ok: !firstFailure,
+    reasonCode: firstFailure?.reasonCode ?? "PLATFORM_LAYOUT_HEALTHY",
+    checks,
+    observations: [{ name: "nativeHostDispatch", verified: false, reason: "File presence, reconciliation and syntax do not prove hooks fired or received native host trust." }],
+  };
 }
 
 function platformOptionsFromArgv(argv) {

@@ -433,11 +433,12 @@ async function registryCheck(input: RestoreInput, root: string, libraryId: strin
   let held: string | null = null;
   try {
     const text = await readFileBytes(join(entry.libraryPath, LIBRARY_FILES.manifest), "utf8");
-    const parsed: unknown = JSON.parse(text);
-    const id = parsed !== null && typeof parsed === "object" ? (parsed as { libraryId?: unknown }).libraryId : undefined;
-    held = typeof id === "string" ? id : null;
-  } catch {
-    held = null;
+    held = validateLibraryManifest(JSON.parse(text), join(entry.libraryPath, LIBRARY_FILES.manifest)).libraryId;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") {
+      return new CheckFailure("LIBRARY_REGISTRY_INVALID", "the previously registered library manifest cannot be read or validated", { ...bound, readCause: reasonOf(error) ?? code ?? "MANIFEST_INVALID" });
+    }
   }
   if (held === libraryId && await readLibraryTombstone(entry.libraryPath) === null) {
     return new CheckFailure("LIBRARY_COPY_REGISTERED", `this device already uses ${libraryId} at ${entry.libraryPath}; ${root} is another copy of it`, {
@@ -531,10 +532,12 @@ class CheckRun {
 }
 
 /** Read only a device binding or the exact declaration previously written by setup. */
-async function declaredRestoreProjectId(input: RestoreInput, libraryRoot: string, state: WorkspaceState): Promise<string | undefined> {
+async function declaredRestoreProjectId(input: RestoreInput, state: WorkspaceState): Promise<string | undefined> {
   const entry = (await readRegistry(input.deviceHome)).entries.find((candidate) => candidate.projectPath === input.projectRoot);
   if (entry?.projectId !== undefined) {
-    if (entry.libraryPath !== libraryRoot || entry.libraryId !== state.metadata.workspaceId) throw new CheckFailure("REGISTRY_LIBRARY_CONFLICT", "the declared project belongs to another library");
+    // registryCheck already admitted this same identity at its restored location.
+    // Keep its explicit project binding even while the registry still names the old path.
+    if (entry.libraryId !== state.metadata.workspaceId) throw new CheckFailure("REGISTRY_LIBRARY_CONFLICT", "the declared project belongs to another library");
     projectLineage(state, entry.projectId);
     return entry.projectId;
   }
@@ -589,7 +592,7 @@ export async function verifyRestore(input: RestoreInput, options: RestoreReadOpt
   run.pass("device-stream", device.detail);
 
   let configurationProjectId: string | undefined;
-  try { configurationProjectId = await declaredRestoreProjectId(input, snapshot.root, streams.state); }
+  try { configurationProjectId = await declaredRestoreProjectId(input, streams.state); }
   catch (error) { return stopped("sections", error instanceof CheckFailure ? error : new CheckFailure("PROJECT_CONFIGURATION_UNAVAILABLE", messageOf(error))); }
   const targetState = scopedWorkspaceState(streams.state, configurationProjectId);
   const sections = await sectionsCheck(input.projectRoot, targetState);
@@ -773,6 +776,7 @@ export async function applyRestoreSetup(plan: SetupPlan): Promise<SetupApplied> 
     deviceHome,
     at,
     library: { path: library.root, libraryId: library.libraryId },
+    ...(library.configurationProjectId === undefined ? {} : { configurationProjectId: library.configurationProjectId }),
     cloud: resolved.cloud,
     navigation: navigationChoice(resolved.navigation),
     engineDirectory: directory,

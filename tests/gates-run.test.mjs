@@ -133,9 +133,21 @@ test("485-AC3: two gates red at once give two reds, and a red gate does not stop
   assert.equal(record.schemaVersion, "einzbern.gate-run.v1");
   assert.match(record.treeDigest, /^[0-9a-f]{64}$/u);
   assert.equal(record.base, null);
-  assert.deepEqual(record.gates.map((gate) => Object.keys(gate).sort()), Array(3).fill(["exitCode", "matched", "matchedWorkIds", "name", "ok", "outputBytes", "outputFile", "required", "root", "signal", "timedOut", "truncated"]));
+  assert.deepEqual(record.gates.map((gate) => Object.keys(gate).sort()), Array(3).fill(["durationMs", "exitCode", "finishedAt", "matched", "matchedWorkIds", "name", "ok", "outputBytes", "outputFile", "required", "root", "signal", "startedAt", "timedOut", "truncated"]));
   assert.deepEqual(record.workIds, []);
   assert.deepEqual(record, run);
+  for (const gate of record.gates) {
+    assert.ok(Number.isFinite(Date.parse(gate.startedAt)));
+    assert.ok(Number.isFinite(Date.parse(gate.finishedAt)));
+    assert.ok(Number.isSafeInteger(gate.durationMs) && gate.durationMs >= 0);
+  }
+  assert.deepEqual(await latestGateRun({ libraryId, deviceHome: desk }), run);
+  const historical = { ...record, gates: record.gates.map(({ startedAt, finishedAt, durationMs, ...gate }) => gate) };
+  await writeFile(recordPath, JSON.stringify(historical));
+  assert.deepEqual(await latestGateRun({ libraryId, deviceHome: desk }), historical, "historical untimed runs remain readable");
+  const partial = { ...record, gates: record.gates.map(({ durationMs, ...gate }) => gate) };
+  await writeFile(recordPath, JSON.stringify(partial));
+  assert.equal(await latestGateRun({ libraryId, deviceHome: desk }), null, "partial timing is invalid, not historical");
 });
 
 test("485-AC3: a timed-out gate does not leave a delayed kill armed after it exits", async (context) => {

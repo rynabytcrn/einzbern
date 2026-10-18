@@ -86,6 +86,9 @@ function parseArguments(argv) {
   if (version !== null && !VERSION_PATTERN.test(version)) fail("INSTALL_VERSION_INVALID", `${version} is not an engine version`, { actual: version });
   if (sha256 !== null && !DIGEST_PATTERN.test(sha256)) fail("INSTALL_SHA256_INVALID", "--sha256 must be 64 lowercase hexadecimal characters", { actual: sha256 });
   const configured = process.env.EINZBERN_HOME;
+  if (!values.has("--home") && typeof configured === "string" && configured.length > 0 && !isAbsolute(configured)) {
+    fail("DEVICE_HOME_INVALID", "EINZBERN_HOME must be an absolute path");
+  }
   const home = values.has("--home") ? resolve(values.get("--home"))
     : typeof configured === "string" && configured.length > 0 ? resolve(configured) : join(homedir(), DEVICE_DIRECTORY);
   return { version, archive, sha256, home };
@@ -288,15 +291,25 @@ async function install(options) {
   const temporary = join(options.home, `tmp-${randomBytes(8).toString("hex")}`);
   await mkdir(temporary, { recursive: true });
   let report;
+  let primary;
   try {
     const tree = await unpack(release, temporary);
     const updated = engineUpdate(tree, release, options.home, at);
     report = { version: release.version, installed: updated.installed, current: updated.current, launchers: await placeLaunchers(options.home, release.version) };
-  } finally {
+  } catch (error) {
+    primary = error;
+  }
+  try {
     const trash = join(options.home, TRASH_DIRECTORY);
     await mkdir(trash, { recursive: true });
     await rename(temporary, join(trash, `install-${at.replaceAll(":", "")}-${basename(temporary)}`));
+  } catch (cleanupError) {
+    const cleanupMessage = String(cleanupError?.message ?? cleanupError);
+    throw new InstallError(primary?.reasonCode ?? "INSTALL_INTERNAL_ERROR",
+      `${String(primary?.message ?? "installation completed but staging preservation failed")}; staging preservation failed: ${cleanupMessage}; retained staging: ${temporary}`,
+      { ...(primary?.details ?? {}), temporary, cleanupError: cleanupMessage });
   }
+  if (primary !== undefined) throw primary;
   return {
     ...report,
     archiveSha256: actual,

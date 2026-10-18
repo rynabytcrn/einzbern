@@ -8,7 +8,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import type { Hash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import {
   PROTOCOL_LIMITS,
@@ -118,6 +118,7 @@ import {
   validateNote,
 } from "./execution-config.js";
 import type { ExecutionConfigState, ExecutionHost } from "./execution-config.js";
+import type { ModelPlanRecord } from "./model-plan.js";
 import type { GateRecord } from "./assignment-gate.js";
 import { GateIdentityError, validateGateIdentityDecision } from "./gate-identity.js";
 import type { GateIdentityDecision } from "./gate-identity.js";
@@ -620,11 +621,6 @@ function exactFields(value: unknown, expected: readonly string[], reasonCode: Wo
   }
 }
 
-function inside(parent: string, candidate: string): boolean {
-  const relation = relative(parent, candidate);
-  return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep));
-}
-
 export function assertWorkspaceRelativePath(value: unknown): asserts value is string {
   if (typeof value !== "string" || value.length === 0 || isAbsolute(value) || value.includes("\\")) {
     fail("WORKSPACE_PATH_ESCAPE", String(value));
@@ -659,7 +655,7 @@ export function assertWorkspaceRecordCount(count: number): void {
 // directory check below stays here for root resolution and the write-lock gate; the
 // lease, recovery and mutation-claim machinery it once served was replaced by the
 // engine file lock (TCRN-CROSS-STORY-467).
-async function boundDirectory(path: string, workspaceRoot?: string): Promise<string> {
+async function boundDirectory(path: string): Promise<string> {
   let metadata;
   try {
     metadata = await lstat(path);
@@ -670,9 +666,6 @@ async function boundDirectory(path: string, workspaceRoot?: string): Promise<str
     fail("WORKSPACE_PATH_INVALID", `${path} must be a real directory`);
   }
   const resolved = await realpath(path);
-  if (workspaceRoot && !inside(workspaceRoot, resolved)) {
-    fail("WORKSPACE_PATH_ESCAPE", path);
-  }
   const after = await lstat(resolved);
   if (!after.isDirectory() || metadata.dev !== after.dev || metadata.ino !== after.ino) {
     fail("WORKSPACE_PATH_INVALID", `${path} changed while resolving`);
@@ -2041,6 +2034,25 @@ class MergeReplay {
     return origin;
   }
 
+  /** Refuse a new write whose literal target historical replay would redirect on this stream. */
+  assertUnredirectedWrite(streamId: string, payload: JsonValue): void {
+    if (!isJsonObject(payload) || typeof payload.operation !== "string" || !isJsonObject(payload.record)) return;
+    const kind = payload.operation.startsWith("work.") ? "work" : payload.operation.startsWith("project.") ? "project" : null;
+    if (kind === null || typeof payload.record.id !== "string") return;
+    const redirects = this.redirects.get(streamId);
+    if (redirects === undefined) return;
+    // Match view's existing fields exactly. Historical events keep their redirects, including
+    // redirects installed by a colliding create that was subsequently rejected by its reducer.
+    for (const field of kind === "work" ? ["id", "parentId", "projectId"] : ["id"]) {
+      const value = payload.record[field];
+      const target = typeof value === "string" ? redirects.get(value) : undefined;
+      if (target === undefined) continue;
+      throw new WorkspaceError("WORKSPACE_INPUT_INVALID", `new ${payload.operation} ${field} ${String(value)} would replay as ${target.id} on this stream; choose an unambiguous target`, {
+        streamId, operation: payload.operation, field, id: String(value), aliasId: target.id, aliasExternalKey: target.externalKey,
+      });
+    }
+  }
+
   /** The event as this merge applies it: a colliding create renamed, a renamed record's later events redirected. */
   view(event: EventRecord, projects: ReadonlyMap<string, ProjectRecord>, work: ReadonlyMap<string, WorkRecord>): EventRecord {
     this.pending = null;
@@ -2123,6 +2135,56 @@ class MergeReplay {
 
 function isReplayRejection(error: unknown): boolean {
   return error instanceof WorkspaceError || error instanceof ProtocolError;
+}
+
+// Historical unassign events could retain orphan efforts, which later set/assign
+// events inherited. Keep those exact records inside replay and its private cache;
+// callers and new mutations see only efforts with a corresponding assignment.
+function projectModelPlanState(state: ExecutionConfigState, target?: { readonly host: unknown; readonly name: unknown }): ExecutionConfigState {
+  const modelPlans = state.modelPlans.map((record) => {
+    if (target !== undefined && (record.host !== target.host || record.name !== target.name)) return record;
+    if (record.efforts === undefined) return record;
+    const retained = Object.entries(record.efforts).filter(([persona]) => Object.hasOwn(record.assignments, persona));
+    if (retained.length === Object.keys(record.efforts).length) return record;
+    const { efforts: _historicalEfforts, ...withoutEfforts } = record;
+    return Object.freeze({ ...withoutEfforts, ...(retained.length === 0 ? {} : { efforts: Object.freeze(Object.fromEntries(retained)) }) });
+  });
+  return modelPlans.every((record, index) => record === state.modelPlans[index]) ? state : { ...state, modelPlans: Object.freeze(modelPlans) };
+}
+
+function projectModelPlanWorkspaceState(state: WorkspaceState): WorkspaceState {
+  const executionConfig = projectModelPlanState(state.executionConfig);
+  return executionConfig === state.executionConfig ? state : { ...state, executionConfig };
+}
+
+type ModelPlanMutation = { readonly state: ExecutionConfigState; readonly record: ModelPlanRecord };
+
+function replayModelPlanMutation(
+  state: ExecutionConfigState,
+  recorded: Readonly<Record<string, unknown>>,
+  apply: (state: ExecutionConfigState) => ModelPlanMutation,
+  kind: "mutation" | "assignment" | "unassignment",
+): ExecutionConfigState {
+  const target = { host: recorded.host, name: recorded.name };
+  const currentState = projectModelPlanState(state, target);
+  const current = apply(currentState);
+  const canonical = canonicalJson(recorded as unknown as JsonValue);
+  if (canonicalJson(current.record) === canonical) return current.state;
+
+  const historical = currentState === state ? current : apply(state);
+  let historicalRecord = historical.record;
+  if (kind === "unassignment" && historicalRecord.efforts === undefined) {
+    const previous = state.modelPlans.find((record) => record.host === target.host && record.name === target.name);
+    // The old writer spread the prior record, then omitted an empty replacement,
+    // retaining its last effort (or its already-empty map). Derive that exact
+    // historical shape from prior state, never from unchecked recorded fields.
+    if (previous?.efforts !== undefined) historicalRecord = Object.freeze({ ...historicalRecord, efforts: previous.efforts });
+  }
+  if (canonicalJson(historicalRecord) !== canonical) fail("WORKSPACE_EVENT_CORRUPT", `model plan ${kind} record is not canonical`);
+  return historicalRecord === historical.record ? historical.state : {
+    ...historical.state,
+    modelPlans: Object.freeze(historical.state.modelPlans.map((record) => record === historical.record ? historicalRecord : record)),
+  };
 }
 
 function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[], snapshot?: ReplaySeed, merge?: MergeReplay): WorkspaceState {
@@ -2619,7 +2681,8 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
           requireEventBoundTimestamp(body.updatedAt, event, `persona ${String(body.name)}`);
           executionConfig = applyCustomPersonaRemove(executionConfig, { name: body.name });
         } else if (operation === "execution.model-plan.set") {
-          const applied = applyModelPlanSetInExecutionConfig(executionConfig, {
+          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan ${String(body.name)}`);
+          executionConfig = replayModelPlanMutation(executionConfig, body, (state) => applyModelPlanSetInExecutionConfig(state, {
             host: body.host,
             name: body.name,
             defaultModel: body.defaultModel,
@@ -2628,34 +2691,27 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
             // comparison below refuses the event as corrupt.
             ...(body.defaultEffort === undefined ? {} : { defaultEffort: body.defaultEffort }),
             updatedAt: String(body.updatedAt),
-          });
-          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan ${String(body.name)}`);
-          if (canonicalJson(applied.record) !== canonicalJson(body)) fail("WORKSPACE_EVENT_CORRUPT", `model plan ${String(body.name)} mutation record is not canonical`);
-          executionConfig = applied.state;
+          }), "mutation");
         } else if (operation === "execution.model-plan.assigned") {
-          const applied = applyModelPlanAssignInExecutionConfig(executionConfig, {
+          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan assignment ${String(body.persona)}`);
+          const canonicalBody = Object.fromEntries(Object.entries(body).filter(([key]) => key !== "persona" && key !== "model" && key !== "effort"));
+          executionConfig = replayModelPlanMutation(executionConfig, canonicalBody, (state) => applyModelPlanAssignInExecutionConfig(state, {
             host: body.host,
             name: body.name,
             persona: body.persona,
             model: body.model,
             ...(body.effort === undefined ? {} : { effort: body.effort }),
             updatedAt: String(body.updatedAt),
-          });
-          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan assignment ${String(body.persona)}`);
-          const canonicalBody = Object.fromEntries(Object.entries(body).filter(([key]) => key !== "persona" && key !== "model" && key !== "effort"));
-          if (canonicalJson(applied.record) !== canonicalJson(canonicalBody as unknown as JsonValue)) fail("WORKSPACE_EVENT_CORRUPT", "model plan assignment record is not canonical");
-          executionConfig = applied.state;
+          }), "assignment");
         } else if (operation === "execution.model-plan.unassigned") {
-          const applied = applyModelPlanUnassignInExecutionConfig(executionConfig, {
+          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan unassignment ${String(body.persona)}`);
+          const canonicalBody = Object.fromEntries(Object.entries(body).filter(([key]) => key !== "persona"));
+          executionConfig = replayModelPlanMutation(executionConfig, canonicalBody, (state) => applyModelPlanUnassignInExecutionConfig(state, {
             host: body.host,
             name: body.name,
             persona: body.persona,
             updatedAt: String(body.updatedAt),
-          });
-          requireEventBoundTimestamp(String(body.updatedAt), event, `model plan unassignment ${String(body.persona)}`);
-          const canonicalBody = Object.fromEntries(Object.entries(body).filter(([key]) => key !== "persona"));
-          if (canonicalJson(applied.record) !== canonicalJson(canonicalBody as unknown as JsonValue)) fail("WORKSPACE_EVENT_CORRUPT", "model plan unassignment record is not canonical");
-          executionConfig = applied.state;
+          }), "unassignment");
         } else if (operation === "execution.model-plan.removed") {
           exactFields(body, ["host", "name", "updatedAt"], "WORKSPACE_EVENT_CORRUPT", "model plan removal record");
           requireEventBoundTimestamp(String(body.updatedAt), event, `model plan ${String(body.name)}`);
@@ -3032,7 +3088,11 @@ export async function withWorkspaceWriteLock<T>(
   try {
     return await withLibraryWriteLock(
       layout.library,
-      () => heldWriteLocks.run(new Set([...held, layout.root]), () => operation(layout.root)),
+      async () => {
+        // A relocation may have completed while this writer waited for the lock.
+        await refuseTombstonedWrite(layout.root);
+        return heldWriteLocks.run(new Set([...held, layout.root]), () => operation(layout.root));
+      },
       { ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(command === undefined ? {} : { command }) },
     );
   } catch (error) {
@@ -3235,6 +3295,7 @@ interface LibrarySeed {
 
 interface LibraryReplayResult {
   readonly state: WorkspaceState;
+  readonly replayExecutionConfig: ExecutionConfigState;
   readonly merge: MergeReplay;
 }
 
@@ -3249,7 +3310,8 @@ function replayLibrary(library: Library, read: LibraryReadShape, cached?: Librar
   const tail = cached === undefined ? read.events : read.events.slice(cached.seed.version);
   const origins = new Map<EventRecord, ReplayOrigin>(tail.map((entry) => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
   const merge = new MergeReplay(origins, cached?.merge);
-  const state = materialize(libraryWorkspaceMetadata(library), tail.map((entry) => entry.event), cached?.seed, merge);
+  const replayed = materialize(libraryWorkspaceMetadata(library), tail.map((entry) => entry.event), cached?.seed, merge);
+  const state = projectModelPlanWorkspaceState(replayed);
   const streams = read.streams.flatMap((stream) => (stream.manifest === null ? [] : [streamHead(stream.manifest)]));
   return {
     state: {
@@ -3263,6 +3325,7 @@ function replayLibrary(library: Library, read: LibraryReadShape, cached?: Librar
         aliases: merge.aliases,
       },
     },
+    replayExecutionConfig: replayed.executionConfig,
     merge,
   };
 }
@@ -3402,7 +3465,7 @@ async function refreshLibraryCache(
           minutes: replay.state.minutes,
           gates: replay.state.gates,
           settings: replay.state.settings,
-          executionConfig: replay.state.executionConfig,
+          executionConfig: replay.replayExecutionConfig,
           templates: replay.state.templates,
           configRecords: replay.state.configRecords,
           attestationEnabledAtSequence: replay.state.attestationEnabledAtSequence,
@@ -3421,7 +3484,7 @@ async function refreshLibraryCache(
  * cache. A seed the rest of the events cannot be replayed onto is a cache fault, and the replay
  * starts again from genesis; the result is the same state either way.
  */
-async function replayLibraryThroughCache(library: Library, read: LibraryRead): Promise<WorkspaceState> {
+async function replayLibraryResultThroughCache(library: Library, read: LibraryRead): Promise<LibraryReplayResult> {
   const cached = await cachedSeed(library, read);
   let replay: LibraryReplayResult | null = null;
   if (cached !== null) {
@@ -3434,7 +3497,11 @@ async function replayLibraryThroughCache(library: Library, read: LibraryRead): P
   const seededVersion = replay === null ? null : cached?.seed.version ?? null;
   replay ??= replayLibrary(library, read);
   await refreshLibraryCache(library, read, replay, seededVersion);
-  return replay.state;
+  return replay;
+}
+
+async function replayLibraryThroughCache(library: Library, read: LibraryRead): Promise<WorkspaceState> {
+  return (await replayLibraryResultThroughCache(library, read)).state;
 }
 
 /** Read every stream of a library and replay them merged, through this device's cache. */
@@ -3480,7 +3547,7 @@ export function legacyWorkspaceEventId(streamId: string, sequence: number): stri
 
 /** Replay already-read events from genesis through the engine's own reducer. Pure. */
 export function materializeFromGenesis(metadata: WorkspaceMetadata, events: readonly EventRecord[]): WorkspaceState {
-  return materialize(metadata, events);
+  return projectModelPlanWorkspaceState(materialize(metadata, events));
 }
 
 /**
@@ -3730,6 +3797,7 @@ interface LibraryReadForAppend {
   readonly library: Library;
   readonly read: LibraryRead;
   readonly state: WorkspaceState;
+  readonly merge: MergeReplay;
 }
 
 // WSA-1: the single full replay per mutation, so the state every delta is built against is the
@@ -3737,7 +3805,8 @@ interface LibraryReadForAppend {
 async function readForAppend(root: string): Promise<LibraryReadForAppend> {
   const library = await openLibrary(root);
   const read = await readAllStreams(library.root);
-  return { library, read, state: await replayLibraryThroughCache(library, read) };
+  const replay = await replayLibraryResultThroughCache(library, read);
+  return { library, read, state: replay.state, merge: replay.merge };
 }
 
 // Read the merged state, plan and build every delta against it and measure the result -- nothing is
@@ -3776,6 +3845,7 @@ async function buildAppend(
       // Each member sees the state the members before it produced, which is what makes an
       // ordered batch express a dependency.
       const delta = buildDelta(current);
+      source.merge.assertUnredirectedWrite(own.streamId, delta.payload);
       if (library.manifest.formatVersion < 2 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) &&
         (Object.hasOwn(delta.payload.record, "involvedProjects") || delta.payload.record.collection === "chain")) {
         throw new FormatVersionError("LIBRARY_FORMAT_UNSUPPORTED", "project-chain semantics require a format-2 library; no implicit in-place upgrade is performed", { required: "2", actual: String(library.manifest.formatVersion) });

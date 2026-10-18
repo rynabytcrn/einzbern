@@ -372,8 +372,12 @@ test("477-R2: the launcher reads the remote git reads and spells it as the regis
 test("477-R5: the launcher finds the device directory as the engine does and imports the entry through a file URL", () => {
   assert.equal(launcher.hookEntryUrl("D:\\Einzbern Devices\\Ada Lovelace\\.einzbern\\engine", "1.2.1", "win32"), "file:///D:/Einzbern%20Devices/Ada%20Lovelace/.einzbern/engine/1.2.1/scripts/einzbern-hook.mjs");
   assert.equal(launcher.hookEntryUrl("/opt/zoo #1 100%/.einzbern/engine", "1.2.1", "linux"), "file:///opt/zoo%20%231%20100%25/.einzbern/engine/1.2.1/scripts/einzbern-hook.mjs");
-  for (const env of [{}, { EINZBERN_HOME: "" }, { EINZBERN_HOME: "relative/device" }, { EINZBERN_HOME: "/elsewhere/device" }]) {
+  for (const env of [{}, { EINZBERN_HOME: "" }, { EINZBERN_HOME: "/elsewhere/device" }]) {
     assert.equal(launcher.deviceDirectory(env, "/opt/ada"), deviceHome(env, "/opt/ada"), JSON.stringify(env));
+  }
+  for (const value of ["relative/device", ".", "../device", "~/.einzbern"]) {
+    assert.throws(() => deviceHome({ EINZBERN_HOME: value }, "/opt/ada"), { reasonCode: "DEVICE_HOME_INVALID" });
+    assert.throws(() => launcher.deviceDirectory({ EINZBERN_HOME: value }, "/opt/ada"), { reasonCode: "DEVICE_HOME_INVALID" });
   }
 });
 
@@ -545,4 +549,13 @@ test("R47-06: a prompt in a known container the registry does not cover is noted
   await writeFile(join(home, "log"), "not a directory\n");
   quiet(runHook(launcherPath, { home, cwd: join(legacyWorkspace, "docs") }));
   assert.equal(await readFile(join(home, "log"), "utf8"), "not a directory\n");
+});
+
+test("relative EINZBERN_HOME is reported without blocking the native hook", () => {
+  const result = spawnSync(process.execPath, [join(repositoryRoot, "scripts/einzbern-hook-launcher.mjs"), "pre-tool-use"], {
+    input: "{}", encoding: "utf8", env: { ...process.env, EINZBERN_HOME: "relative/device" },
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /DEVICE_HOME_INVALID/u);
 });

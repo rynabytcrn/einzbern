@@ -19,8 +19,9 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 
 import { execFileSync } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { join } from "node:path";
 
+import { pathIsInside as inside } from "./path-containment.js";
 import { canonicalSha256, compareCanonicalText } from "../../protocol/src/index.js";
 import type { NamedGate } from "./gates-config.js";
 
@@ -255,6 +256,7 @@ export interface GatesPlan {
   readonly projectRoot: string;
   readonly release: boolean;
   readonly base: string | null;
+  readonly baseByRoot?: Readonly<Record<string, string>>;
   // Stories whose required coverage this plan is intended to prove.
   readonly workIds: readonly string[];
   // Each root's changed files the covers were matched against; null for a release plan.
@@ -271,11 +273,6 @@ export interface GatesPlan {
   // Subtasks, sorted, when there is one: the run's tree digest then counts only the files their
   // commits touched (gateTreeState).
   readonly subjectKeys?: readonly string[];
-}
-
-function inside(parent: string, candidate: string): boolean {
-  const relation = relative(parent, candidate);
-  return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep) && !relation.includes(`${sep}..${sep}`));
 }
 
 /** A gate's root as a real directory inside the project, or GATES_ROOT_INVALID. */
@@ -360,6 +357,7 @@ export async function planGates(input: {
   readonly gates: readonly NamedGate[];
   readonly release?: boolean;
   readonly base?: string;
+  readonly baseByRoot?: Readonly<Record<string, string>>;
   readonly workIds?: readonly string[];
   // TCRN-CROSS-STORY-525: each target's ancestors and the gate names that bind it.
   readonly subjects?: readonly GateSubject[];
@@ -386,12 +384,18 @@ export async function planGates(input: {
     if (!roots.has(gate.root)) roots.set(gate.root, await resolveGateRoot(projectRoot, gate.root));
   }
   const base = input.base ?? null;
+  const baseByRoot = input.baseByRoot;
+  if (baseByRoot !== undefined && (baseByRoot === null || typeof baseByRoot !== "object" || Array.isArray(baseByRoot) ||
+    Object.entries(baseByRoot).some(([root, value]) => !roots.has(root) || typeof value !== "string" || !BASE_SHAPE.test(value)))) {
+    fail("GATES_BASE_INVALID", "per-root bases must name declared enabled roots and valid Git refs", {});
+  }
   const subjects = new Map((input.subjects ?? []).map((subject) => [subject.workId, subject]));
   const unknownGates = [...new Set(workIds.flatMap((workId) => subjects.get(workId)?.gates ?? []))]
     .filter((name) => !input.gates.some((gate) => gate.name === name))
     .sort(compareCanonicalText);
   const subjectKeys = [...new Set(input.subjectKeys ?? [])].sort(compareCanonicalText);
   const declared = {
+    ...(baseByRoot === undefined ? {} : { baseByRoot: Object.fromEntries(Object.entries(baseByRoot).sort(([left], [right]) => compareCanonicalText(left, right))) }),
     roots: [...roots.keys()].sort(compareCanonicalText),
     declarationsDigest: gateDeclarationsDigest(enabled),
     ...(unknownGates.length === 0 ? {} : { unknownGates }),
@@ -404,15 +408,17 @@ export async function planGates(input: {
     ...declared,
   };
   const changed = new Map<string, readonly string[]>();
-  for (const root of declared.roots) {
+  const eligibleRoots = [...new Set(gates.map((gate) => gate.root))];
+  for (const root of eligibleRoots) {
     const directory = roots.get(root);
     if (directory === undefined) continue;
-    const files = changedFiles(directory, { base: input.base! });
+    const rootBase = baseByRoot !== undefined && Object.hasOwn(baseByRoot, root) ? baseByRoot[root]! : input.base!;
+    const files = changedFiles(directory, { base: rootBase });
     if (gates.some((gate) => gate.root === root)) changed.set(root, files);
   }
   // Even an empty plan or a declaration set containing only release-only gates must reject a
   // missing Git project or a base that names no commit.
-  if (declared.roots.length === 0) changedFiles(projectRoot, { base: input.base! });
+  if (eligibleRoots.length === 0) changedFiles(projectRoot, { base: input.base! });
   const selected: PlannedGate[] = [];
   for (const gate of gates) {
     const covers = gate.covers.filter((cover) => !cover.startsWith("work:")).map((glob) => compileGlob(glob));

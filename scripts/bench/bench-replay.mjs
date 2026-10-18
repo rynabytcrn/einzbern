@@ -30,8 +30,8 @@ const label = argument("label") ?? "chain";
 const outDir = resolve(argument("out-dir") ?? join(REPO_ROOT, "docs/reports/init-018/S12"));
 const RUNS = 5;
 
-if (!workspace || !workspace.endsWith("/workspace")) {
-  process.stderr.write("--workspace must point at a synthesized chain's workspace root (ends with /workspace)\n");
+if (!workspace || !workspace.endsWith("/library")) {
+  process.stderr.write("--workspace must point at a synthesized chain's workspace root (ends with /library)\n");
   process.exit(2);
 }
 

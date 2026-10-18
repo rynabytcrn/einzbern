@@ -92,7 +92,7 @@ test("479-AC1: every verb the navigation table names is a verb of the current co
   // each involved project's own configuration (work-project-context).
   assert.deepEqual(SKILL_NAVIGATION.map((entry) => [...entry.verbs]), [
     ["recall"],
-    ["work-show", "minutes-show", "work-project-context"],
+    ["work-show", "minutes-show", "work-project-context", "execution-evidence"],
     ["work-transition", "work-annotate"],
     ["minutes-record"],
     ["knowledge-create"],
@@ -222,4 +222,9 @@ test("488-AC2 (MIN-238 D4): the install line and the fetch script name both repo
   assert.equal(engineRepository, BRAND.engine.id);
   assert.equal(helperOwner, engineOwner, "one account holds both repositories");
   assert.equal(engineOwner, LEGACY_REPOSITORY_NAMES.owner, "renamed under the existing account, not the placeholder");
+});
+
+test("552: generated dispatch workflow consumes admission rather than treating a catalog as permission", () => {
+  const row = tableRows(render()).find(([, verbs]) => verbs.includes("`work-project-context`"));
+  for (const phrase of ["--execution-request", "`dispatchAdmitted` is true", "Pass its selected runner/model/effort exactly", "never substitute", "not a global scheduler", "stdout, stderr and exit code"]) assert.ok(row[2].includes(phrase), phrase);
 });

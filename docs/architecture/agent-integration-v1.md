@@ -88,8 +88,8 @@ begin with `--`; the two-token `--flag value` form rejects a value beginning wit
 
 ## 5. Budgets
 
-- Each argument token is capped at 65,536 characters; an overlong token fails
-  closed with `CLI_INPUT_OVERSIZED` before parsing.
+- Argument tokens are subject to the JavaScript runtime's string limit;
+  command-specific validation applies after parsing.
 - List verbs are bounded by `--limit`/`--offset`; an envelope's `truncated` flag
   signals more records beyond the page.
 - All emitted paths are workspace-relative under the workspace control directory; the contract

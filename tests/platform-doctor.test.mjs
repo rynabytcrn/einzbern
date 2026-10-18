@@ -23,9 +23,9 @@ function test(name, optionsOrBody, maybeBody) {
   queuedTests.push([name, { ...options, concurrency: true }, body]);
 }
 
-import { coreExportedSymbols, inspectChainValidation, inspectPlatform } from "../scripts/platform-doctor.mjs";
+import { coreExportedSymbols, inspectChainValidation, inspectLegacyPlatform as inspectPlatform } from "../scripts/platform-doctor.mjs";
 import { HOST_HOOK_FILE_HOSTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
-import { BRAND, DEVICE_HOME_ENTRIES, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
+import { BRAND, DEVICE_HOME_ENTRIES, DIRECTORY, INSTALL_MANIFEST, LEGACY_CONTROL_DIRECTORY, WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS } from "../dist/build/packages/protocol/src/index.js";
 
 const FIXTURE_COMMIT = "f".repeat(40);
@@ -38,13 +38,27 @@ async function fixture(context, { agents = "fixture\n", chain = true, git = fals
   await mkdir(root, { recursive: true });
   if (agents !== null) await writeFile(join(root, "AGENTS.md"), agents);
   if (claude !== null) await writeFile(join(root, "CLAUDE.md"), claude);
-  if (chain) await mkdir(join(root, ".tcrn-workspace", "cross-project", "workspace"), { recursive: true });
+  if (chain) {
+    const control = join(root, ".tcrn-workspace", "cross-project", "workspace", LEGACY_CONTROL_DIRECTORY);
+    await mkdir(control, { recursive: true });
+    await writeFile(join(control, "workspace.json"), JSON.stringify({ storageVersion: 2, segmentEventLimit: WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES }));
+  }
   if (git) {
     await mkdir(join(root, ".git"));
     if (whitelistGit) await writeFile(join(root, ".gitignore"), "/*\n!/AGENTS.md\n!/CLAUDE.md\n!/docs/\n");
   }
   return root;
 }
+
+test("missing legacy workspace metadata is a storage refusal, not a healthy fixture", async (context) => {
+  const root = await fixture(context);
+  await rm(join(root, ".tcrn-workspace", "cross-project", "workspace", LEGACY_CONTROL_DIRECTORY, "workspace.json"));
+  const result = await inspectPlatform(root, { includeInstallSurface: false });
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, "PLATFORM_WORKSPACE_STORAGE_BEHIND");
+  const storage = result.checks.find((entry) => entry.name === "workspaceStorageShape");
+  assert.equal(storage.partitions[0].error, "ENOENT");
+});
 
 test("a complete synthetic platform container is green", async (context) => {
   const root = await fixture(context);
@@ -645,8 +659,8 @@ test("R47-06: a launcher hook on a device without the installed engine is its ow
   assert.equal(noRegistry.ok, false);
   assert.equal(noRegistry.reasonCode, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED");
   assert.deepEqual(noRegistry.failures.map((failure) => [failure.source, failure.reasonCode, failure.missing]), [
-    ["container.codex-hooks", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]],
-    ["container.claude-settings", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]],
+    ...[1, 2, 3].map(() => ["container.codex-hooks", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
+    ...[1, 2, 3].map(() => ["container.claude-settings", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
   ]);
   assert.equal(noRegistry.failures[0].device, device);
 
@@ -666,8 +680,8 @@ test("R47-06: a launcher hook on a device without the installed engine is its ow
   assert.equal(hooks(both).reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
   assert.deepEqual(hooks(both).failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
     ["container.claude-settings", "Stop", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
-    ["container.codex-hooks", "UserPromptSubmit", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"],
-    ["container.claude-settings", "UserPromptSubmit", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"],
+    ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["container.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
+    ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["container.claude-settings", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
   ]);
 });
 
@@ -693,9 +707,9 @@ test("R47-06: the hook leg reads the user-level Claude and Codex files of the gi
   assert.equal(leg.reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
   assert.deepEqual(leg.failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
     ["machine.claude-settings", "UserPromptSubmit", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
-    ["machine.codex-hooks", "UserPromptSubmit", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"],
+    ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["machine.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
   ]);
-  assert.deepEqual([leg.user.claude.state, leg.user.claude.checked, leg.user.codex.state, leg.user.codex.checked], ["broken", 1, "broken", 1]);
+  assert.deepEqual([leg.user.claude.state, leg.user.claude.checked, leg.user.codex.state, leg.user.codex.checked], ["broken", 1, "broken", 3]);
   assert.equal(leg.failures[0].target, oldScript);
 
   // An absent container Claude file defers that file only; the user-level findings stay red.
@@ -710,7 +724,7 @@ test("R47-06: the hook leg reads the user-level Claude and Codex files of the gi
   await writeFile(join(device, DEVICE_HOME_ENTRIES.registry), `${JSON.stringify({ schemaVersion: "einzbern.registry.v1", entries: [] })}\n`);
   const live = hooks(await inspectInstallFixture(fixture));
   assert.equal(live.ok, true, JSON.stringify(live));
-  assert.deepEqual([live.user.claude.state, live.user.codex.state, live.user.codex.events], ["live", "live", ["UserPromptSubmit"]]);
+  assert.deepEqual([live.user.claude.state, live.user.codex.state, live.user.codex.events], ["live", "live", ["PreToolUse", "SubagentStart", "UserPromptSubmit"]]);
 
   await writeFile(join(fixture.home, ".codex", "hooks.json"), "{ not json");
   const invalid = hooks(await inspectInstallFixture(fixture));

@@ -1,3 +1,5 @@
+import { pathIsInside } from "./path-containment.js";
+import { resolvePortablePath } from "./portable-path.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-380: the generated-artifact blob store.
@@ -42,14 +44,14 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 
 import { assertCanonicalJson, assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import { deviceHome } from "./device-home.js";
 import { MACHINE_SETTINGS_DIRECTORY } from "./machine-settings.js";
-import { SETTINGS_CATALOG } from "./settings.js";
+import { SETTINGS_CATALOG, validateSettingValue } from "./settings.js";
 import { WORKSPACE_CONTROL_DIRECTORY, assertLibraryWritable, libraryUnchangedSince, materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
 import type { WorkspaceState } from "./workspace.js";
 import { hasLibraryManifest } from "./ether-library.js";
@@ -126,11 +128,6 @@ function isJsonObject(value: JsonValue | undefined): value is { readonly [key: s
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isInside(parent: string, candidate: string): boolean {
-  const relation = relative(parent, candidate);
-  return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep));
-}
-
 function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -187,7 +184,9 @@ async function boundFileBytes(path: string, maximumBytes: number): Promise<Buffe
  * taken as written.
  */
 export function resolveGeneratedArtifactsRoot(workspaceRoot: string, value: string): string {
-  return isAbsolute(value) ? resolve(value) : resolve(workspaceRoot, value);
+  const resolved = resolvePortablePath(workspaceRoot, value);
+  if (value.startsWith("binding:")) validateSettingValue(ARTIFACT_ROOT_SETTING_KEY, resolved, workspaceRoot);
+  return resolved;
 }
 
 /**
@@ -225,14 +224,14 @@ export async function assertGeneratedArtifactsRoot(
   }
   const workspace = resolve(workspaceRoot);
   const root = resolveGeneratedArtifactsRoot(workspace, value);
-  if (!isAbsolute(value)) {
+  if (!isAbsolute(value) && !value.startsWith("binding:")) {
     await mkdir(root, { recursive: true });
     return boundDirectory(root);
   }
   // The device directory (TCRN-CROSS-STORY-469 R3): EINZBERN_HOME, or <home>/.einzbern when a
   // user home is named.
   const device = home === undefined ? deviceHome() : resolve(home, MACHINE_SETTINGS_DIRECTORY);
-  if (isInside(device, root)) {
+  if (pathIsInside(device, root)) {
     fail("ARTIFACT_PATH_INVALID", `${ARTIFACT_ROOT_SETTING_KEY} must be outside the machine control home`);
   }
   return boundDirectory(root);
@@ -293,8 +292,11 @@ async function readManifest(workspaceRoot: string): Promise<ArtifactManifestDocu
   let stats;
   try {
     stats = await lstat(path);
-  } catch {
-    return { schemaVersion: ARTIFACT_MANIFEST_SCHEMA_VERSION, artifacts: [] };
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") {
+      return { schemaVersion: ARTIFACT_MANIFEST_SCHEMA_VERSION, artifacts: [] };
+    }
+    fail("ARTIFACT_MANIFEST_INVALID", `${ARTIFACT_MANIFEST_FILE_NAME}: ${String((error as { code?: string }).code ?? error)}`);
   }
   if (!stats.isFile() || stats.isSymbolicLink() || stats.nlink !== 1) {
     fail("ARTIFACT_MANIFEST_INVALID", `${ARTIFACT_MANIFEST_FILE_NAME} is not a plain regular file`);
@@ -461,7 +463,10 @@ async function copyArtifactBlob(root: string, file: string): Promise<CopiedArtif
 
   let stored: Buffer;
   let deduplicated = false;
-  const existing = await lstat(target).catch(() => null);
+  const existing = await lstat(target).catch((error: unknown) => {
+    if ((error as { code?: string }).code === "ENOENT") return null;
+    fail("ARTIFACT_PATH_INVALID", `${target}: ${String((error as { code?: string }).code ?? error)}`);
+  });
   if (existing !== null) {
     // Content addressing makes a repeat put a no-op — but only once the bytes already
     // there are proved to be the bytes this digest names. Trusting the file name is the
@@ -568,8 +573,15 @@ export async function verifyArtifacts(workspaceRootInput: string): Promise<Artif
   const findings: ArtifactVerifyFinding[] = [];
   for (const entry of manifest.artifacts) {
     const target = blobPath(root, entry.sha256);
-    const stats = await lstat(target).catch(() => null);
-    if (stats === null || !stats.isFile() || stats.isSymbolicLink()) {
+    let stats;
+    try {
+      stats = await lstat(target);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      findings.push({ sha256: entry.sha256, finding: code === "ENOENT" ? "missing" : "unreadable", detail: `${entry.sha256}${BLOB_SUFFIX}: ${String(code ?? error)}` });
+      continue;
+    }
+    if (!stats.isFile() || stats.isSymbolicLink()) {
       findings.push({ sha256: entry.sha256, finding: "missing", detail: `${entry.sha256}${BLOB_SUFFIX} is not a regular file in the artifact root` });
       continue;
     }
@@ -577,7 +589,13 @@ export async function verifyArtifacts(workspaceRootInput: string): Promise<Artif
       findings.push({ sha256: entry.sha256, finding: "size-mismatch", detail: `stored ${String(stats.size)} bytes, manifest records ${String(entry.storedBytes)}` });
       continue;
     }
-    const stored = await boundFileBytes(target, ARTIFACT_BYTES_MAX);
+    let stored: Buffer;
+    try {
+      stored = await boundFileBytes(target, ARTIFACT_BYTES_MAX);
+    } catch (error) {
+      findings.push({ sha256: entry.sha256, finding: "unreadable", detail: String(error).replaceAll(target, `${entry.sha256}${BLOB_SUFFIX}`) });
+      continue;
+    }
     const readBack = inflateStoredBlob(stored);
     if ("error" in readBack) {
       findings.push({ sha256: entry.sha256, finding: "unreadable", detail: readBack.error });

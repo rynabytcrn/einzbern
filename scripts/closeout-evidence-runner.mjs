@@ -33,17 +33,38 @@ export const PLATFORM_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), ".
 // caller, which also makes the run say which evidence it judged.
 export const DEFAULT_BATCH = null;
 
+export function evidenceExitMatches(result, expected = 0) {
+  return !result.error && !result.signal && Number.isSafeInteger(result.status)
+    && (result.status === expected || expected === "nonzero" && result.status !== 0);
+}
+
+// The default is three minutes; an explicit zero retains Node's no-timeout
+// behavior. Positive values must fit a signed millisecond timer.
+export const DEFAULT_EVIDENCE_TIMEOUT_MS = 180_000;
+export function validEvidenceEntry(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+  const safeText = (value) => typeof value === "string" && !value.includes("\0");
+  const commandValid = entry.cmd !== undefined
+    ? safeText(entry.cmd) && entry.cmd.trim().length > 0
+    : safeText(entry.program) && entry.program.trim().length > 0
+      && Array.isArray(entry.args) && entry.args.every(safeText);
+  return commandValid
+    && (entry.dir === undefined || safeText(entry.dir))
+    && (entry.timeoutMs === undefined || Number.isSafeInteger(entry.timeoutMs) && entry.timeoutMs >= 0 && entry.timeoutMs <= 2_147_483_647)
+    && (entry.expectedExit === undefined || entry.expectedExit === "nonzero" || Number.isSafeInteger(entry.expectedExit));
+}
+
 /** One evidence command: run it, capture its exit code, judge against the expected sign. */
 export function runEvidence(entry, platformRoot = PLATFORM_ROOT) {
   const dir = entry.dir ? resolve(platformRoot, entry.dir) : platformRoot;
-  const args = typeof entry.cmd === "string" ? entry.cmd.split(/\s+/u) : entry.args;
+  const args = typeof entry.cmd === "string" ? entry.cmd.trim().split(/\s+/u) : entry.args;
   const program = typeof entry.cmd === "string" ? args.shift() : entry.program;
-  const result = spawnSync(program, args, { cwd: dir, encoding: "utf8", timeout: entry.timeoutMs ?? 180_000 });
+  const result = spawnSync(program, args, { cwd: dir, encoding: "utf8", timeout: entry.timeoutMs ?? DEFAULT_EVIDENCE_TIMEOUT_MS });
   const exit = result.status ?? (result.error ? String(result.error.code ?? "ERR") : "TIMEOUT");
   const expected = entry.expectedExit ?? 0;
   // exit 0 is only ever green for an expectedExit 0 command; a command declared to be
   // red (expectedExit: "nonzero") is green when it actually exits non-zero.
-  const ok = (exit === expected) || (expected === "nonzero" && exit !== 0);
+  const ok = evidenceExitMatches(result, expected);
   return { cmd: entry.cmd ?? `${entry.program} ${(entry.args ?? []).join(" ")}`, dir, expected: String(expected), exit: String(exit), ok };
 }
 
@@ -54,13 +75,21 @@ export function runBatch(batchPath) {
   } catch {
     return { ok: false, reasonCode: "BATCH_UNREADABLE", error: `cannot read ${batchPath}` };
   }
-  if (!Array.isArray(batch.incidents) || batch.incidents.length === 0) {
+  return runBatchDocument(batch, { batchPath });
+}
+
+/** Validate the complete batch before invoking even its first evidence command. */
+export function runBatchDocument(batch, { batchPath = null, run = runEvidence } = {}) {
+  if (!Array.isArray(batch?.incidents) || batch.incidents.length === 0) {
     return { ok: false, reasonCode: "BATCH_EMPTY", error: "batch must carry at least one incident" };
+  }
+  if (batch.incidents.some((incident) => !incident || typeof incident !== "object" || Array.isArray(incident) || typeof incident.id !== "string" || !incident.id.trim() || !Array.isArray(incident.evidence) || incident.evidence.length === 0 || incident.evidence.some((entry) => !validEvidenceEntry(entry)))) {
+    return { ok: false, reasonCode: "BATCH_EVIDENCE_INVALID", error: "each incident requires valid nonempty evidence, command arguments, directory and timeout" };
   }
   const rows = [];
   for (const incident of batch.incidents) {
     for (const entry of incident.evidence ?? []) {
-      const result = runEvidence(entry);
+      const result = run(entry);
       rows.push({ incident: incident.id, ...result });
     }
   }

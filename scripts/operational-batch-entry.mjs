@@ -112,7 +112,16 @@ function run(command, args, options = {}) {
 
 function gitOutput(args) {
   const result = run("git", ["--no-optional-locks", ...args], { timeout: 10_000, maxBuffer: 8 * 1024 * 1024 });
-  return result.ok ? result.stdout : "";
+  return requireGitObservation(result, args[0]);
+}
+
+export function requireGitObservation(result, operation) {
+  if (!result?.ok || result.status !== 0 || result.signal || result.error) {
+    const error = new Error(`BATCH_GIT_OBSERVATION_FAILED:${operation}:${result?.error ?? result?.stderr ?? result?.status}`);
+    error.reasonCode = "BATCH_GIT_OBSERVATION_FAILED";
+    throw error;
+  }
+  return result.stdout;
 }
 
 function resolvedCommit(value) {
@@ -219,7 +228,7 @@ function classifyProcess(row, { selfPid = process.pid, selfPgid = null } = {}) {
     scope = "orchestration";
     role = "orchestration";
     scopeBasis = absoluteRepository ? "absolute-repository" : "task-bound";
-  } else if (/^(?:R|S|S\+|Ss)$/u.test(state)) {
+  } else if (!/^[ZX][<NLsl+]*$/u.test(state)) {
     // A live relative repository command is an unknown scoped observation, not
     // an empty list; an unrelated live system process is retained separately so
     // it does not block a batch merely because its cwd is unavailable.
@@ -232,7 +241,7 @@ function classifyProcess(row, { selfPid = process.pid, selfPgid = null } = {}) {
     active = false;
     scopeBasis = "non-live-system-process";
   }
-  return { ...row, scope, role, active, inRepository, likelyGovernedWrite, scopeBasis, stateKnown: /^(?:R|S|S\+|Ss)$/u.test(state) };
+  return { ...row, scope, role, active, inRepository, likelyGovernedWrite, scopeBasis, stateKnown: /^[RSDITW][<NLsl+]*$/u.test(state) };
 }
 
 function processSnapshot() {

@@ -74,11 +74,11 @@ const lastLine = (text) => JSON.parse(text.trim().split("\n").at(-1));
 
 test("484-AC1 through the CLI: variable-set deploy.host is a variable, a row of the custom section and not a setting", async (context) => {
   const fx = await library(context);
-  const receipt = await asAtelier(() => cli(["variable-set", "--workspace", fx.workspace, "--at", at(), "--name", "deploy.host", "--type", "string",
+  const receipt = await asAtelier(() => cli(["variable-set", "--exports", "agents", "--workspace", fx.workspace, "--at", at(), "--name", "deploy.host", "--type", "string",
     "--value", "build.example.com", "--description", "Where a release deploys"]));
   assert.equal(receipt.reasonCode, "VARIABLE_WRITE_COMMITTED");
   assert.equal(receipt.schemaVersion, "einzbern.variable-write-receipt.v1");
-  assert.deepEqual(receipt.variable, { name: "deploy.host", type: "string", value: "build.example.com", description: "Where a release deploys" });
+  assert.deepEqual(receipt.variable, { name: "deploy.host", type: "string", value: "build.example.com", exports: ["agents"], description: "Where a release deploys" });
   // recordId is the CLI's variable name; ids uses STORY-467's global collection identity.
   assert.deepEqual([receipt.recordId, receipt.ids, receipt.version], ["deploy.host", ["variable:deploy.host"], 1]);
   assert.equal(typeof receipt.receiptDigest, "string");
@@ -101,7 +101,7 @@ test("484-AC1 through the CLI: variable-set deploy.host is a variable, a row of 
 
 test("484-AC2 through the CLI: a credential-shaped value or description is refused, and nothing is recorded", async (context) => {
   const fx = await library(context);
-  const set = (flags) => asAtelier(() => refusal(["variable-set", "--workspace", fx.workspace, "--at", at(), ...flags]));
+  const set = (flags) => asAtelier(() => refusal(["variable-set", "--exports", "agents", "--workspace", fx.workspace, "--at", at(), ...flags]));
   const value = await set(["--name", "api.key", "--type", "string", "--value", "sk-proj-0123456789abcdef"]);
   assert.deepEqual([value.reasonCode, value.details.name, value.details.field, value.details.matched], ["VARIABLE_SECRET_SHAPED", "api.key", "value", "sk-"]);
   const description = await set(["--name", "api.note", "--type", "string", "--value", "see the vault", "--description", "old key ghp_0123456789abcdefABCDEF"]);
@@ -133,12 +133,12 @@ test("484-R4: a model's write of a setting or a variable through the CLI is refu
   const fx = await library(context);
   const workspace = ["--workspace", fx.workspace];
   await asAtelier(() => cli(["settings-set", ...workspace, "--at", at(), "--key", "retrieval.tau", "--value", "3"]));
-  await asAtelier(() => cli(["variable-set", ...workspace, "--at", at(), "--name", "deploy.host", "--type", "string", "--value", "build.example.com"]));
+  await asAtelier(() => cli(["variable-set", "--exports", "agents", ...workspace, "--at", at(), "--name", "deploy.host", "--type", "string", "--value", "build.example.com"]));
   const before = await versionOf(fx.workspace);
   const writes = [
-    [() => ["settings-set", ...workspace, "--at", at(), "--key", "quota.weeklyWaitPercent", "--value", "98"], { key: "quota.weeklyWaitPercent" }],
+    [() => ["settings-set", ...workspace, "--at", at(), "--key", "injection.perPromptBytes", "--value", "1800"], { key: "injection.perPromptBytes" }],
     [() => ["settings-remove", ...workspace, "--at", at(), "--key", "retrieval.tau"], { key: "retrieval.tau" }],
-    [() => ["variable-set", ...workspace, "--at", at(), "--name", "deploy.port", "--type", "number", "--value", "8443"], { name: "deploy.port" }],
+    [() => ["variable-set", "--exports", "agents", ...workspace, "--at", at(), "--name", "deploy.port", "--type", "number", "--value", "8443"], { name: "deploy.port" }],
     [() => ["variable-remove", ...workspace, "--at", at(), "--name", "deploy.host"], { name: "deploy.host" }],
   ];
   // Only the exact surface name lets a write through.
@@ -200,14 +200,14 @@ test("484-R4: a key whose catalog entry is modelWritable is written for a model;
 
 test("484-R1 through the CLI: variables are set, changed, listed by name with what AGENTS.md leaves out, and removed once", async (context) => {
   const fx = await library(context);
-  const set = (flags) => asAtelier(() => cli(["variable-set", "--workspace", fx.workspace, "--at", at(), ...flags]));
+  const set = (flags) => asAtelier(() => cli(["variable-set", "--exports", "agents", "--workspace", fx.workspace, "--at", at(), ...flags]));
   await set(["--name", "deploy.host", "--type", "string", "--value", "build.example.com"]);
   await set(["--name", "build.root", "--type", "string", "--value", "/srv/build/output"]);
   await set(["--name", "deploy.enabled", "--type", "boolean", "--value", "true"]);
   const empty = await set(["--name", "deploy.sshHost", "--type", "string", "--value", ""]);
-  assert.deepEqual(empty.variable, { name: "deploy.sshHost", type: "string", value: "", description: "" }, "an empty value is a value");
+  assert.deepEqual(empty.variable, { name: "deploy.sshHost", type: "string", value: "", exports: ["agents"], description: "" }, "an empty value is a value");
   const changed = await set(["--name", "deploy.host", "--type", "string", "--value", "release.example.com", "--description", "Where a release deploys"]);
-  assert.deepEqual(changed.variable, { name: "deploy.host", type: "string", value: "release.example.com", description: "Where a release deploys" });
+  assert.deepEqual(changed.variable, { name: "deploy.host", type: "string", value: "release.example.com", exports: ["agents"], description: "Where a release deploys" });
 
   const listed = await cli(["variable-list", "--workspace", fx.workspace]);
   assert.deepEqual(listed.variables.map((variable) => [variable.name, variable.type, variable.value]), [
@@ -218,7 +218,7 @@ test("484-R1 through the CLI: variables are set, changed, listed by name with wh
   ]);
   assert.deepEqual(listed.withheld, [{ name: "build.root", reason: "absolute-path" }], "the custom section would leave out an absolute path");
 
-  const refuse = (flags) => asAtelier(() => refusal(["variable-set", "--workspace", fx.workspace, "--at", at(), ...flags]));
+  const refuse = (flags) => asAtelier(() => refusal(["variable-set", "--exports", "agents", "--workspace", fx.workspace, "--at", at(), ...flags]));
   assert.equal((await refuse(["--name", "deploy.list", "--type", "list", "--value", "x"])).reasonCode, "VARIABLE_TYPE_INVALID");
   const system = await refuse(["--name", "models.tiers", "--type", "string", "--value", "x"]);
   assert.deepEqual([system.reasonCode, system.details.reason], ["VARIABLE_NAME_INVALID", "system-setting"]);
@@ -240,12 +240,12 @@ test("484-R1 through the CLI: variables are set, changed, listed by name with wh
 test("508-R7 through the CLI: variable-set --order records the order, the receipt and variable-list carry it, and the custom section follows it", async (context) => {
   const fx = await library(context);
   assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === "variable-set").flags.find((flag) => flag.name === "order"), { name: "order", required: false, valueKind: "integer" });
-  const set = (flags) => asAtelier(() => cli(["variable-set", "--workspace", fx.workspace, "--at", at(), ...flags]));
+  const set = (flags) => asAtelier(() => cli(["variable-set", "--exports", "agents", "--workspace", fx.workspace, "--at", at(), ...flags]));
   const late = await set(["--name", "alpha", "--type", "string", "--value", "a", "--order", "20"]);
-  assert.deepEqual(late.variable, { name: "alpha", type: "string", value: "a", description: "", order: 20 });
+  assert.deepEqual(late.variable, { name: "alpha", type: "string", value: "a", exports: ["agents"], description: "", order: 20 });
   await set(["--name", "bravo", "--type", "string", "--value", "b", "--order", "10"]);
   const plain = await set(["--name", "charlie", "--type", "string", "--value", "c"]);
-  assert.deepEqual(plain.variable, { name: "charlie", type: "string", value: "c", description: "" }, "a variable set without --order has none");
+  assert.deepEqual(plain.variable, { name: "charlie", type: "string", value: "c", exports: ["agents"], description: "" }, "a variable set without --order has none");
 
   const listed = await cli(["variable-list", "--workspace", fx.workspace]);
   assert.deepEqual(listed.variables.map((variable) => [variable.name, variable.order ?? null]), [["alpha", 20], ["bravo", 10], ["charlie", null]], "listed by name, each with its order");
@@ -256,8 +256,28 @@ test("508-R7 through the CLI: variable-set --order records the order, the receip
 
   const before = await versionOf(fx.workspace);
   for (const order of ["0", "-3", "1.5", "first"]) {
-    const refused = await asAtelier(() => refusal(["variable-set", "--workspace", fx.workspace, "--at", at(), "--name", "delta", "--type", "string", "--value", "d", "--order", order]));
+    const refused = await asAtelier(() => refusal(["variable-set", "--exports", "agents", "--workspace", fx.workspace, "--at", at(), "--name", "delta", "--type", "string", "--value", "d", "--order", order]));
     assert.deepEqual([refused.reasonCode, refused.message], ["CLI_ARGUMENT_MALFORMED", "order"], order);
   }
   assert.equal(await versionOf(fx.workspace), before, "a malformed order appends nothing");
+});
+
+
+test("configuration contract: CLI variable exports default closed and replace explicitly drops old export targets", async (context) => {
+  const fx = await library(context);
+  const set = (extra = []) => asAtelier(() => cli(["variable-set", "--workspace", fx.workspace, "--at", at(), "--name", "deploy.destination", "--type", "string", "--value", "example.com", ...extra]));
+  const initial = await set();
+  assert.deepEqual(initial.variable.exports, []);
+  assert.deepEqual((await cli(["variable-list", "--workspace", fx.workspace])).withheld, [{ name: "deploy.destination", reason: "not-exported" }]);
+  const shared = await set(["--exports", "agents,handoff"]);
+  assert.deepEqual(shared.variable.exports, ["agents", "handoff"]);
+  assert.deepEqual((await cli(["variable-list", "--workspace", fx.workspace])).withheld, []);
+  const replaced = await set();
+  assert.deepEqual(replaced.variable.exports, []);
+  const invalid = await asAtelier(() => refusal(["variable-set", "--workspace", fx.workspace, "--at", at(), "--name", "deploy.invalid", "--type", "string", "--value", "x", "--exports", "public"]));
+  assert.equal(invalid.reasonCode, "VARIABLE_RECORD_INVALID");
+  const before = await versionOf(fx.workspace);
+  const retiredAuthority = await asAtelier(() => refusal(["settings-set", "--workspace", fx.workspace, "--at", at(), "--key", "quota.weeklyWaitPercent", "--value", "98"]));
+  assert.equal(retiredAuthority.reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
+  assert.equal(await versionOf(fx.workspace), before);
 });

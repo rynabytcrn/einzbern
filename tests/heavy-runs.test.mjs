@@ -541,3 +541,13 @@ test("538 GWT5 (SUB-502): with EINZBERN_HEAVY_LOCK_DIR and EINZBERN_HEAVY_SLOT s
   around.release();
   await around.closed;
 });
+
+
+test("heavy-run device resolution refuses cwd-relative EINZBERN_HOME before reading settings", () => {
+  for (const value of ["relative/device", ".", "../device", "~/.einzbern"]) {
+    const env = { EINZBERN_HOME: value };
+    assert.throws(() => heavy.deviceDirectory(env), { reasonCode: "DEVICE_HOME_INVALID" });
+    assert.throws(() => heavy.heavyLockDirectory(env), { reasonCode: "DEVICE_HOME_INVALID" });
+    assert.throws(() => heavy.maxConcurrentHeavyRuns(env), { reasonCode: "DEVICE_HOME_INVALID" });
+  }
+});

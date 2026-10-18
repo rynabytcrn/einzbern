@@ -130,6 +130,15 @@ is a vector of each device's stream sequence, and its head is one digest over ev
 head. Both the order and the renaming are deterministic, so every device merges the same
 streams to the same state.
 
+New workspace writes are checked against the writing stream's existing redirects before
+an event is appended. A project or work record's original id, or a work record's parent or
+project id, that this stream would redirect is refused with `WORKSPACE_INPUT_INVALID`
+instead of silently changing the requested target. Historical events and their redirect
+semantics remain unchanged. An explicit alias id that is not itself redirected, or an
+original id written from a stream without that redirect, remains writable subject to the
+usual validations. The check uses the replay's actual redirects, including those installed
+by a colliding create that was later rejected and therefore has no published alias entry.
+
 ## Importing an old workspace
 
 An import validates the whole old chain from genesis, copies its segments byte for byte into the

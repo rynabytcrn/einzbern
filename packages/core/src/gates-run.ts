@@ -45,7 +45,8 @@ import { cachePath } from "./device-home.js";
 import { GatesPlanError, changedFiles, gitHead, resolveGateRoot, storyCommitPaths } from "./gates-plan.js";
 import type { GatesPlan } from "./gates-plan.js";
 
-export const GATE_RUN_SCHEMA_VERSION = "einzbern.gate-run.v1" as const;
+import { GATE_RUN_SCHEMA_VERSION, compareGateRuns, isGateRunRecord } from "./gate-run-record.js";
+export { GATE_RUN_SCHEMA_VERSION } from "./gate-run-record.js";
 export const GATE_TREE_SCHEMA_VERSION = "einzbern.gate-tree.v3" as const;
 export const GATE_RUNS_DIRECTORY = "gate-runs" as const;
 export const GATE_RUN_DEFAULT_TIMEOUT_MS = 1_800_000 as const;
@@ -143,6 +144,10 @@ export interface GateRunResult {
   readonly outputFile: string;
   readonly outputBytes: number;
   readonly truncated: boolean;
+  // Absent only on historical records written before per-gate timing was recorded.
+  readonly startedAt?: string;
+  readonly finishedAt?: string;
+  readonly durationMs?: number;
 }
 
 export interface GateRun {
@@ -153,6 +158,7 @@ export interface GateRun {
   readonly at: string;
   readonly release: boolean;
   readonly base: string | null;
+  readonly baseByRoot?: Readonly<Record<string, string>>;
   // The Stories the run was planned to cover; an unbound run cannot satisfy a Story's done check.
   readonly workIds: readonly string[];
   readonly treeDigest: string;
@@ -369,6 +375,7 @@ export async function runGates(plan: GatesPlan, options: {
     declarationsDigest: plan.declarationsDigest,
     release: plan.release,
     base: plan.base,
+    ...(plan.baseByRoot === undefined ? {} : { baseByRoot: plan.baseByRoot }),
     workIds: plan.workIds,
     gates: plan.gates.map((gate) => gate.name),
   }).slice(0, 12)}`;
@@ -380,7 +387,11 @@ export async function runGates(plan: GatesPlan, options: {
   for (const [index, gate] of plan.gates.entries()) {
     const cwd = await resolveGateRoot(plan.projectRoot, gate.root);
     const prior: GateRunPrior = { runId, gates: ended };
+    const startedAt = new Date().toISOString();
+    const started = performance.now();
     const outcome = await runGateProcess(gate.command, cwd, timeoutMs, outputBytes, { ...environment, [GATE_RUN_PRIOR_VARIABLE]: canonicalJson(prior) });
+    const durationMs = Math.max(0, Math.round(performance.now() - started));
+    const finishedAt = new Date().toISOString();
     const outputFile = `${runId}/${index + 1}-${gate.name.replace(/[^A-Za-z0-9._-]/gu, "_")}.log`;
     const outputPath = join(directory, ...outputFile.split("/"));
     await writeFileAtomic(outputPath, outcome.output);
@@ -398,6 +409,7 @@ export async function runGates(plan: GatesPlan, options: {
       outputFile,
       outputBytes: outcome.output.length,
       truncated: outcome.truncated,
+      startedAt, finishedAt, durationMs,
     });
     ended.push({ name: gate.name, root: gate.root, directory: cwd, command: [...gate.command], ok, truncated: outcome.truncated, outputFile: outputPath });
   }
@@ -409,6 +421,7 @@ export async function runGates(plan: GatesPlan, options: {
     at: options.at,
     release: plan.release,
     base: plan.base,
+    ...(plan.baseByRoot === undefined ? {} : { baseByRoot: plan.baseByRoot }),
     workIds: plan.workIds,
     treeDigest: tree.treeDigest,
     declarationsDigest: plan.declarationsDigest,
@@ -419,63 +432,6 @@ export async function runGates(plan: GatesPlan, options: {
   const recordPath = join(directory, `${runId}.json`);
   await writeFileAtomic(recordPath, canonicalJson(run));
   return { run, recordPath };
-}
-
-// A path a run recorded under a root: relative, with forward slashes, and no empty, . or .. segment.
-function isRootPath(value: unknown): value is string {
-  return typeof value === "string" && !value.includes("\u0000") && value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
-}
-
-// TCRN-CROSS-STORY-534: a root's state as einzbern.gate-tree.v3 records it. A root limited to the
-// Story's files names them, each with its content digest, and no HEAD; any other root names its HEAD
-// and the digest of its changes. A root of an older record that names its paths without their
-// digests cannot be read again, so the record is not taken as a run.
-function isGateRootTree(value: unknown): value is GateRootTree {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const tree = value as Readonly<Record<string, unknown>>;
-  if (typeof tree.root !== "string") return false;
-  if (tree.paths === undefined && tree.files === undefined) {
-    return typeof tree.git === "boolean" && (tree.head === null || typeof tree.head === "string") && (tree.changes === null || typeof tree.changes === "string");
-  }
-  const paths = tree.paths;
-  const files = tree.files;
-  return tree.git === true && tree.head === undefined && tree.changes === undefined &&
-    Array.isArray(paths) && paths.every(isRootPath) && Array.isArray(files) && files.length === paths.length &&
-    files.every((file: unknown, index: number) => {
-      if (file === null || typeof file !== "object" || Array.isArray(file)) return false;
-      const entry = file as Readonly<Record<string, unknown>>;
-      return entry.path === paths[index] && typeof entry.digest === "string";
-    });
-}
-
-function isGateRun(value: unknown): value is GateRun {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Readonly<Record<string, unknown>>;
-  const workIds = record.workIds;
-  const gates = record.gates;
-  const trees = record.trees;
-  return record.schemaVersion === GATE_RUN_SCHEMA_VERSION && typeof record.runId === "string" && typeof record.libraryId === "string" &&
-    Array.isArray(trees) && trees.every(isGateRootTree) &&
-    (record.projectId === undefined || (typeof record.projectId === "string" && /^project:[a-f0-9]{24}$/u.test(record.projectId))) &&
-    typeof record.at === "string" && typeof record.treeDigest === "string" && typeof record.declarationsDigest === "string" &&
-    Array.isArray(workIds) && workIds.every((workId: unknown) => typeof workId === "string" && /^work:[0-9a-f]{24}$/u.test(workId)) &&
-    Array.isArray(gates) && gates.every((gate: unknown) => {
-      if (gate === null || typeof gate !== "object") return false;
-      const result = gate as Readonly<Record<string, unknown>>;
-      const matched = result.matched;
-      const matchedWorkIds = result.matchedWorkIds;
-      return typeof result.name === "string" && typeof result.ok === "boolean" && typeof result.required === "boolean" &&
-        Array.isArray(matched) && matched.every((path: unknown) => typeof path === "string") &&
-        Array.isArray(matchedWorkIds) && matchedWorkIds.every((workId: unknown) => typeof workId === "string" && /^work:[0-9a-f]{24}$/u.test(workId));
-    });
-}
-
-function instant(value: string): bigint | null {
-  try {
-    return parseStrictInstant(value);
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -506,7 +462,7 @@ export async function latestGateRun(input: {
     if ((error as { code?: string }).code === "ENOENT") return null;
     throw error;
   }
-  const candidates: { readonly run: GateRun; readonly at: bigint }[] = [];
+  const candidates: GateRun[] = [];
   for (const name of names.filter((entry) => entry.endsWith(".json")).sort(compareCanonicalText)) {
     let run: unknown;
     try {
@@ -514,7 +470,7 @@ export async function latestGateRun(input: {
     } catch {
       continue;
     }
-    if (!isGateRun(run) || run.libraryId !== input.libraryId || run.projectId !== input.projectId) continue;
+    if (!isGateRunRecord(run) || run.libraryId !== input.libraryId || run.projectId !== input.projectId) continue;
     if (input.treeDigest !== undefined && run.treeDigest !== input.treeDigest) continue;
     if (input.declarationsDigest !== undefined && run.declarationsDigest !== input.declarationsDigest) continue;
     if (input.workIds !== undefined) {
@@ -522,13 +478,11 @@ export async function latestGateRun(input: {
       if (run.workIds.length !== expected.length || run.workIds.some((workId, index) => workId !== expected[index])) continue;
     }
     if (input.includesWorkIds !== undefined && !input.includesWorkIds.every((workId) => run.workIds.includes(workId))) continue;
-    const at = instant(run.at);
-    if (at === null) continue;
-    candidates.push({ run, at });
+    candidates.push(run);
   }
-  candidates.sort((left, right) => (left.at === right.at ? compareCanonicalText(right.run.runId, left.run.runId) : left.at > right.at ? -1 : 1));
+  candidates.sort(compareGateRuns);
   for (const candidate of candidates) {
-    if (input.accept === undefined || await input.accept(candidate.run)) return candidate.run;
+    if (input.accept === undefined || await input.accept(candidate)) return candidate;
   }
   return null;
 }

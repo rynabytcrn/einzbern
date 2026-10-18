@@ -167,6 +167,10 @@ export function validateStreamManifest(value: unknown, deviceId: string): Stream
       Object.keys(entry).sort().join("\u0000") !== SEGMENT_FIELDS.join("\u0000")) invalid(`segment ${index + 1} fields`);
     const segment = entry as Readonly<Record<string, unknown>>;
     if (typeof segment.name !== "string" || !SEGMENT_NAME_PATTERN.test(segment.name)) invalid(`segment ${index + 1} name`);
+    // Rollover allocates by array position. A different ordinal could make the next
+    // fresh segment overwrite a file this manifest already commits. Imported JSON
+    // segments use the same ordinal sequence, retaining only their extension.
+    if (segment.name !== segmentName(index + 1, String(segment.name).endsWith(".ndjson") ? "ndjson" : "json")) invalid(`segment ${index + 1} ordinal`);
     if (segment.firstSequence !== next || !Number.isSafeInteger(segment.lastSequence) || Number(segment.lastSequence) < next) invalid(`segment ${index + 1} sequence range`);
     if (!Number.isSafeInteger(segment.bytes) || Number(segment.bytes) < 1 || Number(segment.bytes) > AKASHA_SEGMENT_BYTES_MAXIMUM) invalid(`segment ${index + 1} bytes`);
     if (typeof segment.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(segment.sha256)) invalid(`segment ${index + 1} sha256`);
@@ -588,6 +592,8 @@ export async function appendStreamEvents(
   options: AppendOptions = {},
 ): Promise<StreamManifest> {
   if (events.length === 0) fail("AKASHA_INPUT_INVALID", "an append carries at least one event");
+  // Direct callers must receive the same pre-write admission as manifest readers.
+  manifest = validateStreamManifest(manifest, manifest.deviceId);
   const segmentBytes = options.segmentBytes ?? AKASHA_SEGMENT_BYTES_DEFAULT;
   const directory = streamDirectory(library.root, manifest.deviceId);
   await mkdir(directory, { recursive: true });

@@ -7,7 +7,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { heavyLockDirectoryUnder, usePrivateHeavySlots } from "./helpers/heavy-slots.mjs";
-import { initializeLibrary, declareChainIdentity, createProject, createWork, annotateWork, registerLibrary, setConfigRecord, setWorkspaceSetting, readSettingsCatalog, enableRule } from "../dist/build/packages/core/src/index.js";
+import { appendEvents, initializeLibrary, declareChainIdentity, createProject, createWork, annotateWork, registerLibrary, setConfigRecord, setWorkspaceSetting, readSettingsCatalog, enableRule } from "../dist/build/packages/core/src/index.js";
+import { applyEngineModelPolicySet } from "../dist/build/packages/core/src/engine-model-policy.js";
 const at = "2026-10-08T09:00:00Z";
 const cli = async args => { let output = ""; await runCli(args, { write: text => { output += text; } }); return JSON.parse(output); };
 
@@ -31,17 +32,35 @@ test("existing gates consumers execute independent roots from a Cross Project wo
   const c = await make("coordination", "coordination");
   const a = await make("alpha", "project", c.reference.libraryId);
   const b = await make("beta", "project", c.reference.libraryId);
+  const savedPolicy = await applyEngineModelPolicySet({ home: process.env.EINZBERN_HOME, host: "codex", occurredAt: at, actor: "agent:test",
+    authorization: { decidedIn: `minutes:${"a".repeat(24)}#D1`, libraryId: c.reference.libraryId, target: "models.engine-policy" },
+    policy: { categories: [{ id: "main", name: "Main", description: "", order: 1 }],
+      tiers: [{ category: "main", order: 1, runner: "codex", model: "device-model", effort: "medium", note: "" }],
+      escalation: { enabled: false, threshold: 1, ceiling: "main" } },
+  });
   for (const [target, language] of [[a, "en"], [b, "fr"]]) {
     await setWorkspaceSetting(target.path, { key: "artifact.language", value: language, configurationProjectId: target.reference.projectId, occurredAt: at });
     const catalog = readSettingsCatalog(target.reference.libraryId, []);
     const tiers = JSON.parse(catalog.settings.find(s => s.key === "models.tiers").currentValue).map(tier => ({ ...tier, model: `${language}-model`, effort: "medium" }));
-    await setWorkspaceSetting(target.path, { key: "models.tiers", value: JSON.stringify(tiers), configurationProjectId: target.reference.projectId, occurredAt: at });
+    // Historical per-target declarations remain replayable but are excluded from dispatch.
+    await appendEvents(target.path, [state => ({
+      payload: { operation: "settings.updated", record: { schemaVersion: "tcrn.workspace-setting.v1", key: "models.tiers", value: JSON.stringify(tiers), projectId: target.reference.projectId, layerKind: "workspace_configuration", revision: 1, updatedAt: at, tombstone: false } },
+      projects: state.projects, work: state.work, settings: state.settings,
+    })], { occurredAt: at });
     for (const [key, value] of Object.entries({ "design.authority": `https://${language}.example.test`, "design.repository": `https://example.test/${language}`, "design.pullRequestTarget": "main", "design.productionDocs": `https://${language}.example.test/docs`, "design.buildService": "test", "design.buildProject": language, "design.consumedVersion": "1.0.0" })) await setWorkspaceSetting(target.path, { key, value, configurationProjectId: target.reference.projectId, occurredAt: at });
     await setConfigRecord(target.path, { collection: "chain", key: "repositories", projectId: target.reference.projectId, value: { bindings: [{ id: language, name: language, repository: `https://example.test/${language}`, buildService: "test", buildProject: language }] }, occurredAt: at });
     await setConfigRecord(target.path, { collection: "gate", key: language, projectId: target.reference.projectId, value: { root: ".", command: [process.execPath, "-e", "const c=JSON.parse(process.env.EINZBERN_PROJECT_CONTEXT);require('node:fs').writeFileSync('result.txt',c.settings.find(s=>s.key==='artifact.language').value);require('node:fs').writeFileSync('handoff.json',JSON.stringify(c))"], covers: ["**"], enabled: true, required: true, releaseOnly: false }, occurredAt: at });
   }
   const state = await createWork(c.path, { projectId: c.reference.projectId, externalKey: "BOTH", kind: "Initiative", parentId: null, involvedProjects: { state: "selected", targets: [a.reference, b.reference] }, occurredAt: at });
   const id = state.work[0].id;
+  const dispatch = await cli(["work-project-context", "--workspace", c.path, "--id", id, "--execution-request", JSON.stringify({ host: "codex", category: "main", rejections: 4, requestedAgents: 1, availableCombinations: [{ runner: "codex", model: "device-model", effort: "medium" }] })]);
+  assert.equal(dispatch.dispatchAdmitted, true);
+  for (const target of dispatch.contexts) {
+    assert.equal(target.handoff.executionAdmission.status, "admitted");
+    assert.equal(target.handoff.executionAdmission.selection.record.model, "device-model");
+    assert.equal(target.handoff.executionAdmission.policy.digest, savedPolicy.hosts.codex.digest);
+  }
+  await assert.rejects(cli(["work-project-context", "--workspace", c.path, "--id", id, "--execution-request", "{"]), { reasonCode: "CLI_ARGUMENT_MALFORMED" });
   const args = ["--workspace", c.path, "--work-id", id, "--release", "true"];
   const plan = await cli(["gates-plan", ...args]);
   assert.equal(plan.targets.length, 2);
@@ -56,7 +75,11 @@ test("existing gates consumers execute independent roots from a Cross Project wo
     assert.equal(result.handoff.reference.libraryId, result.reference.libraryId);
     assert.equal(result.handoff.writeAuthority, "not-granted");
     const language = result.handoff.settings.find(s => s.key === "artifact.language").value;
-    assert.ok(JSON.parse(result.handoff.settings.find(s => s.key === "models.tiers").value).every(tier => tier.model === `${language}-model`));
+    assert.equal(result.handoff.settings.some(setting => /^(models|quota)\./u.test(setting.key)), false);
+    assert.equal(result.handoff.enginePolicy.source.kind, "device-engine");
+    assert.equal(result.handoff.enginePolicy.storeRevision, savedPolicy.revision);
+    assert.equal(result.handoff.enginePolicy.hosts.codex.digest, savedPolicy.hosts.codex.digest);
+    assert.equal(result.handoff.enginePolicy.hosts.codex.tiers[0].model, "device-model");
     assert.equal(result.handoff.readiness.development.ready, true);
     assert.equal(result.handoff.design.bindings.find(binding => binding.key === "design.buildProject").value, language);
     assert.ok(result.recordPath.includes(result.reference.libraryId.replace(":", "-")));
@@ -113,7 +136,7 @@ test("U10: output, rules and AGENTS consumers follow each target's own configura
     const projectId = target.reference.projectId;
     await setWorkspaceSetting(target.path, { key: "artifact.language", value: language, configurationProjectId: projectId, occurredAt: at });
     await setWorkspaceSetting(target.path, { key: "knowledge.articlesPath", value: `${name}-articles`, configurationProjectId: projectId, occurredAt: at });
-    await setConfigRecord(target.path, { collection: "variable", key: "target.note", projectId, value: { type: "string", value: name, description: "The target" }, occurredAt: at });
+    await setConfigRecord(target.path, { collection: "variable", key: "target.note", projectId, value: { type: "string", value: name, description: "The target", exports: ["agents", "handoff"] }, occurredAt: at });
     await setConfigRecord(target.path, { collection: "gate", key: name, projectId, value: { root: ".", command: [process.execPath, "-e", "require('node:fs').writeFileSync('handoff.json',process.env.EINZBERN_PROJECT_CONTEXT)"], covers: ["**"], enabled: true, required: true, releaseOnly: false }, occurredAt: at });
     targets[name] = target;
   }

@@ -7,7 +7,7 @@
 
 import { createHash } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, stat, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -74,6 +74,8 @@ const CURRENT_PORTAL_PROOF_FILES = [
   "portal/scripts/proof.mjs",
   "portal/tests/portal.test.mjs",
   "portal/tests/ui-presence.test.mjs",
+  "portal/tests/disposable-portal-fetch.test.mjs",
+  "portal/tests/helpers/disposable-portal-fetch.mjs",
   "packages/core/src/doctor.ts",
   "tests/doctor.test.mjs",
   "scripts/verify-portal.mjs",
@@ -357,11 +359,21 @@ async function runMode(mode) {
   throw new Error(`EVIDENCE_VERBATIM_MODE_UNKNOWN:${mode}`);
 }
 
-function parseNodeCommand(command) {
+async function parseNodeCommand(command, { checkoutRoot = repositoryRoot, commit = "HEAD" } = {}) {
   const tokens = command.trim().split(/\s+/u);
   if (tokens[0] !== "node" || tokens.length < 2 || tokens[1].startsWith("-")) {
     throw new Error(`EVIDENCE_VERBATIM_COMMAND_FORBIDDEN:${command}`);
   }
+  const root = await realpath(checkoutRoot);
+  const declaredPath = toPosixPath(relative(root, resolve(root, tokens[1])));
+  const script = await realpath(resolve(root, tokens[1]));
+  const path = toPosixPath(relative(root, script));
+  if (!path || path === ".." || path.startsWith("../") || path.startsWith("/") || !/\.(?:mjs|cjs|js)$/u.test(path)) throw new Error(`EVIDENCE_VERBATIM_COMMAND_FORBIDDEN:${command}`);
+  // Historical archives have no index: ownership is checked against the pinned
+  // source commit in the original object database, not the current checkout.
+  const tracked = String(runGit(["ls-tree", "-r", "--name-only", "-z", commit, "--", path], { encoding: "utf8" })).split("\0");
+  const declaredTracked = String(runGit(["ls-tree", "-r", "--name-only", "-z", commit, "--", declaredPath], { encoding: "utf8" })).split("\0");
+  if (!tracked.includes(path) || !declaredTracked.includes(declaredPath) || !(await stat(script)).isFile()) throw new Error(`EVIDENCE_VERBATIM_COMMAND_FORBIDDEN:${command}`);
   return tokens.slice(1);
 }
 
@@ -497,7 +509,7 @@ async function replayHistoricalBlock(block, evidence) {
     };
     delete env.GIT_WORK_TREE;
     stage = "historical-command-parse";
-    const args = parseNodeCommand(block.command);
+    const args = await parseNodeCommand(block.command, { checkoutRoot: historicalRoot, commit: evidence.commit });
     stage = "historical-command";
     const captured = await runHistoricalCommand(args, {
       cwd: historicalRoot,
@@ -543,7 +555,7 @@ async function verifyBlocks() {
     }
     let args;
     try {
-      args = parseNodeCommand(block.command);
+      args = await parseNodeCommand(block.command);
     } catch (error) {
       results.push({ ...block, ok: false, reasonCode: "EVIDENCE_VERBATIM_COMMAND_FORBIDDEN", error: String(error.message ?? error) });
       continue;

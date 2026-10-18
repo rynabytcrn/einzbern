@@ -361,6 +361,7 @@ function normalizeLegacyRecord(value: unknown): PersonaRecord {
   const record = value as Record<string, unknown>;
   const expected = ["description", "id", "name", "prompt", "revision", "role", "schemaVersion", "tombstone", "updatedAt"];
   if (canonicalJson(Object.keys(record).sort(compareCanonicalText)) !== canonicalJson(expected.sort(compareCanonicalText))) fail("PERSONA_RECORD_INVALID", "legacy persona record fields are not exact");
+  if (typeof record.updatedAt !== "string") fail("PERSONA_RECORD_INVALID", "persona updatedAt must be a string");
   return applyLegacyPersonaSet({ personas: [] }, {
     ...record,
     schemaVersion: LEGACY_PERSONA_RECORD_VERSION,
@@ -370,7 +371,7 @@ function normalizeLegacyRecord(value: unknown): PersonaRecord {
     role: record.role,
     prompt: record.prompt,
     revision: record.revision,
-    updatedAt: String(record.updatedAt),
+    updatedAt: record.updatedAt,
     tombstone: record.tombstone,
   }).record;
 }
@@ -558,7 +559,8 @@ export function validatePersonaPresetOverride(value: unknown): PersonaPresetOver
     if (field === "role") validatePersonaRole(fields[field]);
     else validatePersonaContent(fields[field], field as PersonaContentField);
   }
-  assertUpdatedAt(String(record.updatedAt));
+  if (typeof record.updatedAt !== "string") fail("PERSONA_RECORD_INVALID", "persona updatedAt must be a string");
+  assertUpdatedAt(record.updatedAt);
   return Object.freeze({ ...record, name, fields: Object.freeze({ ...fields }) }) as unknown as PersonaPresetOverrideRecord;
 }
 

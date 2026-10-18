@@ -16,7 +16,8 @@ import { scopedWorkspaceState } from "./project-scope.js";
 // section as it now stands in AGENTS.md, against the version this engine ships (rules-catalog.ts):
 //
 //   disabled            no record, or a record that says it is off;
-//   removed-from-file   enabled, and AGENTS.md holds no markers of its section;
+//   output-unconfigured enabled, but no output root was available to inspect;
+//   removed-from-file   enabled, and inspected AGENTS.md holds no markers of its section;
 //   pending             enabled, and a write of its section was refused because the user had
 //                       changed it: the section waits for rule-resolve;
 //   user-modified       enabled, and the section is not the text the engine wrote: the user changed
@@ -89,8 +90,8 @@ function fail(reasonCode: RulesReasonCode, message: string, details: Readonly<Re
   throw new RuleError(reasonCode, message, details);
 }
 
-/** The six states a rule can be in, as the header of this module describes them. */
-export const RULE_STATES = Object.freeze(["disabled", "enabled", "user-modified", "removed-from-file", "update-available", "pending"] as const);
+/** The states a rule can be in, as the header of this module describes them. */
+export const RULE_STATES = Object.freeze(["disabled", "enabled", "user-modified", "removed-from-file", "update-available", "pending", "output-unconfigured"] as const);
 export type RuleState = typeof RULE_STATES[number];
 
 /** What a rule's record holds; the rule's id is the record's key. A record without an order has no order field. */
@@ -193,9 +194,11 @@ export function ruleState(input: {
   readonly shippedVersion: number | null;
   readonly section: ParsedSection | null;
   readonly sectionRecord: ManagedSectionRecord | null;
+  readonly outputConfigured?: boolean;
 }): RuleState {
   const { record, shippedVersion, section, sectionRecord } = input;
   if (record === null || !record.enabled) return "disabled";
+  if (input.outputConfigured === false) return "output-unconfigured";
   if (section === null) return "removed-from-file";
   if (sectionRecord?.state === "pending") return "pending";
   const changed = section.digest !== section.bodyDigest ||
@@ -205,7 +208,7 @@ export function ruleState(input: {
   return "enabled";
 }
 
-function statusOf(state: Pick<WorkspaceState, "configRecords">, inFile: ReadonlyMap<string, ParsedSection>, catalog: readonly BuiltInRule[], id: string): RuleStatus {
+function statusOf(state: Pick<WorkspaceState, "configRecords">, inFile: ReadonlyMap<string, ParsedSection>, catalog: readonly BuiltInRule[], id: string, outputConfigured = true): RuleStatus {
   const section = ruleSectionId(id);
   const record = recordedRule(state, id);
   const inFileSection = inFile.get(section) ?? null;
@@ -218,15 +221,15 @@ function statusOf(state: Pick<WorkspaceState, "configRecords">, inFile: Readonly
     fileVersion: inFileSection?.rev ?? null,
     section,
     // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): a coordination library's rule too.
-    state: ruleState({ record, shippedVersion, section: inFileSection, sectionRecord }),
+    state: ruleState({ record, shippedVersion, section: inFileSection, sectionRecord, outputConfigured }),
     ...(record?.order === undefined ? {} : { order: record.order }),
   };
 }
 
-function ruleStatuses(state: Pick<WorkspaceState, "configRecords">, inFile: ReadonlyMap<string, ParsedSection>, catalog: readonly BuiltInRule[]): readonly RuleStatus[] {
+function ruleStatuses(state: Pick<WorkspaceState, "configRecords">, inFile: ReadonlyMap<string, ParsedSection>, catalog: readonly BuiltInRule[], outputConfigured = true): readonly RuleStatus[] {
   const shipped: readonly string[] = catalog.map((rule) => rule.id);
   const recordedOnly = configRecords(state, "rule").map((record) => record.key).filter((id) => !shipped.includes(id)).sort(compareCanonicalText);
-  return [...shipped, ...recordedOnly].map((id) => statusOf(state, inFile, catalog, id));
+  return [...shipped, ...recordedOnly].map((id) => statusOf(state, inFile, catalog, id, outputConfigured));
 }
 
 export interface ListRulesInput {
@@ -243,7 +246,7 @@ export interface ListRulesInput {
  */
 export async function listRules(input: ListRulesInput): Promise<readonly RuleStatus[]> {
   const state = await effectiveProjectState(await materializeWorkspace(input.libraryRoot), input.configurationProjectId);
-  return ruleStatuses(state, input.projectRoot === undefined ? new Map() : await sectionsOfAgentsFile(input.projectRoot), input.catalog ?? BUILT_IN_RULES);
+  return ruleStatuses(state, input.projectRoot === undefined ? new Map() : await sectionsOfAgentsFile(input.projectRoot), input.catalog ?? BUILT_IN_RULES, input.projectRoot !== undefined);
 }
 
 export interface RuleChangeInput extends WorkspaceMutationOptions {
@@ -307,10 +310,10 @@ function planRecordOnlyRule(state: Pick<WorkspaceState, "configRecords">, input:
 }
 
 // A rule change with nowhere to write, recorded under the lock. Its state is read as any rule's is,
-// against no file (TCRN-CROSS-STORY-540: an enabled rule then reads removed-from-file).
+// against no file: an enabled rule then reads output-unconfigured, not a file deletion.
 async function commitRecordOnlyRule(root: string, append: () => Promise<WorkspaceState>, input: RuleChangeInput, enabled: boolean, planned: RecordOnlyRulePlan): Promise<RuleChange> {
   const committed = await commitPlanned(root, append, planned.deltas);
-  return { id: input.id, section: ruleSectionId(input.id), file: AGENTS_FILE, action: enabled ? "enable" : "disable", result: "unchanged", written: false, backupPath: null, recorded: planned.recorded, outputBindingStatus: "unconfigured", status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), new Map(), input.catalog ?? BUILT_IN_RULES, input.id), state: committed };
+  return { id: input.id, section: ruleSectionId(input.id), file: AGENTS_FILE, action: enabled ? "enable" : "disable", result: "unchanged", written: false, backupPath: null, recorded: planned.recorded, outputBindingStatus: "unconfigured", status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), new Map(), input.catalog ?? BUILT_IN_RULES, input.id, false), state: committed };
 }
 
 /**
@@ -347,8 +350,9 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
   return appendPlannedWrite<RecordOnlyRulePlan | EnableRulePlan, RuleChange>(input.libraryRoot, input, {
     plan: async (root, nativeState) => {
       // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): a coordination library's rule as a project's.
-      const binding = await managedOutputBinding(root, input.projectRoot, nativeState);
       const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+      const binding = state.settings.find((entry) => entry.key === "agents.generation")?.value === "none"
+        ? "unconfigured" : await managedOutputBinding(root, input.projectRoot, nativeState);
       const recorded = recordedRule(state, rule.id);
       if (recorded !== null && recorded.version > rule.version) {
         fail("RULE_VERSION_NEWER", `the library records rule ${rule.id} at version ${recorded.version}; this engine ships version ${rule.version}`, {
@@ -447,8 +451,9 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
   return appendPlannedWrite<RecordOnlyRulePlan | DisableRulePlan, RuleChange>(input.libraryRoot, input, {
     plan: async (root, nativeState) => {
       // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): a coordination library's rule as a project's.
-      const binding = await managedOutputBinding(root, input.projectRoot, nativeState);
       const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+      const binding = state.settings.find((entry) => entry.key === "agents.generation")?.value === "none"
+        ? "unconfigured" : await managedOutputBinding(root, input.projectRoot, nativeState);
       const recorded = isRuleId(input.id) ? recordedRule(state, input.id) : null;
       const shipped = catalog.find((entry) => entry.id === input.id);
       if (recorded === null && shipped === undefined) {

@@ -110,12 +110,13 @@ export function summarizeGateResult(key, command, execution) {
   const stdout = String(execution.stdout ?? "");
   const stderr = String(execution.stderr ?? "");
   const exitCode = execution.status ?? 1;
+  const dirtyCheckout = key === "checkout-clean" && stdout.trim() !== "";
   return {
     key,
     command: commandText(command),
-    ok: exitCode === 0,
+    ok: exitCode === 0 && !dirtyCheckout,
     exitCode,
-    reasonCode: extractReasonCode(stdout, stderr, exitCode),
+    reasonCode: exitCode === 0 && dirtyCheckout ? "PREFLIGHT_CHECKOUT_DIRTY" : extractReasonCode(stdout, stderr, exitCode),
     stdoutTail: stdout.slice(-2000),
     stderrTail: stderr.slice(-2000),
   };

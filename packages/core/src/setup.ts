@@ -178,7 +178,8 @@ export interface SetupAnswers {
   readonly cloud?: boolean;
   // A language tag the library writes in (artifact.language).
   readonly language?: string;
-  // Whether AGENTS.md gets the navigation section (agents.navigation written or declined).
+  // Device host-navigation preference (legacy written/declined labels); shared AGENTS
+  // content is independently owned by agents.sharedNavigation on its project/library target.
   readonly navigation?: boolean;
 }
 

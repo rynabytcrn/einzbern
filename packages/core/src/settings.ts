@@ -1,7 +1,9 @@
+import { pathIsInside } from "./path-containment.js";
+import { isPortablePathBinding, resolvePortablePath } from "./portable-path.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 import { PROTOCOL_LIMITS, assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { ARTIFACT_LANGUAGE_TAGS, parsePromptLanguages } from "./knowledge-language.js";
@@ -128,6 +130,8 @@ export interface SettingValueReference {
 }
 
 export type SettingKey =
+  | "agents.generation"
+  | "agents.sharedNavigation"
   | "artifact.language"
   | "design.authority"
   | "design.buildProject"
@@ -251,11 +255,6 @@ function fail(reasonCode: SettingsReasonCode, message: string, details?: Readonl
   throw new SettingsError(reasonCode, message, details);
 }
 
-function isInside(parent: string, candidate: string): boolean {
-  const relation = relative(parent, candidate);
-  return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep));
-}
-
 function assertCanonicalString(value: unknown, label: string, _maximumLength: number): asserts value is string {
   if (typeof value !== "string" || value.length === 0 || value.includes("\u0000")) {
     fail("SETTINGS_VALUE_INVALID", `${label} must be a non-empty bounded string`);
@@ -308,7 +307,7 @@ function assertAbsoluteArtifactsSettingPath(value: string, label: string, worksp
   if (workspaceRoot === undefined) return;
   const workspace = resolve(workspaceRoot);
   const destination = resolve(value);
-  if (isInside(workspace, destination) || isInside(resolve(workspace, LEGACY_CONTROL_DIRECTORY), destination)) {
+  if (pathIsInside(workspace, destination) || pathIsInside(resolve(workspace, LEGACY_CONTROL_DIRECTORY), destination)) {
     fail("SETTINGS_VALUE_INVALID", `${label} must be outside the workspace and its control tree`);
   }
 }
@@ -326,6 +325,10 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "scope" | "
   readonly modelWritable?: boolean;
   readonly shape?: SettingShape;
 })[] = [
+  { key: "agents.generation", type: "enum", controlType: "enum", layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: "managed", allowedValues: ["managed", "none"], group: "general", order: 20 },
+  { key: "agents.sharedNavigation", type: "enum", controlType: "enum", layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: "written", allowedValues: ["written", "declined"], group: "general", order: 21 },
   {
     // TCRN-CROSS-STORY-364: the language this workspace writes its knowledge cards in.
     // Its value set is the roster knowledge-language.ts can actually judge, so the two
@@ -664,6 +667,9 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = Object.freeze(
  * writes it.
  */
 export function assertProjectSettingKey(key: unknown): void {
+  if (typeof key === "string" && /^(models|quota)\./u.test(key)) {
+    fail("SETTINGS_KEY_DEVICE_LEVEL", `${key} is historical compatibility data; edit the device host policy instead`);
+  }
   if (typeof key === "string" && MACHINE_SETTINGS_CATALOG.some((entry) => entry.key === key)) {
     fail("SETTINGS_KEY_DEVICE_LEVEL", `${key} is a device-level setting: it stays in this device's directory; set it with machine-settings-set`, {
       key,
@@ -889,6 +895,10 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
     if (parsed.protocol !== "https:") fail("SETTINGS_VALUE_INVALID", `${entry.key} must use https`);
     if (/[\u0000-\u001f\u007f]/u.test(value)) fail("SETTINGS_VALUE_INVALID", `${entry.key} must not contain control characters`);
   }
+  if (["workspace.generatedArtifactsPath", "knowledge.articlesPath"].includes(entry.key) && value.startsWith("binding:")) {
+    if (!isPortablePathBinding(value)) fail("SETTINGS_VALUE_INVALID", `${entry.key} names an unknown local binding`);
+    return value;
+  }
   if (entry.key === "workspace.generatedArtifactsPath") {
     // TCRN-CROSS-STORY-380: an absolute root is admitted so generated blobs can be written
     // to a directory the operator manages — a cloud-synced folder is the case Owner asked
@@ -906,12 +916,12 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
       if (value.includes("\\") || resolve(value) !== value) {
         fail("SETTINGS_VALUE_INVALID", `${entry.key} must be a normalized absolute path`);
       }
-      if (workspaceRoot !== undefined && isInside(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY), resolve(value))) {
+      if (workspaceRoot !== undefined && pathIsInside(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY), resolve(value))) {
         fail("SETTINGS_VALUE_INVALID", `${entry.key} must not target the workspace control tree`);
       }
     } else {
       assertWorkspaceRelativeSettingPath(value, entry.key);
-      if (workspaceRoot !== undefined && isInside(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY), resolve(workspaceRoot, value))) {
+      if (workspaceRoot !== undefined && pathIsInside(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY), resolve(workspaceRoot, value))) {
         fail("SETTINGS_VALUE_INVALID", `${entry.key} must not target the workspace control tree`);
       }
     }
@@ -921,7 +931,9 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
 
 /** Resolve the article directory using the setting's explicit workspace-anchor contract. */
 export function resolveKnowledgeArticlesPath(workspaceRoot: string, value: string): string {
-  return isAbsolute(value) ? resolve(value) : resolve(workspaceRoot, value);
+  const resolved = resolvePortablePath(workspaceRoot, value);
+  if (value.startsWith("binding:")) validateSettingValue("knowledge.articlesPath", resolved, workspaceRoot);
+  return resolved;
 }
 
 export function validateWorkspaceSettingRecord(value: unknown, workspaceRoot?: string): WorkspaceSettingRecord {
@@ -966,6 +978,8 @@ export function createWorkspaceSettingRecord(
   } catch {
     fail("SETTINGS_RECORD_INVALID", `${entry.key} updatedAt is invalid`);
   }
+  if (entry.key.startsWith("models.") || entry.key.startsWith("quota.")) fail("SETTINGS_KEY_DEVICE_LEVEL", `${entry.key} is historical compatibility data; edit the device host policy instead`);
+  if (["workspace.generatedArtifactsPath", "knowledge.articlesPath"].includes(entry.key) && typeof value === "string" && isAbsolute(value)) fail("SETTINGS_VALUE_INVALID", `${entry.key} requires a portable relative path or binding:paths.artifacts / binding:paths.knowledgeArticles; keep absolute locations in machine settings`);
   const normalizedValue = validateSettingValue(entry.key, value, workspaceRoot);
   return validateWorkspaceSettingRecord({
     schemaVersion: WORKSPACE_SETTING_VERSION,

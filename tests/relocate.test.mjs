@@ -173,3 +173,101 @@ test("470-R3: a copy that does not hash as its source is abandoned, the target l
   }), (error) => error?.reasonCode === "RELOCATE_COPY_MISMATCH");
   assert.deepEqual(await readdir(empty), []);
 });
+
+
+// Sequential phase faults only: no concurrent writers or timing-dependent race probes.
+for (const phase of ["source-tombstoned", "registry-repointed"]) {
+  test(`relocation resumes a durable ${phase} receipt without unlocking both roots`, async (context) => {
+    const base = await scratch(context);
+    const { project, library } = await seeded(base);
+    const target = join(base, "resumable");
+    const { assertLibraryWritable } = await import("../dist/build/packages/core/src/workspace.js");
+    await assert.rejects(relocateLibrary(library, target, {
+      at: at(), publicationStepForTest: step => { if (step === phase) throw new Error(`fixture fault: ${phase}`); },
+    }), error => error?.reasonCode === "RELOCATE_RECOVERY_REQUIRED");
+    await assert.rejects(assertLibraryWritable(library), error => error?.reasonCode === "LIBRARY_TOMBSTONED");
+    await assert.rejects(assertLibraryWritable(target), error => error?.reasonCode === "LIBRARY_TOMBSTONED");
+    const stored = JSON.parse(await readFile(join(library, "TOMBSTONE.json"), "utf8")).relocation;
+    if (phase === "source-tombstoned") {
+      const { FileLockError } = await import("../dist/build/packages/core/src/file-lock.js");
+      const details = { holderPid: "12345", holderCommand: "fixture", heldSince: "2026-09-26T09:00:00Z" };
+      await assert.rejects(relocateLibrary(library, target, {
+        at: at(), publicationStepForTest: step => {
+          if (step === "registry-repointed") throw new FileLockError("FILE_LOCK_TIMEOUT", "pure fixture", details);
+        },
+      }), error => error?.reasonCode === "WORKSPACE_LOCKED" && JSON.stringify(error.details) === JSON.stringify(details));
+    }
+    let timeoutOptionReads = 0;
+    const resumed = await relocateLibrary(library, target, {
+      at: at(), get timeoutMs() { timeoutOptionReads += 1; return 0; },
+    });
+    assert.ok(timeoutOptionReads > 0, "receipt recovery forwards its explicit timeout option to the library lock");
+    assert.equal(resumed.headEventHash, stored.report.headEventHash);
+    assert.equal(resumed.receiptDisposition, "resumed");
+    assert.equal(resumed.transactionId, stored.guard.transactionId);
+    assert.equal(resumed.occurredAt, stored.guard.movedAt);
+    assert.equal((await cli(["library-resolve", "--cwd", project])).libraryPath, target);
+    await assertLibraryWritable(target);
+    await assert.rejects(assertLibraryWritable(library), error => error?.reasonCode === "LIBRARY_TOMBSTONED");
+    // Legitimate later writes change the tree. A completed retry preserves the old receipt and
+    // validates stream-prefix continuity rather than falsely claiming the old tree still matches.
+    await cli(["project-create", "--workspace", target, "--at", at(), "--external-key", "AFTER-RESUME", "--name", "After resume"]);
+    const completed = await relocateLibrary(library, target, { at: at() });
+    assert.equal(completed.headEventHash, stored.report.headEventHash);
+    assert.equal(completed.receiptDisposition, "historical-completion");
+    assert.equal(completed.transactionId, stored.guard.transactionId);
+    assert.deepEqual(completed.versionVector, stored.report.versionVector);
+    assert.notEqual((await cli(["status", "--workspace", target])).headEventHash, completed.headEventHash);
+  });
+}
+
+test("a pre-publication preparation has explicit identity-bound CLI discard and retains unrelated files", async (context) => {
+  const base = await scratch(context);
+  const { library } = await seeded(base);
+  const target = join(base, "preparation");
+  const { assertLibraryWritable } = await import("../dist/build/packages/core/src/workspace.js");
+  await assert.rejects(relocateLibrary(library, target, {
+    at: at(), publicationStepForTest: step => { if (step === "before-source-tombstone") throw new Error("fixture publication fault"); },
+  }), error => error?.reasonCode === "RELOCATE_RECOVERY_REQUIRED");
+  await assertLibraryWritable(library);
+  await assert.rejects(assertLibraryWritable(target), error => error?.reasonCode === "LIBRARY_TOMBSTONED");
+  const guard = JSON.parse(await readFile(join(target, "TOMBSTONE.json"), "utf8"));
+  assert.equal(guard.kind, "relocation-pending");
+  assert.equal((await refusal(["workspace-relocate-discard", "--workspace", library, "--to", target, "--transaction-id", "0".repeat(32)])).reasonCode, "RELOCATE_RECOVERY_REQUIRED");
+  // An ordinary sequential fixture addition, not a competing process or race probe.
+  await writeFile(join(target, "unrelated.txt"), "retain this file\n");
+  const args = ["workspace-relocate-discard", "--workspace", library, "--to", target, "--transaction-id", guard.transactionId];
+  assert.equal((await refusal(args)).reasonCode, "RELOCATE_RECOVERY_REQUIRED");
+  assert.equal(await readFile(join(target, "unrelated.txt"), "utf8"), "retain this file\n");
+  assert.equal(JSON.parse(await readFile(join(target, "TOMBSTONE.json"), "utf8")).transactionId, guard.transactionId);
+  await rm(join(target, "unrelated.txt"));
+  assert.equal((await cli(args)).reasonCode, "RELOCATE_PREPARATION_DISCARDED");
+  await assert.rejects(stat(target), { code: "ENOENT" });
+  await assertLibraryWritable(library);
+});
+
+test("pending relocation rejects an altered guard instead of excluding an arbitrary tombstone from verification", async (context) => {
+  const base = await scratch(context);
+  const { library } = await seeded(base);
+  const target = join(base, "altered-guard");
+  await assert.rejects(relocateLibrary(library, target, {
+    at: at(), publicationStepForTest: step => { if (step === "source-tombstoned") throw new Error("fixture interruption"); },
+  }), error => error?.reasonCode === "RELOCATE_RECOVERY_REQUIRED");
+  const path = join(target, "TOMBSTONE.json");
+  const guard = JSON.parse(await readFile(path, "utf8"));
+  await writeFile(path, JSON.stringify({ ...guard, transactionId: "f".repeat(32) }));
+  await assert.rejects(relocateLibrary(library, target, { at: at() }), error => error?.reasonCode === "RELOCATE_RECOVERY_REQUIRED");
+  assert.equal(JSON.parse(await readFile(path, "utf8")).transactionId, "f".repeat(32));
+});
+
+
+test("a scoped registry repoint capability expires when its transaction returns", async (context) => {
+  const base = await scratch(context);
+  const { withLibraryRepointLock, readRegistry } = await import("../dist/build/packages/core/src/registry.js");
+  const before = await readRegistry();
+  let escaped;
+  await withLibraryRepointLock(async ({ repoint }) => { escaped = repoint; });
+  assert.throws(() => escaped("library:expired", join(base, "never-created"), false), /no longer active/u);
+  assert.deepEqual(await readRegistry(), before);
+  await assert.rejects(stat(join(base, "never-created")), { code: "ENOENT" });
+});

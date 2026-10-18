@@ -136,6 +136,64 @@ test("470-R1: a verb run without --workspace works on the library the current di
   assert.equal(registry.schemaVersion, "einzbern.registry.v1");
 });
 
+test("INIT-056: engine policy set resolves an omitted workspace through the registry and keeps refusal boundaries", async (context) => {
+  const base = await scratch(context);
+  const project = join(base, "model-policy-project");
+  const library = join(project, ".ether");
+  await mkdir(project, { recursive: true });
+  await cli(["init", "--workspace", library, "--at", at()]);
+  const created = await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "REGISTRY-MODEL-POLICY", "--name", "Registry model policy"]);
+  const projectId = created.record.id;
+  await cli(["library-register", "--project", project, "--library", library, "--project-id", projectId, "--at", at()]);
+  const meeting = await cli([
+    "minutes-record", "--workspace", library, "--at", at(), "--project-id", projectId,
+    "--title", "Engine model policy", "--summary", "Fixture Owner decision for registry resolution.",
+    "--decisions", "Set models.engine-policy for the Codex host.", "--decided-by", "owner:governance",
+    "--external-key", "REGISTRY-MODEL-POLICY-OWNER", "--actor", "agent:fixture",
+  ]);
+  const policy = JSON.stringify({
+    categories: [
+      { id: "flagship", name: "Flagship", description: "", order: 10 },
+      { id: "main", name: "Main", description: "", order: 20 },
+      { id: "economy", name: "Economy", description: "", order: 30 },
+    ],
+    tiers: [
+      { order: 10, category: "flagship", runner: "codex", model: "gpt-6-luna", effort: "max", note: "" },
+      { order: 20, category: "economy", runner: "codex", model: "gpt-6-luna", effort: "max", note: "" },
+    ],
+    escalation: { enabled: true, threshold: 2, ceiling: "main" },
+  });
+  const setArgs = [
+    "engine-model-policy-set", "--host", "codex", "--policy", policy, "--at", at(),
+    "--actor", "agent:fixture", "--decided-in", `${meeting.id}#D1`,
+  ];
+  const env = { ...process.env };
+  const run = (args, cwd) => spawnSync(process.execPath, [cliPath, ...args], { cwd, env, encoding: "utf8" });
+
+  const saved = run(setArgs, project);
+  assert.equal(saved.status, 0, saved.stderr);
+  const receipt = JSON.parse(saved.stdout);
+  assert.equal(receipt.reasonCode, "ENGINE_MODEL_POLICY_WRITE_COMMITTED");
+  assert.equal(receipt.readback.selectedHost, "codex");
+  assert.equal(receipt.readback.selectedPolicy.actor, "agent:fixture");
+
+  const wrongDecision = run([...setArgs.slice(0, -1), `minutes:${"d".repeat(24)}#D1`], project);
+  assert.equal(wrongDecision.status, 1);
+  assert.equal(JSON.parse(wrongDecision.stderr).reasonCode, "MODEL_WRITE_AUTHORIZATION_INVALID");
+
+  const elsewhere = join(base, "unregistered");
+  await mkdir(elsewhere);
+  const unregistered = run(setArgs, elsewhere);
+  assert.equal(unregistered.status, 1);
+  const refusal = JSON.parse(unregistered.stderr);
+  assert.equal(refusal.reasonCode, "LIBRARY_NOT_REGISTERED");
+  assert.equal(refusal.remedy, "library-register");
+
+  const unchanged = await cli(["engine-model-policy-catalog", "--host", "codex"]);
+  assert.equal(unchanged.storeRevision, 1, "failed resolution and authorization do not write a policy");
+  assert.equal(unchanged.selectedPolicy.actor, "agent:fixture");
+});
+
 test("SUB-427: the LIBRARY_NOT_REGISTERED hint offers --workspace only to a verb that takes it", async (context) => {
   const base = await scratch(context);
   const elsewhere = join(base, "elsewhere");

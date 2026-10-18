@@ -60,6 +60,7 @@ import {
 } from "./managed-sections.js";
 import type {
   AppliedManagedWrite,
+  ManagedSectionDecision,
   ManagedSectionRecord,
   ManagedSectionResult,
   ManagedSectionState,
@@ -802,15 +803,16 @@ function enabledRuleSections(state: Pick<WorkspaceState, "settings" | "configRec
  * `navigation`: the navigation section on a device that chose written, the two variable sections,
  * and the section of every rule the library has enabled at the version this engine ships.
  */
-export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "configRecords">, navigation: AgentsNavigationChoice | null): {
+export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "configRecords">, _navigation: AgentsNavigationChoice | null): {
   readonly sections: readonly AgentsSection[];
   readonly withheld: readonly WithheldEntry[];
 } {
+  if (state.settings.find(entry => entry.key === "agents.generation")?.value === "none") return { sections: [], withheld: [] };
   const system = renderSystemVariablesSection(state);
   const custom = renderCustomVariablesSection(state);
   return {
     sections: [
-      ...(navigation === "written" ? [NAVIGATION_SECTION] : []),
+      ...((state.settings.find(entry => entry.key === "agents.sharedNavigation")?.value ?? "written") === "written" ? [NAVIGATION_SECTION] : []),
       { id: system.id, file: AGENTS_FILE, body: system.body },
       { id: custom.id, file: AGENTS_FILE, body: custom.body },
       ...enabledRuleSections(state),
@@ -845,6 +847,9 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
     plan: async (root, nativeState) => {
       await assertManagedOutputRoot(root, input.projectRoot, nativeState);
       const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+      if (state.settings.find(entry => entry.key === "agents.generation")?.value === "none") {
+        return { deltas: [], plan: { withheld: [], plans: [] as ManagedWritePlan[], decisions: [] as { plan: ManagedWritePlan; decision: ManagedSectionDecision }[], recorded: 0 } };
+      }
       const agents = agentsFileSections(state, input.navigation);
       const plans = [
         // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.

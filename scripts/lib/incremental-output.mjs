@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-414 — bounded, cursor-based progress evidence.
 
+import { constants } from "node:fs";
 import { appendFile, readFile } from "node:fs/promises";
 
 export const PROGRESS_SCHEMA_VERSION = "tcrn.progress-event.v1";
@@ -38,7 +39,7 @@ export function normalizeProgressEvent(event) {
   return Object.freeze({ ...event, type: event.type.trim() });
 }
 
-export async function appendProgressEvent(path, event) {
+export async function appendProgressEvent(path, event, { create = true } = {}) {
   assertProgressPath(path);
   const value = event?.schemaVersion === PROGRESS_SCHEMA_VERSION
     ? normalizeProgressEvent(event)
@@ -47,7 +48,7 @@ export async function appendProgressEvent(path, event) {
       observedAt: new Date().toISOString(),
       ...event,
     });
-  await appendFile(path, `${JSON.stringify(value)}\n`, { encoding: "utf8", mode: 0o600, flag: "a" });
+  await appendFile(path, `${JSON.stringify(value)}\n`, { encoding: "utf8", mode: 0o600, flag: create ? "a" : constants.O_WRONLY | constants.O_APPEND });
   return value;
 }
 
@@ -55,9 +56,9 @@ export function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-export async function appendProgressIfConfigured(path, type, fields = {}) {
+export async function appendProgressIfConfigured(path, type, fields = {}, options = {}) {
   if (!path) return;
-  await appendProgressEvent(path, { type, ...fields });
+  await appendProgressEvent(path, { type, ...fields }, options);
 }
 
 /**

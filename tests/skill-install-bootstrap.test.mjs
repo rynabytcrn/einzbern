@@ -188,3 +188,14 @@ test("481-R3: install.mjs imports node: built-ins only", async () => {
   assert.doesNotMatch(source, /\bimport\s*\(/u, "no dynamic import");
   assert.doesNotMatch(source, /\brequire\s*\(/u);
 });
+
+// Environment roots are device identities, never relative to the caller's working directory.
+test("installer rejects a relative environment root before reading an archive", async () => {
+  const { home } = await user("relative-environment");
+  const run = install(["--archive", "missing.tar.gz"], { home, env: { EINZBERN_HOME: "relative-device" } });
+  assert.equal(refusal(run).reasonCode, "DEVICE_HOME_INVALID");
+  assert.equal(existsSync(join(base, "relative-device")), false);
+  const explicit = install(["--archive", "missing.tar.gz", "--home", "explicit-device"], { home, env: { EINZBERN_HOME: "relative-device" } });
+  assert.equal(refusal(explicit).reasonCode, "INSTALL_ARCHIVE_UNREADABLE");
+  assert.equal(existsSync(join(base, "explicit-device")), false);
+});

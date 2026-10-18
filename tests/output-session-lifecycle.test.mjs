@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 
+import { appendProgressIfConfigured, readProgressDelta } from "../scripts/lib/incremental-output.mjs";
 import { admitLegacyOutputSessionReceipt, bindOutputSessionProcessGroup, readBoundClaim, recoverStaleOutputSessionLock, safeWriteOutput, withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
 
 const ownerSchema = "tcrn.output-session-owner.v1";
@@ -2818,6 +2819,25 @@ async function settleFixtureProcesses(root) {
   await pollUntil(() => (fixtureProcesses().length === 0 ? true : undefined), () => false);
 }
 
+test("INC-394: a late reaper record appends but never recreates a removed progress file", async (context) => {
+  const directory = await runTemporaryDirectory(context);
+  const path = join(directory, "events.ndjson");
+  await writeFile(path, "", { mode: 0o600, flag: "wx" });
+  await appendProgressIfConfigured(path, "reaper-clean", { managedChildGroups: 0 }, { create: false });
+  const recorded = await readProgressDelta(path, 0);
+  assert.equal(recorded.events.length, 1);
+  assert.equal(recorded.events[0].type, "reaper-clean");
+
+  // The runner has unlinked the ledger but not yet removed its directory.
+  await rm(path);
+  await assert.rejects(
+    appendProgressIfConfigured(path, "reaper-clean", { managedChildGroups: 0 }, { create: false }),
+    { code: "ENOENT" },
+  );
+  assert.deepEqual(await readdir(directory), [], "a late record cannot repopulate the directory");
+  await rmdir(directory);
+});
+
 test("INC-394: an immediate pre-bind fail-closed leaves no reaper and no controller or progress directory", async (context) => {
   const { root, importPath } = await importGuardTaskFixture(context, 'test("a group probe never discovers this source", () => {});');
 
@@ -2933,46 +2953,61 @@ test("a bound bootstrap blocks recovery before it starts the test controller", a
 
 test("a fresh real task entrypoint fails closed while a killed predecessor group lives, then recovers cleanly", async (context) => {
   const crashSource = [
-    'import { writeFileSync } from "node:fs";',
+    'import { existsSync, writeFileSync } from "node:fs";',
     'import test from "node:test";',
     'writeFileSync(process.env.TCRN_TASK_DESCENDANT_PID_PATH, `${JSON.stringify({ testPid: process.pid, controllerPid: process.ppid, processGroup: Number(process.env.TCRN_TEST_CONTROLLER_PROCESS_GROUP), ownerProcessGroup: Number(process.env.TCRN_TEST_CONTROLLER_REAPER_PID) })}\\n`);',
-    'test("remain alive while the outer lifecycle probe kills the actual task entrypoint", async () => { await new Promise((resolve) => setTimeout(resolve, 500)); });',
+    'test("remain alive until the contender has observed the surviving group", async () => { while (process.env.TCRN_TASK_DESCENDANT_RELEASE_PATH && !existsSync(process.env.TCRN_TASK_DESCENDANT_RELEASE_PATH)) await new Promise((resolve) => setTimeout(resolve, 10)); });',
     "",
   ].join("\n");
   const root = await taskEntrypointFixture(context, crashSource);
   // TCRN-CROSS-INC-394: the SIGKILLed runner cannot remove its progress directory; it goes with this TMPDIR.
-  const interrupted = startTaskEntrypoint(root, { TMPDIR: await runTemporaryDirectory(context) });
-  await waitForPath(lockPath(root), interrupted.result);
-  await waitForPath(resolve(root, "descendant.pid"), interrupted.result);
-  const descendants = JSON.parse(await readFile(resolve(root, "descendant.pid"), "utf8"));
-  assert.ok(Number.isSafeInteger(descendants.testPid) && descendants.testPid > 0);
-  assert.ok(Number.isSafeInteger(descendants.controllerPid) && descendants.controllerPid > 0);
-  assert.ok(Number.isSafeInteger(descendants.processGroup) && descendants.processGroup > 0);
-  assert.ok(Number.isSafeInteger(descendants.ownerProcessGroup) && descendants.ownerProcessGroup > 0);
-  // The bootstrap launches a Node test controller plus a test-file process.
-  // The recovery run starts only after both recorded descendants are gone, so
-  // it cannot overlap a surviving importer of dist/build.
-  interrupted.child.kill("SIGKILL");
-  const interruptedResult = await interrupted.result;
-  assert.equal(interruptedResult.code, null, JSON.stringify(interruptedResult));
-  assert.equal(interruptedResult.signal, "SIGKILL", JSON.stringify(interruptedResult));
-  assert.equal(interruptedResult.stdout, "");
-  assert.equal(interruptedResult.stderr, "");
-  const owner = JSON.parse(await readFile(resolve(lockPath(root), "owner.json"), "utf8"));
-  assert.equal(owner.processGroup, descendants.ownerProcessGroup);
-  const noWait = await startTaskEntrypoint(root).result;
-  assert.equal(noWait.code, 1);
-  assert.equal(noWait.signal, null);
-  assert.equal(noWait.stdout, "");
-  assert.equal(JSON.parse(noWait.stderr).reasonCode, "OUTPUT_SESSION_RECOVERY_DESCENDANT_LIVE");
-  await lstat(lockPath(root));
-  // The test controller is the leader of a dedicated detached process group;
-  // its worker and controller must both be gone before stale-owner recovery
-  // is permitted to acquire the command-wide output session.
-  await waitForDeadPid(descendants.testPid);
-  await waitForDeadPid(descendants.controllerPid);
-  await waitForDeadPid(descendants.processGroup);
-  await waitForDeadPid(descendants.ownerProcessGroup);
+  const releasePath = resolve(root, ".git", "descendant-release");
+  const interrupted = startTaskEntrypoint(root, {
+    TMPDIR: await runTemporaryDirectory(context),
+    TCRN_TASK_DESCENDANT_RELEASE_PATH: releasePath,
+  });
+  let descendants;
+  try {
+    await waitForFixtureReadiness(lockPath(root), interrupted.result);
+    await waitForFixtureReadiness(resolve(root, "descendant.pid"), interrupted.result);
+    descendants = JSON.parse(await readFile(resolve(root, "descendant.pid"), "utf8"));
+    assert.ok(Number.isSafeInteger(descendants.testPid) && descendants.testPid > 0);
+    assert.ok(Number.isSafeInteger(descendants.controllerPid) && descendants.controllerPid > 0);
+    assert.ok(Number.isSafeInteger(descendants.processGroup) && descendants.processGroup > 0);
+    assert.ok(Number.isSafeInteger(descendants.ownerProcessGroup) && descendants.ownerProcessGroup > 0);
+    // The bootstrap launches a Node test controller plus a test-file process.
+    // The recovery run starts only after both recorded descendants are gone, so
+    // it cannot overlap a surviving importer of dist/build.
+    interrupted.child.kill("SIGKILL");
+    const interruptedResult = await interrupted.result;
+    assert.equal(interruptedResult.code, null, JSON.stringify(interruptedResult));
+    assert.equal(interruptedResult.signal, "SIGKILL", JSON.stringify(interruptedResult));
+    assert.equal(interruptedResult.stdout, "");
+    assert.equal(interruptedResult.stderr, "");
+    const owner = JSON.parse(await readFile(resolve(lockPath(root), "owner.json"), "utf8"));
+    assert.equal(owner.processGroup, descendants.ownerProcessGroup);
+    const noWait = await startTaskEntrypoint(root).result;
+    assert.equal(noWait.code, 1);
+    assert.equal(noWait.signal, null);
+    assert.equal(noWait.stdout, "");
+    assert.equal(JSON.parse(noWait.stderr).reasonCode, "OUTPUT_SESSION_RECOVERY_DESCENDANT_LIVE");
+    await lstat(lockPath(root));
+  } finally {
+    // Also release on assertion failure, before fixture teardown removes its root.
+    await writeFile(releasePath, "release\n", { mode: 0o600 });
+    if (interrupted.child.exitCode === null && interrupted.child.signalCode === null) interrupted.child.kill("SIGTERM");
+    await interrupted.result;
+    // Join the exact recorded descendants on success and assertion failure.
+    // Recovery must not overlap a surviving importer of dist/build.
+    if (descendants) {
+      await waitForDeadPid(descendants.testPid);
+      await waitForDeadPid(descendants.controllerPid);
+      await waitForDeadPid(descendants.processGroup);
+      await waitForDeadPid(descendants.ownerProcessGroup);
+    } else {
+      await settleFixtureProcesses(root);
+    }
+  }
   await rm(resolve(root, "descendant.pid"));
 
   await writeFixtureTest(root, [
@@ -3297,8 +3332,47 @@ test("a real task entrypoint reports a bounded controller timeout without false 
   await assertTaskResidueClean(root);
 });
 
+// Delay only this disposable fixture's deadline start, not its production timeout
+// arithmetic or cleanup. The controller has already been spawned and durably bound
+// at this boundary. The separate 100 ms timeout test above uses the untouched runner.
+async function installGateTimeoutStartBarrier(root) {
+  const path = resolve(root, "scripts/task.mjs");
+  const source = await readFile(path, "utf8");
+  const marker = "    const startedAt = Date.now();\n";
+  assert.equal(source.split(marker).length, 2, "unique bound controller deadline boundary");
+  const barrier = [
+    '    if (process.env.TCRN_GATE_TIMEOUT_RELEASE_PATH) {',
+    '      const readinessDeadline = Date.now() + 60_000;',
+    '      while (Date.now() < readinessDeadline) {',
+    '        try { await lstat(process.env.TCRN_GATE_TIMEOUT_RELEASE_PATH); break; }',
+    '        catch (error) { if (error?.code !== "ENOENT") throw error; }',
+    '        await delay(10);',
+    '      }',
+    '    }',
+    '',
+  ].join("\n");
+  await writeFile(path, source.replace(marker, `${barrier}${marker}`));
+  runGit(root, ["add", "scripts/task.mjs"]);
+  runGit(root, ["commit", "--quiet", "-m", "synchronize gate readiness before controller deadline"]);
+}
+
+async function waitForFixtureReadiness(path, result) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    try { await lstat(path); return; }
+    catch (error) { if (error?.code !== "ENOENT") throw error; }
+    const outcome = await Promise.race([
+      result.then((value) => ({ value })),
+      new Promise((resolveDelay) => setTimeout(() => resolveDelay(null), 10)),
+    ]);
+    assert.equal(outcome, null, `task exited before fixture readiness: ${JSON.stringify(outcome)}`);
+  }
+  assert.fail(`fixture readiness exceeded its independent 60 s watchdog: ${path}`);
+}
+
 test("the real gates-run child policy privately manages groups, registration races, and controller timeouts", async (context) => {
   const root = await taskEntrypointFixture(context, controllerManagedGateTestSource(), { includeEngineSources: true });
+  await installGateTimeoutStartBarrier(root);
   const common = {
     TCRN_MANAGED_GATE_DEVICE_HOME: resolve(root, "managed-gate-device"),
     TCRN_TEST_CONTROLLER_CHILD_RACE_PROBE_PATH: resolve(root, "managed-gate-race.json"),
@@ -3334,13 +3408,26 @@ test("the real gates-run child policy privately manages groups, registration rac
   await assert.rejects(lstat(common.TCRN_GATE_STARTED_PATH), { code: "ENOENT" });
   await assertTaskResidueClean(root);
 
+  const timeoutReleasePath = resolve(root, ".git", "gate-timeout-release");
   const timeoutTask = startTaskEntrypoint(root, {
     ...common,
     TCRN_MANAGED_GATE_MODE: "controller-timeout",
     TCRN_TEST_CONTROLLER_TIMEOUT_MS: "3000",
+    TCRN_GATE_TIMEOUT_RELEASE_PATH: timeoutReleasePath,
   });
-  await waitForPath(common.TCRN_GATE_STARTED_PATH, timeoutTask.result);
-  const timeout = await timeoutTask.result;
+  let timeout;
+  try {
+    await waitForFixtureReadiness(common.TCRN_GATE_STARTED_PATH, timeoutTask.result);
+    const liveProbe = await readJsonWhenReady(common.TCRN_TEST_CONTROLLER_CHILD_RACE_PROBE_PATH, timeoutTask.result);
+    assert.equal(liveProbe.stage, "spawned-before-bind");
+    assert.ok(Number.isSafeInteger(liveProbe.processGroup) && liveProbe.processGroup > 0);
+    process.kill(-liveProbe.processGroup, 0);
+  } finally {
+    // Release even on readiness/assertion failure so the unchanged real timeout
+    // branch terminates and joins the fixture's controller and managed gate.
+    await writeFile(timeoutReleasePath, "release\n", { mode: 0o600 });
+    timeout = await timeoutTask.result;
+  }
   assert.equal(timeout.code, 1, timeout.stderr);
   assert.equal(timeout.signal, null);
   assert.equal(timeout.stdout, "");

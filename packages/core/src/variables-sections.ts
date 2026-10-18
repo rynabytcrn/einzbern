@@ -2,31 +2,10 @@ import { effectiveProjectState } from "./project-chain.js";
 import { DESIGN_CONFIGURATION_KEYS, designConfiguration } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
-// TCRN-CROSS-STORY-484 R2 (MIN-227 D12; TCRN-CROSS-SUB-340): the two variable sections of
-// AGENTS.md. The system section renders exactly the system settings (SYSTEM_VARIABLE_KEYS); no other
-// setting ever appears there. TCRN-CROSS-STORY-508 R8 (MIN-236 D8; TCRN-CROSS-SUB-407) adds to what
-// it rendered, keeping design.authority (MIN-227 D11): models.category and models.tiers, each a table
-// of records in ascending order (order, id, name, description; order, category, runner, model, effort,
-// note), the three models.escalation settings, and all seven declared design bindings. The design
-// table names its explicit configuration target, effective sources and inheritance; missing bindings
-// stay unconfigured and production publication stays unverified by the offline renderer.
-// The custom section renders the project's variables (variables.ts): name, type, value and
-// description. Both are managed sections (managed-sections.ts), variables-system and
-// variables-custom, written only when writeVariablesSections is called.
-//
-// A managed section never renders an absolute path (TCRN-CROSS-STORY-478), and AGENTS.md is
-// committed, so it never renders a credential either. A variable whose row would name an absolute
-// path, or whose value or description is shaped like a credential (a record written around
-// setVariable, or before a stricter heuristic), is left out of the custom section; a category whose
-// name or description would, or a tier record whose model, effort or note would, is rendered as
-// withheld. Each is reported with its reason, and everything else in the section is still written.
-//
-// TCRN-CROSS-STORY-540 GWT2 (MIN-258 D3(c), MIN-243 D1; TCRN-CROSS-SUB-506): a coordination library's
-// sections go into the project root this device registered for it (agents-sections.ts,
-// managedOutputBinding), and its system section renders the keys that hold for a coordination library
-// (COORDINATION_SYSTEM_VARIABLE_KEYS: execution.maxConcurrentSubagents, the four quota.* settings and the
-// seven design bindings), never models.*, which a coordination library does not have. Q4: both sections
-// are written in the library's artifact language, Chinese for zh-CN and English otherwise.
+// Shared managed output contains project declarations and a runtime policy reference.
+// Device host model/quota values never become a portable project policy snapshot.
+// Historical variable records retain their AGENTS export contract; new declarations
+// require an explicit export target. Output remains a projection, never a read authority.
 
 import { join } from "node:path";
 
@@ -40,18 +19,9 @@ import {
   planManagedWrite,
 } from "./managed-sections.js";
 import type { ManagedSectionDecision, ManagedSectionRecord, ManagedWritePlan } from "./managed-sections.js";
-import { MODELS_CATEGORY_SETTING_KEY } from "./models-category.js";
-import type { ModelsCategoryRecord } from "./models-category.js";
-import {
-  MODELS_ESCALATION_CEILING_SETTING_KEY,
-  MODELS_ESCALATION_ENABLED_SETTING_KEY,
-  MODELS_ESCALATION_SETTING_KEYS,
-  MODELS_ESCALATION_THRESHOLD_SETTING_KEY,
-  readModelsEscalation,
-} from "./models-escalation.js";
-import { MODELS_TIERS_SETTING_KEY, modelsTierReference, readModelsCategory, readModelsTiers } from "./models-tiers.js";
+import { MODELS_TIERS_SETTING_KEY } from "./models-tiers.js";
 import { settingsCatalogEntry } from "./settings.js";
-import { looksSecretShaped, variablesInRenderOrder } from "./variables.js";
+import { looksSecretShaped, variableExportDecision, variablesInRenderOrder } from "./variables.js";
 import { appendPlannedWrite } from "./workspace.js";
 import type { WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 
@@ -62,9 +32,6 @@ const DESIGN_AUTHORITY_SETTING_KEY = "design.authority";
 // The system settings the system section renders, in the order it renders them, and the only ones it
 // ever renders.
 export const SYSTEM_VARIABLE_KEYS: readonly string[] = Object.freeze([
-  MODELS_CATEGORY_SETTING_KEY,
-  MODELS_TIERS_SETTING_KEY,
-  ...MODELS_ESCALATION_SETTING_KEYS,
   ...DESIGN_CONFIGURATION_KEYS,
 ]);
 // TCRN-CROSS-STORY-540 GWT2 (MIN-243 D1, Q5; TCRN-CROSS-SUB-506): the system settings a coordination
@@ -73,14 +40,9 @@ export const SYSTEM_VARIABLE_KEYS: readonly string[] = Object.freeze([
 // A coordination library holds no models.*, so none is here.
 export const COORDINATION_SYSTEM_VARIABLE_KEYS: readonly string[] = Object.freeze([
   "execution.maxConcurrentSubagents",
-  "quota.fiveHourParallelOffPercent",
-  "quota.fiveHourWaitPercent",
-  "quota.weeklyParallelOffPercent",
-  "quota.weeklyWaitPercent",
   ...DESIGN_CONFIGURATION_KEYS,
 ]);
 // The heading the three models.escalation settings share in the system section.
-const MODELS_ESCALATION_HEADING = "models.escalation";
 
 // TCRN-CROSS-STORY-540 (Q4; TCRN-CROSS-SUB-506): the fixed text of both sections in the two
 // languages the library's artifact.language picks between, as a rule's text is picked
@@ -95,6 +57,9 @@ const SECTION_TEXT = Object.freeze({
     note: "Written by Einzbern from the project's configuration. Change it in Atelier, not here: an edit here stops Einzbern from rewriting this section.",
     coordinationNote: "Written by Einzbern from the coordination library's configuration. Change it in Atelier, not here: an edit here stops Einzbern from rewriting this section.",
     systemHeading: "## System variables",
+    policyHeading: "### Engine execution policy",
+    policy: "Resolve the current device/host policy at dispatch time with execution-policy-resolve --host <host> --category <category> --rejections <count>. Model and quota values are device declarations, never copied into shared output.",
+    projectBudget: "Project concurrency is a budget capped by the device. Legacy quota declarations are compatibility data only.",
     customHeading: "## Custom variables",
     categories: "The categories a rule names. The lower the order, the stronger the category.",
     categoriesHeader: ["Order", "Id", "Name", "Description"],
@@ -117,6 +82,9 @@ const SECTION_TEXT = Object.freeze({
     note: "由 Einzbern 按项目配置写入。请在 Atelier 中修改，不要在这里改：在这里改动后，Einzbern 不再重写这一段。",
     coordinationNote: "由 Einzbern 按协调库的配置写入。请在 Atelier 中修改，不要在这里改：在这里改动后，Einzbern 不再重写这一段。",
     systemHeading: "## 系统变量",
+    policyHeading: "### 引擎执行策略",
+    policy: "派工前通过 execution-policy-resolve --host <host> --category <category> --rejections <count> 解析当前设备与宿主策略。模型和额度阈值属于设备声明，不复制到共享生成物。",
+    projectBudget: "项目并发预算只能收紧设备上限。旧额度声明仅供历史兼容读取。",
     customHeading: "## 自定义变量",
     categories: "规则引用的模型分类。顺序号越小，分类越强。",
     categoriesHeader: ["顺序", "Id", "名称", "说明"],
@@ -146,7 +114,7 @@ function coordinationChain(state: Partial<Pick<WorkspaceState, "configRecords">>
   return state.configRecords?.some((record) => record.collection === "chain" && record.key === "identity" && record.projectId === undefined && record.value.role === "coordination") === true;
 }
 
-export type WithheldReason = "absolute-path" | "secret-shaped";
+export type WithheldReason = "absolute-path" | "secret-shaped" | "not-exported";
 
 /**
  * What a section left out: a variable's name, a category as models.category.<id>, or a tier record as
@@ -183,11 +151,6 @@ function withheldReason(line: string, texts: readonly string[]): WithheldReason 
 // A table's lines: its header, its separator and its rows, or (none) when it has no row.
 function table(header: readonly string[], rows: readonly string[], words: SectionText = SECTION_TEXT.en): readonly string[] {
   return rows.length === 0 ? [words.none] : [row(header), row(header.map(() => "---")), ...rows];
-}
-
-/** How a category is named where what a section left out is reported: models.category.<id>. */
-function modelsCategoryReference(category: Pick<ModelsCategoryRecord, "id">): string {
-  return `${MODELS_CATEGORY_SETTING_KEY}.${category.id}`;
 }
 
 type SystemSectionState = Pick<WorkspaceState, "settings"> & Partial<Pick<WorkspaceState, "configRecords">> & {
@@ -232,7 +195,7 @@ function provenanceLines(state: SystemSectionState, keys: readonly string[], wor
  */
 function coordinationSystemSection(state: SystemSectionState, words: SectionText): RenderedVariablesSection {
   const withheld: WithheldEntry[] = [];
-  const limits = COORDINATION_SYSTEM_VARIABLE_KEYS.filter((key) => !(DESIGN_CONFIGURATION_KEYS as readonly string[]).includes(key));
+  const limits = ["execution.maxConcurrentSubagents"];
   const lines = [
     words.systemHeading,
     "",
@@ -240,7 +203,8 @@ function coordinationSystemSection(state: SystemSectionState, words: SectionText
     "",
     `### ${limits.join(", ")}`,
     "",
-    words.execution,
+    words.projectBudget,
+    words.policy,
     "",
     ...table(words.settingValueHeader, limits.map((key) => {
       const value = state.settings.find((entry) => entry.key === key)?.value ?? settingsCatalogEntry(key).defaultValue;
@@ -273,62 +237,9 @@ export function renderSystemVariablesSection(state: SystemSectionState): Rendere
   const words = sectionText(state);
   if (coordinationChain(state)) return coordinationSystemSection(state, words);
   const withheld: WithheldEntry[] = [];
-  const categories: string[] = [];
-  for (const category of readModelsCategory(state.settings)) {
-    const order = String(category.order);
-    const line = row([order, category.id, cell(category.name, words), category.description === "" ? "" : cell(category.description, words)]);
-    const reason = withheldReason(line, [category.name, category.description]);
-    if (reason === null) {
-      categories.push(line);
-    } else {
-      withheld.push({ name: modelsCategoryReference(category), reason });
-      categories.push(row([order, category.id, words.withheld, words.withheld]));
-    }
-  }
-  const tiers: string[] = [];
-  for (const record of readModelsTiers(state.settings)) {
-    const order = String(record.order);
-    const line = row([order, record.category, record.runner, cell(record.model, words), cell(record.effort, words), record.note === "" ? "" : cell(record.note, words)]);
-    const reason = withheldReason(line, [record.model, record.effort, record.note]);
-    if (reason === null) {
-      tiers.push(line);
-    } else {
-      withheld.push({ name: modelsTierReference(record), reason });
-      tiers.push(row([order, record.category, record.runner, words.withheld, words.withheld, words.withheld]));
-    }
-  }
-  const escalation = readModelsEscalation(state.settings);
-  const lines = [
-    words.systemHeading,
-    "",
-    words.note,
-    "",
-    `### ${MODELS_CATEGORY_SETTING_KEY}`,
-    "",
-    words.categories,
-    "",
-    ...table(words.categoriesHeader, categories, words),
-    "",
-    `### ${MODELS_TIERS_SETTING_KEY}`,
-    "",
-    words.tiers,
-    "",
-    ...table(words.tiersHeader, tiers, words),
-    "",
-    `### ${MODELS_ESCALATION_HEADING}`,
-    "",
-    words.escalation,
-    "",
-    ...table(words.settingValueHeader, [
-      row([MODELS_ESCALATION_ENABLED_SETTING_KEY, String(escalation.enabled)]),
-      row([MODELS_ESCALATION_THRESHOLD_SETTING_KEY, String(escalation.threshold)]),
-      row([MODELS_ESCALATION_CEILING_SETTING_KEY, escalation.ceiling]),
-    ], words),
-    "",
-    ...designLines(state, words, withheld),
-    "",
-    ...provenanceLines(state, SYSTEM_VARIABLE_KEYS, words),
-  ];
+  const lines = [words.systemHeading, "", words.note, "", words.policyHeading, "",
+    words.policy,
+    "", ...designLines(state, words, withheld), "", ...provenanceLines(state, DESIGN_CONFIGURATION_KEYS, words)];
   return { id: VARIABLES_SYSTEM_SECTION_ID, body: `${lines.join("\n")}\n`, withheld };
 }
 
@@ -344,6 +255,8 @@ export function renderCustomVariablesSection(state: Pick<WorkspaceState, "config
   const withheld: WithheldEntry[] = [];
   const rows: string[] = [];
   for (const variable of variablesInRenderOrder(state)) {
+    const exportReason = variableExportDecision(variable, "agents");
+    if (exportReason !== null) { withheld.push({ name: variable.name, reason: exportReason }); continue; }
     const line = row([variable.name, variable.type, cell(variable.value, words), variable.description === "" ? "" : cell(variable.description, words)]);
     const reason = withheldReason(line, [variable.value, variable.description]);
     if (reason === null) rows.push(line);
@@ -376,7 +289,7 @@ export interface VariablesSectionsResult {
 // variable-set/remove that makes the row safe or removes it will settle the state on the next
 // render. Respect user-owned, unmanaged, removed, and user-edited sections.
 function recordWithheldCustomVariablesAsPending(plan: ManagedWritePlan, state: Pick<WorkspaceState, "configRecords">, withheld: readonly WithheldEntry[]): ManagedWritePlan {
-  if (withheld.length === 0) return plan;
+  if (!withheld.some(entry => entry.reason !== "not-exported")) return plan;
   const decision = plan.sections.find((section) => section.id === VARIABLES_CUSTOM_SECTION_ID);
   if (decision === undefined || decision.record.state !== "managed" || decision.result === "removed") return plan;
 
@@ -410,10 +323,13 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
   readonly projectRoot: string;
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<VariablesSectionsResult> {
-  return appendPlannedWrite(workspaceRoot, input, {
+  return appendPlannedWrite<{ plan: ManagedWritePlan | null; recorded: number; withheld: readonly WithheldEntry[] }, VariablesSectionsResult>(workspaceRoot, input, {
     plan: async (root, nativeState) => {
       await assertManagedOutputRoot(root, input.projectRoot, nativeState);
       const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+      if (state.settings.find(entry => entry.key === "agents.generation")?.value === "none") {
+        return { deltas: [], plan: { plan: null, recorded: 0, withheld: [] as WithheldEntry[] } };
+      }
       const system = renderSystemVariablesSection(state);
       const custom = renderCustomVariablesSection(state);
       const planned = await planManagedWrite({
@@ -431,8 +347,9 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
       }));
       return { deltas, plan: { plan, recorded: deltas.length, withheld: [...system.withheld, ...custom.withheld] } };
     },
-    unchanged: ({ plan }) => filesAsPlanned([plan]),
+    unchanged: async ({ plan }) => plan === null || await filesAsPlanned([plan]),
     write: async (root, nativeState, { plan, recorded, withheld }, append) => {
+      if (plan === null) return { file: VARIABLES_SECTIONS_FILE, written: false, backupPath: null, sections: [], pendingSections: [], withheld };
       const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
       if (recorded > 0) {
         try {

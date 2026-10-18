@@ -60,7 +60,7 @@ export function assertSettingScope(state: WorkspaceState, key: string, projectId
  */
 export const COORDINATION_RUNTIME_SETTING_KEYS = Object.freeze([
   "engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath",
-  "artifact.language", "execution.maxConcurrentSubagents",
+  "artifact.language", "execution.maxConcurrentSubagents", "agents.generation", "agents.sharedNavigation",
   "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent",
 ] as const satisfies readonly SettingKey[]);
 

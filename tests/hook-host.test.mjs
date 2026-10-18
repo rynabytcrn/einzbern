@@ -97,3 +97,30 @@ test("548-AC2: without EINZBERN_HOST, Claude Code and Codex get byte-for-byte th
     assert.ok(Buffer.from(start, "utf8").equals(Buffer.from(SNAPSHOT_SESSION_START, "utf8")), `${host}: session-start bytes`);
   }
 });
+
+test("BL34: native SubagentStart recalls by its documented agent_type before first work", async (context) => {
+  const { directory, library } = await registeredProject(context);
+  const { runHookEvent } = await import(pathToFileURL(join(repositoryRoot, "scripts/einzbern-hook.mjs")).href);
+  for (const host of ["claude-code", "codex"]) {
+    process.env.EINZBERN_HOST = host;
+    // Both native interfaces provide agent_type, not the delegated task prompt.
+    const payload = { hook_event_name: "SubagentStart", cwd: directory, agent_id: "agent-1", agent_type: "zebrafish" };
+    const answer = JSON.parse(await runHookEvent({ event: "subagent-start", payload, libraryPath: library, cwd: directory }));
+    assert.equal(answer.hookSpecificOutput.hookEventName, "SubagentStart");
+    assert.match(answer.hookSpecificOutput.additionalContext, /Recall first:/u);
+    assert.match(answer.hookSpecificOutput.additionalContext, /Zebrafish tank · HOOK-STORY/u);
+    const empty = JSON.parse(await runHookEvent({ event: "subagent-start", payload: { prompt: PROMPT }, libraryPath: library, cwd: directory }));
+    assert.doesNotMatch(empty.hookSpecificOutput.additionalContext, /HOOK-STORY/u, "a made-up native prompt field is not treated as task evidence");
+  }
+});
+
+
+test("BL34 scope: DSH subagent navigation remains pointer-only even with a matching agent_type", async (context) => {
+  const { directory, library } = await registeredProject(context);
+  process.env.EINZBERN_HOST = "dsh";
+  const { runHookEvent } = await import(pathToFileURL(join(repositoryRoot, "scripts/einzbern-hook.mjs")).href);
+  const answer = JSON.parse(await runHookEvent({ event: "subagent-start", payload: { agent_type: "zebrafish" }, libraryPath: library, cwd: directory }));
+  assert.equal(answer.hookSpecificOutput.hookEventName, "SubagentStart");
+  assert.match(answer.hookSpecificOutput.additionalContext, /Recall first:/u);
+  assert.doesNotMatch(answer.hookSpecificOutput.additionalContext, /HOOK-STORY/u);
+});

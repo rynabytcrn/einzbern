@@ -129,7 +129,12 @@ test("STORY-366: article directories are workspace-relative by default and canno
   assert.equal(entry.defaultValue, "docs/knowledge/articles");
   assert.equal(entry.currentValue, "docs/knowledge/articles");
   assert.equal(validateSettingValue("knowledge.articlesPath", "docs/knowledge/articles", workspace), "docs/knowledge/articles");
+  // Historical records retain absolute-path validation; the new-write boundary refuses them.
   assert.equal(validateSettingValue("knowledge.articlesPath", "/tmp/tcrn-article-root", workspace), "/tmp/tcrn-article-root");
+  await assert.rejects(setWorkspaceSetting(workspace, {
+    key: "knowledge.articlesPath", value: "/tmp/tcrn-article-root", occurredAt: instant(1),
+  }), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
+  assert.equal((await materializeWorkspace(workspace)).version, 0, "a new absolute path must not append an event");
   assert.throws(() => validateSettingValue("knowledge.articlesPath", "../outside", workspace), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
   assert.throws(() => validateSettingValue("knowledge.articlesPath", `${LEGACY_CONTROL_DIRECTORY}/articles`, workspace), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
   assert.throws(() => validateSettingValue("knowledge.articlesPath", `${workspace}/${LEGACY_CONTROL_DIRECTORY}/articles`, workspace), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");

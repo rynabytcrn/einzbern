@@ -28,17 +28,7 @@ const COMMIT_ID_SHAPE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
 
 const HELPER_README_NAMES = Object.freeze(["README.md", "README.en.md", "README.ja.md", "README.ko.md", "README.fr.md"]);
 const RELEASE_ASSET = (version) => `${ENGINE_PACKAGE_NAME}-${version}.tar.gz`;
-const RELEASE_SUMMARY = (version, { LEGACY_BRAND_NAME, LEGACY_HELPER_NAME }) => `Einzbern and Mana Orchestrate ship in lockstep at ${version}. The former ${LEGACY_BRAND_NAME} and ${LEGACY_HELPER_NAME} release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.`;
-
-// TCRN-CROSS-SUB-267: the retired engine and helper names in the release summary and in the
-// CHANGELOG check are the alias constants of the names module, never literals of this file. The
-// names module is the TypeScript source itself, so it is imported when a release is checked or
-// prepared, not when this file loads, the way scripts/task.mjs loads the repository names: a tree
-// that carries scripts/ without packages/ still loads this file.
-async function legacyReleaseNames() {
-  const { LEGACY_BRAND_NAME, LEGACY_HELPER_NAME } = await import("./names.mjs");
-  return { LEGACY_BRAND_NAME, LEGACY_HELPER_NAME };
-}
+const RELEASE_SUMMARY = (version) => `Einzbern and Mana Orchestrate ship in lockstep at ${version}.`;
 
 export class ReleaseLockstepError extends Error {
   constructor(reasonCode, message, details = {}) {
@@ -103,22 +93,16 @@ function changelogSection(changelog, version) {
   return next ? remainder.slice(0, next.index).trim() : remainder.trim();
 }
 
-function validateChangelog(changelog, version, mismatches, { LEGACY_BRAND_NAME, LEGACY_HELPER_NAME }) {
+function validateChangelog(changelog, version, mismatches) {
   const section = changelogSection(changelog, version);
   if (section === null) {
     mismatches.push({ path: CHANGELOG_FILE, expected: `## ${version} section`, actual: "missing" });
     return;
   }
-  const hasEngineRename = section.includes("Einzbern");
-  const hasHelperRename = section.includes("Mana Orchestrate");
-  const hasDeprecatedNames = section.includes(LEGACY_HELPER_NAME) && new RegExp(escapeRegExp(LEGACY_BRAND_NAME), "iu").test(section);
-  const hasRetiredItems = /(retired|retire|deprecated|deprecation|停用|退役|移除|删除)/iu.test(section);
-  if (!hasEngineRename || !hasHelperRename || !hasDeprecatedNames || !hasRetiredItems) {
-    mismatches.push({
-      path: CHANGELOG_FILE,
-      expected: "release section naming both renamed projects and retired surfaces",
-      actual: "release section is missing required rename or retirement notes",
-    });
+  // Each release describes its own changes. A historical rename is not a recurring requirement.
+  const changes = section.replace(RELEASE_SUMMARY(version), "").trim();
+  if (changes.length === 0) {
+    mismatches.push({ path: CHANGELOG_FILE, expected: "non-empty notes describing this release", actual: "no release changes" });
   }
 }
 
@@ -253,7 +237,7 @@ export async function checkRelease({ engineRoot, helperRoot, version, env = proc
   const changelog = await readFile(join(engine.root, CHANGELOG_FILE), "utf8").catch((error) => {
     refuse("RELEASE_FILE_MISSING", `${CHANGELOG_FILE} does not exist`, { path: CHANGELOG_FILE, code: error?.code ?? "UNKNOWN" });
   });
-  validateChangelog(changelog, version, mismatches, await legacyReleaseNames());
+  validateChangelog(changelog, version, mismatches);
 
   try {
     const readme = await renderReadmes({ root: engine.root, version, check: true });
@@ -395,7 +379,7 @@ export async function runReleaseGates({ engineRoot, helperRoot, workspace, proje
   return gates;
 }
 
-function changelogForPrepare(source, version, legacyNames) {
+function changelogForPrepare(source, version) {
   const headings = [...source.matchAll(/^## Unreleased[ \t]*\r?$/gmu)];
   if (headings.length !== 1) refuse("RELEASE_CHANGELOG_UNRELEASED_MISSING", "CHANGELOG.md must have exactly one Unreleased section", { count: headings.length });
   if (changelogSection(source, version) !== null) refuse("RELEASE_CHANGELOG_VERSION_EXISTS", `CHANGELOG.md already has a ${version} section`, { version });
@@ -408,7 +392,7 @@ function changelogForPrepare(source, version, legacyNames) {
   if (body.length === 0) refuse("RELEASE_CHANGELOG_EMPTY", "the Unreleased section has no release notes to cut", {});
   const suffix = next ? remainder.slice(next.index) : "";
   const prefix = source.slice(0, heading.index);
-  const releaseNotes = `## ${version}\n\n${RELEASE_SUMMARY(version, legacyNames)}\n\n${body}\n`;
+  const releaseNotes = `## ${version}\n\n${RELEASE_SUMMARY(version)}\n\n${body}\n`;
   return `${prefix}## Unreleased\n\n${releaseNotes}${suffix.length === 0 ? "" : `\n${suffix}`}`;
 }
 
@@ -470,7 +454,7 @@ async function cutReleaseChangelog(engineRoot, version) {
   const changelog = await readFile(changelogPath, "utf8").catch((error) => {
     refuse("RELEASE_FILE_MISSING", `${CHANGELOG_FILE} does not exist`, { path: CHANGELOG_FILE, code: error?.code ?? "UNKNOWN" });
   });
-  return { changelogPath, nextChangelog: changelogForPrepare(changelog, version, await legacyReleaseNames()) };
+  return { changelogPath, nextChangelog: changelogForPrepare(changelog, version) };
 }
 
 async function writeReleaseVersion({ engineRoot, version, state, changelog }) {
@@ -996,14 +980,15 @@ function repoPublishInfo(root, env) {
   const branch = git(root, ["branch", "--show-current"], env);
   if (branch === "") refuse("RELEASE_DETACHED_HEAD", `${root} is in a detached HEAD state`, { root });
   const remoteUrl = git(root, ["remote", "get-url", "origin"], env);
-  return { root, branch, remote: "origin", remoteUrl };
+  const commit = git(root, ["rev-parse", "HEAD"], env);
+  return { root, branch, remote: "origin", remoteUrl, commit };
 }
 
 // TCRN-CROSS-STORY-520 (MIN-243 D6, D7): the GitHub Release body is a short description of the
 // version and a link to its page in the Wiki's Release Notes chapter, never the CHANGELOG section,
 // which stays complete in docs/releases/<version>.md and in the Wiki. The body has three paragraphs:
 // the first sentence of RELEASE_SUMMARY, the page's address, and the two attachments. The address is
-// composed from the names module when the plan is built, loaded the way legacyReleaseNames loads it:
+// composed from the names module when the plan is built, loaded only when needed:
 // scripts/lib/privacy.mjs counts an address that continues into a path as a finding, so no source or
 // test file carries it as a literal. A page that is missing, empty or not a regular file is refused,
 // so that no release links to an empty Wiki page.
@@ -1023,7 +1008,7 @@ async function releaseNotes(engineRoot, version) {
     const state = stats === null ? "absent" : stats.isFile() ? "empty" : "not-a-file";
     refuse("RELEASE_WIKI_NOTES_MISSING", `${path} is ${state}; the release body would link to an empty Wiki page`, { version, path, state });
   }
-  const summary = RELEASE_SUMMARY(version, await legacyReleaseNames());
+  const summary = RELEASE_SUMMARY(version);
   const headline = /^.*?\.(?=\s|$)/u.exec(summary)?.[0] ?? summary;
   const asset = RELEASE_ASSET(version);
   return `${headline}\n\nRelease notes, by functional module: ${await releaseWikiNotesAddress(version)}\n\nAttachments: \`${asset}\` and its SHA-256 file \`${asset}.sha256\`.\n`;
@@ -1054,7 +1039,7 @@ export async function buildPublishPlan({ engineRoot, helperRoot, version, wikiDi
   const checksum = `${archive}.sha256`;
   await validatePackOutput(engine.root, version);
   const notes = await releaseNotes(engine.root, version);
-  const tagCommands = [engineInfo, helperInfo].map(({ root }) => ["git", "-C", root, "tag", tag]);
+  const tagCommands = [engineInfo, helperInfo].map(({ root, commit }) => ["git", "-C", root, "tag", "-a", tag, commit, "-m", `Release ${tag}`]);
   const pushCommands = [engineInfo, helperInfo].map(({ root, branch, remote }) => ["git", "-C", root, "push", remote, `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`]);
   const releaseCommand = ["gh", "release", "create", tag, archive, checksum, "--title", `Einzbern ${version}`, "--notes", notes];
   const { BRAND, LEGACY_REPOSITORY_NAMES } = await import("./names.mjs");
@@ -1115,7 +1100,7 @@ export async function executeReleaseAction({ action, engineRoot, helperRoot, ver
         refuse("RELEASE_TAG_EXISTS", `${tag} already exists locally or at origin`, { root, tag });
       }
     }
-    for (const root of roots) executeGit(root, ["tag", tag], env, runner);
+    for (const command of plan.commands.tag) executeGit(command[2], command.slice(3), env, runner);
     return { ok: true, reasonCode: "RELEASE_TAGS_CREATED", version, tag, repositories: roots };
   }
 

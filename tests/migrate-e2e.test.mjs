@@ -40,6 +40,8 @@ import {
   materializeWorkspaceFromGenesis,
   openLegacyWorkspace,
   readAllStreams,
+  readRegistry,
+  setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { CODEX_CONFIG_FILE, HOST_HOOK_FILES, isEinzbernHookCommand, isLegacyHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
@@ -402,7 +404,7 @@ test("489-AC1, AC2, AC3, AC4 (fixture): setup --mode migrate --yes true on a mac
   // rule at either level; other tools' hooks and keys, and Codex's hooks switch, stay.
   for (const file of [CLAUDE, CODEX]) {
     const user = await readJson(join(m.home, file));
-    assert.deepEqual(hookCommands(user).filter((hook) => isEinzbernHookCommand(hook.command)).map((hook) => hook.event), ["UserPromptSubmit"], file);
+    assert.deepEqual(hookCommands(user).filter((hook) => isEinzbernHookCommand(hook.command)).map((hook) => hook.event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"], file);
     const container = await readJson(join(m.container, file));
     for (const document of [user, container]) assert.deepEqual(hookCommands(document).filter((hook) => isLegacyHookCommand(hook.command)), [], file);
     assert.deepEqual(hookCommands(container).filter((hook) => isEinzbernHookCommand(hook.command)), [], file);
@@ -410,7 +412,7 @@ test("489-AC1, AC2, AC3, AC4 (fixture): setup --mode migrate --yes true on a mac
   const userClaude = await readJson(join(m.home, CLAUDE));
   assert.deepEqual([userClaude.env, userClaude.permissions, userClaude.hooks.UserPromptSubmit[1]], [{ KEEP: "1" }, { deny: [] }, OTHER_PROMPT]);
   assert.deepEqual(await readJson(join(m.container, CLAUDE)), { env: { CONTAINER: "1" }, hooks: {}, permissions: { deny: [] } });
-  assert.deepEqual((await readJson(join(m.home, CODEX))).hooks.PreToolUse, [OTHER_TOOL]);
+  assert.deepEqual((await readJson(join(m.home, CODEX))).hooks.PreToolUse, [OTHER_TOOL, { hooks: [{ type: "command", command: `node "${join(m.device, "engine", "hook.mjs")}" pre-tool-use` }] }]);
   const config = await readFile(join(m.home, CODEX_CONFIG_FILE), "utf8");
   assert.match(config, /^\[features\]\nhooks = true\n/u);
   assert.equal(config.includes(join(m.container, CODEX)), false, "no trust state of a removed hook stays");
@@ -478,14 +480,14 @@ test("489 (TCRN-CROSS-SUB-366, problems #4): after a migration, repair with --na
   assert.match(await readFile(agents, "utf8"), NAVIGATION_SECTION);
   assert.equal((await sectionRecords(library))["AGENTS.md#navigation"], "managed");
 
-  // The chain the library carries enabled attestation: the section's record goes under the
-  // wizard's actor, in the same run as the section leaves the file.
+  // Local integration preference must not remove the shared section or its attested record.
   const repaired = receipt(run(m, ["setup", "--mode", "repair", "--project", m.container, "--navigation", "false", "--at", at(), "--yes", "true"],
     { tripwire: [m.oldContainer, m.archive] }));
   assert.equal(repaired.reasonCode, "SETUP_APPLIED");
-  assert.doesNotMatch(await readFile(agents, "utf8"), NAVIGATION_SECTION);
+  assert.match(await readFile(agents, "utf8"), NAVIGATION_SECTION);
   const records = await sectionRecords(library);
-  assert.equal(Object.hasOwn(records, "AGENTS.md#navigation"), false, "the navigation section's record left with the section");
+  assert.equal(records["AGENTS.md#navigation"], "managed", "the shared navigation record remains managed");
+  assert.ok(!repaired.written.some((entry) => entry.step === "managed-sections" || entry.step === "library"), "local integration changes no shared state");
   assert.ok(Object.keys(records).length > 0 && Object.values(records).every((state) => state === "managed"), JSON.stringify(records));
   assert.ok((await actorsAfterImport(library)).every((actor) => actor === SETUP_ACTOR), "every event after the old chain names the wizard");
   assert.deepEqual(repaired.pendingSections, []);
@@ -501,8 +503,17 @@ test("489 (TCRN-CROSS-SUB-366, problems #4): a second device restores the migrat
   await mkdir(second.home, { recursive: true });
   await installEngine(second);
 
-  // The second device declines the navigation section, so the restore takes it out of AGENTS.md
-  // and its record out of the library; nothing of the first device's is written.
+  // An explicit shared policy change, not a device preference, requires the restored
+  // project to remove its managed navigation section. Record it on the first device.
+  const previousDevice = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = m.device;
+  try {
+    const binding = (await readRegistry(m.device)).entries.find((entry) => entry.projectPath === m.container);
+    await setWorkspaceSetting(library, { key: "agents.sharedNavigation", value: "declined", occurredAt: at(), actorId: SETUP_ACTOR, configurationProjectId: binding.projectId });
+  } finally {
+    if (previousDevice === undefined) delete process.env.EINZBERN_HOME;
+    else process.env.EINZBERN_HOME = previousDevice;
+  }
   const restored = receipt(run(second, ["setup", "--mode", "restore", "--project", m.container, "--restore", library, "--cloud", "false", "--navigation", "false", "--at", at(), "--yes", "true"],
     { tripwire: [m.oldContainer, m.archive, m.home, m.device] }));
   assert.equal(restored.reasonCode, "SETUP_APPLIED");
@@ -510,7 +521,8 @@ test("489 (TCRN-CROSS-SUB-366, problems #4): a second device restores the migrat
   assert.doesNotMatch(await readFile(join(m.container, "AGENTS.md"), "utf8"), NAVIGATION_SECTION);
   assert.equal(Object.hasOwn(await sectionRecords(library), "AGENTS.md#navigation"), false);
   const streams = (await readAllStreams(library)).streams;
-  const own = streams.filter((stream) => stream.manifest.identityScheme !== "legacy");
+  const secondId = (await readJson(join(second.device, "device.json"))).deviceId;
+  const own = streams.filter((stream) => stream.manifest.deviceId === secondId);
   assert.equal(own.length, 1, "the second device writes its own stream");
   assert.ok(own[0].events.length > 0 && own[0].events.every((event) => event.payload.actor === SETUP_ACTOR));
   assertDoctorGreen(restored);

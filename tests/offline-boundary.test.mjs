@@ -139,7 +139,7 @@ test("ESM named imports resolve to the patched functions", () => {
 if (process.env.TCRN_OFFLINE_PROOF !== "1") {
   const repositoryRoot = resolve(import.meta.dirname, "..");
 
-  async function offlineFixture({ unexpectedSource = false, extraInstallerFetch = false } = {}) {
+  async function offlineFixture({ unexpectedSource = false, extraInstallerFetch = false, harnessMutation = null } = {}) {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "einzbern-offline-scan-"));
     const root = join(temporaryRoot, "engine");
     await mkdir(join(root, ".git"), { recursive: true });
@@ -154,8 +154,21 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
     await cp(import.meta.filename, join(root, "tests", "offline-boundary.test.mjs"));
     await cp(join(repositoryRoot, "package.json"), join(root, "package.json"));
     await cp(join(repositoryRoot, ".npmrc"), join(root, ".npmrc"));
+    await mkdir(join(root, "portal", "tests", "helpers"), { recursive: true });
+    for (const name of ["ui-presence.test.mjs", "disposable-portal-fetch.test.mjs", "helpers/disposable-portal-fetch.mjs"]) {
+      await cp(join(repositoryRoot, "portal", "tests", name), join(root, "portal", "tests", name));
+    }
+    if (harnessMutation) {
+      const target = join(root, "portal", "tests", harnessMutation.file);
+      const source = await readFile(target, "utf8");
+      await writeFile(target, harnessMutation.replace
+        ? source.replace(...harnessMutation.replace)
+        : `${source}\n${harnessMutation.append}\n`);
+    }
     await mkdir(join(root, "node_modules"), { recursive: true });
-    await symlink(await realpath(join(repositoryRoot, "node_modules", "ajv")), join(root, "node_modules", "ajv"), "dir");
+    for (const dependency of ["ajv", "typescript"]) {
+      await symlink(await realpath(join(repositoryRoot, "node_modules", dependency)), join(root, "node_modules", dependency), "dir");
+    }
     if (unexpectedSource) {
       await writeFile(join(root, "scripts", "unexpected-network.mjs"), 'await fetch("https://example.invalid");\n');
     }
@@ -182,6 +195,7 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
 
   function scanReport(run) {
     const output = run.status === 0 ? run.stdout : run.stderr;
+    assert.match(output.trim().split("\n").at(-1), /^\{/u, `offline child produced no JSON report:\n${run.stdout}\n${run.stderr}`);
     return JSON.parse(output.trim().split("\n").at(-1));
   }
 
@@ -203,6 +217,29 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
           assert.equal(run.status, 0, run.stderr);
           assert.equal(report.reasonCode, "OFFLINE_BOUNDARY_VERIFIED");
         }
+      } finally {
+        await rm(fixture.temporaryRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test("offline harness declarations allow only the recorded loopback sites, not new egress", async () => {
+    const mutations = [
+      { file: "ui-presence.test.mjs", append: 'await fetch("https://example.invalid");', finding: "NETWORK_API" },
+      { file: "disposable-portal-fetch.test.mjs", append: 'await fetch("https://example.invalid");', finding: "NETWORK_API" },
+      { file: "disposable-portal-fetch.test.mjs", append: 'import https from "node:https";', finding: "NETWORK_MODULE" },
+      { file: "disposable-portal-fetch.test.mjs", replace: ['server.listen(0, "127.0.0.1");', 'server.listen(0, "0.0.0.0");'], finding: "NETWORK_MODULE" },
+      { file: "disposable-portal-fetch.test.mjs", replace: ['http://127.0.0.1:${server.address().port}', 'https://example.invalid'], finding: "NETWORK_API" },
+      { file: "ui-presence.test.mjs", replace: ['const fetch = disposablePortalFetch();', 'const fetch = globalThis.fetch;'], finding: "NETWORK_API" },
+    ];
+    for (const mutation of mutations) {
+      const fixture = await offlineFixture({ harnessMutation: mutation });
+      try {
+        const run = scanOffline(fixture.root);
+        const report = scanReport(run);
+        assert.equal(run.status, 1, run.stdout);
+        assert.equal(report.reasonCode, "OFFLINE_BOUNDARY_FINDINGS");
+        assert.ok(report.error.includes(`${mutation.finding}:portal/tests/${mutation.file}`), report.error);
       } finally {
         await rm(fixture.temporaryRoot, { recursive: true, force: true });
       }

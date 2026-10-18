@@ -355,7 +355,7 @@ test("542 GWT1 (SUB-521): a backup whose skill-copies holds only the copies an u
   const fx = await device(context);
   const [claude, agents] = SKILL_COPY_ROOTS;
   const more = { first: "20261015T020000Z", second: "20261015T020001Z" };
-  await lay(fx, more.first, [withEntry(updateCopy(claude))]);
+  await lay(fx, more.first, [withEntry(updateCopy(claude)), `${SKILL_COPIES}/${SKILL_COPIES_FILES.record}`]);
   await lay(fx, more.second, [withEntry(updateCopy(agents))]);
 
   const plan = await cli(clean(fx));
@@ -434,8 +434,8 @@ test("542 GWT2 (SUB-521): anything else under skill-copies keeps the backup as u
   await lay(fx, more.oldOnlyRoot, [withEntry(`${SKILL_COPIES}/${oldOnlyRoot}/${BRAND.helper.id}`)]);
   // An install marker outside the directory named as the old device directory.
   await lay(fx, more.strayMarker, [`${SKILL_COPIES}/${LEGACY_SKILL_MARKER_FILES[0]}`]);
-  // Both copies an update replaced, and skills.json beside them.
-  await lay(fx, more.record, [withEntry(updateCopy(claude)), withEntry(updateCopy(agents)), `${SKILL_COPIES}/${SKILL_COPIES_FILES.record}`]);
+  // A record alone cannot establish that a backup contains replaceable copies.
+  await lay(fx, more.record, [`${SKILL_COPIES}/${SKILL_COPIES_FILES.record}`]);
   // A name no layout knows, beside an update's copy.
   await lay(fx, more.unknownName, [withEntry(updateCopy(claude)), withEntry(`${SKILL_COPIES}/${claude.root}/${BRAND.portal.id}`)]);
   // A file, and a link, where an update's copy, a directory, belongs.

@@ -30,6 +30,8 @@ import test from "node:test";
 
 import {
   applyWriteLanguagePolicy,
+  appendEvents,
+  sortWorkspaceSettings,
   createProject,
   createWork,
   captureKnowledgeUnit,
@@ -55,11 +57,14 @@ import {
   expansionsAreBounded,
   expansionsText,
   parsePromptLanguages,
+  readRuntimeKnowledgeLanguagePolicy,
 } from "../dist/build/packages/core/src/knowledge-language.js";
 import { resetRecallCache } from "../dist/build/packages/core/src/recall.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { planCommand, migrateCommand } from "../scripts/knowledge-language.mjs";
+import { engineModelPolicyPath } from "../dist/build/packages/core/src/device-home.js";
+import { applyEngineModelPolicySet, resolveEngineExecutionPolicy, ENGINE_MODEL_POLICY_WRITE_TARGET } from "../dist/build/packages/core/src/engine-model-policy.js";
 
 const instant = (second) => `2026-09-08T00:00:${String(second).padStart(2, "0")}Z`;
 const OWNER = deriveStableId("owner", "STORY-364-OWNER");
@@ -84,6 +89,18 @@ function provider(overrides = {}) {
   };
 }
 
+async function configureLanguageModel() {
+  await applyEngineModelPolicySet({
+    host: "claude-code", occurredAt: instant(0), actor: "agent:test",
+    authorization: { decidedIn: `minutes:${"a".repeat(24)}#D1`, libraryId: `library:${"b".repeat(24)}`, target: ENGINE_MODEL_POLICY_WRITE_TARGET },
+    policy: {
+      categories: [{ id: "economy", name: "Economy", description: "", order: 10 }],
+      tiers: [{ order: 10, category: "economy", runner: "claude-code", model: ECONOMY_MODEL, effort: "medium", note: "" }],
+      escalation: { enabled: false, threshold: 2, ceiling: "economy" },
+    },
+  });
+}
+
 async function languageWorkspace(context, settings) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-story-364-")));
   context.after(() => rm(base, { recursive: true, force: true }));
@@ -101,6 +118,7 @@ async function languageWorkspace(context, settings) {
   let version = Number(state.version);
   let second = 3;
   for (const [key, value] of Object.entries(settings)) {
+    if (key === "models.tiers") { await configureLanguageModel(); continue; }
     const state = await setWorkspaceSetting(workspace, {
       occurredAt: instant(second), key, value,
     });
@@ -198,7 +216,8 @@ for (const [language, translated] of Object.entries({
 })) {
   test(`INC-399: ${language} settings → capture → serialized events → fresh replay/body, with wrong-answer no append`, async (context) => {
     const workspace = await languageWorkspace(context, {});
-    for (const [key, value] of Object.entries({ "artifact.language": language, "retrieval.promptLanguages": "en,fr,ja,ko,zh-CN", "models.tiers": MODELS_TIERS_VALUE })) {
+    await configureLanguageModel();
+    for (const [key, value] of Object.entries({ "artifact.language": language, "retrieval.promptLanguages": "en,fr,ja,ko,zh-CN" })) {
       await withSurface(ATELIER_SURFACE, () => cliJson(["settings-set", "--workspace", workspace, "--at", instant(key === "artifact.language" ? 3 : key === "retrieval.promptLanguages" ? 4 : 5), "--key", key, "--value", value]));
     }
     const catalog = await cliJson(["settings-catalog", "--workspace", workspace]);
@@ -785,10 +804,11 @@ test("language migration excludes retired cards before planning or applying poli
   const writes = [];
   const core = {
     scopedWorkspaceState(state, projectId) { assert.equal(projectId, undefined); return state; },
+    chainIdentity() { return null; },
     async materializeWorkspace() {
       return { settings: [] };
     },
-    readKnowledgeLanguagePolicy() {
+    async readRuntimeKnowledgeLanguagePolicy() {
       return {
         artifactLanguage: "en",
         promptLanguages: ["en"],
@@ -877,4 +897,233 @@ test("language migration excludes retired cards before planning or applying poli
     assert.deepEqual(bodyCalls, dryRun ? [] : expectedIds);
     assert.deepEqual(writes.map((entry) => entry.supersedes), dryRun ? [] : expectedIds);
   }
+});
+
+
+test("545: language migration skips coordination libraries before reading bundles or cards", async () => {
+  const core = {
+    async materializeWorkspace() { return {}; },
+    chainIdentity() { return { role: "coordination" }; },
+    async listKnowledgeMetadata() { throw new Error("coordination cards must not be read"); },
+  };
+  const original = process.stdout.write;
+  const output = [];
+  process.stdout.write = function(chunk) { output.push(JSON.parse(String(chunk))); return true; };
+  try {
+    await planCommand(core, { workspace: "unused" });
+    await migrateCommand(core, { workspace: "unused", bundle: "/missing-bundle" });
+  } finally { process.stdout.write = original; }
+  assert.equal(output.length, 2);
+  assert.ok(output.every(result => result.reasonCode === "KNOWLEDGE_LANGUAGE_COORDINATION_SKIPPED" && result.rewritten === 0));
+});
+
+test("545: migration plan reads each card's scoped project language", async () => {
+  const scoped = [];
+  const core = {
+    async materializeWorkspace() { return {}; },
+    chainIdentity() { return null; },
+    scopedWorkspaceState(_state, projectId) { scoped.push(projectId); return { settings: projectId === "project:english" ? "en" : "zh-CN" }; },
+    async readRuntimeKnowledgeLanguagePolicy(settings) { return { artifactLanguage: settings, promptLanguages: [], economyModel: null }; },
+    async listKnowledgeMetadata() { return { records: [{ id: "card:english", projectId: "project:english", lifecycle: "active", subject: "English words", summary: "English summary", snippet: "English snippet" }] }; },
+    detectLanguage() { return "en"; },
+  };
+  let result;
+  const original = process.stdout.write;
+  process.stdout.write = function(chunk) { result = JSON.parse(String(chunk)); return true; };
+  try { await planCommand(core, { workspace: "unused" }); }
+  finally { process.stdout.write = original; }
+  assert.deepEqual(scoped, [undefined, "project:english"]);
+  assert.equal(result.pending, 0, "library language must not replace a card's project language");
+});
+
+
+test("552: explicit non-Codex device policy takes priority over legacy project tiers", async (context) => {
+  await configureLanguageModel();
+  const settings = [{ key: "artifact.language", value: "zh-CN" }, { key: "models.tiers", value: MODELS_TIERS_VALUE.replace(ECONOMY_MODEL, "legacy-unapproved-model") }];
+  assert.equal(readKnowledgeLanguagePolicy(settings).economyModel, "legacy-unapproved-model", "historical pure helper remains readable");
+  assert.equal((await readRuntimeKnowledgeLanguagePolicy(settings, "claude-code")).economyModel, ECONOMY_MODEL);
+  assert.equal((await readRuntimeKnowledgeLanguagePolicy(settings)).economyModel, null, "host cannot be guessed from legacy runner");
+  assert.equal((await readRuntimeKnowledgeLanguagePolicy(settings, "codex")).economyModel, null, "unconfigured host never borrows another host policy");
+  const workspace = await languageWorkspace(context, { "artifact.language": "zh-CN" });
+  await assert.rejects(captureKnowledgeUnit(workspace, englishCard, { languageProvider: provider() }), error => error.reasonCode === "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE");
+  await assert.rejects(captureKnowledgeUnit(workspace, englishCard, { host: "claude-code", languageProvider: provider({ model: "legacy-unapproved-model" }) }), error => error.reasonCode === "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE");
+  const created = await captureKnowledgeUnit(workspace, englishCard, { host: "claude-code", languageProvider: provider() });
+  assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+});
+
+
+test("552: corrupt installed policy is not downgraded to an unavailable translation model", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "einzbern-language-invalid-policy-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(engineModelPolicyPath(directory), "{}\n");
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = directory;
+  try {
+    await assert.rejects(readRuntimeKnowledgeLanguagePolicy([{ key: "artifact.language", value: "zh-CN" }], "claude-code"), error => typeof error.reasonCode === "string" && error.reasonCode.startsWith("ENGINE_MODEL_POLICY_") && error.reasonCode !== "ENGINE_MODEL_POLICY_UNAVAILABLE");
+  } finally { process.env.EINZBERN_HOME = previous; }
+});
+
+
+test("552: recall tolerates absent economy in a valid host policy but execution and ceiling errors stay explicit", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "einzbern-language-optional-economy-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = directory;
+  const settings = [{ key: "artifact.language", value: "zh-CN" }];
+  const category = (id, order) => ({ id, name: id, description: "", order });
+  const tier = (category) => ({ order: 10, category, runner: "codex", model: "fixture-model", effort: "low", note: "" });
+  const install = async (policy) => applyEngineModelPolicySet({
+    host: "codex", occurredAt: instant(0), actor: "agent:test",
+    authorization: { decidedIn: `minutes:${"a".repeat(24)}#D1`, libraryId: `library:${"b".repeat(24)}`, target: ENGINE_MODEL_POLICY_WRITE_TARGET },
+    policy,
+  });
+  try {
+    const workspace = await languageWorkspace(context, { "artifact.language": "zh-CN", "retrieval.promptLanguages": "zh-CN" });
+    for (const economyDeclared of [false, true]) {
+      await install({
+        categories: [category("main", 10), ...(economyDeclared ? [category("economy", 20)] : [])],
+        tiers: [tier("main")], escalation: { enabled: false, threshold: 2, ceiling: "main" },
+      });
+      await assert.rejects(resolveEngineExecutionPolicy({ host: "codex", category: "economy", rejections: 0 }),
+        error => error.reasonCode === (economyDeclared ? "MODELS_CATEGORY_EMPTY" : "MODELS_CATEGORY_UNKNOWN") && error.details.category === "economy");
+      assert.equal((await readRuntimeKnowledgeLanguagePolicy(settings, "codex")).economyModel, null);
+      await assert.rejects(captureKnowledgeUnit(workspace, englishCard, { host: "codex", languageProvider: provider() }),
+        error => error.reasonCode === "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE", "read-side absence never authorizes a translated write");
+      let output = "";
+      await runCli(["recall", "--workspace", workspace, "--host", "codex", "--at", instant(20),
+        "--query", "is the key still blocking development", "--allow-trailing", "true"], { write(value) { output = value; } });
+      const answer = JSON.parse(output);
+      assert.match(answer.reasonCode, /^RECALL_/u);
+      assert.deepEqual(answer.queryTranslation, { from: "en", to: "zh-CN", model: null });
+      assert.deepEqual(answer.telemetry, { queryTranslations: 1 });
+    }
+    await install({ categories: [category("main", 10), category("economy", 20)], tiers: [tier("economy")],
+      escalation: { enabled: true, threshold: 2, ceiling: "main" } });
+    for (const read of [() => readRuntimeKnowledgeLanguagePolicy(settings, "codex"),
+      () => resolveEngineExecutionPolicy({ host: "codex", category: "economy", rejections: 0 })]) {
+      await assert.rejects(read(), error => error.reasonCode === "MODELS_CATEGORY_EMPTY" && error.details.path === "models.escalation.ceiling");
+    }
+    const path = engineModelPolicyPath(directory);
+    const valid = JSON.parse(await readFile(path, "utf8"));
+    const staleDigest = structuredClone(valid);
+    staleDigest.hosts.codex.tiers[0].model = "changed-without-digest";
+    await writeFile(path, JSON.stringify(staleDigest));
+    await assert.rejects(readRuntimeKnowledgeLanguagePolicy(settings, "codex"), error => error.reasonCode === "ENGINE_MODEL_POLICY_FILE_INVALID");
+    const invalid = structuredClone(valid);
+    invalid.hosts.codex.escalation.ceiling = "undeclared";
+    await writeFile(path, JSON.stringify(invalid));
+    await assert.rejects(readRuntimeKnowledgeLanguagePolicy(settings, "codex"), error => error.reasonCode === "ENGINE_MODEL_POLICY_INVALID");
+    await writeFile(path, "{}\n");
+    await assert.rejects(readRuntimeKnowledgeLanguagePolicy(settings, "codex"), error => error.reasonCode?.startsWith("ENGINE_MODEL_POLICY_") && error.reasonCode !== "ENGINE_MODEL_POLICY_UNAVAILABLE");
+  } finally {
+    if (previous === undefined) delete process.env.EINZBERN_HOME;
+    else process.env.EINZBERN_HOME = previous;
+  }
+});
+
+
+// PR24 K1/K2: append only synthetic historical records in fresh test libraries. The current
+// settings writer deliberately cannot create these old declarations; capture still must read them.
+async function legacyLanguageWorkspace(context, model) {
+  const workspace = await languageWorkspace(context, { "artifact.language": "zh-CN" });
+  const record = {
+    schemaVersion: "tcrn.workspace-setting.v1", key: "models.tiers", layerKind: "workspace_configuration",
+    value: MODELS_TIERS_VALUE.replace(ECONOMY_MODEL, model), revision: 1, updatedAt: instant(7), tombstone: false,
+  };
+  await appendEvents(workspace, [(state) => ({
+    payload: { operation: "settings.updated", record }, projects: state.projects, work: state.work,
+    settings: sortWorkspaceSettings([...state.settings, record]),
+  })], { occurredAt: instant(7) });
+  return workspace;
+}
+
+async function isolatedLanguageDevice(context, operation) {
+  const directory = await mkdtemp(join(tmpdir(), "einzbern-language-legacy-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = directory;
+  try { return await operation(directory); }
+  finally {
+    if (previous === undefined) delete process.env.EINZBERN_HOME;
+    else process.env.EINZBERN_HOME = previous;
+  }
+}
+
+async function installLanguagePolicy(host, model, effort = "medium", category = "economy") {
+  return applyEngineModelPolicySet({
+    host, occurredAt: instant(0), actor: "agent:test",
+    authorization: { decidedIn: `minutes:${"a".repeat(24)}#D1`, libraryId: `library:${"b".repeat(24)}`, target: ENGINE_MODEL_POLICY_WRITE_TARGET },
+    policy: {
+      categories: [{ id: category, name: category, description: "", order: 10 }],
+      tiers: [{ order: 10, category, runner: host, model, effort, note: "" }],
+      escalation: { enabled: false, threshold: 2, ceiling: category },
+    },
+  });
+}
+
+for (const withCodexPolicy of [false, true]) for (const model of [ECONOMY_MODEL, "fixture-claude-secondary"]) {
+  test(`PR24 K1/K2: legacy Claude capture keeps ${model}, Codex policy=${withCodexPolicy}`, async (context) => {
+    await isolatedLanguageDevice(context, async (directory) => {
+      if (withCodexPolicy) await installLanguagePolicy("codex", "fixture-codex-device");
+      const policyBefore = await readFile(engineModelPolicyPath(directory), "utf8").catch(error => {
+        if (error.code !== "ENOENT") throw error;
+        return null;
+      });
+      const workspace = await legacyLanguageWorkspace(context, model);
+      const before = await materializeWorkspaceFromGenesis(workspace);
+      const result = await captureKnowledgeUnit(workspace, englishCard, { host: "claude-code", languageProvider: provider({ model }) });
+      assert.equal(result.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+      assert.equal((await readRuntimeKnowledgeLanguagePolicy(before.settings, "claude-code")).economyModel, model);
+      assert.deepEqual(await materializeWorkspaceFromGenesis(workspace), before, "capture cannot change historical declarations, version or chain head");
+      const policyAfter = await readFile(engineModelPolicyPath(directory), "utf8").catch(error => {
+        if (error.code !== "ENOENT") throw error;
+        return null;
+      });
+      assert.equal(policyAfter, policyBefore, "legacy capture never creates Claude policy or rewrites another host");
+    });
+  });
+}
+
+test("PR24 K3/K4: explicit unusable host policy never falls back to legacy models", async (context) => {
+  await isolatedLanguageDevice(context, async (directory) => {
+    const workspace = await legacyLanguageWorkspace(context, "legacy-project-model");
+    const before = await materializeWorkspaceFromGenesis(workspace);
+    assert.equal((await readRuntimeKnowledgeLanguagePolicy(before.settings)).economyModel, null);
+    await assert.rejects(readRuntimeKnowledgeLanguagePolicy(before.settings, "INVALID"), error => error.reasonCode === "ENGINE_MODEL_POLICY_HOST_INVALID");
+    // Absent Codex is different from unmigrated Claude: no project fallback is allowed.
+    await assert.rejects(captureKnowledgeUnit(workspace, englishCard, { host: "codex", languageProvider: provider({ model: "legacy-project-model" }) }), error => error.reasonCode === "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE");
+    for (const host of ["claude-code", "codex"]) {
+      for (const [model, effort, category] of [["", "medium", "economy"], ["device-model", "", "economy"], ["device-model", "medium", "main"]]) {
+        await installLanguagePolicy(host, model, effort, category);
+        assert.equal((await readRuntimeKnowledgeLanguagePolicy(before.settings, host)).economyModel, null);
+        await assert.rejects(captureKnowledgeUnit(workspace, englishCard, { host, languageProvider: provider({ model: "legacy-project-model" }) }), error => error.reasonCode === "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE");
+      }
+    }
+    await installLanguagePolicy("codex", "fixture-codex-device");
+    assert.equal((await readRuntimeKnowledgeLanguagePolicy(before.settings, "codex")).economyModel, "fixture-codex-device");
+    await writeFile(engineModelPolicyPath(directory), "not JSON");
+    for (const host of ["codex", "claude-code"]) {
+      await assert.rejects(captureKnowledgeUnit(workspace, englishCard, { host, languageProvider: provider({ model: "legacy-project-model" }) }), error => error.reasonCode === "ENGINE_MODEL_POLICY_FILE_INVALID");
+    }
+    assert.deepEqual(await materializeWorkspaceFromGenesis(workspace), before);
+  });
+});
+
+
+test("PR24 K4: explicit Claude device policy overrides a real legacy project's capture model", async (context) => {
+  await isolatedLanguageDevice(context, async (directory) => {
+    const workspace = await legacyLanguageWorkspace(context, "legacy-project-model");
+    const before = await materializeWorkspaceFromGenesis(workspace);
+    await installLanguagePolicy("claude-code", "fixture-device-model");
+    const policyBefore = await readFile(engineModelPolicyPath(directory), "utf8");
+    await assert.rejects(captureKnowledgeUnit(workspace, englishCard, {
+      host: "claude-code", languageProvider: provider({ model: "legacy-project-model" }),
+    }), error => error.reasonCode === "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE");
+    const result = await captureKnowledgeUnit(workspace, englishCard, {
+      host: "claude-code", languageProvider: provider({ model: "fixture-device-model" }),
+    });
+    assert.equal(result.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+    assert.deepEqual(await materializeWorkspaceFromGenesis(workspace), before);
+    assert.equal(await readFile(engineModelPolicyPath(directory), "utf8"), policyBefore);
+  });
 });

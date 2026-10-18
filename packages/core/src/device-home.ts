@@ -11,7 +11,7 @@
 
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import { DIRECTORY } from "./names.js";
 
@@ -21,6 +21,8 @@ export const DEVICE_HOME_ENTRIES = Object.freeze({
   device: "device.json",
   registry: "registry.json",
   machineSettings: "machine-settings.json",
+  // TCRN-CROSS-INIT-056: one device-local model policy, partitioned by host inside the file.
+  engineModelPolicy: "engine-model-policy.json",
   cache: "cache",
   locks: "locks",
   backups: "backups",
@@ -43,22 +45,25 @@ export const USER_CREST_PATH_SETTING = "crest.userPath" as const;
 const USER_CREST_DEVICE_NAME = "user-crest";
 
 export class DeviceHomeError extends Error {
-  readonly reasonCode: "DEVICE_LIBRARY_ID_INVALID";
+  readonly reasonCode: "DEVICE_LIBRARY_ID_INVALID" | "DEVICE_HOME_INVALID";
 
-  constructor(message: string) {
+  constructor(message: string, reasonCode: "DEVICE_LIBRARY_ID_INVALID" | "DEVICE_HOME_INVALID" = "DEVICE_LIBRARY_ID_INVALID") {
     super(message);
     this.name = "DeviceHomeError";
-    this.reasonCode = "DEVICE_LIBRARY_ID_INVALID";
+    this.reasonCode = reasonCode;
   }
 }
 
 /**
- * The device directory: EINZBERN_HOME when it is set and non-empty (resolved against the
- * working directory), otherwise `<home>/.einzbern`. Computing it touches nothing.
+ * The device directory: an absolute EINZBERN_HOME when set and non-empty, otherwise
+ * `<home>/.einzbern`. Relative environment paths are rejected; computing touches nothing.
  */
 export function deviceHome(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string {
   const configured = env[DEVICE_HOME_ENVIRONMENT_VARIABLE];
-  if (typeof configured === "string" && configured.length > 0) return resolve(configured);
+  if (typeof configured === "string" && configured.length > 0) {
+    if (!isAbsolute(configured)) throw new DeviceHomeError("EINZBERN_HOME must be an absolute device directory, not a cwd-relative path", "DEVICE_HOME_INVALID");
+    return resolve(configured);
+  }
   return join(home, DIRECTORY.device);
 }
 
@@ -79,6 +84,16 @@ export function deviceFilePath(home: string = deviceHome()): string {
 
 export function registryPath(home: string = deviceHome()): string {
   return join(home, DEVICE_HOME_ENTRIES.registry);
+}
+
+/** The one device-local source for engine model policy. */
+export function engineModelPolicyPath(home: string = deviceHome()): string {
+  return join(home, DEVICE_HOME_ENTRIES.engineModelPolicy);
+}
+
+/** The lock shared by every process that replaces the engine model policy file. */
+export function engineModelPolicyLockPath(home: string = deviceHome()): string {
+  return join(home, DEVICE_HOME_ENTRIES.locks, `${DEVICE_HOME_ENTRIES.engineModelPolicy}.lock`);
 }
 
 /** This library's derived state on this machine: views, snapshots and indexes. */

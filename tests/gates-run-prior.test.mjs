@@ -92,7 +92,7 @@ test("537-a: the second gate reads the first gate's entry, the first reads an em
   const record = JSON.parse(recordText);
   assert.deepEqual(Object.keys(record).sort(), ["at", "base", "declarationsDigest", "gates", "libraryId", "reds", "release", "runId", "schemaVersion", "treeDigest", "trees", "workIds"]);
   for (const gate of record.gates) {
-    assert.deepEqual(Object.keys(gate).sort(), ["exitCode", "matched", "matchedWorkIds", "name", "ok", "outputBytes", "outputFile", "required", "root", "signal", "timedOut", "truncated"]);
+    assert.deepEqual(Object.keys(gate).sort(), ["durationMs", "exitCode", "finishedAt", "matched", "matchedWorkIds", "name", "ok", "outputBytes", "outputFile", "required", "root", "signal", "startedAt", "timedOut", "truncated"]);
     assert.equal(gate.outputFile.startsWith(`${run.runId}/`), true, "the record keeps the output file relative to the gate-runs directory");
   }
 });

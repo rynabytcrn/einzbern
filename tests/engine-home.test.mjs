@@ -262,6 +262,36 @@ test("471-R3: rollback needs a previous version that is still installed", async 
   assert.equal(JSON.parse(await readFile(join(home, "engine", "current"), "utf8")).version, NEWER, "current stays where it was");
 });
 
+test("471-R3: an invalid registry refuses engine-update before current moves", async (context) => {
+  const { base, home } = await scratch(context);
+  await update(await engineTree(base, FRAMEWORK_VERSION));
+  const newer = await engineTree(base, NEWER);
+  const pointer = await readFile(join(home, "engine", "current"));
+  const registry = join(home, "registry.json");
+  for (const invalid of ["{", JSON.stringify({ schemaVersion: "invalid", entries: [] })]) {
+    await writeFile(registry, invalid);
+    const error = await refusal(["engine-update", "--from", newer.tree, "--sha256", newer.sha256, "--version", newer.version, "--at", at()]);
+    assert.equal(error.reasonCode, "LIBRARY_REGISTRY_INVALID");
+    assert.deepEqual(await readFile(join(home, "engine", "current")), pointer, "a report failure leaves the entire current pointer unchanged");
+    assert.equal(await readFile(registry, "utf8"), invalid, "a refused update does not alter the invalid registry");
+  }
+});
+
+test("471-R3: an invalid registry refuses engine-rollback before current moves", async (context) => {
+  const { base, home } = await scratch(context);
+  await update(await engineTree(base, FRAMEWORK_VERSION));
+  await update(await engineTree(base, NEWER));
+  const pointer = await readFile(join(home, "engine", "current"));
+  const registry = join(home, "registry.json");
+  for (const invalid of ["{", JSON.stringify({ schemaVersion: "invalid", entries: [] })]) {
+    await writeFile(registry, invalid);
+    const error = await refusal(["engine-rollback", "--at", at()]);
+    assert.equal(error.reasonCode, "LIBRARY_REGISTRY_INVALID");
+    assert.deepEqual(await readFile(join(home, "engine", "current")), pointer, "a report failure leaves the entire current pointer unchanged");
+    assert.equal(await readFile(registry, "utf8"), invalid, "a refused rollback does not alter the invalid registry");
+  }
+});
+
 test("471-R3: after a switch every registered library is checked against the engine now current", async (context) => {
   const { base } = await scratch(context);
   const projects = { plain: join(base, "plain"), future: join(base, "future") };

@@ -17,8 +17,8 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // install-tree digest its publisher stated (specs/release-trust-v1.md); fetching it is the
 // installer's job, and the engine never reaches the network. Before a version becomes current it
 // runs once (engine-list) to prove that it starts, that it is the version it was installed as, and
-// which library format it reads; after the switch every library in this device's registry is
-// checked against it. engine-rollback makes the previous version current again. Installing,
+// which library format it reads; every library in this device's registry is checked against it
+// before the switch is committed. engine-rollback makes the previous version current again. Installing,
 // switching and rolling back hold the device's engine lock, so two of them never interleave.
 
 import { execFile } from "node:child_process";
@@ -69,6 +69,7 @@ export const ENGINE_FILES = Object.freeze({
 // No product deadline: the invoking operator owns cancellation.
 
 export const ENGINE_HOME_REASON_CODES = Object.freeze([
+  "ENGINE_CURRENT_CHANGED",
   "ENGINE_CURRENT_INVALID",
   "ENGINE_PROBE_FAILED",
   "ENGINE_ROLLBACK_UNAVAILABLE",
@@ -421,20 +422,40 @@ export async function updateEngine(input: EngineUpdateInput): Promise<EngineSwit
       previous: before === null ? null : before.version === input.version ? before.previous : before.version,
       switchedAt: input.at,
     });
+    // Finish every fallible report read before committing the switch. In particular, a damaged
+    // registry must not turn an already-committed update into a refusal.
+    const result = await report("ENGINE_UPDATED", current, engine, home, installed);
     await writeEngineCurrent(current, home);
-    return report("ENGINE_UPDATED", current, engine, home, installed);
+    return result;
   });
 }
 
 /**
  * Make the previous version current again (TCRN-CROSS-STORY-471 R3): it must still be installed and
  * must start; the version it replaces becomes the previous one, so a second rollback undoes the first.
+ * A planned rollback can bind both version identities; they are checked while holding the engine
+ * lock, before probing or switching, so a stale plan cannot choose a different rollback target.
  */
-export async function rollbackEngine(input: { readonly at: string; readonly home?: string }): Promise<EngineSwitchReport> {
+export async function rollbackEngine(input: {
+  readonly at: string;
+  readonly home?: string;
+  readonly expectedCurrent?: Pick<EngineCurrent, "version" | "previous">;
+}): Promise<EngineSwitchReport> {
   assertStrictInstant(input.at);
   const home = input.home ?? deviceHome();
   return withEngineLock(home, async () => {
     const before = await readEngineCurrent(home);
+    const expected = input.expectedCurrent;
+    if (expected !== undefined && (before?.version !== expected.version || before?.previous !== expected.previous)) {
+      fail("ENGINE_CURRENT_CHANGED", "engine/current changed after the rollback was planned; make a new rollback plan", {
+        file: engineCurrentPath(home),
+        expectedVersion: expected.version,
+        actualVersion: before?.version ?? "none",
+        expectedPrevious: expected.previous ?? "none",
+        actualPrevious: before?.previous ?? "none",
+        remedy: "make a new rollback plan",
+      });
+    }
     if (before === null) fail("ENGINE_ROLLBACK_UNAVAILABLE", "no engine version is current on this device", { remedy: "engine-update" });
     if (before.previous === null) {
       fail("ENGINE_ROLLBACK_UNAVAILABLE", `${before.version} is current and there is no previous version to go back to`, { remedy: "engine-update" });
@@ -453,7 +474,8 @@ export async function rollbackEngine(input: { readonly at: string; readonly home
       previous: before.version,
       switchedAt: input.at,
     });
+    const result = await report("ENGINE_ROLLED_BACK", current, engine, home);
     await writeEngineCurrent(current, home);
-    return report("ENGINE_ROLLED_BACK", current, engine, home);
+    return result;
   });
 }

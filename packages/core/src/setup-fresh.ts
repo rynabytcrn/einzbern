@@ -1,4 +1,4 @@
-import { chainIdentity, declareChainIdentity, ensureProjectCoordination, projectCoordinationChoice, resolveCoordinationBinding } from "./project-chain.js";
+import { chainIdentity, declareChainIdentity, effectiveProjectState, ensureProjectCoordination, projectCoordinationChoice, resolveCoordinationBinding } from "./project-chain.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -593,6 +593,8 @@ async function planSections(recorder: SetupRecorder, projectRoot: string, state:
   readonly pending: readonly { readonly file: string; readonly id: string }[];
   readonly recordsChange: boolean;
 }> {
+  // Explicit project opt-out suppresses both root files in the plan, just as apply does.
+  if (state.settings.find((entry) => entry.key === "agents.generation")?.value === "none") return { pending: [], recordsChange: false };
   const agentsPath = join(projectRoot, AGENTS_FILE);
   const plans: (ManagedWritePlan | null)[] = [
     await recorder.attempt("managed-sections", agentsPath, () => planManagedWrite({
@@ -614,7 +616,7 @@ async function planSections(recorder: SetupRecorder, projectRoot: string, state:
     for (const id of plan.pending) pending.push({ file: plan.file, id });
     if (plan.sections.some((decision) => decision.recordChanged)) recordsChange = true;
   }
-  if (navigation === "declined") {
+  if (state.settings.find((entry) => entry.key === "agents.sharedNavigation")?.value === "declined") {
     const agentsPlan = plans[0];
     const navigationDecision = agentsPlan?.sections.find((decision) => decision.id === "navigation");
     const navigationSection = agentsPlan?.before === null || agentsPlan?.before === undefined
@@ -676,7 +678,7 @@ export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput
   }
   const declared = input.configurationProjectId ?? (await readRegistry(deviceHome)).entries.find(entry => entry.projectPath === projectRoot && entry.libraryPath === library.path)?.projectId;
   const view = Object.hasOwn(library.state, "configurationProjectId") || declared === undefined
-    ? library.state : scopedWorkspaceState(await materializeWorkspaceFromGenesis(library.path), declared);
+    ? library.state : await effectiveProjectState(await materializeWorkspaceFromGenesis(library.path), declared, deviceHome);
   const sections = await planSections(recorder, projectRoot, view, navigation);
   if (sections.recordsChange) recorder.write("library", library.path, "update");
   return sections.pending;
@@ -838,7 +840,8 @@ async function applySections(recorder: SetupRecorder, input: WiringApplyInput, l
   }
   if (rendered.recorded > 0) recorder.write("library", library.path, "update");
   const pending = rendered.pending.map((section) => ({ file: section.file, id: section.id }));
-  if (input.navigation === "declined" && rendered.sections.some((section) => section.file === AGENTS_FILE && section.id === "navigation" && section.state === "managed")) {
+  const sharedState = await effectiveProjectState(await materializeWorkspace(library.path), input.configurationProjectId, deviceHome);
+  if (sharedState.settings.find((entry) => entry.key === "agents.generation")?.value !== "none" && sharedState.settings.find((entry) => entry.key === "agents.sharedNavigation")?.value === "declined" && rendered.sections.some((section) => section.file === AGENTS_FILE && section.id === "navigation" && section.state === "managed")) {
     try {
       const { change } = await disableAgentsSection(library.path, {
         projectRoot,

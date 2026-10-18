@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "einzbern.vendored-runtime.v1",
+  "source": "portal/ds-static-bridges.snapshot.js",
+  "sha256": "e44b14d7fa5342982849aa46c967ef00a460cf2ab127223e4abcac5df6f4a7f0",
+  "notices": "THIRD_PARTY_NOTICES.txt",
+  "noticesSha256": "4ed9fbf62ca58c4588755446b7563e411645d156b6a2542181641e4716d64af1",
+  "components": [
+    {
+      "name": "react",
+      "version": "19.1.0",
+      "license": "MIT"
+    },
+    {
+      "name": "react-dom",
+      "version": "19.1.0",
+      "license": "MIT"
+    }
+  ]
+}

@@ -28,7 +28,7 @@ import {
   materializeWorkspace,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
-import { knowledgeConflictHits } from "../dist/build/packages/core/src/knowledge-core.js";
+import { knowledgeConflictHits, knowledgeProjectionConflict } from "../dist/build/packages/core/src/knowledge-core.js";
 import { KNOWLEDGE_HINT_QUESTION, knowledgeHintFor } from "../dist/build/packages/core/src/knowledge-hint.js";
 import { applyMachineSettingSet } from "../dist/build/packages/core/src/machine-settings.js";
 import { readRecallCards } from "../dist/build/packages/core/src/recall-inputs.js";
@@ -244,4 +244,37 @@ test("STORY-539 GWT3 (SUB-504): the knowledge hint of done, of a work-batch done
   // At the core: what a hint scores nothing against leaves nothing out.
   const state = await as(home, () => materializeWorkspace(fx.workspace));
   assert.deepEqual(knowledgeHintFor(state, [], { workId: work("RF-STORY-A3") }), { line: `${HINT_PREFIX}无；按族滤掉 0 张`, conflictCandidateIds: [], filteredByFamily: 0 });
+});
+
+
+test("545: completion hints cap ranked candidates at five independently of query capacity", () => {
+  const cards = Array.from({ length: 8 }, (_, index) => ({
+    id: `knowledge:hint-${index}`, subject: "Pelican feeding schedule", summary: "Pelican feeding schedule",
+    snippet: "Pelican feeding schedule", tags: [], sourceReferences: [], linkedWorkIds: [],
+    lifecycle: "active", extensions: {}, expansions: {},
+  }));
+  const state = { work: [{ id: "work:hint", title: "Pelican feeding schedule", externalKey: "HINT", kind: "Story", parentId: null, extensions: {} }], minutes: [], conferenceMinutes: [], conferences: [] };
+  const hint = knowledgeHintFor(state, cards, { workId: "work:hint" });
+  assert.deepEqual(hint.conflictCandidateIds, cards.slice(0, 5).map(card => card.id));
+});
+
+
+test("545: conflict projection follows stable creation direction, not reverse-only evidence", () => {
+  const older = { id: "knowledge:a", updatedAt: "2026-10-14T08:00:00Z", subject: "Amber rotation", summary: "", snippet: "", tags: [], lifecycle: "active", extensions: {} };
+  const newer = { ...older, id: "knowledge:b", updatedAt: "2026-10-14T09:00:00Z", subject: "Cobalt deployment", summary: "Amber rotation; Amber rotation" };
+  const conflict = (left, right) => knowledgeProjectionConflict(left, right, left.updatedAt, right.updatedAt);
+  assert.deepEqual(knowledgeConflictHits([older], newer.subject), []);
+  assert.deepEqual(knowledgeConflictHits([newer], older.subject), [newer.id]);
+  assert.equal(conflict(older, newer), false);
+  assert.equal(conflict(newer, older), false, "enumeration never selects the comparison direction");
+  const genuine = { ...newer, subject: "Amber rotation guide" };
+  assert.equal(conflict(older, genuine), true);
+  assert.equal(conflict(genuine, older), true);
+  assert.equal(knowledgeProjectionConflict({ ...older, updatedAt: "2026-10-15T08:00:00Z" }, newer, older.updatedAt, newer.updatedAt), false, "refresh metadata does not replace the original event instant");
+  const tied = { ...newer, updatedAt: older.updatedAt };
+  assert.equal(conflict(older, tied), false);
+  assert.equal(conflict(tied, older), false);
+  const reverseTie = { ...tied, id: "knowledge:0" };
+  assert.equal(conflict(older, reverseTie), true, "equal-time cards use canonical id, not input order");
+  assert.equal(conflict(reverseTie, older), true);
 });

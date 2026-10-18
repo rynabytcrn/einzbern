@@ -85,7 +85,9 @@ export async function runAllP1Legs(runLeg, tasks = P1_TASKS, now = () => perform
     } catch (error) {
       const reasonCode = typeof error?.reasonCode === "string" && error.reasonCode.length > 0 ? error.reasonCode : "P1_LEG_INTERNAL_ERROR";
       legs.push({ task, ok: false, reasonCode });
-      reds.push({ task, reasonCode, message: String(error?.message ?? error).slice(0, 2000) });
+      // A command can print many passing tests before its failing assertion. Keep
+      // the complete diagnostic so the aggregate receipt does not hide the failure.
+      reds.push({ task, reasonCode, message: String(error?.message ?? error) });
     } finally {
       durations.push({ task, durationMs: Math.round(now() - started) });
     }

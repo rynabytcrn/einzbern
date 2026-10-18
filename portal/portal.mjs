@@ -10,19 +10,19 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Hold the same device registry lock used by register/unregister/repoint until
 // the CLI's library lock and all output writes finish. This is exclusion, not
-// another preflight or an authentication mechanism. The lock and its path come
+// another preflight or an authentication mechanism. Relocation takes this same
+// registry-before-library lock order. The lock and its path come
 // through the registry-lock bridge, as the names do through names.mjs.
 import { withFileLock, registryPath } from "../scripts/lib/registry-lock.mjs";
 
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
-import { DIRECTORY, LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
+import { LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
 
 function execFileAsync(file, args, options) {
   return new Promise((resolve, reject) => {
@@ -77,6 +77,9 @@ function failStartup(error) {
 if (!ACTOR) {
   failStartup(startupError("PORTAL_ACTOR_REQUIRED", { variable: "TCRN_PORTAL_ACTOR" }, "Atelier starts with TCRN_PORTAL_ACTOR set to the actor its writes are recorded under"));
 }
+
+// Reject cwd-relative device roots before selecting any library or reading its cache.
+try { deviceHomePath(); } catch (error) { failStartup(error); }
 
 // TCRN-CROSS-STORY-482 R3, AC1: Atelier opens the libraries this device has registered, read
 // through library-list (the device directory's registry.json), and switches among them. It
@@ -654,6 +657,7 @@ const writeVariable = (body) => governedWrite((common) => [
   "--name", String(body.name ?? ""),
   "--type", String(body.type ?? ""),
   "--value", String(body.value ?? ""),
+  "--exports", (body.exports ?? []).join(","),
   ...(body.description === undefined ? [] : ["--description", String(body.description)]),
   ...orderArguments(body.order),
 ], ATELIER_SURFACE);
@@ -676,8 +680,8 @@ async function gatesProjection() {
 }
 
 function deviceHomePath() {
-  const configured = process.env.EINZBERN_HOME;
-  return typeof configured === "string" && configured.length > 0 ? resolve(configured) : join(homedir(), DIRECTORY.device);
+  // Reuse the validated core device-home path through the existing registry bridge.
+  return dirname(registryPath());
 }
 
 function isGateRun(value, libraryId, projectId) {
@@ -878,7 +882,10 @@ async function agentsRead(name) {
   const path = proseTarget(name);
   if (!path) return { status: currentProseRoot() === null ? 200 : 404, body: { ok: currentProseRoot() === null, reasonCode: currentProseRoot() === null ? "PORTAL_PROJECT_BINDING_UNCONFIGURED" : "PORTAL_PATH_ESCAPE", file: name, text: "", outputBindingStatus: "unconfigured" } };
   let text = "";
-  try { text = await readFile(path, "utf8"); } catch { /* absent prose reads as an empty editor */ }
+  try { text = await readFile(path, "utf8"); } catch (error) {
+    // Only absence is an empty editor. Never return file contents or raw filesystem errors.
+    if (error?.code !== "ENOENT") return { status: 500, body: { ok: false, reasonCode: "PORTAL_INTERNAL_ERROR", file: name, error: "Unable to read project instructions." } };
+  }
   return { status: 200, body: { ok: true, reasonCode: "PORTAL_AGENTS_MD_READY", file: name, path, text } };
 }
 
@@ -929,8 +936,8 @@ function isLoopbackHost(hostHeader) {
 // The routes that answer for this device or engine rather than for the selected target, and the two
 // switches, which name the target they select (TCRN-CROSS-INIT-053 R46 I05). The writes are the ones the
 // target check left alone before.
-const TARGET_EXEMPT_READS = Object.freeze(["/api/libraries", "/api/project-targets", "/api/machine-settings", "/api/vocabulary", "/api/commands"]);
-const TARGET_EXEMPT_WRITES = Object.freeze(["/api/library", "/api/configuration-scope", "/api/machine-settings"]);
+const TARGET_EXEMPT_READS = Object.freeze(["/api/libraries", "/api/project-targets", "/api/machine-settings", "/api/model-policy", "/api/vocabulary", "/api/commands"]);
+const TARGET_EXEMPT_WRITES = Object.freeze(["/api/library", "/api/configuration-scope", "/api/machine-settings", "/api/model-policy"]);
 
 const server = createServer((request, response) => requestContext.run({ epoch: selectionEpoch, library: { ...selectedLibrary, configurationProjectId: selectedConfigurationProjectId }, authenticated: false }, async () => {
   if (!isLoopbackHost(request.headers.host)) {
@@ -1017,6 +1024,13 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     // out from those three and keeps no grouping of its own.
     if (request.method === "GET" && pathname === "/api/settings") {
       send(response, 200, await settingsCatalog());
+      return;
+    }
+    // INIT-056's policy belongs to the engine on this device and is partitioned by host. It has no
+    // selected-project scope; the source projection still reports any legacy project records.
+    if (request.method === "GET" && pathname === "/api/model-policy") {
+      const result = await cliResult(["engine-model-policy-catalog", ...(url.searchParams.has("host") ? ["--host", url.searchParams.get("host")] : [])]);
+      send(response, result.ok ? 200 : 409, result.body);
       return;
     }
     if (request.method === "POST" && pathname === "/api/configuration-scope") {
@@ -1312,6 +1326,9 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     if ((request.method === "POST" || request.method === "DELETE") && pathname === "/api/variables") {
       const body = await readJsonBody(request);
       const name = String(body.name ?? "");
+      if (request.method === "POST" && body.exports !== undefined && (!Array.isArray(body.exports) || body.exports.some((target) => !["agents", "handoff"].includes(target)) || new Set(body.exports).size !== body.exports.length)) {
+        send(response, 400, { ok: false, reasonCode: "VARIABLE_EXPORTS_INVALID" }); return;
+      }
       const mutation = request.method === "POST" ? await writeVariable(body) : await removeVariable(name);
       const result = await completeVariableWrite(name, mutation);
       send(response, result.ok ? 200 : 409, result.body);
@@ -1381,6 +1398,30 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       send(response, result.ok ? 200 : 409, { ...result.body, readback: readback?.settings?.find((entry) => entry.key === key) ?? null });
       return;
     }
+    if (request.method === "POST" && pathname === "/api/model-policy") {
+      const body = await readJsonBody(request);
+      const library = currentLibrary();
+      // The device policy is not scoped to a project target, but the Owner decision that
+      // authorizes its write is resolved from this library. A tab that changed libraries while a
+      // form was open must not have its old closure write against the new selection.
+      if (body.libraryId !== library.libraryId || body.libraryPath !== library.libraryPath) {
+        send(response, 409, { ok: false, reasonCode: "PORTAL_MODEL_POLICY_LIBRARY_CHANGED", library: publicLibrary(library) });
+        return;
+      }
+      const host = String(body.host ?? "");
+      const decidedIn = String(body.decidedIn ?? "");
+      const result = await cliResult([
+        "engine-model-policy-set",
+        "--workspace", library.libraryPath,
+        "--host", host,
+        "--policy", JSON.stringify(body.policy ?? null),
+        "--at", new Date().toISOString(),
+        "--actor", ACTOR,
+        "--decided-in", decidedIn,
+      ]);
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok });
+      return;
+    }
     if (request.method === "GET" && pathname === "/api/agents-md") {
       const result = await agentsRead(url.searchParams.get("file") ?? PROSE_FILES[0]);
       send(response, result.status, result.body);
@@ -1406,7 +1447,14 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
 }));
 
 const port = Number(portArgument || (await machineValue("portal.port")) || "4319");
-server.listen(port, "127.0.0.1", () => {
+const reportListenFailure = (error) => {
+  process.stderr.write(`${JSON.stringify({ ok: false, reasonCode: error.code === "EADDRINUSE" ? "PORTAL_PORT_IN_USE" : "PORTAL_LISTEN_FAILED", port, host: "127.0.0.1", error: String(error.code ?? error.message), recovery: "Choose an available port with --port or stop the existing listener." })}\n`);
+  process.exitCode = 1;
+};
+server.on("error", reportListenFailure);
+if (!Number.isSafeInteger(port) || port < 0 || port > 65535) {
+  reportListenFailure({ code: "PORTAL_PORT_INVALID" });
+} else server.listen(port, "127.0.0.1", () => {
   const bound = server.address().port;
   process.stdout.write(`${JSON.stringify({
     reasonCode: "PORTAL_LISTENING",

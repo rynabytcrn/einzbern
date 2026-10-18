@@ -47,10 +47,10 @@ function refusal(args, env) {
 }
 
 function oneHook(device) {
-  return { UserPromptSubmit: [{ hooks: [{ type: "command", command: `node "${join(device, "engine", "hook.mjs")}" user-prompt-submit` }] }] };
+  return Object.fromEntries([["UserPromptSubmit", "user-prompt-submit"], ["SubagentStart", "subagent-start"], ["PreToolUse", "pre-tool-use"]].map(([event, word]) => [event, [{ hooks: [{ type: "command", command: `node "${join(device, "engine", "hook.mjs")}" ${word}` }] }]]));
 }
 
-test("477-R1: --scope user renders one UserPromptSubmit hook for each host into the home directory, and nothing else", async (t) => {
+test("BL34/35: --scope user renders the three engine hooks for each host into the home directory", async (t) => {
   const { home, device, env } = await machine(t, "einzbern-host-render-user-");
   for (const host of ["claude-code", "codex"]) {
     const plan = run(["--host", host, "--scope", "user", "--plan-only"], env);
@@ -88,7 +88,7 @@ test("478-AC5: --scope user renders pointer hooks when this device declined the 
   const receipt = run(["--host", "claude-code", "--scope", "user", "--at", AT], env);
   assert.equal(receipt.reasonCode, "HOST_RENDER_COMMITTED");
   const hooks = JSON.parse(await readFile(join(home, ".claude", "settings.json"), "utf8")).hooks;
-  assert.deepEqual(Object.keys(hooks).sort(), ["SessionStart", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual(Object.keys(hooks).sort(), ["PreToolUse", "SessionStart", "SubagentStart", "UserPromptSubmit"]);
   assert.match(hooks.SessionStart[0].hooks[0].command, / session-start$/u);
   assert.match(hooks.SubagentStart[0].hooks[0].command, / subagent-start$/u);
 });

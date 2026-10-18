@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { initializeLibrary, materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { appendEvents, initializeLibrary, materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import {
   AGENTS_FILE,
   CLAUDE_FILE,
@@ -147,7 +147,7 @@ test("478-R5: an import in a code block or a code span, or of another file, is n
   for (const id of ["navigation", "rule:autonomy", "variables-system", "variables-custom"]) assert.equal(managedSectionFile(id), AGENTS_FILE, id);
 });
 
-test("478-R4: the navigation section holds three lines and goes into AGENTS.md only on a device that chose written", async (context) => {
+test("478-R4: the navigation section holds three lines and follows the shared project choice", async (context) => {
   const { base, project, backups } = await scratch(context);
   assert.equal(NAVIGATION_LINES.length, 3);
   assert.equal(NAVIGATION_SECTION.body, `${NAVIGATION_LINES.join("\n")}\n`);
@@ -157,6 +157,7 @@ test("478-R4: the navigation section holds three lines and goes into AGENTS.md o
 
   const root = await library(base);
   await writeFile(join(project, CLAUDE_FILE), "@AGENTS.md\n");
+  await setWorkspaceSetting(root, { key: "agents.sharedNavigation", value: "declined", occurredAt: at() });
   const declined = await renderAgentsSections(root, { projectRoot: project, navigation: "declined", backupRoot: backups, occurredAt: at() });
   assert.deepEqual(declined.sections.map((section) => [section.file, section.id, section.result]), [
     [AGENTS_FILE, "variables-system", "create"],
@@ -167,6 +168,7 @@ test("478-R4: the navigation section holds three lines and goes into AGENTS.md o
   assert.equal(sectionOf(agents, "navigation"), null, "a device that declined gets no navigation section");
   assert.deepEqual((await records(root)).map((record) => [record.id, record.state]), [["variables-custom", "managed"], ["variables-system", "managed"]]);
 
+  await setWorkspaceSetting(root, { key: "agents.sharedNavigation", value: "written", occurredAt: at() });
   const written = await renderAgentsSections(root, { projectRoot: project, navigation: "written", backupRoot: backups, occurredAt: at() });
   assert.deepEqual(written.sections.map((section) => [section.id, section.result]), [
     ["variables-system", "unchanged"],
@@ -185,18 +187,18 @@ test("478-R4: the navigation section holds three lines and goes into AGENTS.md o
   assert.deepEqual(other.sections.find((section) => section.id === "navigation"), { id: "navigation", file: AGENTS_FILE, result: "unchanged", state: "managed", line: navigation.startLine });
 });
 
-test("478-AC5: declined adds the SessionStart and SubagentStart pointer hooks; written or unset adds none", async (context) => {
+test("478-AC5: declined adds SessionStart; prompt, subagent and read-guard hooks remain installed", async (context) => {
   const { device } = await scratch(context);
   const deviceHome = "/srv/einzbern/device";
   for (const host of ["claude-code", "codex"]) {
     const declined = planHostHooks({ host, scope: "user", deviceHome, platform: "linux", navigation: "declined" });
-    assert.deepEqual(Object.keys(declined.groups), ["UserPromptSubmit", "SessionStart", "SubagentStart"], host);
+    assert.deepEqual(Object.keys(declined.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse", "SessionStart"], host);
     assert.equal(declined.navigation, "declined");
     assert.equal(declined.groups.SessionStart[0].hooks[0].command, 'node "/srv/einzbern/device/engine/hook.mjs" session-start');
     assert.equal(declined.groups.SubagentStart[0].hooks[0].command, 'node "/srv/einzbern/device/engine/hook.mjs" subagent-start');
     for (const choice of ["written", null, undefined]) {
       const expected = planHostHooks({ host, scope: "user", deviceHome, platform: "linux", ...(choice === undefined ? {} : { navigation: choice }) });
-      assert.deepEqual(Object.keys(expected.groups), ["UserPromptSubmit"], `${host}: ${choice}`);
+      assert.deepEqual(Object.keys(expected.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse"], `${host}: ${choice}`);
     }
     const clean = planHostHooks({ host, scope: "project", deviceHome, platform: "linux", navigation: "declined", install: false });
     assert.deepEqual(clean.groups, {}, "a clean-only plan renders no pointer hook either");
@@ -213,17 +215,17 @@ test("478-AC5: declined adds the SessionStart and SubagentStart pointer hooks; w
   await applyMachineSettingSet({ key: AGENTS_NAVIGATION_SETTING, value: "declined", occurredAt: at(), path });
   assert.equal(await readAgentsNavigation(device), "declined");
   const fromDevice = planHostHooks({ host: "claude-code", scope: "user", deviceHome, platform: "linux", navigation: await readAgentsNavigation(device) });
-  assert.deepEqual(Object.keys(fromDevice.groups), ["UserPromptSubmit", "SessionStart", "SubagentStart"]);
+  assert.deepEqual(Object.keys(fromDevice.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse", "SessionStart"]);
 
-  // Written after declined: rendering again takes the pointer hooks out and keeps the prompt hook.
+  // Written after declined: remove only the optional session pointer, retaining required hooks.
   const other = { matcher: "startup", hooks: [{ type: "command", command: "echo mine" }] };
   const first = mergeHostHooks({ hooks: { SessionStart: [other] } }, fromDevice);
   assert.deepEqual(first.document.hooks.SessionStart, [other, ...fromDevice.groups.SessionStart]);
   await applyMachineSettingSet({ key: AGENTS_NAVIGATION_SETTING, value: "written", occurredAt: at(), path });
   const written = planHostHooks({ host: "claude-code", scope: "user", deviceHome, platform: "linux", navigation: await readAgentsNavigation(device) });
   const rerendered = mergeHostHooks(first.document, written);
-  assert.deepEqual(rerendered.document.hooks, { SessionStart: [other], UserPromptSubmit: written.groups.UserPromptSubmit });
-  assert.deepEqual(rerendered.removedHooks.map((hook) => hook.event).sort(), ["SessionStart", "SubagentStart"]);
+  assert.deepEqual(rerendered.document.hooks, { SessionStart: [other], UserPromptSubmit: written.groups.UserPromptSubmit, SubagentStart: written.groups.SubagentStart, PreToolUse: written.groups.PreToolUse });
+  assert.deepEqual(rerendered.removedHooks.map((hook) => hook.event).sort(), ["SessionStart"]);
 });
 
 test("478-R3: overwrite puts the engine's text back and records it as the new baseline", async (context) => {
@@ -249,14 +251,14 @@ test("T15: a changed variable section stays pending until explicitly overwritten
   const paths = await scratch(context);
   await writeFile(join(paths.project, AGENTS_FILE), USER_TEXT);
   const root = await library(paths.base);
-  await setVariable(root, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(root, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   const first = await renderAgentsSections(root, { projectRoot: paths.project, navigation: null, backupRoot: paths.backups, occurredAt: at() });
   assert.equal(first.pending.length, 0);
 
   const original = await readFile(join(paths.project, AGENTS_FILE), "utf8");
   const edited = original.replace("build.example.com", "hand.example.com");
   await writeFile(join(paths.project, AGENTS_FILE), edited);
-  await setVariable(root, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+  await setVariable(root, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
   const blocked = await renderAgentsSections(root, { projectRoot: paths.project, navigation: null, backupRoot: paths.backups, occurredAt: at() });
   assert.deepEqual(blocked.pending, [{ id: "variables-custom", file: AGENTS_FILE }]);
   assert.equal(await readFile(join(paths.project, AGENTS_FILE), "utf8"), edited, "automatic rendering preserves the user's edit");
@@ -428,31 +430,25 @@ test("508-R7: orderRuleSections leaves a plan alone while no rule holds an order
 });
 
 // TCRN-CROSS-STORY-508 R8, AC7 (MIN-236 D8; TCRN-CROSS-SUB-407): the system section a render writes into
-// AGENTS.md is the engine's text for it, with the categories, the tiers in order, the three escalation
-// settings and design.authority, and it names no absolute path, not even the project's or the library's.
-test("508-AC7 via the render: the system section in AGENTS.md holds the categories, the tiers in order, the escalation settings and design.authority, and no absolute path", async (context) => {
+// AGENTS.md is the engine's runtime policy reference and design projection. Historical model
+// settings remain readable but never enter shared output, nor does an absolute device path.
+test("508-AC7 via the render: the system section in AGENTS.md holds runtime policy guidance and design, never historical model values or absolute paths", async (context) => {
   const { base, project, backups } = await scratch(context);
   const root = await library(base);
-  await setWorkspaceSetting(root, { key: "models.escalation.threshold", value: "2", occurredAt: at() });
-  await setWorkspaceSetting(root, { key: "models.escalation.ceiling", value: "flagship", occurredAt: at() });
+  const occurredAt = at();
+  await appendEvents(root, ["models.escalation.threshold", "models.escalation.ceiling"].map((key, index) => state => ({
+    payload: { operation: "settings.updated", record: { schemaVersion: "tcrn.workspace-setting.v1", key, value: index === 0 ? "2" : "flagship", layerKind: "workspace_configuration", revision: 1, updatedAt: occurredAt, tombstone: false } },
+    projects: state.projects, work: state.work, settings: state.settings,
+  })), { occurredAt });
   const rendered = await renderAgentsSections(root, { projectRoot: project, navigation: "declined", backupRoot: backups, occurredAt: at() });
   assert.deepEqual(rendered.withheld, []);
   const text = await readFile(join(project, AGENTS_FILE), "utf8");
   const system = sectionOf(text, "variables-system");
   assert.equal(system.body, engineSectionBody(rendered.state, "variables-system"), "the file holds the engine's text");
-  assert.deepEqual(system.body.match(/^### .+$/gmu), ["### models.category", "### models.tiers", "### models.escalation", "### design.authority"]);
-  const lines = system.body.split("\n");
-  for (const line of [
-    "| 10 | flagship | flagship |  |",
-    "| 30 | economy | economy |  |",
-    "| 60 | economy | claude-code | (unset) | (unset) |  |",
-    "| models.escalation.enabled | true |",
-    "| models.escalation.threshold | 2 |",
-    "| models.escalation.ceiling | flagship |",
-  ]) assert.ok(lines.includes(line), line);
-  const tiers = lines.slice(lines.indexOf("### models.tiers"), lines.indexOf("### models.escalation"));
-  const tierOrders = tiers.filter((line) => /^\| [0-9]+ \| /u.test(line)).map((line) => Number(line.split(" | ")[0].slice(2)));
-  assert.deepEqual(tierOrders, [10, 20, 30, 40, 50, 60], "the tiers in ascending order");
+  assert.deepEqual(system.body.match(/^### .+$/gmu), ["### Engine execution policy", "### design.authority"]);
+  assert.match(system.body, /execution-policy-resolve --host <host> --category <category> --rejections <count>/u);
+  assert.doesNotMatch(system.body, /models\.|quota\.|flagship/u, "historical declarations are never rendered as shared runtime authority");
+  assert.deepEqual(rendered.state.settings.filter(entry => entry.key.startsWith("models.")).map(entry => entry.value), ["flagship", "2"], "historical declarations remain readable");
   assert.match(system.body, /^### design\.authority\n\nConfiguration target: library defaults\./mu);
   assert.match(system.body, /Design bindings: unconfigured\. Production publication: unverified/);
   assert.match(system.body, /\| design\.authority \| \(unconfigured\) \| default \| false \|/);
@@ -487,7 +483,7 @@ test("489: a render whose records cannot be committed puts both files back as th
   const claudePath = join(paths.project, CLAUDE_FILE);
   await writeFile(agentsPath, USER_TEXT);
   const root = await library(paths.base);
-  await setVariable(root, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await setVariable(root, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   const render = (options = {}) => renderAgentsSections(root, { projectRoot: paths.project, navigation: "written", backupRoot: paths.backups, occurredAt: at(), ...options });
 
   const empty = await libraryHead(root);
@@ -510,7 +506,7 @@ test("489: a render whose records cannot be committed puts both files back as th
   // A replace that cannot be recorded leaves the section as its record says, so the next render does not take it for the user's change.
   const written = await readFile(agentsPath, "utf8");
   const recorded = await records(root);
-  await setVariable(root, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+  await setVariable(root, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
   const head = await libraryHead(root);
   const again = await refusal(() => render(OVER_BUDGET));
   assert.equal(again.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");

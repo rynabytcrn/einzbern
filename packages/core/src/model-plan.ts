@@ -176,8 +176,11 @@ export function applyModelPlanUnassign(records: readonly ModelPlanRecord[], inpu
   delete assignments[persona];
   const efforts = existing.efforts === undefined ? undefined : { ...existing.efforts };
   if (efforts !== undefined) delete efforts[persona];
+  // Remove the old map before conditionally restoring it. Spreading `existing`
+  // here would retain the removed persona when its effort was the last entry.
+  const { efforts: _previousEfforts, ...withoutEfforts } = existing;
   const record = Object.freeze({
-    ...existing,
+    ...withoutEfforts,
     assignments: normalizeAssignments(assignments),
     ...(efforts === undefined || Object.keys(efforts).length === 0 ? {} : { efforts: normalizeEfforts(efforts) }),
     revision: existing.revision + 1,

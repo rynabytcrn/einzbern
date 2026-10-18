@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { SETUP_MODES, applySetup, detectSetupContext, planSetup } from "../dist/build/packages/core/src/setup.js";
 import { SKILL_COPY_ROOTS, skillCopyPath } from "../dist/build/packages/core/src/skill-copies.js";
@@ -224,7 +224,7 @@ test("480-R1, R6: six modes, and migrate names an installation from before the r
   assert.equal(await lstat(join(f.project, ".ether")).catch(() => null), null, "nothing was written");
 });
 
-test("480-AC1: the default answers install the library, the registry entry, both skill copies, one hook per host and the managed sections, and list every file", async (context) => {
+test("480-AC1: the default answers install the library, the registry entry, both skill copies, current hooks per host and the managed sections, and list every file", async (context) => {
   const f = await fixture(context);
   const planned = await plan(f);
   assert.equal(planned.reasonCode, "SETUP_PLAN_READY");
@@ -286,8 +286,8 @@ test("480-AC1: the default answers install the library, the registry entry, both
   for (const root of SKILL_COPY_ROOTS) assert.ok((await lstat(join(skillCopyPath(f.home, root), "SKILL.md"))).isFile(), root.host);
   const launcher = join(f.deviceHome, "engine", "hook.mjs");
   assert.deepEqual(await readFile(launcher), await readFile(join(repositoryRoot, "scripts/einzbern-hook-launcher.mjs")));
-  assert.deepEqual(await einzbernHooks(join(f.home, ".claude", "settings.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`]]);
-  assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`]]);
+  assert.deepEqual(await einzbernHooks(join(f.home, ".claude", "settings.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
+  assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
   assert.match(await readFile(join(f.home, ".codex", "config.toml"), "utf8"), /^\[features\]\nhooks = true$/mu);
   const claude = await readFile(join(f.project, "CLAUDE.md"), "utf8");
   assert.match(claude, /<!-- einzbern:section id=claude-import rev=1 digest=[0-9a-f]{64} -->\n@AGENTS\.md\n<!-- einzbern:section-end id=claude-import -->/u);
@@ -340,8 +340,8 @@ test("480-AC2: a second run with the same answers plans no write and writes noth
   assert.equal(second.library.libraryId, first.library.libraryId);
   assert.deepEqual(await Promise.all(files.map((path) => readFile(path, "utf8"))), before, "every file keeps its bytes");
   assert.deepEqual(await snapshot([join(f.home, ".claude", "skills"), join(f.home, ".agents", "skills")]), copies);
-  assert.equal((await einzbernHooks(join(f.home, ".claude", "settings.json"))).length, 1);
-  assert.equal((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).length, 1);
+  assert.equal((await einzbernHooks(join(f.home, ".claude", "settings.json"))).length, 3);
+  assert.equal((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).length, 3);
   assert.equal((before[3].match(/einzbern:section id=navigation /gu) ?? []).length, 1);
   assertSelfCheckGreen(second);
 });
@@ -409,7 +409,7 @@ test("480-R5: every host file and project file is backed up before it is replace
   assertSelfCheckGreen(applied);
 });
 
-test("480-R2: a library outside the project gets the project's host write roots; a declined navigation section gets the pointer hooks instead", async (context) => {
+test("480-R2: a library outside the project gets the project's host write roots; declined device navigation adds pointer hooks without removing shared navigation", async (context) => {
   const f = await fixture(context);
   const library = join(f.base, "elsewhere", "Ether", "project");
   const planned = await plan(f, { artifacts: library, cloud: false, language: "en", navigation: false });
@@ -423,10 +423,10 @@ test("480-R2: a library outside the project gets the project's host write roots;
   assert.equal(applied.library.path, library);
   assert.deepEqual(JSON.parse(await readFile(roots[0], "utf8")).permissions.additionalDirectories, [library]);
   assert.ok((await readFile(roots[1], "utf8")).includes(JSON.stringify(library)));
-  // Declined: no navigation section, the device remembers it, and the user settings carry the pointer hooks.
-  assert.doesNotMatch(await readFile(join(f.project, "AGENTS.md"), "utf8"), /id=navigation /u);
+  // Device decline changes local hooks, not the shared project navigation declaration.
+  assert.match(await readFile(join(f.project, "AGENTS.md"), "utf8"), /id=navigation /u);
   assert.equal(JSON.parse(await readFile(join(f.deviceHome, "machine-settings.json"), "utf8")).values["agents.navigation"], "declined");
-  assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["SessionStart", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SessionStart", "SubagentStart", "UserPromptSubmit"]);
   const again = await plan(f, { artifacts: library, navigation: false });
   assert.deepEqual(again.writes, []);
 });
@@ -527,4 +527,21 @@ test("548-AC4: the fresh plan lists what the DSH profiles say about the plugin, 
   assert.equal(planned.dshPlugin.detected, true);
   assert.deepEqual(planned.dshPlugin.profiles.map((entry) => [entry.name, entry.installed, entry.version, entry.hookPathMatches]), [["p1", true, "0.1.0", true]]);
   assert.deepEqual(planned.writes.filter((entry) => entry.path.startsWith(join(f.home, ".dsh"))), [], "no step writes a DSH profile");
+});
+
+
+test("agents.generation none suppresses root files in both setup planning and application", async (context) => {
+  const f = await fixture(context);
+  await applySetup(await plan(f));
+  const library = join(f.project, ".ether");
+  await setWorkspaceSetting(library, { key: "agents.generation", value: "none", occurredAt: at() });
+  // Missing files must not be re-created, and the opt-out does not remove any user files.
+  await rm(join(f.project, "AGENTS.md"));
+  await rm(join(f.project, "CLAUDE.md"));
+  const next = await plan(f, {}, { mode: "repair" });
+  assert.equal(next.writes.some((entry) => entry.step === "managed-sections" && [join(f.project, "AGENTS.md"), join(f.project, "CLAUDE.md")].includes(entry.path)), false);
+  const applied = await applySetup(next);
+  assert.equal(applied.written.some((entry) => [join(f.project, "AGENTS.md"), join(f.project, "CLAUDE.md")].includes(entry.path)), false);
+  await assert.rejects(lstat(join(f.project, "AGENTS.md")), { code: "ENOENT" });
+  await assert.rejects(lstat(join(f.project, "CLAUDE.md")), { code: "ENOENT" });
 });

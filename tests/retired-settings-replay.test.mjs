@@ -28,6 +28,8 @@ import {
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
   sortWorkspaceSettings,
+  setWorkspaceSetting,
+  removeWorkspaceSetting,
   validateKnowledgeStore,
   validateWorkspace,
 } from "../dist/build/packages/core/src/index.js";
@@ -258,4 +260,33 @@ test("SUB-310 R17: a recorded knowledge.aggregateBytes replays as history in eve
     assert.equal(state.version, 3, read);
     assert.deepEqual(state.settings, [], `${read}: the removal is history too`);
   }
+});
+
+// Unlike retired keys, device-authoritative declarations remain readable diagnostics.
+// Seed actual historical event records, not a now-forbidden project write.
+test("configuration migration: historical model and quota declarations replay while new writes refuse", async (t) => {
+  const fx = await fixture(t, "FIXTURE-DEVICE-AUTHORITY-HISTORY");
+  const declarations = [["models.escalation.enabled", "false"], ["quota.fiveHourWaitPercent", "85"]];
+  await appendSettingEvents(fx, "2026-01-02T00:00:00Z", declarations.map(([key, value]) =>
+    recordedSetting(key, value, "2026-01-02T00:00:00Z")));
+  for (const [read, { state, error }] of Object.entries(await readEveryWay(fx.workspace))) {
+    assert.equal(error, undefined, `${read}: ${error?.reasonCode} ${error?.message}`);
+    assert.equal(state.version, 3, read);
+    assert.deepEqual(state.settings.map(({ key, value }) => [key, value]), declarations, read);
+    assert.equal(state.library.rejectedEvents.length, 0, `${read}: historical declarations are valid events`);
+  }
+  for (const [key, value] of declarations) {
+    await assert.rejects(setWorkspaceSetting(fx.workspace, {
+      key, value, occurredAt: "2026-01-03T00:00:00Z",
+    }), (error) => error?.reasonCode === "SETTINGS_KEY_DEVICE_LEVEL");
+    await assert.rejects(removeWorkspaceSetting(fx.workspace, {
+      key, occurredAt: "2026-01-03T00:00:00Z",
+    }), (error) => error?.reasonCode === "SETTINGS_KEY_DEVICE_LEVEL");
+    const args = ["--workspace", fx.workspace, "--at", "2026-01-03T00:00:00Z", "--key", key];
+    assert.equal(await reasonOf(["settings-set", ...args, "--value", value]), "SETTINGS_KEY_DEVICE_LEVEL", `${key}: CLI write refuses without requiring an Atelier permit`);
+    assert.equal(await reasonOf(["settings-remove", ...args]), "SETTINGS_KEY_DEVICE_LEVEL", `${key}: CLI remove preserves historical diagnostics`);
+  }
+  const after = await validateWorkspace(fx.workspace);
+  assert.equal(after.version, 3, "refused project writes append nothing");
+  assert.deepEqual(after.settings.map(({ key, value }) => [key, value]), declarations);
 });

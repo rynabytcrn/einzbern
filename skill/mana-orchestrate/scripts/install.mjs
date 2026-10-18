@@ -86,6 +86,9 @@ function parseArguments(argv) {
   if (version !== null && !VERSION_PATTERN.test(version)) fail("INSTALL_VERSION_INVALID", `${version} is not an engine version`, { actual: version });
   if (sha256 !== null && !DIGEST_PATTERN.test(sha256)) fail("INSTALL_SHA256_INVALID", "--sha256 must be 64 lowercase hexadecimal characters", { actual: sha256 });
   const configured = process.env.EINZBERN_HOME;
+  if (!values.has("--home") && typeof configured === "string" && configured.length > 0 && !isAbsolute(configured)) {
+    fail("DEVICE_HOME_INVALID", "EINZBERN_HOME must be an absolute path");
+  }
   const home = values.has("--home") ? resolve(values.get("--home"))
     : typeof configured === "string" && configured.length > 0 ? resolve(configured) : join(homedir(), DEVICE_DIRECTORY);
   return { version, archive, sha256, home };

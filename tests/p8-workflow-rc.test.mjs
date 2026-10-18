@@ -45,7 +45,7 @@ import {
   staleReleaseArtifactMoves,
   validateP8ReleaseDocuments,
 } from "../scripts/lib/p8-workflow-rc.mjs";
-import { ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
+import { BRAND, ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
 import { scanPrivacyEntries } from "../scripts/lib/privacy.mjs";
 import { withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
 import { writeUstar } from "../scripts/lib/tar.mjs";
@@ -415,14 +415,59 @@ test("R48-01 (R47-REG-1): an address or local path in a member, a header path or
   extraLength.writeUInt16LE(extra.length);
   assert.deepEqual(findings(formalPackage([clean], { flags: 0x04, fields: [extraLength, extra] })), [`EMAIL_IDENTIFIER:release:${PACKAGE_LABEL}#gzip-extra`]);
 
-  // The reviewed owner line passes only under its exact member label; the same line in any
-  // other member of the package is a finding.
+  // The 2.2.2 package's three compiled names.js owner-line members are fixed by the read-only
+  // package evidence. The draft 2.2.4 candidate and every nearby member remain findings.
   const names = await readFile(new URL("../dist/build/packages/core/src/names.js", import.meta.url), "utf8");
   const ownerLine = names.split("\n").find((line) => line.includes(scanOwner) && /\bowner\s*:/u.test(line));
-  const reviewed = `einzbern-${P8_VERSION}/atelier/portal.mjs`;
-  const unknown = `einzbern-${P8_VERSION}/atelier/other.mjs`;
-  assert.deepEqual(findings(formalPackage([{ path: reviewed, bytes: Buffer.from(`${ownerLine}\n`, "utf8") }])), []);
-  assert.deepEqual(findings(formalPackage([{ path: unknown, bytes: Buffer.from(`${ownerLine}\n`, "utf8") }])), [`OWNER_PRIVATE_IDENTIFIER:release:${PACKAGE_LABEL}/${unknown}`]);
+  assert.equal(createHash("sha256").update(scanOwner, "utf8").digest("hex"), "1b58b39b82f7665f411664797bcc897a75d9a6222ee4a8c97234493324aab74f");
+  assert.equal(createHash("sha256").update(ownerLine, "utf8").digest("hex"), "3861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56");
+  const reviewedVersion = "2.2.2";
+  const reviewedArchive = `dist/release/${BRAND.engine.id}-${reviewedVersion}.tar.gz`;
+  const memberPaths = ["atelier/portal.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern.mjs"];
+  const ownerBytes = Buffer.from(`${ownerLine}\n`, "utf8");
+  const reviewedPackage = p8FormalPackagePrivacyEntries(formalPackage(memberPaths.map((path) => ({
+    path: `${BRAND.engine.id}-${reviewedVersion}/${path}`,
+    bytes: ownerBytes,
+  }))), reviewedArchive);
+  const reviewedMembers = reviewedPackage.entries.filter((entry) => entry.releaseArchiveMember === true);
+  assert.deepEqual(reviewedMembers.map((entry) => entry.sourcePaths), memberPaths.map(() => ["dist/build/packages/core/src/names.js"]));
+  assert.deepEqual(releaseScan(reviewedMembers), []);
+
+  const finalVersion = "2.2.3";
+  const finalArchive = `dist/release/${BRAND.engine.id}-${finalVersion}.tar.gz`;
+  const finalPackage = p8FormalPackagePrivacyEntries(formalPackage(memberPaths.map((path) => ({
+    path: `${BRAND.engine.id}-${finalVersion}/${path}`,
+    bytes: ownerBytes,
+  }))), finalArchive);
+  const finalMembers = finalPackage.entries.filter((entry) => entry.releaseArchiveMember === true);
+  assert.equal(finalMembers.length, 3);
+  assert.deepEqual(finalMembers.map((entry) => entry.sourcePaths), memberPaths.map(() => ["dist/build/packages/core/src/names.js"]));
+  assert.deepEqual(releaseScan(finalPackage.entries), [], "the reviewed 2.2.3 members use canonical package labels");
+
+  const ownerFinding = (entry, owner = scanOwner) => scanPrivacyEntries([entry], { owner, repositories: ENGINE_REPOSITORY_NAMES })
+    .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
+  const reviewedPortal = reviewedMembers.find((entry) => entry.label.endsWith("/atelier/portal.mjs"));
+  assert.ok(reviewedPortal, "the read-only 2.2.2 package carries the pinned portal member");
+  assert.ok(ownerFinding({ ...reviewedPortal, sourcePaths: ["dist/build/packages/core/src/other.js"] }), "a changed source origin remains a finding");
+  assert.ok(ownerFinding({ ...reviewedPortal, content: `${ownerLine} // changed` }), "a changed whole line remains a finding");
+  const changedOwner = LEGACY_REPOSITORY_NAMES.owner === scanOwner ? "changed-public-owner" : LEGACY_REPOSITORY_NAMES.owner;
+  assert.ok(ownerFinding({ ...reviewedPortal, content: ownerLine.replaceAll(scanOwner, changedOwner) }, changedOwner), "a changed value remains a finding");
+
+  const unknownMember = `${BRAND.engine.id}-${reviewedVersion}/atelier/other.mjs`;
+  const unknownMemberArchive = p8FormalPackagePrivacyEntries(formalPackage([{ path: unknownMember, bytes: ownerBytes }]), reviewedArchive);
+  const unknownReleaseMembers = unknownMemberArchive.entries.filter((entry) => entry.label === `${reviewedArchive}/${unknownMember}` && entry.releaseArchiveMember === true);
+  assert.equal(unknownReleaseMembers.length, 1);
+  assert.deepEqual(unknownReleaseMembers[0].sourcePaths, []);
+  assert.ok(unknownMemberArchive.entries.some((entry) => ownerFinding(entry)), "an unknown member in the reviewed version remains a finding");
+
+  const draftVersion = "2.2.4";
+  const draftArchive = `dist/release/${BRAND.engine.id}-${draftVersion}.tar.gz`;
+  const draftMember = `${BRAND.engine.id}-${draftVersion}/atelier/portal.mjs`;
+  const draftPackage = p8FormalPackagePrivacyEntries(formalPackage([{ path: draftMember, bytes: ownerBytes }]), draftArchive);
+  const draftReleaseMembers = draftPackage.entries.filter((entry) => entry.label === `${draftArchive}/${draftMember}` && entry.releaseArchiveMember === true);
+  assert.equal(draftReleaseMembers.length, 1);
+  assert.deepEqual(draftReleaseMembers[0].sourcePaths, []);
+  assert.ok(draftPackage.entries.some((entry) => ownerFinding(entry)), "the draft 2.2.4 candidate has no package classification yet");
 
   // An entry this walk cannot label, and a package another reader would unpack differently, are refused.
   const layout = (archive) => assert.throws(() => p8FormalPackagePrivacyEntries(archive), (error) => error.reasonCode === "P8_RELEASE_ARCHIVE_LAYOUT_INVALID");

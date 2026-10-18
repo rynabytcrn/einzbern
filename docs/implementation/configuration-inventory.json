@@ -1972,6 +1972,84 @@
         "transport": "argv-string",
         "defaultValue": null,
         "owner": "device-user",
+        "source": "explicit caller-reported machine observations",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd",
+        "sharing": "device-local; never a shared library declaration",
+        "export": "private local preparation artifact only",
+        "restart": "applies only through the requested lifecycle operation; plan alone writes nothing",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-prepare:observations",
+        "kind": "cli-argument",
+        "name": "--observations",
+        "command": "execution-prepare",
+        "catalogReference": "COMMAND_CATALOG[execution-prepare].flags[observations]",
+        "consumer": [
+          "dispatch-workflow.ts prepareDispatch"
+        ],
+        "precedence": [
+          "explicit execution-prepare --observations",
+          "consumer-specific fallback described below"
+        ],
+        "semanticType": "path",
+        "validation": "Readable machine JSON file with availableCombinations and optional original timestamped usage/expectedPolicy; observations are never derived from policy.",
+        "defaultDescription": "required; missing evidence refuses admission",
+        "scope": "current work revision and all selected project targets",
+        "effect": "Captures admission bindings without native launch or account collection.",
+        "flag": {
+          "name": "observations",
+          "required": true,
+          "valueKind": "string",
+          "valueShape": "Machine JSON file: explicit availableCombinations, optional timestamped usage/expectedPolicy; never inferred from policy."
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "caller-reported process return, not independently authenticated",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd",
+        "sharing": "device-local; never a shared library declaration",
+        "export": "private create-new local record only",
+        "restart": "applies only through the requested lifecycle operation; plan alone writes nothing",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-record:process-return",
+        "kind": "cli-argument",
+        "name": "--process-return",
+        "command": "execution-record",
+        "catalogReference": "COMMAND_CATALOG[execution-record].flags[process-return]",
+        "consumer": [
+          "dispatch-workflow.ts recordDispatch"
+        ],
+        "precedence": [
+          "explicit execution-record --process-return",
+          "consumer-specific fallback described below"
+        ],
+        "semanticType": "path",
+        "validation": "Readable tcrn.dispatch-process-return.v1 JSON with source, saved binding digest, actual invocation tuple, actual process start and optional actual streams/exit; no native-tool schema conversion.",
+        "defaultDescription": "required; absent observations remain unavailable",
+        "scope": "one selected saved target binding",
+        "effect": "Derives repeated association fields and retains raw/normalized failures without launching or refreshing admission.",
+        "flag": {
+          "name": "process-return",
+          "required": true,
+          "valueKind": "string",
+          "valueShape": "Actual process artifact per specs/dispatch-admission-evidence-v1.md; native tool responses unsupported."
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
         "source": "caller invocation plus installed device policy",
         "persistence": "invocation",
         "sensitivity": "context-may-contain-private-data",
@@ -3641,6 +3719,86 @@
             "name": "usage",
             "required": false,
             "valueKind": "json"
+          }
+        ]
+      },
+      {
+        "name": "execution-prepare",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "id",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "host",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "category",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "rejections",
+            "required": true,
+            "valueKind": "integer"
+          },
+          {
+            "name": "requested-agents",
+            "required": true,
+            "valueKind": "integer"
+          },
+          {
+            "name": "observations",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Machine JSON file: explicit availableCombinations, optional timestamped usage/expectedPolicy; never inferred from policy."
+          },
+          {
+            "name": "output",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Create-new private local preparation file outside device/library roots; refused preparations are retained. No dispatch."
+          }
+        ]
+      },
+      {
+        "name": "execution-record",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "binding",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Saved execution-prepare file."
+          },
+          {
+            "name": "target",
+            "required": true,
+            "valueKind": "integer",
+            "valueShape": "Exact zero-based target index in the preparation bindings."
+          },
+          {
+            "name": "process-return",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Actual process artifact per specs/dispatch-admission-evidence-v1.md; native tool responses unsupported."
+          },
+          {
+            "name": "output",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Create-new private local record, retaining raw and normalized failures/unavailability. No dispatch."
           }
         ]
       },

@@ -904,5 +904,4 @@ export * from "./involved-projects.js";
 
 export * from "./project-chain.js";
 
-export { prepareDispatch, recordDispatch, writeDispatchArtifact, DispatchWorkflowError, DISPATCH_PREPARATION_VERSION, PROCESS_RETURN_VERSION } from "./dispatch-workflow.js";
-export type { DispatchPreparation } from "./dispatch-workflow.js";
+export { prepareDispatch, recordDispatch, writeDispatchArtifact } from "./dispatch-workflow.js";

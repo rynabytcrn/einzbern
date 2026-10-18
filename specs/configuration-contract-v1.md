@@ -14,7 +14,15 @@ policy authority is the device's explicitly selected host, not a project's old d
 Metadata does not migrate events, install policies, mutate defaults or refresh generated files.
 The pre-existing `readKnowledgeLanguagePolicy` public API remains deprecated and read-only
 for historical source compatibility; engine consumers use `readRuntimeKnowledgeLanguagePolicy`
-and must not treat the historical reader as execution authority.
+and must not treat the historical reader as Codex execution authority.
+
+The knowledge-language consumer preserves one explicitly scoped upgrade compatibility
+path: an explicitly named non-Codex host with no configured device-host policy retains
+its existing project language-model selection. A configured non-Codex policy takes
+precedence, and corrupt or unusable policies never trigger this compatibility path.
+Codex remains device-policy-only. This does not migrate declarations, create a host
+policy, change the global execution resolver, or make historical catalog rows evidence
+of an effective native invocation.
 
 `annotateConfigValue(key, rawValue, valueOrigin)` validates using the existing key validator and
 returns both raw and semantic values plus contract metadata. Booleans accept only true/false

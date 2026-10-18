@@ -5576,6 +5576,10 @@ const BOOT = __PORTAL_BOOT__;
       result = { ok: false, reasonCode: "PORTAL_MODEL_POLICY_WRITE_UNAVAILABLE", error: String(error?.message ?? error) };
     } finally {
       if (modelPolicyWrites().get(host) === request) modelPolicyWrites().delete(host);
+      // Settling the device-host write guard must redraw the current controls,
+      // including a replacement draft or another library. This adopts no result;
+      // the identity/version checks below still govern receipt application.
+      renderModelPolicy(); renderModelCategories(); renderModelTiers();
     }
     showReceipt(result);
     if ((BOOT.library?.libraryId ?? null) !== libraryId) return;
@@ -5591,6 +5595,12 @@ const BOOT = __PORTAL_BOOT__;
   };
   const wireModelPolicyEditor = (view, host, render) => {
     const pending = modelPolicyPendingFor(host) || modelPolicyWrites().has(host) || state.librarySwitching;
+    // A detached button must not save a replacement draft or follow a selection
+    // change, even when that change returns to the same library and host.
+    const draft = modelPolicyDrafts().get(host);
+    const read = state.modelPolicyRead;
+    const epoch = state.libraryEpoch || 0;
+    const libraryId = BOOT.library?.libraryId ?? null;
     const hostSelect = $("[data-engine-model-policy-host]", view);
     hostSelect?.addEventListener("change", (event) => {
       const next = event.currentTarget.value;
@@ -5628,7 +5638,9 @@ const BOOT = __PORTAL_BOOT__;
       draft.policy[kind].splice(index, 1); markPolicyDirty(draft); render();
     }));
     $("[data-engine-model-policy-undo]", view)?.addEventListener("click", () => { resetModelPolicyDraft(host); render(); });
-    $("[data-engine-model-policy-save]", view)?.addEventListener("click", () => { if (!pending) void saveModelPolicy(host, render); });
+    $("[data-engine-model-policy-save]", view)?.addEventListener("click", () => {
+      if (!pending && state.modelPolicyRead === read && (state.libraryEpoch || 0) === epoch && (BOOT.library?.libraryId ?? null) === libraryId && modelPolicyDrafts().get(host) === draft) void saveModelPolicy(host, render);
+    });
   };
   const renderModelPolicy = () => {
     const view = $("#engine-model-policy-view");
@@ -7042,6 +7054,15 @@ const BOOT = __PORTAL_BOOT__;
     state.targetNotice = target;
     renderTargetNotice();
   };
+  // Refresh renders while the selection guard is still set. Recompute all model
+  // controls after clearing it, keeping their own pending read/write guards intact.
+  // This is a local redraw only: completion must not initiate another read.
+  const finishSelectionSwitch = () => {
+    state.librarySwitching = false;
+    setSettingWritesBusy(Boolean(state.settingsWritePending));
+    renderConfigurationTargets();
+    renderModelPolicy(); renderModelCategories(); renderModelTiers();
+  };
   // Switch back: select this page's registration again, and its configuration target when it was another.
   const switchBack = async () => {
     if (state.librarySwitching) return;
@@ -7060,7 +7081,7 @@ const BOOT = __PORTAL_BOOT__;
       BOOT.proseRoot = chosen.proseRoot;
       const listing = await api("/api/libraries", { anyTarget: true });
       await adoptSelection({ library: chosen.library, epoch: chosen.epoch, libraries: listing.ok ? listing.libraries : null });
-    } finally { state.librarySwitching = false; setSettingWritesBusy(Boolean(state.settingsWritePending)); renderConfigurationTargets(); loadLibraries(); }
+    } finally { finishSelectionSwitch(); loadLibraries(); }
   };
   // Follow: take the selection the server holds now, and read everything for it.
   const followSelection = async () => {
@@ -7072,7 +7093,7 @@ const BOOT = __PORTAL_BOOT__;
       if (!listing.ok || !listing.selected || !Number.isSafeInteger(listing.servedTarget?.epoch)) { showReceipt(listing); return; }
       BOOT.proseRoot = null;
       await adoptSelection({ library: listing.selected, epoch: listing.servedTarget.epoch, libraries: listing.libraries });
-    } finally { state.librarySwitching = false; setSettingWritesBusy(Boolean(state.settingsWritePending)); renderConfigurationTargets(); loadLibraries(); }
+    } finally { finishSelectionSwitch(); loadLibraries(); }
   };
   $("#configuration-project-select").addEventListener("change", async (event) => {
     if (state.librarySwitching || state.settingsWritePending) { renderConfigurationTargets(); return; }
@@ -7085,7 +7106,7 @@ const BOOT = __PORTAL_BOOT__;
       const selected = await api("/api/configuration-scope", { method: "POST", body: JSON.stringify({ projectId: event.target.value || null }) });
       if (selected.ok) { BOOT.epoch = selected.epoch; BOOT.library = selected.library; BOOT.proseRoot = selected.proseRoot; state.settings = selected.settings; await refresh(); await refreshGates(); await loadAgents(); }
       else { showReceipt(selected); await refresh(); }
-    } finally { state.librarySwitching = false; setSettingWritesBusy(Boolean(state.settingsWritePending)); renderConfigurationTargets(); }
+    } finally { finishSelectionSwitch(); }
   });
   $("#library-select").addEventListener("change", async (event) => {
     if (state.librarySwitching) return;
@@ -7108,9 +7129,7 @@ const BOOT = __PORTAL_BOOT__;
     } catch (error) {
       loadLibraries(); showReceipt({ ok: false, reasonCode: "PORTAL_LIBRARY_SELECT_FAILED", error: String(error?.message ?? error) }); await refresh();
     } finally {
-      state.librarySwitching = false;
-      setSettingWritesBusy(Boolean(state.settingsWritePending));
-      renderConfigurationTargets();
+      finishSelectionSwitch();
       loadLibraries();
       $("#library-select").focus();
     }

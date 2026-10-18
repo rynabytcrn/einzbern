@@ -3615,6 +3615,9 @@ test("INIT-056 R5: host changes reject an old Save and an older specialized read
     await page.waitForSettled();
     document.querySelector('[data-page-target="engine-model-policy"]').click();
     assert.equal(note().value, "constructor draft remains distinct", "neither read overwrites an unsaved host draft");
+    const postsBeforeRoundTripSave = page.requests.filter((path) => path === "/api/model-policy").length;
+    oldSave.click();
+    assert.equal(page.requests.filter((path) => path === "/api/model-policy").length, postsBeforeRoundTripSave, "a host round trip cannot revalidate a detached old Save closure");
     view().querySelector("[data-engine-model-policy-undo]").click();
     await waitFor(() => model()?.value === "constructor-new", "Undo reveals the newest accepted read");
     assert.equal(note().value, "newer shared read");
@@ -3820,4 +3823,177 @@ if (!MUTATION) test("A546 rules without an output root stay enabled and show a d
     assert.equal(await readFile(join(fixture.container, "AGENTS.md"), "utf8"), "# The container\n");
     await assert.rejects(readFile(join(fixture.coordination, "AGENTS.md")), { code: "ENOENT" });
   } finally { await closePage(page, fixture); }
+});
+
+// PR24 U1-U4: run the served Portal and real isolated selection endpoints. Waiting
+// observes completed requests, never the expected enabled state of a control.
+const policySwitchViews = [
+  ["engine-model-policy", "#engine-model-policy-view"],
+  ["model-categories", "#model-categories-view"],
+  ["model-tiers", "#model-tiers-view"],
+];
+function policySwitchControls(page, selector) {
+  const view = () => page.document.querySelector(selector);
+  const control = (name) => view().querySelector(`[data-engine-model-policy-${name}]`);
+  const change = (node, value, kind = "change") => { node.value = value; node.dispatchEvent(new page.window.Event(kind, { bubbles: true })); };
+  const recovered = () => {
+    for (const name of ["host", "decision", "undo"]) assert.equal(control(name)?.disabled, false, `${selector}: ${name} recovers without navigation`);
+    assert.equal(control("save")?.disabled, true, `${selector}: pristine Save remains disabled`);
+  };
+  return { view, control, change, recovered };
+}
+for (const [name, selector] of policySwitchViews) test(`PR24 U1: ${name} recovers after a library switch`, async () => {
+  const fixture = await scratch("tcrn-pr24-switch-");
+  const page = await loadExecutedDom(fixture);
+  try {
+    page.document.querySelector(`[data-page-target="${name}"]`).click();
+    const controls = policySwitchControls(page, selector);
+    controls.recovered();
+    const before = page.requests.filter((path) => path.startsWith("/api/model-policy?")).length;
+    controls.change(page.document.querySelector("#library-select"), fixture.second.project);
+    await page.waitForSettled();
+    assert.equal(page.document.querySelector("#library-select").disabled, false);
+    controls.recovered();
+    assert.equal(page.requests.filter((path) => path.startsWith("/api/model-policy?")).length, before + 1, "completion redraw adds no network read");
+  } finally { await closePage(page, fixture); }
+});
+
+test("PR24 U2: rejected library selection and failed policy read recover and retry", async () => {
+  const fixture = await scratch("tcrn-pr24-failed-switch-");
+  const page = await loadExecutedDom(fixture);
+  try {
+    page.document.querySelector('[data-page-target="engine-model-policy"]').click();
+    const { control, change, recovered } = policySwitchControls(page, "#engine-model-policy-view");
+    const select = page.document.querySelector("#library-select");
+    const option = page.document.createElement("option"); option.value = "not-a-registered-library"; select.append(option);
+    change(select, option.value);
+    await page.waitForSettled();
+    assert.match(page.document.querySelector("#receipt-raw").textContent, /PORTAL_LIBRARY_UNKNOWN/);
+    recovered();
+    page.hold((path) => path.startsWith("/api/model-policy?"));
+    change(select, fixture.second.project);
+    await waitFor(() => page.held() === 1, "the switch's pending policy read");
+    assert.equal(control("host").disabled, true);
+    assert.equal(control("save")?.disabled ?? true, true, "pending read cannot save");
+    page.release({ error: new Error("PR24 isolated read failure") });
+    await page.waitForSettled();
+    assert.equal(control("host").disabled, false, "failed read leaves host available for retry");
+    assert.equal(control("save"), null, "unavailable policy has no save action");
+    assert.match(page.document.querySelector("#receipt-raw").textContent, /PORTAL_READ_FAILED/);
+    change(select, fixture.proseRoot);
+    await page.waitForSettled();
+    recovered();
+  } finally { await closePage(page, fixture); }
+});
+
+test("PR24 U2 U3: configuration target switches recover and reject detached Save closures", async () => {
+  const fixture = await scratch("tcrn-pr24-scope-switch-");
+  const extra = await cli(["project-create", "--workspace", fixture.workspace, "--external-key", "PR24-SCOPE", "--name", "Scope fixture", "--at", nextAt()], fixture.deviceEnv);
+  const page = await loadExecutedDom(fixture);
+  try {
+    page.document.querySelector('[data-page-target="engine-model-policy"]').click();
+    const { control, change, recovered } = policySwitchControls(page, "#engine-model-policy-view");
+    change(control("decision"), "minutes:synthetic-old#D1", "input");
+    const oldSave = control("save");
+    const scope = page.document.querySelector("#configuration-project-select");
+    page.hold((path) => path.startsWith("/api/model-policy?"));
+    change(scope, extra.record.id);
+    await waitFor(() => page.held() === 1, "the new scope's policy read");
+    assert.equal(control("save").disabled, true, "dirty draft cannot save during the target read");
+    oldSave.click();
+    assert.equal(page.requests.filter((path) => path === "/api/model-policy").length, 0, "old closure cannot save during the target read");
+    page.release();
+    await page.waitForSettled();
+    assert.equal(scope.disabled, false);
+    assert.equal(control("host").disabled, false);
+    // Engine policies and decision authority belong to the host/device and
+    // library, not to a project configuration scope (engine-model-policy-v1).
+    assert.equal(control("decision").value, "minutes:synthetic-old#D1", "same-library scope change preserves the host draft's library-owned decision");
+    const before = page.requests.filter((path) => path === "/api/model-policy").length;
+    oldSave.click();
+    assert.equal(page.requests.filter((path) => path === "/api/model-policy").length, before, "old scope Save cannot submit a draft at the new epoch");
+    control("undo").click(); recovered();
+    change(control("decision"), "minutes:synthetic-replaced#D1", "input");
+    const replacedSave = control("save");
+    control("undo").click();
+    change(control("decision"), "minutes:synthetic-current#D1", "input");
+    replacedSave.click();
+    assert.equal(page.requests.filter((path) => path === "/api/model-policy").length, before, "Save cannot submit a different draft created after Undo");
+    control("undo").click(); recovered();
+    const invalid = page.document.createElement("option"); invalid.value = "project:ffffffffffffffffffffffff"; scope.append(invalid);
+    change(scope, invalid.value);
+    await page.waitForSettled();
+    assert.match(page.document.querySelector("#receipt-raw").textContent, /PORTAL_PROJECT_SCOPE_UNKNOWN/);
+    recovered();
+    change(scope, fixture.projectId);
+    await page.waitForSettled(); recovered();
+  } finally { await closePage(page, fixture); }
+});
+
+test("PR24 U3: switch completion retains pending write guard and old library draft cannot save", async () => {
+  const fixture = await scratch("tcrn-pr24-pending-switch-");
+  const page = await loadExecutedDom(fixture);
+  try {
+    page.document.querySelector('[data-page-target="engine-model-policy"]').click();
+    const { control, change, recovered } = policySwitchControls(page, "#engine-model-policy-view");
+    change(control("decision"), "minutes:synthetic-old#D1", "input");
+    const oldSave = control("save");
+    page.hold((path) => path === "/api/model-policy");
+    oldSave.click();
+    await waitFor(() => page.held() === 1, "the pending isolated write");
+    assert.equal(control("save").disabled, true);
+    change(page.document.querySelector("#library-select"), fixture.second.project);
+    await page.waitForSettled(); recovered();
+    change(control("decision"), "minutes:synthetic-new#D1", "input");
+    assert.equal(control("save").disabled, true, "write lock survives switching libraries and editing");
+    page.release();
+    await page.waitForSettled();
+    assert.equal(control("decision").value, "minutes:synthetic-new#D1", "old write cannot acknowledge or replace the new library draft");
+    assert.equal(control("save").disabled, false, "write completion recovers the new dirty draft without an extra edit");
+    const before = page.requests.filter((path) => path === "/api/model-policy").length;
+    oldSave.click();
+    assert.equal(page.requests.filter((path) => path === "/api/model-policy").length, before, "old library Save cannot submit the new library draft");
+  } finally { page.release(); await closePage(page, fixture); }
+});
+
+for (const action of ["switch-back", "follow"]) test(`PR24 U2: ${action} after another tab changes selection recovers model controls`, async () => {
+  const fixture = await scratch("tcrn-pr24-other-tab-");
+  const page = await loadExecutedDom(fixture);
+  try {
+    page.document.querySelector('[data-page-target="model-tiers"]').click();
+    const { recovered } = policySwitchControls(page, "#model-tiers-view");
+    const boot = JSON.parse(page.source.match(/const BOOT = (\{[^\n]*\});/u)[1]);
+    const response = await page.serverRequest("/api/library", { method: "POST", headers: { "content-type": "application/json", "x-portal-token": boot.token }, body: JSON.stringify({ library: fixture.second.project }) });
+    assert.equal(response.status, 200);
+    const filter = page.document.querySelector('[data-ui="knowledge-status-filter"]');
+    filter.value = "all"; filter.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+    await page.waitForSettled();
+    const button = page.document.querySelector(`[data-target-${action}]`);
+    assert.ok(button);
+    button.click();
+    await page.waitForSettled();
+    recovered();
+    assert.equal(page.document.querySelector("#target-notice").hidden, true);
+  } finally { await closePage(page, fixture); }
+});
+
+test("PR24 U3: failed write after Undo recovers a replacement draft without another edit", async () => {
+  const fixture = await scratch("tcrn-pr24-replaced-write-");
+  const page = await loadExecutedDom(fixture);
+  try {
+    page.document.querySelector('[data-page-target="engine-model-policy"]').click();
+    const { control, change } = policySwitchControls(page, "#engine-model-policy-view");
+    change(control("decision"), "minutes:synthetic-sent#D1", "input");
+    page.hold((path) => path === "/api/model-policy");
+    control("save").click();
+    await waitFor(() => page.held() === 1, "the pending write before Undo");
+    control("undo").click();
+    change(control("decision"), "minutes:synthetic-replacement#D1", "input");
+    assert.equal(control("save").disabled, true);
+    page.release({ error: new Error("PR24 isolated write failure") });
+    await page.waitForSettled();
+    assert.match(page.document.querySelector("#receipt-raw").textContent, /PORTAL_MODEL_POLICY_WRITE_UNAVAILABLE/);
+    assert.equal(control("decision").value, "minutes:synthetic-replacement#D1");
+    assert.equal(control("save").disabled, false, "settled failed write releases the replacement draft without an extra edit");
+  } finally { page.release(); await closePage(page, fixture); }
 });

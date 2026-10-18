@@ -30,74 +30,9 @@ function text(value) {
   return typeof value === "string" ? value : "";
 }
 
-// Association validates a supplied host return; it does not authenticate the host,
-// execute a dispatch, or convert the review runner into native execution evidence.
-export const DISPATCH_EVIDENCE_VERSION = "tcrn.host-dispatch-evidence.v1";
-const recordObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const nonempty = (value) => typeof value === "string" && value.trim().length > 0;
-const digestString = (value) => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
-function canonicalEvidence(value) {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
-  if (typeof value === "number" && Number.isFinite(value)) return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalEvidence).join(",")}]`;
-  if (recordObject(value)) return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalEvidence(value[key])}`).join(",")}}`;
-  throw new TypeError("admission evidence must contain only JSON values");
-}
-export function dispatchAdmissionDigest(admission) {
-  return createHash("sha256").update(canonicalEvidence(admission)).digest("hex");
-}
-
-/** Deterministic validation only. Undefined means the legacy path was requested. */
-export function normalizeDispatchAdmissionEvidence(value, { workId = null, workRevision = null } = {}) {
-  if (value === undefined) return { requested: false, valid: true, complete: false, status: "not-requested", problems: [], evidence: null };
-  const problems = [];
-  const input = recordObject(value) ? value : {};
-  const handoff = recordObject(input.handoff) ? input.handoff : {};
-  const admission = recordObject(handoff.executionAdmission) ? handoff.executionAdmission : {};
-  const result = recordObject(input.hostResult) ? input.hostResult : {};
-  const request = recordObject(admission.request) ? admission.request : {};
-  const selection = recordObject(admission.selection) ? admission.selection : {};
-  const tuple = recordObject(selection.record) ? selection.record : {};
-  const policy = recordObject(admission.policy) ? admission.policy : {};
-  const origin = recordObject(selection.origin) ? selection.origin : {};
-  if (admission.schemaVersion !== "tcrn.execution-admission.v1" || admission.status !== "admitted" || !Array.isArray(admission.reasons) || admission.reasons.length !== 0) problems.push("handoff must contain an admitted execution admission without refusal reasons");
-  if (!WORK_ID_PATTERN.test(text(handoff.workId)) || (workId !== null && handoff.workId !== workId)) problems.push("handoff workId does not match the reviewed work");
-  if (!Number.isSafeInteger(handoff.workRevision) || handoff.workRevision < 1 || (workRevision !== null && handoff.workRevision !== workRevision)) problems.push("handoff workRevision is missing or differs from the bound work revision");
-  const reference = handoff.reference;
-  if (!recordObject(reference) || Object.keys(reference).sort().join(",") !== "libraryId,projectId" || !/^(library|workspace):[a-f0-9]{24}$/u.test(text(reference.libraryId)) || !/^project:[a-f0-9]{24}$/u.test(text(reference.projectId))) problems.push("handoff reference must be a stable project reference");
-  if (!nonempty(request.host) || !nonempty(request.category) || !Number.isSafeInteger(request.rejections) || request.rejections < 0 || !Number.isSafeInteger(request.requestedAgents) || request.requestedAgents < 1) problems.push("admission request is missing or malformed");
-  if (!["runner", "model", "effort"].every(key => nonempty(tuple[key]))) problems.push("admission selected tuple is missing or malformed");
-  if (!Number.isSafeInteger(policy.revision) || policy.revision < 1 || !digestString(policy.digest) || policy.host !== request.host) problems.push("admission policy identity is missing or malformed");
-  if (selection.host !== request.host || selection.category !== request.category || selection.rejections !== request.rejections || origin.revision !== policy.revision || origin.digest !== policy.digest) problems.push("admission selection differs from its request or policy identity");
-  if (result.schemaVersion !== DISPATCH_EVIDENCE_VERSION || result.source !== "native-host-return") problems.push("hostResult must explicitly identify a native-host-return, not review or test output");
-  const compare = (actual, expected, label) => {
-    try { if (canonicalEvidence(actual) === canonicalEvidence(expected)) return; } catch { /* missing or non-JSON binding */ }
-    problems.push(`hostResult ${label} does not match the admission handoff`);
-  };
-  compare(result.workId, handoff.workId, "workId");
-  compare(result.workRevision, handoff.workRevision, "workRevision");
-  compare(result.projectReference, reference, "projectReference");
-  compare(result.request, request, "request");
-  compare(result.selectedTuple, { runner: tuple.runner, model: tuple.model, effort: tuple.effort }, "selectedTuple");
-  compare(result.policyRevision, policy.revision, "policyRevision");
-  compare(result.policyDigest, policy.digest, "policyDigest");
-  let admissionDigest = null;
-  try { admissionDigest = dispatchAdmissionDigest(admission); } catch { problems.push("admission is not JSON evidence"); }
-  if (!digestString(result.admissionDigest) || result.admissionDigest !== admissionDigest) problems.push("hostResult admissionDigest does not match the complete admission receipt");
-  const unavailable = [];
-  for (const field of ["stdout", "stderr", "exitCode"]) {
-    const observation = result[field];
-    if (recordObject(observation) && observation.status === "available" && (field === "exitCode" ? Number.isSafeInteger(observation.value) && observation.value >= 0 : typeof observation.value === "string") && Object.keys(observation).sort().join(",") === "status,value") continue;
-    if (recordObject(observation) && observation.status === "unavailable" && nonempty(observation.reason) && Object.keys(observation).sort().join(",") === "reason,status") unavailable.push(field);
-    else problems.push(`hostResult ${field} must contain actual returned text/exit code or an explicit unavailable reason`);
-  }
-  return {
-    requested: true, valid: problems.length === 0, complete: problems.length === 0 && unavailable.length === 0,
-    status: problems.length > 0 ? "invalid" : unavailable.length > 0 ? "unavailable" : "associated",
-    verification: "caller-supplied-host-return-not-independently-authenticated",
-    problems, unavailable, admissionDigest, evidence: value,
-  };
-}
+// One validator for source review and the installed public CLI.
+import { normalizeDispatchAdmissionEvidence } from "../packages/core/src/dispatch-evidence.ts";
+export { DISPATCH_EVIDENCE_VERSION, dispatchAdmissionDigest, normalizeDispatchAdmissionEvidence } from "../packages/core/src/dispatch-evidence.ts";
 
 function childEnvironment() {
   const environment = { ...process.env };

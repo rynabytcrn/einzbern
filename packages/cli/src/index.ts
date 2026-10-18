@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { normalizeDispatchAdmissionEvidence } from "../../core/src/dispatch-evidence.js";
 import { discardRelocationPreparation } from "../../core/src/relocate.js";
 import { planConfigurationProjectionRefresh, refreshConfigurationProjections, diagnoseLegacySharedPaths } from "../../core/src/configuration-projections.js";
 import type { ExecutionAdmissionRequest } from "../../core/src/execution-admission.js";
@@ -1644,6 +1645,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "device-clean", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }, { name: "home", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-480 R4, AC5: doctor's eight checks of this device and one project, --project or
   // the current directory. It changes nothing: device-stream's lock and probe file go again.
+  { name: "dispatch-evidence", availability: "cli", mutates: false, flags: [{ name: "from-file", required: true, valueKind: "string", valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input." }] },
   { name: "doctor", availability: "cli", mutates: false, flags: [{ name: "project", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-471 R2, R3: the engine versions in this device's engine/ directory. engine-update
   // installs an unpacked, digest-checked version and makes it current; engine-rollback makes the
@@ -2225,6 +2227,21 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "commands") {
     parseArguments(rest, []);
     io.write(canonicalJson({ reasonCode: "CLI_CATALOG_READY", schemaVersion: "tcrn.cli-catalog.v1", commands: COMMAND_CATALOG }));
+    return;
+  }
+  if (command === "dispatch-evidence") {
+    const values = parseArguments(rest, ["from-file"]);
+    required(values, ["from-file"]);
+    let input: unknown;
+    try {
+      input = JSON.parse(readFileSync(values["from-file"] ?? "", "utf8"));
+    } catch {
+      fail("DISPATCH_EVIDENCE_INPUT_INVALID", "--from-file must name a readable JSON evidence file");
+    }
+    const result = normalizeDispatchAdmissionEvidence(input);
+    io.write(canonicalJson(result));
+    if (!result.valid) fail("DISPATCH_EVIDENCE_INVALID", "Dispatch evidence association failed; see stdout problems");
+    if (!result.complete) fail("DISPATCH_EVIDENCE_UNAVAILABLE", "Dispatch evidence is incomplete; see stdout unavailable observations");
     return;
   }
   if (command === "host-probe") {

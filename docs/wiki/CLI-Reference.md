@@ -119,6 +119,15 @@
 | `--yes` | 可选 | `boolean` |
 | `--home` | 可选 | `string` |
 
+## `dispatch-evidence`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--from-file` | 必填 | `string` | `Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input.` |
+
 ## `doctor`
 
 - 可用范围：`cli`。

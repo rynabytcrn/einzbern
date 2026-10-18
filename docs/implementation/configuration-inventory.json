@@ -3399,6 +3399,56 @@
         "flags": []
       },
       {
+        "name": "configuration-projections-plan",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "project-id",
+            "required": false,
+            "valueKind": "string"
+          }
+        ]
+      },
+      {
+        "name": "configuration-projections-refresh",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "project-id",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          },
+          {
+            "name": "actor",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "output-keys",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "JSON array of stable registered output keys; omitted selects all known outputs, [] selects none"
+          }
+        ]
+      },
+      {
         "name": "device-clean",
         "availability": "cli",
         "mutates": true,
@@ -3417,6 +3467,19 @@
             "name": "home",
             "required": false,
             "valueKind": "string"
+          }
+        ]
+      },
+      {
+        "name": "dispatch-evidence",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "from-file",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input."
           }
         ]
       },
@@ -5782,56 +5845,6 @@
         ]
       },
       {
-        "name": "configuration-projections-plan",
-        "availability": "cli",
-        "mutates": false,
-        "flags": [
-          {
-            "name": "workspace",
-            "required": false,
-            "valueKind": "string"
-          },
-          {
-            "name": "project-id",
-            "required": false,
-            "valueKind": "string"
-          }
-        ]
-      },
-      {
-        "name": "configuration-projections-refresh",
-        "availability": "cli",
-        "mutates": true,
-        "flags": [
-          {
-            "name": "workspace",
-            "required": false,
-            "valueKind": "string"
-          },
-          {
-            "name": "project-id",
-            "required": false,
-            "valueKind": "string"
-          },
-          {
-            "name": "at",
-            "required": true,
-            "valueKind": "instant"
-          },
-          {
-            "name": "actor",
-            "required": false,
-            "valueKind": "string"
-          },
-          {
-            "name": "output-keys",
-            "required": false,
-            "valueKind": "string",
-            "valueShape": "JSON array of stable registered output keys; omitted selects all known outputs, [] selects none"
-          }
-        ]
-      },
-      {
         "name": "settings-catalog",
         "availability": "cli",
         "mutates": false,
@@ -6938,28 +6951,6 @@
         ]
       },
       {
-        "name": "workspace-relocate-discard",
-        "availability": "cli",
-        "mutates": true,
-        "flags": [
-          {
-            "name": "workspace",
-            "required": false,
-            "valueKind": "string"
-          },
-          {
-            "name": "to",
-            "required": true,
-            "valueKind": "string"
-          },
-          {
-            "name": "transaction-id",
-            "required": true,
-            "valueKind": "string"
-          }
-        ]
-      },
-      {
         "name": "workspace-relocate",
         "availability": "cli",
         "mutates": true,
@@ -6988,6 +6979,28 @@
             "name": "timeout-ms",
             "required": false,
             "valueKind": "integer"
+          }
+        ]
+      },
+      {
+        "name": "workspace-relocate-discard",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "to",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "transaction-id",
+            "required": true,
+            "valueKind": "string"
           }
         ]
       }

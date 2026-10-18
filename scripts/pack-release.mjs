@@ -233,6 +233,7 @@ async function packRelease({ version: requested, out }) {
       },
     });
     if (JSON.parse(rendered).reasonCode !== "SKILL_RENDERED") fail("PACK_INTERNAL_ERROR", "skill-render did not render the skill");
+    await copyStaged(tree, "specs/dispatch-admission-evidence-v1.md", join(repositoryRoot, "specs/dispatch-admission-evidence-v1.md"));
     const documents = [...(await readdir(repositoryRoot)).filter((file) => README.test(file)).sort(), ...DOCUMENTS];
     for (const file of documents) await copyStaged(tree, file, join(repositoryRoot, file));
     const digest = await core.computeInstallTreeDigest(tree);

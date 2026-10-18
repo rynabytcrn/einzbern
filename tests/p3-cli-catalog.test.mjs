@@ -158,8 +158,8 @@ test("S369 retired model-plan commands refuse with and without their legacy flag
     assert.equal(legacy.ok, false);
     assert.equal(legacy.reasonCode, "CLI_COMMAND_UNKNOWN");
   }
-  // The dispatch-* verbs went too (TCRN-CROSS-STORY-467 R3).
-  assert.equal(COMMAND_CATALOG.filter((entry) => entry.name.startsWith("dispatch-")).length, 0);
+  // Legacy dispatch executors remain retired. The new evidence verb only associates supplied data.
+  assert.deepEqual(COMMAND_CATALOG.filter((entry) => entry.name.startsWith("dispatch-")).map(entry => entry.name), ["dispatch-evidence"]);
   assert.equal(COMMAND_CATALOG.filter((entry) => entry.name.startsWith("model-plan-")).length, 0);
 });
 
@@ -423,7 +423,7 @@ test("526 GWT5, 541 GWT1, INIT-056: the closed decided-in roster carries its doc
   assert.deepEqual(enginePolicy.flags.find((flag) => flag.name === "actor"), { name: "actor", required: true, valueKind: "string" });
 });
 
-test("integrated engine: the only non-decision valueShapes document projection selection and execution admission", () => {
+test("integrated engine: non-decision valueShapes document projection selection, execution admission and dispatch evidence", () => {
   const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags
     .filter((flag) => flag.name !== "decided-in" && flag.valueShape !== undefined)
     .map((flag) => [entry.name, { ...flag }]));
@@ -431,6 +431,10 @@ test("integrated engine: the only non-decision valueShapes document projection s
     ["configuration-projections-refresh", {
       name: "output-keys", required: false, valueKind: "string",
       valueShape: "JSON array of stable registered output keys; omitted selects all known outputs, [] selects none",
+    }],
+    ["dispatch-evidence", {
+      name: "from-file", required: true, valueKind: "string",
+      valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input.",
     }],
     ["work-project-context", {
       name: "execution-request", required: false, valueKind: "string",

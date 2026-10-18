@@ -158,6 +158,7 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
     "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
+    "specs/dispatch-admission-evidence-v1.md",
     ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "manifest.json",
   ];
   assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());
@@ -464,4 +465,61 @@ test("481-R2: tar.mjs writes the bytes P8's independent rebuild writes, reads th
     archive,
   ]);
   assert.deepEqual(readUstar(withDirectory).map((entry) => entry.path), read.map((entry) => entry.path));
+});
+
+// PR24 P1-P4: execute the public archive entry with repository and node_modules
+// reads denied by Node itself, not merely absent from the current directory.
+test("dispatch evidence is usable from the archive alone with unchanged owner synthetic cases", async () => {
+  const { tree, report, archive } = await packedRelease();
+  assert.equal(report.sha256, sha256(archive));
+  const isolated = await environment("dispatch-evidence");
+  const cli = join(tree, "scripts/einzbern.mjs");
+  // Allow only this empty temporary fixture tree. Missing layout candidates may
+  // return ENOENT here; repository source and dependencies remain denied.
+  const permission = ["--permission", `--allow-fs-read=${base}`];
+  assert.equal(existsSync(join(base, "scripts/policy/knowledge-provenance.json")), false, "missing layout candidate stays inside the isolated fixture, without copied policy assets");
+  isolated.env.NODE_OPTIONS = "";
+  delete isolated.env.NODE_PATH;
+  const execute = (args) => node([...permission, cli, ...args], isolated);
+  for (const path of [join(repositoryRoot, "package.json"), join(repositoryRoot, "node_modules/typescript/package.json")]) {
+    const denied = node([...permission, "--input-type=module", "-e", `import { readFileSync } from 'node:fs'; readFileSync(${JSON.stringify(path)});`], isolated);
+    assert.notEqual(denied.status, 0);
+    assert.match(denied.stderr, /ERR_ACCESS_DENIED/);
+  }
+  const skill = await readFile(join(tree, "skill/mana-orchestrate/SKILL.md"), "utf8");
+  assert.match(skill, /dispatch-evidence --from-file <json>/);
+  assert.doesNotMatch(skill, /scripts\/review-evidence\.mjs/);
+  assert.match(skill, /specs\/dispatch-admission-evidence-v1\.md/);
+  const format = await readFile(join(tree, "specs/dispatch-admission-evidence-v1.md"), "utf8");
+  assert.match(format, /hostResult/);
+  assert.match(format, /Exit 1/);
+  for (const args of [["commands"], ["dispatch-evidence", "--help"]]) {
+    const run = execute(args);
+    assert.equal(run.status, 0, run.stderr);
+    const command = JSON.parse(run.stdout).commands.find(entry => entry.name === "dispatch-evidence");
+    assert.equal(command.mutates, false);
+    assert.match(command.flags[0].valueShape, /handoff, hostResult/);
+  }
+  for (const name of ["associated", "refused", "mismatch", "unavailable"]) {
+    // Copy byte-for-byte; do not rebuild the receipt or repair a bad case.
+    const bytes = await readFile(join(repositoryRoot, "fixtures/dispatch-evidence", `dispatch-${name}.synthetic.json`));
+    const input = JSON.parse(bytes);
+    const path = join(isolated.cwd, `${name}.json`);
+    await writeFile(path, bytes);
+    const run = execute(["dispatch-evidence", "--from-file", path]);
+    assert.equal(run.status, input.expected.complete ? 0 : 1, run.stderr);
+    const actual = JSON.parse(run.stdout);
+    for (const key of ["valid", "complete", "status"]) assert.equal(actual[key], input.expected[key], name + ": " + key);
+    assert.deepEqual(actual.evidence, input);
+    assert.equal(actual.verification, "caller-supplied-host-return-not-independently-authenticated");
+    if (input.expected.complete) assert.equal(run.stderr, "");
+    else assert.match(run.stderr, /DISPATCH_EVIDENCE_(INVALID|UNAVAILABLE)/);
+  }
+  const malformed = join(isolated.cwd, "malformed.json");
+  await writeFile(malformed, "{");
+  const bad = execute(["dispatch-evidence", "--from-file", malformed]);
+  assert.equal(bad.status, 1);
+  assert.equal(bad.stdout, "");
+  assert.match(bad.stderr, /DISPATCH_EVIDENCE_INPUT_INVALID/);
+  assert.equal(existsSync(isolated.env.EINZBERN_HOME), false, "no device state was needed or created");
 });

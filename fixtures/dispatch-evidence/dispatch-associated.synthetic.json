@@ -1,0 +1,129 @@
+{
+  "fixtureOnly": true,
+  "warning": "SYNTHETIC FORMAT/ASSOCIATION TEST INPUT; NOT A NATIVE EXECUTION OR PRODUCTION AUTHORIZATION",
+  "expected": {
+    "valid": true,
+    "complete": true,
+    "status": "associated"
+  },
+  "handoff": {
+    "workId": "work:111111111111111111111111",
+    "workRevision": 3,
+    "reference": {
+      "libraryId": "library:222222222222222222222222",
+      "projectId": "project:333333333333333333333333"
+    },
+    "executionAdmission": {
+      "schemaVersion": "tcrn.execution-admission.v1",
+      "status": "admitted",
+      "reasons": [],
+      "request": {
+        "host": "codex",
+        "category": "economy",
+        "rejections": 0,
+        "requestedAgents": 1
+      },
+      "selection": {
+        "record": {
+          "order": 60,
+          "category": "economy",
+          "runner": "codex",
+          "model": "gpt-6-luna",
+          "effort": "max",
+          "note": ""
+        },
+        "steps": 0,
+        "atCeiling": false,
+        "capabilityStatus": "unchecked",
+        "host": "codex",
+        "category": "economy",
+        "rejections": 0,
+        "escalation": {
+          "enabled": true,
+          "threshold": 2,
+          "ceiling": "main"
+        },
+        "quota": {
+          "fiveHourParallelOffPercent": 75,
+          "fiveHourWaitPercent": 90,
+          "weeklyParallelOffPercent": 95,
+          "weeklyWaitPercent": null
+        },
+        "quotaOrigin": "engine-default",
+        "origin": {
+          "kind": "device-engine",
+          "path": "/synthetic-test-device/engine-model-policy.json",
+          "revision": 1,
+          "storeRevision": 1,
+          "digest": "393f15683c840e229d3bfc5a2095b6c6b933ff99771a1db0e5f9cdab14c8d5b0"
+        }
+      },
+      "policy": {
+        "host": "codex",
+        "revision": 1,
+        "storeRevision": 1,
+        "digest": "393f15683c840e229d3bfc5a2095b6c6b933ff99771a1db0e5f9cdab14c8d5b0"
+      },
+      "capabilities": {
+        "status": "caller-reported-match",
+        "verification": "caller-reported-not-native-verified"
+      },
+      "quota": {
+        "status": "not-configured",
+        "decision": "not-configured",
+        "observedAt": null,
+        "source": null,
+        "fiveHourUsedPercent": null,
+        "weeklyUsedPercent": null,
+        "ageMs": null,
+        "maxAgeMs": 300000,
+        "verification": "caller-reported-not-account-verified",
+        "unknownWindows": []
+      },
+      "concurrency": {
+        "deviceLimit": 8,
+        "projectLimit": null,
+        "effectiveLimit": 8,
+        "origin": "device",
+        "admissionLimit": 8
+      },
+      "evaluatedAt": "2026-10-18T01:00:00.000Z"
+    }
+  },
+  "hostResult": {
+    "schemaVersion": "tcrn.host-dispatch-evidence.v1",
+    "source": "native-host-return",
+    "workId": "work:111111111111111111111111",
+    "workRevision": 3,
+    "projectReference": {
+      "libraryId": "library:222222222222222222222222",
+      "projectId": "project:333333333333333333333333"
+    },
+    "request": {
+      "host": "codex",
+      "category": "economy",
+      "rejections": 0,
+      "requestedAgents": 1
+    },
+    "selectedTuple": {
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "effort": "max"
+    },
+    "policyRevision": 1,
+    "policyDigest": "393f15683c840e229d3bfc5a2095b6c6b933ff99771a1db0e5f9cdab14c8d5b0",
+    "admissionDigest": "c97bedad003db04a8ec439ddb0b1cad3f7064582a02613957cfeeb02f514751a",
+    "stdout": {
+      "status": "available",
+      "value": "SYNTHETIC FIXTURE OUTPUT - NOT A NATIVE EXECUTION\n"
+    },
+    "stderr": {
+      "status": "available",
+      "value": ""
+    },
+    "exitCode": {
+      "status": "available",
+      "value": 0
+    }
+  }
+}

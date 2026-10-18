@@ -1,4 +1,4 @@
-import { resolveEngineExecutionPolicy } from "./engine-model-policy.js";
+import { engineModelPolicyCatalogFromSnapshot, readEngineModelPolicyFile, resolveEngineExecutionPolicyFromSnapshot } from "./engine-model-policy.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -146,8 +146,9 @@ export interface SettingsView {
 
 /**
  * @deprecated Historical read-only compatibility API; use readRuntimeKnowledgeLanguagePolicy for execution.
- * Historical/pure workspace language policy, not runtime model authority. Current consumers use
- * readRuntimeKnowledgeLanguagePolicy below. TCRN-CROSS-STORY-508 R4: the economy model is the model of the
+ * Historical/pure workspace language policy, not Codex runtime model authority. Current consumers use
+ * readRuntimeKnowledgeLanguagePolicy below, which preserves this consumer only for unmigrated non-Codex hosts.
+ * TCRN-CROSS-STORY-508 R4: the economy model is the model of the
  * economy category's base record in models.tiers (baseModelsTier: the record with the largest order,
  * whatever its runner), the record a rule naming the economy category gets. It no longer depends on a
  * host, so `_host`, which chose a host's table under TCRN-CROSS-STORY-484, decides nothing; it stays
@@ -176,15 +177,25 @@ export function readKnowledgeLanguagePolicy(settings: readonly SettingsView[], _
   });
 }
 
-/** Current runtime language settings plus authoritative installed device/host model selection. */
+/**
+ * Codex uses device authority only. Unmigrated non-Codex hosts retain the historical
+ * workspace language consumer until an explicit device/host policy takes precedence.
+ */
 export async function readRuntimeKnowledgeLanguagePolicy(settings: readonly SettingsView[], host?: string): Promise<KnowledgeLanguagePolicy> {
   const language = readKnowledgeLanguagePolicy(settings.filter((setting) => !setting.key.startsWith("models.")));
   // Unconfigured artifact language consumes no translation/expansion model. Missing explicit host
   // never selects a project tier, guesses a host or silently uses another host's policy.
   let economyModel: string | null = null;
   if (language.artifactLanguage !== null && host !== undefined) {
+    // Read one verified snapshot: fallback is based on host-entry absence, not a selection error
+    // (which can also mean an explicitly configured but unusable tuple).
+    const snapshot = await readEngineModelPolicyFile();
+    const catalog = engineModelPolicyCatalogFromSnapshot(snapshot, host);
+    if (host !== "codex" && catalog.selectedStatus === "unconfigured") {
+      return readKnowledgeLanguagePolicy(settings);
+    }
     try {
-      economyModel = (await resolveEngineExecutionPolicy({ host, category: "economy", rejections: 0 })).record.model;
+      economyModel = resolveEngineExecutionPolicyFromSnapshot(snapshot, { host, category: "economy", rejections: 0 }).record.model;
     } catch (error) {
       // Unavailable is an explicit absence, not permission to select project or other-host tiers.
       // Reads can report an owed translation with model:null; writes still refuse in apply below.

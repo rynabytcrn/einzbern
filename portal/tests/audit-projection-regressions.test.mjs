@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { canonicalJson } from "../../scripts/lib/canonical-json.mjs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
@@ -17,6 +19,7 @@ function declaration(source, name) {
 }
 const browser = html.slice(html.indexOf('<script type="module">') + '<script type="module">'.length, html.lastIndexOf('</script>'));
 function extract(source, name, bindings) {
+  bindings = { canonicalJson, createHash, ...bindings };
   return new Function(...Object.keys(bindings), `${declaration(source, name)}\nreturn ${name};`)(...Object.values(bindings));
 }
 test("knowledge inventory reads every page and refuses incomplete or changing inventories", async () => {

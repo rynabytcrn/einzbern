@@ -21,6 +21,8 @@ import { fileURLToPath } from "node:url";
 // through the registry-lock bridge, as the names do through names.mjs.
 import { withFileLock, registryPath } from "../scripts/lib/registry-lock.mjs";
 
+import { canonicalJson } from "../scripts/lib/canonical-json.mjs";
+
 import { isGateRunRecord, compareGateRuns } from "../scripts/lib/gate-run.mjs";
 
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
@@ -442,6 +444,7 @@ async function knowledgeProjection(status = "valid") {
   let listing;
   let total;
   const seen = new Set();
+  const digest = createHash("sha256").update("[", "utf8");
   // Page until the declared inventory is complete; never present a prefix as the inventory.
   do {
     listing = await cliResult(["knowledge-list", "--workspace", selected.libraryPath, "--at", at, "--selection", "all", "--status", status, "--allow-trailing", "true", "--limit", "100", "--offset", String(records.length)]);
@@ -455,14 +458,26 @@ async function knowledgeProjection(status = "valid") {
     if (!Array.isArray(page) || !Number.isSafeInteger(count) || count < 0 ||
         (total !== undefined && total !== count) || records.length + page.length > count ||
         (page.length === 0 && records.length < count) ||
-        page.some((record) => typeof record?.id !== "string" || seen.has(record.id) || !seen.add(record.id))) {
+        page.some((record) => typeof record?.id !== "string")) {
+      listing = { ok: false, body: { ok: false, reasonCode: "PORTAL_KNOWLEDGE_PAGINATION_CHANGED" } };
+      break;
+    }
+    // selection=all keeps every differing version of an id. The engine coalesces identical
+    // stored metadata, not ids, revisions or body digests; compare the complete projected record.
+    // The shared serializer orders nested keys canonically and returns an entry without an LF.
+    const entries = page.map((record) => canonicalJson(record));
+    if (entries.some((entry) => seen.has(entry) || !seen.add(entry))) {
       listing = { ok: false, body: { ok: false, reasonCode: "PORTAL_KNOWLEDGE_PAGINATION_CHANGED" } };
       break;
     }
     total = count;
+    for (const [index, entry] of entries.entries()) {
+      if (records.length + index > 0) digest.update(",", "utf8");
+      digest.update(entry, "utf8");
+    }
     records.push(...page);
   } while (records.length < total);
-  if (listing.ok) listing = { ...listing, body: { ...listing.body, records, total: total ?? 0, offset: 0, truncated: false } };
+  if (listing.ok) listing = { ...listing, body: { ...listing.body, records, total: total ?? 0, offset: 0, truncated: false, resultDigest: digest.update("]\n", "utf8").digest("hex") } };
   return {
     ok: listing.ok,
     reasonCode: listing.ok ? "PORTAL_KNOWLEDGE_READY" : "PORTAL_KNOWLEDGE_PARTIAL",

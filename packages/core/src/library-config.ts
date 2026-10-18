@@ -164,6 +164,16 @@ export async function configProjectionStatus(
     return stored === "absent" && settings.length === 0 && projectedRecords(records ?? []).length === 0 ? "current" : stored;
   }
   if (canonicalJson(stored.values) !== canonicalJson(projectConfigValues(settings))) return "stale";
-  if (canonicalJson(stored.projects ?? {}) !== canonicalJson(projectConfigScopes(settings, records ?? []))) return "stale";
-  return records === undefined || canonicalJson(stored.records) === canonicalJson(projectConfigRecords(records)) ? "current" : "stale";
+  const expectedProjects = projectConfigScopes(settings, records ?? []);
+  if (records === undefined) {
+    // Record-only scopes do not introduce settings; compare values on both sides without
+    // treating omitted records as an assertion that each project's records are empty.
+    const projectIds = new Set([...Object.keys(stored.projects ?? {}), ...Object.keys(expectedProjects)]);
+    for (const id of projectIds) {
+      if (canonicalJson(stored.projects?.[id]?.values ?? {}) !== canonicalJson(expectedProjects[id]?.values ?? {})) return "stale";
+    }
+    return "current";
+  }
+  if (canonicalJson(stored.projects ?? {}) !== canonicalJson(expectedProjects)) return "stale";
+  return canonicalJson(stored.records) === canonicalJson(projectConfigRecords(records)) ? "current" : "stale";
 }

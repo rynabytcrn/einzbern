@@ -41,7 +41,8 @@ import { effectiveProjectState } from "./project-chain.js";
 
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isUtf8 } from "node:buffer";
-import { dirname, join, resolve, relative, isAbsolute } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { pathIsInside } from "./path-containment.js";
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
 import { removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
@@ -537,10 +538,7 @@ export type ManagedOutputBinding = "bound" | "unconfigured";
 
 // Whether `path` is a library in `libraries` or lies within one.
 function insideLibrary(path: string, libraries: readonly string[]): boolean {
-  return libraries.some((library) => {
-    const relation = relative(library, path);
-    return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
-  });
+  return libraries.some((library) => pathIsInside(library, path));
 }
 
 /**

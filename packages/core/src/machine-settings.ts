@@ -320,12 +320,17 @@ function orderedValues(values: Readonly<Record<string, string>>): Readonly<Recor
   return Object.freeze(ordered);
 }
 
+// Preserve the existing nonempty-string read contract, including historical timestamps.
+function assertUpdatedAt(value: unknown): asserts value is string {
+  if (typeof value !== "string" || value.length === 0) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings need an updatedAt");
+}
+
 export function validateMachineSettingsFile(value: unknown): MachineSettingsFile {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings must be an object");
   const record = value as Record<string, unknown>;
   if (record.schemaVersion !== MACHINE_SETTINGS_VERSION) fail("MACHINE_SETTINGS_FILE_INVALID", `machine settings schemaVersion must be ${MACHINE_SETTINGS_VERSION}`);
   if (record.layerKind !== MACHINE_SETTINGS_LAYER_KIND) fail("MACHINE_SETTINGS_FILE_INVALID", `machine settings layerKind must be ${MACHINE_SETTINGS_LAYER_KIND}`);
-  if (typeof record.updatedAt !== "string" || record.updatedAt.length === 0) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings need an updatedAt");
+  assertUpdatedAt(record.updatedAt);
   const values = record.values;
   if (values === null || typeof values !== "object" || Array.isArray(values)) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings values must be an object");
   const validated: Record<string, string> = {};
@@ -399,6 +404,7 @@ export async function applyMachineSettingSet(input: {
   readonly path?: string;
 }): Promise<MachineSettingsFile> {
   assertMachineSettingKey(input.key);
+  assertUpdatedAt(input.occurredAt);
   const validated = validateMachineSettingValue(input.key, input.value);
   const value = BY_KEY.get(input.key)?.type === "path" ? await realSettingPath(input.key, validated) : validated;
   const path = input.path ?? machineSettingsPath();
@@ -423,6 +429,7 @@ export async function applyMachineSettingRemove(input: {
   readonly path?: string;
 }): Promise<MachineSettingsFile> {
   assertMachineSettingKey(input.key);
+  assertUpdatedAt(input.occurredAt);
   const path = input.path ?? machineSettingsPath();
   const current = await readMachineSettings(path);
   if (!Object.hasOwn(current.values, input.key)) fail("MACHINE_SETTING_NOT_SET", `machine setting ${input.key} is not set`);

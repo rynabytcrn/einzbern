@@ -1,5 +1,7 @@
 # Code-quality audit coverage and closure register
 
+Current status: see the [2026-10-18 post-merge audit index](post-merge-audit.md). This register preserves its historical review and verification statements; older pending statuses are not the current status of merged PR #24.
+
 Date: 2026-10-17. Initial inspection basis: `7aee972`; subsequent fixes are recorded separately.
 This is a repository-wide inventory with risk-prioritized, partial static control-flow review,
 not an exhaustive line-by-line security audit. Passing tests, lint and type checks do not close

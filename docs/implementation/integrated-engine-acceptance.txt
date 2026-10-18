@@ -1,5 +1,7 @@
 Integrated configuration and engine completion
 
+Current status index: docs/implementation/post-merge-audit.md (2026-10-18). The entries below remain a historical ledger; older draft/red/pending statements are not the current status of merged PR #24. Original observations and receipt identities are preserved.
+
 First implementation commit: f7265086a4bf03980e36c084a16d4af81c8f4422.
 Base: bccf01697eb0a807c4353c847e5459978d84a3a8.
 This tracked ledger maps obligations and preserves diagnostic history. The PR's final verification receipts identify the exact tested commit and package; this file is not a self-updating completion receipt.

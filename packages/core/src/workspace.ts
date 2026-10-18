@@ -2034,6 +2034,25 @@ class MergeReplay {
     return origin;
   }
 
+  /** Refuse a new write whose literal target historical replay would redirect on this stream. */
+  assertUnredirectedWrite(streamId: string, payload: JsonValue): void {
+    if (!isJsonObject(payload) || typeof payload.operation !== "string" || !isJsonObject(payload.record)) return;
+    const kind = payload.operation.startsWith("work.") ? "work" : payload.operation.startsWith("project.") ? "project" : null;
+    if (kind === null || typeof payload.record.id !== "string") return;
+    const redirects = this.redirects.get(streamId);
+    if (redirects === undefined) return;
+    // Match view's existing fields exactly. Historical events keep their redirects, including
+    // redirects installed by a colliding create that was subsequently rejected by its reducer.
+    for (const field of kind === "work" ? ["id", "parentId", "projectId"] : ["id"]) {
+      const value = payload.record[field];
+      const target = typeof value === "string" ? redirects.get(value) : undefined;
+      if (target === undefined) continue;
+      throw new WorkspaceError("WORKSPACE_INPUT_INVALID", `new ${payload.operation} ${field} ${String(value)} would replay as ${target.id} on this stream; choose an unambiguous target`, {
+        streamId, operation: payload.operation, field, id: String(value), aliasId: target.id, aliasExternalKey: target.externalKey,
+      });
+    }
+  }
+
   /** The event as this merge applies it: a colliding create renamed, a renamed record's later events redirected. */
   view(event: EventRecord, projects: ReadonlyMap<string, ProjectRecord>, work: ReadonlyMap<string, WorkRecord>): EventRecord {
     this.pending = null;
@@ -3465,7 +3484,7 @@ async function refreshLibraryCache(
  * cache. A seed the rest of the events cannot be replayed onto is a cache fault, and the replay
  * starts again from genesis; the result is the same state either way.
  */
-async function replayLibraryThroughCache(library: Library, read: LibraryRead): Promise<WorkspaceState> {
+async function replayLibraryResultThroughCache(library: Library, read: LibraryRead): Promise<LibraryReplayResult> {
   const cached = await cachedSeed(library, read);
   let replay: LibraryReplayResult | null = null;
   if (cached !== null) {
@@ -3478,7 +3497,11 @@ async function replayLibraryThroughCache(library: Library, read: LibraryRead): P
   const seededVersion = replay === null ? null : cached?.seed.version ?? null;
   replay ??= replayLibrary(library, read);
   await refreshLibraryCache(library, read, replay, seededVersion);
-  return replay.state;
+  return replay;
+}
+
+async function replayLibraryThroughCache(library: Library, read: LibraryRead): Promise<WorkspaceState> {
+  return (await replayLibraryResultThroughCache(library, read)).state;
 }
 
 /** Read every stream of a library and replay them merged, through this device's cache. */
@@ -3774,6 +3797,7 @@ interface LibraryReadForAppend {
   readonly library: Library;
   readonly read: LibraryRead;
   readonly state: WorkspaceState;
+  readonly merge: MergeReplay;
 }
 
 // WSA-1: the single full replay per mutation, so the state every delta is built against is the
@@ -3781,7 +3805,8 @@ interface LibraryReadForAppend {
 async function readForAppend(root: string): Promise<LibraryReadForAppend> {
   const library = await openLibrary(root);
   const read = await readAllStreams(library.root);
-  return { library, read, state: await replayLibraryThroughCache(library, read) };
+  const replay = await replayLibraryResultThroughCache(library, read);
+  return { library, read, state: replay.state, merge: replay.merge };
 }
 
 // Read the merged state, plan and build every delta against it and measure the result -- nothing is
@@ -3820,6 +3845,7 @@ async function buildAppend(
       // Each member sees the state the members before it produced, which is what makes an
       // ordered batch express a dependency.
       const delta = buildDelta(current);
+      source.merge.assertUnredirectedWrite(own.streamId, delta.payload);
       if (library.manifest.formatVersion < 2 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) &&
         (Object.hasOwn(delta.payload.record, "involvedProjects") || delta.payload.record.collection === "chain")) {
         throw new FormatVersionError("LIBRARY_FORMAT_UNSUPPORTED", "project-chain semantics require a format-2 library; no implicit in-place upgrade is performed", { required: "2", actual: String(library.manifest.formatVersion) });

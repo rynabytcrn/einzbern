@@ -70,7 +70,9 @@ function discoverRepositoryRoot() {
 function remoteOwner(root) {
   const remote = runGit(root, ["remote", "get-url", "origin"]).toString("utf8").trim();
   const match = remote.match(new RegExp(`github\\.com[/:]([^/]+)/(?:${REPOSITORY_NAME_PATTERN})(?:\\.git)?$`, "u"));
-  if (!match) fail("PRIVACY_ORIGIN_UNEXPECTED", remote);
+  // An origin may contain credential userinfo or a private filesystem path.
+  // Keep the refusal diagnostic value-free, as the full privacy gate does.
+  if (!match) fail("PRIVACY_ORIGIN_UNEXPECTED", "origin does not name a supported repository");
   return match[1];
 }
 

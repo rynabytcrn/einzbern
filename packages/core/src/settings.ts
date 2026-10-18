@@ -3,7 +3,7 @@ import { isPortablePathBinding, resolvePortablePath } from "./portable-path.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, resolve, win32 } from "node:path";
 
 import { PROTOCOL_LIMITS, assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { ARTIFACT_LANGUAGE_TAGS, parsePromptLanguages } from "./knowledge-language.js";
@@ -979,7 +979,9 @@ export function createWorkspaceSettingRecord(
     fail("SETTINGS_RECORD_INVALID", `${entry.key} updatedAt is invalid`);
   }
   if (entry.key.startsWith("models.") || entry.key.startsWith("quota.")) fail("SETTINGS_KEY_DEVICE_LEVEL", `${entry.key} is historical compatibility data; edit the device host policy instead`);
-  if (["workspace.generatedArtifactsPath", "knowledge.articlesPath"].includes(entry.key) && typeof value === "string" && isAbsolute(value)) fail("SETTINGS_VALUE_INVALID", `${entry.key} requires a portable relative path or binding:paths.artifacts / binding:paths.knowledgeArticles; keep absolute locations in machine settings`);
+  // Shared declarations must be portable even when authored on a different platform.
+  // Keep this admission check out of historical record validation and replay.
+  if (["workspace.generatedArtifactsPath", "knowledge.articlesPath"].includes(entry.key) && typeof value === "string" && (isAbsolute(value) || win32.isAbsolute(value))) fail("SETTINGS_VALUE_INVALID", `${entry.key} requires a portable relative path or binding:paths.artifacts / binding:paths.knowledgeArticles; keep absolute locations in machine settings`);
   const normalizedValue = validateSettingValue(entry.key, value, workspaceRoot);
   return validateWorkspaceSettingRecord({
     schemaVersion: WORKSPACE_SETTING_VERSION,

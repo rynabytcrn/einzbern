@@ -104,6 +104,13 @@ function referencedId(member: Readonly<Record<string, unknown>>): string | null 
   return null;
 }
 
+// Shape admission only checks whether a reference was supplied. Canonicalizing
+// it here would throw before all shape problems are collected and before the
+// apply loop can report the failing member and any earlier successful members.
+function hasReference(member: Readonly<Record<string, unknown>>): boolean {
+  return isNonEmptyString(member.id) || isNonEmptyString(member.externalKey);
+}
+
 // The shape pass: stateless, so every verdict belongs to the member that earned it and
 // all of them are reported in one refusal rather than one per round trip.
 function shapeProblems(members: readonly unknown[]): readonly KnowledgeBatchProblem[] {
@@ -132,12 +139,12 @@ function shapeProblems(members: readonly unknown[]): readonly KnowledgeBatchProb
       } else if (!Object.hasOwn(member.stalenessPolicy, "maximumAgeDays") || !Object.hasOwn(member.stalenessPolicy, "unknownDisposition")) {
         problems.push({ index, verb, rule: "policy-fields-required", detail: "maximumAgeDays and unknownDisposition" });
       }
-      if (referencedId(member) === null) {
+      if (!hasReference(member)) {
         problems.push({ index, verb, rule: "reference-required", detail: "id or externalKey names the card to act on" });
       }
       return;
     }
-    if (referencedId(member) === null) {
+    if (!hasReference(member)) {
       problems.push({ index, verb, rule: "reference-required", detail: "id or externalKey names the card to act on" });
     }
   });

@@ -11,8 +11,8 @@ const P8_SUCCESS_FIELDS = Object.freeze([
 ]);
 const P8_ARCHIVE_FIELDS = Object.freeze(["files", "path", "reasonCode", "sha256"]);
 const P8_SBOM_FIELDS = Object.freeze([
-  "basis", "components", "dependencyGraphClosure", "directComponents", "path",
-  "reasonCode", "transitiveComponents",
+  "basis", "components", "dependencyGraphClosure", "dependencyGraphScope", "directComponents", "path",
+  "reasonCode", "transitiveComponents", "vendoredComponents", "vendoredInventory",
 ]);
 const P8_ARTIFACT_FIELDS = Object.freeze(["path", "sha256", "size"]);
 const P8_STALE_RELEASE_FIELDS = Object.freeze(["from", "sha256", "size", "to", "version"]);
@@ -182,7 +182,7 @@ function inspectP8Receipt(receipt, expectedSourceFiles, expectedBasisCommit, fin
 
   const sbom = receipt.sbom;
   exactKeys(sbom, P8_SBOM_FIELDS, "$.sbom", findings);
-  if (sbom?.reasonCode !== "SBOM_VERIFIED" || sbom?.path !== "dist/sbom/sbom.cdx.json" || !nonNegativeInteger(sbom?.components) || !nonNegativeInteger(sbom?.directComponents) || !nonNegativeInteger(sbom?.transitiveComponents) || sbom?.dependencyGraphClosure !== "complete" || !digestText(sbom?.basis)) {
+  if (sbom?.reasonCode !== "SBOM_VERIFIED" || sbom?.path !== "dist/sbom/sbom.cdx.json" || !nonNegativeInteger(sbom?.components) || !nonNegativeInteger(sbom?.directComponents) || !nonNegativeInteger(sbom?.transitiveComponents) || sbom?.dependencyGraphClosure !== "complete" || sbom?.dependencyGraphScope !== "lockfile" || !nonNegativeInteger(sbom?.vendoredComponents) || sbom?.vendoredInventory !== "digest-bound-snapshot-and-notices" || !digestText(sbom?.basis)) {
     findings.push({ code: "P8_SBOM_RECEIPT_INVALID", location: "$.sbom" });
   }
 

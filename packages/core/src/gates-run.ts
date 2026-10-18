@@ -469,6 +469,10 @@ function isGateRun(value: unknown): value is GateRun {
   return record.schemaVersion === GATE_RUN_SCHEMA_VERSION && typeof record.runId === "string" && typeof record.libraryId === "string" &&
     (record.baseByRoot === undefined || (record.baseByRoot !== null && typeof record.baseByRoot === "object" && !Array.isArray(record.baseByRoot) &&
       Object.values(record.baseByRoot).every((value) => typeof value === "string"))) &&
+    // These fields decide which gates are due and are consumed by run readers.
+    // A malformed release flag must never silently become a non-release run.
+    typeof record.release === "boolean" && (record.base === null || typeof record.base === "string") &&
+    Array.isArray(record.reds) && record.reds.every((name: unknown) => typeof name === "string") &&
     Array.isArray(trees) && trees.every(isGateRootTree) &&
     (record.projectId === undefined || (typeof record.projectId === "string" && /^project:[a-f0-9]{24}$/u.test(record.projectId))) &&
     typeof record.at === "string" && typeof record.treeDigest === "string" && typeof record.declarationsDigest === "string" &&
@@ -483,6 +487,10 @@ function isGateRun(value: unknown): value is GateRun {
         typeof result.finishedAt === "string" && instant(result.finishedAt) !== null &&
         typeof result.durationMs === "number" && Number.isSafeInteger(result.durationMs) && result.durationMs >= 0;
       return (timingAbsent || timingValid) && typeof result.name === "string" && typeof result.ok === "boolean" && typeof result.required === "boolean" &&
+        typeof result.root === "string" && (result.exitCode === null || (typeof result.exitCode === "number" && Number.isSafeInteger(result.exitCode))) &&
+        (result.signal === null || typeof result.signal === "string") && typeof result.timedOut === "boolean" &&
+        typeof result.outputFile === "string" && typeof result.outputBytes === "number" && Number.isSafeInteger(result.outputBytes) && result.outputBytes >= 0 &&
+        typeof result.truncated === "boolean" &&
         Array.isArray(matched) && matched.every((path: unknown) => typeof path === "string") &&
         Array.isArray(matchedWorkIds) && matchedWorkIds.every((workId: unknown) => typeof workId === "string" && /^work:[0-9a-f]{24}$/u.test(workId));
     });

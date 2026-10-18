@@ -819,7 +819,7 @@ function publicGitMetadataProjections(entry, content, owner) {
   }
   const emailSpans = [];
   const ownerSpans = [];
-  let webFlow = false;
+  let publicCommitter = false;
   for (const role of roles) {
     const line = lines[cursor];
     const match = /^(author|committer|tagger) ([^<>\r\n]+) <([^<>\r\n]+)> (?:0|[1-9][0-9]*) [+-][0-9]{4}$/u.exec(line ?? "");
@@ -828,7 +828,7 @@ function publicGitMetadataProjections(entry, content, owner) {
     const login = githubUserEmail.exec(email)?.[1];
     const user = login !== undefined && githubLogin.test(login) && !login.includes("--");
     const service = role === "committer" && name === "GitHub" && email === joinParts(["noreply", "github.com"], "@");
-    webFlow ||= service;
+    if (role === "committer") publicCommitter = user || service;
     const offset = lines.slice(0, cursor).reduce((sum, value) => sum + value.length + 1, 0);
     if (user || service) {
       const start = offset + role.length + name.length + 3;
@@ -844,9 +844,10 @@ function publicGitMetadataProjections(entry, content, owner) {
     cursor += 1;
   }
   // Additional/continuation headers are not identities. Leave them entirely scanned.
-  // Restrict the merge account slot to the first subject of a two-parent web-flow
-  // shaped commit; branch text and every following message line remain scanned.
-  if (entry.kind === "commit" && webFlow && parents.length === 2 && parents[0] !== parents[1]) {
+  // Restrict the merge account slot to the first subject of a two-parent commit
+  // with a public noreply committer (user or web-flow). This is syntax, not proof
+  // of a hosted merge; branch text and all following message lines remain scanned.
+  if (entry.kind === "commit" && publicCommitter && parents.length === 2 && parents[0] !== parents[1]) {
     const subject = content.slice(boundary + 2).split("\n", 1)[0];
     const merge = /^(Merge pull request #[1-9][0-9]* from )([^/\s]+)\/([^\s]+)$/u.exec(subject);
     if (merge && merge[2] === owner && githubLogin.test(owner) && !owner.includes("--")) {

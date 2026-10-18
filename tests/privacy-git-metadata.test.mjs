@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 
 import { scanPrivacyEntries } from "../scripts/lib/privacy.mjs";
 
@@ -69,7 +70,7 @@ test("malformed domains, login syntax, suffixes, and service identities stay fin
   detects(commit({ c: committer + " extra" }), "EMAIL_IDENTIFIER");
 });
 
-test("merge classification covers only the account slot of a first two-parent web-flow subject", () => {
+test("merge classification covers only the account slot of a first two-parent public-noreply subject", () => {
   for (const [payload, reason] of [[privateEmail, "EMAIL_IDENTIFIER"], [privatePath, "LOCAL_ABSOLUTE_PATH"], [secret, "GITHUB_CLASSIC_TOKEN"], [owner, "OWNER_PRIVATE_IDENTIFIER"]]) {
     detects(commit({ message: `${subject}/${payload}` }), reason);
   }
@@ -77,7 +78,8 @@ test("merge classification covers only the account slot of a first two-parent we
     detects(commit({ message }), "OWNER_PRIVATE_IDENTIFIER");
   }
   detects(commit({ parents: 1 }), "OWNER_PRIVATE_IDENTIFIER");
-  detects(commit({ c: identity("committer", "Display", mail("contributor")) }), "OWNER_PRIVATE_IDENTIFIER");
+  detects(commit({ c: identity("committer", "Display", privateEmail) }), "OWNER_PRIVATE_IDENTIFIER");
+  detects(commit({ c: identity("committer", "Display", privateEmail) }), "EMAIL_IDENTIFIER");
 });
 
 test("public identity text is still private outside metadata, including tag bodies", () => {
@@ -89,3 +91,41 @@ test("public identity text is still private outside metadata, including tag bodi
   assert.deepEqual(reasons(tag, { kind: "tag" }), []);
   detects(tag + tagger, "EMAIL_IDENTIFIER", { kind: "tag" });
 });
+
+
+test("public user and web-flow committers support distinct fork and upstream accounts", () => {
+  const upstream = "public-upstream";
+  const a = identity("author", upstream, mail(upstream));
+  for (const c of [committer, identity("committer", upstream, mail(upstream)), identity("committer", "Different Display Name", mail(`12345+${upstream}`))]) {
+    const content = commit({ a, c });
+    for (const account of [owner, upstream]) {
+      assert.deepEqual(scanPrivacyEntries([{ kind: "commit", label: "synthetic", content }], { owner: account }), []);
+    }
+    for (const [payload, reason] of [[privateEmail, "EMAIL_IDENTIFIER"], [privatePath, "LOCAL_ABSOLUTE_PATH"], [secret, "GITHUB_CLASSIC_TOKEN"], [owner, "OWNER_PRIVATE_IDENTIFIER"]]) {
+      detects(commit({ a, c, message: `${subject}/${payload}` }), reason);
+      detects(commit({ a, c: c.replace("committer ", `committer Display ${payload} `) }), reason);
+    }
+    detects(content, "PRIVATE_RUNTIME_VALUE", { privateTokens: [upstream] });
+  }
+});
+
+for (const object of ["36f50376cd9862bc5192c1a5c8835c998b626f2a", "a32bbc60551e3d1caf7f19ebfe7e4034309f5e29"]) {
+  test(`retained merge ${object} scans cleanly in fork and upstream contexts`, (context) => {
+    const read = spawnSync("git", ["cat-file", "commit", object], { cwd: new URL("..", import.meta.url), encoding: "utf8" });
+    if (read.status !== 0) {
+      context.skip(`${object} is not in this clone's history`);
+      return;
+    }
+    // Derive already-public account slots without storing identities in fixtures.
+    const authorAccount = /^author [^<>\n]+ <(?:[0-9]+\+)?([^@<>]+)@users\.noreply\.github\.com>/mu.exec(read.stdout)?.[1];
+    const forkAccount = /^Merge pull request #[1-9][0-9]* from ([^/\s]+)\//mu.exec(read.stdout)?.[1];
+    assert.ok(authorAccount && forkAccount, "retained fixture exposes both public account slots");
+    for (const account of new Set([authorAccount, forkAccount])) {
+      const entries = [{ kind: "commit", label: `git-commit:${object}`, content: read.stdout }];
+      assert.deepEqual(scanPrivacyEntries(entries, { owner: account }), []);
+      const changed = read.stdout + privateEmail;
+      assert.ok(scanPrivacyEntries([{ ...entries[0], content: changed }], { owner: account })
+        .some((finding) => finding.startsWith("EMAIL_IDENTIFIER:")));
+    }
+  });
+}

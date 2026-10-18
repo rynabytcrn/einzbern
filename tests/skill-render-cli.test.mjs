@@ -123,7 +123,7 @@ test("479-AC1, AC3 through the CLI: every verb the generated table names is list
   const listed = (await invoke(["commands"])).report.commands.map((entry) => entry.name);
   const verbs = tableVerbs(markdown);
   // The full-text moment includes both project context and the packaged evidence entry.
-  assert.equal(verbs.length, 10, "the six moments name ten verbs");
+  assert.equal(verbs.length, 12, "the six moments name twelve verbs");
   assert.ok(verbs.includes("execution-evidence"), "the installed workflow names its public evidence entry");
   for (const verb of verbs) assert.ok(listed.includes(verb), `${verb} is listed by commands`);
   assert.ok(listed.includes("skill-render"), "skill-render is itself listed by commands");

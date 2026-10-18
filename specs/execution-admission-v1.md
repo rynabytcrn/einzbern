@@ -46,3 +46,7 @@ not reread files and validates its supplied policy/device records.
 Quota evidence includes `fiveHourUsedPercent` and `weeklyUsedPercent` as numbers or null,
 together with observation time, source, age and decision. Null means unobserved, never
 zero. These are explicitly caller-reported, not account-authenticated measurements.
+
+## Machine-facing entry
+
+`execution-prepare` accepts scalar selectors and a machine observations file, captures these same contexts/admissions immediately before dispatch, and saves exact per-target bindings. `execution-record` mechanically derives repeated evidence fields from that saved preparation and an actual caller-reported process artifact. See the shipped `dispatch-admission-evidence-v1.md` for schemas, support matrix, private create-new persistence and failure semantics. This does not add an installed native dispatcher, capability/account collector, native-tool adapter, scheduler or reservation. Unsupported modes are reported once, not delegated back to the user as recurring hand-filled JSON chores.

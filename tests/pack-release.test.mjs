@@ -514,6 +514,13 @@ test("execution evidence is usable from the archive with product source denied a
   const format = await readFile(join(tree, "specs/dispatch-admission-evidence-v1.md"), "utf8");
   assert.match(format, /hostResult/);
   assert.match(format, /Exit 1/);
+  assert.match(format, /tcrn\.dispatch-process-return\.v1/);
+  assert.match(skill, /execution-prepare/); assert.match(skill, /execution-record/);
+  for (const verb of ["execution-prepare", "execution-record"]) {
+    const help = execute([verb, "--help"]);
+    assert.equal(help.status, 0, help.stderr);
+    assert.equal(JSON.parse(help.stdout).commands[0].mutates, true);
+  }
   for (const args of [["commands"], ["execution-evidence", "--help"]]) {
     const run = execute(args);
     assert.equal(run.status, 0, run.stderr);

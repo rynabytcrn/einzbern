@@ -212,6 +212,34 @@
 | `--project-budget` | 可选 | `integer` |
 | `--usage` | 可选 | `json` |
 
+## `execution-prepare`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--id` | 必填 | `string` |  |
+| `--host` | 必填 | `string` |  |
+| `--category` | 必填 | `string` |  |
+| `--rejections` | 必填 | `integer` |  |
+| `--requested-agents` | 必填 | `integer` |  |
+| `--observations` | 必填 | `string` | `Machine JSON file: explicit availableCombinations, optional timestamped usage/expectedPolicy; never inferred from policy.` |
+| `--output` | 必填 | `string` | `Create-new private local preparation file outside device/library roots; refused preparations are retained. No dispatch.` |
+
+## `execution-record`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--binding` | 必填 | `string` | `Saved execution-prepare file.` |
+| `--target` | 必填 | `integer` | `Exact zero-based target index in the preparation bindings.` |
+| `--process-return` | 必填 | `string` | `Actual process artifact per specs/dispatch-admission-evidence-v1.md; native tool responses unsupported.` |
+| `--output` | 必填 | `string` | `Create-new private local record, retaining raw and normalized failures/unavailability. No dispatch.` |
+
 ## `export`
 
 - 可用范围：`cli`。

@@ -41,3 +41,36 @@ Requested evidence carries `verification: "caller-supplied-host-return-not-indep
 ## Deterministic checks
 
 Run `node --test tests/dispatch-admission-evidence.test.mjs`. These tests use plain object fixtures, not host dispatches or native calls. They cover omitted/invalid requests, full association, canonical full-receipt digest, refusal, binding mismatches, absent and malformed observations, explicit unavailability, review-test provenance rejection, and preservation of nonzero exit codes.
+
+## Machine preparation and recording (installed)
+
+These two bounded commands automate binding fields, not native execution. Both are cataloged as `mutates: true` because they create explicitly named private local files. The original `execution-evidence --from-file` remains read-only and retains its original exit semantics.
+
+1. `execution-prepare --workspace <library> --id <work> --host <host> --category <category> --rejections <count> --requested-agents <count> --observations <machine-observations.json> --output <new-private-preparation.json>` reads the current work/project contexts and admission policy. Normal registry workspace resolution is supported. Observations contain only `availableCombinations`, optional `usage`, and optional `expectedPolicy`, with the same admission schema above. Missing capability evidence is refused, never derived from policy. Original usage timestamps are retained, never refreshed. The result has `schemaVersion: "tcrn.dispatch-preparation.v1"`, original `selectors` and `observations`, exact `context`, ordered `bindings` (zero-based `target`, exact `handoff`, canonical `digest`), and a digest of the other preparation fields. Every involved target, including unresolved/refused targets, is retained. A refused preparation is saved before exit 1; admitted preparation exits 0. No dispatch occurs.
+2. Immediately before a separately authorized dispatch, the calling host uses the selected exact handoff. It carries that binding's digest into its process-return artifact, without asking the user to construct repeated JSON fields. The engine does not install that calling-host integration. Re-prepare if policy, work, observations or batch size changed; the saved artifact is evidence, not a reusable permit. There is no occupancy reservation or independently checked provenance.
+3. `execution-record --binding <saved-preparation.json> --target <index> --process-return <actual-process-return.json> --output <new-private-record.json>` derives work/revision, project reference, request, policy identity and admission digest mechanically from the selected binding, then runs the existing normalizer. It saves the exact raw artifact and normalized result, even for failed, mismatched or unavailable observations. No fresh admission is manufactured after execution.
+
+The supported machine process artifact is a closed JSON object:
+
+- `schemaVersion: "tcrn.dispatch-process-return.v1"`, `source: "native-host-return"` explicitly asserts the caller is reporting a native host process, not a review/test runner.
+- `bindingDigest`: the selected preparation binding's digest, carried by the caller at dispatch. It is not recomputed from an unrelated result afterward.
+- `selectedTuple`: the actual invocation's caller-observed exact `{runner, model, effort}`. This must come from the invocation, not be copied from the desired policy. The normalizer compares it to admission; missing or substituted fields fail. It remains caller-reported, not independently authenticated.
+- `startedAt`: the actual process start as a strict UTC instant. It must be no earlier than admission, no later than five minutes after it, and not in the future. This bound rejects known stale starts; it is not a promise that five-minute-old policy remains current. Configured quota observations must also still be fresh at that actual start. Recording may happen after a long-running process finishes.
+- Optional `stdout`, `stderr`: actual returned strings, including observed empty strings. Optional `exitCode`: actual nonnegative safe integer. Omission becomes explicitly unavailable, never an empty string or zero. Present null, string exit codes and other malformed values remain invalid rather than being repaired. Termination without a returned exit code omits that field.
+
+The record uses `tcrn.dispatch-record.v1`, retaining target, selected handoff, preparation digest, raw artifact, and normalized association. A complete zero-exit association exits 0. Invalid or unavailable association, or a complete nonzero process exit, exits 1 after persistence (`DISPATCH_EVIDENCE_INVALID`, `DISPATCH_EVIDENCE_UNAVAILABLE`, or `DISPATCH_PROCESS_FAILED`). Unreadable/malformed JSON or invalid selectors are input errors, not fabricated records. Saved binding mutations and mismatched process binding digests fail association; a digest detects inconsistency, not malicious rewriting or host authenticity. Historical recording does not reread current work/policy or certify dispatch actually followed them.
+
+Outputs must be new files in an existing local parent directory outside device and library roots, including detected unregistered library ancestors (preparation also excludes its explicit workspace). Existing outputs are never replaced; create-new mode requests 0600 permissions. No chmod of existing files, library writes, uploads or automatic publication occurs. Host filesystem permission semantics still apply. Contexts, paths, variables and process streams may be private: use a private local directory, not a repository/shared or cloud-synced folder, and do not publish these files by default. Neither command stores credentials, reads account usage, executes a supplied command, starts a native agent, schedules work, or installs a retired observer/controller.
+
+### Support matrix
+
+| Surface | Installed support |
+| --- | --- |
+| Machine scalar selectors + explicit observations → exact per-target binding | Yes, `execution-prepare` |
+| Saved binding + caller-reported process artifact → raw and normalized local record | Yes, `execution-record` |
+| Legacy envelope association, no persistence | Yes, `execution-evidence --from-file` |
+| Native capability/quota auto-collection and authenticated account reads | No collector installed |
+| Native process launch or native-tool response conversion | No adapter installed |
+| Scheduler, reservation, reusable dispatch permission | Not provided |
+
+The Skill must not turn absent native support into repeated hand-filled JSON or approval requests. Report an unsupported host mode once and stop affected dispatch. Do not invent native-tool schemas, provenance, successful exits, missing streams, supported tuples or quota values to complete the workflow.

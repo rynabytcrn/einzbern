@@ -50,6 +50,34 @@ Retained verification for **081a924a**:
 
 The earlier P8 and P1 failures remain failed historical evidence; later success does not rewrite them. Focused checks overlap, and results from different heads must not be added or transferred. This documentation closeout records retained evidence; it does not run new tests, build a new package or attest the documentation commit as a newly executed candidate.
 
+## PR27 and actual merged-main verification
+
+PR #27 merged on 2026-10-18 at 15:41:47 UTC as
+`8c6af763c338e815922036391a481fe58bc7d713`. Its tree equals reviewed candidate
+`84d4382ccc982acb55011981a689f496ac0ef3ba`. The candidate's complete fork P1
+`39136802820` passed before the existing contribution branch was fast-forwarded
+to that same SHA; upstream P1 `39138432791` then passed separately.
+
+The actual merge subsequently passed main P1 run `39141643115`.
+Independent raw-artifact checks covered all twelve legs, including full reachable
+history privacy, 974 source hashes and 271 core test files: 2,354 tests, 2,352
+passed, zero failed and two explicit pipe-truncation-condition skips. The merge's
+package smoke independently verified archive/install/setup and all eight doctor
+checks. Its archive SHA-256 is
+`4ff29d6abdd5b28b051c995153265d8ec2c85c1d1c708e6d19dcb7e15aa5f23c`.
+Identical archive bytes do not change the source identity of any prior invocation.
+
+This is current evidence for that merged baseline, not merely an old PR26 receipt
+or a green-page assertion. It is not a new formal P8/H1 receipt, native acceptance
+or evidence for a later release version. The initial fork candidate's privacy
+failure and the old main failures remain historical failures. No historical
+commit was rewritten and no blanket identity-payload exemption was introduced.
+
+The [3.0.0 migration preparation](../releases/3.0.0-migration.md) additionally
+records a dispatch-usability gap: caller-evidence validation and generated Skill
+instructions alone do not provide native collection, launch or automatic storage.
+Source-audit completion must not be interpreted as closure of that integration.
+
 ## Bounded next steps
 
 1. Prepare [native Mac acceptance](native-acceptance.md#mac-acceptance-preparation-and-approval-boundary) with exact package identity, a read-only baseline, verified backup/rollback and disposable-copy checks before any separately authorized live write. Installation and publication are separate decisions; a candidate version is not a published release.

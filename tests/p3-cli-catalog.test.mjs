@@ -158,8 +158,8 @@ test("S369 retired model-plan commands refuse with and without their legacy flag
     assert.equal(legacy.ok, false);
     assert.equal(legacy.reasonCode, "CLI_COMMAND_UNKNOWN");
   }
-  // Legacy dispatch executors remain retired. The new evidence verb only associates supplied data.
-  assert.deepEqual(COMMAND_CATALOG.filter((entry) => entry.name.startsWith("dispatch-")).map(entry => entry.name), ["dispatch-evidence"]);
+  // The dispatch-* verbs went too (TCRN-CROSS-STORY-467 R3).
+  assert.equal(COMMAND_CATALOG.filter((entry) => entry.name.startsWith("dispatch-")).length, 0);
   assert.equal(COMMAND_CATALOG.filter((entry) => entry.name.startsWith("model-plan-")).length, 0);
 });
 
@@ -432,7 +432,7 @@ test("integrated engine: non-decision valueShapes document projection selection,
       name: "output-keys", required: false, valueKind: "string",
       valueShape: "JSON array of stable registered output keys; omitted selects all known outputs, [] selects none",
     }],
-    ["dispatch-evidence", {
+    ["execution-evidence", {
       name: "from-file", required: true, valueKind: "string",
       valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input.",
     }],

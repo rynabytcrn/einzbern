@@ -1,6 +1,6 @@
 # Admission-bound dispatch review evidence v1
 
-The installed public entry is `node <engine>/scripts/einzbern.mjs dispatch-evidence --from-file <evidence.json>`. It requires only the archive and its supported Node.js runtime, not a registered library, source checkout, account, or node_modules. Run `node <engine>/scripts/einzbern.mjs dispatch-evidence --help` for flag help; `commands` also lists it. The file is a JSON object containing `handoff` and `hostResult` as described below. This format document is shipped at `specs/dispatch-admission-evidence-v1.md` in the engine archive.
+The installed public entry is `node <engine>/scripts/einzbern.mjs execution-evidence --from-file <evidence.json>`. It requires only the archive and its supported Node.js runtime, not a registered library, source checkout, account, or node_modules. Run `node <engine>/scripts/einzbern.mjs execution-evidence --help` for flag help; `commands` also lists it. The file is a JSON object containing `handoff` and `hostResult` as described below. This format document is shipped at `specs/dispatch-admission-evidence-v1.md` in the engine archive.
 
 The CLI prints the normalized result as JSON to stdout. Exit 0 means valid, complete association only, not successful native execution: a nonzero host exit code is preserved unchanged. Exit 1 means invalid/refused/mismatched evidence, unavailable observations, or an input/usage error; stderr carries a reason code. Malformed or unreadable JSON does not produce an association result. It makes no external calls or library/device writes.
 

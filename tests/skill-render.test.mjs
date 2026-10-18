@@ -92,7 +92,7 @@ test("479-AC1: every verb the navigation table names is a verb of the current co
   // each involved project's own configuration (work-project-context).
   assert.deepEqual(SKILL_NAVIGATION.map((entry) => [...entry.verbs]), [
     ["recall"],
-    ["work-show", "minutes-show", "work-project-context", "dispatch-evidence"],
+    ["work-show", "minutes-show", "work-project-context", "execution-evidence"],
     ["work-transition", "work-annotate"],
     ["minutes-record"],
     ["knowledge-create"],

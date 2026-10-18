@@ -1645,7 +1645,6 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "device-clean", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }, { name: "home", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-480 R4, AC5: doctor's eight checks of this device and one project, --project or
   // the current directory. It changes nothing: device-stream's lock and probe file go again.
-  { name: "dispatch-evidence", availability: "cli", mutates: false, flags: [{ name: "from-file", required: true, valueKind: "string", valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input." }] },
   { name: "doctor", availability: "cli", mutates: false, flags: [{ name: "project", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-471 R2, R3: the engine versions in this device's engine/ directory. engine-update
   // installs an unpacked, digest-checked version and makes it current; engine-rollback makes the
@@ -1659,6 +1658,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "engine-rollback", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }] },
   { name: "engine-update", availability: "cli", mutates: true, flags: [{ name: "from", required: true, valueKind: "string" }, { name: "sha256", required: true, valueKind: "string" }, { name: "version", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "event-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
+  { name: "execution-evidence", availability: "cli", mutates: false, flags: [{ name: "from-file", required: true, valueKind: "string", valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input." }] },
   { name: "execution-policy-resolve", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "category", required: true, valueKind: "string" }, { name: "rejections", required: true, valueKind: "integer" }, { name: "project-budget", required: false, valueKind: "integer" }, { name: "usage", required: false, valueKind: "json" }] },
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R1 to R3: gate declarations (one configuration record per gate), the plan a
@@ -2229,7 +2229,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson({ reasonCode: "CLI_CATALOG_READY", schemaVersion: "tcrn.cli-catalog.v1", commands: COMMAND_CATALOG }));
     return;
   }
-  if (command === "dispatch-evidence") {
+  if (command === "execution-evidence") {
     const values = parseArguments(rest, ["from-file"]);
     required(values, ["from-file"]);
     let input: unknown;

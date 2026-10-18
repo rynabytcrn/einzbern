@@ -3471,19 +3471,6 @@
         ]
       },
       {
-        "name": "dispatch-evidence",
-        "availability": "cli",
-        "mutates": false,
-        "flags": [
-          {
-            "name": "from-file",
-            "required": true,
-            "valueKind": "string",
-            "valueShape": "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input."
-          }
-        ]
-      },
-      {
         "name": "doctor",
         "availability": "cli",
         "mutates": false,
@@ -3609,6 +3596,19 @@
             "name": "offset",
             "required": false,
             "valueKind": "integer"
+          }
+        ]
+      },
+      {
+        "name": "execution-evidence",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "from-file",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input."
           }
         ]
       },

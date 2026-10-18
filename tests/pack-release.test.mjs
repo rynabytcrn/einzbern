@@ -20,7 +20,7 @@ import { pathToFileURL } from "node:url";
 import { gzipSync, gunzipSync, constants as zlibConstants } from "node:zlib";
 import test, { after } from "node:test";
 
-import { FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
+import { BRAND, FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
 import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
 import {
   P8_RELEASE_ARTIFACTS,
@@ -467,36 +467,48 @@ test("481-R2: tar.mjs writes the bytes P8's independent rebuild writes, reads th
   assert.deepEqual(readUstar(withDirectory).map((entry) => entry.path), read.map((entry) => entry.path));
 });
 
-// PR24 P1-P4: execute the public archive entry with repository and node_modules
-// reads denied by Node itself, not merely absent from the current directory.
-test("dispatch evidence is usable from the archive alone with unchanged owner synthetic cases", async () => {
-  const { tree, report, archive } = await packedRelease();
+// PR24 P1-P4: execute the archive entry with product source and node_modules
+// reads denied by Node itself. Governed runs retain their mandatory, standalone
+// controller preload; uninstrumented runs allow only the isolated fixture tree.
+test("execution evidence is usable from the archive with product source denied and unchanged owner synthetic cases", async () => {
+  const { tree, report, archive, entries } = await packedRelease();
   assert.equal(report.sha256, sha256(archive));
-  const isolated = await environment("dispatch-evidence");
+  const isolated = await environment("execution-evidence");
   const cli = join(tree, "scripts/einzbern.mjs");
   // Allow only this empty temporary fixture tree. Missing layout candidates may
   // return ENOENT here; repository source and dependencies remain denied.
   const permission = ["--permission", `--allow-fs-read=${base}`];
   assert.equal(existsSync(join(base, "scripts/policy/knowledge-provenance.json")), false, "missing layout candidate stays inside the isolated fixture, without copied policy assets");
-  isolated.env.NODE_OPTIONS = "";
+  const controllerPolicy = join(repositoryRoot, "scripts/test-controller-child-policy.mjs");
+  const controllerImport = `--import=${pathToFileURL(controllerPolicy).href}`;
+  if ((process.env.NODE_OPTIONS ?? "").split(/\s+/u).includes(controllerImport)) {
+    // This exact test-instrumentation file imports Node builtins only. It is not
+    // an application dependency, and no product source directory is permitted.
+    permission.push(`--allow-fs-read=${controllerPolicy}`);
+  }
   delete isolated.env.NODE_PATH;
   const execute = (args) => node([...permission, cli, ...args], isolated);
-  for (const path of [join(repositoryRoot, "package.json"), join(repositoryRoot, "node_modules/typescript/package.json")]) {
+  for (const path of [join(repositoryRoot, "package.json"), join(repositoryRoot, "packages/core/src/dispatch-evidence.ts"), join(repositoryRoot, "packages/cli/src/index.ts"), join(repositoryRoot, "node_modules/typescript/package.json")]) {
     const denied = node([...permission, "--input-type=module", "-e", `import { readFileSync } from 'node:fs'; readFileSync(${JSON.stringify(path)});`], isolated);
     assert.notEqual(denied.status, 0);
     assert.match(denied.stderr, /ERR_ACCESS_DENIED/);
+    assert.ok(denied.stderr.includes(path), "the denial names the requested product source, not instrumentation");
   }
-  const skill = await readFile(join(tree, "skill/mana-orchestrate/SKILL.md"), "utf8");
-  assert.match(skill, /dispatch-evidence --from-file <json>/);
+  // This is the helper installed inside this archive, not a sibling checkout.
+  const skillEntry = entries.find(entry => entry.path === `${RELEASE}/skill/${BRAND.helper.id}/SKILL.md`);
+  assert.ok(skillEntry, "the canonical helper Skill is a member of this exact archive");
+  const skill = await readFile(join(tree, "skill", BRAND.helper.id, "SKILL.md"), "utf8");
+  assert.deepEqual(Buffer.from(skill, "utf8"), skillEntry.bytes, "the installed Skill read comes from this archive's member bytes");
+  assert.match(skill, /execution-evidence --from-file <json>/);
   assert.doesNotMatch(skill, /scripts\/review-evidence\.mjs/);
   assert.match(skill, /specs\/dispatch-admission-evidence-v1\.md/);
   const format = await readFile(join(tree, "specs/dispatch-admission-evidence-v1.md"), "utf8");
   assert.match(format, /hostResult/);
   assert.match(format, /Exit 1/);
-  for (const args of [["commands"], ["dispatch-evidence", "--help"]]) {
+  for (const args of [["commands"], ["execution-evidence", "--help"]]) {
     const run = execute(args);
     assert.equal(run.status, 0, run.stderr);
-    const command = JSON.parse(run.stdout).commands.find(entry => entry.name === "dispatch-evidence");
+    const command = JSON.parse(run.stdout).commands.find(entry => entry.name === "execution-evidence");
     assert.equal(command.mutates, false);
     assert.match(command.flags[0].valueShape, /handoff, hostResult/);
   }
@@ -506,7 +518,7 @@ test("dispatch evidence is usable from the archive alone with unchanged owner sy
     const input = JSON.parse(bytes);
     const path = join(isolated.cwd, `${name}.json`);
     await writeFile(path, bytes);
-    const run = execute(["dispatch-evidence", "--from-file", path]);
+    const run = execute(["execution-evidence", "--from-file", path]);
     assert.equal(run.status, input.expected.complete ? 0 : 1, run.stderr);
     const actual = JSON.parse(run.stdout);
     for (const key of ["valid", "complete", "status"]) assert.equal(actual[key], input.expected[key], name + ": " + key);
@@ -517,7 +529,7 @@ test("dispatch evidence is usable from the archive alone with unchanged owner sy
   }
   const malformed = join(isolated.cwd, "malformed.json");
   await writeFile(malformed, "{");
-  const bad = execute(["dispatch-evidence", "--from-file", malformed]);
+  const bad = execute(["execution-evidence", "--from-file", malformed]);
   assert.equal(bad.status, 1);
   assert.equal(bad.stdout, "");
   assert.match(bad.stderr, /DISPATCH_EVIDENCE_INPUT_INVALID/);

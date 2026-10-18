@@ -167,6 +167,14 @@ async function bundleAtelier(stage, coreBuild) {
   await copyStaged(root, "scripts/lib/runtime-capacity.mjs", join(repositoryRoot, "scripts", "lib", "runtime-capacity.mjs"));
   await writeStaged(root, "scripts/lib/names.mjs", names.replace(NAMES_SOURCE_SPECIFIER, NAMES_BUILD_SPECIFIER));
   await writeStaged(root, "scripts/lib/registry-lock.mjs", stagedRegistryLock);
+  const gateRunBridge = await readFile(join(repositoryRoot, "scripts/lib/gate-run.mjs"), "utf8");
+  const gateRunBuild = '"../../dist/build/packages/core/src/gate-run-record.js"';
+  if (gateRunBridge.split(gateRunBuild).length !== 2) fail("PACK_ATELIER_UNBOUND", "gate-run bridge no longer names its compiled receipt contract once");
+  await writeStaged(root, "scripts/lib/gate-run.mjs", gateRunBridge.replace(gateRunBuild, '"../../packages/core/src/gate-run-record.js"'));
+  await copyStaged(root, "packages/core/src/gate-run-record.js", join(coreBuild, "gate-run-record.js"));
+  await copyStaged(root, "packages/protocol/src/index.js", join(repositoryRoot, "dist/build/packages/protocol/src/index.js"));
+  await copyStaged(root, "scripts/lib/canonical-order.mjs", join(repositoryRoot, "scripts/lib/canonical-order.mjs"));
+  await copyStaged(root, "scripts/lib/canonical-json.mjs", join(repositoryRoot, "scripts/lib/canonical-json.mjs"));
   await copyStaged(root, "packages/core/src/names.js", join(coreBuild, "names.js"));
   for (const module of REGISTRY_LOCK_MODULES) await copyStaged(root, `packages/core/src/${module}`, join(coreBuild, module));
   return (await bundleEntry(join(root, "portal", "portal.mjs"))).code;

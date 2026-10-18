@@ -3977,25 +3977,30 @@ async function loadUserCrestSnapshot(location: UserCrestLocation, options: Knowl
     value.index === null || typeof value.index !== "object") {
     return null;
   }
-  const removals = new Map(value.removals as [string, CrestRemoval][]);
-  const eventHeads = value.eventHeads as CrestEventHead[];
-  const scan: UserCrestScan = {
-    storeRoot, device: location.device, eventOnly: true, eventHeads,
-    marker: value.marker as KnowledgeStoreMarker,
-    units: (value.units as CrestUnit[]).map((unit) => snapshotUnit(unit, removals, options)),
-    index: value.index as KnowledgeIndex,
-    unresolvedConflicts: value.unresolvedConflicts as string[][],
-    duplicates: (value.duplicates as CrestDuplicate[]).map((duplicate) => ({ ...duplicate, versions: duplicate.versions.map((unit) => snapshotUnit(unit, removals, options)) })),
-    awaitingChain: [], unresolvedScopes: [], removals,
-    streamBodies: value.streamBodies as CrestStreamBody[],
-  };
-  let current: boolean;
+  // The whole reconstruction is disposable cache input, not authoritative data.
   try {
-    current = await userCrestFingerprint(storeRoot) === value.fingerprint;
+    const removals = new Map(value.removals as [string, CrestRemoval][]);
+    const eventHeads = value.eventHeads as CrestEventHead[];
+    const scan: UserCrestScan = {
+      storeRoot, device: location.device, eventOnly: true, eventHeads,
+      marker: value.marker as KnowledgeStoreMarker,
+      units: (value.units as CrestUnit[]).map((unit) => snapshotUnit(unit, removals, options)),
+      index: value.index as KnowledgeIndex,
+      unresolvedConflicts: value.unresolvedConflicts as string[][],
+      duplicates: (value.duplicates as CrestDuplicate[]).map((duplicate) => ({ ...duplicate, versions: duplicate.versions.map((unit) => snapshotUnit(unit, removals, options)) })),
+      awaitingChain: [], unresolvedScopes: [], removals,
+      streamBodies: value.streamBodies as CrestStreamBody[],
+    };
+    let current: boolean;
+    try {
+      current = await userCrestFingerprint(storeRoot) === value.fingerprint;
+    } catch {
+      current = false;
+    }
+    return { scan, current };
   } catch {
-    current = false;
+    return null;
   }
-  return { scan, current };
 }
 
 function assertStoreScope(scope: unknown): asserts scope is KnowledgeStoreScope | undefined {

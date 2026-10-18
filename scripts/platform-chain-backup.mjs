@@ -105,7 +105,7 @@ async function readDueReceipt(path, kind) {
     const receipt = await readJson(path);
     const timestamp = kind === "offsite" ? receipt.pushedAt : receipt.finishedAt;
     const ageHours = typeof timestamp === "string" ? (Date.now() - Date.parse(timestamp)) / 3_600_000 : Number.POSITIVE_INFINITY;
-    return { receipt, ageHours, fresh: receipt.ok === true && Number.isFinite(ageHours) && ageHours < SNAPSHOT_INTERVAL_HOURS };
+    return { receipt, ageHours, fresh: receipt.ok === true && Number.isFinite(ageHours) && ageHours >= 0 && ageHours < SNAPSHOT_INTERVAL_HOURS };
   } catch {
     return { receipt: null, ageHours: Number.POSITIVE_INFINITY, fresh: false };
   }
@@ -193,7 +193,7 @@ export async function createSnapshot(platformRootArgument, options = {}) {
   await mkdir(archiveRoot, { recursive: true, mode: 0o700 });
   const stamp = timestampSlug(options.now ? new Date(options.now) : new Date());
   const name = `chain-snapshot-${stamp}.tar.gz`;
-  const tempRoot = await mkdtemp(join(tmpdir(), "tcrn-platform-chain-snapshot-"));
+  const tempRoot = await mkdtemp(join(archiveRoot, ".tcrn-platform-chain-snapshot-"));
   const partialPath = join(tempRoot, name);
   const snapshotPath = join(archiveRoot, name);
   try {

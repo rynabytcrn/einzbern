@@ -15,7 +15,7 @@ import { normalizeInvolvedProjects, involvedProjectsOf, projectReference, hasInv
 import { normalizedWorkGates } from "../../core/src/work-gates.js";
 import { declarationsFromInput, standBesideWarnings } from "../../core/src/minutes.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
-import { acquireHeavySlot } from "../../../scripts/lib/heavy-runs.mjs";
+import { acquireHeavySlot, HEAVY_SLOT_VARIABLE } from "../../../scripts/lib/heavy-runs.mjs";
 
 import {
   applyMachineSettingRemove,
@@ -1020,7 +1020,7 @@ function libraryCoveredWork(state: Awaited<ReturnType<typeof materializeWorkspac
 // One project's share of the work a coordination library covers itself (libraryCoveredWork): its plan,
 // or its run with the reds as the single-library form gives them. A refusal is this result's own, as a
 // target's is, and the other results stand.
-async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean, group: LibraryGateGroup): Promise<Record<string, unknown>> {
+async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean, group: LibraryGateGroup, executeRun: typeof runGates): Promise<Record<string, unknown>> {
   const binding = { projectId: group.projectId ?? null, workIds: group.workIds };
   let projectRoot: string | undefined;
   try {
@@ -1036,7 +1036,7 @@ async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWor
       subjectKeys: workSubjectKeys(state.work, group.workIds),
     });
     if (!execute) return { ...binding, projectRoot, ok: true, plan };
-    const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(group.projectId === undefined ? {} : { projectId: group.projectId }), at: values.at ?? "" });
+    const { run, recordPath } = await executeRun(plan, { libraryId: state.metadata.workspaceId, ...(group.projectId === undefined ? {} : { projectId: group.projectId }), at: values.at ?? "" });
     return {
       ...binding, projectRoot, ok: run.reds.length === 0, reds: run.reds,
       requiredReds: run.gates.filter((gate) => gate.required && !gate.ok).map((gate) => gate.name),
@@ -1053,7 +1053,7 @@ async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWor
  * retained per target, and one refused target does not erase other results.
  * Work this library's own gates cover runs here as well (TCRN-CROSS-STORY-519),
  * listed apart under `library`; such work needs no target and no decided relation. */
-async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean): Promise<Record<string, unknown> | null> {
+async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean, executeRun: typeof runGates): Promise<Record<string, unknown> | null> {
   if (chainIdentity(state)?.role !== "coordination" || values["work-id"] === undefined) return null;
   const workIds = listValue(values["work-id"]);
   const covered = libraryCoveredWork(state, workIds, values["project-id"], booleanValue(values.release, "release"));
@@ -1095,7 +1095,7 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
           // repository and root the gates run in. No global first-target setting applies.
           const handoff = { ...(context.handoff as Record<string, unknown>), repository: repository.binding, projectRoot };
           if (execute) {
-            const { run, recordPath } = await runGates(plan, { libraryId: reference.libraryId, projectId: reference.projectId, at: values.at!, env: { ...process.env, EINZBERN_PROJECT_CONTEXT: canonicalJson(handoff) } });
+            const { run, recordPath } = await executeRun(plan, { libraryId: reference.libraryId, projectId: reference.projectId, at: values.at!, env: { ...process.env, EINZBERN_PROJECT_CONTEXT: canonicalJson(handoff) } });
             results.push({ ...binding, projectRoot, ok: run.reds.length === 0, handoff, run, recordPath });
           } else results.push({ ...binding, projectRoot, ok: true, handoff, plan });
           } catch (error) {
@@ -1109,7 +1109,7 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
     }
   }
   const library: Record<string, unknown>[] = [];
-  for (const group of covered.groups) library.push(await libraryGateResult(state, values, execute, group));
+  for (const group of covered.groups) library.push(await libraryGateResult(state, values, execute, group, executeRun));
   return {
     reasonCode: execute ? "GATES_RUN_COMPLETED" : "GATES_PLAN_READY", workspaceId: state.metadata.workspaceId, version: state.version,
     ok: results.every(result => result.ok === true) && library.every(result => result.ok === true), targets: results,
@@ -1117,14 +1117,31 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
   };
 }
 
-// Work-target operations finish before single-project preparation. Keep the shared validation and
-// planning order here; only gates-run acquires a heavy slot after a single-project plan is ready.
+// Coordination execution occurs during preparation. Acquire its slot lazily at the first
+// actual run, not for undecided/refused/no-op targets. Single-project execution takes its
+// slot after planning; read-only plans never read heavy-run settings.
 async function prepareGates(values: Readonly<Record<string, string>>, execute: boolean): Promise<
   | { readonly targets: Record<string, unknown> }
   | { readonly state: Awaited<ReturnType<typeof effectiveProjectState>>; readonly plan: Awaited<ReturnType<typeof planGates>> }
 > {
   const native = await validateWorkspace(values.workspace ?? "");
-  const targets = await workGateTargets(native, values, execute);
+  const execution: { slot: Awaited<ReturnType<typeof acquireHeavySlot>> | null } = { slot: null };
+  const executeRun: typeof runGates = async (plan, options) => {
+    execution.slot ??= await acquireHeavySlot({ command: "gates-run" });
+    // A target's context environment was copied before lazy acquisition. Carry the
+    // admitted slot into that copy so nested heavy commands inherit rather than wait.
+    const env = options.env === undefined ? undefined : {
+      ...options.env,
+      [HEAVY_SLOT_VARIABLE]: `${execution.slot.token}:${execution.slot.path}`,
+    };
+    return runGates(plan, env === undefined ? options : { ...options, env });
+  };
+  let targets;
+  try {
+    targets = await workGateTargets(native, values, execute, executeRun);
+  } finally {
+    execution.slot?.release();
+  }
   if (targets !== null) return { targets };
   const state = await effectiveProjectState(native, values["project-id"]);
   const workIds = values["work-id"] === undefined ? [] : listValue(values["work-id"]);
@@ -3493,15 +3510,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // Epics with their goal, body and parent titles, every minutes record, and the cards.
     const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes, ...(decisions === "valid" ? {} : { decisions }) });
     const result = recall({
-      // One index per library, whatever path it is read at (TCRN-CROSS-STORY-469).
-      cacheKey: state.metadata.workspaceId,
+      // Library identity stays path-independent; project-specific corpus inputs must not share an index.
+      cacheKey: `${state.metadata.workspaceId}:${values["project-id"] ?? ""}`,
       // The storage checkpoint: the chain head the records were replayed from, and the
       // digests of the two knowledge answers they were read with. Any one moving is a
       // different corpus, and the index is rebuilt from the rows that actually changed.
       // A library's head is one digest over every stream's head, so it moves with any
       // entry of the version vector. An index of another status of decisions is another corpus
       // at the same head, and names that status (the cards' status is in their digest).
-      checkpoint: `${state.headEventHash}:${cards.digest}${decisions === "valid" ? "" : `:decisions=${decisions}`}`,
+      checkpoint: `${state.headEventHash}:${cards.digest}:scope-bytes=${scopeExcerptBytes}${decisions === "valid" ? "" : `:decisions=${decisions}`}`,
       documents: () => recallDocuments(inputs),
       query,
       tau,

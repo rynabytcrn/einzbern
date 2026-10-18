@@ -4,6 +4,15 @@
 
 window.PORTAL_LOCALES = {
   "en": {
+    "receipt.unknown": "Outcome unknown",
+    "reason.PORTAL_RESPONSE_UNAVAILABLE": "The response could not be read. A write may have committed; read back the state before retrying.",
+    "receipt.renamePartial": "The new name was committed, but removal of the old name was not confirmed. Check the original target before retrying.",
+
+    "gates.title": "Gates",
+    "receipt.operation": "Operation",
+    "receipt.operationId": "Operation ID",
+    "receipt.occurredAt": "Occurred at",
+
     "configuration.target": "Editing target",
     "configuration.storageSource": "Persisted in",
     "configuration.sharing": "Sharing",
@@ -632,6 +641,15 @@ window.PORTAL_LOCALES = {
     "reason.PORTAL_GATE_RELEASE_REASON_REQUIRED": "A release needs a reason. Write why the gate is released, then release it again."
   },
   "zh-CN": {
+    "receipt.unknown": "结果未知",
+    "reason.PORTAL_RESPONSE_UNAVAILABLE": "无法读取响应。写入可能已提交，请先重新读取状态，再决定是否重试。",
+    "receipt.renamePartial": "新名称已提交，但旧名称是否已删除尚未确认。重试前请检查原目标。",
+
+    "gates.title": "门禁",
+    "receipt.operation": "操作",
+    "receipt.operationId": "操作标识",
+    "receipt.occurredAt": "发生时间",
+
     "configuration.target": "正在修改的目标",
     "configuration.storageSource": "持久化位置",
     "configuration.sharing": "共享范围",
@@ -1260,6 +1278,15 @@ window.PORTAL_LOCALES = {
     "reason.PORTAL_GATE_RELEASE_REASON_REQUIRED": "放行需要原因。写明放行原因后再放行。"
   },
   "ja": {
+    "receipt.unknown": "結果不明",
+    "reason.PORTAL_RESPONSE_UNAVAILABLE": "応答を読み取れませんでした。書き込みが確定した可能性があります。再試行の前に状態を確認してください。",
+    "receipt.renamePartial": "新しい名前は確定しましたが、古い名前の削除は未確認です。再試行の前に元の対象を確認してください。",
+
+    "gates.title": "ゲート",
+    "receipt.operation": "操作",
+    "receipt.operationId": "操作 ID",
+    "receipt.occurredAt": "発生日時",
+
     "configuration.target": "編集対象",
     "configuration.storageSource": "保存先",
     "configuration.sharing": "共有範囲",
@@ -1888,6 +1915,15 @@ window.PORTAL_LOCALES = {
     "reason.PORTAL_GATE_RELEASE_REASON_REQUIRED": "解除には理由が必要です。理由を書いてから、もう一度解除してください。"
   },
   "ko": {
+    "receipt.unknown": "결과를 알 수 없음",
+    "reason.PORTAL_RESPONSE_UNAVAILABLE": "응답을 읽을 수 없습니다. 쓰기가 반영되었을 수 있으므로 다시 시도하기 전에 상태를 확인하세요.",
+    "receipt.renamePartial": "새 이름은 반영되었지만 기존 이름의 삭제는 확인되지 않았습니다. 다시 시도하기 전에 원래 대상을 확인하세요.",
+
+    "gates.title": "게이트",
+    "receipt.operation": "작업",
+    "receipt.operationId": "작업 ID",
+    "receipt.occurredAt": "발생 시각",
+
     "configuration.target": "편집 대상",
     "configuration.storageSource": "저장 위치",
     "configuration.sharing": "공유 범위",
@@ -2516,6 +2552,15 @@ window.PORTAL_LOCALES = {
     "reason.PORTAL_GATE_RELEASE_REASON_REQUIRED": "해제에는 이유가 필요합니다. 이유를 적은 뒤 다시 해제하세요."
   },
   "fr": {
+    "receipt.unknown": "Résultat inconnu",
+    "reason.PORTAL_RESPONSE_UNAVAILABLE": "La réponse est illisible. Une écriture a peut-être été enregistrée ; relisez l’état avant de réessayer.",
+    "receipt.renamePartial": "Le nouveau nom a été enregistré, mais la suppression de l’ancien nom n’est pas confirmée. Vérifiez la cible initiale avant de réessayer.",
+
+    "gates.title": "Contrôles",
+    "receipt.operation": "Opération",
+    "receipt.operationId": "Identifiant de l’opération",
+    "receipt.occurredAt": "Date de l’opération",
+
     "configuration.target": "Cible de modification",
     "configuration.storageSource": "Stockage persistant",
     "configuration.sharing": "Partage",

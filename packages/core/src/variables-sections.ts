@@ -288,7 +288,7 @@ export interface VariablesSectionsResult {
 // section. Keep that outstanding decision visible as the section's existing pending state; a
 // variable-set/remove that makes the row safe or removes it will settle the state on the next
 // render. Respect user-owned, unmanaged, removed, and user-edited sections.
-function recordWithheldCustomVariablesAsPending(plan: ManagedWritePlan, state: Pick<WorkspaceState, "configRecords">, withheld: readonly WithheldEntry[]): ManagedWritePlan {
+export function recordWithheldCustomVariablesAsPending(plan: ManagedWritePlan, state: Pick<WorkspaceState, "configRecords">, withheld: readonly WithheldEntry[]): ManagedWritePlan {
   if (!withheld.some(entry => entry.reason !== "not-exported")) return plan;
   const decision = plan.sections.find((section) => section.id === VARIABLES_CUSTOM_SECTION_ID);
   if (decision === undefined || decision.record.state !== "managed" || decision.result === "removed") return plan;

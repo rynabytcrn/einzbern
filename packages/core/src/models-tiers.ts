@@ -146,7 +146,8 @@ function numberLegacyHostTiers(tables: LegacyHostTiers): ModelsTiers {
   const records: ModelsTierRecord[] = [];
   for (const category of categories) {
     for (const host of hosts) {
-      const entry = tables[host]?.[category];
+      const table = tables[host];
+      const entry = table !== undefined && Object.hasOwn(table, category) ? table[category] : undefined;
       if (entry === undefined) continue;
       records.push(Object.freeze({ order: MODELS_ORDER_STEP * (records.length + 1), category, runner: entry.runner, model: entry.model, effort: entry.effort, note: "" }));
     }

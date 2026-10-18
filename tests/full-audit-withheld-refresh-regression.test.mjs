@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {asPinnedDevice} from './helpers/device-home.mjs';
+import {mkdtemp,mkdir,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
+import {initializeLibrary,createProject} from '../dist/build/packages/core/src/workspace.js';
+import {declareChainIdentity} from '../dist/build/packages/core/src/project-chain.js';
+import {registerLibrary} from '../dist/build/packages/core/src/registry.js';
+import {setVariable} from '../dist/build/packages/core/src/variables.js';
+import {writeVariablesSections} from '../dist/build/packages/core/src/variables-sections.js';
+import {refreshConfigurationProjections} from '../dist/build/packages/core/src/configuration-projections.js';
+const at='2026-10-18T00:00:00Z';
+test('full refresh retains withheld custom-variable pending state until safe', async()=>asPinnedDevice(async home=>{const root=await mkdtemp(join(tmpdir(),'audit-withheld-'));try{const lib=join(root,'lib'),output=join(root,'output');await mkdir(output);const initial=await initializeLibrary({root:lib,createdAt:at});const id=initial.metadata.workspaceId;await declareChainIdentity(lib,{role:'project',coordinationLibraryId:id},{occurredAt:at});const state=await createProject(lib,{externalKey:'TEST',name:'Test',occurredAt:at});const projectId=state.projects[0].id;await registerLibrary({projectPath:output,libraryPath:lib,projectId,registeredAt:at,gitRemote:null},home);await setVariable(lib,{name:'deploy.path',type:'string',value:'/fixture/private/path',exports:['agents'],configurationProjectId:projectId,occurredAt:at});const first=await writeVariablesSections(lib,{projectRoot:output,configurationProjectId:projectId,occurredAt:at});assert.ok(first.pendingSections.length>0);for(let i=0;i<2;i++){const refresh=await refreshConfigurationProjections({libraryId:id,projectId},{occurredAt:at});assert.equal(refresh.outcomes[0].status,'pending');assert.ok(refresh.outcomes[0].pendingSections.length>0);}await setVariable(lib,{name:'deploy.path',type:'string',value:'portable-value',exports:['agents'],configurationProjectId:projectId,occurredAt:at});const safe=await refreshConfigurationProjections({libraryId:id,projectId},{occurredAt:at});assert.equal(safe.outcomes[0].status,'refreshed');assert.deepEqual(safe.outcomes[0].pendingSections,[]);}finally{await rm(root,{recursive:true,force:true});}}));

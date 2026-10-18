@@ -101,7 +101,7 @@ export async function planCommand(core, values) {
   }
   // An explicit --host selects installed policy; absence does not guess or read project tiers.
   const policy = await readRuntimeKnowledgeLanguagePolicy(scopedWorkspaceState(state, values["project-id"]).settings, values.host);
-  const answer = await listKnowledgeMetadata(workspace, { at: values.at ?? new Date().toISOString().replace(/\.\d+Z$/u, "Z"), selection: "all", ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), allowTrailing: true });
+  const answer = await listKnowledgeMetadata(workspace, { at: values.at ?? new Date().toISOString().replace(/\.\d+Z$/u, "Z"), selection: "all", limit: Number.MAX_SAFE_INTEGER, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), allowTrailing: true });
   const cards = (answer.records ?? []).filter((record) => record.lifecycle !== "retired" && !record.extensions?.supersededBy);
   const request = (await Promise.all(cards.map(async (record) => {
     const policy = await readRuntimeKnowledgeLanguagePolicy(scopedWorkspaceState(state, record.projectId ?? values["project-id"]).settings, values.host);
@@ -140,7 +140,7 @@ export async function migrateCommand(core, values) {
     return undefined;
   }
   // An explicit --host selects installed policy; absence does not guess or read project tiers.
-  const answer = await listKnowledgeMetadata(workspace, { at, selection: "all", ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), allowTrailing: true });
+  const answer = await listKnowledgeMetadata(workspace, { at, selection: "all", limit: Number.MAX_SAFE_INTEGER, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), allowTrailing: true });
   const bundle = readBundle(values.bundle ?? "");
   const rewrites = [];
   for (const record of answer.records ?? []) {
@@ -160,7 +160,8 @@ export async function migrateCommand(core, values) {
       continue;
     }
     const changed = applied.subject !== record.subject || applied.summary !== record.summary ||
-      applied.snippet !== record.snippet || Object.keys(record.expansions ?? {}).length === 0;
+      applied.snippet !== record.snippet || Object.keys(record.expansions ?? {}).length === 0 ||
+      policy.promptLanguages.some((language) => !Object.hasOwn(record.expansions ?? {}, language));
     rewrites.push({ id: record.id, externalKey: record.externalKey, applied: changed, subject: applied.subject, expansions: applied.expansions });
     if (dryRun || !changed) continue;
     const body = String((await readKnowledgeBody(workspace, record.id, { at, allowUnpromoted: true })).body ?? "");

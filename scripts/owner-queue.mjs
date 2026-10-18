@@ -40,6 +40,17 @@ export const ENGINE_CLI = resolve(dirname(fileURLToPath(import.meta.url)), "einz
  * sitting on this disk. The envelope is unchanged ({ ok, reasonCode, result }); callers
  * already tolerated both `result.records` and `result.result.records`.
  */
+export function parseChainReadResult({ code, signal, stdout = "", stderr = "" }) {
+  if (code !== 0 || signal) return { ok: false, reasonCode: "CHAIN_READ_FAILED", error: stderr.slice(-200), exitCode: code, signal };
+  const lines = stdout.trim().split("\n");
+  let parsed;
+  try { parsed = JSON.parse(lines.at(-1) ?? ""); } catch { parsed = null; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ok: false, reasonCode: "CHAIN_READ_UNPARSEABLE", error: (stderr || stdout).slice(-200) };
+  if (parsed.ok === false) return { ok: false, reasonCode: parsed.reasonCode ?? "CHAIN_READ_REFUSED", error: parsed.error ?? null, result: parsed };
+  if (!Array.isArray(parsed.records) && !Array.isArray(parsed.result?.records)) return { ok: false, reasonCode: "CHAIN_READ_UNPARSEABLE", error: "missing records envelope" };
+  return { ok: true, reasonCode: parsed.reasonCode ?? null, result: parsed };
+}
+
 export function callChainRead(verb, { partition, ...flags }, { timeoutMs = 120_000 } = {}) {
   return new Promise((resolvePromise) => {
     const argv = [ENGINE_CLI, verb, "--workspace", workspaceForPartition(partition)];
@@ -56,20 +67,13 @@ export function callChainRead(verb, { partition, ...flags }, { timeoutMs = 120_0
     }, timeoutMs);
     child.stdout.on("data", (chunk) => { out += chunk.toString("utf8"); });
     child.stderr.on("data", (chunk) => { err += chunk.toString("utf8"); });
-    child.on("close", () => {
+    child.once("error", (error) => {
       clearTimeout(timer);
-      const lines = `${out}${err}`.trim().split("\n");
-      let parsed = null;
-      try { parsed = JSON.parse(lines[lines.length - 1] ?? ""); } catch { parsed = null; }
-      if (parsed === null) {
-        resolvePromise({ ok: false, reasonCode: "CHAIN_READ_UNPARSEABLE", error: `${err || out}`.slice(-200) });
-        return;
-      }
-      if (parsed.ok === false) {
-        resolvePromise({ ok: false, reasonCode: parsed.reasonCode ?? "CHAIN_READ_REFUSED", error: parsed.error ?? null, result: parsed });
-        return;
-      }
-      resolvePromise({ ok: true, reasonCode: parsed.reasonCode ?? null, result: parsed });
+      resolvePromise({ ok: false, reasonCode: "CHAIN_READ_FAILED", error: String(error.message ?? error) });
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      resolvePromise(parseChainReadResult({ code, signal, stdout: out, stderr: err }));
     });
   });
 }

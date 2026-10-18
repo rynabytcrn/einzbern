@@ -557,7 +557,8 @@ for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {
 await timedStage("git-status-after", async () => {
   if (timingProbe) return;
   const post = run("git", ["status", "--porcelain=v1", "--untracked-files=all"]);
-  if (post.ok && post.output.trim() !== "") fail("PUSH_GATE_GATES_MUTATED_SOURCE", post.output.trim().split("\n").slice(0, 5).join(" | "));
+  if (!post.ok) fail("PUSH_GATE_GIT_UNAVAILABLE", post.output.trim().slice(0, 200));
+  else if (post.output.trim() !== "") fail("PUSH_GATE_GATES_MUTATED_SOURCE", post.output.trim().split("\n").slice(0, 5).join(" | "));
 });
 
 let stdoutObserved = "";

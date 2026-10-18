@@ -1,5 +1,7 @@
 # Post-merge audit status and next-stage scope
 
+Current follow-on status: see the [2026-10-18 post-PR25 audit index](post-pr25-audit.md). The PR24 baseline, candidate statuses and verification statements below are retained as historical evidence.
+
 Date: 2026-10-18 UTC. This is a dated status index, not a replacement for historical receipts or a claim of native acceptance.
 
 ## Accepted baseline and evidence identity

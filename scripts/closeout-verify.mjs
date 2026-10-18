@@ -369,6 +369,9 @@ function redLegProblems(redLeg) {
 
 export function verifyCloseout(manifest, options = {}) {
   const problems = [];
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest) || !Array.isArray(manifest.items) || manifest.items.some((id) => typeof id !== "string" || id.trim().length === 0) || (manifest.dispositions !== undefined && (!manifest.dispositions || typeof manifest.dispositions !== "object" || Array.isArray(manifest.dispositions)))) {
+    return { ok: false, reasonCode: "CLOSEOUT_ITEMS_UNRECONCILED", problems: ["manifest, items and dispositions must have valid shapes and nonblank item ids"], itemCount: 0, dispositionCount: 0 };
+  }
   if (![CLOSEOUT_SCHEMA_V1, CLOSEOUT_SCHEMA_V2].includes(manifest?.schemaVersion)) {
     problems.push(`schemaVersion must be ${CLOSEOUT_SCHEMA_V1} or ${CLOSEOUT_SCHEMA_V2}`);
   }

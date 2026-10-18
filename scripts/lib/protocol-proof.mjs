@@ -252,7 +252,7 @@ export async function validateP2SchemasAndFixtures() {
     stableIdBoundaryCases,
     extensionNameCases: 2 + extensionNameCases.invalid.length,
     resolvedLocalRefs,
-    evaluator: "ajv@8.17.1-draft-2020-12",
+    evaluator: "ajv@8.20.0-draft-2020-12",
     p3Marker: "absent",
   };
 }

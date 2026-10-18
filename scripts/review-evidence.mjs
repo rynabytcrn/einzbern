@@ -276,7 +276,7 @@ export function parseTestRunOutput(stdout, stderr = "", declaredTestFiles = []) 
       testCases,
       passed: passed ?? (structured.result === "passed" || structured.ok === true ? testCases : null),
       failed: failed ?? (structured.result === "passed" || structured.ok === true ? 0 : null),
-      parseable: true,
+      parseable: (structured.result === "passed" || structured.ok === true) && structured.ok !== false && (structured.result === undefined || structured.result === "passed"),
       source: "engine-test-result.file-list",
     };
   }

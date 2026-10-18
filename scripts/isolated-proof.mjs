@@ -66,7 +66,7 @@ const commit = git(["rev-parse", "HEAD"]);
 const tree = git(["rev-parse", "HEAD^{tree}"]);
 const origin = git(["remote", "get-url", "origin"]);
 if (!ENGINE_REPOSITORY_NAMES.some((name) => new RegExp(`^https://github\\.com/[^/]+/${name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\.git$`, "u").test(origin))) {
-  throw new Error(`ISOLATED_ORIGIN_INVALID:${origin}`);
+  throw new Error("ISOLATED_ORIGIN_INVALID");
 }
 
 const temporary = await mkdtemp(join(tmpdir(), "tcrn-isolated-proof-"));

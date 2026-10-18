@@ -565,10 +565,12 @@ async function runTypecheck() {
   // Nothing here distinguishes an error from a warning or a suggestion.
   const invocation = [compiler, "--noEmit", "--pretty", "false", "--project", "tsconfig.json"];
   let diagnostics = "";
+  let compilerFailed = false;
   try {
     diagnostics = run(process.execPath, invocation);
   } catch (error) {
     if (!(error instanceof LocalCommandError)) throw error;
+    compilerFailed = true;
     diagnostics = error.message;
   }
   const reported = diagnostics
@@ -576,6 +578,7 @@ async function runTypecheck() {
     .map((line) => line.trim())
     .filter((line) => line !== "" && !line.startsWith(`${process.execPath} ${compiler}`));
   assertion(reported.length === 0, "TYPECHECK_DIAGNOSTIC", reported.join(" | "));
+  assertion(!compilerFailed, "TYPECHECK_COMPILER_FAILED", "compiler exited unsuccessfully without diagnostics");
   return success("TYPECHECK_VERIFIED", {
     files: files.length,
     engine: `typescript-${pinnedVersion}`,

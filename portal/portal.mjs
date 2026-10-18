@@ -21,6 +21,10 @@ import { fileURLToPath } from "node:url";
 // through the registry-lock bridge, as the names do through names.mjs.
 import { withFileLock, registryPath } from "../scripts/lib/registry-lock.mjs";
 
+import { canonicalJson } from "../scripts/lib/canonical-json.mjs";
+
+import { isGateRunRecord, compareGateRuns } from "../scripts/lib/gate-run.mjs";
+
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
 import { LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
 
@@ -436,7 +440,44 @@ async function knowledgeProjection(status = "valid") {
   const at = readInstant();
   // TCRN-CROSS-MIN-225 (TCRN-CROSS-SUB-259): the knowledge view never read the retire-proposals
   // answer fetched beside the list, so that call, a full telemetry read on every load, is gone.
-  const listing = await cliResult(["knowledge-list", "--workspace", selected.libraryPath, "--at", at, "--selection", "all", "--status", status, "--allow-trailing", "true"]);
+  const records = [];
+  let listing;
+  let total;
+  const seen = new Set();
+  const digest = createHash("sha256").update("[", "utf8");
+  // Page until the declared inventory is complete; never present a prefix as the inventory.
+  do {
+    listing = await cliResult(["knowledge-list", "--workspace", selected.libraryPath, "--at", at, "--selection", "all", "--status", status, "--allow-trailing", "true", "--limit", "100", "--offset", String(records.length)]);
+    if (!listing.ok) break;
+    if (listing.body?.knowledgeStore === "absent") {
+      if (records.length > 0) listing = { ok: false, body: { ok: false, reasonCode: "PORTAL_KNOWLEDGE_PAGINATION_CHANGED" } };
+      break;
+    }
+    const page = listing.body?.records;
+    const count = listing.body?.total;
+    if (!Array.isArray(page) || !Number.isSafeInteger(count) || count < 0 ||
+        (total !== undefined && total !== count) || records.length + page.length > count ||
+        (page.length === 0 && records.length < count) ||
+        page.some((record) => typeof record?.id !== "string")) {
+      listing = { ok: false, body: { ok: false, reasonCode: "PORTAL_KNOWLEDGE_PAGINATION_CHANGED" } };
+      break;
+    }
+    // selection=all keeps every differing version of an id. The engine coalesces identical
+    // stored metadata, not ids, revisions or body digests; compare the complete projected record.
+    // The shared serializer orders nested keys canonically and returns an entry without an LF.
+    const entries = page.map((record) => canonicalJson(record));
+    if (entries.some((entry) => seen.has(entry) || !seen.add(entry))) {
+      listing = { ok: false, body: { ok: false, reasonCode: "PORTAL_KNOWLEDGE_PAGINATION_CHANGED" } };
+      break;
+    }
+    total = count;
+    for (const [index, entry] of entries.entries()) {
+      if (records.length + index > 0) digest.update(",", "utf8");
+      digest.update(entry, "utf8");
+    }
+    records.push(...page);
+  } while (records.length < total);
+  if (listing.ok) listing = { ...listing, body: { ...listing.body, records, total: total ?? 0, offset: 0, truncated: false, resultDigest: digest.update("]\n", "utf8").digest("hex") } };
   return {
     ok: listing.ok,
     reasonCode: listing.ok ? "PORTAL_KNOWLEDGE_READY" : "PORTAL_KNOWLEDGE_PARTIAL",
@@ -685,13 +726,7 @@ function deviceHomePath() {
 }
 
 function isGateRun(value, libraryId, projectId) {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const run = value;
-  return run.schemaVersion === "einzbern.gate-run.v1" && run.libraryId === libraryId && (run.projectId ?? null) === projectId &&
-    typeof run.runId === "string" && typeof run.at === "string" && Number.isFinite(Date.parse(run.at)) &&
-    typeof run.treeDigest === "string" && typeof run.declarationsDigest === "string" && Array.isArray(run.gates) &&
-    run.gates.every((gate) => gate !== null && typeof gate === "object" && typeof gate.name === "string" && typeof gate.ok === "boolean" && typeof gate.required === "boolean") &&
-    Array.isArray(run.reds);
+  return isGateRunRecord(value) && value.libraryId === libraryId && (value.projectId ?? null) === projectId;
 }
 
 async function latestGateRunProjection() {
@@ -709,7 +744,7 @@ async function latestGateRunProjection() {
     let run;
     try { run = JSON.parse(await readFile(join(directory, entry.name), "utf8")); } catch { continue; }
     if (!isGateRun(run, libraryId, currentLibrary().configurationProjectId)) continue;
-    if (latest === null || Date.parse(run.at) > Date.parse(latest.at) || (Date.parse(run.at) === Date.parse(latest.at) && run.runId.localeCompare(latest.runId) > 0)) latest = run;
+    if (latest === null || compareGateRuns(run, latest) < 0) latest = run;
   }
   return { ok: true, reasonCode: "PORTAL_GATE_RUN_READY", run: latest };
 }
@@ -805,7 +840,10 @@ async function reconcile() {
     const path = proseTarget(name);
     if (!path) continue;
     let text = "";
-    try { text = await readFile(path, "utf8"); } catch { continue; }
+    try { text = await readFile(path, "utf8"); } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      return { ok: false, reasonCode: "PORTAL_PROSE_READ_FAILED", file: name, errorCode: error?.code ?? "UNKNOWN", rows: [], findings: [] };
+    }
     for (const [lineIndex, line] of text.split("\n").entries()) {
       for (const match of line.matchAll(KEY_PATTERN)) {
         const key = match[1];
@@ -944,9 +982,9 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     send(response, 403, { ok: false, reasonCode: "PORTAL_HOST_REJECTED" });
     return;
   }
-  const url = new URL(request.url, "http://127.0.0.1");
-  const pathname = apiAlias(url.pathname);
   try {
+    const url = new URL(request.url, "http://127.0.0.1");
+    const pathname = apiAlias(url.pathname);
     if (request.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
       const html = await readFile(join(portalRoot, "index.html"), "utf8");
       const library = currentLibrary();

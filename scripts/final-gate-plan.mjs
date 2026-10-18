@@ -497,7 +497,7 @@ function impactInput(options) {
   const dependenciesValue = options.dependencyFiles ?? options.dependencies ?? options.dependencyGraph ?? diff.dependencies ?? impact.dependencies ?? impact.dependencyFiles ?? impact.dependency ?? changes.dependencies ?? changes.dependency;
   const configurationValue = options.configurationFiles ?? options.configFiles ?? options.configuration ?? diff.configuration ?? impact.configuration ?? impact.configFiles ?? impact.config ?? changes.configuration ?? changes.config;
   const generatedValue = options.generatedFiles ?? options.generated ?? diff.generated ?? impact.generated ?? impact.generatedFiles ?? impact.artifacts ?? changes.generated ?? changes.artifacts;
-  const environmentValue = options.environmentChanges ?? diff.environment ?? impact.environment ?? impact.environmentChanges ?? changes.environment ?? changes.environmentChanges;
+  const environmentValue = options.environmentChanges ?? options.environment ?? diff.environment ?? impact.environment ?? impact.environmentChanges ?? changes.environment ?? changes.environmentChanges;
   const crossRepoValue = options.crossRepoChanges ?? options.crossRepositoryChanges ?? diff.crossRepoChanges ?? impact.crossRepoChanges ?? impact.crossRepositoryChanges ?? changes.crossRepoChanges ?? changes.crossRepository;
   const changedFiles = pathEntries(changedFilesValue, "source");
   const dependencies = pathEntries(dependenciesValue, "dependency");
@@ -757,12 +757,12 @@ function evidenceValue(evidence, key) {
   return evidence?.[key] ?? evidence?.result?.[key];
 }
 
-function trustedArtifactIdentity(candidate, { expectedInputs = null, gateId = null, expectedCommand = null, expectedInvocation = null, expectedPhase = null, authority = null, rosterPath = null } = {}) {
+function trustedArtifactIdentity(candidate, { expectedInputs = null, gateId = null, expectedCommand = null, expectedInvocation = null, expectedPhase = null, authority = null, rosterPath = null, allowFailed = false } = {}) {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
   const artifactPath = batchString(candidate.path ?? candidate.file ?? candidate.storePath ?? candidate.artifactPath);
   const digest = batchString(candidate.sha256 ?? candidate.digest ?? candidate.hash);
   const id = batchString(candidate.id ?? artifactPath ?? candidate.name ?? digest);
-  const status = candidate.ok === true || TERMINAL_EVIDENCE_STATES.has(String(candidate.status ?? "").toLowerCase()) || candidate.terminal === true;
+  const status = (allowFailed && candidate.status === "failed") || candidate.ok === true || TERMINAL_EVIDENCE_STATES.has(String(candidate.status ?? "").toLowerCase()) || candidate.terminal === true;
   const source = batchString(candidate.source ?? candidate.runner);
   const storeRoot = batchString(candidate.storeRoot ?? candidate.evidenceStore ?? candidate.store);
   // A digest over a caller-written JSON document proves only that the bytes
@@ -787,7 +787,7 @@ function trustedArtifactIdentity(candidate, { expectedInputs = null, gateId = nu
     if (!document || typeof document !== "object" || Array.isArray(document)) return null;
     const documentStatus = String(document.status ?? document.state ?? "").toLowerCase();
     const documentGate = batchString(document.gateId ?? document.gate ?? document.rootId);
-    if (!TERMINAL_EVIDENCE_STATES.has(documentStatus) || document.ok !== true || (document.exitCode !== 0 && !completedByRosterException(document, documentGate, rosterPath))) return null;
+    if (!(allowFailed && documentStatus === "failed" && document.ok === false) && (!TERMINAL_EVIDENCE_STATES.has(documentStatus) || document.ok !== true || (document.exitCode !== 0 && !completedByRosterException(document, documentGate, rosterPath)))) return null;
     const documentCommand = batchString(document.command);
     if (documentGate === null || gateId !== null && documentGate !== gateId || documentCommand === null) return null;
     if (expectedCommand !== null && normalizeCommand(documentCommand) !== normalizeCommand(expectedCommand)) return null;
@@ -814,18 +814,18 @@ function trustedArtifactIdentity(candidate, { expectedInputs = null, gateId = nu
   }
 }
 
-function terminalEvidenceIdentity(evidence, { requireTrusted = false, expectedCommand = null, expectedInvocation = null, expectedPhase = null, authority = null, rosterPath = null } = {}) {
+function terminalEvidenceIdentity(evidence, { requireTrusted = false, expectedCommand = null, expectedInvocation = null, expectedPhase = null, authority = null, rosterPath = null, allowFailed = false } = {}) {
   const candidates = [evidence?.terminalEvidence, evidence?.runnerEvidence, evidence?.receipt, evidence?.artifact, evidence?.result?.terminalEvidence, evidence?.result?.receipt];
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
     if (requireTrusted) {
-      const trusted = trustedArtifactIdentity(candidate, { expectedInputs: normalizedDigestInput(evidence?.inputs ?? evidence?.result?.inputs), gateId: evidenceGateId(evidence), expectedCommand, expectedInvocation, expectedPhase, authority, rosterPath });
+      const trusted = trustedArtifactIdentity(candidate, { expectedInputs: normalizedDigestInput(evidence?.inputs ?? evidence?.result?.inputs), gateId: evidenceGateId(evidence), expectedCommand, expectedInvocation, expectedPhase, authority, rosterPath, allowFailed });
       if (trusted !== null) return trusted;
       continue;
     }
     const id = batchString(candidate.id ?? candidate.path ?? candidate.name ?? candidate.digest);
     const digest = batchString(candidate.sha256 ?? candidate.digest ?? candidate.hash);
-    const status = candidate.ok === true || TERMINAL_EVIDENCE_STATES.has(candidate.status) || candidate.terminal === true;
+    const status = (allowFailed && candidate.status === "failed") || candidate.ok === true || TERMINAL_EVIDENCE_STATES.has(candidate.status) || candidate.terminal === true;
     if (id !== null && digest !== null && status) return { id, digest, source: batchString(candidate.source ?? candidate.runner ?? "trusted-runner") };
   }
   if (!requireTrusted && evidence?.trustedRunner === true && batchString(evidence?.receiptDigest ?? evidence?.evidenceDigest) !== null) {
@@ -2638,10 +2638,10 @@ function measuredResultProblems(row, expectedInputs, { requireTrusted = false, e
   const problems = [];
   const rowInputs = row?.inputs ?? row?.inputDigests;
   if (!hasCompleteInputKey(rowInputs) || JSON.stringify(completeInputKey(rowInputs)) !== JSON.stringify(completeInputKey(expectedInputs))) problems.push("runner did not return the planned four input digests");
-  if (terminalEvidenceIdentity(row, { requireTrusted, expectedCommand, expectedInvocation, authority, rosterPath }) === null) problems.push(requireTrusted ? "runner did not return a readable immutable terminal artifact" : "runner did not return trusted terminal evidence");
-  if (!TERMINAL_EVIDENCE_STATES.has(row?.status) && row?.terminal !== true) problems.push("runner result is not terminal");
+  if (terminalEvidenceIdentity(row, { requireTrusted, expectedCommand, expectedInvocation, authority, rosterPath, allowFailed: row?.ok === false }) === null) problems.push(requireTrusted ? "runner did not return a readable immutable terminal artifact" : "runner did not return trusted terminal evidence");
+  if (!(row?.ok === false && row?.status === "failed") && !TERMINAL_EVIDENCE_STATES.has(row?.status) && row?.terminal !== true) problems.push("runner result is not terminal");
   if (expectedGateId !== null && row?.gateId !== expectedGateId) problems.push("runner result is bound to the wrong gate");
-  if (requireTrusted && row?.exitCode !== 0 && !completedByRosterException(row, row?.gateId, rosterPath)) problems.push("runner result did not report exitCode 0");
+  if (requireTrusted && row?.ok !== false && row?.exitCode !== 0 && !completedByRosterException(row, row?.gateId, rosterPath)) problems.push("runner result did not report exitCode 0");
   if (/^FIXTURE_ROOT_/u.test(String(row?.reasonCode ?? ""))) problems.push("fixture root result cannot satisfy a production gate");
   return problems;
 }

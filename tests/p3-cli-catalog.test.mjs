@@ -423,7 +423,7 @@ test("526 GWT5, 541 GWT1, INIT-056: the closed decided-in roster carries its doc
   assert.deepEqual(enginePolicy.flags.find((flag) => flag.name === "actor"), { name: "actor", required: true, valueKind: "string" });
 });
 
-test("integrated engine: non-decision valueShapes document projection selection, execution admission and dispatch evidence", () => {
+test("integrated engine: non-decision valueShapes document projection selection, capture host and execution evidence", () => {
   const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags
     .filter((flag) => flag.name !== "decided-in" && flag.valueShape !== undefined)
     .map((flag) => [entry.name, { ...flag }]));
@@ -435,6 +435,10 @@ test("integrated engine: non-decision valueShapes document projection selection,
     ["execution-evidence", {
       name: "from-file", required: true, valueKind: "string",
       valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input.",
+    }],
+    ["knowledge-capture", {
+      name: "host", required: false, valueKind: "string",
+      valueShape: "Explicit host for configured artifact-language model policy; required by that policy, not inferred.",
     }],
     ["work-project-context", {
       name: "execution-request", required: false, valueKind: "string",
@@ -484,5 +488,14 @@ test("529 GWT2 (TCRN-CROSS-SUB-480): every write that takes the library write lo
     const entry = COMMAND_CATALOG.find((candidate) => candidate.name === name);
     assert.equal(entry.mutates, true, `${name} writes`);
     assert.deepEqual(entry.flags.find((flag) => flag.name === "timeout-ms"), { name: "timeout-ms", required: false, valueKind: "integer" }, name);
+  }
+});
+
+test("PR24: capture advertises an optional host in catalog and command help", async () => {
+  for (const argv of [["commands"], ["knowledge-capture", "--help"]]) {
+    const result = await invoke(argv);
+    assert.equal(result.ok, true);
+    const command = JSON.parse(result.output).commands.find((entry) => entry.name === "knowledge-capture");
+    assert.deepEqual(command.flags.find((flag) => flag.name === "host"), { name: "host", required: false, valueKind: "string", valueShape: "Explicit host for configured artifact-language model policy; required by that policy, not inferred." });
   }
 });

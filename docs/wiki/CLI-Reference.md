@@ -441,29 +441,30 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--subject` | 必填 | `string` |
-| `--summary` | 必填 | `string` |
-| `--snippet` | 必填 | `string` |
-| `--tags` | 必填 | `list` |
-| `--accountable-owner-id` | 必填 | `string` |
-| `--body` | 必填 | `string` |
-| `--external-key` | 可选 | `string` |
-| `--scope` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
-| `--role-scopes` | 可选 | `list` |
-| `--category` | 可选 | `string` |
-| `--kind` | 可选 | `string` |
-| `--source-references` | 可选 | `list` |
-| `--evidence-ids` | 可选 | `list` |
-| `--supersedes` | 可选 | `string` |
-| `--coexist` | 可选 | `boolean` |
-| `--allow-trailing` | 可选 | `boolean` |
-| `--language-bundle` | 可选 | `string` |
-| `--timeout-ms` | 可选 | `integer` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--host` | 可选 | `string` | `Explicit host for configured artifact-language model policy; required by that policy, not inferred.` |
+| `--at` | 必填 | `instant` |  |
+| `--subject` | 必填 | `string` |  |
+| `--summary` | 必填 | `string` |  |
+| `--snippet` | 必填 | `string` |  |
+| `--tags` | 必填 | `list` |  |
+| `--accountable-owner-id` | 必填 | `string` |  |
+| `--body` | 必填 | `string` |  |
+| `--external-key` | 可选 | `string` |  |
+| `--scope` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--role-scopes` | 可选 | `list` |  |
+| `--category` | 可选 | `string` |  |
+| `--kind` | 可选 | `string` |  |
+| `--source-references` | 可选 | `list` |  |
+| `--evidence-ids` | 可选 | `list` |  |
+| `--supersedes` | 可选 | `string` |  |
+| `--coexist` | 可选 | `boolean` |  |
+| `--allow-trailing` | 可选 | `boolean` |  |
+| `--language-bundle` | 可选 | `string` |  |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `knowledge-checkpoint`
 

@@ -12,6 +12,9 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { runCaptureCliUpgradeMatrix } from "./helpers/capture-cli-upgrade.mjs";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -266,4 +269,15 @@ test("BL33 deferred: preserve existing single-character and contiguous Chinese t
   assert.deepEqual(knowledgeConflictHits([card], "中"), []);
   assert.deepEqual(knowledgeConflictHits([card], "中 文"), [card.id]);
   assert.deepEqual(knowledgeConflictHits([{ ...card, subject: "中中" }], "中"), [card.id], "repeated single-character matches retain existing threshold behavior; this repair does not tune BL33");
+});
+
+// PR24-1: exercise the shipped source launcher, not runCli or the capture core API.
+test("PR24 source CLI: knowledge-capture routes explicit host through legacy and device policy", async (context) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-capture-cli-")));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const cli = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
+  await runCaptureCliUpgradeMatrix({
+    root,
+    execute: (args, options) => spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", ...options }),
+  });
 });

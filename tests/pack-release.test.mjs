@@ -9,6 +9,7 @@
 // rebuild writes, reads them back, and refuses the entries an unpacker must not follow.
 
 import "./helpers/device-home.mjs";
+import { runCaptureCliUpgradeMatrix } from "./helpers/capture-cli-upgrade.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -542,4 +543,31 @@ test("execution evidence is usable from the archive with product source denied a
   assert.equal(bad.stdout, "");
   assert.match(bad.stderr, /DISPATCH_EVIDENCE_INPUT_INVALID/);
   assert.equal(existsSync(isolated.env.EINZBERN_HOME), false, "no device state was needed or created");
+});
+
+// PR24-1: exercise an upgraded synthetic historical library through the actual
+// release archive, not a core write or the checkout launcher. Only fixture writes
+// and the controller's exact mandatory preloads are available to the child.
+test("PR24-1: packed knowledge-capture preserves legacy language writes with explicit host", async () => {
+  const { tree } = await packedRelease();
+  const root = join(base, "capture-cli-upgrade");
+  const permission = ["--permission", `--allow-fs-read=${base}`, `--allow-fs-write=${root}`];
+  const inheritedOptions = (process.env.NODE_OPTIONS ?? "").split(/\s+/u);
+  for (const file of ["test-controller-child-policy.mjs", "no-network.mjs"]) {
+    const instrumentation = join(repositoryRoot, "scripts", file);
+    if (inheritedOptions.includes(`--import=${pathToFileURL(instrumentation).href}`)) permission.push(`--allow-fs-read=${instrumentation}`);
+  }
+  const cli = join(tree, "scripts/einzbern.mjs");
+  const execute = (args, options) => node([...permission, cli, ...args], options);
+  await runCaptureCliUpgradeMatrix({ root, execute });
+  const isolated = await environment("capture-catalog");
+  for (const args of [["commands"], ["knowledge-capture", "--help"]]) {
+    const result = execute(args, isolated);
+    assert.equal(result.status, 0, result.stderr);
+    const command = JSON.parse(result.stdout).commands.find(entry => entry.name === "knowledge-capture");
+    const host = command.flags.find(flag => flag.name === "host");
+    assert.ok(host, "archive catalog advertises host on knowledge-capture");
+    assert.equal(host.required, false, "host is conditional on language policy, not globally required");
+    assert.equal(host.valueKind, "string");
+  }
 });

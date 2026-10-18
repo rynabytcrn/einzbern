@@ -4286,6 +4286,12 @@
             "valueKind": "string"
           },
           {
+            "name": "host",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "Explicit host for configured artifact-language model policy; required by that policy, not inferred."
+          },
+          {
             "name": "at",
             "required": true,
             "valueKind": "instant"

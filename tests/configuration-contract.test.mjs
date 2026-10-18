@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { configurationContract, annotateConfigValue } from "../dist/build/packages/core/src/configuration-contract.js";
 import { COMMAND_CATALOG } from "../dist/build/packages/cli/src/index.js";
@@ -88,4 +89,11 @@ test("configuration contract includes runtime ownership and the canonical CLI fl
   assert.ok(contract.runtimeInputs.entries.some(entry => entry.name === "EINZBERN_HOME"));
   assert.ok(contract.runtimeInputs.entries.some(entry => entry.kind === "browser-storage"));
   assert.equal(configurationContract().runtimeInputs.commandCatalogAttached, false);
+});
+
+test("configuration inventory retains exact command flags including capture host", async () => {
+  const inventory = JSON.parse(await readFile(new URL("../docs/implementation/configuration-inventory.json", import.meta.url), "utf8"));
+  assert.deepEqual(inventory, configurationContract(COMMAND_CATALOG));
+  const capture = inventory.runtimeInputs.commandCatalog.find((command) => command.name === "knowledge-capture");
+  assert.deepEqual(capture.flags.find((flag) => flag.name === "host"), { name: "host", required: false, valueKind: "string", valueShape: "Explicit host for configured artifact-language model policy; required by that policy, not inferred." });
 });

@@ -786,20 +786,85 @@ function sanitizeAllowedPublicMetadata(entry, owner, repositories) {
   if (entry.kind !== "commit" && entry.kind !== "tag") {
     return content;
   }
-  return content
-    .split("\n")
-    .map((line) => {
-      const match = line.match(/^(author|committer|tagger) ([^<>\r\n]+) <((?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com)> \d+ [+-]\d{4}$/u);
-      if (!match) {
-        return reviewedCommitIdentity(entry, line) ?? line;
+  return content.split("\n").map((line) => reviewedCommitIdentity(entry, line) ?? line).join("\n");
+}
+
+// These are public-address *syntax* classifications, not proof of GitHub origin,
+// account ownership, signature validity, or authorization. Git objects can be forged.
+// Only EMAIL/OWNER projections change: secret and deployment-private patterns still
+// inspect the original tokens. Never classify an arbitrary display name or whole line.
+const githubLogin = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u;
+const githubUserEmail = /^(?:[1-9][0-9]*\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com$/u;
+
+function publicGitMetadataProjections(entry, content, owner) {
+  if (entry.kind !== "commit" && entry.kind !== "tag") return new Map();
+  const boundary = content.indexOf("\n\n");
+  if (boundary === -1) return new Map();
+  const lines = content.slice(0, boundary).split("\n");
+  const oid = "(?:[a-f0-9]{40}|[a-f0-9]{64})";
+  let cursor;
+  const parents = [];
+  let roles;
+  if (entry.kind === "commit") {
+    if (!new RegExp(`^tree ${oid}$`, "u").test(lines[0])) return new Map();
+    cursor = 1;
+    while (new RegExp(`^parent ${oid}$`, "u").test(lines[cursor] ?? "")) parents.push(lines[cursor++]);
+    roles = ["author", "committer"];
+  } else {
+    if (!new RegExp(`^object ${oid}$`, "u").test(lines[0]) ||
+        !/^type (?:commit|tree|blob|tag)$/u.test(lines[1] ?? "") ||
+        !/^tag [^\r\n]+$/u.test(lines[2] ?? "")) return new Map();
+    cursor = 3;
+    roles = ["tagger"];
+  }
+  const emailSpans = [];
+  const ownerSpans = [];
+  let webFlow = false;
+  for (const role of roles) {
+    const line = lines[cursor];
+    const match = /^(author|committer|tagger) ([^<>\r\n]+) <([^<>\r\n]+)> (?:0|[1-9][0-9]*) [+-][0-9]{4}$/u.exec(line ?? "");
+    if (!match || match[1] !== role) return new Map();
+    const [, , name, email] = match;
+    const login = githubUserEmail.exec(email)?.[1];
+    const user = login !== undefined && githubLogin.test(login) && !login.includes("--");
+    const service = role === "committer" && name === "GitHub" && email === joinParts(["noreply", "github.com"], "@");
+    webFlow ||= service;
+    const offset = lines.slice(0, cursor).reduce((sum, value) => sum + value.length + 1, 0);
+    if (user || service) {
+      const start = offset + role.length + name.length + 3;
+      emailSpans.push([start, start + email.length]);
+      if (user && login === owner) {
+        const loginStart = start + email.lastIndexOf("@") - login.length;
+        ownerSpans.push([loginStart, loginStart + login.length]);
+        // A display field that is exactly the account login is an account token;
+        // all other display-name text remains scanned, even beside a public email.
+        if (name === login) ownerSpans.push([offset + role.length + 1, offset + role.length + 1 + name.length]);
       }
-      const [, role, name, , login] = match;
-      if (name !== login) {
-        return reviewedCommitIdentity(entry, line) ?? line;
-      }
-      return `${role} [ALLOWED_PUBLIC_GIT_HOSTING_IDENTITY]`;
-    })
-    .join("\n");
+    }
+    cursor += 1;
+  }
+  // Additional/continuation headers are not identities. Leave them entirely scanned.
+  // Restrict the merge account slot to the first subject of a two-parent web-flow
+  // shaped commit; branch text and every following message line remain scanned.
+  if (entry.kind === "commit" && webFlow && parents.length === 2 && parents[0] !== parents[1]) {
+    const subject = content.slice(boundary + 2).split("\n", 1)[0];
+    const merge = /^(Merge pull request #[1-9][0-9]* from )([^/\s]+)\/([^\s]+)$/u.exec(subject);
+    if (merge && merge[2] === owner && githubLogin.test(owner) && !owner.includes("--")) {
+      const start = boundary + 2 + merge[1].length;
+      ownerSpans.push([start, start + owner.length]);
+    }
+  }
+  const project = (spans) => {
+    let result = content;
+    for (const [start, end] of spans.sort((left, right) => right[0] - left[0])) {
+      result = `${result.slice(0, start)}[PUBLIC_GIT_TOKEN]${result.slice(end)}`;
+    }
+    return [result, normalizePrivacyText(result)];
+  };
+  const projections = new Map();
+  if (emailSpans.length > 0) projections.set("EMAIL_IDENTIFIER", project(emailSpans));
+  if (ownerSpans.length > 0) projections.set("OWNER_PRIVATE_IDENTIFIER", project(ownerSpans));
+  return projections;
 }
 
 // `repositories` names the public GitHub repositories whose origin URL under `owner` is
@@ -843,9 +908,10 @@ export function scanPrivacyEntries(entries, { owner, privateTokens = [], reposit
       if (matchedReasons === undefined) {
         const content = sanitizeAllowedPublicMetadata(entry, owner, repositories);
         const normalized = normalizePrivacyText(content);
+        const metadataProjections = publicGitMetadataProjections(entry, content, owner);
         matchedReasons = [];
         for (const [reasonCode, pattern] of patterns) {
-          if (hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, [content, normalized])) {
+          if (hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, metadataProjections.get(reasonCode) ?? [content, normalized])) {
             matchedReasons.push(reasonCode);
           }
         }

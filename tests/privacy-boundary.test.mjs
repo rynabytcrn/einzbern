@@ -196,9 +196,10 @@ test("batch object framing is validated per record and as a whole stream", () =>
 });
 
 // TCRN-CROSS-MIN-279 D1, MIN-281 D1: the reviewed identity lines of 72ae480e and 440f297d are
-// allowed only on that commit's own object, line for line. Each commit is read from this
-// repository's history, so no address is written into a source file.
-test("a reviewed commit's identity lines are allowed only on that commit, unchanged", (context) => {
+// remain accepted without rewriting history. Public GitHub tokens may also satisfy
+// the structural metadata contract; unreviewed private edits must still fail closed.
+// Each commit is read from history, so no address is written into a source file.
+test("reviewed historical commits remain accepted and private identity edits fail closed", (context) => {
   const options = { owner: LEGACY_REPOSITORY_NAMES.owner };
   const scan = (label, content) => scanPrivacyEntries([{ label, kind: "commit", content }], options);
   for (const reviewed of ["72ae480e5ce142db481ecc65bccbdd3abe129643", "440f297d0f42c14714fea2063ec660f0017f4809"]) {
@@ -208,10 +209,12 @@ test("a reviewed commit's identity lines are allowed only on that commit, unchan
       continue;
     }
     assert.deepEqual(scan(`git-commit:${reviewed}`, read.stdout), [], `${reviewed} is clean`);
-    assert.ok(scan(`git-commit:${"b".repeat(40)}`, read.stdout).length > 0, `${reviewed}: the same lines on another commit are a finding`);
-    const changed = read.stdout.replace(/^(committer [^\n]*?) (\d+) /mu, (_, head, time) => `${head} ${Number(time) + 1} `);
+    const privateName = joinParts(["", "Users", "fixture", "private"], "/");
+    const changed = read.stdout.replace(/^committer /mu, `committer ${privateName} `);
     assert.notEqual(changed, read.stdout);
-    assert.ok(scan(`git-commit:${reviewed}`, changed).length > 0, `${reviewed}: a changed identity line is a finding`);
+    for (const object of [reviewed, "b".repeat(40)]) {
+      assert.ok(scan(`git-commit:${object}`, changed).some((finding) => finding.startsWith("LOCAL_ABSOLUTE_PATH:")), `${reviewed}: private edits remain findings`);
+    }
   }
 });
 

@@ -7,7 +7,8 @@ import { engineModelPolicyCatalogFromSnapshot } from "./engine-model-policy.js";
 import { MACHINE_SETTINGS_FILE_NAME, MACHINE_SETTINGS_CATALOG } from "./machine-settings.js";
 import type { MachineSettingsReadback } from "./machine-settings.js";
 import { resolveExecutionConcurrency } from "./execution-policy.js";
-import { join, relative, isAbsolute } from "node:path";
+import { join } from "node:path";
+import { pathIsInside } from "./path-containment.js";
 import { deviceHome } from "./device-home.js";
 import { realpath } from "node:fs/promises";
 import { canonicalJson } from "../../protocol/src/index.js";
@@ -110,7 +111,7 @@ async function resolveProjectTargetFromSnapshot(referenceInput: ProjectReference
     const repositoryContexts = await Promise.all(entries.map(async entry => {
       const matches = declaredRepositories.filter(binding => entry.gitRemote !== null && normalizeGitRemote(binding.repository) === entry.gitRemote);
       let outputReady = false;
-      try { const projectRoot = await realpath(entry.projectPath); const relation = relative(root, projectRoot); outputReady = relation !== "" && (relation.startsWith("..") || isAbsolute(relation)); } catch { /* unavailable output remains unready */ }
+      try { const projectRoot = await realpath(entry.projectPath); outputReady = !pathIsInside(root, projectRoot); } catch { /* unavailable output remains unready */ }
       return { projectPath: entry.projectPath, gitRemote: entry.gitRemote, outputReady, binding: matches.length === 1 ? matches[0]! : null, status: matches.length === 1 ? "bound" : matches.length > 1 ? "ambiguous" : "unconfigured" };
     }));
     const { enginePolicy, deviceSettings } = execution ?? projectExecutionConfiguration(await readExecutionAdmissionSnapshot(home));

@@ -86,12 +86,11 @@ jobs:
           corepack install --global pnpm@11.3.0
           test "$(corepack pnpm@11.3.0 --version)" = "11.3.0"
 
-      # TCRN-CROSS-MIN-280 D3: on a pull request the privacy leg scans history from the
-      # merge-base with the PR's base on; push to main and workflow_dispatch leave the
-      # variable empty and scan the full HEAD-reachable history.
+      # Use the same complete HEAD-reachable privacy history for fork dispatch,
+      # pull requests and main. A PR must not hide a failing base-history finding.
       - name: Verify P1 offline
         env:
-          EINZBERN_PRIVACY_HISTORY_BASE: ${{ github.event.pull_request.base.sha }}
+          EINZBERN_PRIVACY_HISTORY_BASE: ""
         run: |
           root="$RUNNER_TEMP/einzbern-p1-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           mkdir "$root"
@@ -107,10 +106,6 @@ jobs:
               git -C "$root/build" update-ref -d "$ref"
             fi
           done
-          if [ -n "$EINZBERN_PRIVACY_HISTORY_BASE" ]; then
-            git -C "$root/build" cat-file -e "${EINZBERN_PRIVACY_HISTORY_BASE}^{commit}"
-            git -C "$root/build" merge-base HEAD "$EINZBERN_PRIVACY_HISTORY_BASE" > /dev/null
-          fi
           git -C "$root/build" reflog expire --expire=now --all
           git -C "$root/build" gc --prune=now --quiet
           pnpm --dir "$root/build" install --offline --frozen-lockfile --ignore-scripts

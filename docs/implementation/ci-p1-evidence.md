@@ -36,6 +36,20 @@ Actions are pinned to full official commit identities. No authentication files, 
 values or device-home contents belong in the artifact. Test stdout is retained without truncation,
 so fixtures must continue to use synthetic data and existing privacy checks still apply.
 
+## Fork and merge verification scope
+
+Before creating or updating an upstream PR, run this workflow on the complete frozen
+candidate in the contributor fork with `workflow_dispatch` and `mode=p1`. Check the
+reported head SHA and full terminal evidence. A separate candidate branch avoids
+publishing intermediate fixes to an already-open PR. See [the contribution sequence](../../CONTRIBUTING.md#fork-first-batch-end-contribution-workflow).
+
+Fork dispatch, PR and main runs all explicitly clear `EINZBERN_PRIVACY_HISTORY_BASE`
+and scan full HEAD-reachable history. The PR P1 verification job still checks its contributor head, not a
+synthetic merge commit; a later main merge has additional identity/message metadata.
+Public-hosting metadata classification must remain narrowly structural and retain
+private payload detection. A previous candidate's green result is not proof of an
+uncreated merge, and upstream checks/permissions are not replaced by a fork receipt.
+
 ## Provenance and method limits
 
 The generic observer is adapted from supplied read-only method sources with SHA-256:

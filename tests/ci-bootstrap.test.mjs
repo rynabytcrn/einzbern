@@ -30,9 +30,8 @@ test("CI retains explicit safe dependency acquisition and offline P1 execution",
   assert.match(workflow, P1_STEP);
 });
 
-// TCRN-CROSS-MIN-280 D3: the P1 step names the pull request's base for the privacy increment.
-// The expression is empty on push and workflow_dispatch, where the full history is scanned.
-const P1_STEP = /- name: Verify P1 offline\n        env:\n          EINZBERN_PRIVACY_HISTORY_BASE: \$\{\{ github\.event\.pull_request\.base\.sha \}\}\n        run: \|/u;
+// Fork dispatch, pull requests and main scan identical full reachable history.
+const P1_STEP = /- name: Verify P1 offline\n        env:\n          EINZBERN_PRIVACY_HISTORY_BASE: ""\n        run: \|/u;
 
 // TCRN-CROSS-STORY-359. The `ci` verb and its `verify:ci` name retired with the rest of
 // the ticket-numbered and subset gates, but three of its assertions had no second home:
@@ -108,8 +107,8 @@ test("CI retains one observed P1 train in an independent clone and always upload
   assert.match(workflow, /retention-days: 14/u);
   assert.match(workflow, /overwrite: false/u);
   assert.equal((workflow.match(/working-directory: \$\{\{ runner.temp \}\}\/einzbern-p1-/gu) ?? []).length, 2);
-  assert.match(workflow, /cat-file -e "\$\{EINZBERN_PRIVACY_HISTORY_BASE\}\^\{commit\}"/u);
-  assert.match(workflow, /merge-base HEAD "\$EINZBERN_PRIVACY_HISTORY_BASE"/u);
+  assert.match(workflow, /EINZBERN_PRIVACY_HISTORY_BASE: ""/u);
+  assert.equal(workflow.includes("github.event.pull_request.base.sha"), false, "PR privacy must not silently narrow the history compared with fork/main");
   assert.ok(workflow.includes('node "$build_root/skill/mana-orchestrate/scripts/install.mjs"'));
 });
 

@@ -469,7 +469,7 @@ test("481-R2: tar.mjs writes the bytes P8's independent rebuild writes, reads th
 
 // PR24 P1-P4: execute the archive entry with product source and node_modules
 // reads denied by Node itself. Governed runs retain their mandatory, standalone
-// controller preload; uninstrumented runs allow only the isolated fixture tree.
+// controller and offline preloads; uninstrumented runs allow only the isolated fixture tree.
 test("execution evidence is usable from the archive with product source denied and unchanged owner synthetic cases", async () => {
   const { tree, report, archive, entries } = await packedRelease();
   assert.equal(report.sha256, sha256(archive));
@@ -479,20 +479,28 @@ test("execution evidence is usable from the archive with product source denied a
   // return ENOENT here; repository source and dependencies remain denied.
   const permission = ["--permission", `--allow-fs-read=${base}`];
   assert.equal(existsSync(join(base, "scripts/policy/knowledge-provenance.json")), false, "missing layout candidate stays inside the isolated fixture, without copied policy assets");
-  const controllerPolicy = join(repositoryRoot, "scripts/test-controller-child-policy.mjs");
-  const controllerImport = `--import=${pathToFileURL(controllerPolicy).href}`;
-  if ((process.env.NODE_OPTIONS ?? "").split(/\s+/u).includes(controllerImport)) {
-    // This exact test-instrumentation file imports Node builtins only. It is not
-    // an application dependency, and no product source directory is permitted.
-    permission.push(`--allow-fs-read=${controllerPolicy}`);
+  const inheritedOptions = (process.env.NODE_OPTIONS ?? "").split(/\s+/u);
+  const mandatoryInstrumentation = ["test-controller-child-policy.mjs", "no-network.mjs"];
+  for (const file of mandatoryInstrumentation) {
+    const instrumentation = join(repositoryRoot, "scripts", file);
+    if (inheritedOptions.includes(`--import=${pathToFileURL(instrumentation).href}`)) {
+      // Closed, exact-file allowances for the controller's existing builtin-only
+      // instrumentation. Never allow arbitrary inherited imports or source trees.
+      permission.push(`--allow-fs-read=${instrumentation}`);
+    }
   }
   delete isolated.env.NODE_PATH;
   const execute = (args) => node([...permission, cli, ...args], isolated);
+  if (inheritedOptions.includes(`--import=${pathToFileURL(join(repositoryRoot, "scripts/no-network.mjs")).href}`)) {
+    // Transport refusal behavior is covered by the dedicated offline-boundary suite.
+    const offline = node([...permission, "--input-type=module", "-e", "import assert from 'node:assert/strict'; assert.equal(globalThis.__TCRN_OFFLINE_GUARD__, true);"], isolated);
+    assert.equal(offline.status, 0, offline.stderr);
+  }
   for (const path of [join(repositoryRoot, "package.json"), join(repositoryRoot, "packages/core/src/dispatch-evidence.ts"), join(repositoryRoot, "packages/cli/src/index.ts"), join(repositoryRoot, "node_modules/typescript/package.json")]) {
     const denied = node([...permission, "--input-type=module", "-e", `import { readFileSync } from 'node:fs'; readFileSync(${JSON.stringify(path)});`], isolated);
     assert.notEqual(denied.status, 0);
     assert.match(denied.stderr, /ERR_ACCESS_DENIED/);
-    assert.ok(denied.stderr.includes(path), "the denial names the requested product source, not instrumentation");
+    assert.ok(denied.stderr.includes(path), `the denial must name ${safeDiagnostic(path)}, not instrumentation: ${safeDiagnostic(denied.stderr)}`);
   }
   // This is the helper installed inside this archive, not a sibling checkout.
   const skillEntry = entries.find(entry => entry.path === `${RELEASE}/skill/${BRAND.helper.id}/SKILL.md`);

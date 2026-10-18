@@ -1,6 +1,6 @@
 # Post-PR25 audit status and bounded follow-on scope
 
-Current expanded scope: see the [consolidated source-audit and repair index](full-quality-audit.md). The narrower review, intermediate fixes and evidence below are preserved as history, not the final batch verdict.
+Current status after PR26 merge: see the [accepted-candidate evidence and bounded next steps](full-quality-audit.md#accepted-pr26-verification-and-remaining-gates). The narrower review, intermediate fixes and pending-verification statements below are preserved as history, not the current batch verdict. PR26 P1/P8/package closure does not close PF-3 or native acceptance.
 
 Date: 2026-10-18 UTC. This index preserves the [earlier post-merge audit](post-merge-audit.md) and its historical evidence. It does not establish exhaustive audit coverage or completion of the original acceptance plan.
 

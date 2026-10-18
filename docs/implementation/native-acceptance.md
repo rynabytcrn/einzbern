@@ -4,6 +4,60 @@ The code and Linux fixture receipts do not establish the state of a user's Mac, 
 capabilities, account usage, or a second synced device. Perform these checks only after reviewing
 the final PR and the exact candidate archive. Do not replace these steps with old receipts.
 
+## Mac acceptance preparation and approval boundary
+
+Preparation status after PR26 merge: **not exercised on a real Mac**. The accepted
+source head is `081a924a09bf1a1a2e438f6910b64f5d212c0a8d`; merge
+`a32bbc60551e3d1caf7f19ebfe7e4034309f5e29` has the same tree. Retained P1/P8 and
+isolated installation/setup/doctor receipts are summarized in the
+[accepted-candidate index](full-quality-audit.md#accepted-pr26-verification-and-remaining-gates).
+They are not permission to install, publish, modify a live library or change account access.
+
+Use this sequence before the detailed acceptance below:
+
+1. **Identify without changing state.** Confirm the intended Mac, host, library and
+   registered project scope with the Owner. First collect a read-only baseline of the
+   current engine identity/install inventory, library identity and health, configured
+   hosts and policy revisions, and project settings. Record unavailable observations as
+   unavailable. Inspect command behavior before use; if a check may repair, refresh,
+   install hooks or write a cache, do not treat it as read-only or run it on the live
+   library at this stage.
+2. **Bind the exact package.** The retained 081a924a archive SHA-256 is
+   `4ff29d6abdd5b28b051c995153265d8ec2c85c1d1c708e6d19dcb7e15aa5f23c`.
+   Verify downloaded bytes and read the exact package manifest for version and
+   install-tree digest. Stop on a mismatch or missing identity. A later rebuild or
+   documentation commit must not silently inherit this archive's receipts.
+3. **Prepare recovery before applying anything.** With authorization for the backup
+   destination, preserve and verify the previous engine installation, original library
+   and event history. Keep the only recovery copy intact. Record how the previous
+   installation will be selected and how backup integrity was checked; do not assume
+   rollback also reverses new history or that an older engine reads new setting keys.
+4. **Use a disposable target first.** Review the setup plan and exercise the candidate
+   against an isolated fixture or an explicitly authorized disposable library copy,
+   with separate target bindings that cannot reach the live library, project outputs or
+   sync folder. Do not register a copied library as a second live instance. Inspect the
+   plan's complete write targets before applying it. Stop on unexpected writes or
+   incomplete recovery evidence rather than bypassing refusal guards.
+5. **Obtain the live-operation approvals.** Before real installation/setup, identify the
+   exact package, target device/library and planned writes to the Owner. A model-policy
+   write additionally requires the actual current Owner decision and actor described
+   below, followed by exact readback; do not substitute fixture values or obsolete
+   model availability assumptions. Host permissions, credential/access changes, real
+   dispatch and cloud-sync/relocation writes require their applicable explicit approval.
+   Documentation approval alone grants none of these operations.
+6. **Retain a minimal receipt.** Record candidate identity, UTC time, target alias,
+   command, exit status and passed/failed/not-exercised outcome for each approved step.
+   Keep raw evidence private and review any exported report for sensitive values.
+   Never include credentials, tokens, private library contents or unneeded account
+   details in reports. A refusal or uncertain mutation outcome requires readback and
+   review, not an automatic retry. Stop when approval, a required input or safe recovery
+   is missing; list that blocker rather than claiming acceptance.
+
+This preparation does not schedule another full CI run. Formal PF-2/PF-3 evidence
+must first be reconciled with its original method and final candidate as described
+below. Cloud sync and representative-scale performance remain separate deployment
+checks, not prerequisites to declaring the already completed source repair merged.
+
 ## Candidate and rollback
 
 1. Record the final commit, archive SHA-256, install-tree digest and version from the reviewed

@@ -1,6 +1,6 @@
 # Consolidated source-quality audit and repair scope
 
-Date: 2026-10-18 UTC. This index supersedes the current-scope interpretation of the [post-PR25 index](post-pr25-audit.md), while preserving its historical receipts. The agreed source review completed before the consolidated repair batch began. Repair integration and final verification remain in progress; this is not final acceptance or a claim that every original obligation is complete.
+Date: 2026-10-18 UTC. This index supersedes the current-scope interpretation of the [post-PR25 index](post-pr25-audit.md), while preserving its historical receipts. The agreed source review completed before the consolidated repair batch began. PR26 repair integration and its accepted-candidate P1/P8/package verification are complete and merged; see the exact evidence identities below. This is not native acceptance, full PF-2/PF-3 closure or a claim that every original obligation is complete.
 
 ## Source-review coverage and limits
 
@@ -36,10 +36,24 @@ New refusals should expose the actual malformed input, unavailable observation o
 
 Explicit-ID coordination selection versus global uniqueness and the forward-slash UNC/privacy-heuristic ambiguity remain contract decisions, not automatic fixes. Supplied preverified publication evidence remains an offline consistency contract, not independent authentication. Deprecated host/dispatch/DSH features are not revived to clear an old backlog.
 
-## Verification status and remaining gates
+## Accepted PR26 verification and remaining gates
 
-Independent reviews identified and closed additional Portal malformed-response/pagination and closeout option-validation gaps. Source review and focused regression checks do not replace the final gates below. Focused checks are diagnostic evidence for their exact changing trees; their overlapping counts are not a final aggregate result. No current final-candidate P1, P8, extracted-package or formal H1 pass is claimed here.
+PR #26 merged on 2026-10-18 at 13:18:24 UTC as `a32bbc60551e3d1caf7f19ebfe7e4034309f5e29`. Its tree, `f20e70043baa65851aafced71f44a12a9ebbca49`, equals accepted head `081a924a09bf1a1a2e438f6910b64f5d212c0a8d`. Tree equality identifies the merged code; it does not relabel executions as runs on the merge commit or this later documentation closeout.
 
-After integration closes, freeze the exact candidate and retain its prescribed full P1/P8, package/install/setup/doctor and formal H1 identities, commands, streams, counts and hashes. The intermediate P8 failure on historical merge metadata remains historical failed evidence; adding a narrow reviewed-metadata classification does not itself establish a subsequent P8 pass. Earlier PR25 runs remain bound to their actual execution head, as recorded in the prior index.
+Independent reviews closed the Portal malformed-response/pagination and closeout option-validation gaps. The final P2/P3 pagination repair preserves distinct full canonical records, including legitimate unresolved versions, and streams the canonical list digest. Its sixteen focused regressions are diagnostic evidence, not an extra aggregate total.
 
-PF-3 still requires its reconciled original inputs/method, same-HEAD PF-2 receipt reuse, generation and consumer evidence without replacing immutable historical inventories. [Native acceptance](native-acceptance.md), private input availability, container-only post-install headings and publication authorization remain separate. Source-review closure and a future green repair candidate do not attest an unexercised device, account or synchronization service.
+Retained verification for **081a924a**:
+
+- P1 run `39126873193` in the upstream repository passed all twelve legs. Core recorded 270 test files and 2,345 tests: 2,343 passed, zero failed and two recorded pipe-truncation-condition skips. Skips are not passes. The 973-source identity inventory and original stream digests were checked.
+- Actual P8 and its strict consumer passed. The CI package matched the locally verified P8 archive, SHA-256 `4ff29d6abdd5b28b051c995153265d8ec2c85c1d1c708e6d19dcb7e15aa5f23c`; isolated installation/setup/doctor passed, including all eight doctor checks. This is not real Mac, live-library or native UI acceptance.
+- This final repair used one automatic integration CI run. The unrelated earlier 52-invocation package diagnostic and formal H1 were not repeated. Formal H1 run `39122349184` in the contributor fork belongs to historical candidate `d0985199caaa00fecd02d170bacf62f51cf47d0d`, not 081a924a. Ordinary P1 is not literal H1.
+
+The earlier P8 and P1 failures remain failed historical evidence; later success does not rewrite them. Focused checks overlap, and results from different heads must not be added or transferred. This documentation closeout records retained evidence; it does not run new tests, build a new package or attest the documentation commit as a newly executed candidate.
+
+## Bounded next steps
+
+1. Prepare [native Mac acceptance](native-acceptance.md#mac-acceptance-preparation-and-approval-boundary) with exact package identity, a read-only baseline, verified backup/rollback and disposable-copy checks before any separately authorized live write. Installation and publication are separate decisions; a candidate version is not a published release.
+2. Reconcile PF-3/U18 original private inputs and method before scheduling any missing formal evidence. PF-3 requires its specified same-HEAD PF-2 controller receipt, dry-run and actual generation, four current inventories and consumer evidence without replacing immutable historical inventories. Historical H1 or tree equality does not waive those requirements, and missing inputs are not a reason for unrelated full reruns.
+3. Before cloud-sync adoption, migrate shared declarations to portable references, configure each device's bindings and verify actual two-device alternating writes/merge behavior. Representative-scale performance remains unmeasured: the potential O(n²) concern is not a measured regression. Schedule that work against the intended deployment, not as an automatic broad audit restart.
+
+The contract decisions above, container-only post-install headings and release authorization remain separate. Source-review closure and green candidate receipts do not attest an unexercised device, account or synchronization service. Preserve the historical indexes and inventories; do not treat their older pending statements as current PR26 blockers.

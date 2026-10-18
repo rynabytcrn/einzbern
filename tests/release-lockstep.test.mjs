@@ -93,7 +93,7 @@ async function createRepos(name) {
   for (const directory of ["scripts", "portal", "skill"]) {
     await cp(join(REPOSITORY_ROOT, directory), join(engineRoot, directory), { recursive: true });
   }
-  for (const path of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "packages/core/src/names.ts"]) {
+  for (const path of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "packages/core/src/names.ts", "specs/dispatch-admission-evidence-v1.md"]) {
     await writeText(engineRoot, path, await readFile(join(REPOSITORY_ROOT, path), "utf8"));
   }
   await writeText(engineRoot, "packages/core/src/framework-version.ts", await readFile(join(REPOSITORY_ROOT, "packages/core/src/framework-version.ts"), "utf8"));
@@ -262,6 +262,9 @@ test("488-R1/R2/R4, MIN-235 D13: prepare aligns both repositories, keeps schema 
   const notices = readUstar(gunzipSync(archive)).find((entry) => entry.path === `einzbern-${NEXT_VERSION}/THIRD_PARTY_NOTICES.txt`);
   assert.ok(notices, "the prepared archive retains vendored runtime license notices");
   assert.deepEqual(notices.bytes, await readFile(join(REPOSITORY_ROOT, "THIRD_PARTY_NOTICES.txt")), "release preparation preserves the actual license notice bytes");
+  const dispatchFormat = readUstar(gunzipSync(archive)).find((entry) => entry.path === `einzbern-${NEXT_VERSION}/specs/dispatch-admission-evidence-v1.md`);
+  assert.ok(dispatchFormat, "the prepared archive includes the format required by its public dispatch evidence entry");
+  assert.deepEqual(dispatchFormat.bytes, await readFile(join(REPOSITORY_ROOT, "specs/dispatch-admission-evidence-v1.md")), "release preparation preserves the exact dispatch evidence format bytes");
   const checksum = await readFile(result.assets.checksum, "utf8");
   assert.equal(checksum, `${result.assets.sha256}  einzbern-${NEXT_VERSION}.tar.gz\n`);
   const p8 = await import(pathToFileURL(join(repos.engineRoot, "scripts/lib/p8-workflow-rc.mjs")).href);

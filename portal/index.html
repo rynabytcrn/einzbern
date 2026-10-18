@@ -4566,8 +4566,11 @@ const BOOT = __PORTAL_BOOT__;
       body = await response.json();
       if (body === null || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid response");
     } catch {
+      // Read callers own their unavailable view/receipt and cleanup in catch/finally.
+      // Preserve that contract without exposing raw transport errors or private URLs.
+      if ((request.method ?? "GET") === "GET") throw new Error("Unable to read the response.");
       // A lost write response does not establish whether the engine committed. Never retry it.
-      return answered({ ok: false, reasonCode: "PORTAL_RESPONSE_UNAVAILABLE", outcome: (request.method ?? "GET") === "GET" ? "unavailable" : "unknown", retrySafe: false }, target);
+      return answered({ ok: false, reasonCode: "PORTAL_RESPONSE_UNAVAILABLE", outcome: "unknown", retrySafe: false }, target);
     }
     const served = servedTargetOf(response);
     const read = (request.method ?? "GET") === "GET";

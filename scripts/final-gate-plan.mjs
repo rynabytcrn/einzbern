@@ -2749,7 +2749,6 @@ export async function executeSelectedRoots(plan, runner, { getInputs, currentInp
     rows.push(row);
     if (drifted) return { ...plan, executed: rows, blocked, invalidated: [...(plan.invalidated ?? []), { id: entry.id, evidenceId: entry.evidenceId ?? null, reasons: ["gate inputs changed while the root was running"] }], executable: false, executionPermission: "denied" };
   }
-  if (rows.some((row) => row.invalidated === true)) return { ...plan, executed: rows, blocked, executable: false, executionPermission: "denied" };
   const recorded = recordExecution(plan, rows, { blocked, rosterPath });
   return {
     ...recorded,

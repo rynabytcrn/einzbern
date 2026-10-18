@@ -11,7 +11,7 @@ import { initializeLibrary, createProject, createWork, setWorkspaceSetting } fro
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { resetRecallCache } from "../dist/build/packages/core/src/recall.js";
 
-async function prepareFixture({ execute, reject = false, role = "coordination" }) {
+async function prepareFixture({ execute, reject = false, role = "coordination", noRun = false }) {
   const source = await readFile(new URL("../packages/cli/src/index.ts", import.meta.url), "utf8");
   const start = source.indexOf("async function prepareGates(");
   const end = source.indexOf("\ntype GatesLibrary", start);
@@ -22,11 +22,24 @@ async function prepareFixture({ execute, reject = false, role = "coordination" }
   const prepare = runInNewContext(`${js}\nprepareGates`, {
     validateWorkspace: async () => state,
     chainIdentity: () => ({ role }),
-    acquireHeavySlot: async () => { calls.push("acquire"); return { release: () => calls.push("release") }; },
-    workGateTargets: async (_state, _values, run) => {
-      calls.push(run ? "execute" : "plan");
-      if (reject) throw new Error("fixture refusal");
+    HEAVY_SLOT_VARIABLE: "EINZBERN_HEAVY_SLOT",
+    acquireHeavySlot: async () => { calls.push("acquire"); return { token: "fixture-token", path: "/fixture/slot", release: () => calls.push("release") }; },
+    workGateTargets: async (_state, _values, run, executeRun) => {
+      calls.push("prepare");
+      if (run && role === "coordination" && !noRun) {
+        await executeRun({}, { env: { EINZBERN_PROJECT_CONTEXT: "fixture-context" } });
+        await executeRun({}, {});
+      }
       return role === "coordination" ? { ok: true } : null;
+    },
+    runGates: async (_plan, options) => {
+      if (options.env !== undefined) {
+        assert.equal(options.env.EINZBERN_HEAVY_SLOT, "fixture-token:/fixture/slot");
+        assert.equal(options.env.EINZBERN_PROJECT_CONTEXT, "fixture-context");
+      }
+      calls.push("execute");
+      if (reject) throw new Error("fixture refusal");
+      return {};
     },
     effectiveProjectState: async () => state,
     listValue: () => [], listGates: () => [], booleanValue: () => false,
@@ -39,18 +52,18 @@ async function prepareFixture({ execute, reject = false, role = "coordination" }
 test("coordination gate preparation holds a heavy slot through execution", async () => {
   const { calls, invoke } = await prepareFixture({ execute: true });
   await invoke();
-  assert.deepEqual(calls, ["acquire", "execute", "release"]);
+  assert.deepEqual(calls, ["prepare", "acquire", "execute", "execute", "release"]);
 });
 test("coordination gate preparation releases its slot on refusal", async () => {
   const { calls, invoke } = await prepareFixture({ execute: true, reject: true });
   await assert.rejects(invoke, /fixture refusal/u);
-  assert.deepEqual(calls, ["acquire", "execute", "release"]);
+  assert.deepEqual(calls, ["prepare", "acquire", "execute", "release"]);
 });
-test("read-only and single-project preparation do not take an execution slot", async () => {
-  for (const options of [{ execute: false }, { execute: true, role: "project" }]) {
+test("read-only, single-project and no-op coordination preparation do not take an execution slot", async () => {
+  for (const options of [{ execute: false }, { execute: true, role: "project" }, { execute: true, noRun: true }]) {
     const { calls, invoke } = await prepareFixture(options);
     await invoke();
-    assert.deepEqual(calls, [options.execute ? "execute" : "plan"]);
+    assert.deepEqual(calls, ["prepare"]);
   }
 });
 

@@ -39,9 +39,9 @@ test("reconciliation treats only missing prose as absent and does not leak raw e
   }
 });
 test("transport and JSON failures preserve unknown mutation outcome without retry",async()=>{
- for (const fetch of [async()=>{throw new Error('private');},async()=>({json:async()=>{throw new Error('private');}})]) {
+ for (const responseStub of [async()=>{throw new Error('private');},async()=>({json:async()=>{throw new Error('private');}})]) {
   let calls=0;
-  const api=extract(browser,'api',{pageTarget:()=>({epoch:1}),state:{},BOOT:{token:'fixture'},headerJson:JSON.stringify,fetch:async(...args)=>{calls++;return fetch(...args);},answered:(body)=>body});
+  const api=extract(browser,'api',{pageTarget:()=>({epoch:1}),state:{},BOOT:{token:'fixture'},headerJson:JSON.stringify,fetch:async(...args)=>{calls++;return responseStub(...args);},answered:(body)=>body});
   const result=await api('/api/variables',{method:'POST',body:'{}'}); assert.equal(result.outcome,'unknown'); assert.equal(result.retrySafe,false);assert.equal(calls,1);assert.ok(!JSON.stringify(result).includes('private'));
  }
 });
@@ -111,4 +111,13 @@ test("knowledge store disappearance after a page is not a green prefix",async()=
  let calls=0;
  const project=extract(server,'knowledgeProjection',{currentLibrary:()=>({libraryPath:'/fixture'}),readInstant:()=>'',cliResult:async()=>++calls===1?{ok:true,body:{total:2,records:[{id:'first'}]}}:{ok:true,body:{knowledgeStore:'absent',records:[],total:0}}});
  const result=await project();assert.equal(result.ok,false);assert.deepEqual(result.records,[]);assert.equal(calls,2);
+});
+
+test("GET transport failures reach existing reader catch handlers with sanitized diagnostics", async()=>{
+ for (const responseStub of [async()=>{throw new Error('PRIVATE URL');},async()=>({json:async()=>{throw new Error('PRIVATE BODY');}})]) {
+  let calls=0;
+  const api=extract(browser,'api',{pageTarget:()=>({epoch:1}),state:{},BOOT:{token:'fixture'},headerJson:JSON.stringify,fetch:async(...args)=>{calls++;return responseStub(...args);},answered:(body)=>body});
+  await assert.rejects(()=>api('/api/work'), error=>error.message==='Unable to read the response.');
+  assert.equal(calls,1);
+ }
 });

@@ -45,6 +45,12 @@ test('failed code-owned receipt remains a failed executed row, never green', asy
   const plan=buildDynamicGatePlan({roster,containment,inputs,changedFiles:['scripts/final-gate-plan.mjs'],dependencies:[],configuration:[],generated:[],environment:[],crossRepoChanges:[],candidateReady:true,executionPermission:true,operational:true,requireCompleteImpact:true,receiptAuthority:authority,gateInvocations:{'engine-release':invocation}});
   const result=await executeSelectedRoots(plan,entry=>issueGateReceipt(authority,{entry,result:{ok:false,status:1,stdout:'failure'},inputs,invocation}),{getInputs:()=>inputs,rosterPath});
   assert.equal(result.executable,false); assert.equal(result.executed.length,1); assert.equal(result.executed[0].status,'failed'); assert.equal(result.executed[0].ok,false); assert.notEqual(result.executed[0].reasonCode,'GATE_PLAN_TERMINAL_EVIDENCE_INVALID');
+  // Failure retention is not authority: a receipt from another issuer and a
+  // failed result with no immutable artifact retain the governed refusal.
+  const otherAuthority=createGateReceiptAuthority();
+  await assert.rejects(executeSelectedRoots(plan,entry=>issueGateReceipt(otherAuthority,{entry,result:{ok:false,status:1},inputs,invocation}),{getInputs:()=>inputs,rosterPath}),{reasonCode:'GATE_PLAN_TERMINAL_EVIDENCE_INVALID'});
+  await assert.rejects(executeSelectedRoots(plan,()=>({ok:false,status:'failed',exitCode:1,inputs}),{getInputs:()=>inputs,rosterPath}),{reasonCode:'GATE_PLAN_TERMINAL_EVIDENCE_INVALID'});
+
 });
 
 test('failed Git observation cannot become successful empty output', () => {

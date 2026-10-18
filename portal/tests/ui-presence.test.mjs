@@ -2369,7 +2369,8 @@ if (process.argv[2] === "work-list") {
         const failure = assertOnlyWorkFailed(broken, "PORTAL_READ_FAILED");
         const complete = JSON.parse(failure.querySelector("pre").textContent);
         assert.equal(complete.reasonCode, "PORTAL_READ_FAILED");
-        assert.equal(complete.error, "fetch failed");
+        assert.equal(complete.error, "Unable to read the response.");
+        assert.equal(JSON.stringify(complete).includes("fetch failed"), false, "raw transport details are not exposed");
         assert.ok(failure.querySelector(".tcrn-state-surface__description").textContent.length > 0);
       } finally { broken.child.kill(); }
     } finally { await rm(fixture.base, { recursive: true, force: true }); }
@@ -3992,7 +3993,11 @@ test("PR24 U3: failed write after Undo recovers a replacement draft without anot
     assert.equal(control("save").disabled, true);
     page.release({ error: new Error("PR24 isolated write failure") });
     await page.waitForSettled();
-    assert.match(page.document.querySelector("#receipt-raw").textContent, /PORTAL_MODEL_POLICY_WRITE_UNAVAILABLE/);
+    const receipt = JSON.parse(page.document.querySelector("#receipt-raw").textContent);
+    assert.equal(receipt.reasonCode, "PORTAL_RESPONSE_UNAVAILABLE");
+    assert.equal(receipt.outcome, "unknown", "a lost response cannot establish that the write failed to commit");
+    assert.equal(receipt.retrySafe, false);
+    assert.equal(JSON.stringify(receipt).includes("PR24 isolated write failure"), false);
     assert.equal(control("decision").value, "minutes:synthetic-replacement#D1");
     assert.equal(control("save").disabled, false, "settled failed write releases the replacement draft without an extra edit");
   } finally { page.release(); await closePage(page, fixture); }

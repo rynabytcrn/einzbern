@@ -25,7 +25,7 @@ function test(name, optionsOrBody, maybeBody) {
 
 import { coreExportedSymbols, inspectChainValidation, inspectLegacyPlatform as inspectPlatform } from "../scripts/platform-doctor.mjs";
 import { HOST_HOOK_FILE_HOSTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
-import { BRAND, DEVICE_HOME_ENTRIES, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
+import { BRAND, DEVICE_HOME_ENTRIES, DIRECTORY, INSTALL_MANIFEST, LEGACY_CONTROL_DIRECTORY, WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS } from "../dist/build/packages/protocol/src/index.js";
 
 const FIXTURE_COMMIT = "f".repeat(40);
@@ -38,13 +38,27 @@ async function fixture(context, { agents = "fixture\n", chain = true, git = fals
   await mkdir(root, { recursive: true });
   if (agents !== null) await writeFile(join(root, "AGENTS.md"), agents);
   if (claude !== null) await writeFile(join(root, "CLAUDE.md"), claude);
-  if (chain) await mkdir(join(root, ".tcrn-workspace", "cross-project", "workspace"), { recursive: true });
+  if (chain) {
+    const control = join(root, ".tcrn-workspace", "cross-project", "workspace", LEGACY_CONTROL_DIRECTORY);
+    await mkdir(control, { recursive: true });
+    await writeFile(join(control, "workspace.json"), JSON.stringify({ storageVersion: 2, segmentEventLimit: WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES }));
+  }
   if (git) {
     await mkdir(join(root, ".git"));
     if (whitelistGit) await writeFile(join(root, ".gitignore"), "/*\n!/AGENTS.md\n!/CLAUDE.md\n!/docs/\n");
   }
   return root;
 }
+
+test("missing legacy workspace metadata is a storage refusal, not a healthy fixture", async (context) => {
+  const root = await fixture(context);
+  await rm(join(root, ".tcrn-workspace", "cross-project", "workspace", LEGACY_CONTROL_DIRECTORY, "workspace.json"));
+  const result = await inspectPlatform(root, { includeInstallSurface: false });
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, "PLATFORM_WORKSPACE_STORAGE_BEHIND");
+  const storage = result.checks.find((entry) => entry.name === "workspaceStorageShape");
+  assert.equal(storage.partitions[0].error, "ENOENT");
+});
 
 test("a complete synthetic platform container is green", async (context) => {
   const root = await fixture(context);

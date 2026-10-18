@@ -139,7 +139,7 @@ export async function inspectChainValidation(root, options = {}) {
         workspace: relative(root, workspacePath),
         exitCode: 0,
         reasonCode: output?.reasonCode ?? "WORKSPACE_COMMAND_COMPLETED",
-        ...(output === null ? { outputValid: false } : {}),
+        outputValid: output !== null && typeof output === "object" && !Array.isArray(output) && output.ok !== false && ["CHAIN_VALIDATED", "WORKSPACE_COMMAND_COMPLETED"].includes(output.reasonCode),
       };
     } catch (error) {
       const output = parseCommandJson(error?.stdout) ?? parseCommandJson(error?.stderr);
@@ -153,7 +153,7 @@ export async function inspectChainValidation(root, options = {}) {
     }
   }));
   const durationMs = Number(process.hrtime.bigint() - started) / 1_000_000;
-  const failed = results.filter((result) => result.exitCode !== 0);
+  const failed = results.filter((result) => result.exitCode !== 0 || result.outputValid !== true);
   if (failed.length > 0) {
     return check("chainValidation", false, {
       reasonCode: "PLATFORM_CHAIN_VALIDATION_FAILED",
@@ -467,8 +467,9 @@ async function inspectWorkspaceStorageShape(root, options) {
     } catch (error) {
       // ENOENT is expected in synthetic test fixtures that do not create workspace.json.
       // Only treat as a failure if the file should exist (real platform).
-      if (error?.code === "ENOENT") {
-        return check("workspaceStorageShape", true, { comparable: false, reason: "no readable workspace metadata; storage shape is unknown (synthetic fixture)" });
+      if (error?.code === "ENOENT" && options.acceptanceHeadCommit !== undefined) {
+        partitions.push({ partition: entry.name, ok: true, comparable: false, reason: "no readable workspace metadata (synthetic fixture)" });
+        continue;
       }
       partitions.push({
         partition: entry.name,
@@ -1375,6 +1376,11 @@ function engineCapabilitySurfaceVerdict(installedCatalog, worktreeCatalog, sourc
   for (const verbName of commonVerbs) {
     const iCmd = installedMap.get(verbName);
     const wCmd = worktreeMap.get(verbName);
+    if (iCmd.availability !== wCmd.availability || iCmd.mutates !== wCmd.mutates) {
+      attributeDifferences.push({ verb: verbName, flag: null,
+        installed: { availability: iCmd.availability, mutates: iCmd.mutates },
+        worktree: { availability: wCmd.availability, mutates: wCmd.mutates } });
+    }
     const iFlags = new Set(iCmd.flags.map((f) => f.name));
     const wFlags = new Set(wCmd.flags.map((f) => f.name));
 
@@ -1457,7 +1463,7 @@ function engineCapabilitySurfaceVerdict(installedCatalog, worktreeCatalog, sourc
       })),
       installedDigest: installedDigest.slice(0, 12),
       worktreeDigest: worktreeDigest.slice(0, 12),
-      reason: "verb and flag names match, but some flag attributes differ (e.g., required, valueKind); neither copy is strictly ahead and this cannot be judged by the authority model",
+      reason: "verb and flag names match, but some command or flag attributes differ (availability, mutates, required, valueKind); neither copy is strictly ahead and this cannot be judged by the authority model",
       source,
     };
     return check("engineCapabilitySurface", true, verdict);
@@ -1633,7 +1639,7 @@ async function readFreshnessReceipt(path, maxAgeHours, kind) {
       ? receipt.ok === true && receipt.readbackVerified === true
       : receipt.ok === true && typeof receipt.snapshotSha256 === "string" && receipt.chainVersions !== undefined;
     return {
-      ok: ok && Number.isFinite(ageHours) && ageHours <= maxAgeHours,
+      ok: ok && Number.isFinite(ageHours) && ageHours >= 0 && ageHours <= maxAgeHours,
       latestAt: timestamp,
       ageHours,
       receiptOk: receipt.ok === true,

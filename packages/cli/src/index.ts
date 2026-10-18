@@ -1117,14 +1117,21 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
   };
 }
 
-// Work-target operations finish before single-project preparation. Keep the shared validation and
-// planning order here; only gates-run acquires a heavy slot after a single-project plan is ready.
+// Coordination execution occurs during preparation, so it holds its heavy slot here.
+// Single-project execution still acquires its slot after planning; read-only plans hold none.
 async function prepareGates(values: Readonly<Record<string, string>>, execute: boolean): Promise<
   | { readonly targets: Record<string, unknown> }
   | { readonly state: Awaited<ReturnType<typeof effectiveProjectState>>; readonly plan: Awaited<ReturnType<typeof planGates>> }
 > {
   const native = await validateWorkspace(values.workspace ?? "");
-  const targets = await workGateTargets(native, values, execute);
+  const slot = execute && chainIdentity(native)?.role === "coordination" && values["work-id"] !== undefined
+    ? await acquireHeavySlot({ command: "gates-run" }) : null;
+  let targets;
+  try {
+    targets = await workGateTargets(native, values, execute);
+  } finally {
+    slot?.release();
+  }
   if (targets !== null) return { targets };
   const state = await effectiveProjectState(native, values["project-id"]);
   const workIds = values["work-id"] === undefined ? [] : listValue(values["work-id"]);
@@ -3493,15 +3500,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // Epics with their goal, body and parent titles, every minutes record, and the cards.
     const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes, ...(decisions === "valid" ? {} : { decisions }) });
     const result = recall({
-      // One index per library, whatever path it is read at (TCRN-CROSS-STORY-469).
-      cacheKey: state.metadata.workspaceId,
+      // Library identity stays path-independent; project-specific corpus inputs must not share an index.
+      cacheKey: `${state.metadata.workspaceId}:${values["project-id"] ?? ""}`,
       // The storage checkpoint: the chain head the records were replayed from, and the
       // digests of the two knowledge answers they were read with. Any one moving is a
       // different corpus, and the index is rebuilt from the rows that actually changed.
       // A library's head is one digest over every stream's head, so it moves with any
       // entry of the version vector. An index of another status of decisions is another corpus
       // at the same head, and names that status (the cards' status is in their digest).
-      checkpoint: `${state.headEventHash}:${cards.digest}${decisions === "valid" ? "" : `:decisions=${decisions}`}`,
+      checkpoint: `${state.headEventHash}:${cards.digest}:scope-bytes=${scopeExcerptBytes}${decisions === "valid" ? "" : `:decisions=${decisions}`}`,
       documents: () => recallDocuments(inputs),
       query,
       tau,

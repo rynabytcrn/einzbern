@@ -457,7 +457,7 @@ export function isWorkSummary(value: unknown): boolean {
   if (value === null) {
     return true;
   }
-  return typeof value === "string" && value.length > 0 && Buffer.byteLength(value, "utf8") <= WORK_SUMMARY_MAX_BYTES;
+  return typeof value === "string" && value.isWellFormed() && value.length > 0 && Buffer.byteLength(value, "utf8") <= WORK_SUMMARY_MAX_BYTES;
 }
 
 function assertWorkRecordShape(record: WorkRecord): void {
@@ -516,9 +516,9 @@ function assertWorkRecordShape(record: WorkRecord): void {
   }
   if (current || summarised) {
     if (record.scopeDigest !== null && (typeof record.scopeDigest !== "string" || !/^[a-f0-9]{64}$/u.test(record.scopeDigest)) ||
-      (record.title !== null && typeof record.title !== "string") ||
+      (record.title !== null && (typeof record.title !== "string" || !record.title.isWellFormed())) ||
       (record.createdAt !== null && (typeof record.createdAt !== "string" || (() => { try { assertStrictInstant(record.createdAt); return false; } catch { return true; } })())) ||
-      !Array.isArray(record.labels) || record.labels.some((label) => typeof label !== "string") ||
+      !Array.isArray(record.labels) || record.labels.some((label) => typeof label !== "string" || !label.isWellFormed()) ||
       new Set(record.labels).size !== record.labels.length) {
       fail("RECORD_MALFORMED", String(record.id));
     }
@@ -829,27 +829,18 @@ export function validateWorkGraph(records: readonly WorkRecord[], registry: read
       }
     }
   }
-  const visiting = new Set<string>();
   const visited = new Set<string>();
-  function visit(record: WorkRecord): void {
-    if (visiting.has(record.id)) {
-      fail("GRAPH_CYCLE", record.id);
-    }
-    if (visited.has(record.id)) {
-      return;
-    }
-    visiting.add(record.id);
-    if (record.parentId !== null) {
-      const parent = byId.get(record.parentId);
-      if (parent) {
-        visit(parent);
-      }
-    }
-    visiting.delete(record.id);
-    visited.add(record.id);
-  }
   for (const record of records) {
-    visit(record);
+    const visiting = new Set<string>();
+    const path: string[] = [];
+    let current: WorkRecord | undefined = record;
+    while (current !== undefined && !visited.has(current.id)) {
+      if (visiting.has(current.id)) fail("GRAPH_CYCLE", current.id);
+      visiting.add(current.id);
+      path.push(current.id);
+      current = current.parentId === null ? undefined : byId.get(current.parentId);
+    }
+    for (const id of path) visited.add(id);
   }
   return deterministicWorkOrder(records);
 }
@@ -1045,6 +1036,7 @@ export function findStreamChainBreak(events: readonly EventRecord[], expected: S
     const broken = (kind: StreamChainBreakKind): StreamChainBreak => ({ kind, sequence, eventId });
     if (!isPlainObject(event)) return broken("fields");
     if (!isEventSchemaVersion(event.schemaVersion)) return broken("schemaVersion");
+    if (Object.keys(event).some((field) => !field.isWellFormed())) return broken("fields");
     const fields = Object.keys(event).sort(compareCanonicalText).join("\0");
     if (fields !== [...eventRecordFields(event.schemaVersion)].sort(compareCanonicalText).join("\0")) return broken("fields");
     if (event.sequence !== sequence) return broken("sequence");
@@ -1137,7 +1129,7 @@ export function assertExchangePath(path: unknown): asserts path is string {
     fail("RECORD_MALFORMED", "Exchange path must be a string");
   }
   canonicalStringLength(path);
-  if (path.startsWith("/") || path.includes("\\") || path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+  if (path.startsWith("/") || /^[A-Za-z]:/u.test(path) || path.includes("\\") || path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
     fail("PATH_ESCAPE", path);
   }
 }

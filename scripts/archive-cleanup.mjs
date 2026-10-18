@@ -59,8 +59,13 @@ export async function applyArchiveCleanup(archiveRoot, baseline) {
   const current = await archiveBaseline(archiveRoot);
   if (JSON.stringify(current) !== JSON.stringify(baseline)) throw new Error("ARCHIVE_BASELINE_CHANGED");
   const root = resolve(archiveRoot);
-  for (const name of APPROVED_ARCHIVE_DELETIONS) await rm(resolve(root, name), { recursive: true, force: false });
   const snapshots = resolve(root, "chain-snapshots");
+  // Validate the survivor before the first destructive operation, including unrelated entries.
+  const directory = await lstat(snapshots);
+  if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error("ARCHIVE_RETAINED_SNAPSHOT_INVALID");
+  const retained = await lstat(resolve(snapshots, LATEST_CHAIN_SNAPSHOT)).catch(() => null);
+  if (!retained?.isFile() || retained.isSymbolicLink()) throw new Error("ARCHIVE_RETAINED_SNAPSHOT_INVALID");
+  for (const name of APPROVED_ARCHIVE_DELETIONS) await rm(resolve(root, name), { recursive: true, force: false });
   for (const entry of await readdir(snapshots, { withFileTypes: true })) {
     if (entry.name !== LATEST_CHAIN_SNAPSHOT) await rm(resolve(snapshots, entry.name), { recursive: true, force: false });
   }

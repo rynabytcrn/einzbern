@@ -751,9 +751,13 @@ export function normalizePrivacyText(content) {
 // 72ae480e is the web merge of PR #10 (TCRN-CROSS-STORY-548), authored with the account's primary
 // address and committed by GitHub's web-flow identity. 440f297d is the web merge of PR #13, authored
 // under the account's profile name and committed by the same web-flow identity (TCRN-CROSS-MIN-281
-// D1); from then on pull requests are merged locally under the noreply identity, so no further
-// web-merge commit is added here.
+// D1). PR #24 and PR #25 carry noreply identities; their public merge subjects
+// repeat upstream and fork owner logins. Only the exact reviewed subjects are classified below.
 const REVIEWED_COMMIT_IDENTITY_LINES = new Set([
+  // PR #25 public fork merge subject; classification is also exact under fork-origin scanning.
+  "c653cc387e72fdcba55370676d7246cd8d2efacd\u0000de825bf72a84bbb476cb6557f6bc9fed6f7c8ea8e81acaf635e32fa20ffc98cb",
+  // PR #24 public merge subject, independently reviewed; all other lines remain scanned.
+  "b543cd4365fc388f1d217b8caecace24cf2836f1\u0000de36be9877b705c41d86e3aed18fc252925f93aebd432e8a789746f0a2a23751",
   "72ae480e5ce142db481ecc65bccbdd3abe129643\u00006044624858c9b74e081c24d084d4cf0b24e2ecdbedc07a401a0e0621c4703d94",
   "72ae480e5ce142db481ecc65bccbdd3abe129643\u00006ed6143fe0d2c0750b9cc4f94dff13095b84105b7ca8ca175ca91ff62f3b8497",
   "440f297d0f42c14714fea2063ec660f0017f4809\u0000a5cc6c26eb0ef10142478ed9dc7d381292d778114ca7ab4cb8dde4a5a20423a8",

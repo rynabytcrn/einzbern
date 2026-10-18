@@ -40,7 +40,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
@@ -104,7 +104,7 @@ function parseArguments(argv) {
 
 function inside(parent, child) {
   const path = relative(parent, child);
-  return path === "" || (!path.startsWith("..") && !path.startsWith(sep) && path !== "..");
+  return path === "" || (!path.startsWith(`..${sep}`) && !isAbsolute(path) && path !== "..");
 }
 
 async function readState(layout, source) {
@@ -243,7 +243,7 @@ export async function recordCorpus(options) {
   // reason code the card read produced is recorded rather than swallowed.
   let knowledge;
   try {
-    knowledge = await listKnowledgeMetadata(options.source, { at: options.at, allowTrailing: true, includeExplicitOnly: true });
+    knowledge = await listKnowledgeMetadata(options.source, { at: options.at, limit: Number.MAX_SAFE_INTEGER, allowTrailing: true, includeExplicitOnly: true });
   } catch (error) {
     if (typeof error?.reasonCode !== "string") throw error;
     knowledge = { reasonCode: error.reasonCode, resultDigest: "absent", records: [] };

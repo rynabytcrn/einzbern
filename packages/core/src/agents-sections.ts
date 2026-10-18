@@ -77,6 +77,7 @@ import { BUILT_IN_RULES, builtInRule, ruleBody } from "./rules-catalog.js";
 import {
   VARIABLES_CUSTOM_SECTION_ID,
   VARIABLES_SYSTEM_SECTION_ID,
+  recordWithheldCustomVariablesAsPending,
   renderCustomVariablesSection,
   renderSystemVariablesSection,
 } from "./variables-sections.js";
@@ -851,12 +852,12 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
       const agents = agentsFileSections(state, input.navigation);
       const plans = [
         // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.
-        orderRuleSections(await planManagedWrite({
+        recordWithheldCustomVariablesAsPending(orderRuleSections(await planManagedWrite({
           filePath: join(input.projectRoot, AGENTS_FILE),
           file: AGENTS_FILE,
           desired: agents.sections.map((section) => ({ id: section.id, body: section.body })),
           records: managedSectionRecordsFor(state, AGENTS_FILE),
-        }), ruleOrders(state)),
+        }), ruleOrders(state)), state, renderCustomVariablesSection(state).withheld),
         await planClaudeImport(input.projectRoot, managedSectionRecordsFor(state, CLAUDE_FILE)),
       ];
       const decisions = plans.flatMap((plan) => plan.sections.map((decision) => ({ plan, decision })));

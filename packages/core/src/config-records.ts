@@ -242,6 +242,8 @@ export interface ConfigRecordRemoveInput {
 export function setConfigRecordDelta(input: ConfigRecordSetInput): (state: WorkspaceState) => MutationDelta {
   assertConfigRecordCollection(input.collection);
   assertConfigRecordKey(input.key);
+  // Admission only: historical chain records retain their original replay validator.
+  if (input.collection === "chain" && input.key === "identity" && typeof (input.value as Record<string, unknown> | null)?.role !== "string") fail("CONFIG_RECORD_VALUE_INVALID", "chain identity role must be a string");
   const record: ConfigRecord = { collection: input.collection, key: input.key, ...(input.projectId === undefined ? {} : { projectId: input.projectId }), value: checkConfigRecordValue(input.collection, input.key, input.value) };
   return (state) => {
     projectLineage(state, input.projectId);

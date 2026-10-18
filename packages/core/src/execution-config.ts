@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { assertProtocolId, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
+import { assertProtocolId, assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import {
   EMPTY_PERSONA_STORE,
   PersonaStoreError,
@@ -409,32 +409,61 @@ export function validateExecutionConfigState(value: unknown): ExecutionConfigSta
     fail("EXECUTION_RECORD_INVALID", "execution config state must be an object");
   }
   const candidate = value as { configurations?: unknown; defaults?: unknown; bindings?: unknown; personas?: unknown; modelPlans?: unknown; personaOverrides?: unknown; personaTombstones?: unknown };
-  const configurations = Array.isArray(candidate.configurations) ? candidate.configurations : [];
-  const defaults = Array.isArray(candidate.defaults) ? candidate.defaults : [];
-  const bindings = Array.isArray(candidate.bindings) ? candidate.bindings : [];
-  const personas = validatePersonaStoreState({ personas: Array.isArray(candidate.personas) ? candidate.personas : [] });
-  const modelPlans = validateModelPlanState(Array.isArray(candidate.modelPlans) ? candidate.modelPlans : []);
-  const personaOverrides = Array.isArray(candidate.personaOverrides) ? candidate.personaOverrides.map(validatePersonaPresetOverride) : [];
-  const personaTombstones = Array.isArray(candidate.personaTombstones) && candidate.personaTombstones.every((entry) => typeof entry === "string")
-    ? [...new Set(candidate.personaTombstones as string[])].sort(compareCanonicalText)
-    : [];
+  const collection = (key: keyof typeof candidate): unknown[] => {
+    const entries = candidate[key];
+    if (entries === undefined) return [];
+    if (!Array.isArray(entries)) fail("EXECUTION_RECORD_INVALID", `${key} must be an array`);
+    return entries;
+  };
+  const configurations = collection("configurations");
+  const defaults = collection("defaults");
+  const bindings = collection("bindings");
+  const personas = validatePersonaStoreState({ personas: collection("personas") });
+  const modelPlans = validateModelPlanState(collection("modelPlans"));
+  const personaOverrides = collection("personaOverrides").map(validatePersonaPresetOverride);
+  const tombstones = collection("personaTombstones");
+  if (!tombstones.every((entry) => typeof entry === "string")) fail("EXECUTION_RECORD_INVALID", "persona tombstones must be strings");
+  const personaTombstones = [...new Set(tombstones as string[])].sort(compareCanonicalText);
+  const shape = (entry: unknown, fields: readonly string[]): Record<string, unknown> => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry) || Object.keys(entry).sort().join(",") !== [...fields].sort().join(",")) fail("EXECUTION_RECORD_INVALID", "execution record fields are not exact");
+    const record = entry as Record<string, unknown>;
+    if (typeof record.updatedAt !== "string") fail("EXECUTION_RECORD_INVALID", "execution updatedAt must be a string");
+    try { assertStrictInstant(record.updatedAt); } catch { fail("EXECUTION_RECORD_INVALID", "execution updatedAt is invalid"); }
+    return record;
+  };
+  const identities = new Set<string>();
   for (const entry of configurations) {
-    const record = entry as HostConfigurationRecord;
+    const record = shape(entry, ["schemaVersion", "host", "name", "model", "note", "revision", "updatedAt", "tombstone"]);
     assertExecutionHost(record.host);
     validateConfigurationName(record.name);
     validateModel(record.model);
     validateNote(record.note);
+    if (record.schemaVersion !== EXECUTION_CONFIG_VERSION || record.tombstone !== false || !Number.isSafeInteger(record.revision) || Number(record.revision) < 1) fail("EXECUTION_RECORD_INVALID", "execution record envelope is invalid");
+    const identity = JSON.stringify([record.host, record.name]);
+    if (identities.has(identity)) fail("EXECUTION_RECORD_INVALID", "duplicate configuration identity");
+    identities.add(identity);
   }
+  const defaultHosts = new Set<string>();
   for (const entry of defaults) {
-    const record = entry as HostDefaultRecord;
+    const record = shape(entry, ["host", "configurationName", "updatedAt"]);
     assertExecutionHost(record.host);
-    if (record.configurationName !== null) validateConfigurationName(record.configurationName);
+    if (defaultHosts.has(record.host)) fail("EXECUTION_RECORD_INVALID", "duplicate default host");
+    defaultHosts.add(record.host);
+    if (record.configurationName !== null) {
+      validateConfigurationName(record.configurationName);
+      if (!identities.has(JSON.stringify([record.host, record.configurationName]))) fail("EXECUTION_CONFIGURATION_UNKNOWN", "default configuration does not exist");
+    }
   }
+  const bindingIds = new Set<string>();
   for (const entry of bindings) {
-    const record = entry as PersonaBindingRecord;
+    const record = shape(entry, ["profileId", "host", "configurationName", "updatedAt"]);
     assertExecutionHost(record.host);
     validateConfigurationName(record.configurationName);
-    if (!personaExists(personas, record.profileId)) fail("EXECUTION_PERSONA_UNKNOWN", `no persona exists for ${record.profileId}`);
+    if (typeof record.profileId !== "string" || !personaExists(personas, record.profileId)) fail("EXECUTION_PERSONA_UNKNOWN", `no persona exists for ${String(record.profileId)}`);
+    if (!identities.has(JSON.stringify([record.host, record.configurationName]))) fail("EXECUTION_CONFIGURATION_UNKNOWN", "bound configuration does not exist");
+    const identity = JSON.stringify([record.host, record.profileId]);
+    if (bindingIds.has(identity)) fail("EXECUTION_RECORD_INVALID", "duplicate persona binding");
+    bindingIds.add(identity);
   }
   return {
     configurations: sortState(configurations as HostConfigurationRecord[]),

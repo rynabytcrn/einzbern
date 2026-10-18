@@ -8,7 +8,7 @@
 // the id it had, copies each old segment into this device's stream directory unchanged (checked
 // file by file against its SHA-256), and commits a stream manifest that keeps the old stream id
 // and event identities (identityScheme "legacy"), the old sequence and head, and a clock
-// high-water mark equal to the old event count (an old event's clock is its sequence). The new
+// high-water mark equal to the final event clock (old-schema clocks are their sequences). The new
 // library is then replayed and must hold the same events, head and records as the old chain.
 // This device's later events continue the same stream: the next sequence, a priorHash on the old
 // head, and einzbern.event.v1 while the old events stay tcrn.event.v1.
@@ -39,7 +39,7 @@ import type { Hash } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
-import { assertCanonicalJson, assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
+import { assertCanonicalJson, assertStrictInstant, canonicalJson, compareCanonicalText, eventClock, findStreamChainBreak } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import {
   STREAM_MANIFEST_FILE,
@@ -57,7 +57,7 @@ import type { KnowledgeStatusFilter } from "./knowledge-core.js";
 import { writeConfigProjection } from "./library-config.js";
 import { openLegacyWorkspace, replayLegacyWorkspace, validateLegacyChain } from "./legacy-workspace.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_EVENTS_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
-import { materializeLibrary } from "./workspace.js";
+import { legacyWorkspaceEventId, materializeLibrary } from "./workspace.js";
 import type { WorkspaceState } from "./workspace.js";
 import { FRAMEWORK_VERSION } from "./framework-version.js";
 
@@ -667,6 +667,15 @@ export async function importLegacyWorkspace(legacyRoot: string, target: string, 
   }
   const legacy = await openLegacyWorkspace(legacyRoot);
   const chain = validateLegacyChain(legacy);
+  const streamBreak = findStreamChainBreak(legacy.events, {
+    streamId: legacy.streamId,
+    eventId: (sequence) => legacyWorkspaceEventId(legacy.streamId, sequence),
+  });
+  if (streamBreak !== null) mismatch("legacy chain cannot be imported as a stream", {
+    sequence: String(streamBreak.sequence), break: streamBreak.kind,
+  });
+  const head = legacy.events.at(-1);
+  const clockHighWater = head === undefined ? 0 : eventClock(head);
   const legacyState = replayLegacyWorkspace(legacy);
   const records = recordsReport(legacyState);
   const knowledge = options.omitLegacyKnowledge === undefined ? await readLegacyKnowledge(legacy.root, options.createdAt) : null;
@@ -728,7 +737,7 @@ export async function importLegacyWorkspace(legacyRoot: string, target: string, 
         identityScheme: "legacy",
         sequence: chain.events,
         headEventHash: chain.headEventHash,
-        clockHighWater: chain.events,
+        clockHighWater,
         segments: streamSegments,
         engineVersion: FRAMEWORK_VERSION,
         formatVersion: LIBRARY_FORMAT_VERSION,

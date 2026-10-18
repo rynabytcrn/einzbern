@@ -158,7 +158,7 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
       }
       return;
     }
-    if (referencedId(member) === null) {
+    if (!isNonEmptyString(member.id) && !isNonEmptyString(member.externalKey)) {
       problems.push({ index, verb, rule: "reference-required", detail: "id or externalKey names the record to act on" });
     }
     if (verb === "work-transition") {
@@ -277,7 +277,10 @@ export async function applyWorkBatch(
     // because of a neighbour, so there is nothing consequential to separate out.
     throw new WorkspaceError("WORK_BATCH_REFUSED", JSON.stringify({ stage: "shape", problems }));
   }
-  const deltas = members.map((member) => deltaFor(member as Readonly<Record<string, unknown>>, options.occurredAt, options.actorId));
+  // Resolve member inputs inside its indexed delta, so normalization failures receive
+  // the same attribution as state-dependent refusals from appendEvents.
+  const deltas = members.map((member) => (state: WorkspaceState) =>
+    deltaFor(member as Readonly<Record<string, unknown>>, options.occurredAt, options.actorId)(state));
   try {
     return await appendEvents(workspaceRoot, deltas, options);
   } catch (error) {

@@ -291,15 +291,25 @@ async function install(options) {
   const temporary = join(options.home, `tmp-${randomBytes(8).toString("hex")}`);
   await mkdir(temporary, { recursive: true });
   let report;
+  let primary;
   try {
     const tree = await unpack(release, temporary);
     const updated = engineUpdate(tree, release, options.home, at);
     report = { version: release.version, installed: updated.installed, current: updated.current, launchers: await placeLaunchers(options.home, release.version) };
-  } finally {
+  } catch (error) {
+    primary = error;
+  }
+  try {
     const trash = join(options.home, TRASH_DIRECTORY);
     await mkdir(trash, { recursive: true });
     await rename(temporary, join(trash, `install-${at.replaceAll(":", "")}-${basename(temporary)}`));
+  } catch (cleanupError) {
+    const cleanupMessage = String(cleanupError?.message ?? cleanupError);
+    throw new InstallError(primary?.reasonCode ?? "INSTALL_INTERNAL_ERROR",
+      `${String(primary?.message ?? "installation completed but staging preservation failed")}; staging preservation failed: ${cleanupMessage}; retained staging: ${temporary}`,
+      { ...(primary?.details ?? {}), temporary, cleanupError: cleanupMessage });
   }
+  if (primary !== undefined) throw primary;
   return {
     ...report,
     archiveSha256: actual,

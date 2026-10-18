@@ -79,7 +79,13 @@ legs.push({
 // The fallback locale is the reference: it is the one the contract says every
 // other locale falls back to, so divergence is reported against it.
 const reference = table?.[fallbackLocale] ? fallbackLocale : portalLocales[0];
-const allKeys = [...new Set(Object.values(table ?? {}).flatMap((entry) => Object.keys(entry)))].sort();
+// Include literal consumer references, including keys missing from every locale.
+const consumerSource = await readFile(join(portalRoot, "index.html"), "utf8");
+const referencedKeys = [
+  ...[...consumerSource.matchAll(/\bt\(\s*["']([^"']+)["']\s*[,)]/gu)].map((match) => match[1]),
+  ...[...consumerSource.matchAll(/data-i18n(?:-placeholder|-aria-label)?=["']([^"']+)["']/gu)].map((match) => match[1]),
+].filter((key) => !key.includes("${"));
+const allKeys = [...new Set([...Object.values(table ?? {}).flatMap((entry) => Object.keys(entry)), ...referencedKeys])].sort();
 const coverageGaps = [];
 for (const locale of contractLocales) {
   const entries = table?.[locale] ?? {};

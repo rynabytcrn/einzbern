@@ -856,7 +856,7 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
   }
 
   private async readSegmentedIndex(segmentName: string, documents?: JsonValue[]): Promise<Readonly<Record<string, SegmentedKnowledgeBodyLocation>>> {
-    const value = assertCanonicalJson((await this.delegate.readKnowledgeBodyFile(segmentName.replace(".ndjson", ".idx"), 1_048_576)).toString("utf8"));
+    const value = assertCanonicalJson((await this.delegate.readKnowledgeBodyFile(segmentName.replace(".ndjson", ".idx"), RUNTIME_CAPACITY.bufferBytes)).toString("utf8"));
     if (!segmentedBodyObject(value) || value.schemaVersion !== "tcrn.knowledge-body-index.v1" || !segmentedBodyObject(value.entries)) {
       throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", `${segmentName} index`);
     }

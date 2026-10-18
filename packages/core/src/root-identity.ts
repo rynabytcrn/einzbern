@@ -80,8 +80,8 @@ export function assertDistinctRootShape(
       }
       const leftToRight = relative(leftIdentity, rightIdentity);
       const rightToLeft = relative(rightIdentity, leftIdentity);
-      const leftContainsRight = leftToRight !== "" && !leftToRight.startsWith("..") && !leftToRight.startsWith(sep);
-      const rightContainsLeft = rightToLeft !== "" && !rightToLeft.startsWith("..") && !rightToLeft.startsWith(sep);
+      const leftContainsRight = leftToRight !== "" && leftToRight !== ".." && !leftToRight.startsWith(`..${sep}`) && !isAbsolute(leftToRight);
+      const rightContainsLeft = rightToLeft !== "" && rightToLeft !== ".." && !rightToLeft.startsWith(`..${sep}`) && !isAbsolute(rightToLeft);
       if (leftContainsRight || rightContainsLeft) {
         fail("ROOT_PATH_CONTAINMENT", `${left.kind} and ${right.kind} overlap by containment`);
       }
@@ -180,8 +180,8 @@ export async function assertDistinctRoots(roots: readonly ExplicitRoot[]): Promi
       }
       const leftToRight = relative(left.portableIdentity, right.portableIdentity);
       const rightToLeft = relative(right.portableIdentity, left.portableIdentity);
-      const leftContainsRight = leftToRight !== "" && !leftToRight.startsWith("..") && !leftToRight.startsWith(sep);
-      const rightContainsLeft = rightToLeft !== "" && !rightToLeft.startsWith("..") && !rightToLeft.startsWith(sep);
+      const leftContainsRight = leftToRight !== "" && leftToRight !== ".." && !leftToRight.startsWith(`..${sep}`) && !isAbsolute(leftToRight);
+      const rightContainsLeft = rightToLeft !== "" && rightToLeft !== ".." && !rightToLeft.startsWith(`..${sep}`) && !isAbsolute(rightToLeft);
       if (leftContainsRight || rightContainsLeft) {
         fail("ROOT_PATH_CONTAINMENT", `${left.kind} and ${right.kind} overlap by containment`);
       }

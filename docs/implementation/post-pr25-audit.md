@@ -1,5 +1,7 @@
 # Post-PR25 audit status and bounded follow-on scope
 
+Current expanded scope: see the [consolidated source-audit and repair index](full-quality-audit.md). The narrower review, intermediate fixes and evidence below are preserved as history, not the final batch verdict.
+
 Date: 2026-10-18 UTC. This index preserves the [earlier post-merge audit](post-merge-audit.md) and its historical evidence. It does not establish exhaustive audit coverage or completion of the original acceptance plan.
 
 ## Accepted baseline and historical execution identities

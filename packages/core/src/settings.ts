@@ -981,7 +981,7 @@ export function createWorkspaceSettingRecord(
   if (entry.key.startsWith("models.") || entry.key.startsWith("quota.")) fail("SETTINGS_KEY_DEVICE_LEVEL", `${entry.key} is historical compatibility data; edit the device host policy instead`);
   // Shared declarations must be portable even when authored on a different platform.
   // Keep this admission check out of historical record validation and replay.
-  if (["workspace.generatedArtifactsPath", "knowledge.articlesPath"].includes(entry.key) && typeof value === "string" && (isAbsolute(value) || win32.isAbsolute(value))) fail("SETTINGS_VALUE_INVALID", `${entry.key} requires a portable relative path or binding:paths.artifacts / binding:paths.knowledgeArticles; keep absolute locations in machine settings`);
+  if (["workspace.generatedArtifactsPath", "knowledge.articlesPath"].includes(entry.key) && typeof value === "string" && (isAbsolute(value) || win32.isAbsolute(value) || /^[A-Za-z]:/u.test(value))) fail("SETTINGS_VALUE_INVALID", `${entry.key} requires a portable relative path or binding:paths.artifacts / binding:paths.knowledgeArticles; keep absolute locations in machine settings`);
   const normalizedValue = validateSettingValue(entry.key, value, workspaceRoot);
   return validateWorkspaceSettingRecord({
     schemaVersion: WORKSPACE_SETTING_VERSION,

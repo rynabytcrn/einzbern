@@ -4553,15 +4553,22 @@ const BOOT = __PORTAL_BOOT__;
   // moved to; the page says so above its pages and offers to switch back or to follow, and shows nothing
   // of the other target meanwhile. A write's answer always reaches its receipt.
   const api = async (path, options = {}) => {
-    const { anyTarget = false, retried = false, ...request } = options;
+    const { anyTarget = false, retried = false, target = pageTarget(), ...request } = options;
     if (path === "/api/settings" && request.method === "POST") {
       if (state.librarySwitching) return { ok: false, reasonCode: "PORTAL_LIBRARY_CHANGED" };
       const sent = JSON.parse(request.body);
       request.body = JSON.stringify({ ...sent, libraryId: BOOT.library?.libraryId, libraryPath: BOOT.library?.libraryPath });
     }
-    const headers = { ...(request.body === undefined ? {} : { "content-type": "application/json" }), "x-portal-token": BOOT.token, "x-configuration-target": headerJson(pageTarget()) };
-    const response = await fetch(path, { ...request, headers: { ...headers, ...(request.headers || {}) } });
-    const body = await response.json();
+    const headers = { ...(request.body === undefined ? {} : { "content-type": "application/json" }), "x-portal-token": BOOT.token, "x-configuration-target": headerJson(target) };
+    let response, body;
+    try {
+      response = await fetch(path, { ...request, headers: { ...headers, ...(request.headers || {}) } });
+      body = await response.json();
+      if (body === null || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid response");
+    } catch {
+      // A lost write response does not establish whether the engine committed. Never retry it.
+      return answered({ ok: false, reasonCode: "PORTAL_RESPONSE_UNAVAILABLE", outcome: (request.method ?? "GET") === "GET" ? "unavailable" : "unknown", retrySafe: false }, target);
+    }
     const served = servedTargetOf(response);
     const read = (request.method ?? "GET") === "GET";
     const dropped = () => answered({ ok: false, reasonCode: "PORTAL_ANSWER_DISCARDED", discarded: true, httpStatus: response.status }, served);
@@ -4613,12 +4620,12 @@ const BOOT = __PORTAL_BOOT__;
     feedback.dataset.operationState = success ? "ready" : "error";
     $("#receipt-operation-status").className = `tcrn-badge ${success ? "tcrn-badge--positive" : "tcrn-badge--danger"} tcrn-operation-feedback__status`;
     $("#receipt-operation-status").dataset.operationShortStatusPhase = phase;
-    setText("#receipt-operation-status-text", state.receipt.version ? `${success ? "✓" : "✕"}v${state.receipt.version}` : success ? t("receipt.saved") : `✕ ${t("receipt.failed")}`);
+    setText("#receipt-operation-status-text", state.receipt.version ? `${success ? "✓" : "✕"}v${state.receipt.version}` : success ? t("receipt.saved") : `✕ ${(state.receipt?.outcome === "unknown" ? t("receipt.unknown") : t("receipt.failed"))}`);
     const chip = $("#receipt-chip");
     chip.className = `tcrn-badge ${success ? "tcrn-badge--positive" : "tcrn-badge--danger"}`;
     const receiptTag = state.receipt.version
       ? `v${state.receipt.version}`
-      : success ? t("receipt.saved") : `✕ ${t("receipt.failed")}`;
+      : success ? t("receipt.saved") : `✕ ${(state.receipt?.outcome === "unknown" ? t("receipt.unknown") : t("receipt.failed"))}`;
     setText("#receipt-chip-text", state.receipt.version ? `${success ? "✓" : "✕"}${receiptTag}` : receiptTag);
     renderReceipt();
   };
@@ -4632,11 +4639,11 @@ const BOOT = __PORTAL_BOOT__;
     const operationStatus = $("#receipt-operation-status");
     operationStatus.className = `tcrn-badge ${success ? "tcrn-badge--positive" : "tcrn-badge--danger"} tcrn-operation-feedback__status`;
     operationStatus.dataset.operationShortStatusPhase = phase;
-    setText("#receipt-operation-status-text", state.receipt ? state.receipt.version ? `${success ? "✓" : "✕"}v${state.receipt.version}` : success ? t("receipt.saved") : `✕ ${t("receipt.failed")}` : t("chip.idle"));
+    setText("#receipt-operation-status-text", state.receipt ? state.receipt.version ? `${success ? "✓" : "✕"}v${state.receipt.version}` : success ? t("receipt.saved") : `✕ ${(state.receipt?.outcome === "unknown" ? t("receipt.unknown") : t("receipt.failed"))}` : t("chip.idle"));
     const hint = reasonHint(body.reasonCode);
     const message = $("#operation-message");
     message.hidden = !state.receipt || success;
-    message.textContent = hint || t("receipt.failureMessage");
+    message.textContent = body.rename?.partialCommit ? t("receipt.renamePartial") : hint || t("receipt.failureMessage");
     const fields = [["receipt.reasonCode", t("receipt.reasonCode"), body.reasonCode + (hint ? " — " + hint : "")], ["receipt.record", t("receipt.record"), recordValue(body)], ["receipt.version", t("receipt.version"), body.version ?? "—"], ["receipt.updatedAt", t("receipt.updatedAt"), body.updatedAt ?? "—"], ["receipt.digest", t("receipt.digest"), body.receiptDigest ?? "—"], ["receipt.head", t("receipt.head"), body.headEventHash ?? "—"], ["receipt.actor", t("receipt.actor"), body.actor ?? BOOT.actor], ...(body.error ? [["receipt.error", t("receipt.error"), body.error]] : [])];
     const identity = [["operation", t("receipt.operation"), body.operation ?? body.command], ["operation-id", t("receipt.operationId"), body.operationId ?? body.headEventHash], ["actor", t("receipt.actor"), body.actor ?? BOOT.actor], ["occurred-at", t("receipt.occurredAt"), body.updatedAt ?? body.occurredAt]].filter(([, , value]) => value !== undefined && value !== null && String(value).length > 0);
     $("#receipt-operation-identity").innerHTML = identity.map(([id, label, value]) => `<div class="tcrn-operation-feedback__identity-row" data-operation-identity-field="${esc(id)}"><dt>${esc(label)}</dt><dd class="tcrn-operation-feedback__identity-value">${["operation-id", "occurred-at"].includes(id) ? `<code>${esc(value)}</code>` : esc(value)}</dd></div>`).join("");
@@ -5894,11 +5901,23 @@ const BOOT = __PORTAL_BOOT__;
     }
     const order = String(values.order ?? "").trim();
     echo("variable-set", ["--name", name, "--type", values.type, "--value", values.value, ...(order === "" ? [] : ["--order", order])]);
-    let result = await api("/api/variables", { method: "POST", body: JSON.stringify(values) });
-    let committed = result.ok !== false || result.mutation !== undefined;
+    const target = pageTarget();
+    const committedReceipt = (receipt, expectedName, removed = false) => receipt?.schemaVersion === "einzbern.variable-write-receipt.v1"
+      && receipt.reasonCode === "VARIABLE_WRITE_COMMITTED" && receipt.persistence === "committed"
+      && receipt.workspaceId === target.libraryId && receipt.recordId === expectedName
+      && Number.isSafeInteger(receipt.version) && receipt.version >= 0 && typeof receipt.headEventHash === "string"
+      && (removed ? receipt.variable === null : receipt.variable?.name === expectedName);
+    const normalize = (answer, expectedName, removed = false) => {
+      if (committedReceipt(answer?.mutation ?? answer, expectedName, removed)) return answer;
+      if (answer?.ok === false && typeof answer.reasonCode === "string" && answer.mutation === undefined) return answer;
+      return { ok: false, reasonCode: "PORTAL_RESPONSE_UNAVAILABLE", outcome: "unknown", retrySafe: false };
+    };
+    let result = await api("/api/variables", { method: "POST", body: JSON.stringify(values), target });
+    result = normalize(result, name);
+    let committed = committedReceipt(result.mutation ?? result, name);
     if (committed && previousName !== null && name !== previousName) {
-      const removed = await api("/api/variables", { method: "DELETE", body: JSON.stringify({ name: previousName }) });
-      result = removed.ok === false ? { ...removed, ok: false, rename: { created: result, removed } } : { ...removed, rename: { created: result, removed } };
+      const removed = normalize(await api("/api/variables", { method: "DELETE", body: JSON.stringify({ name: previousName }), target }), previousName, true);
+      result = removed.ok === false ? { ...removed, ok: false, rename: { target, partialCommit: true, created: result, removed } } : { ...removed, rename: { created: result, removed } };
       committed = true;
     }
     showReceipt(result);
@@ -6100,6 +6119,7 @@ const BOOT = __PORTAL_BOOT__;
     return `<div class="tcrn-search-result-list__item" role="listitem" data-knowledge-id="${esc(record.id)}" data-knowledge-status="removed"><div class="tcrn-document-canvas__section"><strong>${esc(record.subject || record.externalKey || record.id)}</strong><span class="tcrn-text">${esc(t("knowledge.removalBasis"))}: ${esc(removal.basis ?? "—")}</span><span class="tcrn-label-set"><code>${esc(record.id)}</code>${statusBadge(t("knowledge.statusRemoved"), "danger")}<span class="tcrn-text">${esc(removalReasonLabel(removal.reason))}</span><span class="tcrn-text">${esc(removedBy)}</span></span>${successor}</div></div>`;
   };
   const renderKnowledgeView = () => {
+    const focus = rememberFocus($("#knowledge-view-content"));
     const data = state.knowledge;
     const records = Array.isArray(data?.records) ? data.records : [];
     const filter = state.knowledgeQuery.trim().toLocaleLowerCase();
@@ -6124,7 +6144,7 @@ const BOOT = __PORTAL_BOOT__;
     if (storeAbsent) {
       $("#knowledge-view-content").innerHTML = `${filterField}<section class="tcrn-state-surface tcrn-state-surface--neutral" data-tone="neutral" data-state-surface-kind="empty" data-knowledge-store="absent"><h3 class="tcrn-heading tcrn-heading--3 tcrn-state-surface__title">${esc(t("knowledge.storeAbsentTitle"))}</h3><p class="tcrn-text tcrn-state-surface__description">${esc(t("knowledge.storeAbsentBody"))}</p></section>${bodyReader}`;
     } else if (visibleRecords.length === 0) {
-      $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-state-surface">${esc(records.length === 0 ? (data?.listing?.ok === false ? t("config.readUnavailable") : t("dashboard.knowledgeEmpty")) : t("knowledge.noMatches"))}</div>${bodyReader}`;
+      $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-state-surface">${esc(records.length === 0 ? (data?.ok === false || data?.listing?.ok === false ? t("config.readUnavailable") : t("dashboard.knowledgeEmpty")) : t("knowledge.noMatches"))}</div>${bodyReader}`;
     } else {
       $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-search-result-list" role="list">${visibleRecords.map((record) => {
       if (record.status === "removed") return removedKnowledgeRow(record);
@@ -6139,6 +6159,7 @@ const BOOT = __PORTAL_BOOT__;
       return `<div class="tcrn-search-result-list__item" role="listitem" data-knowledge-id="${esc(record.id)}"><div class="tcrn-document-canvas__section"><strong>${esc(record.subject || record.externalKey || record.id)}</strong><span class="tcrn-text">${esc(record.summary || t("dashboard.missingSummary"))}</span><span class="tcrn-label-set"><code>${esc(record.id)}</code><span class="tcrn-badge">${esc(record.kind || "—")}</span>${statusBadge(label, retired ? "danger" : "positive")}<span class="tcrn-text">${esc(retirement)}</span></span><span class="tcrn-text">${esc(sourceText)}</span></div>${readAction}</div>`;
       }).join("")}</div>${bodyReader}`;
     }
+    restoreFocus($("#knowledge-view-content"), focus);
     $("#knowledge-filter")?.addEventListener("input", (event) => {
       state.knowledgeQuery = event.target.value;
       renderKnowledgeView();
@@ -6480,6 +6501,7 @@ const BOOT = __PORTAL_BOOT__;
       button.disabled = true;
       echo("rule-enable", ["--id", id]);
       const result = await api(`/api/rules/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ action: "enable" }) });
+      button.disabled = false;
       showReceipt(result);
       if (result.ok && result.rules) await loadAgents();
       else { renderProseDirectory(); renderPending(); }
@@ -6504,11 +6526,11 @@ const BOOT = __PORTAL_BOOT__;
       return `<li class="${finding ? `tcrn-line-numbered-editor__line--${tone}` : ""}" data-editor-line-finding="${finding ? "true" : "false"}">${index + 1}</li>`;
     }).join("");
   };
-  const focusLine = (line) => { const editor = $("#agents-md"); const before = lineFromText(editor.value).slice(0, Math.max(0, line - 1)).join("\n"); editor.focus(); editor.setSelectionRange(before.length, before.length + (lineFromText(editor.value)[line - 1] || "").length); };
+  const focusLine = (line) => { const editor = $("#agents-md"); const before = lineFromText(editor.value).slice(0, Math.max(0, line - 1)).join("\n"); editor.focus(); const start = before.length + (line > 1 ? 1 : 0); editor.setSelectionRange(start, start + (lineFromText(editor.value)[line - 1] || "").length); };
   const renderReconciliation = (result) => {
     state.reconciliation = result;
     const chip = $("#reconcile-chip"); chip.className = `tcrn-badge ${result.ok ? "tcrn-badge--positive" : "tcrn-badge--warning"}`; chip.textContent = result.ok ? t("reconcile.green") : `${result.findings?.length || result.mismatchCount || 0} ${t("reconcile.findings")}`;
-    $("#reconcile-findings").innerHTML = result.findings?.length ? result.findings.map((finding) => `<li class="tcrn-line-numbered-editor__finding--${finding.tone === "danger" ? "danger" : "warning"}" data-editor-finding-line="${esc(finding.line)}"><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-finding-link" data-ui="prose-finding-link" data-prose-line="${esc(finding.line)}"><span class="tcrn-dot" aria-hidden="true"></span><span>${esc(finding.file)}:${esc(finding.line)}</span><span class="tcrn-machine-token tcrn-machine-token--compact tcrn-machine-token--key"><span class="tcrn-machine-token__value">${esc(finding.token || finding.key)}</span></span><span>${esc(finding.kind)}</span></button></li>`).join("") : `<li class="tcrn-text">${esc(t("reconcile.green"))}</li>`;
+    $("#reconcile-findings").innerHTML = result.findings?.length ? result.findings.map((finding) => `<li class="tcrn-line-numbered-editor__finding--${finding.tone === "danger" ? "danger" : "warning"}" data-editor-finding-line="${esc(finding.line)}"><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-finding-link" data-ui="prose-finding-link" data-prose-line="${esc(finding.line)}"><span class="tcrn-dot" aria-hidden="true"></span><span>${esc(finding.file)}:${esc(finding.line)}</span><span class="tcrn-machine-token tcrn-machine-token--compact tcrn-machine-token--key"><span class="tcrn-machine-token__value">${esc(finding.token || finding.key)}</span></span><span>${esc(finding.kind)}</span></button></li>`).join("") : `<li class="tcrn-text">${esc(t(result.ok ? "reconcile.green" : "app.readUnavailable"))}</li>`;
     renderGutter();
     $$('[data-prose-line]', $("#reconcile-findings")).forEach((button) => button.addEventListener("click", () => focusLine(Number(button.dataset.proseLine))));
   };
@@ -6704,6 +6726,7 @@ const BOOT = __PORTAL_BOOT__;
     echo("work-release", ["--id", id, "--force", "true"]);
     button.disabled = true;
     const result = await api("/api/work/lease-release", { method: "POST", body: JSON.stringify({ id }) });
+    button.disabled = false;
     showReceipt(result);
     await refreshWork();
   });
@@ -6795,6 +6818,7 @@ const BOOT = __PORTAL_BOOT__;
       button.disabled = true;
       echo("library-unregister", ["--project", projectPath]);
       const result = await api("/api/libraries/unregister", { method: "POST", body: JSON.stringify({ projectPath }) });
+      button.disabled = false;
       showReceipt(result);
       state.unregisterPlan = result.ok ? result : null;
       renderRegistry();
@@ -6804,6 +6828,7 @@ const BOOT = __PORTAL_BOOT__;
       button.disabled = true;
       echo("library-unregister", ["--project", projectPath, "--yes", "true"]);
       const result = await api("/api/libraries/unregister", { method: "POST", body: JSON.stringify({ projectPath, confirm: true }) });
+      button.disabled = false;
       showReceipt(result);
       state.unregisterPlan = null;
       if (result.ok) { state.registry = result.libraries || []; state.registryPaths = result.paths || []; loadLibraries(state.registry); }
@@ -6876,6 +6901,7 @@ const BOOT = __PORTAL_BOOT__;
       button.disabled = true;
       echo("work-gate-release", ["--id", id, "--reason", reason]);
       const result = await api("/api/migrated-gates/release", { method: "POST", body: JSON.stringify({ id, reason }) });
+      button.disabled = false;
       showReceipt(result);
       state.gateReleaseConfirm = null;
       if (result.ok) { delete reasons[id]; await refreshMigratedGates(); } else renderMigratedGates();
@@ -6982,6 +7008,7 @@ const BOOT = __PORTAL_BOOT__;
     echo(action === "approve" ? "proposal-approve" : "proposal-reject", ["--key", key]);
     button.disabled = true;
     const result = await api(`/api/proposals/${encodeURIComponent(key)}`, { method: "POST", body: JSON.stringify({ action, proposedAt: button.dataset.proposedAt }) });
+    button.disabled = false;
     showReceipt(result);
     if (key.startsWith("gate:")) await refreshGates();
     else await loadAgents();

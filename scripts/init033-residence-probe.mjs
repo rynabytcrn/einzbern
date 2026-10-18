@@ -107,9 +107,9 @@ try {
   const projectCodexProbe = probes.find((probe) => probe.label === "codex project feature list");
   probes.push(await run("codex user feature list", "codex", ["-C", project, "features", "list"], project, { CODEX_HOME: codexHome }));
   const userCodexProbe = probes.find((probe) => probe.label === "codex user feature list");
-  const rootHooksFalseObserved = rootCodexProbe?.stdout.includes("hooks                                stable             false") ?? false;
-  const projectHooksFalseObserved = projectCodexProbe?.stdout.includes("hooks                                stable             false") ?? false;
-  const userHooksFalseObserved = userCodexProbe?.stdout.includes("hooks                                stable             false") ?? false;
+  const rootHooksFalseObserved = rootCodexProbe?.exitCode === 0 && rootCodexProbe?.stdout.includes("hooks                                stable             false");
+  const projectHooksFalseObserved = projectCodexProbe?.exitCode === 0 && projectCodexProbe?.stdout.includes("hooks                                stable             false");
+  const userHooksFalseObserved = userCodexProbe?.exitCode === 0 && userCodexProbe?.stdout.includes("hooks                                stable             false");
   process.stdout.write(`${JSON.stringify({
     schemaVersion: "tcrn.init033.residence-probe.v1",
     fixture: {
@@ -121,9 +121,9 @@ try {
     hostVersions,
     probes,
     conclusions: {
-      claudeSettingsDeny: "host surface accepted by doctor; deny behavior not observed because no model session was opened",
-      claudeHooks: "host surface accepted by doctor; hook firing not observed because no model session was opened",
-      claudeMcp: "effective in child project: project .mcp.json is visible and pending approval",
+      claudeSettingsDeny: probes.some((p) => p.label === "claude settings doctor" && p.exitCode === 0) ? "doctor completed; deny behavior not observed without a model session" : "not observed: doctor unavailable or failed",
+      claudeHooks: probes.some((p) => p.label === "claude settings doctor" && p.exitCode === 0) ? "doctor completed; hook firing not observed without a model session" : "not observed: doctor unavailable or failed",
+      claudeMcp: probes.some((p) => p.label === "claude project MCP get" && p.exitCode === 0 && p.stdout.includes("init033Fixture")) ? "fixture MCP entry observed; approval and execution not established" : "not observed",
       codexConfig: userHooksFalseObserved
         ? `effective only from CODEX_HOME/config.toml; container-root .codex=${rootHooksFalseObserved ? "observed" : "not observed"}, project .codex=${projectHooksFalseObserved ? "observed" : "not observed"}`
         : "not observed",

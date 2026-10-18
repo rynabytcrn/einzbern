@@ -1,3 +1,4 @@
+import { StringDecoder } from "node:string_decoder";
 // SPDX-License-Identifier: Apache-2.0
 // STORY-373: one-shot, no-shell host model probe. The host owns credentials and
 // output semantics; this module only returns a bounded observation.
@@ -84,25 +85,19 @@ function defaultExecutable(selectedHost: HostProbeHost, env: NodeJS.ProcessEnv):
   return "claude";
 }
 
-function text(value: Buffer, state: { bytes: number; truncated: boolean }): void {
-  state.bytes += value.byteLength;
-  if (state.bytes > HOST_PROBE_OUTPUT_BYTES) state.truncated = true;
+function appendBounded(chunks: Buffer[], value: Buffer, state: { bytes: number; truncated: boolean }): void {
+  const remaining = HOST_PROBE_OUTPUT_BYTES - state.bytes;
+  if (remaining <= 0) { if (value.byteLength > 0) state.truncated = true; return; }
+  chunks.push(value.subarray(0, remaining));
+  state.bytes += Math.min(value.byteLength, remaining);
+  if (value.byteLength > remaining) state.truncated = true;
 }
 
-function appendBounded(chunks: string[], value: Buffer, state: { bytes: number; truncated: boolean }): void {
-  if (state.truncated && state.bytes > HOST_PROBE_OUTPUT_BYTES) return;
-  const remaining = HOST_PROBE_OUTPUT_BYTES - state.bytes;
-  if (value.byteLength <= remaining) {
-    chunks.push(value.toString("utf8"));
-    state.bytes += value.byteLength;
-    return;
-  }
-  if (remaining > 0) {
-    let end = remaining;
-    while (end > 0 && (value[end]! & 0xc0) === 0x80) end -= 1;
-    chunks.push(value.subarray(0, end).toString("utf8"));
-  }
-  text(value, state);
+function decodeBounded(chunks: Buffer[], truncated: boolean): string {
+  const decoder = new StringDecoder("utf8");
+  const value = decoder.write(Buffer.concat(chunks));
+  // A byte cap may cut a code point. Omit that incomplete tail, not an invented replacement.
+  return value + (truncated ? "" : decoder.end());
 }
 
 function terminate(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
@@ -142,8 +137,8 @@ export async function probeHost(input: {
     fail("HOST_PROBE_EXECUTABLE_INVALID", "executable must be non-empty well-formed text");
   }
   const command = [executable, ...args];
-  const stdoutChunks: string[] = [];
-  const stderrChunks: string[] = [];
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
   const stdoutState = { bytes: 0, truncated: false };
   const stderrState = { bytes: 0, truncated: false };
   return new Promise((resolve) => {
@@ -155,11 +150,13 @@ export async function probeHost(input: {
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
       const truncated = stdoutState.truncated || stderrState.truncated;
+      const stdout = decodeBounded(stdoutChunks, stdoutState.truncated);
+      const stderr = decodeBounded(stderrChunks, stderrState.truncated);
       const reasonCode = timedOut
         ? "HOST_PROBE_TIMEOUT"
         : spawnFailure
           ? "HOST_PROBE_CLI_UNAVAILABLE"
-          : reasonFor(exitCode, stderrChunks.join(""), truncated);
+          : reasonFor(exitCode, stderr, truncated);
       resolve({
         schemaVersion: "tcrn.host-probe.v1",
         host: selectedHost,
@@ -170,8 +167,8 @@ export async function probeHost(input: {
         availability,
         exitCode,
         signal,
-        stdout: stdoutChunks.join(""),
-        stderr: stderrChunks.join(""),
+        stdout,
+        stderr,
         stdoutTruncated: stdoutState.truncated,
         stderrTruncated: stderrState.truncated,
         timedOut,

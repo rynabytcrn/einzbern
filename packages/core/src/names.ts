@@ -53,14 +53,15 @@ export interface DirectoryGlossaryEntry {
 
 // The plain explanation of each directory name, in the order a reader meets them.
 export const DIRECTORY_GLOSSARY: readonly DirectoryGlossaryEntry[] = [
-  { name: `${DIRECTORY.library}/`, plain: "库：一个项目的全部记录所在的目录，可以放在项目里，也可以放在云盘里。" },
-  { name: `${DIRECTORY.library}/manifest.json`, plain: "库清单：库 id、格式版本、最低引擎版本与项目提示；只在建库、格式变更与迁移时写。" },
-  { name: `${DIRECTORY.library}/${DIRECTORY.events}/`, plain: "事件真值：每台设备只追加自己子目录里的事件流，读取时合并全部设备的流。" },
-  { name: `${DIRECTORY.library}/${DIRECTORY.knowledge}/`, plain: "知识库：知识卡与文章。" },
-  { name: `${DIRECTORY.library}/${DIRECTORY.projectConfig}/`, plain: "项目级配置的投影：随库同步；真值是事件，这里只是便于阅读的副本。" },
-  { name: `${DIRECTORY.library}/${DIRECTORY.artifacts}/`, plain: "产物库：按内容哈希存放的大文件。" },
-  { name: `~/${DIRECTORY.device}/`, plain: "设备目录：本机的设备身份、库注册表、缓存、备份与已装引擎版本；不随库同步。" },
-  { name: `<云盘>/${DIRECTORY.cloudDefaultParent}/<项目名>/`, plain: "库放进云盘时的默认位置。" },
+  { name: `${DIRECTORY.cloudDefaultParent}/`, plain: "共享总库：多个项目在同一个库内按项目身份区分；文件夹名称为 Ether，父目录由用户选择。" },
+  { name: `${DIRECTORY.cloudDefaultParent}/manifest.json`, plain: "库清单：库 id、格式版本、最低引擎版本与项目提示；只在建库、格式变更与迁移时写。" },
+  { name: `${DIRECTORY.cloudDefaultParent}/${DIRECTORY.events}/`, plain: "事件真值：每台设备只追加自己子目录里的事件流，读取时合并全部设备的流。" },
+  { name: `${DIRECTORY.cloudDefaultParent}/${DIRECTORY.knowledge}/`, plain: "知识库：知识卡与文章，保留各自的项目作用域。" },
+  { name: `${DIRECTORY.cloudDefaultParent}/${DIRECTORY.projectConfig}/`, plain: "项目级配置的投影：真值是事件，这里只是便于阅读的副本。" },
+  { name: `${DIRECTORY.cloudDefaultParent}/${DIRECTORY.artifacts}/`, plain: "产物库：按内容哈希存放的大文件，以及原生迁移保存的历史与证据。" },
+  { name: `${DIRECTORY.cloudDefaultParent}/${DIRECTORY.device}/<设备id>/`, plain: "设备运行数据：cache、locks、backups；每台设备使用自己的子目录，不共享设备身份或写锁。" },
+  { name: `~/${DIRECTORY.device}/`, plain: "设备目录：本机的设备身份、库注册表、宿主配置、存储指向与已装引擎版本；留在本机。" },
+  { name: `${DIRECTORY.library}/`, plain: "旧版项目库名称；已有库仍可通过注册表或显式路径使用。" },
 ];
 
 export const SCHEMA_NAMESPACE = "einzbern." as const;
@@ -188,9 +189,11 @@ export function renderLibraryReadme(): string {
   const brands = Object.values(BRAND).map((entry) => `| ${entry.name} | ${entry.plain} |`);
   const directories = DIRECTORY_GLOSSARY.map((entry) => `| \`${entry.name}\` | ${entry.plain} |`);
   return [
-    `# ${BRAND.engine.name} 库（${DIRECTORY.library}）`,
+    `# ${DIRECTORY.cloudDefaultParent} 共享总库（${BRAND.engine.name}）`,
     "",
-    `这个目录是一个 ${BRAND.engine.name} 库：一个项目的工单、纪要、知识与产物都记在这里。每台设备只追加 \`${DIRECTORY.events}/\` 下以自己设备 id 命名的子目录，读取时合并全部设备的记录，所以放进云盘同步也不会出现两台设备改同一个文件。`,
+    `这里保存 ${BRAND.engine.name} 的工单、纪要、知识、配置与产物。多个项目在同一个共享总库内按项目身份区分，不为每个项目另建一套目录。每台设备只追加 \`${DIRECTORY.events}/\` 下以自己设备 id 命名的事件流，读取时合并全部设备的记录。`,
+    "",
+    `\`${DIRECTORY.cloudDefaultParent}\` 是文件夹名称，父目录由用户选择，可以是本地磁盘、外接磁盘或同步文件夹。安装向导的 \`--artifacts\` 接受库的完整路径；所选位置保存在本机配置中，后续项目默认复用它。云同步选项记录所选位置的属性，不限制位置。`,
     "",
     `这里的文件只由引擎写入，请不要手工编辑；要查看或修改记录，用 \`${BRAND.engine.id}\` 命令或 ${BRAND.portal.name} 门户。`,
     "",
@@ -200,8 +203,8 @@ export function renderLibraryReadme(): string {
     "| --- | --- |",
     ...brands,
     ...directories,
-    `| \`${DIRECTORY.library}/README.md\` | 本说明。 |`,
-    `| \`${DIRECTORY.library}/.gitignore\` | 内容为 \`*\`：库放在 Git 仓里时，git status 看不到它。 |`,
+    `| \`${DIRECTORY.cloudDefaultParent}/README.md\` | 本说明。 |`,
+    `| \`${DIRECTORY.cloudDefaultParent}/.gitignore\` | 内容为 \`*\`：库放在 Git 仓里时，git status 看不到它。 |`,
     "",
     "## 旧名对照",
     "",

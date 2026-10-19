@@ -29,7 +29,7 @@ runtime dependencies<br><sub>a single zero-dependency file, no database, no netw
 <td align="center" width="33%">
 
 ### 3
-hosts, one memory<br><sub>Claude Code, Codex and DeepSeek Harness read the same .ether</sub>
+hosts, one memory<br><sub>Claude Code, Codex and DeepSeek Harness read the same Ether</sub>
 
 </td>
 </tr>
@@ -54,7 +54,7 @@ The Grail is a wish machine: make a wish, get a result. Wish machines share one 
 
 Einzbern follows that. It enforces exactly two things: a work item must state its goal, and it must state what counts as done. How it is written, split, and carried out is up to the model. Einzbern stays out of it.
 
-Work items, knowledge, minutes, and variables are the mana flowing through this machine. They are fixed in place in a folder in your project called `.ether`, after ether, the medium that lets mana take a fixed form in the real world. The model draws from it before every prompt and writes back to it when work is done.
+Work items, knowledge, minutes, and variables are the mana flowing through this machine. They are fixed in place in one shared library at your chosen location called `Ether`, after ether, the medium that lets mana take a fixed form in the real world. The model draws from it before every prompt and writes back to it when work is done.
 
 ## What it remembers
 
@@ -101,7 +101,7 @@ Most memory solutions are a vector store or a stack of notes: they save fragment
 |---|---|---|
 | A decision and how it came about | A similar chat fragment | Numbered minutes; work items and cards point to them by number |
 | How far a piece of work has got | Nothing | Four levels of work items; relations are fields: what blocks what, what supersedes what, which minutes decided it |
-| Switching hosts | Each keeps its own | Claude Code, Codex and DeepSeek Harness read the same .ether |
+| Switching hosts | Each keeps its own | Claude Code, Codex and DeepSeek Harness read the same Ether |
 | Switching devices | Manual sync, or none | Put it in a cloud folder; one stream per device; simultaneous writes never conflict |
 | Looking and changing | Open files | Atelier: variables, rules, gate configuration and store state on one page; changes render into AGENTS.md at once |
 | How the model works | Not the plugin's concern | Not policed; seven principles, off by default, chosen per project |
@@ -121,7 +121,7 @@ npx skills add tpmoonchefryan/mana-orchestrate
 
 Or tell your host: find a skill called Mana Orchestrate and install it.
 
-Then, in the project directory, say: install Einzbern. The wizard asks one screen of questions: fresh install or restore from an existing `.ether`, where the artifacts go, whether that folder is cloud-synced, which language, and whether to write a navigation section into AGENTS.md. It then lists every file it is about to write, and you confirm once. Update, repair, migrate from the previous version, uninstall, and health check are modes of the same wizard.
+Then, in the project directory, say: install Einzbern. The wizard asks one screen of questions: fresh install or restore from an existing `Ether`, where the artifacts go, whether that folder is cloud-synced, which language, and whether to write a navigation section into AGENTS.md. It then lists every file it is about to write, and you confirm once. Update, repair, migrate from the previous version, uninstall, and health check are modes of the same wizard.
 
 It does not commit, push, edit your .gitignore, or delete anything, and it touches the network only to download the engine.
 
@@ -145,13 +145,13 @@ There are seven built-in principles, called Command Spells, the commands a Serva
 
 ## Several devices and cloud folders
 
-`.ether` can live in a synced folder such as OneDrive or iCloud. Each device writes only its own record stream, and reads merge all streams. Two devices can write at the same time: no locks, nobody waits. If both devices change the same work item, the later change is recorded as rejected: not lost, not silently overwritten. Indexes and snapshots stay on the local machine; only the records themselves are in the cloud. The engine does not encrypt; the security of your cloud account is on your side.
+`Ether` is the name of the shared-library folder. You choose its parent: a local disk, an external disk, or a synced folder such as OneDrive or iCloud. Projects remain distinct by identity inside one library, and later projects reuse the selected location by default. Events live in `akasha/<device-id>/`; caches, write locks and backups live in `Ether/.einzbern/<device-id>/`, separately for each device. Device identity, registry, host configuration and installed engines remain local in `~/.einzbern/`. Existing `.ether` libraries remain compatible.
 
 ## How we use it ourselves
 
 This is how Einzbern develops itself, and the usage we suggest. You can adopt any one layer alone.
 
-**Two conversations.** A design conversation on the flagship tier discusses direction with you, records decisions as minutes, and splits the work into Initiative, Epic and Story in .ether. An implementation conversation on the main tier reads the Stories from .ether and writes no code: it dispatches, records, runs gates and reports.
+**Two conversations.** A design conversation on the flagship tier discusses direction with you, records decisions as minutes, and splits the work into Initiative, Epic and Story in Ether. An implementation conversation on the main tier reads the Stories from Ether and writes no code: it dispatches, records, runs gates and reports.
 
 **One batch at a time.** The implementation conversation sends one economy-tier subagent to split every Story of the Initiative into Subtasks at once, each naming the files it touches and what it depends on. Then it packages by dependency and file overlap: related Subtasks go into one package in order, unrelated ones into packages of their own. Each package gets one economy-tier subagent working in its own git worktree, in parallel, retired when the package is done. When all packages are done, one integration subagent merges them in dependency order; gates run once and acceptance happens once at the end of the batch, and defects are reworked as a batch.
 
@@ -222,15 +222,15 @@ Parallelism by itself saves no tokens; it only changes how fast they are spent. 
 |---|---|---|
 | Einzbern | The engine: the program that holds records and performs retrieval and recording | The body of the Grail |
 | Mana Orchestrate | The skill that brings Einzbern into the host: tells the model when to call which engine feature, and carries the install wizard | Mana, the greater source of magical energy; here, memory in circulation |
-| Ether | The artifacts directory `.ether` | Ether, the medium that lets mana take a fixed form in the real world |
-| Akasha | `.ether/akasha/`, the append-only event record from which every derived state is rebuilt | Akasha, the Root, where every record resides |
-| Crest | `.ether/crest/`, the knowledge store; the project-level and user-level stores share the name | The Magic Crest, craft inherited across generations |
+| Ether | The artifacts directory `Ether` | Ether, the medium that lets mana take a fixed form in the real world |
+| Akasha | `Ether/akasha/`, the append-only event record from which every derived state is rebuilt | Akasha, the Root, where every record resides |
+| Crest | `Ether/crest/`, the knowledge store; the project-level and user-level stores share the name | The Magic Crest, craft inherited across generations |
 | Command Spell | The seven built-in principles, off by default, enabled by choice | Command Spells, the commands a Servant cannot refuse |
 | Atelier | The local management page | A magus's workshop |
 
 ## Full documentation
 
-Wiki: concepts and glossary, the install wizard, the `.ether` layout, several devices and cloud folders, the principles in full, migrating from TCRN Workflow, CLI reference.
+Wiki: concepts and glossary, the install wizard, the `Ether` layout, several devices and cloud folders, the principles in full, migrating from TCRN Workflow, CLI reference.
 
 ## License
 

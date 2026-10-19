@@ -87,7 +87,7 @@ test("466-R5: the README explains every name and carries the alias table names.t
   const end = readme.indexOf(ALIAS_TABLE_END_MARKER);
   assert.ok(start >= 0 && end > start);
   assert.deepEqual(readme.slice(start + ALIAS_TABLE_START_MARKER.length, end).trim().split("\n"), [...renderLegacyAliasTable()]);
-  for (const name of ["Einzbern", "Atelier", "`.ether/`", "`.ether/akasha/`", "`.ether/crest/`", "`.ether/config/`", "`.ether/artifacts/`", "`.ether/manifest.json`", "`.ether/.gitignore`"]) {
+  for (const name of ["Einzbern", "Atelier", "`Ether/`", "`Ether/akasha/`", "`Ether/crest/`", "`Ether/config/`", "`Ether/artifacts/`", "`Ether/manifest.json`", "`Ether/.gitignore`"]) {
     assert.ok(readme.includes(name), `the README explains ${name}`);
   }
   assert.ok(!readme.includes("\r"), "LF only");

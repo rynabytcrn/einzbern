@@ -74,7 +74,7 @@ test("470-R2: Linux has no cloud folder convention and suggests nothing", () => 
   }
 });
 
-test("470-R2: a project's library defaults to <cloud root>/Ether/<project name>", () => {
+test("470-R2: a shared library is named Ether under the selected parent", () => {
   assert.equal(defaultCloudLibraryPath("/Users/owner/Library/CloudStorage/OneDrive-Personal", "Einzbern", "darwin"), "/Users/owner/Library/CloudStorage/OneDrive-Personal/Ether");
   assert.equal(defaultCloudLibraryPath("C:\\Users\\owner\\OneDrive", "Einzbern", "win32"), "C:\\Users\\owner\\OneDrive\\Ether");
 });

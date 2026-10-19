@@ -2,9 +2,8 @@
 
 A format-3 library may hold coordination and development projects together. Its global chain
 identity has role `shared`; each existing project's identity, settings and configuration retain
-explicit project scope. No directory name implies a project binding. The default fresh location
-is the device's `library/`, outside the source repository, or the shared location that
-`storage-configure` records. Fresh setup reuses a shared library and declares a separate project.
+explicit project scope. No directory name implies a project binding. The default folder name is `Ether`. The user chooses its parent on any filesystem;
+`storage-configure` records the selected location on this device. Fresh setup reuses a shared library and declares a separate project.
 An explicit location remains an explicit choice. Engine 3.0.0, which reads through format 2,
 refuses the new format before taking a write lock.
 
@@ -48,3 +47,10 @@ persistent device pointer. Forwarding directory links preserve historical eviden
 keeping another data copy. Device identity, credentials, registry, engine installations and host
 model policies remain device-local. A runtime directory belongs to one device; devices do not
 share a write lock or identity through cloud sync. The local pointer is not a cloud-sync receipt.
+
+The shared root retains `akasha/`, `crest/`, `config/` and `artifacts/`. Device runtime
+uses `Ether/.einzbern/<device-id>/` and is excluded from library snapshots and record
+relocation. Device identities, registries, host policies and installed engines remain local.
+`storage-consolidate` plans and applies verified library/runtime relocation, preserves
+source receipts and evidence, and retires only the exact verified old roots.
+`library-readme-refresh` archives the previous generated README before replacing it.

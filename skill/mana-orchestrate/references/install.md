@@ -34,9 +34,10 @@ only the questions the plan reports as open, offer the plan's suggestion as the 
 never ask again for an answer the user already gave, and never guess an answer.
 
 1. Library location. The shared library holds the projects' records under their stable project identities.
-   The default is this device's persistent shared-library location, or `<device directory>/library`
-   for a first installation. It is outside the source tree and reused by subsequent projects.
-   A cloud-drive directory or another explicit location may be selected.
+   The folder is named `Ether`; the user chooses its parent on any filesystem. The plan suggests
+   the saved shared-library location, or `Ether` next to the device directory on a first install.
+   `--artifacts` selects the complete library path. Subsequent projects reuse that location;
+   cloud-provider detection does not constrain it.
    Flag: `--artifacts <library path>`.
 2. Cloud drive. Is the library's folder synced by a cloud drive? The plan suggests an answer from
    the location. Flag: `--cloud true` or `--cloud false`.

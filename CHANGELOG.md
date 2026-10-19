@@ -5,6 +5,17 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 3.0.5
+
+Local installation candidate; this version has not been tagged or published.
+
+- Use the established `Ether` folder name at a user-selected parent, independently
+  of cloud-provider detection. Persist the chosen shared location for later projects.
+- Keep runtime data under `Ether/.einzbern/<device-id>/`, with device identity and
+  installations remaining local. Preserve legacy libraries and verify relocation
+  before retiring old roots.
+- Update README naming and layout after installation and migration acceptance.
+
 ## 3.0.4
 
 Local installation candidate; this version has not been tagged or published.

@@ -579,6 +579,10 @@ test("a user-chosen local parent creates one Ether and later projects reuse its 
   const first = await applySetup(await plan(f, { artifacts: library, cloud: false }));
   assertSelfCheckGreen(first);
   assert.equal(first.library.path, library);
+  const readme = await readFile(join(library, "README.md"), "utf8");
+  assert.ok(readme.includes("Ether/akasha/"));
+  assert.ok(readme.includes("父目录由用户选择"));
+  assert.equal(readme.includes("<云盘>/Ether/<项目名>"), false);
   assert.equal(chainIdentity(await materializeWorkspace(library)).role, "shared");
   assert.equal(readStorageLocation(f.deviceHome).library, library);
   const second = { ...f, project: join(f.base, "second source") };

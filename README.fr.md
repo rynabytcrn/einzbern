@@ -29,7 +29,7 @@ dépendance à l'exécution<br><sub>un seul fichier sans dépendance, ni base de
 <td align="center" width="33%">
 
 ### 3
-hôtes, une mémoire<br><sub>Claude Code, Codex et DeepSeek Harness lisent le même .ether</sub>
+hôtes, une mémoire<br><sub>Claude Code, Codex et DeepSeek Harness lisent le même Ether</sub>
 
 </td>
 </tr>
@@ -54,7 +54,7 @@ Le Graal est une machine à vœux : on formule un vœu, on obtient un résultat.
 
 Einzbern suit ce principe. Il n'impose que deux choses : un élément de travail doit énoncer son objectif, et ce qui compte comme terminé. Comment l'écrire, le découper, le mener, c'est au modèle d'en décider selon sa propre logique. Einzbern ne s'en mêle pas.
 
-Éléments de travail, connaissances, comptes rendus et variables sont le mana qui circule dans cette machine. Ils sont fixés dans un dossier de votre projet nommé `.ether`, d'après l'éther, le milieu qui permet au mana de prendre forme dans le monde réel. Le modèle y puise avant chaque prompt et y dépose ce qu'il a fait.
+Éléments de travail, connaissances, comptes rendus et variables sont le mana qui circule dans cette machine. Ils sont fixés dans une bibliothèque partagée à l’emplacement de votre choix, nommée `Ether`, d'après l'éther, le milieu qui permet au mana de prendre forme dans le monde réel. Le modèle y puise avant chaque prompt et y dépose ce qu'il a fait.
 
 ## Ce qu'il retient
 
@@ -101,7 +101,7 @@ La plupart des solutions de mémoire sont un magasin de vecteurs ou une pile de 
 |---|---|---|
 | Une décision et son origine | Un fragment de conversation similaire | Des comptes rendus numérotés ; éléments de travail et cartes pointent vers eux par numéro |
 | Où en est un travail | Rien | Quatre niveaux d'éléments ; les relations sont des champs : qui bloque quoi, qui remplace quoi, quel compte rendu l'a décidé |
-| Changer d'hôte | Chacun garde sa mémoire | Claude Code, Codex et DeepSeek Harness lisent le même .ether |
+| Changer d'hôte | Chacun garde sa mémoire | Claude Code, Codex et DeepSeek Harness lisent le même Ether |
 | Changer d'appareil | Synchronisation manuelle, ou aucune | Dans un dossier cloud ; un flux par appareil ; écrire en même temps ne crée aucun conflit |
 | Voir et changer | Ouvrir des fichiers | Atelier : variables, règles, configuration des portes et état du dépôt sur une seule page ; un changement est rendu aussitôt dans AGENTS.md |
 | La façon de travailler du modèle | Pas l'affaire du plugin | Non policée ; sept principes, désactivés par défaut, choisis projet par projet |
@@ -121,7 +121,7 @@ npx skills add tpmoonchefryan/mana-orchestrate
 
 Ou dites à votre hôte : trouve un skill nommé Mana Orchestrate et installe-le.
 
-Puis, dans le répertoire du projet, dites : installe Einzbern. L'assistant pose ses questions sur un seul écran : installation neuve ou restauration depuis un `.ether` existant, où placer les artefacts, si ce dossier est synchronisé dans le cloud, quelle langue, et s'il faut écrire une section de navigation dans AGENTS.md. Il liste ensuite chaque fichier qu'il s'apprête à écrire, et vous confirmez une seule fois. Mise à jour, réparation, migration depuis la version précédente, désinstallation et bilan de santé sont des modes du même assistant.
+Puis, dans le répertoire du projet, dites : installe Einzbern. L'assistant pose ses questions sur un seul écran : installation neuve ou restauration depuis un `Ether` existant, où placer les artefacts, si ce dossier est synchronisé dans le cloud, quelle langue, et s'il faut écrire une section de navigation dans AGENTS.md. Il liste ensuite chaque fichier qu'il s'apprête à écrire, et vous confirmez une seule fois. Mise à jour, réparation, migration depuis la version précédente, désinstallation et bilan de santé sont des modes du même assistant.
 
 Il ne commite pas, ne pousse pas, ne modifie pas votre .gitignore, ne supprime rien, et ne touche au réseau que pour télécharger le moteur.
 
@@ -145,13 +145,13 @@ Il y a sept principes intégrés, appelés Command Spells, les sceaux de command
 
 ## Plusieurs appareils et dossiers cloud
 
-`.ether` peut vivre dans un dossier synchronisé comme OneDrive ou iCloud. Chaque appareil n'écrit que dans son propre flux d'enregistrements, et la lecture fusionne tous les flux. Deux appareils peuvent écrire en même temps : pas de verrou, personne n'attend personne. Si les deux modifient le même élément de travail, la modification arrivée en second est enregistrée comme rejetée : ni perdue, ni écrasée en silence. Index et instantanés restent sur la machine locale ; le cloud ne contient que les enregistrements eux-mêmes. Le moteur ne chiffre pas ; la sécurité de votre compte cloud est de votre côté.
+`Ether` est le nom du dossier de la bibliothèque partagée. Vous choisissez son dossier parent : disque local, disque externe ou dossier synchronisé comme OneDrive ou iCloud. Les projets sont distingués par leur identité dans une seule bibliothèque ; les projets suivants réutilisent cet emplacement par défaut. Les événements sont dans `akasha/<id-appareil>/` ; caches, verrous et sauvegardes dans `Ether/.einzbern/<id-appareil>/`, séparément pour chaque appareil. Identité, registre, configuration des hôtes et moteurs installés restent en local dans `~/.einzbern/`. Les bibliothèques `.ether` existantes restent compatibles.
 
 ## Comment nous l'utilisons nous-mêmes
 
 C'est ainsi qu'Einzbern se développe lui-même, et c'est l'usage que nous suggérons. Vous pouvez n'en adopter qu'une couche.
 
-**Deux conversations.** Une conversation de conception, sur le palier phare, discute la direction avec vous, enregistre les décisions en comptes rendus et découpe le travail en Initiative, Epic et Story dans .ether. Une conversation d'implémentation, sur le palier principal, lit les Stories dans .ether et n'écrit aucun code : elle délègue, enregistre, exécute les portes et rend compte.
+**Deux conversations.** Une conversation de conception, sur le palier phare, discute la direction avec vous, enregistre les décisions en comptes rendus et découpe le travail en Initiative, Epic et Story dans Ether. Une conversation d'implémentation, sur le palier principal, lit les Stories dans Ether et n'écrit aucun code : elle délègue, enregistre, exécute les portes et rend compte.
 
 **Un lot à la fois.** La conversation d'implémentation envoie un sous-agent du palier économique découper d'un coup toutes les Stories de l'Initiative en Subtasks, chacune nommant les fichiers touchés et ses dépendances. Puis elle forme des paquets par dépendance et chevauchement de fichiers : les Subtasks liées vont dans un même paquet, dans l'ordre ; les indépendantes forment chacune leur paquet. Chaque paquet reçoit un sous-agent du palier économique qui travaille dans son propre worktree git, en parallèle, et se retire une fois le paquet fini. Quand tous les paquets sont finis, un sous-agent d'intégration les fusionne dans l'ordre des dépendances ; les portes tournent une fois et l'acceptation a lieu une fois en fin de lot, et les défauts sont repris par lot.
 
@@ -222,15 +222,15 @@ Le parallélisme en lui-même n'économise aucun token ; il change seulement la 
 |---|---|---|
 | Einzbern | Le moteur : le programme qui détient les enregistrements et exécute recherche et enregistrement | Le corps du Graal |
 | Mana Orchestrate | Le skill qui amène Einzbern dans l'hôte : indique au modèle quand appeler quelle fonction du moteur, et embarque l'assistant d'installation | Le mana, la grande source d'énergie magique ; ici, la mémoire en circulation |
-| Ether | Le répertoire des artefacts `.ether` | L'éther, le milieu qui permet au mana de prendre forme dans le monde réel |
-| Akasha | `.ether/akasha/`, l'enregistrement d'événements en ajout seul dont tout état dérivé est reconstruit | Akasha, la Racine, où résident tous les enregistrements |
-| Crest | `.ether/crest/`, le dépôt de connaissances ; les dépôts de projet et d'utilisateur portent le même nom | L'emblème magique, l'art hérité de génération en génération |
+| Ether | Le répertoire des artefacts `Ether` | L'éther, le milieu qui permet au mana de prendre forme dans le monde réel |
+| Akasha | `Ether/akasha/`, l'enregistrement d'événements en ajout seul dont tout état dérivé est reconstruit | Akasha, la Racine, où résident tous les enregistrements |
+| Crest | `Ether/crest/`, le dépôt de connaissances ; les dépôts de projet et d'utilisateur portent le même nom | L'emblème magique, l'art hérité de génération en génération |
 | Command Spell | Les sept principes intégrés, désactivés par défaut, activés au choix | Les sceaux de commandement auxquels un Servant ne peut se soustraire |
 | Atelier | La page de gestion locale | L'atelier d'un mage |
 
 ## Documentation complète
 
-Wiki : concepts et glossaire, assistant d'installation, structure de `.ether`, plusieurs appareils et dossiers cloud, texte intégral des principes, migration depuis TCRN Workflow, référence CLI.
+Wiki : concepts et glossaire, assistant d'installation, structure de `Ether`, plusieurs appareils et dossiers cloud, texte intégral des principes, migration depuis TCRN Workflow, référence CLI.
 
 ## Licence
 

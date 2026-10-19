@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 3.0.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 3.0.0.
+
 - Generated release notes rebase relative file links from the root CHANGELOG so
   migration and other repository links retain their targets in `docs/releases/`.
 

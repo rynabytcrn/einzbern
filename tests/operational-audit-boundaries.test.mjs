@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { normalizePhaseAwareImpact, buildDynamicGatePlan, createGateReceiptAuthority, issueGateReceipt, executeSelectedRoots } from '../scripts/final-gate-plan.mjs';
 import { classifyProcess, requireGitObservation } from '../scripts/operational-batch-entry.mjs';
 import { parseTestRunOutput } from '../scripts/review-evidence.mjs';
@@ -9,7 +10,7 @@ import { verifyCloseout } from '../scripts/closeout-verify.mjs';
 import { evidenceExitMatches, runBatchDocument, validEvidenceEntry } from '../scripts/closeout-evidence-runner.mjs';
 import { parseChainReadResult } from '../scripts/owner-queue.mjs';
 import { selectSimulatedTail } from '../scripts/compaction-prototype.mjs';
-const root = new URL('../', import.meta.url).pathname.replace(/\/$/u, '');
+const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/u, '');
 test('production environment alias preserves unknown impact and precedence', () => {
   assert.equal(normalizePhaseAwareImpact({environment:[{name:'runtime',known:false}]}).environment[0].known,false);
   assert.deepEqual(normalizePhaseAwareImpact({environment:[{name:'runtime'}],environmentChanges:[]}).environment,[]);

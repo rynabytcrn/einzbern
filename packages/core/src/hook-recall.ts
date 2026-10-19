@@ -34,6 +34,7 @@ import { effectiveProjectState } from "./project-chain.js";
 // the entry notes the failure's own reasonCode before passing it on.
 
 import { NAVIGATION_LINES } from "./agents-sections.js";
+import { isSharedLibrary } from "./chain-identity.js";
 import { HOST_HOOK_EVENTS, HOST_HOOK_HOSTS, HOST_HOOK_POINTER_EVENTS } from "./host-hooks.js";
 import type { HostHookHost } from "./host-hooks.js";
 import { recall, recallDocuments } from "./recall.js";
@@ -193,9 +194,10 @@ export async function promptRecallOutcome(request: PromptRecallRequest): Promise
   if (library === null) return { answer: null, reasonCode: "HOOK_RECALL_LIBRARY_UNCONFIRMED" };
   const at = request.at ?? currentInstant();
   const state = await effectiveProjectState(await materializeLibrary(library.libraryPath), library.entry.projectId);
+  const projectId = isSharedLibrary(state) ? library.entry.projectId : undefined;
   // TCRN-CROSS-SUB-425 (MIN-239 D6): the prompt hook recalls valid cards only, always; no prompt asks
   // it for a removed one.
-  const { cards, digest } = await readRecallCards(library.libraryPath, { at, allowTrailing: true, status: "valid", ...(library.entry.projectId === undefined ? {} : { projectId: library.entry.projectId }) });
+  const { cards, digest } = await readRecallCards(library.libraryPath, { at, allowTrailing: true, status: "valid", ...(projectId === undefined ? {} : { projectId }) });
   const tau = numericSetting(state, "retrieval.tau", (value) => Number.isFinite(value) && value >= 0);
   const scopeExcerptBytes = numericSetting(state, "retrieval.scopeExcerptBytes", (value) => Number.isSafeInteger(value) && value > 0);
   const perPromptBytes = numericSetting(state, "injection.perPromptBytes", (value) => Number.isSafeInteger(value) && value > 0);
@@ -203,7 +205,7 @@ export async function promptRecallOutcome(request: PromptRecallRequest): Promise
     // Its own index: the recall verb's documents are built another way and must not answer here.
     cacheKey: `prompt-hook:${state.metadata.workspaceId}:${state.configurationProjectId ?? "library"}`,
     checkpoint: `${state.headEventHash}:${digest}`,
-    documents: () => recallDocuments(recallInputsFromState(state, cards, { scopeExcerptBytes, ...(library.entry.projectId === undefined ? {} : { projectId: library.entry.projectId }) })),
+    documents: () => recallDocuments(recallInputsFromState(state, cards, { scopeExcerptBytes, ...(projectId === undefined ? {} : { projectId }) })),
     query: prompt,
     tau,
   });

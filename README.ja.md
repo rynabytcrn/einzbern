@@ -6,7 +6,7 @@
 
 [简体中文](README.md) · [English](README.en.md) · **日本語** · [한국어](README.ko.md) · [Français](README.fr.md)
 
-![release](https://img.shields.io/badge/release-3.0.0-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20Harness-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+![release](https://img.shields.io/badge/release-3.0.3-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20DeepSeek%20Harness-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
 [水曜の午後に起きたこと](#水曜の午後に起きたこと) · [何を覚えるか](#何を覚えるか) · [こういうときに欲しくなる](#こういうときに欲しくなる) · [記憶プラグインではなく、これを選ぶ理由](#記憶プラグインではなくこれを選ぶ理由) · [インストール](#インストール) · [日々の使い方](#日々の使い方) · [複数デバイスとクラウドフォルダ](#複数デバイスとクラウドフォルダ) · [私たち自身の使い方](#私たち自身の使い方) · [内蔵の原則がトークンを無駄にしない仕組み](#内蔵の原則がトークンを無駄にしない仕組み) · [なぜこの設計か](#なぜこの設計か) · [用語集](#用語集)
 

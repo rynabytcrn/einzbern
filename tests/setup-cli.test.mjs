@@ -22,7 +22,6 @@ import {
   DOCTOR_CHECKS,
   FRAMEWORK_VERSION,
   computeInstallTreeDigest,
-  createProject,
   createWork,
   materializeWorkspace,
   setWorkspaceSetting,
@@ -92,7 +91,7 @@ async function fixture(context) {
   });
   const engine = await engineTree(base);
   assert.equal((await cli(["engine-update", "--from", engine.tree, "--sha256", engine.sha256, "--version", FRAMEWORK_VERSION, "--at", at()])).reasonCode, "ENGINE_UPDATED");
-  return { base, home, deviceHome, project, library: join(project, ".ether") };
+  return { base, home, deviceHome, project, library: join(deviceHome, "library") };
 }
 
 const setup = (f, mode, ...flags) => cli(["setup", "--mode", mode, "--project", f.project, "--at", at(), ...flags]);
@@ -159,13 +158,12 @@ test("480-AC1, AC2 through the CLI: setup plans without --yes and writes nothing
   assert.equal(planned.mode, "fresh");
   assert.deepEqual(planned.blockers, []);
   assert.deepEqual(planned.questions.map((question) => question.flag), ["--artifacts", "--cloud", "--language", "--navigation"]);
-  // EPIC-144 R2: besides its 14 writes, a first installation creates this device's coordination
-  // library, and the plan lists that write before the apply.
-  const coordination = join(f.deviceHome, "coordination-library");
+  // The shared library serves as coordination too; setup creates no second library.
+  const coordination = f.library;
   assert.deepEqual(planned.writes.filter((entry) => entry.path === coordination).map((entry) => [entry.step, entry.action]), [["library", "create"]]);
-  assert.equal(planned.writes.filter((entry) => entry.path !== coordination).length, 14);
+  assert.equal(planned.writes.filter((entry) => entry.path !== coordination).length, 15);
   // TCRN-CROSS-INIT-053 R46 (I08): the plan names that coordination chain, and the receipt its registration.
-  assert.deepEqual(planned.coordination, { libraryId: null, status: "create", path: coordination });
+  assert.deepEqual(planned.coordination, { libraryId: null, status: "registered", path: coordination });
   assert.deepEqual(planned.warnings, []);
   assert.deepEqual(await snapshot(roots), before, "without --yes true nothing is written");
 
@@ -174,7 +172,7 @@ test("480-AC1, AC2 through the CLI: setup plans without --yes and writes nothing
   assert.deepEqual(rows(applied.written), rows(planned.writes), "the summary lists what the plan said");
   assert.deepEqual(applied.warnings, []);
   assert.deepEqual(applied.library.path, f.library);
-  const coordinationId = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === coordination).libraryId;
+  const coordinationId = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === f.project).libraryId;
   assert.deepEqual(applied.coordination, { libraryId: coordinationId, status: "registered", path: coordination });
   // The self-check: doctor's eight checks, and the hook run once as a host runs it.
   assertChecksGreen(applied.selfCheck.checks);
@@ -196,7 +194,7 @@ test("480-R5 through the CLI: after an apply the hook runs once with the project
   const f = await fixture(context);
   await setup(f, "fresh", "--yes", "true");
   // A library that knows the zebrafish: the prompt "zebrafish" now has a strong hit.
-  const projectId = (await createProject(f.library, { occurredAt: at(), externalKey: "ZOO", name: "Zoo" })).projects[0].id;
+  const projectId = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === f.project).projectId;
   const idOf = async (key) => (await materializeWorkspace(f.library)).work.find((record) => record.externalKey === key).id;
   await createWork(f.library, { occurredAt: at(), projectId, externalKey: "ZOO-INIT", kind: "Initiative", parentId: null, title: "Aviary initiative", scope: "## Goal\nBuild the heron aviary." });
   await createWork(f.library, { occurredAt: at(), projectId, externalKey: "ZOO-EPIC", kind: "Epic", parentId: await idOf("ZOO-INIT"), title: "Wetland epic", goal: "Keep the flamingo pond." });
@@ -262,14 +260,12 @@ test("480-AC4, AC5 through the CLI: doctor answers eight green checks; uninstall
   const sections = await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file))));
   const planned = await setup(f, "uninstall");
   assert.deepEqual(planned.questions.map((question) => [question.flag, question.default]), [["--managed-sections", "keep"]]);
-  // TCRN-CROSS-INIT-053 R46 (I08): the only project naming the coordination chain goes, and setup's
-  // registration of it goes with it; the plan says so before the apply does it.
-  const coordination = join(f.deviceHome, "coordination-library");
-  const released = { libraryId: JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === coordination).libraryId, status: "released", path: coordination };
-  assert.deepEqual(planned.coordination, released);
+  // Removing the project's registration retains the shared library and every byte it holds.
+  const retained = { libraryId: JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === f.project).libraryId, status: "retained", path: null };
+  assert.deepEqual(planned.coordination, retained);
   const removed = await setup(f, "uninstall", "--managed-sections", "keep", "--yes", "true");
   assert.equal(removed.reasonCode, "SETUP_APPLIED");
-  assert.deepEqual(removed.coordination, released);
+  assert.deepEqual(removed.coordination, retained);
   assert.deepEqual(await einzbernHooks(join(f.home, ".claude", "settings.json")), []);
   assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), []);
   for (const root of SKILL_COPY_ROOTS) assert.equal(await lstat(skillCopyPath(f.home, root)).catch(() => null), null, root.host);

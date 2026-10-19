@@ -39,3 +39,8 @@ export function chainIdentity(state: Pick<WorkspaceState, "configRecords" | "met
   if ((identity.role === "coordination" || identity.role === "shared") && identity.coordinationLibraryId !== state.metadata.workspaceId) throw new ProjectChainError("coordination identity must name its own library");
   return identity;
 }
+
+/** Library-wide identity remains visible when a project-specific identity is effective. */
+export function isSharedLibrary(state: Pick<WorkspaceState, "configRecords">): boolean {
+  return state.configRecords.some(record => record.collection === "chain" && record.key === "identity" && record.projectId === undefined && record.value.role === "shared");
+}

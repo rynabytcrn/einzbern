@@ -46,7 +46,7 @@ import {
   readRuntimeKnowledgeLanguagePolicy,
 } from "./knowledge-language.js";
 import type { KnowledgeExpansions, KnowledgeLanguagePolicy, KnowledgeLanguageProvider } from "./knowledge-language.js";
-import { chainIdentity } from "./chain-identity.js";
+import { chainIdentity, isSharedLibrary } from "./chain-identity.js";
 import { activeWorkspaceRoot, materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
 import type { ProjectRecord, WorkspaceState } from "./workspace.js";
 import { SETTINGS_CATALOG, resolveKnowledgeArticlesPath } from "./settings.js";
@@ -2659,9 +2659,9 @@ async function scanLibraryCrest(
   // TCRN-CROSS-SUB-413: the cards and every version of a duplicate. TCRN-CROSS-SUB-310 R17 (MIN-238
   // D1): however many body bytes the merged streams hold, the read answers; nothing sums them.
   const records = crestRecords({ units, duplicates });
-  if (!imported && workspace.library?.consolidation !== undefined) for (const unit of records) {
+  if (!imported && isSharedLibrary(workspace)) for (const unit of records) {
     if (unit.metadata.projectId !== null) continue;
-    const source = workspace.library.consolidation.sources.find(source => unit.metadataPath.startsWith(join(workspaceRoot, source.archive, "crest") + "/") ||
+    const source = workspace.library?.consolidation?.sources.find(source => unit.metadataPath.startsWith(join(workspaceRoot, source.archive, "crest") + "/") ||
       (source.manifest.libraryId === workspace.metadata.workspaceId && source.inventory.some(file => join(workspaceRoot, file.path) === unit.metadataPath)));
     migratedKnowledgeScopes.set(unit.metadata, source?.bindings.map(binding => binding.projectId) ?? []);
   }

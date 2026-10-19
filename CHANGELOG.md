@@ -5,6 +5,24 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 3.0.3
+
+Local installation candidate; this version has not been tagged or published.
+
+- Consolidate independently validated library histories into one format-3 shared
+  library. Preserve original native events, knowledge bodies, source identities,
+  project configuration and archived evidence; reject conflicting identities or
+  altered source copies before cleanup.
+- Default new installations and restore suggestions to the device's shared
+  library outside project source trees. Reuse the same library for additional
+  projects, with explicit project bindings and isolated shared-library recall.
+- Configure a persistent storage pointer for the shared library and device-specific
+  runtime data. Preserve old runtime evidence paths with forwarding links.
+- Provide planned consolidation, runtime relocation and verified source-cleanup
+  commands. Preserve relocation receipts before clearing redundant source copies.
+- Retain legacy library-wide recall when a project selects configuration; shared
+  libraries retain global cards while isolating each project's corpus.
+
 ## 3.0.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 3.0.0.

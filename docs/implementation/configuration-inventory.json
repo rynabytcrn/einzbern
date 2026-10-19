@@ -6252,6 +6252,38 @@
         ]
       },
       {
+        "name": "storage-configure",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "library",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "runtime",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          },
+          {
+            "name": "decided-in",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "yes",
+            "required": false,
+            "valueKind": "boolean"
+          }
+        ]
+      },
+      {
         "name": "template-admit",
         "availability": "cli",
         "mutates": true,
@@ -7111,6 +7143,70 @@
             "name": "timeout-ms",
             "required": false,
             "valueKind": "integer"
+          }
+        ]
+      },
+      {
+        "name": "workspace-consolidate",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "mapping",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "to",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          },
+          {
+            "name": "actor",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "decided-in",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "yes",
+            "required": false,
+            "valueKind": "boolean"
+          }
+        ]
+      },
+      {
+        "name": "workspace-consolidate-clean",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "to",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "copies",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          },
+          {
+            "name": "yes",
+            "required": false,
+            "valueKind": "boolean"
           }
         ]
       },

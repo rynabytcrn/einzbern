@@ -1,4 +1,5 @@
 import { deviceHome } from "../../core/src/device-home.js";
+import { isSharedLibrary } from "../../core/src/chain-identity.js";
 import { readFile } from "node:fs/promises";
 import { configureStorageLocation } from "../../core/src/storage-configure.js";
 import { consolidateLibraries, cleanConsolidatedSources } from "../../core/src/consolidate.js";
@@ -1802,6 +1803,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // INC-074/INC-081: seal a retained file archive to an already authoritative
   // TCRN-CROSS-INC-275: PostgreSQL support removed. storage-home-seal was
   // PG-specific; it is removed.
+  { name: "storage-configure", availability: "cli", mutates: true, flags: [{ name: "library", required: true, valueKind: "string" }, { name: "runtime", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "decided-in", required: true, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   { name: "template-admit", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "template", required: true, valueKind: "string" }, { name: "owner", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "template-validate", availability: "cli", mutates: false, flags: [{ name: "template", required: true, valueKind: "string" }] },
   { name: "validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
@@ -1840,9 +1842,8 @@ export const COMMAND_CATALOG = Object.freeze([
   // Story going to done run in.
   { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   // TCRN-CROSS-STORY-470 R3: move a library; the old place keeps a tombstone and refuses writes.
-  { name: "storage-configure", availability: "cli", mutates: true, flags: [{ name: "library", required: true, valueKind: "string" }, { name: "runtime", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "decided-in", required: true, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
-  { name: "workspace-consolidate-clean", availability: "cli", mutates: true, flags: [{ name: "to", required: true, valueKind: "string" }, { name: "copies", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }] },
   { name: "workspace-consolidate", availability: "cli", mutates: true, flags: [{ name: "mapping", required: true, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "workspace-consolidate-clean", availability: "cli", mutates: true, flags: [{ name: "to", required: true, valueKind: "string" }, { name: "copies", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }] },
   { name: "workspace-relocate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "workspace-relocate-discard", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "transaction-id", required: true, valueKind: "string" }] },
 ] as const);
@@ -3546,6 +3547,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const limit = values.limit === undefined ? undefined : integerValue(values, "limit");
     if (limit !== undefined && (limit < 1 || !Number.isSafeInteger(limit))) fail("CLI_ARGUMENT_MALFORMED", "limit");
     const state = await effectiveProjectState(await validateWorkspace(workspace), values["project-id"]);
+    // Legacy project selection chooses configuration only; shared libraries also isolate corpora.
+    const projectId = isSharedLibrary(state) ? values["project-id"] : undefined;
     const settingValue = (key: string): string | undefined => state.settings.find((entry) => entry.key === key)?.value;
     // The flag wins over the setting, the setting over the recorded default: the same
     // order work-list's scope-bytes already uses.
@@ -3577,7 +3580,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // Each store answers the card status as knowledge-list does: removed, the removed cards alone; all,
     // every card.
     const cards = await readRecallCards(workspace, {
-      ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }),
+      ...(projectId === undefined ? {} : { projectId }),
       at: values.at ?? "",
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
       ...(cardStatus === "valid" ? {} : { status: cardStatus }),
@@ -3585,7 +3588,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-474 R1: what the index holds is decided in one place (recall-inputs.ts), so
     // the verb and the prompt hook cannot index differently: the Stories, Incidents, Initiatives and
     // Epics with their goal, body and parent titles, every minutes record, and the cards.
-    const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), ...(decisions === "valid" ? {} : { decisions }) });
+    const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes, ...(projectId === undefined ? {} : { projectId }), ...(decisions === "valid" ? {} : { decisions }) });
     const result = recall({
       // Library identity stays path-independent; project-specific corpus inputs must not share an index.
       cacheKey: `${state.metadata.workspaceId}:${values["project-id"] ?? ""}`,

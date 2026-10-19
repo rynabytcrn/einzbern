@@ -1139,6 +1139,19 @@
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
 
+## `storage-configure`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--library` | 必填 | `string` |
+| `--runtime` | 必填 | `string` |
+| `--at` | 必填 | `instant` |
+| `--decided-in` | 必填 | `string` |
+| `--yes` | 可选 | `boolean` |
+
 ## `template-admit`
 
 - 可用范围：`cli`。
@@ -1440,6 +1453,32 @@
 | `--project` | 可选 | `string` |
 | `--actor` | 可选 | `string` |
 | `--timeout-ms` | 可选 | `integer` |
+
+## `workspace-consolidate`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--mapping` | 必填 | `string` |
+| `--to` | 必填 | `string` |
+| `--at` | 必填 | `instant` |
+| `--actor` | 必填 | `string` |
+| `--decided-in` | 必填 | `string` |
+| `--yes` | 可选 | `boolean` |
+
+## `workspace-consolidate-clean`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--to` | 必填 | `string` |
+| `--copies` | 必填 | `string` |
+| `--at` | 必填 | `instant` |
+| `--yes` | 可选 | `boolean` |
 
 ## `workspace-relocate`
 

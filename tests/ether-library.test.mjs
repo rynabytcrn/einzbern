@@ -14,6 +14,7 @@ import {
   ALIAS_TABLE_START_MARKER,
   FRAMEWORK_VERSION,
   LIBRARY_ROOT_ENTRIES,
+  LIBRARY_FORMAT_VERSION,
   createLibrary,
   hasLibraryManifest,
   openLibrary,
@@ -50,7 +51,7 @@ test("469-R1: the manifest names the library, its format, the engine it needs an
   assert.deepEqual(Object.keys(manifest).sort(), ["createdAt", "formatVersion", "libraryId", "minEngineVersion", "project", "schemaVersion"]);
   assert.equal(manifest.schemaVersion, "einzbern.library-manifest.v1");
   assert.match(manifest.libraryId, /^library:[a-f0-9]{24}$/u);
-  assert.equal(manifest.formatVersion, 2);
+  assert.equal(manifest.formatVersion, LIBRARY_FORMAT_VERSION);
   assert.equal(manifest.minEngineVersion, FRAMEWORK_VERSION);
   assert.deepEqual(manifest.project, { name: "Demo", gitRemote: null });
   assert.equal(manifest.createdAt, AT);

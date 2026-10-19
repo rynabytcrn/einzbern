@@ -11,7 +11,10 @@ import {
   consolidateLibraries, cleanConsolidatedSources, materializeWorkspaceFromGenesis, scopedWorkspaceState, readRegistry,
   setConfigRecord, chainIdentity, resolveProjectTarget, readConsolidationIndex, openLibrary,
   configureStorageLocation, defaultSharedLibraryPath, cachePath, lockPath,
+  createWork,
 } from "../dist/build/packages/core/src/index.js";
+import { runCli } from "../dist/build/packages/cli/src/index.js";
+import { promptRecallContext } from "../dist/build/packages/core/src/hook-recall.js";
 import { recallInputsFromState } from "../dist/build/packages/core/src/recall-inputs.js";
 const at = "2026-10-19T12:00:00Z";
 const owner = "owner:000000000000000000000001";
@@ -101,6 +104,54 @@ test("runtime moves outside the source tree and a persistent device pointer sele
   assert.equal(await readFile(join(runtime, "cache", "owned"), "utf8"), "runtime data");
   assert.equal(await readFile(join(home, "cache", "owned"), "utf8"), "runtime data", "historical evidence paths still resolve");
   await configureStorageLocation(home, f.to, runtime, at, f.options.decidedIn, true);
+});
+
+test("a fresh shared library recalls global cards and only the selected project's work and cards", async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-shared-recall-")));
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = join(root, "device");
+  t.after(async () => {
+    if (previous === undefined) delete process.env.EINZBERN_HOME;
+    else process.env.EINZBERN_HOME = previous;
+    await rm(root, { recursive: true, force: true });
+  });
+  const library = join(root, "library");
+  await initializeLibrary({ root: library, createdAt: at });
+  let state = await materializeWorkspaceFromGenesis(library);
+  await declareChainIdentity(library, { role: "shared", coordinationLibraryId: state.metadata.workspaceId }, { occurredAt: at });
+  const projects = [];
+  for (const key of ["ALPHA", "BETA"]) {
+    state = await createProject(library, { externalKey: key, name: key, occurredAt: at });
+    const id = state.projects.find(project => project.externalKey === key).id;
+    const path = join(root, key);
+    await mkdir(path);
+    await registerLibrary({ projectPath: path, projectId: id, libraryPath: library, registeredAt: at, gitRemote: null });
+    await setWorkspaceSetting(library, { key: "retrieval.tau", value: "0", configurationProjectId: id, occurredAt: at });
+    await createWork(library, { projectId: id, externalKey: `${key}-INIT`, kind: "Initiative", parentId: null,
+      title: `${key} calibration ledger`, scope: `${key} calibration measurements`, occurredAt: at });
+    projects.push({ id, path, key });
+  }
+  await initializeKnowledgeStore(library, { disposableAcknowledged: true });
+  for (const project of [null, ...projects]) await createKnowledgeUnit(library, {
+    externalKey: `${project?.key ?? "GLOBAL"}-CALIBRATION`, scope: project === null ? "workspace" : "project", projectId: project?.id ?? null, coexist: true,
+    roleScopes: [], category: "implementation", kind: "fact", subject: `${project?.key ?? "GLOBAL"} calibration reference`,
+    summary: "Measured calibration data", snippet: "Read calibration measurements", tags: ["calibration"],
+    sourceReferences: [], sourceDigest: null, linkedEvidenceIds: [], linkedWorkIds: [], linkedDecisionIds: [], linkedGateIds: [],
+    retrievalDisposition: "default", freshnessState: "fresh", lastVerified: null, exportDisposition: "metadata-only", accountableOwnerId: owner,
+    body: "Calibration measurements are retained as the shared reference.", lifecycle: "active", occurredAt: at,
+    stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" },
+  });
+  for (const [selected, other] of [[projects[0], projects[1]], [projects[1], projects[0]]]) {
+    let output = "";
+    await runCli(["recall", "--workspace", library, "--project-id", selected.id, "--at", at, "--query", "calibration", "--tau", "0"], { write: value => { output += value; } });
+    const keys = JSON.parse(output).records.map(record => record.key).sort();
+    assert.deepEqual(keys, [`${selected.key}-CALIBRATION`, `${selected.key}-INIT`, "GLOBAL-CALIBRATION"].sort());
+    const answer = await promptRecallContext({ libraryPath: library, cwd: selected.path, host: "codex", prompt: "calibration", at });
+    assert.ok(answer.lines.some(line => line.includes("GLOBAL calibration reference")));
+    assert.ok(answer.lines.some(line => line.includes(`${selected.key} calibration reference`)));
+    assert.ok(answer.lines.some(line => line.includes(`${selected.key}-INIT`)));
+    assert.equal(answer.lines.some(line => line.includes(`${other.key}-INIT`) || line.includes(`${other.key} calibration reference`)), false);
+  }
 });
 
 test("verified cleanup rejects unique knowledge and removes only redundant, tombstoned copies", async t => {

@@ -33,7 +33,10 @@ with a backup and comparison against the captured source entries. Host wiring re
 those old library write roots, preserving unrelated paths and settings. A changed source, occupied
 target, symlink, conflicting project binding or altered archive refuses publication.
 
-Project-scoped recall filters work, minutes and cards. Workspace/role knowledge imported from a
+Project-scoped recall in a shared library filters work, minutes and cards; the global shared
+identity remains authoritative even when a project-specific identity is effective. A fresh shared
+library's global workspace/role cards remain visible to every project. Legacy libraries keep their
+library-wide corpus when a project selects configuration. Workspace/role knowledge imported from a
 former project library keeps its original metadata, with its migration scope derived from the
 committed source binding; it does not become another project's knowledge by accident. Explicit
 whole-library reads remain available. Original knowledge chain references validate against the

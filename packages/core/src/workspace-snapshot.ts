@@ -187,7 +187,7 @@ async function libraryTreeRules(root: string, invalidManifest: SnapshotReasonCod
 
 // The paths of a library tree the witness leaves out: the knowledge mutation claim.
 function libraryExcludedPaths(): readonly string[] {
-  return [`${DIRECTORY.knowledge}/mutation.claim`];
+  return [`${DIRECTORY.knowledge}/mutation.claim`, DIRECTORY.device];
 }
 
 // Minimal bound-read helpers, re-implemented locally per the duplicate-machinery

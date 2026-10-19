@@ -18,9 +18,18 @@ export async function configureStorageLocation(home: string, library: string, ru
   return withFileLock(join(home, "storage-location.lock"), async () => {
     const receiptPath = join(home, "storage-relocation.json");
     const expected = { from, to: target, library: resolve(library), decidedIn };
-    const recorded = await readFile(receiptPath, "utf8").then(text => JSON.parse(text), error => { if (error.code === "ENOENT") return null; throw error; });
-    if (recorded !== null && canonicalJson(recorded) !== canonicalJson(expected) && from !== target) throw new Error("STORAGE_RECOVERY_REQUIRED");
-    if (from !== target && recorded === null) await writeFileAtomic(receiptPath, canonicalJson(expected));
+    let recorded = await readFile(receiptPath, "utf8").then(text => JSON.parse(text), error => { if (error.code === "ENOENT") return null; throw error; });
+    if (recorded !== null && canonicalJson(recorded) !== canonicalJson(expected) && from !== target) {
+      if (previous?.runtime !== recorded.to || previous.decidedIn !== recorded.decidedIn) throw new Error("STORAGE_RECOVERY_REQUIRED");
+      const archive = join(from, "backups", "storage-locations");
+      await mkdir(archive, { recursive: true });
+      await writeFileAtomic(join(archive, `${at.replace(/[-:]/gu, "")}.json`), canonicalJson({ pointer: previous, receipt: recorded }));
+      recorded = null;
+    }
+    if (from !== target && recorded === null) {
+      await writeFileAtomic(receiptPath, canonicalJson(expected));
+      recorded = expected;
+    }
     await mkdir(target, { recursive: true });
     if (from !== target) {
       const locks = await readdir(join(from, "locks")).catch(error => { if (error.code === "ENOENT") return []; throw error; });

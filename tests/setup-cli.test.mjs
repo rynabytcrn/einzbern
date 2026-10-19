@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
 import { renderWritableRoots } from "../scripts/host-render.mjs";
@@ -91,7 +91,7 @@ async function fixture(context) {
   });
   const engine = await engineTree(base);
   assert.equal((await cli(["engine-update", "--from", engine.tree, "--sha256", engine.sha256, "--version", FRAMEWORK_VERSION, "--at", at()])).reasonCode, "ENGINE_UPDATED");
-  return { base, home, deviceHome, project, library: join(deviceHome, "library") };
+  return { base, home, deviceHome, project, library: join(dirname(deviceHome), "Ether") };
 }
 
 const setup = (f, mode, ...flags) => cli(["setup", "--mode", mode, "--project", f.project, "--at", at(), ...flags]);

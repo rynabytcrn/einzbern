@@ -1,4 +1,5 @@
-import { defaultSharedLibraryPath } from "./storage-location.js";
+import { defaultSharedLibraryPath, readStorageLocation, sharedRuntimePath } from "./storage-location.js";
+import { configureStorageLocation } from "./storage-configure.js";
 import { setConfigRecord } from "./config-records.js";
 import { chainIdentity, declareChainIdentity, effectiveProjectState, ensureProjectCoordination, projectCoordinationChoice, resolveCoordinationBinding } from "./project-chain.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
@@ -991,7 +992,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
   let binding: SetupCoordination | null = null;
   try {
     const identity = library.action === "reuse" ? chainIdentity(await materializeWorkspace(library.path)) : null;
-    const coordination = artifacts === defaultSharedLibraryPath(deviceHome) || identity?.role === "shared"
+    const coordination = library.action === "create" || artifacts === defaultSharedLibraryPath(deviceHome) || identity?.role === "shared"
       ? { libraryId: library.libraryId, status: "registered" as const, path: library.path }
       : await projectCoordinationChoice(identity, deviceHome);
     binding = { libraryId: coordination.libraryId, status: coordination.status, path: coordination.path };
@@ -1017,6 +1018,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
     deviceNavigation,
     engine: files,
   });
+  if ((library.action === "create" || artifacts === defaultSharedLibraryPath(deviceHome)) && readStorageLocation(deviceHome) === null) recorder.write("device", join(deviceHome, "storage-location.json"), "create");
 
   return {
     questions: questionsFor(input, defaults),
@@ -1069,7 +1071,7 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
   const libraryPath = library.root;
   const libraryId = library.manifest.libraryId;
   if (planned.action === "create") recorder.write("library", libraryPath, "create");
-  const central = libraryPath === defaultSharedLibraryPath(deviceHome);
+  const central = planned.action === "create" || libraryPath === defaultSharedLibraryPath(deviceHome);
   if (central && chainIdentity(await materializeWorkspace(libraryPath)) === null) await declareChainIdentity(libraryPath, { role: "shared", coordinationLibraryId: libraryId }, { occurredAt: at, actorId: SETUP_ACTOR });
   const existingIdentity = chainIdentity(await materializeWorkspace(libraryPath));
   const registryFile = registryPath(deviceHome);
@@ -1107,6 +1109,11 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
     navigation: navigationChoice(resolved.navigation),
     engineDirectory: directory,
   });
+
+  if (declaredIdentity.role === "shared" && readStorageLocation(deviceHome) === null) {
+    await configureStorageLocation(deviceHome, libraryPath, sharedRuntimePath(libraryPath, device.deviceId), at, "setup:install", true);
+    recorder.write("device", join(deviceHome, "storage-location.json"), "create");
+  }
 
   return setupApplied(plan, recorder, {
     deviceId: device.deviceId,

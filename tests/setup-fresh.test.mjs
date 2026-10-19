@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { dirname, delimiter, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 
@@ -221,7 +221,7 @@ test("480-R1, R6: six modes, and migrate names an installation from before the r
     assert.equal(error.details.reasonCode, "SETUP_ENGINE_NOT_INSTALLED");
     return true;
   });
-  assert.equal(await lstat(join(f.deviceHome, "library")).catch(() => null), null, "nothing was written");
+  assert.equal(await lstat(join(dirname(f.deviceHome), "Ether")).catch(() => null), null, "nothing was written");
 });
 
 test("480-AC1: the default answers install the library, the registry entry, both skill copies, current hooks per host and the managed sections, and list every file", async (context) => {
@@ -233,14 +233,14 @@ test("480-AC1: the default answers install the library, the registry entry, both
   assert.equal(planned.context.suggestedMode, "fresh");
   // One screen of questions, each with the default it takes.
   assert.deepEqual(planned.questions.map((question) => [question.id, question.flag, question.default]), [
-    ["artifacts", "--artifacts", join(f.deviceHome, "library")],
+    ["artifacts", "--artifacts", join(dirname(f.deviceHome), "Ether")],
     ["cloud", "--cloud", false],
     ["language", "--language", "en"],
     ["navigation", "--navigation", true],
   ]);
   const expected = [
     ["device", join(f.deviceHome, "device.json"), "create"],
-    ["library", join(f.deviceHome, "library"), "create"],
+    ["library", join(dirname(f.deviceHome), "Ether"), "create"],
     ["registry", join(f.deviceHome, "registry.json"), "create"],
     ["skill-copies", join(f.home, ".claude", "skills", "mana-orchestrate"), "create"],
     ["skill-copies", join(f.home, ".agents", "skills", "mana-orchestrate"), "create"],
@@ -261,27 +261,27 @@ test("480-AC1: the default answers install the library, the registry entry, both
   assert.equal(planned.backupDir, null);
   // TCRN-CROSS-INIT-053 R46 (I08): the plan names the coordination chain it creates at this device's
   // default location, and the receipt the one it registered there.
-  assert.deepEqual(planned.coordination, { libraryId: null, status: "registered", path: join(f.deviceHome, "library") });
+  assert.deepEqual(planned.coordination, { libraryId: null, status: "registered", path: join(dirname(f.deviceHome), "Ether") });
 
   const applied = await applySetup(planned);
   assert.equal(applied.reasonCode, "SETUP_APPLIED");
   assert.deepEqual(rows(applied.written), expected, "the summary lists every file written");
   assert.equal(applied.backupDir, null);
   assert.equal(applied.library.created, true);
-  assert.deepEqual(applied.answers, { artifacts: join(f.deviceHome, "library"), cloud: false, language: "en", navigation: true });
+  assert.deepEqual(applied.answers, { artifacts: join(dirname(f.deviceHome), "Ether"), cloud: false, language: "en", navigation: true });
 
-  const manifest = JSON.parse(await readFile(join(f.deviceHome, "library", "manifest.json"), "utf8"));
+  const manifest = JSON.parse(await readFile(join(dirname(f.deviceHome), "Ether", "manifest.json"), "utf8"));
   assert.equal(manifest.libraryId, applied.library.libraryId);
   assert.equal(manifest.project.name, "project");
   const registry = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8"));
   // The coordination library is registered as setup registers it, its own path the project path,
   // and the project's library names it (EPIC-144 R2).
-  const coordination = join(f.deviceHome, "library");
-  const coordinationId = chainIdentity(await materializeWorkspace(join(f.deviceHome, "library"))).coordinationLibraryId;
+  const coordination = join(dirname(f.deviceHome), "Ether");
+  const coordinationId = chainIdentity(await materializeWorkspace(join(dirname(f.deviceHome), "Ether"))).coordinationLibraryId;
   assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.libraryId, entry.cloudHosted, entry.chainRole]),
-    [[f.project, join(f.deviceHome, "library"), applied.library.libraryId, false, "project"]]);
+    [[f.project, join(dirname(f.deviceHome), "Ether"), applied.library.libraryId, false, "project"]]);
   assert.deepEqual(applied.coordination, { libraryId: coordinationId, status: "registered", path: coordination });
-  const state = await materializeWorkspace(join(f.deviceHome, "library"));
+  const state = await materializeWorkspace(join(dirname(f.deviceHome), "Ether"));
   assert.equal(state.settings.find((setting) => setting.key === "artifact.language")?.value, "en");
   for (const root of SKILL_COPY_ROOTS) assert.ok((await lstat(join(skillCopyPath(f.home, root), "SKILL.md"))).isFile(), root.host);
   const launcher = join(f.deviceHome, "engine", "hook.mjs");
@@ -319,17 +319,17 @@ test("480-AC2: a second run with the same answers plans no write and writes noth
   const copies = await snapshot([join(f.home, ".claude", "skills"), join(f.home, ".agents", "skills")]);
 
   const context2 = await detectSetupContext({ projectRoot: f.project, home: f.home, deviceHome: f.deviceHome });
-  assert.equal(context2.registered?.libraryPath, join(f.deviceHome, "library"));
+  assert.equal(context2.registered?.libraryPath, join(dirname(f.deviceHome), "Ether"));
   assert.equal(context2.suggestedMode, "update");
   const again = await plan(f);
   assert.deepEqual(again.blockers, []);
   assert.equal(again.library.action, "reuse");
   assert.deepEqual(again.writes, [], "a second plan writes nothing");
   // R46 I08: the second plan finds the coordination chain the first registered.
-  const registeredCoordination = { libraryId: chainIdentity(await materializeWorkspace(join(f.deviceHome, "library"))).coordinationLibraryId, status: "registered", path: join(f.deviceHome, "library") };
+  const registeredCoordination = { libraryId: chainIdentity(await materializeWorkspace(join(dirname(f.deviceHome), "Ether"))).coordinationLibraryId, status: "registered", path: join(dirname(f.deviceHome), "Ether") };
   assert.deepEqual(again.coordination, registeredCoordination);
   assert.deepEqual(again.questions.map((question) => [question.id, question.default]), [
-    ["artifacts", join(f.deviceHome, "library")],
+    ["artifacts", join(dirname(f.deviceHome), "Ether")],
     ["cloud", false],
     ["language", "en"],
     ["navigation", true],
@@ -534,7 +534,7 @@ test("548-AC4: the fresh plan lists what the DSH profiles say about the plugin, 
 test("agents.generation none suppresses root files in both setup planning and application", async (context) => {
   const f = await fixture(context);
   await applySetup(await plan(f));
-  const library = join(f.deviceHome, "library");
+  const library = join(dirname(f.deviceHome), "Ether");
   await setWorkspaceSetting(library, { key: "agents.generation", value: "none", occurredAt: at() });
   // Missing files must not be re-created, and the opt-out does not remove any user files.
   await rm(join(f.project, "AGENTS.md"));

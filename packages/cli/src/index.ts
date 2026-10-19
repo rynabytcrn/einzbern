@@ -2,6 +2,7 @@ import { deviceHome } from "../../core/src/device-home.js";
 import { isSharedLibrary } from "../../core/src/chain-identity.js";
 import { readFile } from "node:fs/promises";
 import { configureStorageLocation } from "../../core/src/storage-configure.js";
+import { consolidateStorage, refreshLibraryReadme } from "../../core/src/storage-consolidate.js";
 import { consolidateLibraries, cleanConsolidatedSources } from "../../core/src/consolidate.js";
 import type { ConsolidationMapping } from "../../core/src/consolidate.js";
 // SPDX-License-Identifier: Apache-2.0
@@ -1804,6 +1805,8 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-INC-275: PostgreSQL support removed. storage-home-seal was
   // PG-specific; it is removed.
   { name: "storage-configure", availability: "cli", mutates: true, flags: [{ name: "library", required: true, valueKind: "string" }, { name: "runtime", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "decided-in", required: true, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "storage-consolidate", availability: "cli", mutates: true, flags: [{ name: "from", required: true, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "retire-runtime-root", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "decided-in", required: true, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "library-readme-refresh", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "template-admit", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "template", required: true, valueKind: "string" }, { name: "owner", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "template-validate", availability: "cli", mutates: false, flags: [{ name: "template", required: true, valueKind: "string" }] },
   { name: "validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
@@ -2641,6 +2644,18 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const values = parseArguments(rest, ["library", "runtime", "at", "decided-in", "yes"]);
     required(values, ["library", "runtime", "at", "decided-in"]);
     io.write(canonicalJson(await configureStorageLocation(deviceHome(), values.library!, values.runtime!, values.at!, values["decided-in"]!, booleanValue(values.yes, "yes")) as JsonValue));
+    return;
+  }
+  if (command === "storage-consolidate") {
+    const values = parseArguments(rest, ["from", "to", "retire-runtime-root", "at", "decided-in", "yes"]);
+    required(values, ["from", "to", "retire-runtime-root", "at", "decided-in"]);
+    io.write(canonicalJson(await consolidateStorage(deviceHome(), values.from!, values.to!, values["retire-runtime-root"]!, values.at!, values["decided-in"]!, booleanValue(values.yes, "yes")) as JsonValue));
+    return;
+  }
+  if (command === "library-readme-refresh") {
+    const values = parseArguments(rest, ["workspace", "at"]);
+    required(values, ["workspace", "at"]);
+    io.write(canonicalJson(await refreshLibraryReadme(values.workspace!, values.at!) as JsonValue));
     return;
   }
   if (command === "workspace-consolidate-clean") {

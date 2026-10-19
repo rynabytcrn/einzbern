@@ -310,6 +310,7 @@ async function copyTree(source: string, target: string, options: RelocateOptions
       const sourcePath = join(from, entry.name);
       const relativePath = relative(source, sourcePath).split(sep).join("/");
       if (relativePath === `${DIRECTORY.knowledge}/mutation.claim`) continue;
+      if (relativePath === DIRECTORY.device) continue;
       const targetPath = join(to, entry.name);
       if (entry.isDirectory()) {
         await createOwnedDirectory(targetPath, owned);

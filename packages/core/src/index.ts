@@ -910,5 +910,6 @@ export * from "./consolidate.js";
 export * from "./consolidation-format.js";
 
 export * from "./storage-location.js";
+export * from "./storage-consolidate.js";
 
 export * from "./storage-configure.js";

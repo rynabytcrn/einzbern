@@ -17,6 +17,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
 import { renderWritableRoots } from "../scripts/host-render.mjs";
+import { libraryTreeDigests } from "../dist/build/packages/core/src/workspace-snapshot.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   DOCTOR_CHECKS,
@@ -161,7 +162,7 @@ test("480-AC1, AC2 through the CLI: setup plans without --yes and writes nothing
   // The shared library serves as coordination too; setup creates no second library.
   const coordination = f.library;
   assert.deepEqual(planned.writes.filter((entry) => entry.path === coordination).map((entry) => [entry.step, entry.action]), [["library", "create"]]);
-  assert.equal(planned.writes.filter((entry) => entry.path !== coordination).length, 15);
+  assert.equal(planned.writes.filter((entry) => entry.path !== coordination).length, 16);
   // TCRN-CROSS-INIT-053 R46 (I08): the plan names that coordination chain, and the receipt its registration.
   assert.deepEqual(planned.coordination, { libraryId: null, status: "registered", path: coordination });
   assert.deepEqual(planned.warnings, []);
@@ -256,7 +257,7 @@ test("480-AC4, AC5 through the CLI: doctor answers eight green checks; uninstall
   assertChecksGreen(doctor.checks);
   for (const entry of doctor.checks) assert.deepEqual(Object.keys(entry).sort(), ["check", "detail", "ok", "reasonCode"]);
 
-  const libraryDigest = (await computeInstallTreeDigest(f.library)).sha256;
+  const libraryDigest = await libraryTreeDigests(f.library);
   const sections = await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file))));
   const planned = await setup(f, "uninstall");
   assert.deepEqual(planned.questions.map((question) => [question.flag, question.default]), [["--managed-sections", "keep"]]);
@@ -270,7 +271,7 @@ test("480-AC4, AC5 through the CLI: doctor answers eight green checks; uninstall
   assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), []);
   for (const root of SKILL_COPY_ROOTS) assert.equal(await lstat(skillCopyPath(f.home, root)).catch(() => null), null, root.host);
   assert.deepEqual(JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries, []);
-  assert.equal((await computeInstallTreeDigest(f.library)).sha256, libraryDigest, "480-AC4: the library's tree digest is unchanged");
+  assert.deepEqual(await libraryTreeDigests(f.library), libraryDigest, "480-AC4: all library records remain byte-identical; device runtime has its own lifecycle");
   assert.deepEqual(await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file)))), sections);
   assert.deepEqual(removed.selfCheck.injected, [], "an unregistered project's prompt gets nothing");
 

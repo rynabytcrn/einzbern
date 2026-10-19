@@ -458,7 +458,7 @@ export async function planWritableRoots(input: WritableRootsInput): Promise<Writ
     const before = await readHostFile(join(projectRoot, path), path);
     let after = host === "claude-code" ? claudeWritableRoots(before, libraryPath, input.replacePaths) : codexWritableRoots(before, libraryPath, input.replacePaths);
     const runtime = readStorageLocation(deviceHome())?.runtime;
-    if (runtime !== undefined) after = host === "claude-code" ? claudeWritableRoots(after, runtime) : codexWritableRoots(after, runtime);
+    if (runtime !== undefined && !inside(libraryPath, runtime)) after = host === "claude-code" ? claudeWritableRoots(after, runtime) : codexWritableRoots(after, runtime);
     files.push({ host, path, before, after, changed: after !== before, trackedByGit: hostFileTrackedByGit(projectRoot, path) });
   }
   return { projectRoot, libraryPath, libraryInsideProject: false, files };

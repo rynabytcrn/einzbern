@@ -58,7 +58,7 @@ export async function configureStorageLocation(home: string, library: string, ru
     const { readRegistry } = await import("./registry.js");
     const { planWritableRoots, applyWritableRoots } = await import("./host-writable-roots.js");
     const hostWiring = [];
-    for (const entry of (await readRegistry(home)).entries) if (entry.libraryPath === value.library) hostWiring.push(await applyWritableRoots(await planWritableRoots({ projectRoot: entry.projectPath, libraryPath: entry.libraryPath }), { at, home }));
+    for (const entry of (await readRegistry(home)).entries) if (entry.libraryPath === value.library) hostWiring.push(await applyWritableRoots(await planWritableRoots({ projectRoot: entry.projectPath, libraryPath: entry.libraryPath, replacePaths: from === home ? [] : [from] }), { at, home }));
     return { reasonCode: "STORAGE_LOCATION_CONFIGURED", ...value, areas, hostWiring };
   });
 }

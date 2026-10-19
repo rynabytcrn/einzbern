@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, readStorageLocation, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS, runDoctor } from "../dist/build/packages/core/src/doctor.js";
 import { SETUP_MODES, applySetup, detectSetupContext, planSetup } from "../dist/build/packages/core/src/setup.js";
 import { SKILL_COPY_ROOTS, skillCopyPath } from "../dist/build/packages/core/src/skill-copies.js";
@@ -255,6 +255,7 @@ test("480-AC1: the default answers install the library, the registry entry, both
     ["machine-settings", join(f.deviceHome, "machine-settings.json"), "create"],
     ["managed-sections", join(f.project, "AGENTS.md"), "create"],
     ["managed-sections", join(f.project, "CLAUDE.md"), "create"],
+    ["device", join(f.deviceHome, "storage-location.json"), "create"],
   ];
   assert.deepEqual(rows(planned.writes), expected);
   assert.deepEqual(planned.backups, []);
@@ -571,4 +572,41 @@ test("fresh defaults reuse one external library for different projects with sepa
   assert.equal(edited.ok, false);
   assert.deepEqual(edited.detail.pending, ["AGENTS.md#variables-system"]);
   assertSelfCheckGreen({ selfCheck: await check(secondRoot) });
+});
+
+test("a user-chosen local parent creates one Ether and later projects reuse its shared identity", async context => {
+  const f = await fixture(context), library = join(f.base, "Selected storage", "Ether");
+  const first = await applySetup(await plan(f, { artifacts: library, cloud: false }));
+  assertSelfCheckGreen(first);
+  assert.equal(first.library.path, library);
+  assert.equal(chainIdentity(await materializeWorkspace(library)).role, "shared");
+  assert.equal(readStorageLocation(f.deviceHome).library, library);
+  const second = { ...f, project: join(f.base, "second source") };
+  await mkdir(second.project);
+  const next = await plan(second);
+  assert.equal(next.resolved.artifacts, library);
+  const applied = await applySetup(next);
+  assertSelfCheckGreen(applied);
+  assert.equal(applied.library.libraryId, first.library.libraryId);
+  const entries = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries;
+  assert.equal(new Set(entries.map(entry => entry.libraryPath)).size, 1);
+  assert.equal(new Set(entries.map(entry => entry.projectId)).size, 2);
+  assert.equal(await lstat(join(f.project, ".ether")).catch(() => null), null);
+  assert.equal(await lstat(join(second.project, ".ether")).catch(() => null), null);
+});
+
+test("restoring a shared Ether on another device retains its chosen location and isolates device runtime", async context => {
+  const f = await fixture(context), library = join(f.base, "Chosen parent", "Ether");
+  await applySetup(await plan(f, { artifacts: library, cloud: false }));
+  const b = { ...f, home: join(f.base, "home-b"), deviceHome: join(f.base, "device-b"), project: join(f.base, "source-b") };
+  await mkdir(b.home); await mkdir(b.project);
+  process.env.EINZBERN_HOME = b.deviceHome; process.env.HOME = b.home; process.env.USERPROFILE = b.home;
+  const tree = join(f.base, "trees", FRAMEWORK_VERSION);
+  await cli(["engine-update", "--from", tree, "--sha256", (await computeInstallTreeDigest(tree)).sha256, "--version", FRAMEWORK_VERSION, "--at", at()]);
+  const restored = await applySetup(await planSetup({ mode: "restore", projectRoot: b.project, home: b.home, deviceHome: b.deviceHome, at: at(), restore: library, answers: { cloud: false, navigation: true } }));
+  assertSelfCheckGreen(restored);
+  assert.equal(readStorageLocation(b.deviceHome).library, library);
+  assert.notEqual(readStorageLocation(b.deviceHome).runtime, readStorageLocation(f.deviceHome).runtime);
+  const next = { ...b, project: join(f.base, "source-c") }; await mkdir(next.project);
+  assert.equal((await plan(next)).resolved.artifacts, library);
 });

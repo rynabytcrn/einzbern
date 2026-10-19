@@ -1,4 +1,5 @@
-import { defaultSharedLibraryPath } from "./storage-location.js";
+import { defaultSharedLibraryPath, readStorageLocation, sharedRuntimePath } from "./storage-location.js";
+import { configureStorageLocation } from "./storage-configure.js";
 import { chainIdentity, registerSetupCoordination, restoredCoordinationBinding } from "./project-chain.js";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -710,6 +711,7 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
     deviceNavigation,
     engine: engine.directory === null ? null : await readEngineFiles(recorder, engine.directory),
   });
+  if (chainIdentity(library.state)?.role === "shared" && readStorageLocation(deviceHome) === null) recorder.write("device", join(deviceHome, "storage-location.json"), "create");
   return {
     questions: restoreQuestions(input, library.root, cloud),
     resolved,
@@ -783,6 +785,10 @@ export async function applyRestoreSetup(plan: SetupPlan): Promise<SetupApplied> 
     engineDirectory: directory,
     actorId: SETUP_ACTOR,
   });
+  if (chainIdentity(library.state)?.role === "shared" && readStorageLocation(deviceHome) === null) {
+    await configureStorageLocation(deviceHome, library.root, sharedRuntimePath(library.root, device.deviceId), at, "setup:restore", true);
+    recorder.write("device", join(deviceHome, "storage-location.json"), "create");
+  }
   // TCRN-CROSS-INIT-053 R46 (I08): a coordination found at the default location is registered now.
   const bound: SetupCoordination | null = coordination === null ? null
     : { libraryId: coordination.libraryId, status: coordination.status === "located" ? "registered" : coordination.status, path: coordination.path };

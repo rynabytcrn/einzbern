@@ -34,10 +34,11 @@ interface Journal {
   readonly at: string;
   readonly completed?: boolean;
   readonly relocation?: RelocationReport;
+  readonly actor?: string;
 }
 
 /** One shared library, at a user-chosen parent. No cloud-provider or source-path restriction. */
-export async function consolidateStorage(home: string, fromInput: string, toInput: string, retireRuntimeRootInput: string, at: string, decidedIn: string, yes = false): Promise<Record<string, unknown>> {
+export async function consolidateStorage(home: string, fromInput: string, toInput: string, retireRuntimeRootInput: string, at: string, decidedIn: string, yes = false, actor?: string): Promise<Record<string, unknown>> {
   assertStrictInstant(at);
   const from = resolve(fromInput), to = resolve(toInput), retireRuntimeRoot = resolve(retireRuntimeRootInput);
   if (from === to || contains(from, to) || contains(to, from) || contains(retireRuntimeRoot, to) || contains(to, retireRuntimeRoot)) refuse("overlapping storage roots");
@@ -46,10 +47,14 @@ export async function consolidateStorage(home: string, fromInput: string, toInpu
   const journalPath = join(home, "storage-consolidation.json");
   const previous = await readFile(journalPath, "utf8").then(text => JSON.parse(text) as Journal, error => { if (error.code === "ENOENT") return null; throw error; });
   if (previous && (previous.from !== from || previous.to !== to || previous.decidedIn !== decidedIn || previous.retireRuntimeRoot !== retireRuntimeRoot)) refuse("another storage consolidation requires recovery");
-  if (previous?.completed) return { reasonCode: "STORAGE_CONSOLIDATED", ...previous, resumed: true };
+  if (previous?.completed) {
+    const current = readStorageLocation(home);
+    if (current?.library !== to || current.runtime !== previous.runtimeTo || !await exists(join(to, "manifest.json")) || await exists(from) || await exists(retireRuntimeRoot)) refuse("completed storage has changed; no cleanup is inferred");
+    return { reasonCode: "STORAGE_CONSOLIDATED", ...previous, resumed: true };
+  }
   const pointer = readStorageLocation(home);
   if (pointer === null || (pointer.library !== from && pointer.library !== to)) refuse("the configured library does not match this migration");
-  const journal: Journal = previous ?? { from, to, runtimeFrom: pointer.runtime, runtimeTo: sharedRuntimePath(to, device.deviceId), retireRuntimeRoot, decidedIn, at };
+  const journal: Journal = previous ?? { from, to, runtimeFrom: pointer.runtime, runtimeTo: sharedRuntimePath(to, device.deviceId), retireRuntimeRoot, decidedIn, at, ...(actor === undefined ? {} : { actor }) };
   if (dirname(journal.runtimeFrom) !== retireRuntimeRoot || basename(journal.runtimeFrom) !== device.deviceId || retireRuntimeRoot === home) refuse("the exact retired runtime root must contain only this device");
   if (await exists(retireRuntimeRoot)) {
     if ((await lstat(retireRuntimeRoot)).isSymbolicLink() || (await readdir(retireRuntimeRoot)).some(name => ![device.deviceId, ".DS_Store"].includes(name))) refuse("the runtime root contains unowned entries");
@@ -84,6 +89,22 @@ export async function consolidateStorage(home: string, fromInput: string, toInpu
         await rename(staging, link);
       } else await symlink(destination, link, process.platform === "win32" ? "junction" : "dir");
     }
+    if (await exists(journal.runtimeFrom)) {
+      for (const area of ["cache", "locks", "backups"]) {
+        const path = join(journal.runtimeFrom, area);
+        if (!await exists(path)) continue;
+        if (!(await lstat(path)).isSymbolicLink() || await realpath(path) !== join(journal.runtimeTo, area)) refuse(`unverified runtime forwarding link: ${path}`);
+        await unlink(path);
+      }
+      const metadata = join(journal.runtimeFrom, ".DS_Store");
+      if (await exists(metadata)) await rename(metadata, join(journal.runtimeTo, "backups", "storage-locations", "old-device-finder-metadata"));
+      await rmdir(journal.runtimeFrom);
+    }
+    if (await exists(retireRuntimeRoot)) {
+      const metadata = join(retireRuntimeRoot, ".DS_Store");
+      if (await exists(metadata)) await rename(metadata, join(journal.runtimeTo, "backups", "storage-locations", "old-runtime-finder-metadata"));
+      await rmdir(retireRuntimeRoot);
+    }
     const target = await openLibrary(to);
     await withLibraryWriteLock(target, async () => {
       if (await exists(from)) {
@@ -92,9 +113,10 @@ export async function consolidateStorage(home: string, fromInput: string, toInpu
         if ((await readdir(from)).some(name => ![".gitignore", "README.md", "manifest.json", "akasha", "crest", "config", "artifacts", LIBRARY_TOMBSTONE_FILE, ".DS_Store"].includes(name))) refuse("the old library contains unowned root entries");
         const sourceFiles = (await libraryTreeDigests(from)).filter(file => file.path !== LIBRARY_TOMBSTONE_FILE);
         const targetFiles = new Map((await libraryTreeDigests(to)).map(file => [file.path, file]));
-        if (sourceFiles.some(file => targetFiles.get(file.path)?.sha256 !== file.sha256)) refuse("an old-library file has no identical destination");
+        if (sourceFiles.some(file => file.path !== ".DS_Store" && targetFiles.get(file.path)?.sha256 !== file.sha256)) refuse("an old-library file has no identical destination");
         const proof = join(to, DIRECTORY.artifacts, "relocations", relocation.transactionId);
         await mkdir(proof, { recursive: true });
+        if (await exists(join(from, ".DS_Store"))) await writeFileAtomic(join(proof, "source-finder-metadata"), await readFile(join(from, ".DS_Store")));
         await writeFileAtomic(join(proof, "source-tombstone.json"), await readFile(join(from, LIBRARY_TOMBSTONE_FILE), "utf8"));
         await writeFileAtomic(join(proof, "storage.json"), json({ ...journal, relocation, sourceFiles }));
         // Delete an exact, rechecked file list; unknown entries and links are retained as errors.
@@ -114,29 +136,13 @@ export async function consolidateStorage(home: string, fromInput: string, toInpu
         await clear(from); await unlink(join(from, "manifest.json")); await unlink(join(from, LIBRARY_TOMBSTONE_FILE)); await rmdir(from);
       }
     });
-    if (await exists(journal.runtimeFrom)) {
-      for (const area of ["cache", "locks", "backups"]) {
-        const path = join(journal.runtimeFrom, area);
-        if (!await exists(path)) continue;
-        if (!(await lstat(path)).isSymbolicLink() || await realpath(path) !== join(journal.runtimeTo, area)) refuse(`unverified runtime forwarding link: ${path}`);
-        await unlink(path);
-      }
-      const metadata = join(journal.runtimeFrom, ".DS_Store");
-      if (await exists(metadata)) await rename(metadata, join(journal.runtimeTo, "backups", "storage-locations", "old-device-finder-metadata"));
-      await rmdir(journal.runtimeFrom);
-    }
-    if (await exists(retireRuntimeRoot)) {
-      const metadata = join(retireRuntimeRoot, ".DS_Store");
-      if (await exists(metadata)) await rename(metadata, join(journal.runtimeTo, "backups", "storage-locations", "old-runtime-finder-metadata"));
-      await rmdir(retireRuntimeRoot);
-    }
-    await writeFileAtomic(journalPath, json({ ...journal, completed: true }));
+    await writeFileAtomic(journalPath, json({ ...journal, relocation, completed: true }));
     return { reasonCode: "STORAGE_CONSOLIDATED", ...journal, completed: true, relocation, retired: [from, retireRuntimeRoot] };
   });
 }
 
 /** Refresh generated documentation after acceptance; retain the previous README as evidence. */
-export async function refreshLibraryReadme(root: string, at: string): Promise<Record<string, unknown>> {
+export async function refreshLibraryReadme(root: string, at: string, actor?: string): Promise<Record<string, unknown>> {
   assertStrictInstant(at);
   const library = await openLibrary(root);
   return withLibraryWriteLock(library, async () => {
@@ -147,6 +153,6 @@ export async function refreshLibraryReadme(root: string, at: string): Promise<Re
     await mkdir(archive, { recursive: true });
     await writeFileAtomic(join(archive, `${digest(previous)}.md`), previous);
     await writeFileAtomic(path, text);
-    return { reasonCode: "LIBRARY_README_REFRESHED", path, previousSha256: digest(previous), sha256: digest(text), at };
+    return { reasonCode: "LIBRARY_README_REFRESHED", path, previousSha256: digest(previous), sha256: digest(text), at, ...(actor === undefined ? {} : { actor }) };
   });
 }

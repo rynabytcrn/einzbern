@@ -992,7 +992,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
   let binding: SetupCoordination | null = null;
   try {
     const identity = library.action === "reuse" ? chainIdentity(await materializeWorkspace(library.path)) : null;
-    const coordination = library.action === "create" || artifacts === defaultSharedLibraryPath(deviceHome) || identity?.role === "shared"
+    const coordination = basename(artifacts) === DIRECTORY.cloudDefaultParent || artifacts === defaultSharedLibraryPath(deviceHome) || identity?.role === "shared"
       ? { libraryId: library.libraryId, status: "registered" as const, path: library.path }
       : await projectCoordinationChoice(identity, deviceHome);
     binding = { libraryId: coordination.libraryId, status: coordination.status, path: coordination.path };
@@ -1018,7 +1018,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
     deviceNavigation,
     engine: files,
   });
-  if ((library.action === "create" || artifacts === defaultSharedLibraryPath(deviceHome)) && readStorageLocation(deviceHome) === null) recorder.write("device", join(deviceHome, "storage-location.json"), "create");
+  if ((basename(artifacts) === DIRECTORY.cloudDefaultParent || artifacts === defaultSharedLibraryPath(deviceHome)) && readStorageLocation(deviceHome) === null) recorder.write("device", join(deviceHome, "storage-location.json"), "create");
 
   return {
     questions: questionsFor(input, defaults),
@@ -1071,7 +1071,7 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
   const libraryPath = library.root;
   const libraryId = library.manifest.libraryId;
   if (planned.action === "create") recorder.write("library", libraryPath, "create");
-  const central = planned.action === "create" || libraryPath === defaultSharedLibraryPath(deviceHome);
+  const central = basename(libraryPath) === DIRECTORY.cloudDefaultParent || libraryPath === defaultSharedLibraryPath(deviceHome);
   if (central && chainIdentity(await materializeWorkspace(libraryPath)) === null) await declareChainIdentity(libraryPath, { role: "shared", coordinationLibraryId: libraryId }, { occurredAt: at, actorId: SETUP_ACTOR });
   const existingIdentity = chainIdentity(await materializeWorkspace(libraryPath));
   const registryFile = registryPath(deviceHome);

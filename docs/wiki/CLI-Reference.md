@@ -693,6 +693,17 @@
 
 无旗标。
 
+## `library-readme-refresh`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--actor` | 必填 | `string` |
+| `--workspace` | 可选 | `string` |
+| `--at` | 必填 | `instant` |
+
 ## `library-register`
 
 - 可用范围：`cli`。
@@ -1152,6 +1163,21 @@
 | `--decided-in` | 必填 | `string` |
 | `--yes` | 可选 | `boolean` |
 
+## `storage-consolidate`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--actor` | 必填 | `string` |
+| `--from` | 必填 | `string` |
+| `--to` | 必填 | `string` |
+| `--retire-runtime-root` | 必填 | `string` |
+| `--at` | 必填 | `instant` |
+| `--decided-in` | 必填 | `string` |
+| `--yes` | 可选 | `boolean` |
+
 ## `template-admit`
 
 - 可用范围：`cli`。
@@ -1503,19 +1529,3 @@
 | `--workspace` | 可选 | `string` |
 | `--to` | 必填 | `string` |
 | `--transaction-id` | 必填 | `string` |
-
-## `storage-consolidate`
-
-Plan a verified library and runtime move into one `Ether` at the user-selected parent:
-`--from <old library> --to <selected Ether> --retire-runtime-root <exact old runtime root> --at <UTC> --decided-in <decision> --actor <actual actor>`.
-With `--yes true`, preserve the shared identity, native history, file digests and relocation
-receipts, move runtime into `.einzbern/<device-id>/`, update this device and host wiring,
-and retire only the exact verified old roots. Other devices or unrecognized content refuse
-retirement. Repeating the same request resumes its durable receipt.
-
-## `library-readme-refresh`
-
-After acceptance, update the generated README through the engine:
-`--workspace <library> --at <UTC> --actor <actual actor>`. The previous README is
-archived under `artifacts/relocations/readme/` before replacement. Repeating a current
-README returns `LIBRARY_README_CURRENT` without changing it.

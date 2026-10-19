@@ -5105,6 +5105,28 @@
         "flags": []
       },
       {
+        "name": "library-readme-refresh",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "actor",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "workspace",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          }
+        ]
+      },
+      {
         "name": "library-register",
         "availability": "cli",
         "mutates": true,
@@ -6263,6 +6285,48 @@
           },
           {
             "name": "runtime",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          },
+          {
+            "name": "decided-in",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "yes",
+            "required": false,
+            "valueKind": "boolean"
+          }
+        ]
+      },
+      {
+        "name": "storage-consolidate",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "actor",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "from",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "to",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "retire-runtime-root",
             "required": true,
             "valueKind": "string"
           },

@@ -23,7 +23,7 @@ function validateReceipt(value: Receipt): void {
   if (!value || !isAbsolute(value.from) || !isAbsolute(value.to) || !validIdentity(value.source) || !["copying", "verified", "complete"].includes(value.phase) || !Array.isArray(value.entries)) refuse("invalid runtime transport receipt");
   const paths = new Map<string, Entry>();
   for (const entry of value.entries) {
-    if (typeof entry.path !== "string" || isAbsolute(entry.path) || entry.path.includes("\\") || entry.path.split("/").some(part => ["", ".", ".."].includes(part)) || paths.has(entry.path)) refuse("invalid runtime receipt path");
+    if (typeof entry.path !== "string" || isAbsolute(entry.path) || entry.path.includes("\\") || entry.path.split("/").some((part: string) => ["", ".", ".."].includes(part)) || paths.has(entry.path)) refuse("invalid runtime receipt path");
     if (!["directory", "file", "link"].includes(entry.kind) || (entry.kind === "file" && (!/^[a-f0-9]{64}$/u.test(entry.sha256 ?? "") || !Number.isSafeInteger(entry.bytes) || entry.bytes! < 0)) || (entry.kind === "link" && (typeof entry.link !== "string" || entry.link.length === 0 || entry.link.includes("\0")))) refuse("invalid runtime receipt entry");
     paths.set(entry.path, entry);
   }

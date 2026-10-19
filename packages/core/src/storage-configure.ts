@@ -20,7 +20,7 @@ export async function configureStorageLocation(home: string, library: string, ru
     const expected = { from, to: target, library: resolve(library), decidedIn };
     let recorded = await readFile(receiptPath, "utf8").then(text => JSON.parse(text), error => { if (error.code === "ENOENT") return null; throw error; });
     if (recorded !== null && canonicalJson(recorded) !== canonicalJson(expected) && from !== target) {
-      if (previous?.runtime !== recorded.to || previous.decidedIn !== recorded.decidedIn) throw new Error("STORAGE_RECOVERY_REQUIRED");
+      if (previous === null || previous.runtime !== recorded.to || previous.decidedIn !== recorded.decidedIn) throw new Error("STORAGE_RECOVERY_REQUIRED");
       const archive = join(from, "backups", "storage-locations");
       await mkdir(archive, { recursive: true });
       await writeFileAtomic(join(archive, `${at.replace(/[-:]/gu, "")}.json`), canonicalJson({ pointer: previous, receipt: recorded }));

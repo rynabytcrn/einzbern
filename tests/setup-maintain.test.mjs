@@ -133,7 +133,7 @@ async function installed(context, { before = null } = {}) {
   assert.equal((await cli(["engine-update", "--from", engine.tree, "--sha256", engine.sha256, "--version", FRAMEWORK_VERSION, "--at", at()])).reasonCode, "ENGINE_UPDATED");
   const f = { base, home, deviceHome, project, library: join(project, ".ether") };
   if (before !== null) await before(f);
-  const fresh = await applySetup(await plan(f, "fresh"));
+  const fresh = await applySetup(await plan(f, "fresh", { answers: { artifacts: f.library } }));
   assertSelfCheckGreen(fresh);
   return { ...f, fresh };
 }
@@ -498,7 +498,7 @@ test("480-AC4 (U04): uninstall keeps the coordination registration while a regis
   const projects = [f.project, join(f.base, "second"), join(f.base, "third")];
   for (const project of projects.slice(1)) {
     await mkdir(project);
-    const applied = await applySetup(await planSetup({ mode: "fresh", projectRoot: project, at: at(), home: f.home, deviceHome: f.deviceHome }));
+    const applied = await applySetup(await planSetup({ mode: "fresh", projectRoot: project, at: at(), home: f.home, deviceHome: f.deviceHome, answers: { artifacts: join(project, ".ether") } }));
     assert.equal(applied.reasonCode, "SETUP_APPLIED");
     assert.ok(!applied.written.some((entry) => entry.path === coordination), "a second project joins the registered coordination and creates none");
     assert.equal(chainIdentity(await materializeWorkspace(join(project, ".ether"))).coordinationLibraryId, coordinationId);

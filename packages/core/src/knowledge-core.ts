@@ -622,6 +622,8 @@ interface KnowledgeMutationClaim extends ExclusiveFile {
   readonly acquiredAt: string;
 }
 
+const migratedKnowledgeScopes = new WeakMap<KnowledgeUnitMetadata, readonly string[]>();
+
 interface ScannedKnowledgeUnit {
   readonly metadataPath: string;
   readonly bodyPath: string;
@@ -714,6 +716,7 @@ interface UserCrestScan extends CrestScan {
 }
 
 interface KnowledgeStoreScan extends CrestScan {
+  readonly sourceRemovalEvents?: readonly CrestRemovalEvent[];
   // TCRN-CROSS-SUB-414: a library's crest, merged from its device streams and any metadata/body
   // layout, or an old-layout workspace's store, read as its engine left it.
   readonly layout: "library" | "old-layout";
@@ -2499,12 +2502,10 @@ function chainEventHash(workspace: WorkspaceState, streamId: string, sequence: n
 // Whether this device's chain holds every chain event a library crest event was written against:
 // each named stream has reached the sequence, and its event there is the one named.
 function chainHolds(workspace: WorkspaceState, chain: readonly ChainPosition[]): boolean {
-  const streams = workspace.library?.streams ?? [];
+  const streams = [...(workspace.library?.streams ?? []), ...(workspace.library?.importedStreams ?? [])];
   return chain.every((position) => {
-    const stream = streams.find((entry) => entry.deviceId === position.deviceId);
-    if (stream === undefined || stream.sequence < position.sequence) return false;
-    if (stream.sequence === position.sequence) return stream.headEventHash === position.eventHash;
-    return chainEventHash(workspace, stream.streamId, position.sequence) === position.eventHash;
+    return streams.some(stream => stream.deviceId === position.deviceId && stream.sequence >= position.sequence &&
+      (stream.sequence === position.sequence ? stream.headEventHash === position.eventHash : chainEventHash(workspace, stream.streamId, position.sequence) === position.eventHash));
   });
 }
 
@@ -2581,6 +2582,7 @@ async function scanLibraryCrest(
   allowClaim: boolean,
   bodyMode: "full" | "metadata-only",
   rebase: boolean,
+  imported = false,
 ): Promise<KnowledgeStoreScan> {
   const backend = storeBackendFor(storeRoot, options);
   // The marker first: a crest nobody initialized has none, and says so as it always did.
@@ -2627,7 +2629,18 @@ async function scanLibraryCrest(
   const streams = hasEvents ? await readCrestEventStreams(storeRoot, reading) : EMPTY_CREST_EVENT_STREAMS;
   // TCRN-CROSS-SUB-425: the removals the streams hold, and the supersessions, decide which cards are
   // removed; only then are the bodies admitted, since a removed card's may be cleared.
-  const projection = projectCrestUnits([...legacyUnits, ...streams.units], streams.removals, workspace, true);
+  const importedUnits: CrestUnit[] = [];
+  const importedRemovals: CrestRemovalEvent[] = [];
+  if (!imported) for (const source of workspace.library?.consolidation?.sources ?? []) {
+    if (source.manifest.libraryId === workspace.metadata.workspaceId || !source.inventory.some(file => file.path === "crest/store.json")) continue;
+    const archivedWorkspace = { ...workspace, metadata: { ...workspace.metadata, workspaceId: source.manifest.libraryId } };
+    const archived = await scanLibraryCrest(archivedWorkspace, workspaceRoot, join(workspaceRoot, source.archive, "crest"), options, false, bodyMode, rebase, true);
+    if (archived.awaitingChain.length) fail("KNOWLEDGE_PARTIAL_STATE", "imported knowledge is awaiting its original chain");
+    for (const unit of archived.units) importedUnits.push({ ...unit, lineage: `${source.manifest.libraryId}/${unit.lineage}` });
+    for (const duplicate of archived.duplicates) for (const unit of duplicate.versions) importedUnits.push({ ...unit, lineage: `${source.manifest.libraryId}/${unit.lineage}` });
+    importedRemovals.push(...archived.sourceRemovalEvents ?? []);
+  }
+  const projection = projectCrestUnits([...legacyUnits, ...streams.units, ...importedUnits], [...streams.removals, ...importedRemovals], workspace, true);
   const { removals, unresolvedConflicts } = projection;
   // TCRN-CROSS-SUB-425 R18: a removed card's record of the metadata/body layout may hold no body, since
   // knowledge-bodies-migrate --clear-removed clears it there; every other live record still holds its own.
@@ -2646,6 +2659,12 @@ async function scanLibraryCrest(
   // TCRN-CROSS-SUB-413: the cards and every version of a duplicate. TCRN-CROSS-SUB-310 R17 (MIN-238
   // D1): however many body bytes the merged streams hold, the read answers; nothing sums them.
   const records = crestRecords({ units, duplicates });
+  if (!imported && workspace.library?.consolidation !== undefined) for (const unit of records) {
+    if (unit.metadata.projectId !== null) continue;
+    const source = workspace.library.consolidation.sources.find(source => unit.metadataPath.startsWith(join(workspaceRoot, source.archive, "crest") + "/") ||
+      (source.manifest.libraryId === workspace.metadata.workspaceId && source.inventory.some(file => join(workspaceRoot, file.path) === unit.metadataPath)));
+    migratedKnowledgeScopes.set(unit.metadata, source?.bindings.map(binding => binding.projectId) ?? []);
+  }
   // WSC-2: the current record of each card is bound to the chain this read replayed. Rebase defers
   // scope/project liveness into the offender list; dangling work references are diagnostics.
   // TCRN-CROSS-SUB-414 (R16, C-R16-1): a project deleted after a card was written -- or by another
@@ -2694,13 +2713,13 @@ async function scanLibraryCrest(
     version: marker.version + streams.eventCount,
   };
   const index = knowledgeIndex(projectedMarker, indexRecords(records.map((unit) => unit.metadata), removals));
-  await projectKnowledgeView(libraryKnowledgeView(storeRoot, options), index);
+  if (!imported) await projectKnowledgeView(libraryKnowledgeView(storeRoot, options), index);
   return {
     layout: "library", workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot: null, marker: projectedMarker, workspace, units, index,
     linkInvalid: [...linkInvalid].sort(compareCanonicalText),
     danglingWorkLinks,
     unresolvedConflicts, duplicates, awaitingChain, unresolvedScopes, eventHeads: streams.heads,
-    removals, streamBodies,
+    removals, streamBodies, sourceRemovalEvents: streams.removals,
   };
 }
 
@@ -4276,7 +4295,7 @@ const UNCONFIGURED_WRITE_LANGUAGE_POLICY: KnowledgeLanguagePolicy = Object.freez
  */
 async function writeLanguagePolicy(workspace: WorkspaceState, projectId: string | null, host?: string): Promise<KnowledgeLanguagePolicy> {
   const scoped = scopedWorkspaceState(workspace, projectId ?? undefined);
-  if (chainIdentity(workspace)?.role === "coordination") return UNCONFIGURED_WRITE_LANGUAGE_POLICY;
+  if (chainIdentity(workspace, projectId ?? undefined)?.role === "coordination") return UNCONFIGURED_WRITE_LANGUAGE_POLICY;
   return readRuntimeKnowledgeLanguagePolicy(scoped.settings, host);
 }
 
@@ -5477,7 +5496,7 @@ function selectKnowledgeMetadata(
     const freshness = computeFreshness(metadata, query.at);
     const explicitCorpus = includeExplicitOnly && (query.includeExplicitOnly === true || search !== undefined);
     if (selection === "default" && !(explicitCorpus ? explicitlySelectable(metadata, query.at) : isDefaultSelectable(metadata, query.at))) return false;
-    return (!query.projectId || metadata.projectId === query.projectId) &&
+    return (!query.projectId || metadata.projectId === query.projectId || (migratedKnowledgeScopes.has(metadata) && (migratedKnowledgeScopes.get(metadata)!.length === 0 || migratedKnowledgeScopes.get(metadata)!.includes(query.projectId)))) &&
       (!query.roleScope || metadata.roleScopes.includes(query.roleScope)) &&
       (!query.category || metadata.category === query.category) && (!query.kind || metadata.kind === query.kind) &&
       (!query.tag || metadata.tags.includes(query.tag)) && (!query.freshness || freshness === query.freshness) &&

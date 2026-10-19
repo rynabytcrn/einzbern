@@ -110,7 +110,7 @@ async function fixture(context, { engines = ["a", "b"] } = {}) {
 /** Device a installs the project with a fresh library in .ether; the process is device a afterwards. */
 async function installOnA(f, answers = {}) {
   use(f.a);
-  const planned = await planSetup({ mode: "fresh", projectRoot: f.project, at: at(), home: f.a.home, deviceHome: f.a.deviceHome, answers });
+  const planned = await planSetup({ mode: "fresh", projectRoot: f.project, at: at(), home: f.a.home, deviceHome: f.a.deviceHome, answers: { artifacts: f.library, ...answers } });
   assert.deepEqual(planned.blockers, []);
   const applied = await applySetup(planned);
   assert.equal(applied.reasonCode, "SETUP_APPLIED");
@@ -473,7 +473,7 @@ test("480-R3 (U04): a second device recognizes the restored coordination identit
   // A later first installation of another project on device b joins the same identity.
   const other = join(f.base, "other");
   await mkdir(other);
-  const planned = await planSetup({ mode: "fresh", projectRoot: other, at: at(), home: f.b.home, deviceHome: f.b.deviceHome });
+  const planned = await planSetup({ mode: "fresh", projectRoot: other, at: at(), home: f.b.home, deviceHome: f.b.deviceHome, answers: { artifacts: join(other, ".ether") } });
   assert.deepEqual(planned.blockers, []);
   assert.ok(!planned.writes.some((entry) => entry.path === coordinationOnB), "the plan creates no coordination library");
   assert.deepEqual(planned.coordination, unregistered, "R46 I08: a fresh plan names the identity it joins, unregistered here");
@@ -554,7 +554,7 @@ test("480-R3 (U04): restoring a library that names another coordination than thi
   use(f.b);
   const own = join(f.base, "own");
   await mkdir(own);
-  assert.equal((await applySetup(await planSetup({ mode: "fresh", projectRoot: own, at: at(), home: f.b.home, deviceHome: f.b.deviceHome }))).reasonCode, "SETUP_APPLIED");
+  assert.equal((await applySetup(await planSetup({ mode: "fresh", projectRoot: own, at: at(), home: f.b.home, deviceHome: f.b.deviceHome, answers: { artifacts: join(own, ".ether") } }))).reasonCode, "SETUP_APPLIED");
   const deviceCoordination = chainIdentity(await materializeWorkspace(join(own, ".ether"))).coordinationLibraryId;
   assert.notEqual(deviceCoordination, named);
   const registryBefore = await readFile(join(f.b.deviceHome, "registry.json"));

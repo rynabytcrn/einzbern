@@ -36,6 +36,7 @@ export const RECALL_LINE_MAX_BYTES = RUNTIME_CAPACITY.bufferBytes;
 // Declared ancestry is complete; the seen set below rejects cycles without a depth ceiling.
 
 export interface RecallInputOptions {
+  readonly projectId?: string;
   readonly scopeExcerptBytes?: number;
   // TCRN-CROSS-SUB-426 R17 续作修订三 (C-R18-1; MIN-239 D6; STORY-514 R4): which decisions of each
   // minutes record recall indexes, as minutes-list reads them. Left out, the valid ones; "obsolete" the
@@ -340,6 +341,7 @@ function projectCrestDegradation(read: RecallCardStoreRead): RecallProjectCrestD
 }
 
 export interface RecallCardReadOptions {
+  readonly projectId?: string;
   readonly at: string;
   readonly allowTrailing?: boolean;
   // TCRN-CROSS-SUB-425 (MIN-239 D6): which cards to read from each store, as knowledge-list reads them.
@@ -373,6 +375,7 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
         at: options.at,
         ...(options.allowTrailing === undefined ? {} : { allowTrailing: options.allowTrailing }),
         ...(options.status === undefined ? {} : { status: options.status }),
+        ...(scope === "project" && options.projectId !== undefined ? { projectId: options.projectId } : {}),
         includeExplicitOnly: true,
         limit: Number.MAX_SAFE_INTEGER,
         ...(scope === "user" ? { scope } : {}),
@@ -427,6 +430,12 @@ export function recallInputsFromState(
   cards: readonly RecallKnowledgeInput[],
   options: RecallInputOptions = {},
 ): RecallInputs {
+  if (options.projectId !== undefined) state = {
+    work: state.work.filter(entry => entry.projectId === options.projectId),
+    minutes: state.minutes.filter(entry => entry.projectId === options.projectId),
+    conferenceMinutes: state.conferenceMinutes.filter(entry => entry.projectId === options.projectId),
+    conferences: state.conferences.filter(entry => entry.projectId === options.projectId),
+  };
   const byId = new Map(state.work.map((record) => [record.id, record]));
   const work: RecallWorkInput[] = [];
   for (const record of state.work) {

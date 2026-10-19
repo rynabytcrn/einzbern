@@ -1,3 +1,4 @@
+import { runtimeHome } from "./storage-location.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -306,7 +307,7 @@ async function checkRegisteredLibraries(engine: EngineProbe, home: string): Prom
 }
 
 async function withEngineLock<T>(home: string, operation: () => Promise<T>): Promise<T> {
-  const path = join(home, DEVICE_HOME_ENTRIES.locks, ENGINE_FILES.lock);
+  const path = join(runtimeHome(home), DEVICE_HOME_ENTRIES.locks, ENGINE_FILES.lock);
   await ensureDeviceDirectory(dirname(path));
   return withFileLock(path, operation);
 }

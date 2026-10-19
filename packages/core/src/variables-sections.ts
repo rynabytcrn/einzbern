@@ -110,8 +110,9 @@ function sectionText(state: Partial<Pick<WorkspaceState, "settings">>): SectionT
 
 // Whether the library is a coordination library (chain-identity.ts), read from its identity record as
 // the library holds it; a scoped state keeps that record (project-scope.ts).
-function coordinationChain(state: Partial<Pick<WorkspaceState, "configRecords">>): boolean {
-  return state.configRecords?.some((record) => record.collection === "chain" && record.key === "identity" && record.projectId === undefined && record.value.role === "coordination") === true;
+function coordinationChain(state: Partial<Pick<WorkspaceState, "configRecords">> & { readonly configurationProjectId?: string | null }): boolean {
+  const scope = state.configurationProjectId ?? undefined;
+  return state.configRecords?.some((record) => record.collection === "chain" && record.key === "identity" && (record.projectId === scope || record.projectId === undefined) && record.value.role === "coordination") === true;
 }
 
 export type WithheldReason = "absolute-path" | "secret-shaped" | "not-exported";

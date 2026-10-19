@@ -1,3 +1,4 @@
+import { readConsolidationIndex } from "./consolidation-format.js";
 // SPDX-License-Identifier: Apache-2.0
 import { readExecutionAdmissionSnapshot, resolveExecutionAdmissionFromSnapshot } from "./execution-admission.js";
 import type { ExecutionAdmissionRequest, ExecutionAdmissionSnapshot } from "./execution-admission.js";
@@ -61,7 +62,16 @@ export async function resolveProjectTarget(referenceInput: ProjectReference, hom
 }
 
 async function resolveProjectTargetFromSnapshot(referenceInput: ProjectReference, home: string | undefined, visited: Set<string>, execution?: ReturnType<typeof projectExecutionConfiguration>): Promise<Record<string, unknown>> {
-  const reference = projectReference(referenceInput);
+  let reference = projectReference(referenceInput);
+  const registry = await readRegistry(home);
+  if (!registry.entries.some(entry => entry.libraryId === reference.libraryId)) for (const path of new Set(registry.entries.map(entry => entry.libraryPath))) {
+    const library = await openLibrary(path).catch(() => null);
+    if (library === null || library.manifest.consolidation === undefined) continue;
+    const consolidation = await readConsolidationIndex(path, library.manifest);
+    if (consolidation?.sources.some(source => source.manifest.libraryId === reference.libraryId)) {
+      reference = { ...reference, libraryId: library.manifest.libraryId }; break;
+    }
+  }
   const base = { reference, writeAuthority: "not-granted" };
   const key = projectReferenceKey(reference);
   if (visited.has(key)) return { ...base, status: "conflicting", reason: "common-default-cycle" };
@@ -84,7 +94,7 @@ async function resolveProjectTargetFromSnapshot(referenceInput: ProjectReference
   if (!project) return { ...base, status: "project-absent" };
   if (project.tombstone) return { ...base, status: "project-deleted" };
   try {
-    const identity = chainIdentity(state);
+    const identity = chainIdentity(state, project.id);
     if (identity?.role !== "project") return { ...base, status: "unconfigured", reason: identity === null ? "chain-role-unclassified" : "coordination-is-not-development", name: project.name };
     const scoped = scopedWorkspaceState(state, project.id);
     const catalog = readSettingsCatalog(state.metadata.workspaceId, scoped.settings);
@@ -252,7 +262,7 @@ async function discoverRegistered(home: string | undefined, expectedId: string |
     if (state.metadata.workspaceId !== entry.libraryId) throw new ProjectChainError("registered coordination identity mismatch");
     const identity = chainIdentity(state);
     if (identity?.role === "project") named.add(identity.coordinationLibraryId);
-    if (identity?.role !== "coordination") continue;
+    if (identity?.role !== "coordination" && identity?.role !== "shared") continue;
     const path = await realpath(entry.libraryPath);
     const previous = candidates.get(entry.libraryId);
     if (previous && previous.path !== path) throw new ProjectChainError(`coordination has competing locations: ${previous.path}, ${path}`);
@@ -413,7 +423,7 @@ export async function resolveCoordinationBinding(expectedId: string, home: strin
   const own = await registeredCoordination(home);
   if (own !== null) throw new CoordinationConflictError(`the library names coordination ${expectedId}, but this device's coordination is ${own.libraryId}`, [expectedId, own.libraryId]);
   const local = await defaultCoordination(home);
-  if (local !== null && local.role === "coordination") {
+  if (local !== null && (local.role === "coordination" || local.role === "shared")) {
     if (local.libraryId === expectedId) return { libraryId: expectedId, status: "located", path: local.path };
     throw new CoordinationConflictError(`the library names coordination ${expectedId}, but this device's default coordination location holds ${local.libraryId}`, [expectedId, local.libraryId]);
   }
@@ -498,6 +508,7 @@ export async function registerSetupCoordination(path: string, occurredAt: string
 // `written`: the coordination library was written to (created, or given its Cross Project project).
 export async function ensureProjectCoordination(root: string, occurredAt: string, home = deviceHome()): Promise<{ libraryId: string; path: string | null; created: boolean; written: boolean; status: ProjectCoordinationChoice["status"] }> {
   const identity = chainIdentity(await materializeWorkspace(root));
+  if (identity?.role === "shared") return { libraryId: identity.coordinationLibraryId, path: root, created: false, written: false, status: "registered" };
   const choice = await projectCoordinationChoice(identity, home);
   let libraryId = choice.libraryId;
   let written = false;

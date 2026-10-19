@@ -1,3 +1,8 @@
+import { deviceHome } from "../../core/src/device-home.js";
+import { readFile } from "node:fs/promises";
+import { configureStorageLocation } from "../../core/src/storage-configure.js";
+import { consolidateLibraries, cleanConsolidatedSources } from "../../core/src/consolidate.js";
+import type { ConsolidationMapping } from "../../core/src/consolidate.js";
 // SPDX-License-Identifier: Apache-2.0
 import { prepareDispatch, recordDispatch, writeDispatchArtifact } from "../../core/src/dispatch-workflow.js";
 import { normalizeDispatchAdmissionEvidence } from "../../core/src/dispatch-evidence.js";
@@ -1055,7 +1060,7 @@ async function libraryGateResult(state: Awaited<ReturnType<typeof materializeWor
  * Work this library's own gates cover runs here as well (TCRN-CROSS-STORY-519),
  * listed apart under `library`; such work needs no target and no decided relation. */
 async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean, executeRun: typeof runGates): Promise<Record<string, unknown> | null> {
-  if (chainIdentity(state)?.role !== "coordination" || values["work-id"] === undefined) return null;
+  if (!["coordination", "shared"].includes(chainIdentity(state)?.role ?? "") || values["work-id"] === undefined) return null;
   const workIds = listValue(values["work-id"]);
   const covered = libraryCoveredWork(state, workIds, values["project-id"], booleanValue(values.release, "release"));
   const results: Record<string, unknown>[] = [];
@@ -1835,6 +1840,9 @@ export const COMMAND_CATALOG = Object.freeze([
   // Story going to done run in.
   { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   // TCRN-CROSS-STORY-470 R3: move a library; the old place keeps a tombstone and refuses writes.
+  { name: "storage-configure", availability: "cli", mutates: true, flags: [{ name: "library", required: true, valueKind: "string" }, { name: "runtime", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "decided-in", required: true, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "workspace-consolidate-clean", availability: "cli", mutates: true, flags: [{ name: "to", required: true, valueKind: "string" }, { name: "copies", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "workspace-consolidate", availability: "cli", mutates: true, flags: [{ name: "mapping", required: true, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   { name: "workspace-relocate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "workspace-relocate-discard", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "transaction-id", required: true, valueKind: "string" }] },
 ] as const);
@@ -2230,7 +2238,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   const otherRequired = REGISTRY_RESOLVED_VERBS.get(command);
   if (!PROJECT_OR_LIBRARY_VERBS.has(command) && otherRequired !== undefined && !rest.includes("--help") && !rest.includes("-h") && !hasFlag(rest, "workspace") &&
     otherRequired.every((name) => hasFlag(rest, name))) {
-    rest = ["--workspace", (await resolveLibrary(process.cwd(), undefined, { workspaceFlag: true })).libraryPath, ...rest];
+    const resolved = await resolveLibrary(process.cwd(), undefined, { workspaceFlag: true });
+    const acceptsProject = COMMAND_CATALOG.find(entry => entry.name === command)?.flags.some(flag => flag.name === "project-id");
+    rest = ["--workspace", resolved.libraryPath, ...(acceptsProject && resolved.entry.projectId !== undefined && !hasFlag(rest, "project-id") ? ["--project-id", resolved.entry.projectId] : []), ...rest];
   }
   lastWrittenIds = null;
   // requiredShared is the mandatory pair every workspace-event mutation verb demands
@@ -2626,6 +2636,26 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   // TCRN-CROSS-STORY-470 R3, AC2, AC3: relocate a library (relocate.ts). The host write-root
   // wiring for a library outside its project follows the move (TCRN-CROSS-STORY-470 R5).
+  if (command === "storage-configure") {
+    const values = parseArguments(rest, ["library", "runtime", "at", "decided-in", "yes"]);
+    required(values, ["library", "runtime", "at", "decided-in"]);
+    io.write(canonicalJson(await configureStorageLocation(deviceHome(), values.library!, values.runtime!, values.at!, values["decided-in"]!, booleanValue(values.yes, "yes")) as JsonValue));
+    return;
+  }
+  if (command === "workspace-consolidate-clean") {
+    const values = parseArguments(rest, ["to", "copies", "at", "yes"]);
+    required(values, ["to", "copies", "at"]);
+    const copies = JSON.parse(await readFile(values.copies!, "utf8")) as { path: string; libraryId: string }[];
+    io.write(canonicalJson(await cleanConsolidatedSources(values.to!, copies, values.at!, booleanValue(values.yes, "yes")) as JsonValue));
+    return;
+  }
+  if (command === "workspace-consolidate") {
+    const values = parseArguments(rest, ["mapping", "to", "at", "actor", "decided-in", "yes"]);
+    required(values, ["mapping", "to", "at", "actor", "decided-in"]);
+    const mapping = JSON.parse(await readFile(values.mapping!, "utf8")) as ConsolidationMapping;
+    io.write(canonicalJson(await consolidateLibraries(mapping, values.to!, { at: values.at!, actor: values.actor!, decidedIn: values["decided-in"]!, yes: booleanValue(values.yes, "yes") }) as JsonValue));
+    return;
+  }
   if (command === "workspace-relocate-discard") {
     const values = parseArguments(rest, ["workspace", "to", "transaction-id"]);
     required(values, ["workspace", "to", "transaction-id"]);
@@ -3547,6 +3577,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // Each store answers the card status as knowledge-list does: removed, the removed cards alone; all,
     // every card.
     const cards = await readRecallCards(workspace, {
+      ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }),
       at: values.at ?? "",
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
       ...(cardStatus === "valid" ? {} : { status: cardStatus }),
@@ -3554,7 +3585,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-474 R1: what the index holds is decided in one place (recall-inputs.ts), so
     // the verb and the prompt hook cannot index differently: the Stories, Incidents, Initiatives and
     // Epics with their goal, body and parent titles, every minutes record, and the cards.
-    const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes, ...(decisions === "valid" ? {} : { decisions }) });
+    const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), ...(decisions === "valid" ? {} : { decisions }) });
     const result = recall({
       // Library identity stays path-independent; project-specific corpus inputs must not share an index.
       cacheKey: `${state.metadata.workspaceId}:${values["project-id"] ?? ""}`,

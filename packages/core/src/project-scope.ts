@@ -45,8 +45,8 @@ export function workspaceSettingIdentity(key: string, projectId?: string): strin
 
 export function assertSettingScope(state: WorkspaceState, key: string, projectId?: string): void {
   projectLineage(state, projectId);
-  if (chainIdentity(state)?.role === "coordination" && !coordinationRuntimeSetting(settingsCatalogEntry(key).key)) throw new ProjectScopeError("coordination chains expose runtime settings only", { key });
-  if (projectId !== undefined && (chainIdentity(state)?.role === "coordination" || settingsCatalogEntry(key).scope === "library")) {
+  if (chainIdentity(state, projectId)?.role === "coordination" && !coordinationRuntimeSetting(settingsCatalogEntry(key).key)) throw new ProjectScopeError("coordination chains expose runtime settings only", { key });
+  if (projectId !== undefined && ((chainIdentity(state)?.role !== "shared" && chainIdentity(state, projectId)?.role === "coordination") || settingsCatalogEntry(key).scope === "library")) {
     throw new ProjectScopeError("this setting belongs to the whole library and cannot have a project override", { key, projectId });
   }
 }
@@ -109,7 +109,7 @@ export function designConfiguration(state: Pick<ScopedWorkspaceState, "settings"
 /** Read view; never pass it to appendEvents as the replacement for the full native state. */
 export function scopedWorkspaceState(state: WorkspaceState, projectId?: string): ScopedWorkspaceState {
   const lineage = projectLineage(state, projectId);
-  const coordination = chainIdentity(state)?.role === "coordination";
+  const coordination = chainIdentity(state, projectId)?.role === "coordination";
   const scopes: readonly (string | undefined)[] = [...lineage.map((entry) => entry.id), undefined];
   const source = (scope: string | undefined): ConfigurationSource => ({
     kind: scope === undefined ? "library" : "project", projectId: scope ?? null,
@@ -124,7 +124,7 @@ export function scopedWorkspaceState(state: WorkspaceState, projectId?: string):
   for (const entry of SETTINGS_CATALOG) {
     // A coordination chain reads its runtime settings at the library level only (c1-B), like a library setting.
     if (coordination && !coordinationRuntimeSetting(entry.key)) continue;
-    const libraryLevel = coordination || entry.scope === "library";
+    const libraryLevel = (coordination && chainIdentity(state)?.role !== "shared") || entry.scope === "library";
     const eligible = libraryLevel ? [undefined] : scopes;
     const record = eligible.map((scope) => state.settings.find((value) => value.key === entry.key && value.projectId === scope)).find((value) => value !== undefined);
     const fallback = eligible.filter((scope) => scope !== (libraryLevel ? undefined : projectId)).map((scope) => state.settings.find((value) => value.key === entry.key && value.projectId === scope)).find((value) => value !== undefined);
@@ -135,7 +135,7 @@ export function scopedWorkspaceState(state: WorkspaceState, projectId?: string):
     else settingSources[entry.key] = { kind: "default", projectId: null, projectName: null, inherited: false };
   }
   for (const entry of readSettingsCatalog(state.metadata.workspaceId, fallbackRecords).settings) settingFallbackValues[entry.key] = entry.currentValue;
-  const configRecords: ConfigRecord[] = state.configRecords.filter(record => record.collection === "chain" && record.key === "identity" && record.projectId === undefined);
+  const configRecords: ConfigRecord[] = state.configRecords.filter(record => record.collection === "chain" && record.key === "identity" && (record.projectId === undefined || record.projectId === projectId));
   const configSources: Record<string, ConfigurationSource> = {};
   const seen = new Set<string>();
   for (const scope of scopes) for (const record of state.configRecords) {

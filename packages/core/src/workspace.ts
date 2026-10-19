@@ -1,3 +1,4 @@
+import { consolidateStates } from "./consolidation-state.js";
 import { FormatVersionError } from "./format-version.js";
 import type { InvolvedProjects } from "../../protocol/src/index.js";
 import { normalizeInvolvedProjects, involvedProjectsOf, assertStoredInvolvedProjects, assertInvolvedProjectScope, storedInvolvedProjects } from "./involved-projects.js";
@@ -422,6 +423,8 @@ export interface LibraryStreamHead {
 }
 
 export interface LibraryReplay {
+  readonly importedStreams?: readonly LibraryStreamHead[];
+  readonly consolidation?: import("./consolidation-format.js").ConsolidationIndex;
   readonly libraryRoot: string;
   readonly versionVector: Readonly<Record<string, number>>;
   readonly streams: readonly LibraryStreamHead[];
@@ -2198,7 +2201,9 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
   const projects = collection<string, ProjectRecord>((snapshot?.projects ?? []).map((record) => [record.id, record]));
   const work = collection<string, WorkRecord>((snapshot?.work ?? []).map((record) => [record.id, record]));
   const conferences = collection<string, ConferenceRequest>((snapshot?.conferences ?? []).map((record) => [record.id, record]));
-  const conferencePositions = collection<string, ConferencePosition>((snapshot?.conferencePositions ?? []).map((record) => [record.id, record]));
+  const sharedPositions = snapshot?.configRecords.some(record => record.collection === "chain" && record.key === "identity" && record.projectId === undefined && record.value.role === "shared") === true;
+  const positionKey = (record: ConferencePosition): string => sharedPositions ? JSON.stringify([record.projectId, record.id]) : record.id;
+  const conferencePositions = collection<string, ConferencePosition>((snapshot?.conferencePositions ?? []).map((record) => [positionKey(record), record]));
   const conferenceMinutes = collection<string, ConferenceMinutes>((snapshot?.conferenceMinutes ?? []).map((record) => [record.id, record]));
   const minutesRecords = collection<string, MinutesRecord>((snapshot?.minutes ?? []).map((record) => [record.id, record]));
   const gates = collection<string, GateRecord>((snapshot?.gates ?? []).map((record) => [record.id, record]));
@@ -2403,7 +2408,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
       if (operation === "conference.position.appended") {
         const record = extensionRecordOrCorrupt(() => validateConferencePosition(payloadRecord(payload, operation, actorRequired)));
         requireEventBoundTimestamp(record.updatedAt, event, `conference position ${record.id}`);
-        if (conferencePositions.has(record.id) || record.revision !== 1 || record.tombstone) {
+        if (conferencePositions.has(positionKey(record)) || record.revision !== 1 || record.tombstone) {
           fail("WORKSPACE_EVENT_CORRUPT", `invalid conference position ${record.id}`);
         }
         const conference = requireOpenConference(conferences, record.conferenceId, `conference position ${record.id}`);
@@ -2411,7 +2416,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
           fail("WORKSPACE_EVENT_CORRUPT", `conference position ${record.id} is not bound to its conference project`);
         }
         recordExtensionClosureValidation(2);
-        conferencePositions.set(record.id, record);
+        conferencePositions.set(positionKey(record), record);
         continue;
       }
       const parts = closePayload(payload, actorRequired);
@@ -2625,6 +2630,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
       try {
         const change = readConfigRecordEvent(operation, body);
         if (change.collection === "chain" && change.key === "identity" && change.value?.role === "coordination" && change.value.coordinationLibraryId !== metadata.workspaceId) throw new ConfigRecordError("CONFIG_RECORD_EVENT_INVALID", "coordination identity must refer to this library");
+        if (change.collection === "chain" && change.key === "identity" && change.projectId !== undefined && ![...configRecords.values()].some(record => record.collection === "chain" && record.key === "identity" && record.projectId === undefined && record.value.role === "shared")) throw new ConfigRecordError("CONFIG_RECORD_EVENT_INVALID", "scoped identity requires a shared library");
         if (change.collection === "chain" && change.key === "identity" && typeof change.value?.primaryProjectId === "string") projectLineage({ projects: [...projects.values()] }, change.value.primaryProjectId);
         const identity = configRecordIdentity(change.collection, change.key, change.projectId);
         if (change.projectId !== undefined) projectLineage({ projects: [...projects.values()] }, change.projectId);
@@ -3285,7 +3291,7 @@ function streamHead(manifest: StreamManifest): LibraryStreamHead {
   };
 }
 
-type LibraryReadShape = { readonly streams: readonly { readonly manifest: StreamManifest | null }[]; readonly events: readonly MergedEvent[]; readonly versionVector: Readonly<Record<string, number>> };
+type LibraryReadShape = { readonly consolidation?: LibraryRead["consolidation"]; readonly streams: readonly { readonly manifest: StreamManifest | null }[]; readonly events: readonly MergedEvent[]; readonly versionVector: Readonly<Record<string, number>> };
 
 // A seed read back from this device's cache, with the merge state it resumes.
 interface LibrarySeed {
@@ -3307,6 +3313,19 @@ interface LibraryReplayResult {
  * merges: the order and the renaming are both deterministic.
  */
 function replayLibrary(library: Library, read: LibraryReadShape, cached?: LibrarySeed): LibraryReplayResult {
+  if (read.consolidation !== undefined) {
+    const { index, sources } = read.consolidation;
+    const inputs = sources.map(({ source, read: sourceRead }) => ({ source, state: replayLibrary({ root: `${library.root}/${source.archive}`, manifest: source.manifest }, sourceRead).state }));
+    const base = consolidateStates(index, inputs);
+    const entries = read.events.filter(entry => entry.event.sequence > (index.primaryVersionVector[entry.deviceId] ?? 0));
+    const origins = new Map<EventRecord, ReplayOrigin>(entries.map(entry => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
+    const merge = new MergeReplay(origins);
+    const replayed = materialize(libraryWorkspaceMetadata(library), entries.map(entry => entry.event), { ...base, prefixEvents: base.events }, merge);
+    const streams = read.streams.flatMap(stream => stream.manifest === null ? [] : [streamHead(stream.manifest)]);
+    const importedStreams = inputs.flatMap(entry => entry.state.library?.streams ?? []);
+    const headEventHash = canonicalSha256({ schemaVersion: "einzbern.shared-head.v1", provenance: library.manifest.consolidation!.sha256, head: libraryHeadDigest(streams) });
+    return { state: { ...replayed, headEventHash, library: { libraryRoot: library.root, versionVector: read.versionVector, streams, importedStreams, consolidation: index, rejectedEvents: merge.rejected, aliases: merge.aliases } }, replayExecutionConfig: replayed.executionConfig, merge };
+  }
   const tail = cached === undefined ? read.events : read.events.slice(cached.seed.version);
   const origins = new Map<EventRecord, ReplayOrigin>(tail.map((entry) => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
   const merge = new MergeReplay(origins, cached?.merge);
@@ -3485,6 +3504,7 @@ async function refreshLibraryCache(
  * starts again from genesis; the result is the same state either way.
  */
 async function replayLibraryResultThroughCache(library: Library, read: LibraryRead): Promise<LibraryReplayResult> {
+  if (read.consolidation !== undefined) return replayLibrary(library, read);
   const cached = await cachedSeed(library, read);
   let replay: LibraryReplayResult | null = null;
   if (cached !== null) {
@@ -3846,6 +3866,7 @@ async function buildAppend(
       // ordered batch express a dependency.
       const delta = buildDelta(current);
       source.merge.assertUnredirectedWrite(own.streamId, delta.payload);
+      if (library.manifest.formatVersion < 3 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) && delta.payload.record.collection === "chain" && delta.payload.record.key === "identity" && delta.payload.record.projectId !== undefined) throw new FormatVersionError("LIBRARY_FORMAT_UNSUPPORTED", "scoped chain identities require format 3", { required: "3" });
       if (library.manifest.formatVersion < 2 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) &&
         (Object.hasOwn(delta.payload.record, "involvedProjects") || delta.payload.record.collection === "chain")) {
         throw new FormatVersionError("LIBRARY_FORMAT_UNSUPPORTED", "project-chain semantics require a format-2 library; no implicit in-place upgrade is performed", { required: "2", actual: String(library.manifest.formatVersion) });
@@ -3913,8 +3934,9 @@ async function commitAppend(prepared: PreparedAppend, options: WorkspaceMutation
   return {
     ...current,
     version: state.version + appended.length,
-    headEventHash: libraryHeadDigest(streams),
+    headEventHash: library.manifest.consolidation === undefined ? libraryHeadDigest(streams) : canonicalSha256({ schemaVersion: "einzbern.shared-head.v1", provenance: library.manifest.consolidation.sha256, head: libraryHeadDigest(streams) }),
     library: {
+      ...state.library,
       libraryRoot: library.root,
       versionVector: { ...(state.library?.versionVector ?? {}), [deviceId]: committed.sequence },
       streams,
@@ -5032,6 +5054,7 @@ export async function exportWorkspace(workspaceRoot: string): Promise<string> {
     : {};
   return canonicalJson({
     schemaVersion: "tcrn.workspace-export.v1",
+    ...(state.library?.consolidation === undefined ? {} : { consolidation: state.library.consolidation as unknown as JsonValue, configRecords: state.configRecords }),
     workspaceId: state.metadata.workspaceId,
     version: state.version,
     headEventHash: state.headEventHash,

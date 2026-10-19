@@ -33,9 +33,10 @@ it in one AskUserQuestion call, Codex asks it in the conversation as one numbere
 only the questions the plan reports as open, offer the plan's suggestion as the first choice,
 never ask again for an answer the user already gave, and never guess an answer.
 
-1. Library location. The library is the directory that holds all of this project's records. It
-   can sit inside the project, in a cloud-drive folder (by default
-   `<cloud drive>/Ether/<project name>/`), or in a directory the user names.
+1. Library location. The shared library holds the projects' records under their stable project identities.
+   The default is this device's persistent shared-library location, or `<device directory>/library`
+   for a first installation. It is outside the source tree and reused by subsequent projects.
+   A cloud-drive directory or another explicit location may be selected.
    Flag: `--artifacts <library path>`.
 2. Cloud drive. Is the library's folder synced by a cloud drive? The plan suggests an answer from
    the location. Flag: `--cloud true` or `--cloud false`.

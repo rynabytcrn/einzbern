@@ -235,9 +235,9 @@ export async function registerLibrary(input: RegisterLibraryInput, home?: string
     const projectId = input.projectId ?? (previous?.libraryId === library.manifest.libraryId ? previous.projectId : undefined);
     const state = await materializeWorkspace(library.root);
     if (projectId !== undefined) projectLineage(state, projectId);
-    const role = chainIdentity(state)?.role;
+    const role = chainIdentity(state, projectId)?.role;
     const entry: RegistryEntry = {
-      ...(role === undefined ? {} : { chainRole: role }),
+      ...(role === undefined || role === "shared" ? {} : { chainRole: role }),
       projectPath,
       ...(projectId === undefined ? {} : { projectId }),
       gitRemote: remote === null ? null : normalizeGitRemote(remote),
@@ -505,4 +505,19 @@ export async function resolveLibrary(cwdInput: string, home?: string, options: {
     });
   }
   return { entry: found.entry, via: found.via, libraryPath: library.root, libraryId: library.manifest.libraryId };
+}
+
+/** Publish a consolidation in one registry replacement. The source entries are CAS witnesses. */
+export async function repointConsolidatedLibraries(expected: readonly RegistryEntry[], replacements: readonly RegistryEntry[], at: string, home?: string): Promise<void> {
+  await mutateRegistry(home, async (registry, directory) => {
+    for (const entry of expected) {
+      const actual = registry.entries.find(value => value.projectPath === entry.projectPath);
+      const replacement = replacements.find(value => value.projectPath === entry.projectPath);
+      if (canonicalJson(actual as unknown as JsonValue) !== canonicalJson(entry as unknown as JsonValue) && canonicalJson(actual as unknown as JsonValue) !== canonicalJson(replacement as unknown as JsonValue)) fail("LIBRARY_REGISTRY_MISMATCH", "registry changed during consolidation");
+    }
+    const backup = await freshBackupDirectory(join(backupsPath(directory), `${backupStamp(at)}-consolidation`));
+    await copyFile(registryPath(directory), join(backup, "registry.json"));
+    const paths = new Set(replacements.map(entry => entry.projectPath));
+    await writeRegistry({ ...registry, entries: [...registry.entries.filter(entry => !paths.has(entry.projectPath)), ...replacements] }, directory);
+  });
 }

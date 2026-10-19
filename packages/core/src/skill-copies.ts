@@ -1,3 +1,4 @@
+import { runtimeHome } from "./storage-location.js";
 // SPDX-License-Identifier: Apache-2.0
 import { renameRetryBudget } from "./io-policy.js";
 
@@ -377,7 +378,7 @@ export async function installSkillCopies(input: InstallSkillCopiesInput): Promis
   const device = resolve(input.deviceHome ?? currentDeviceHome());
   const source = resolve(input.source);
   const digest = await sourceDigest(source);
-  const lock = join(device, DEVICE_HOME_ENTRIES.locks, SKILL_COPIES_FILES.lock);
+  const lock = join(runtimeHome(device), DEVICE_HOME_ENTRIES.locks, SKILL_COPIES_FILES.lock);
   await ensureDeviceDirectory(dirname(lock));
   return withFileLock(lock, async () => {
     const backupDir = join(backupsPath(device), stamp, SKILL_COPIES_FILES.backup);

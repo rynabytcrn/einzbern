@@ -7,14 +7,14 @@ export class ProjectChainError extends Error {
 }
 export interface ChainIdentity {
   readonly primaryProjectId?: string;
-  readonly role: "coordination" | "project";
+  readonly role: "coordination" | "project" | "shared";
   readonly coordinationLibraryId: string;
 }
 const libraryId = (value: unknown): value is string => typeof value === "string" && /^(library|workspace):[a-f0-9]{24}$/u.test(value);
 /** Canonical records travel in device streams; registries only locate them. */
 export function checkChainRecord(value: ConfigRecordValue, key: string): void {
   if (key === "identity") {
-    if (Object.keys(value).filter(field => field !== "primaryProjectId").sort().join(",") !== "coordinationLibraryId,role" || (value.primaryProjectId !== undefined && (typeof value.primaryProjectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(value.primaryProjectId))) || !["coordination", "project"].includes(String(value.role)) || !libraryId(value.coordinationLibraryId)) throw new ProjectChainError("chain identity requires an explicit role and coordination library identity");
+    if (Object.keys(value).filter(field => field !== "primaryProjectId").sort().join(",") !== "coordinationLibraryId,role" || (value.primaryProjectId !== undefined && (typeof value.primaryProjectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(value.primaryProjectId))) || !["coordination", "project", "shared"].includes(String(value.role)) || !libraryId(value.coordinationLibraryId)) throw new ProjectChainError("chain identity requires an explicit role and coordination library identity");
     return;
   }
   if (key === "common-default") { projectReference(value); return; }
@@ -30,11 +30,12 @@ export function checkChainRecord(value: ConfigRecordValue, key: string): void {
   }
   throw new ProjectChainError("unknown chain record");
 }
-export function chainIdentity(state: Pick<WorkspaceState, "configRecords" | "metadata">): ChainIdentity | null {
-  const record = state.configRecords.find(r => r.collection === "chain" && r.key === "identity" && r.projectId === undefined);
+export function chainIdentity(state: Pick<WorkspaceState, "configRecords" | "metadata"> & { readonly configurationProjectId?: string | null }, projectId?: string): ChainIdentity | null {
+  const target = projectId ?? state.configurationProjectId ?? undefined;
+  const record = (target === undefined ? undefined : state.configRecords.find(r => r.collection === "chain" && r.key === "identity" && r.projectId === target)) ?? state.configRecords.find(r => r.collection === "chain" && r.key === "identity" && r.projectId === undefined);
   if (!record) return null;
   checkChainRecord(record.value, record.key);
   const identity = record.value as unknown as ChainIdentity;
-  if (identity.role === "coordination" && identity.coordinationLibraryId !== state.metadata.workspaceId) throw new ProjectChainError("coordination identity must name its own library");
+  if ((identity.role === "coordination" || identity.role === "shared") && identity.coordinationLibraryId !== state.metadata.workspaceId) throw new ProjectChainError("coordination identity must name its own library");
   return identity;
 }

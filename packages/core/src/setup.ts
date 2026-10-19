@@ -613,7 +613,7 @@ function coordinationProjectMessage(migration: MigrationPlan, own: MigrationPart
 }
 
 // The chain role the mapping row of a partition gives it, or null without one.
-function rowRole(migration: MigrationPlan, own: MigrationPartitionPlan): "coordination" | "project" | null {
+function rowRole(migration: MigrationPlan, own: MigrationPartitionPlan): "coordination" | "project" | "shared" | null {
   return migration.mapping?.partitions.find((entry) => entry.partition === own.partition)?.chainRole ?? null;
 }
 

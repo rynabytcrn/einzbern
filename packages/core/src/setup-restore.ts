@@ -1,3 +1,4 @@
+import { defaultSharedLibraryPath } from "./storage-location.js";
 import { chainIdentity, registerSetupCoordination, restoredCoordinationBinding } from "./project-chain.js";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -660,7 +661,7 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
   if (input.options.restore === undefined) {
     const suggested = await suggestedLibrary(input);
     recorder.block("library", projectRoot, "SETUP_ANSWER_REQUIRED", "name the library to restore from with --restore <library path>");
-    const artifacts = suggested ?? join(projectRoot, DIRECTORY.library);
+    const artifacts = suggested ?? defaultSharedLibraryPath(deviceHome);
     return {
       questions: restoreQuestions(input, suggested, null),
       resolved: { artifacts, cloud: answers.cloud ?? defaultCloud(context, artifacts), language: defaultLanguage(), navigation },

@@ -182,7 +182,7 @@ export function checkConfigRecordValue(collection: ConfigRecordCollection, key: 
 export function readConfigRecordEvent(operation: string, record: Readonly<Record<string, JsonValue>>): ConfigRecordChange {
   const expected = [...(operation === CONFIG_RECORD_SET_OPERATION ? ["collection", "key", "value"] : ["collection", "key"]), ...(Object.hasOwn(record, "projectId") ? ["projectId"] : [])].sort(compareCanonicalText);
   if (Object.hasOwn(record, "projectId") && (typeof record.projectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(record.projectId))) fail("CONFIG_RECORD_EVENT_INVALID", "invalid project scope");
-  if (record.collection === "chain" && ((record.key === "identity" && record.projectId !== undefined) || (record.key !== "identity" && record.projectId === undefined))) fail("CONFIG_RECORD_EVENT_INVALID", "invalid chain record scope");
+  if (record.collection === "chain" && (record.key !== "identity" && record.projectId === undefined)) fail("CONFIG_RECORD_EVENT_INVALID", "invalid chain record scope");
   if (record.collection === "lease" && record.projectId === undefined) fail("CONFIG_RECORD_EVENT_INVALID", "a lease is scoped to its work item's project");
   const scope = typeof record.projectId === "string" ? { projectId: record.projectId } : {};
   const actual = Object.keys(record).sort(compareCanonicalText);
@@ -249,7 +249,7 @@ export function setConfigRecordDelta(input: ConfigRecordSetInput): (state: Works
     projectLineage(state, input.projectId);
     if (input.collection === "chain" && input.key === "identity" && "value" in input && typeof (input.value as Record<string, unknown>)?.primaryProjectId === "string") projectLineage(state, (input.value as Record<string, unknown>).primaryProjectId as string);
     if (input.collection === "chain" && input.key === "identity" && "value" in input && (input.value as Record<string, unknown>)?.role === "coordination" && (input.value as Record<string, unknown>)?.coordinationLibraryId !== state.metadata.workspaceId) fail("CONFIG_RECORD_VALUE_INVALID", "coordination identity must refer to this library");
-    if (input.collection === "chain" && ((input.key === "identity" && input.projectId !== undefined) || (input.key !== "identity" && input.projectId === undefined))) fail("CONFIG_RECORD_VALUE_INVALID", "chain identity is library scoped; common defaults require an explicit project");
+    if (input.collection === "chain" && ((input.key === "identity" && input.projectId !== undefined && !state.configRecords.some(record => record.collection === "chain" && record.key === "identity" && record.projectId === undefined && record.value.role === "shared")) || (input.key !== "identity" && input.projectId === undefined))) fail("CONFIG_RECORD_VALUE_INVALID", "chain identity is library scoped; common defaults require an explicit project");
     if (input.collection === "lease" && input.projectId === undefined) fail("CONFIG_RECORD_VALUE_INVALID", "a lease is scoped to its work item's project");
     return {
     payload: buildEventPayload(CONFIG_RECORD_SET_OPERATION, { collection: record.collection, key: record.key, value: record.value, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) }, undefined, writeAuthorizationExtras(input.authorization)),
@@ -273,7 +273,7 @@ export function removeConfigRecordDelta(input: ConfigRecordRemoveInput): (state:
     projectLineage(state, input.projectId);
     if (input.collection === "chain" && input.key === "identity" && "value" in input && typeof (input.value as Record<string, unknown>)?.primaryProjectId === "string") projectLineage(state, (input.value as Record<string, unknown>).primaryProjectId as string);
     if (input.collection === "chain" && input.key === "identity" && "value" in input && (input.value as Record<string, unknown>)?.role === "coordination" && (input.value as Record<string, unknown>)?.coordinationLibraryId !== state.metadata.workspaceId) fail("CONFIG_RECORD_VALUE_INVALID", "coordination identity must refer to this library");
-    if (input.collection === "chain" && ((input.key === "identity" && input.projectId !== undefined) || (input.key !== "identity" && input.projectId === undefined))) fail("CONFIG_RECORD_VALUE_INVALID", "chain identity is library scoped; common defaults require an explicit project");
+    if (input.collection === "chain" && ((input.key === "identity" && input.projectId !== undefined && !state.configRecords.some(record => record.collection === "chain" && record.key === "identity" && record.projectId === undefined && record.value.role === "shared")) || (input.key !== "identity" && input.projectId === undefined))) fail("CONFIG_RECORD_VALUE_INVALID", "chain identity is library scoped; common defaults require an explicit project");
     if (!state.configRecords.some((entry) => entry.collection === collection && entry.key === key && entry.projectId === input.projectId)) {
       fail("CONFIG_RECORD_NOT_FOUND", `${collection} ${key} is not set`, { collection, key });
     }

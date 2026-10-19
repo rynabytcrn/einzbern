@@ -27,7 +27,7 @@ einzbern setup --mode fresh|restore|update|repair|migrate|uninstall --project <�
 
 | 模式 | 用途 | 模式专属选项 |
 | --- | --- | --- |
-| `fresh` | 在新项目安装。默认在项目下创建 `.ether`，也可用 `--artifacts` 指定位置；登记项目、安装技能与宿主钩子，并设置语言、云同步与导航选择。 | `--artifacts`、`--cloud`、`--language`、`--navigation` |
+| `fresh` | 在新项目安装。默认复用设备的共享总库，在库内登记项目；首次使用设备的 `library/`，也可用 `--artifacts` 指定位置；登记项目、安装技能与宿主钩子，并设置语言、云同步与导航选择。 | `--artifacts`、`--cloud`、`--language`、`--navigation` |
 | `restore` | 把本机接回已有库。先检查库与设备状态；任一检查失败就停止且不写入。 | `--restore`、`--cloud`、`--navigation` |
 | `update` | 从本地 Einzbern 发布包更新引擎；也可把引擎切回上一个版本。 | `--archive`、`--rollback true` |
 | `repair` | 依据本机注册信息重新检查安装和宿主接线。完整的项目不会被重复改写。 | `--cloud`、`--navigation` |

@@ -905,3 +905,10 @@ export * from "./involved-projects.js";
 export * from "./project-chain.js";
 
 export { prepareDispatch, recordDispatch, writeDispatchArtifact } from "./dispatch-workflow.js";
+
+export * from "./consolidate.js";
+export * from "./consolidation-format.js";
+
+export * from "./storage-location.js";
+
+export * from "./storage-configure.js";

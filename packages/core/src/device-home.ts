@@ -1,3 +1,4 @@
+import { runtimeHome } from "./storage-location.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-469 R3, R6 (MIN-227 D13, D19): the device directory. What belongs to this
@@ -93,17 +94,17 @@ export function engineModelPolicyPath(home: string = deviceHome()): string {
 
 /** The lock shared by every process that replaces the engine model policy file. */
 export function engineModelPolicyLockPath(home: string = deviceHome()): string {
-  return join(home, DEVICE_HOME_ENTRIES.locks, `${DEVICE_HOME_ENTRIES.engineModelPolicy}.lock`);
+  return join(runtimeHome(home), DEVICE_HOME_ENTRIES.locks, `${DEVICE_HOME_ENTRIES.engineModelPolicy}.lock`);
 }
 
 /** This library's derived state on this machine: views, snapshots and indexes. */
 export function cachePath(libraryId: string, home: string = deviceHome()): string {
-  return join(home, DEVICE_HOME_ENTRIES.cache, libraryDirectoryName(libraryId));
+  return join(runtimeHome(home), DEVICE_HOME_ENTRIES.cache, libraryDirectoryName(libraryId));
 }
 
 /** The one write lock every process on this machine takes before writing this library. */
 export function lockPath(libraryId: string, home: string = deviceHome()): string {
-  return join(home, DEVICE_HOME_ENTRIES.locks, `${libraryDirectoryName(libraryId)}.lock`);
+  return join(runtimeHome(home), DEVICE_HOME_ENTRIES.locks, `${libraryDirectoryName(libraryId)}.lock`);
 }
 
 /**
@@ -125,12 +126,12 @@ export function userCrestEventsPath(crest: string): string {
 
 /** The one lock every process on this machine takes before reading or writing the user crest. */
 export function userCrestLockPath(home: string = deviceHome()): string {
-  return join(home, DEVICE_HOME_ENTRIES.locks, `${USER_CREST_DEVICE_NAME}.lock`);
+  return join(runtimeHome(home), DEVICE_HOME_ENTRIES.locks, `${USER_CREST_DEVICE_NAME}.lock`);
 }
 
 /** The user crest's derived state on this machine (its index view); never a file in the crest. */
 export function userCrestCachePath(home: string = deviceHome()): string {
-  return join(home, DEVICE_HOME_ENTRIES.cache, USER_CREST_DEVICE_NAME);
+  return join(runtimeHome(home), DEVICE_HOME_ENTRIES.cache, USER_CREST_DEVICE_NAME);
 }
 
 /**
@@ -146,7 +147,7 @@ export function userCrestSnapshotPath(home: string = deviceHome()): string {
 }
 
 export function backupsPath(home: string = deviceHome()): string {
-  return join(home, DEVICE_HOME_ENTRIES.backups);
+  return join(runtimeHome(home), DEVICE_HOME_ENTRIES.backups);
 }
 
 export function engineRoot(home: string = deviceHome()): string {

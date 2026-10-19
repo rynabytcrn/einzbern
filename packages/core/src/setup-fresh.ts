@@ -1,3 +1,5 @@
+import { defaultSharedLibraryPath } from "./storage-location.js";
+import { setConfigRecord } from "./config-records.js";
 import { chainIdentity, declareChainIdentity, effectiveProjectState, ensureProjectCoordination, projectCoordinationChoice, resolveCoordinationBinding } from "./project-chain.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
@@ -7,7 +9,7 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // and the plan lists what each would write in the same order:
 //
 //   device            this device's identity (device.json), when it has none yet
-//   library           the library at --artifacts, by default .ether in the project, created there
+//   library           the library at --artifacts, by default the device shared library outside the source tree
 //                     (the place must not exist or be empty); a project already registered keeps
 //                     its library, which is reused. Its language is written as artifact.language
 //                     (--language)
@@ -78,11 +80,11 @@ import { AGENTS_NAVIGATION_SETTING, MACHINE_SETTINGS_FILE_NAME, applyMachineSett
 import type { AgentsNavigationChoice } from "./machine-settings.js";
 import { managedSectionRecordsFor, parseManagedFile, planManagedWrite } from "./managed-sections.js";
 import type { ManagedWritePlan } from "./managed-sections.js";
-import { BRAND, DIRECTORY } from "./names.js";
+import { BRAND } from "./names.js";
 import { gitRemoteOf, normalizeGitRemote, readRegistry, registerLibrary } from "./registry.js";
 import type { Registry } from "./registry.js";
 import { SETTINGS_CATALOG } from "./settings.js";
-import { SETUP_APPLIED_SCHEMA_VERSION, SETUP_QUESTIONS, setupFail } from "./setup.js";
+import { SETUP_ACTOR, SETUP_APPLIED_SCHEMA_VERSION, SETUP_QUESTIONS, setupFail } from "./setup.js";
 import type {
   ResolvedSetupAnswers,
   SetupApplied,
@@ -453,6 +455,8 @@ async function planLibrary(recorder: SetupRecorder, input: SetupModeInput, artif
   const kind = await entryKind(artifacts);
   if (kind === "directory") {
     if (await hasLibraryManifest(artifacts)) {
+      const state = await materializeWorkspaceFromGenesis(artifacts);
+      if (chainIdentity(state)?.role === "shared") return { path: artifacts, action: "reuse", libraryId: state.metadata.workspaceId, state };
       recorder.block("library", artifacts, "SETUP_LIBRARY_EXISTS", `a library is already at ${artifacts}: restore it with setup --mode restore`);
     } else if ((await readdir(artifacts)).length > 0) {
       recorder.block("library", artifacts, "LIBRARY_TARGET_NOT_EMPTY", `${artifacts} is not empty; a library is created in a new or empty directory`);
@@ -952,7 +956,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
   // The answers: what was given, else the default, which on a device and project already set up is
   // what they hold now.
   const artifacts = await realTarget(answers.artifacts === undefined
-    ? context.registered?.libraryPath ?? join(projectRoot, DIRECTORY.library)
+    ? context.registered?.libraryPath ?? defaultSharedLibraryPath(deviceHome)
     : resolve(projectRoot, answers.artifacts));
   const deviceNavigation = await readDeviceNavigation(recorder, deviceHome);
   // TCRN-CROSS-STORY-548 R4: DSH's plugin, as facts for the plan; nothing here writes a DSH profile.
@@ -987,7 +991,9 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
   let binding: SetupCoordination | null = null;
   try {
     const identity = library.action === "reuse" ? chainIdentity(await materializeWorkspace(library.path)) : null;
-    const coordination = await projectCoordinationChoice(identity, deviceHome);
+    const coordination = artifacts === defaultSharedLibraryPath(deviceHome) || identity?.role === "shared"
+      ? { libraryId: library.libraryId, status: "registered" as const, path: library.path }
+      : await projectCoordinationChoice(identity, deviceHome);
     binding = { libraryId: coordination.libraryId, status: coordination.status, path: coordination.path };
     if (coordination.status === "create") recorder.write("library", coordination.path!, "create");
     if (coordination.status === "located") {
@@ -1063,6 +1069,8 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
   const libraryPath = library.root;
   const libraryId = library.manifest.libraryId;
   if (planned.action === "create") recorder.write("library", libraryPath, "create");
+  const central = libraryPath === defaultSharedLibraryPath(deviceHome);
+  if (central && chainIdentity(await materializeWorkspace(libraryPath)) === null) await declareChainIdentity(libraryPath, { role: "shared", coordinationLibraryId: libraryId }, { occurredAt: at, actorId: SETUP_ACTOR });
   const existingIdentity = chainIdentity(await materializeWorkspace(libraryPath));
   const registryFile = registryPath(deviceHome);
   const registryKind = await entryKind(registryFile);
@@ -1075,12 +1083,15 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
     if (coordination.status === "located" && coordination.written) recorder.write("library", coordination.path!, "update");
   }
   if (existingIdentity === null) recorder.write("library", libraryPath, "update");
-  const configurationProjectId = await ensureSetupProjectBinding(projectRoot, libraryPath, { at, deviceHome });
+  const configurationProjectId = await ensureSetupProjectBinding(projectRoot, libraryPath, { at, deviceHome, actorId: SETUP_ACTOR });
   const declaredIdentity = chainIdentity(await materializeWorkspace(libraryPath))!;
-  if (declaredIdentity.primaryProjectId === undefined) await declareChainIdentity(libraryPath, { ...declaredIdentity, primaryProjectId: configurationProjectId }, { occurredAt: at });
+  if (declaredIdentity.role === "shared") {
+    const current = await materializeWorkspace(libraryPath);
+    if (!current.configRecords.some(record => record.collection === "chain" && record.key === "identity" && record.projectId === configurationProjectId)) await setConfigRecord(libraryPath, { collection: "chain", key: "identity", value: { role: "project", primaryProjectId: configurationProjectId, coordinationLibraryId: libraryId }, projectId: configurationProjectId, occurredAt: at, actorId: SETUP_ACTOR });
+  } else if (declaredIdentity.primaryProjectId === undefined) await declareChainIdentity(libraryPath, { ...declaredIdentity, primaryProjectId: configurationProjectId }, { occurredAt: at, actorId: SETUP_ACTOR });
   const state = scopedWorkspaceState(await materializeWorkspace(libraryPath), configurationProjectId);
   if (libraryLanguage(state) !== resolved.language) {
-    await setWorkspaceSetting(libraryPath, { key: LANGUAGE_SETTING, value: resolved.language, configurationProjectId, occurredAt: at });
+    await setWorkspaceSetting(libraryPath, { key: LANGUAGE_SETTING, value: resolved.language, configurationProjectId, occurredAt: at, actorId: SETUP_ACTOR });
     recorder.write("library", libraryPath, "update");
   }
 

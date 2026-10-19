@@ -1,3 +1,5 @@
+import { deviceHome } from "./device-home.js";
+import { readStorageLocation } from "./storage-location.js";
 import { localProbeTimeout } from "./io-policy.js";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -116,7 +118,7 @@ function inside(parent: string, candidate: string): boolean {
 // ---- Claude Code: JSON ----
 
 /** Claude Code: `permissions.additionalDirectories` names the library; every other field is kept. */
-export function claudeWritableRoots(current: string | null, libraryPath: string): string {
+export function claudeWritableRoots(current: string | null, libraryPath: string, replacePaths: readonly string[] = []): string {
   const file = WRITABLE_ROOTS_FILES["claude-code"];
   let document: Record<string, unknown> = {};
   if (current !== null && current.trim() !== "") {
@@ -133,8 +135,8 @@ export function claudeWritableRoots(current: string | null, libraryPath: string)
   if (!isObject(permissions)) unsupported(file, "permissions is not an object");
   const directories = permissions.additionalDirectories ?? [];
   if (!isPathList(directories)) unsupported(file, "permissions.additionalDirectories is not a list of paths");
-  if (current !== null && directories.includes(libraryPath)) return current;
-  return `${JSON.stringify({ ...document, permissions: { ...permissions, additionalDirectories: [...directories, libraryPath] } }, null, 2)}\n`;
+  if (current !== null && directories.includes(libraryPath) && !directories.some(path => replacePaths.includes(path) && path !== libraryPath)) return current;
+  return `${JSON.stringify({ ...document, permissions: { ...permissions, additionalDirectories: [...directories.filter(path => !replacePaths.includes(path) && path !== libraryPath), libraryPath] } }, null, 2)}\n`;
 }
 
 // ---- Codex: TOML ----
@@ -323,7 +325,7 @@ function tomlStringArray(source: string, start: number, file: string): TomlStrin
 }
 
 /** Codex: `[sandbox_workspace_write] writable_roots` names the library; every other byte is kept. */
-export function codexWritableRoots(current: string | null, libraryPath: string): string {
+export function codexWritableRoots(current: string | null, libraryPath: string, replacePaths: readonly string[] = []): string {
   const file = WRITABLE_ROOTS_FILES.codex;
   const source = current ?? "";
   const eol = source.includes("\r\n") ? "\r\n" : "\n";
@@ -373,6 +375,10 @@ export function codexWritableRoots(current: string | null, libraryPath: string):
       : `${source}${eol}${line}`;
   }
   const array = tomlStringArray(source, valueStart, file);
+  if (replacePaths.length > 0 && array.values.some(path => replacePaths.includes(path) && path !== libraryPath)) {
+    const values = [...array.values.filter(path => !replacePaths.includes(path) && path !== libraryPath), libraryPath];
+    return `${source.slice(0, array.open)}[${values.map(tomlBasicString).join(", ")}]${source.slice(array.close + 1)}`;
+  }
   if (array.values.includes(libraryPath)) return source;
   if (array.lastValueEnd === null) {
     return source.slice(array.open + 1, array.close).trim() === ""
@@ -434,6 +440,7 @@ export function hostFileTrackedByGit(projectRoot: string, file: string): boolean
 }
 
 export interface WritableRootsInput {
+  readonly replacePaths?: readonly string[];
   readonly projectRoot: string;
   readonly libraryPath: string;
   // Both hosts when left out.
@@ -449,7 +456,9 @@ export async function planWritableRoots(input: WritableRootsInput): Promise<Writ
   for (const host of input.hosts ?? WRITABLE_ROOTS_HOSTS) {
     const path = WRITABLE_ROOTS_FILES[host];
     const before = await readHostFile(join(projectRoot, path), path);
-    const after = host === "claude-code" ? claudeWritableRoots(before, libraryPath) : codexWritableRoots(before, libraryPath);
+    let after = host === "claude-code" ? claudeWritableRoots(before, libraryPath, input.replacePaths) : codexWritableRoots(before, libraryPath, input.replacePaths);
+    const runtime = readStorageLocation(deviceHome())?.runtime;
+    if (runtime !== undefined) after = host === "claude-code" ? claudeWritableRoots(after, runtime) : codexWritableRoots(after, runtime);
     files.push({ host, path, before, after, changed: after !== before, trackedByGit: hostFileTrackedByGit(projectRoot, path) });
   }
   return { projectRoot, libraryPath, libraryInsideProject: false, files };

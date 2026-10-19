@@ -82,6 +82,7 @@ export interface LibraryManifest {
   readonly minEngineVersion: string;
   readonly project: LibraryProjectHint;
   readonly createdAt: string;
+  readonly consolidation?: { readonly index: string; readonly sha256: string };
 }
 
 export interface Library {
@@ -109,7 +110,7 @@ export function validateLibraryManifest(value: unknown, where: string = LIBRARY_
   const invalid = (message: string): never => fail("LIBRARY_MANIFEST_INVALID", `${where}: ${message}`, { manifest: where });
   if (value === null || typeof value !== "object" || Array.isArray(value)) invalid("not an object");
   const record = value as Readonly<Record<string, unknown>>;
-  if (Object.keys(record).sort().join("\u0000") !== MANIFEST_FIELDS.join("\u0000")) invalid("fields are not exact");
+  if (Object.keys(record).filter(key => key !== "consolidation").sort().join("\u0000") !== MANIFEST_FIELDS.join("\u0000")) invalid("fields are not exact");
   if (record.schemaVersion !== LIBRARY_MANIFEST_SCHEMA_VERSION) invalid(`schemaVersion must be ${LIBRARY_MANIFEST_SCHEMA_VERSION}`);
   if (typeof record.libraryId !== "string" || !LIBRARY_ID_PATTERN.test(record.libraryId)) invalid("libraryId is not a library id");
   if (!Number.isSafeInteger(record.formatVersion) || Number(record.formatVersion) < 1) invalid("formatVersion must be a positive integer");
@@ -126,7 +127,10 @@ export function validateLibraryManifest(value: unknown, where: string = LIBRARY_
   } catch {
     invalid("createdAt must be a strict instant");
   }
+  const consolidation = record.consolidation as LibraryManifest["consolidation"];
+  if (consolidation !== undefined && (Number(record.formatVersion) < 3 || consolidation === null || typeof consolidation !== "object" || Object.keys(consolidation).sort().join(",") !== "index,sha256" || consolidation.index !== "artifacts/consolidation/index.json" || typeof consolidation.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(consolidation.sha256))) invalid("consolidation requires a format-3 provenance index");
   return Object.freeze({
+    ...(consolidation === undefined ? {} : { consolidation }),
     schemaVersion: LIBRARY_MANIFEST_SCHEMA_VERSION,
     libraryId: String(record.libraryId),
     formatVersion: Number(record.formatVersion),

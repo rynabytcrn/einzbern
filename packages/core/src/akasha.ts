@@ -1,3 +1,5 @@
+import { readConsolidationIndex } from "./consolidation-format.js";
+import type { ConsolidationIndex, ConsolidationSource } from "./consolidation-format.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -47,8 +49,8 @@ import { writeFileAtomic, isAtomicTemporaryName } from "./atomic-file.js";
 import { ensureDeviceDirectory, lockPath } from "./device-home.js";
 import { readDevice } from "./device-identity.js";
 import type { DeviceIdentity } from "./device-identity.js";
-import type { Library } from "./ether-library.js";
-import { LIBRARY_FORMAT_VERSION, openLibrary } from "./ether-library.js";
+import type { Library, LibraryManifest } from "./ether-library.js";
+import { LIBRARY_FORMAT_VERSION, hasLibraryManifest, openLibrary } from "./ether-library.js";
 import { withFileLock } from "./file-lock.js";
 import type { FileLockOptions } from "./file-lock.js";
 import { assertLibrarySupported, upgradeReadiness } from "./format-version.js";
@@ -255,6 +257,8 @@ async function readInternalFile(
 const defaultReadBytes: ReadBytes = readWithoutFollowingLink;
 
 export interface StreamReadOptions {
+  /** A digest-bound source manifest from a consolidation index, for an immutable archive. */
+  readonly archivedManifest?: LibraryManifest;
   // Test seam: how file bytes are read (a sync client's placeholder can block this).
   readonly readFile?: ReadBytes;
 }
@@ -305,14 +309,14 @@ export async function readStreamManifest(libraryRoot: string, deviceId: string, 
     });
   }
   const manifest = validateStreamManifest(parsed, deviceId);
-  await assertDerivedStreamIdentity(libraryRoot, manifest);
+  await assertDerivedStreamIdentity(libraryRoot, manifest, options.archivedManifest);
   return manifest;
 }
 
-async function assertDerivedStreamIdentity(libraryRoot: string, manifest: StreamManifest): Promise<void> {
+async function assertDerivedStreamIdentity(libraryRoot: string, manifest: StreamManifest, archivedManifest?: LibraryManifest): Promise<void> {
   if (manifest.identityScheme === "legacy") return;
-  const library = await openLibrary(libraryRoot);
-  const expected = deriveStreamId(library.manifest.libraryId, manifest.deviceId);
+  const libraryManifest = archivedManifest ?? (await openLibrary(libraryRoot)).manifest;
+  const expected = deriveStreamId(libraryManifest.libraryId, manifest.deviceId);
   if (manifest.streamId !== expected) {
     const file = `${DIRECTORY.events}/${manifest.deviceId}/${STREAM_MANIFEST_FILE}`;
     fail("AKASHA_STREAM_MANIFEST_INVALID", `${file}: streamId does not match its library and device identity`, {
@@ -403,7 +407,7 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
  * device, stream and sequence where the stream stops being provable.
  */
 export async function readStreamEvents(libraryRoot: string, manifest: StreamManifest, options: StreamReadOptions = {}): Promise<readonly EventRecord[]> {
-  await assertDerivedStreamIdentity(libraryRoot, manifest);
+  await assertDerivedStreamIdentity(libraryRoot, manifest, options.archivedManifest);
   const readFile = options.readFile ?? defaultReadBytes;
   const events: EventRecord[] = [];
   let mismatched: StreamSegment | null = null;
@@ -697,6 +701,7 @@ export interface MergedEvent {
 }
 
 export interface LibraryRead {
+  readonly consolidation?: { readonly index: ConsolidationIndex; readonly sources: readonly { readonly source: ConsolidationSource; readonly read: LibraryRead }[] };
   readonly streams: readonly StreamRead[];
   // Every committed event of every stream, in merge order: clock, then device id, then sequence.
   readonly events: readonly MergedEvent[];
@@ -744,13 +749,27 @@ export async function readAllStreams(libraryRoot: string, options: LibraryReadOp
   const versionVector: Record<string, number> = {};
   for (const deviceId of await listStreamDevices(libraryRoot)) {
     const reader = timeoutMs === undefined ? readFile : timed(readFile, timeoutMs, deviceId);
-    const manifest = await readStreamManifest(libraryRoot, deviceId, { readFile: reader });
-    const events = manifest === null ? [] : await readStreamEvents(libraryRoot, manifest, { readFile: reader });
+    const manifest = await readStreamManifest(libraryRoot, deviceId, { readFile: reader, ...(options.archivedManifest === undefined ? {} : { archivedManifest: options.archivedManifest }) });
+    const events = manifest === null ? [] : await readStreamEvents(libraryRoot, manifest, { readFile: reader, ...(options.archivedManifest === undefined ? {} : { archivedManifest: options.archivedManifest }) });
     streams.push({ deviceId, manifest, events });
     if (manifest === null) continue;
     versionVector[deviceId] = manifest.sequence;
     for (const event of events) merged.push({ event, deviceId, streamId: manifest.streamId, clock: eventClock(event) });
   }
   merged.sort(compareMergedEvents);
-  return { streams, events: merged, versionVector: Object.freeze(versionVector) };
+  let consolidation: LibraryRead["consolidation"];
+  if (await hasLibraryManifest(libraryRoot)) {
+    const library = await openLibrary(libraryRoot);
+    const index = await readConsolidationIndex(libraryRoot, library.manifest);
+    if (index !== null) {
+      const sources = [];
+      for (const source of index.sources) {
+        const read = await readAllStreams(join(libraryRoot, source.archive), { ...options, archivedManifest: source.manifest });
+        if (JSON.stringify(read.versionVector) !== JSON.stringify(source.versionVector)) throw new Error("CONSOLIDATION_SOURCE_CHANGED: archive stream vector");
+        sources.push({ source, read });
+      }
+      consolidation = { index, sources };
+    }
+  }
+  return { streams, events: merged, versionVector: Object.freeze(versionVector), ...(consolidation === undefined ? {} : { consolidation }) };
 }

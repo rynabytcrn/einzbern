@@ -176,7 +176,7 @@ async function bundleAtelier(stage, coreBuild) {
   await copyStaged(root, "scripts/lib/canonical-order.mjs", join(repositoryRoot, "scripts/lib/canonical-order.mjs"));
   await copyStaged(root, "scripts/lib/canonical-json.mjs", join(repositoryRoot, "scripts/lib/canonical-json.mjs"));
   await copyStaged(root, "packages/core/src/names.js", join(coreBuild, "names.js"));
-  for (const module of REGISTRY_LOCK_MODULES) await copyStaged(root, `packages/core/src/${module}`, join(coreBuild, module));
+  for (const module of [...REGISTRY_LOCK_MODULES, "storage-location.js"]) await copyStaged(root, `packages/core/src/${module}`, join(coreBuild, module));
   return (await bundleEntry(join(root, "portal", "portal.mjs"))).code;
 }
 

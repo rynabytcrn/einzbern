@@ -2780,7 +2780,7 @@
         ],
         "semanticType": "path",
         "validation": "Fresh mode only; nonblank path without NUL, real-target resolution and binding/conflict checks.",
-        "defaultDescription": "existing registered library path, otherwise <project>/.ether",
+        "defaultDescription": "existing registered library path, otherwise the persistent shared-library location or <device>/library",
         "scope": "device library/project binding",
         "effect": "Chooses library location. Name is historical: this is not an arbitrary generated-output preference.",
         "flag": {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import './helpers/device-home.mjs';
 import assert from 'node:assert/strict';
-import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -10,7 +10,7 @@ import { verifyRestore } from '../dist/build/packages/core/src/setup-restore.js'
 import { planSetup, applySetup } from '../dist/build/packages/core/src/setup.js';
 const at = '2026-10-18T08:00:00Z';
 async function fixture(t) {
- const base = await mkdtemp(join(tmpdir(), 'governance-batch-audit-'));
+ const base = await realpath(await mkdtemp(join(tmpdir(), 'governance-batch-audit-')));
  t.after(() => rm(base, { recursive: true, force: true }));
  const old = join(base, 'old'), target = join(base, 'target'), projectRoot = join(base, 'project'), home = join(base, 'home'), deviceHome = join(base, 'device');
  await mkdir(projectRoot); await mkdir(home);

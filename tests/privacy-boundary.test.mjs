@@ -10,7 +10,7 @@ import test from "node:test";
 
 import { LocalCommandError, runLocalCommand } from "../scripts/lib/local-command.mjs";
 import { aggregatePrivacySurface, decodeGitMetadataBytes, normalizePrivacyText, p8ReleasePrivacySourcePaths, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries, walkHistoricalCommitPaths } from "../scripts/lib/privacy.mjs";
-import { writeUstar } from "../scripts/lib/tar.mjs";
+import { readUstar, writeUstar } from "../scripts/lib/tar.mjs";
 import { BRAND, ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 const batchCheckFormat = "--batch-check=%(objectname) %(objecttype) %(objectsize)";
@@ -363,6 +363,92 @@ test("classified privacy samples stay path-and-line exact across source, history
   assert.deepEqual(archive, originalArchive, "scanning leaves the archive bytes unchanged");
   assert.ok(archiveFindings.some((finding) => finding.startsWith("GITHUB_CLASSIC_TOKEN:release:") && finding.endsWith("#body:src/new-secret.mjs")));
   assert.ok(archiveFindings.some((finding) => finding.startsWith("EMAIL_IDENTIFIER:release:") && finding.includes("#header:fixtures/")));
+});
+
+test("reviewed mailto sample retains exact source, blob and source-tar boundaries", async () => {
+  const root = resolve(import.meta.dirname, "..");
+  const path = "tests/release-lockstep.test.mjs";
+  const bytes = await readFile(join(root, path));
+  const originalBytes = Buffer.from(bytes);
+  const fixture = bytes.toString("utf8");
+  const lines = fixture.split("\n").filter((line) => line.includes("(mailto:"));
+  assert.equal(lines.length, 1, "there is exactly one reviewed mailto fixture line");
+  const line = lines[0];
+  const email = line.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu)?.[0];
+  assert.ok(email, "the reviewed value is derived from the existing fixture");
+  const digest = (value) => createHash("sha256").update(value).digest("hex");
+  assert.equal(digest(email), "2f761a0ba6fc6541787d69b3833f6979dadb036ef2c610f73e3ecb0ad843eb76");
+  assert.equal(digest(normalizePrivacyText(line)), "a7efd70d054a3dd966911e119aa4dccde720f7452a7c16b5724aacd262a8862e");
+  const names = await readFile(join(root, "packages/core/src/names.ts"), "utf8");
+  const owner = names.match(/owner:\s*"([^"]+)"/u)?.[1];
+  assert.ok(owner);
+  const scan = (entry) => {
+    const original = {
+      ...entry,
+      content: Buffer.isBuffer(entry.content) ? Buffer.from(entry.content) : entry.content,
+      ...(entry.sourcePaths === undefined ? {} : { sourcePaths: [...entry.sourcePaths] }),
+    };
+    const findings = scanPrivacyEntries([entry], { owner });
+    assert.deepEqual(entry, original, "scanning leaves the input entry and bytes unchanged");
+    return findings;
+  };
+  const rejected = (entry, label = entry.label) => {
+    assert.ok(scan(entry).includes(`EMAIL_IDENTIFIER:${entry.kind}:${label}`),
+      "the targeted entry must retain its email finding");
+  };
+  assert.deepEqual(scan({ label: path, kind: "source", content: fixture }), []);
+  const object = fixtureGit(root, ["rev-parse", `HEAD:${path}`]).trim();
+  const blob = fixtureGit(root, ["cat-file", "blob", object], { raw: true });
+  assert.deepEqual(blob, bytes, "the reachable HEAD blob equals the complete source fixture");
+  const blobEntry = { label: `git-blob:${object}`, kind: "blob", sourcePaths: [path], content: blob.toString("utf8") };
+  assert.deepEqual(scan(blobEntry), []);
+
+  const archive = writeUstar([{ path, bytes }]);
+  const members = readUstar(archive);
+  assert.equal(members.length, 1);
+  assert.equal(members[0].path, path);
+  assert.deepEqual(members[0].bytes, bytes, "the real tar member retains the complete source bytes");
+  const archiveEntries = [
+    { label: "dist/source/einzbern-source.tar", kind: "archive", content: archive },
+    { label: "dist/release/einzbern-3.0.0-source.tar", kind: "release", content: archive },
+  ];
+  for (const entry of archiveEntries) assert.deepEqual(scan(entry), []);
+  assert.deepEqual(bytes, originalBytes, "source bytes remain unchanged across all positive surfaces");
+
+  // Isolate the reviewed line: no other private fixture can satisfy these assertions.
+  const source = { label: path, kind: "source", content: line };
+  assert.deepEqual(scan(source), []);
+  const changedPath = "tests/unreviewed-mailto.test.mjs";
+  rejected({ ...source, label: changedPath });
+  const changedValue = `changed-${email}`;
+  rejected({ ...source, content: line.replace(email, changedValue) });
+  rejected({ ...source, content: `${line} // changed` });
+  const isolatedBlob = { ...blobEntry, content: line };
+  assert.deepEqual(scan(isolatedBlob), []);
+  rejected({ label: isolatedBlob.label, kind: "blob", content: line });
+  for (const sourcePaths of [[], [changedPath], [path, changedPath]]) {
+    rejected({ ...isolatedBlob, sourcePaths });
+  }
+  rejected({
+    label: `dist/release/einzbern-3.0.0.tar.gz/einzbern-3.0.0/${path}`,
+    kind: "release", releaseArchiveMember: true, sourcePaths: [path], content: line,
+  });
+  const escapedPayload = [...changedValue].map((character) =>
+    `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+  assert.equal(normalizePrivacyText(escapedPayload), changedValue, "escaped bytes decode to the additional value");
+  const extraPayloads = [changedValue, escapedPayload];
+  for (const payload of extraPayloads) {
+    rejected({ ...source, content: `${line}\n${payload}\n` });
+  }
+  for (const entry of archiveEntries) {
+    const changedMember = writeUstar([{ path: changedPath, bytes: Buffer.from(line) }]);
+    rejected({ ...entry, content: changedMember }, `${entry.label}#body:${changedPath}`);
+    for (const content of [line.replace(email, changedValue), `${line} // changed`,
+      ...extraPayloads.map((payload) => `${line}\n${payload}\n`)]) {
+      rejected({ ...entry, content: writeUstar([{ path, bytes: Buffer.from(content) }]) },
+        `${entry.label}#body:${path}`);
+    }
+  }
 });
 
 test("DS publication provenance is classified only at exact inventory source lines", async () => {

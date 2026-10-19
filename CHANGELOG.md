@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+- Release preparation can explicitly select project gate declarations with
+  `--project-id`; both phases bind that scope and reject mismatched receipts or
+  native runs while preserving the omitted library-default behavior.
+
 ### Next public release: 3.0.0 preparation
 
 The next public release is a major release under the existing compatibility policy.

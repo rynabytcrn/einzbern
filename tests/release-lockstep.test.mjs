@@ -178,7 +178,7 @@ test("488-R4: prepare names a gates workspace, while remote stops do not require
   );
 });
 
-async function controlledPrepareRunner({ engineRoot, helperRoot, projectRoot, environment, workspace, staleBuild = false }) {
+async function controlledPrepareRunner({ engineRoot, helperRoot, projectRoot, environment, workspace, projectId = null, staleBuild = false }) {
   const calls = [];
   const runner = async (command, args, { cwd, env }) => {
     calls.push({ command, args, cwd });
@@ -217,6 +217,7 @@ async function controlledPrepareRunner({ engineRoot, helperRoot, projectRoot, en
     version: NEXT_VERSION,
     workspace,
     projectRoot,
+    projectId,
     env: environment,
     at: "2026-09-27T04:00:00Z",
     runner,
@@ -581,12 +582,12 @@ async function createReleaseFixture(name, { red = false, ignoredExtra = false } 
   return { ...repos, environment, workspace, receiptPath: join(repos.projectRoot, "release-receipt.json") };
 }
 
-function generateFixture(fixture, { keepExtra = [], calls = [], receiptPath = fixture.receiptPath, engineRoot = fixture.engineRoot } = {}) {
-  return generateRelease({ engineRoot, helperRoot: fixture.helperRoot, version: NEXT_VERSION, workspace: fixture.workspace, projectRoot: fixture.projectRoot, receiptPath, keepExtra, env: fixture.environment, runner: releaseRunner(engineRoot, calls), at: "2026-10-08T01:00:00Z" });
+function generateFixture(fixture, { keepExtra = [], calls = [], receiptPath = fixture.receiptPath, engineRoot = fixture.engineRoot, projectId = fixture.projectId ?? null } = {}) {
+  return generateRelease({ engineRoot, helperRoot: fixture.helperRoot, version: NEXT_VERSION, workspace: fixture.workspace, projectRoot: fixture.projectRoot, projectId, receiptPath, keepExtra, env: fixture.environment, runner: releaseRunner(engineRoot, calls), at: "2026-10-08T01:00:00Z" });
 }
 
-function finishFixture(fixture, { calls = [], version = NEXT_VERSION, receiptPath = fixture.receiptPath } = {}) {
-  return finishRelease({ engineRoot: fixture.engineRoot, helperRoot: fixture.helperRoot, version, workspace: fixture.workspace, projectRoot: fixture.projectRoot, receiptPath, env: fixture.environment, runner: releaseRunner(fixture.engineRoot, calls), at: "2026-10-08T02:00:00Z" });
+function finishFixture(fixture, { calls = [], version = NEXT_VERSION, receiptPath = fixture.receiptPath, projectId = fixture.projectId ?? null } = {}) {
+  return finishRelease({ engineRoot: fixture.engineRoot, helperRoot: fixture.helperRoot, version, workspace: fixture.workspace, projectRoot: fixture.projectRoot, projectId, receiptPath, env: fixture.environment, runner: releaseRunner(fixture.engineRoot, calls), at: "2026-10-08T02:00:00Z" });
 }
 
 function commitRelease(fixture, receipt) {
@@ -799,4 +800,151 @@ test("SUB-357 R41 B1: generate and finish need a receipt, and every release opti
   assertCliReason(["generate", ...common, ...gated, ...receipt, "--execute", "tag"], "RELEASE_ARGUMENT_INVALID");
   assertCliReason(["generate", ...common, ...gated, ...receipt, ...receipt], "RELEASE_ARGUMENT_DUPLICATE");
   assertCliReason(["generate", "--version", "not-a-version", "--helper", join(base, "missing-helper"), ...gated, ...receipt, "--keep-extra", CREATE_SKILL_ARCHIVE, "--keep-extra", RETIRED_REFERENCE], "RELEASE_VERSION_INVALID");
+});
+
+// SUB-544: configuration scope is independent of the registered filesystem root. These
+// fixtures use native project creation, scoped declarations and the actual built CLI.
+async function scopedReleaseProject(fixture, key, { required = true, helperRequired = true, enabled = true, rootOverride, covers = ["**"], red = false } = {}) {
+  const created = JSON.parse(execFileSync(process.execPath, [join(fixture.engineRoot, "scripts/einzbern.mjs"), "project-create", "--workspace", fixture.workspace, "--external-key", key, "--name", key, "--at", "2026-10-08T00:00:01Z"], { env: fixture.environment, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+  const projectId = created.record.id;
+  for (const [index, [name, root]] of [["engine:fixture", fixture.engineRoot], ["helper:fixture", fixture.helperRoot]].entries()) {
+    await setGate(fixture.workspace, {
+      occurredAt: `2026-10-08T00:00:0${index + 2}Z`, configurationProjectId: projectId, name,
+      gate: { command: [process.execPath, "-e", `process.exit(process.cwd() === ${JSON.stringify(root)} ? ${red ? 7 : 0} : 19)`], root: rootOverride ?? root.split("/").at(-1), covers, required: required && (index === 0 || helperRequired), enabled, releaseOnly: true },
+    });
+  }
+  return projectId;
+}
+
+async function scopedFixture(name, options = {}) {
+  const fixture = await createReleaseFixture(name);
+  fixture.projectId = await scopedReleaseProject(fixture, `${name}-A`, options);
+  return fixture;
+}
+
+test("SUB-544: default zero gates and explicit project gates stay separate in native CLI reads and runs", async () => {
+  const repos = await createRepos("scope-empty");
+  const environment = await makeEnvironment("scope-empty");
+  const workspace = await makeWorkspace("scope-empty", repos, environment, { declarations: "empty" });
+  const fixture = { ...repos, workspace, environment };
+  const projectId = await scopedReleaseProject(fixture, "scope-empty-A");
+  await assert.rejects(checkReleaseGatePlan({ ...repos, workspace, env: environment }), { reasonCode: "RELEASE_GATE_DECLARATIONS_EMPTY" });
+  const bound = await checkReleaseGatePlan({ ...repos, workspace, projectId, env: environment });
+  assert.equal(bound.projectId, projectId);
+  assert.equal(bound.plan.gates.length, 2);
+  const at = "2026-10-08T04:00:00Z";
+  const gates = await runReleaseGates({ ...repos, workspace, projectId, env: environment, at });
+  assert.equal(gates.run.projectId, projectId);
+  const tree = await gateTreeState(repos.projectRoot, bound.plan.roots);
+  await assert.rejects(assertReleaseGateRun({ gates, plan: bound.plan, tree, at }), { reasonCode: "RELEASE_GATE_RUN_INVALID" });
+  await assert.rejects(assertReleaseGateRun({ gates, plan: bound.plan, tree, at, projectId: `project:${"f".repeat(24)}` }), { reasonCode: "RELEASE_GATE_RUN_INVALID" });
+  const wrong = structuredClone(gates);
+  wrong.run.projectId = `project:${"f".repeat(24)}`;
+  await assert.rejects(assertReleaseGateRun({ gates: wrong, plan: bound.plan, tree, at, projectId }), { reasonCode: "RELEASE_GATE_RUN_INVALID" });
+});
+
+test("SUB-544: same-name project declarations cannot inherit green library gates; prepare uses the explicit scope", async () => {
+  const fixture = await scopedFixture("scope-prepare", { red: true });
+  const defaultPlan = await checkReleaseGatePlan({ ...fixture, env: fixture.environment, projectId: null });
+  const scopedPlan = await checkReleaseGatePlan({ ...fixture, env: fixture.environment });
+  assert.notEqual(defaultPlan.plan.declarationsDigest, scopedPlan.plan.declarationsDigest);
+  await assert.rejects(controlledPrepareRunner(fixture), { reasonCode: "RELEASE_GATES_RED" });
+});
+
+for (const [label, options, reasonCode] of [
+  ["disabled", { enabled: false }, "RELEASE_REQUIRED_GATES_MISSING"],
+  ["optional", { required: false }, "RELEASE_REQUIRED_GATES_MISSING"],
+  ["parent-root", { rootOverride: "." }, "RELEASE_REQUIRED_GATES_MISSING"],
+  ["missing-helper", { helperRequired: false }, "RELEASE_REQUIRED_GATES_MISSING"],
+]) {
+  test(`SUB-544: explicit ${label} declarations cannot borrow library required coverage`, async () => {
+    const fixture = await scopedFixture(`scope-${label}`, options);
+    await assert.rejects(checkReleaseGatePlan({ ...fixture, env: fixture.environment }), { reasonCode });
+  });
+}
+
+test("SUB-544: identical project A/B declarations still bind generate and finish to A; scope refusals do not move or pack", async () => {
+  const fixture = await scopedFixture("scope-two-phase");
+  const other = await scopedReleaseProject(fixture, "scope-two-phase-B");
+  const a = await checkReleaseGatePlan({ ...fixture, env: fixture.environment });
+  const b = await checkReleaseGatePlan({ ...fixture, env: fixture.environment, projectId: other });
+  assert.equal(a.plan.declarationsDigest, b.plan.declarationsDigest);
+  const generated = await generateFixture(fixture);
+  const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+  assert.equal(receipt.gates.projectId, fixture.projectId);
+  assert.equal(generated.gates.projectId, fixture.projectId);
+  commitRelease(fixture, receipt);
+  const stale = `dist/release/einzbern-${OLD_VERSION}.tar.gz`;
+  await writeText(fixture.engineRoot, stale, "retain until scope matches\n");
+  for (const projectId of [other, null]) {
+    const calls = [];
+    await assert.rejects(finishFixture(fixture, { projectId, calls }), (error) => error.details.violations.some((entry) => entry.code === "RELEASE_RECEIPT_MISMATCH" && entry.field === "gates.projectId"));
+    assert.equal(calls.length, 0);
+    assert.equal(await readFile(join(fixture.engineRoot, stale), "utf8"), "retain until scope matches\n");
+  }
+  // Old v1 receipts omitted this field: omission never names A.
+  const legacy = structuredClone(receipt);
+  delete legacy.gates.projectId;
+  await writeFile(fixture.receiptPath, `${JSON.stringify(legacy)}\n`);
+  await assert.rejects(finishFixture(fixture), (error) => error.details.violations.some((entry) => entry.field === "gates.projectId"));
+  await writeFile(fixture.receiptPath, `${JSON.stringify(receipt)}\n`);
+  const finished = await finishFixture(fixture);
+  assert.equal(finished.gates.projectId, fixture.projectId);
+  assert.equal(finished.gates.ok, true);
+});
+
+test("SUB-544: scoped covers drift after generate refuses before finish gates and packing", async () => {
+  const fixture = await scopedFixture("scope-covers-drift");
+  await generateFixture(fixture);
+  commitRelease(fixture, JSON.parse(await readFile(fixture.receiptPath, "utf8")));
+  await setGate(fixture.workspace, { occurredAt: "2026-10-08T03:00:00Z", configurationProjectId: fixture.projectId, name: "engine:fixture", gate: { command: [process.execPath, "-e", `process.exit(process.cwd() === ${JSON.stringify(fixture.engineRoot)} ? 0 : 19)`], root: "einzbern", covers: ["src/**"], required: true, enabled: true, releaseOnly: true } });
+  const calls = [];
+  await assert.rejects(finishFixture(fixture, { calls }), (error) => error.details.violations.some((entry) => entry.code === "RELEASE_RECEIPT_BASIS_CHANGED"));
+  assert.equal(calls.length, 0);
+});
+
+test("SUB-544: legacy v1 receipt omission retains the library-default two-phase flow", async () => {
+  const fixture = await createReleaseFixture("scope-legacy-default");
+  await generateFixture(fixture);
+  const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+  delete receipt.gates.projectId;
+  await writeFile(fixture.receiptPath, `${JSON.stringify(receipt)}\n`);
+  commitRelease(fixture, receipt);
+  assert.equal((await finishFixture(fixture)).gates.projectId, null);
+});
+
+test("SUB-544: release CLI rejects invalid project scope before repository or receipt mutations", () => {
+  const common = ["--version", NEXT_VERSION, "--helper", join(base, "missing-helper")];
+  const gated = ["--workspace", join(base, "missing-library"), "--project", base];
+  const id = `project:${"a".repeat(24)}`;
+  for (const value of ["", "project:A", " project:" + "a".repeat(24), "../project"]) {
+    assertCliReason(["prepare", ...common, ...gated, "--project-id", value], "RELEASE_ARGUMENT_INVALID");
+  }
+  assertCliReason(["prepare", ...common, ...gated, "--project-id"], "RELEASE_ARGUMENT_VALUE_MISSING");
+  assertCliReason(["prepare", ...common, ...gated, "--project-id", id, "--project-id", id], "RELEASE_ARGUMENT_DUPLICATE");
+  assertCliReason(["check", ...common, "--project-id", id], "RELEASE_ARGUMENT_INVALID");
+  assertCliReason(["publish-plan", ...common, "--wiki-dir", base, "--project-id", id], "RELEASE_ARGUMENT_INVALID");
+});
+
+test("SUB-544: prepare succeeds with project required gates when the library default is empty", async () => {
+  const repos = await createRepos("scope-prepare-empty");
+  const environment = await makeEnvironment("scope-prepare-empty");
+  const workspace = await makeWorkspace("scope-prepare-empty", repos, environment, { declarations: "empty" });
+  const fixture = { ...repos, workspace, environment };
+  const projectId = await scopedReleaseProject(fixture, "scope-prepare-empty-A");
+  const { result } = await controlledPrepareRunner({ ...fixture, projectId });
+  assert.equal(result.gates.projectId, projectId);
+  assert.deepEqual(result.gates.selected, ["engine:fixture", "helper:fixture"]);
+});
+
+test("SUB-544: post-run declaration reread checks the selected project when its gate changes covers", async () => {
+  const fixture = await scopedFixture("scope-run-drift");
+  const script = join(fixture.projectRoot, "change-scoped-gate.mjs");
+  const command = [process.execPath, script];
+  const gate = { command, root: "einzbern", covers: ["**"], required: true, enabled: true, releaseOnly: true };
+  const changed = { ...gate, covers: ["src/**"] };
+  const module = pathToFileURL(join(fixture.engineRoot, "dist/build/packages/core/src/gates-config.js")).href;
+  await writeFile(script, `import { setGate } from ${JSON.stringify(module)};\nawait setGate(${JSON.stringify(fixture.workspace)}, ${JSON.stringify({ occurredAt: "2026-10-08T03:00:00Z", configurationProjectId: fixture.projectId, name: "engine:fixture", gate: changed })});\n`);
+  await setGate(fixture.workspace, { occurredAt: "2026-10-08T00:00:04Z", configurationProjectId: fixture.projectId, name: "engine:fixture", gate });
+  await assert.rejects(runReleaseGates({ ...fixture, env: fixture.environment, at: "2026-10-08T02:00:00Z" }), { reasonCode: "RELEASE_GATE_BASIS_CHANGED" });
 });

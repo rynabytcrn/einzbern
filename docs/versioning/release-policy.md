@@ -38,7 +38,7 @@ tree explicitly:
 
 ```sh
 node scripts/release.mjs check --version <version> --helper <helper-working-tree>
-node scripts/release.mjs prepare --version <version> --helper <helper-working-tree> --workspace <library> --project <registered-project>
+node scripts/release.mjs prepare --version <version> --helper <helper-working-tree> --workspace <library> --project <registered-project> [--project-id <stable-project-id>]
 ```
 
 `prepare` updates the engine and package versions and the actual core
@@ -51,9 +51,17 @@ release gate, pack, or digest check stops preparation. The command makes local
 working tree changes only and creates no commit.
 
 `--workspace` names an existing Einzbern library and `--project` names its exact
-registered project on this device. That project must contain both release
-repositories. The current tree must already have a build for the initial CLI
-declaration checks. The gate declarations must be nonempty, include enabled
+registered filesystem root on this device. That root must contain both release
+repositories. Optional `--project-id project:<24 lowercase hexadecimal digits>`
+selects the stable configuration project inside that library; it does not change
+or replace the filesystem root. It is accepted only by `prepare`, `generate` and
+`finish`. Omit it to preserve the library-default declaration selection. Use the
+same selection for both phases: an explicit project A, project B and the library
+default remain distinct even when their commands, roots and declaration digests
+are identical. Declaration reads, plans, actual gate runs and post-run checks all
+use this selection; the saved native run must name the same project scope.
+
+The current tree must already have a build for the initial CLI declaration checks. The gate declarations must be nonempty, include enabled
 required gates on the exact engine and helper roots, and select every enabled
 gate. Preparation passes `--release true` and both explicit roots to the real CLI;
 it reads the saved native run and checks every selection, execution, exit status,
@@ -75,8 +83,8 @@ on the same device directory for both phases, because the library registration
 and the gate runs belong to that device.
 
 ```sh
-node scripts/release.mjs generate --version <version> --helper <helper-working-tree> --workspace <library> --project <registered-project> --receipt <new-receipt-file> [--keep-extra <helper-path>]...
-node scripts/release.mjs finish --version <version> --helper <helper-working-tree> --workspace <library> --project <registered-project> --receipt <new-receipt-file>
+node scripts/release.mjs generate --version <version> --helper <helper-working-tree> --workspace <library> --project <registered-project> [--project-id <stable-project-id>] --receipt <new-receipt-file> [--keep-extra <helper-path>]...
+node scripts/release.mjs finish --version <version> --helper <helper-working-tree> --workspace <library> --project <registered-project> [--project-id <stable-project-id>] --receipt <new-receipt-file>
 ```
 
 `generate` requires both trees clean and records both HEAD commits. Before it
@@ -94,6 +102,12 @@ tracks, and those it does not track, such as an ignored lockfile. `--keep-extra`
 names a tracked extra file that stays in the helper; every other tracked extra
 file is listed in `removeFiles`. Untracked extra files are never removed and never
 committed. `generate` creates no commit and runs no gate.
+
+The v1 generate receipt records this selection in `gates.projectId` (`null` for
+the library default). `finish` refuses a different scope before running gates,
+moving old output or packing. An older v1 receipt with no `projectId` means only
+the library default and cannot authorize an explicit project selection. Invalid,
+empty or duplicate `--project-id` arguments are rejected before release changes.
 
 Commit each repository exactly once after `generate`. The engine commit contains
 the receipt's changes. The helper commit contains the receipt's changes and the

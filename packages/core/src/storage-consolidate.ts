@@ -45,8 +45,13 @@ export async function consolidateStorage(home: string, fromInput: string, toInpu
   const device = await readDevice(home);
   if (device === null) refuse("a device identity is required");
   const journalPath = join(home, "storage-consolidation.json");
-  const previous = await readFile(journalPath, "utf8").then(text => JSON.parse(text) as Journal, error => { if (error.code === "ENOENT") return null; throw error; });
-  if (previous && (previous.from !== from || previous.to !== to || previous.decidedIn !== decidedIn || previous.retireRuntimeRoot !== retireRuntimeRoot)) refuse("another storage consolidation requires recovery");
+  const saved = await readFile(journalPath, "utf8").then(text => JSON.parse(text) as Journal, error => { if (error.code === "ENOENT") return null; throw error; });
+  let previous = saved;
+  if (previous && (previous.from !== from || previous.to !== to || previous.decidedIn !== decidedIn || previous.retireRuntimeRoot !== retireRuntimeRoot)) {
+    const current = readStorageLocation(home);
+    if (!previous.completed || previous.to !== from || current?.library !== from || current.runtime !== previous.runtimeTo) refuse("another storage consolidation requires recovery");
+    previous = null;
+  }
   if (previous?.completed) {
     const current = readStorageLocation(home);
     if (current?.library !== to || current.runtime !== previous.runtimeTo || !await exists(join(to, "manifest.json")) || await exists(from) || await exists(retireRuntimeRoot)) refuse("completed storage has changed; no cleanup is inferred");
@@ -62,6 +67,11 @@ export async function consolidateStorage(home: string, fromInput: string, toInpu
   }
   if (!yes) return { reasonCode: "STORAGE_CONSOLIDATION_PLAN_READY", ...journal, retire: [from, retireRuntimeRoot] };
   return withFileLock(join(home, "storage-consolidation.lock"), async () => {
+    if (saved !== null && previous === null) {
+      const archive = join(journal.runtimeFrom, "backups", "storage-locations");
+      await mkdir(archive, { recursive: true });
+      await writeFileAtomic(join(archive, `consolidation-${digest(json(saved))}.json`), json(saved));
+    }
     await writeFileAtomic(journalPath, json(journal));
     // Finder's display metadata is backed up; it is never treated as library content to overwrite.
     if (!await exists(join(to, "manifest.json")) && await exists(to)) {

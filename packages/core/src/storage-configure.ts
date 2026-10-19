@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-import { lstat, mkdir, readFile, readdir, rename, realpath, symlink } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, symlink } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { withFileLock } from "./file-lock.js";
 import { readStorageLocation } from "./storage-location.js";
 import type { StorageLocation } from "./storage-location.js";
+import { runtimeTransportReceiptPath, transportRuntimeArea } from "./runtime-transport.js";
+import type { RuntimeTransportOptions } from "./runtime-transport.js";
 /** Device identity, credentials, registry and host policies remain local. Only derived runtime and backups move. */
-export async function configureStorageLocation(home: string, library: string, runtime: string, at: string, decidedIn: string, yes = false): Promise<Record<string, unknown>> {
+export async function configureStorageLocation(home: string, library: string, runtime: string, at: string, decidedIn: string, yes = false, transportOptions: RuntimeTransportOptions = {}): Promise<Record<string, unknown>> {
   assertStrictInstant(at);
   if (!isAbsolute(library) || !isAbsolute(runtime) || resolve(runtime) === resolve(home) || resolve(runtime).startsWith(`${resolve(home)}/`)) throw new Error("STORAGE_LOCATION_INVALID");
   const previous = readStorageLocation(home);
@@ -47,8 +49,9 @@ export async function configureStorageLocation(home: string, library: string, ru
           continue;
         }
         if (!sourceStat.isDirectory()) throw new Error("STORAGE_UNSAFE_PATH");
-        if (occupied) throw new Error(`STORAGE_TARGET_NOT_EMPTY: ${destination}`);
-        await rename(source, destination);
+        const pendingCopy = await lstat(runtimeTransportReceiptPath(home, source, destination, at)).then(() => true, error => { if (error.code === "ENOENT") return false; throw error; });
+        if (occupied && !pendingCopy) throw new Error(`STORAGE_TARGET_NOT_EMPTY: ${destination}`);
+        await transportRuntimeArea(home, source, destination, at, transportOptions);
         // Historical evidence paths keep resolving, without keeping a second data copy.
         await symlink(destination, source, process.platform === "win32" ? "junction" : "dir");
       }

@@ -1742,6 +1742,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-470 R1: this device's registry of libraries (registry.json in the device
   // directory). library-register writes the registry, never a project or a library.
   { name: "library-list", availability: "cli", mutates: false, flags: [] },
+  { name: "library-readme-refresh", availability: "cli", mutates: true, flags: [{ name: "actor", required: true, valueKind: "string" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "library-register", availability: "cli", mutates: true, flags: [{ name: "project", required: true, valueKind: "string" }, { name: "library", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }, { name: "git-remote", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "library-resolve", availability: "cli", mutates: false, flags: [{ name: "cwd", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-541 (MIN-258 D3; TCRN-CROSS-SUB-511): take one entry out of the registry by its
@@ -1806,7 +1807,6 @@ export const COMMAND_CATALOG = Object.freeze([
   // PG-specific; it is removed.
   { name: "storage-configure", availability: "cli", mutates: true, flags: [{ name: "library", required: true, valueKind: "string" }, { name: "runtime", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "decided-in", required: true, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   { name: "storage-consolidate", availability: "cli", mutates: true, flags: [{ name: "actor", required: true, valueKind: "string" }, { name: "from", required: true, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "retire-runtime-root", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "decided-in", required: true, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
-  { name: "library-readme-refresh", availability: "cli", mutates: true, flags: [{ name: "actor", required: true, valueKind: "string" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "template-admit", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "template", required: true, valueKind: "string" }, { name: "owner", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "template-validate", availability: "cli", mutates: false, flags: [{ name: "template", required: true, valueKind: "string" }] },
   { name: "validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },

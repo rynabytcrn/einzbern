@@ -68,3 +68,38 @@ test("a completed earlier runtime relocation can move again, and a busy migratio
   assert.equal(result.completed, true);
   assert.equal(await readFile(join(f.home, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
 });
+
+test("cross-device runtime copy preserves evidence and resumes an interrupted retirement", async t => {
+  const f = await fixture(t), target = join(f.root, "External selected parent", "Ether", ".einzbern", f.device.deviceId);
+  await writeFile(join(f.runtime, "cache", "a"), "alpha");
+  await writeFile(join(f.runtime, "cache", "b"), "beta");
+  const options = { forceCopyForTest: true, publicationStepForTest: phase => { if (phase === "retiring") throw new Error("interrupted after verified copy"); } };
+  await assert.rejects(configureStorageLocation(f.home, f.from, target, at, decision, true, options), /interrupted/);
+  assert.equal(await readFile(join(target, "cache", "a"), "utf8"), "alpha");
+  await configureStorageLocation(f.home, f.from, target, at, decision, true, { forceCopyForTest: true });
+  assert.equal(await readFile(join(f.home, "cache", "a"), "utf8"), "alpha");
+  assert.equal(await readFile(join(f.home, "cache", "b"), "utf8"), "beta");
+  assert.equal(await readFile(join(f.home, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
+});
+
+test("cross-device recovery refuses a changed verified destination and preserves the source", async t => {
+  const f = await fixture(t), target = join(f.root, "External chosen parent", "Ether", ".einzbern", f.device.deviceId);
+  await assert.rejects(configureStorageLocation(f.home, f.from, target, at, decision, true, {
+    forceCopyForTest: true, publicationStepForTest: async phase => {
+      if (phase === "verified") { await writeFile(join(target, "cache", "gate-evidence.log"), "unique later edit"); throw new Error("interrupted before retirement"); }
+    },
+  }), /interrupted/);
+  await assert.rejects(configureStorageLocation(f.home, f.from, target, at, decision, true, { forceCopyForTest: true }), /destination changed/);
+  assert.equal(await readFile(join(f.runtime, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
+  assert.equal(await readFile(join(target, "cache", "gate-evidence.log"), "utf8"), "unique later edit");
+});
+
+test("a completed consolidation does not prevent a later explicit change of parent", async t => {
+  const f = await fixture(t);
+  await consolidateStorage(f.home, f.from, f.to, f.runtimeRoot, at, decision, true);
+  const next = join(f.root, "Next selected parent", "Ether");
+  await consolidateStorage(f.home, f.to, next, join(f.to, ".einzbern"), "2026-10-19T16:01:00Z", decision, true);
+  assert.equal(readStorageLocation(f.home).library, next);
+  await assert.rejects(readFile(join(f.to, "manifest.json")), { code: "ENOENT" });
+  assert.equal(await readFile(join(f.home, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
+});

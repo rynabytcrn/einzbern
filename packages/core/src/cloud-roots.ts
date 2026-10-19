@@ -91,7 +91,8 @@ export function suggestCloudHosted(realPath: string, context: CloudRootContext =
   return matchCloudRoot(realPath, context) !== null;
 }
 
-/** The shared library's default name is Ether, regardless of the chosen parent/provider. */
-export function defaultCloudLibraryPath(cloudRoot: string, _projectName: string, platform: string = process.platform): string {
-  return pathModule(platform).join(cloudRoot, DIRECTORY.cloudDefaultParent);
+/** @deprecated Legacy per-project helper; current setup uses defaultSharedLibraryPath.
+ * Where a project's library goes in a cloud folder by default: <cloud root>/Ether/<project name>. */
+export function defaultCloudLibraryPath(cloudRoot: string, projectName: string, platform: string = process.platform): string {
+  return pathModule(platform).join(cloudRoot, DIRECTORY.cloudDefaultParent, projectName);
 }

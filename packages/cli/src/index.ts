@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { prepareDispatch, recordDispatch, writeDispatchArtifact } from "../../core/src/dispatch-workflow.js";
 import { normalizeDispatchAdmissionEvidence } from "../../core/src/dispatch-evidence.js";
 import { discardRelocationPreparation } from "../../core/src/relocate.js";
 import { planConfigurationProjectionRefresh, refreshConfigurationProjections, diagnoseLegacySharedPaths } from "../../core/src/configuration-projections.js";
@@ -1677,6 +1678,19 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "event-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "execution-evidence", availability: "cli", mutates: false, flags: [{ name: "from-file", required: true, valueKind: "string", valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input." }] },
   { name: "execution-policy-resolve", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "category", required: true, valueKind: "string" }, { name: "rejections", required: true, valueKind: "integer" }, { name: "project-budget", required: false, valueKind: "integer" }, { name: "usage", required: false, valueKind: "json" }] },
+  { name: "execution-prepare", availability: "cli", mutates: true, flags: [
+    { name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" },
+    { name: "host", required: true, valueKind: "string" }, { name: "category", required: true, valueKind: "string" },
+    { name: "rejections", required: true, valueKind: "integer" }, { name: "requested-agents", required: true, valueKind: "integer" },
+    { name: "observations", required: true, valueKind: "string", valueShape: "Machine JSON file: explicit availableCombinations, optional timestamped usage/expectedPolicy; never inferred from policy." },
+    { name: "output", required: true, valueKind: "string", valueShape: "Create-new private local preparation file outside device/library roots; refused preparations are retained. No dispatch." },
+  ] },
+  { name: "execution-record", availability: "cli", mutates: true, flags: [
+    { name: "binding", required: true, valueKind: "string", valueShape: "Saved execution-prepare file." },
+    { name: "target", required: true, valueKind: "integer", valueShape: "Exact zero-based target index in the preparation bindings." },
+    { name: "process-return", required: true, valueKind: "string", valueShape: "Actual process artifact per specs/dispatch-admission-evidence-v1.md; native tool responses unsupported." },
+    { name: "output", required: true, valueKind: "string", valueShape: "Create-new private local record, retaining raw and normalized failures/unavailability. No dispatch." },
+  ] },
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R1 to R3: gate declarations (one configuration record per gate), the plan a
   // change and optional Story need, and running it into this device's cache.
@@ -2244,6 +2258,38 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "commands") {
     parseArguments(rest, []);
     io.write(canonicalJson({ reasonCode: "CLI_CATALOG_READY", schemaVersion: "tcrn.cli-catalog.v1", commands: COMMAND_CATALOG }));
+    return;
+  }
+  if (command === "execution-prepare") {
+    const values = parseArguments(rest, ["workspace", "id", "host", "category", "rejections", "requested-agents", "observations", "output"]);
+    required(values, ["workspace", "id", "host", "category", "rejections", "requested-agents", "observations", "output"]);
+    let observations: unknown;
+    try { observations = JSON.parse(readFileSync(values.observations!, "utf8")); }
+    catch { fail("DISPATCH_EVIDENCE_INPUT_INVALID", "--observations must name a readable machine observations JSON file"); }
+    const result = await prepareDispatch(await materializeWorkspace(values.workspace!), values.id!, {
+      host: values.host!, category: values.category!, rejections: integerValue(values, "rejections"), requestedAgents: integerValue(values, "requested-agents"),
+    }, observations);
+    await writeDispatchArtifact(values.output!, result, [values.workspace!]);
+    io.write(`${JSON.stringify(result)}\n`);
+    if (result.context.dispatchAdmitted !== true) fail("DISPATCH_PREPARATION_REFUSED", "Preparation retained; work is not dispatch-admitted. See target admission/readiness.");
+    return;
+  }
+  if (command === "execution-record") {
+    const values = parseArguments(rest, ["binding", "target", "process-return", "output"]);
+    required(values, ["binding", "target", "process-return", "output"]);
+    let binding: unknown; let processReturn: unknown;
+    try {
+      binding = JSON.parse(readFileSync(values.binding!, "utf8"));
+      processReturn = JSON.parse(readFileSync(values["process-return"]!, "utf8"));
+    } catch { fail("DISPATCH_EVIDENCE_INPUT_INVALID", "--binding and --process-return must name readable JSON files"); }
+    const result = recordDispatch(binding, integerValue(values, "target"), processReturn);
+    await writeDispatchArtifact(values.output!, result);
+    io.write(`${JSON.stringify(result)}\n`);
+    const normalized = result.normalized as ReturnType<typeof normalizeDispatchAdmissionEvidence>;
+    if (!normalized.valid) fail("DISPATCH_EVIDENCE_INVALID", "Invalid association retained; see stdout problems");
+    if (!normalized.complete) fail("DISPATCH_EVIDENCE_UNAVAILABLE", "Incomplete association retained; see stdout unavailable observations");
+    const hostResult = (normalized.evidence as { hostResult: { exitCode: { value: number } } }).hostResult;
+    if (hostResult.exitCode.value !== 0) fail("DISPATCH_PROCESS_FAILED", "Nonzero process exit retained unchanged");
     return;
   }
   if (command === "execution-evidence") {

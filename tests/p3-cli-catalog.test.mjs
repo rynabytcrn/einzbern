@@ -436,6 +436,12 @@ test("integrated engine: non-decision valueShapes document projection selection,
       name: "from-file", required: true, valueKind: "string",
       valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input.",
     }],
+    ["execution-prepare", { name: "observations", required: true, valueKind: "string", valueShape: "Machine JSON file: explicit availableCombinations, optional timestamped usage/expectedPolicy; never inferred from policy." }],
+    ["execution-prepare", { name: "output", required: true, valueKind: "string", valueShape: "Create-new private local preparation file outside device/library roots; refused preparations are retained. No dispatch." }],
+    ["execution-record", { name: "binding", required: true, valueKind: "string", valueShape: "Saved execution-prepare file." }],
+    ["execution-record", { name: "target", required: true, valueKind: "integer", valueShape: "Exact zero-based target index in the preparation bindings." }],
+    ["execution-record", { name: "process-return", required: true, valueKind: "string", valueShape: "Actual process artifact per specs/dispatch-admission-evidence-v1.md; native tool responses unsupported." }],
+    ["execution-record", { name: "output", required: true, valueKind: "string", valueShape: "Create-new private local record, retaining raw and normalized failures/unavailability. No dispatch." }],
     ["knowledge-capture", {
       name: "host", required: false, valueKind: "string",
       valueShape: "Explicit host for configured artifact-language model policy; required by that policy, not inferred.",
@@ -498,4 +504,13 @@ test("PR24: capture advertises an optional host in catalog and command help", as
     const command = JSON.parse(result.output).commands.find((entry) => entry.name === "knowledge-capture");
     assert.deepEqual(command.flags.find((flag) => flag.name === "host"), { name: "host", required: false, valueKind: "string", valueShape: "Explicit host for configured artifact-language model policy; required by that policy, not inferred." });
   }
+});
+
+// Preparation/recording mutate only explicit create-new local artifacts; legacy validation does not.
+test("machine dispatch catalog declares persistence and its complete supported flags", () => {
+  const get = name => COMMAND_CATALOG.find(entry => entry.name === name);
+  assert.equal(get("execution-evidence").mutates, false);
+  for (const name of ["execution-prepare", "execution-record"]) assert.equal(get(name).mutates, true);
+  assert.deepEqual(get("execution-prepare").flags.map(flag => flag.name), ["workspace", "id", "host", "category", "rejections", "requested-agents", "observations", "output"]);
+  assert.deepEqual(get("execution-record").flags.map(flag => flag.name), ["binding", "target", "process-return", "output"]);
 });

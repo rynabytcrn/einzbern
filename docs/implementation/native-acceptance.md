@@ -1,5 +1,12 @@
 # Native acceptance checklist (not executed by this PR)
 
+Current preparation note: [3.0.0 migration preparation](../releases/3.0.0-migration.md)
+distinguishes one-time governed configuration from routine machine admission.
+Do not interpret this checklist as a request for repeated per-dispatch approval,
+hand-written evidence envelopes or manual account observations. Missing native
+collectors/return fields are capability gaps, not facts an Owner signature can
+supply. The historical candidate identities below retain their original meaning.
+
 The code and Linux fixture receipts do not establish the state of a user's Mac, external host
 capabilities, account usage, or a second synced device. Perform these checks only after reviewing
 the final PR and the exact candidate archive. Do not replace these steps with old receipts.

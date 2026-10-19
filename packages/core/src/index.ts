@@ -903,3 +903,5 @@ export * from "./project-scope.js";
 export * from "./involved-projects.js";
 
 export * from "./project-chain.js";
+
+export { prepareDispatch, recordDispatch, writeDispatchArtifact } from "./dispatch-workflow.js";

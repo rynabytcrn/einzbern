@@ -5,7 +5,83 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Next public release: 3.0.0 preparation
+
+The next public release is a major release under the existing compatibility policy.
+The published comparison baseline is 2.2.1; 2.2.3 below is an unpublished source
+candidate, not a released intermediate upgrade. This section prepares release
+inputs, not permission to create tags, publish packages or update a live device.
+Formal version generation and the two-repository release gates remain separate.
+
+### Breaking configuration changes and migration
+
+- New project writes to `models.*` and `quota.*` are refused with
+  `SETTINGS_KEY_DEVICE_LEVEL`. Configure the device's explicitly named host policy
+  instead. Previously valid calls such as `settings-set models.escalation.enabled=false`
+  therefore require a caller change; historical readability is not write compatibility.
+- Historical model and quota events remain readable but no longer select execution
+  policy. No host policy is silently created or copied from another host. Existing
+  authorization for governed configuration changes must name the actual target.
+- New shared artifact/article path declarations use portable relative paths or local
+  bindings, not absolute device paths. Historical path events are not rewritten.
+  Variable export and managed projection refresh are explicit and target-owned.
+
+See [the 3.0.0 migration preparation](docs/releases/3.0.0-migration.md) for the
+one-time configuration boundary, routine dispatch limitations and rollback cautions.
+
+### Configuration, knowledge and recovery
+
+- Device, library and project descriptors expose ownership, persistence, effective
+  source and read-only historical declarations. Atelier resolves the selected
+  library's state rather than retaining the previous library's model-page state.
+- The public knowledge-capture CLI passes the explicit host through language-policy
+  selection. Non-Codex legacy language behavior remains distinct from strict Codex
+  device policy; no cross-host fallback or automatic non-Codex policy migration is added.
+- Paginated knowledge consumers retain legal same-ID versions and derive a canonical
+  digest for the entire result, not the last page. Invalid/repeated-page responses
+  still refuse rather than silently dropping records.
+- Consolidated repairs cover segmented storage and replay integrity, cache recovery,
+  portable containment, lock ordering, relocation/setup rollback, configuration
+  validation, governance attribution and public CLI/Portal error contracts.
+
+### Hosts and installation
+
+- New installed `execution-prepare` and `execution-record` commands automate
+  task/project/policy binding and private create-new evidence records from
+  machine-supplied observations and actual process returns. Refusals, unavailable
+  observations and nonzero exits remain explicit. The existing `execution-evidence`
+  validator remains read-only. These commands do not install native collectors,
+  launch agents or authenticate caller evidence; unsupported host modes must be
+  reported once, not converted into repeated user JSON/approval chores.
+- DeepSeek Harness is recognized as `dsh` for recall and host configuration. Its
+  plugin owns hook invocation; Einzbern does not install a DSH hook file. This does
+  not certify an automated DSH development-dispatch adapter.
+- Installer handling rejects invalid absolute roots and preserves the primary
+  install error when cleanup also fails. Generated Mana Orchestrate content must
+  be regenerated from the final engine and released with the same version.
+- Preserve the helper's tracked `skill/mana-orchestrate/scripts/create-skill-archive.mjs`
+  through the formal generator's explicit `--keep-extra` option.
+
+### Verification and contribution workflow
+
+- Fork, PR and main P1 now scan full reachable Git history, not a PR-only increment.
+  Narrow structural classification of public noreply identity headers and standard
+  merge-account slots does not exempt names, branch/body payloads or secret patterns.
+  Previously reviewed exact historical exceptions remain unchanged.
+- Batch fixes and generated outputs before candidate freeze. Verify the candidate
+  in the fork before advancing the contribution PR, then retain the upstream checks
+  under their own commit identities. This does not authorize repeated unrelated CI.
+- Baseline merge `8c6af763c338e815922036391a481fe58bc7d713` has complete P1 and
+  isolated package/install/setup/doctor receipts. These are valid baseline evidence,
+  not a future 3.0.0 release receipt. Original formal P8/H1 receipts keep their
+  original commits; private PF3/U18 and native acceptance remain explicitly scoped.
+
 ## 2.2.3
+
+Historical unpublished candidate notes follow. Statements about pending checks,
+candidate identities and incremental PR scanning describe that candidate's earlier
+state, not the current main or the next public release. The current preparation
+summary is above; do not use this section as current release acceptance.
 
 Source candidate for INIT-056 and the integrated configuration/quality audit; not a published
 release or a deployment to the owner's device. Device-owned, host-partitioned execution policy

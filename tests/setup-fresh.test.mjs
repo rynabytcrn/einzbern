@@ -19,7 +19,7 @@ import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
-import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
+import { DOCTOR_CHECKS, runDoctor } from "../dist/build/packages/core/src/doctor.js";
 import { SETUP_MODES, applySetup, detectSetupContext, planSetup } from "../dist/build/packages/core/src/setup.js";
 import { SKILL_COPY_ROOTS, skillCopyPath } from "../dist/build/packages/core/src/skill-copies.js";
 
@@ -552,7 +552,7 @@ test("fresh defaults reuse one external library for different projects with sepa
   const first = await applySetup(await plan(f));
   const secondRoot = join(f.base, "second-project");
   await mkdir(secondRoot);
-  const second = await applySetup(await planSetup({ mode: "fresh", projectRoot: secondRoot, at: at(), home: f.home, deviceHome: f.deviceHome }));
+  const second = await applySetup(await planSetup({ mode: "fresh", projectRoot: secondRoot, at: at(), home: f.home, deviceHome: f.deviceHome, answers: { language: "zh-CN" } }));
   assertSelfCheckGreen(second);
   assert.equal(second.library.path, first.library.path);
   assert.equal(second.library.libraryId, first.library.libraryId);
@@ -560,4 +560,15 @@ test("fresh defaults reuse one external library for different projects with sepa
   assert.equal(new Set(registry.entries.map(entry => entry.libraryId)).size, 1);
   assert.equal(new Set(registry.entries.map(entry => entry.projectId)).size, 2);
   for (const root of [f.project, secondRoot]) await assert.rejects(lstat(join(root, ".ether")), { code: "ENOENT" });
+  const check = projectRoot => runDoctor({ projectRoot, home: f.home, deviceHome: f.deviceHome });
+  for (const root of [f.project, secondRoot]) assertSelfCheckGreen({ selfCheck: await check(root) });
+  const document = join(f.project, "AGENTS.md");
+  const original = await readFile(document, "utf8");
+  const changed = original.replace("### design.authority", "### owner.editedDesignAuthority");
+  assert.notEqual(changed, original);
+  await writeFile(document, changed);
+  const edited = (await check(f.project)).find(entry => entry.check === "managed-sections");
+  assert.equal(edited.ok, false);
+  assert.deepEqual(edited.detail.pending, ["AGENTS.md#variables-system"]);
+  assertSelfCheckGreen({ selfCheck: await check(secondRoot) });
 });

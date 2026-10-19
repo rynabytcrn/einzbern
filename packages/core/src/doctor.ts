@@ -34,6 +34,8 @@
 // this engine may not open is never locked or probed (format-version.ts).
 
 import { randomBytes } from "node:crypto";
+import { isSharedLibrary } from "./chain-identity.js";
+import { scopedWorkspaceState } from "./project-scope.js";
 import type { FileHandle } from "node:fs/promises";
 import { lstat, open, readFile, realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -616,7 +618,8 @@ async function deviceStreamCheck(context: DoctorContext, located: ProjectLibrary
 async function managedSectionsCheck(context: DoctorContext, located: ProjectLibrary): Promise<DoctorCheck> {
   if (located.libraryPath === null) return result("managed-sections", ["LIBRARY_NOT_FOUND"], { libraryPath: null });
   // Replayed from the streams, read-only: neither the device cache nor the projection is trusted.
-  const state = await materializeWorkspaceFromGenesis(located.libraryPath);
+  const native = await materializeWorkspaceFromGenesis(located.libraryPath);
+  const state = isSharedLibrary(native) ? scopedWorkspaceState(native, located.entry?.projectId) : native;
   const recorded = state.configRecords.filter((record) => record.collection === MANAGED_SECTION_COLLECTION);
   const files = [...new Set([...MANAGED_FILES, ...recorded.map((record) => String(record.value.file))])].sort();
   const causes: string[] = [];

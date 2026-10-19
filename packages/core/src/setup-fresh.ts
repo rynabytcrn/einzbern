@@ -1,5 +1,6 @@
 import { defaultSharedLibraryPath, readStorageLocation, sharedRuntimePath } from "./storage-location.js";
 import { configureStorageLocation } from "./storage-configure.js";
+import { DIRECTORY } from "./names.js";
 import { setConfigRecord } from "./config-records.js";
 import { chainIdentity, declareChainIdentity, effectiveProjectState, ensureProjectCoordination, projectCoordinationChoice, resolveCoordinationBinding } from "./project-chain.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";

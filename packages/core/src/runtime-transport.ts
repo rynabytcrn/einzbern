@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, readlink, rename, rmdir, stat, symlink, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { canonicalJson } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
@@ -18,6 +18,20 @@ const json = (value: unknown): string => canonicalJson(value as JsonValue);
 const hash = (value: string | Buffer): string => createHash("sha256").update(value).digest("hex");
 const exists = async (path: string): Promise<boolean> => lstat(path).then(() => true, error => { if (error.code === "ENOENT") return false; throw error; });
 function refuse(message: string): never { throw Object.assign(new Error(message), { reasonCode: "STORAGE_TRANSPORT_REFUSED" }); }
+function validateReceipt(value: Receipt): void {
+  const validIdentity = (item: Identity | undefined): boolean => item !== undefined && /^\d+$/u.test(item.dev) && /^\d+$/u.test(item.ino);
+  if (!value || !isAbsolute(value.from) || !isAbsolute(value.to) || !validIdentity(value.source) || !["copying", "verified", "complete"].includes(value.phase) || !Array.isArray(value.entries)) refuse("invalid runtime transport receipt");
+  const paths = new Map<string, Entry>();
+  for (const entry of value.entries) {
+    if (typeof entry.path !== "string" || isAbsolute(entry.path) || entry.path.includes("\\") || entry.path.split("/").some(part => ["", ".", ".."].includes(part)) || paths.has(entry.path)) refuse("invalid runtime receipt path");
+    if (!["directory", "file", "link"].includes(entry.kind) || (entry.kind === "file" && (!/^[a-f0-9]{64}$/u.test(entry.sha256 ?? "") || !Number.isSafeInteger(entry.bytes) || entry.bytes! < 0)) || (entry.kind === "link" && (typeof entry.link !== "string" || entry.link.length === 0 || entry.link.includes("\0")))) refuse("invalid runtime receipt entry");
+    paths.set(entry.path, entry);
+  }
+  for (const entry of value.entries) {
+    const parent = entry.path.slice(0, entry.path.lastIndexOf("/"));
+    if (entry.path.includes("/") && paths.get(parent)?.kind !== "directory") refuse("invalid runtime receipt parent");
+  }
+}
 async function identity(path: string): Promise<Identity> {
   const value = await lstat(path, { bigint: true });
   if (!value.isDirectory() || value.isSymbolicLink()) refuse(`not a plain runtime directory: ${path}`);
@@ -45,6 +59,7 @@ export function runtimeTransportReceiptPath(home: string, from: string, to: stri
 export async function transportRuntimeArea(home: string, from: string, to: string, at: string, options: RuntimeTransportOptions = {}): Promise<void> {
   const receiptPath = runtimeTransportReceiptPath(home, from, to, at);
   let receipt = await readFile(receiptPath, "utf8").then(text => JSON.parse(text) as Receipt, error => { if (error.code === "ENOENT") return null; throw error; });
+  if (receipt !== null) validateReceipt(receipt);
   if (receipt === null) {
     if (await exists(to)) refuse(`runtime destination is occupied: ${to}`);
     if (!options.forceCopyForTest) {

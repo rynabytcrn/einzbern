@@ -48,9 +48,9 @@ function render(root, arguments_) {
   return { status: result.status, output: JSON.parse(result.stdout.trim()) };
 }
 
-test("495-T4: templates match the finalized five-language READMEs", async () => {
+test("495-T4: preserve the finalized five-language README templates as historical evidence", async () => {
   for (const name of NAMES) {
-    const template = await readFile(join(TEMPLATES, name), "utf8");
+    const template = await readFile(join(REPO_ROOT, "tests/fixtures/readme/story-495", name), "utf8");
     const digest = createHash("sha256").update(template).digest("hex");
     assert.equal(digest, FINAL_README_TEMPLATE_SHA256[name], `${name} matches the finalized external README`);
     assert.equal(template.split(PLACEHOLDER).length - 1, 1, `${name} carries one ${PLACEHOLDER} slot`);
@@ -140,4 +140,20 @@ test("486-R4: render-readme writes the five root READMEs, and --check compares w
   assert.equal(invalid.output.reasonCode, "README_RENDER_VERSION_INVALID");
   assert.equal(render(root, ["--version"]).output.reasonCode, "README_RENDER_VERSION_MISSING");
   assert.equal(render(root, ["--write"]).output.reasonCode, "README_RENDER_ARGUMENT_UNKNOWN");
+});
+
+// MIN-337: current Ether naming is checked separately from the frozen STORY-495 evidence.
+const ETHER_TEMPLATE_SHA256 = {
+  "README.md": "fb726d92f89f108e095b8462959b4cf73fb775c06176934e29ed8c5ea57c67c0",
+  "README.en.md": "71afa4562afa40c2428b7817ea332ea7f2eb5682e442c01b07e84a55b35b585e",
+  "README.ja.md": "1d2e8856771c59aeee5939c1568e54dee25d4b449d6302279c2b0ac0aa855497",
+  "README.ko.md": "c445c90ea7cb99fd5d59a0c56d7cb5e23f8d252f70e14907b12603fcd14445f8",
+  "README.fr.md": "c15b1bf17404c70b404959969dee865b8b6cc6738ed57eff7c0f89cb3a2e7c8f"
+};
+test("MIN-337: current README templates retain the Ether naming baseline", async () => {
+  for (const name of NAMES) {
+    const text = await readFile(join(TEMPLATES, name), "utf8");
+    assert.equal(createHash("sha256").update(text).digest("hex"), ETHER_TEMPLATE_SHA256[name]);
+    assert.equal(text.split(PLACEHOLDER).length - 1, 1);
+  }
 });

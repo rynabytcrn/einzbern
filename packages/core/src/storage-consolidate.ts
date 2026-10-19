@@ -60,6 +60,7 @@ export async function consolidateStorage(home: string, fromInput: string, toInpu
   const pointer = readStorageLocation(home);
   if (pointer === null || (pointer.library !== from && pointer.library !== to)) refuse("the configured library does not match this migration");
   const journal: Journal = previous ?? { from, to, runtimeFrom: pointer.runtime, runtimeTo: sharedRuntimePath(to, device.deviceId), retireRuntimeRoot, decidedIn, at, ...(actor === undefined ? {} : { actor }) };
+  if (journal.runtimeTo !== sharedRuntimePath(to, device.deviceId) || (pointer.runtime !== journal.runtimeFrom && pointer.runtime !== journal.runtimeTo)) refuse("the runtime receipt does not match the configured storage");
   if (dirname(journal.runtimeFrom) !== retireRuntimeRoot || basename(journal.runtimeFrom) !== device.deviceId || retireRuntimeRoot === home) refuse("the exact retired runtime root must contain only this device");
   if (await exists(retireRuntimeRoot)) {
     if ((await lstat(retireRuntimeRoot)).isSymbolicLink() || (await readdir(retireRuntimeRoot)).some(name => ![device.deviceId, ".DS_Store"].includes(name))) refuse("the runtime root contains unowned entries");
@@ -85,6 +86,7 @@ export async function consolidateStorage(home: string, fromInput: string, toInpu
     }
     const relocation = await exists(from) ? await relocateLibrary(from, to, { at: journal.at }) : journal.relocation;
     if (relocation === undefined) refuse("the source is absent without a published relocation receipt");
+    if (!/^[a-f0-9]{32}$/u.test(relocation.transactionId) || relocation.from !== from || relocation.to !== to || relocation.libraryId !== (await openLibrary(to)).manifest.libraryId) refuse("the library relocation receipt does not match the selected roots");
     await writeFileAtomic(journalPath, json({ ...journal, relocation }));
     await configureStorageLocation(home, to, journal.runtimeTo, journal.at, decidedIn, true);
     // Keep the established ~/.einzbern evidence paths, without retaining the old top-level name.

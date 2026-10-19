@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { initializeLibrary, createProject, declareChainIdentity, materializeWorkspaceFromGenesis, readDevice, registerLibrary,
   configureStorageLocation, consolidateStorage, defaultSharedLibraryPath, readStorageLocation } from "../dist/build/packages/core/src/index.js";
+import { runtimeTransportReceiptPath } from "../dist/build/packages/core/src/runtime-transport.js";
 import { libraryTreeDigests } from "../dist/build/packages/core/src/workspace-snapshot.js";
 const at = "2026-10-19T16:00:00Z";
 const decision = "minutes:000000000000000000000001#D1";
@@ -102,4 +103,17 @@ test("a completed consolidation does not prevent a later explicit change of pare
   assert.equal(readStorageLocation(f.home).library, next);
   await assert.rejects(readFile(join(f.to, "manifest.json")), { code: "ENOENT" });
   assert.equal(await readFile(join(f.home, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
+});
+
+test("malformed runtime receipt paths refuse without changing original or landed evidence", async t => {
+  const f = await fixture(t), target = join(f.root, "External parent", "Ether", ".einzbern", f.device.deviceId);
+  await assert.rejects(configureStorageLocation(f.home, f.from, target, at, decision, true, {
+    forceCopyForTest: true, publicationStepForTest: phase => { if (phase === "verified") throw new Error("interrupted"); },
+  }), /interrupted/);
+  const path = runtimeTransportReceiptPath(f.home, join(f.runtime, "cache"), join(target, "cache"), at);
+  const receipt = JSON.parse(await readFile(path, "utf8")); receipt.entries[0].path = "../../outside";
+  await writeFile(path, JSON.stringify(receipt));
+  await assert.rejects(configureStorageLocation(f.home, f.from, target, at, decision, true, { forceCopyForTest: true }), /receipt path/);
+  assert.equal(await readFile(join(f.runtime, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
+  assert.equal(await readFile(join(target, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
 });

@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 3.1.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 3.1.0.
+
 ### Shared library and project memory
 
 - Store multiple projects in one shared `Ether` library while retaining stable

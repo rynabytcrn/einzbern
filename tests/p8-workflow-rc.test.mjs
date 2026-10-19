@@ -444,6 +444,34 @@ test("R48-01 (R47-REG-1): an address or local path in a member, a header path or
   assert.deepEqual(finalMembers.map((entry) => entry.sourcePaths), memberPaths.map(() => ["dist/build/packages/core/src/names.js"]));
   assert.deepEqual(releaseScan(finalPackage.entries), [], "the reviewed 2.2.3 members use canonical package labels");
 
+  // R2 current release: exercise the real gzip/USTAR decoder, using the exact
+  // names.js line reviewed in the retained failed P8 diagnostic package. This
+  // fixture defines decoder coverage; it does not claim a rebuilt package passed.
+  const currentVersion = "3.0.0";
+  const currentArchive = `dist/release/${BRAND.engine.id}-${currentVersion}.tar.gz`;
+  const decodeCurrent = (paths = memberPaths, content = ownerBytes, archive = currentArchive, version = currentVersion) =>
+    p8FormalPackagePrivacyEntries(formalPackage(paths.map((path) => ({
+      path: `${BRAND.engine.id}-${version}/${path}`, bytes: content,
+    }))), archive);
+  const currentPackage = decodeCurrent();
+  const currentMembers = currentPackage.entries.filter((entry) => entry.releaseArchiveMember === true);
+  assert.equal(currentMembers.length, 3);
+  assert.deepEqual(currentMembers.map((entry) => entry.sourcePaths), memberPaths.map(() => ["dist/build/packages/core/src/names.js"]));
+  assert.deepEqual(releaseScan(currentPackage.entries), []);
+  const rejectsOwner = (decoded) => assert.ok(releaseScan(decoded.entries).some((finding) => finding.startsWith("OWNER_PRIVATE_IDENTIFIER:")));
+  for (const version of ["3.0.1", "2.2.4"]) {
+    const decoded = decodeCurrent(memberPaths, ownerBytes, `dist/release/${BRAND.engine.id}-${version}.tar.gz`, version);
+    assert.ok(decoded.entries.filter((entry) => entry.releaseArchiveMember === true).every((entry) => entry.sourcePaths.length === 0));
+    rejectsOwner(decoded);
+  }
+  rejectsOwner(decodeCurrent(memberPaths, ownerBytes, currentArchive.replace(".tar.gz", ".other.tar.gz")));
+  rejectsOwner(decodeCurrent(memberPaths.map((path) => `adjacent/${path}`)));
+  const escapedCurrentOwner = [...scanOwner].map((character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+  for (const content of [`${ownerLine} // changed`, `${ownerLine}\n${scanOwner}`, `${ownerLine}\n"${escapedCurrentOwner}"`]) {
+    rejectsOwner(decodeCurrent(memberPaths, Buffer.from(content)));
+  }
+  assert.ok(releaseScan(decodeCurrent(memberPaths, Buffer.from(`${ownerLine}\n${localPath}`)).entries).some((finding) => finding.startsWith("LOCAL_ABSOLUTE_PATH:")));
+
   const ownerFinding = (entry, owner = scanOwner) => scanPrivacyEntries([entry], { owner, repositories: ENGINE_REPOSITORY_NAMES })
     .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
   const reviewedPortal = reviewedMembers.find((entry) => entry.label.endsWith("/atelier/portal.mjs"));

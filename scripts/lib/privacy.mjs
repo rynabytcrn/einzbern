@@ -154,6 +154,11 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
 // All 30 members were scanned; exactly these three carry the existing reviewed compiled
 // names.js owner line once each, with unchanged value and whole-line digests. The manifest,
 // install-tree digest and original LICENSE bytes were verified. No other match is classified.
+// Release 3.0.0 R2: the P8-created diagnostic package (privacy failed, not an isolated
+// PF-2 pass), archive sha256 b8ba8a04b773e22b5b4ff1fa7b0a6b699339d6db6e75bbce379ab4a27a2509d1,
+// was byte-reviewed: these three emitted members each contain the existing names.js owner
+// assignment once, with the unchanged owner and whole-line digests. The CLI's additional
+// occurrence is the existing complete public helper address. Only these exact labels are added.
 const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
@@ -185,6 +190,9 @@ const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-2.2.3.tar.gz/einzbern-2.2.3/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-2.2.3.tar.gz/einzbern-2.2.3/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-2.2.3.tar.gz/einzbern-2.2.3/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.0.0.tar.gz/einzbern-3.0.0/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.0.0.tar.gz/einzbern-3.0.0/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.0.0.tar.gz/einzbern-3.0.0/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
 ]);
 const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
   [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [

@@ -1264,3 +1264,38 @@ test("reviewed 2.2.3 package owner classification is exact in version, member, o
     assert.ok(findings.some((value) => value.startsWith("PRIVATE_HOSTNAME:")), "other private content is not exempt");
   }
 });
+
+// Current release binding; the historical 2.2.3 review above remains unchanged.
+test("reviewed diagnostic 3.0.0 package owner classification is exact in version, member, origin and line", async () => {
+  const owner = LEGACY_REPOSITORY_NAMES.owner;
+  const buildPath = "dist/build/packages/core/src/names.js";
+  const build = await readFile(resolve(import.meta.dirname, "..", buildPath), "utf8");
+  const ownerLine = build.split("\n").find((line) => line.includes(owner) && /\bowner\s*:/u.test(line));
+  assert.equal(createHash("sha256").update(ownerLine).digest("hex"), "3861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56");
+  const member = (path, version = "3.0.0") => `dist/release/${BRAND.engine.id}-${version}.tar.gz/${BRAND.engine.id}-${version}/${path}`;
+  for (const path of ["atelier/portal.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern.mjs"]) {
+    const label = member(path);
+    const entry = { label, kind: "release", releaseArchiveMember: true, sourcePaths: p8ReleasePrivacySourcePaths(label), content: ownerLine };
+    const finding = (candidate, scanOwner = owner) => scanPrivacyEntries([candidate], { owner: scanOwner })
+      .includes(`OWNER_PRIVATE_IDENTIFIER:release:${candidate.label}`);
+    assert.deepEqual(entry.sourcePaths, [buildPath]);
+    assert.deepEqual(scanPrivacyEntries([entry], { owner }), []);
+    for (const changedLabel of [member(path, "3.0.1"), member(path, "2.2.4"), member(`adjacent/${path}`), label.replace(".tar.gz/", ".other.tar.gz/")]) {
+      assert.deepEqual(p8ReleasePrivacySourcePaths(changedLabel), []);
+      assert.ok(finding({ ...entry, label: changedLabel, sourcePaths: p8ReleasePrivacySourcePaths(changedLabel) }));
+    }
+    for (const sourcePaths of [[], ["dist/build/packages/core/src/other.js"], [buildPath, "dist/build/packages/core/src/other.js"]]) {
+      assert.ok(finding({ ...entry, sourcePaths }), "missing or unapproved origins remain findings");
+    }
+    assert.ok(finding({ ...entry, releaseArchiveMember: undefined }));
+    assert.ok(finding({ ...entry, content: `${ownerLine} // changed` }));
+    const changedOwner = publicIdentity.login;
+    assert.ok(finding({ ...entry, content: ownerLine.replaceAll(owner, changedOwner) }, changedOwner));
+    const escapedOwner = [...owner].map((character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+    for (const content of [`${ownerLine}\n${owner}`, `${owner}\n${ownerLine}`, `${ownerLine}\n"${escapedOwner}"`]) {
+      assert.ok(finding({ ...entry, content }), "additional raw or escaped private text remains a finding");
+    }
+    const findings = scanPrivacyEntries([{ ...entry, content: `${ownerLine}\n${PRIVATE_VM_HOST}` }], { owner });
+    assert.ok(findings.some((value) => value.startsWith("PRIVATE_HOSTNAME:")), "other private content is not exempt");
+  }
+});

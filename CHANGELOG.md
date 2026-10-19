@@ -5,6 +5,9 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+- Generated release notes rebase relative file links from the root CHANGELOG so
+  migration and other repository links retain their targets in `docs/releases/`.
+
 - Release preparation can explicitly select project gate declarations with
   `--project-id`; both phases bind that scope and reject mismatched receipts or
   native runs while preserving the omitted library-default behavior.

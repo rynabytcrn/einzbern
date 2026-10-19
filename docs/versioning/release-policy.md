@@ -93,8 +93,11 @@ CHANGELOG cut, checks that the receipt is a new file outside both repositories
 and that each `--keep-extra` path is tracked by the helper, and reports every
 failed condition together. It then writes the package versions, the single
 `FRAMEWORK_VERSION` replacement, the versioned CHANGELOG section and
-`docs/releases/<version>.md` from that section, builds the engine and checks the
-built version, renders the engine READMEs, regenerates the CLI reference only when
+`docs/releases/<version>.md` from that section, rebasing relative file-link
+destinations from the root CHANGELOG to the generated note directory. Prose, link
+titles, query and fragment suffixes, external URLs and fragment-only links retain
+their content; the root CHANGELOG destinations stay unchanged. It builds the engine
+and checks the built version, renders the engine READMEs, regenerates the CLI reference only when
 its check reports it out of date, and renders the helper tree. The receipt records
 every changed file of both repositories with its status, size and SHA-256, the
 gate library and declaration digest, and the helper's extra files: those Git

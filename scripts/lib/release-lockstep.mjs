@@ -408,6 +408,67 @@ function changelogForPrepare(source, version) {
   return `${prefix}## Unreleased\n\n${releaseNotes}${suffix.length === 0 ? "" : `\n${suffix}`}`;
 }
 
+// CHANGELOG destinations are relative to the repository root. Only destinations move:
+// keep prose, titles, suffixes, code examples and non-file URLs byte-for-byte.
+function releaseNoteContent(source) {
+  const rebase = (destination) => {
+    if (/^(?:[a-z][a-z\d+.-]*:|\/|#|\?)/iu.test(destination) || destination.length === 0) return destination;
+    return `../../${destination}`;
+  };
+  let fence = null;
+  return source.split(/(?<=\n)/u).map((line) => {
+    const delimiter = /^ {0,3}(`{3,}|~{3,})/u.exec(line);
+    if (fence !== null) {
+      if (delimiter && delimiter[1][0] === fence[0] && delimiter[1].length >= fence.length && line.slice(delimiter[0].length).trim() === "") fence = null;
+      return line;
+    }
+    if (delimiter) { fence = delimiter[1]; return line; }
+    if (/^(?: {4}|\t)/u.test(line)) return line;
+    // Reference definitions have the same destination syntax as inline links.
+    const definition = /^ {0,3}\[[^\]\n]+\]:[ \t]*/u.exec(line);
+    const starts = definition ? [definition[0].length] : [];
+    let code = null;
+    let brackets = 0;
+    for (let i = 0; i < line.length; i += 1) {
+      if (line[i] === "\\") { i += 1; continue; }
+      if (line[i] === "`") {
+        const run = /^`+/u.exec(line.slice(i))[0];
+        if (code === null) code = run; else if (code === run) code = null;
+        i += run.length - 1;
+      } else if (code === null && line[i] === "[") {
+        brackets += 1;
+      } else if (code === null && line[i] === "]" && brackets > 0) {
+        brackets -= 1;
+        if (line[i + 1] !== "(") continue;
+        let start = i + 2;
+        while (/[ \t]/u.test(line[start] ?? "")) start += 1;
+        starts.push(start);
+      }
+    }
+    // Apply right-to-left so earlier destination offsets stay valid.
+    let result = line;
+    for (const start of [...new Set(starts)].sort((a, b) => b - a)) {
+      const angle = line[start] === "<";
+      const from = start + (angle ? 1 : 0);
+      let end = from;
+      let depth = 0;
+      for (; end < line.length; end += 1) {
+        const char = line[end];
+        if (char === "\\") { end += 1; continue; }
+        if (angle) { if (char === ">" || char === "\n") break; }
+        else {
+          if (/\s/u.test(char) || (char === ")" && depth === 0)) break;
+          if (char === "(") depth += 1;
+          if (char === ")") depth -= 1;
+        }
+      }
+      if (angle && line[end] !== ">") continue;
+      result = result.slice(0, from) + rebase(line.slice(from, end)) + result.slice(end);
+    }
+    return result;
+  }).join("");
+}
+
 async function updatePackageVersion(path, version) {
   const manifest = await readJson(path);
   if (typeof manifest.version !== "string" || !RELEASE_VERSION_SHAPE.test(manifest.version)) {
@@ -721,7 +782,7 @@ export async function generateRelease({ engineRoot, helperRoot, version, workspa
 
   await writeReleaseVersion({ engineRoot: engine.root, version, state, changelog });
   await mkdir(join(engine.root, ...RELEASE_NOTE_DIRECTORY.split("/")), { recursive: true });
-  await writeFile(join(engine.root, ...notePath.split("/")), `# Einzbern ${version}\n\n${changelogSection(changelog.nextChangelog, version)}\n`, { flag: "wx" });
+  await writeFile(join(engine.root, ...notePath.split("/")), `# Einzbern ${version}\n\n${releaseNoteContent(changelogSection(changelog.nextChangelog, version))}\n`, { flag: "wx" });
   const build = await buildReleaseTree({ engineRoot: engine.root, version, env, runner });
   const readme = await renderEngineReadmes({ engineRoot: engine.root, version, env, runner });
   const cliReference = await checkCliReference({ engineRoot: engine.root, env, runner });

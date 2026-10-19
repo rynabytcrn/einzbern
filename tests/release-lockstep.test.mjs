@@ -28,8 +28,9 @@ import {
   runReleaseGates,
 } from "../scripts/lib/release-lockstep.mjs";
 import { README_NAMES, renderReadmes } from "../scripts/render-readme.mjs";
-import { FRAMEWORK_VERSION, initializeLibrary } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, initializeLibrary, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { compareSemver, parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
+import { ATELIER_SURFACE, SURFACE_ENVIRONMENT_VARIABLE } from "../dist/build/packages/cli/src/index.js";
 import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
 import { setGate } from "../dist/build/packages/core/src/gates-config.js";
 import { gateTreeState } from "../dist/build/packages/core/src/gates-run.js";
@@ -598,6 +599,45 @@ function commitRelease(fixture, receipt) {
   git(fixture.helperRoot, ["commit", "-q", "-m", "release helper"]);
 }
 
+test("SUB-549: generate rebases CHANGELOG file destinations while preserving source text and non-file links", async () => {
+  const fixture = await createReleaseFixture("note-destinations");
+  const unchanged = [
+    "Prose docs/releases/3.0.0-migration.md and literal ](docs/prose.md) stay literal.",
+    "[external](https://example.invalid/a?q=1#part) [mail](mailto:a@example.invalid)",
+    "[network](//example.invalid/a) [root](/docs/a.md) [fragment](#configuration) [query](?view=full)",
+    "`[example](docs/example.md)`",
+    "```md\n[example](docs/example.md)\n```",
+  ].join("\n\n");
+  const original = [
+    "[migration](docs/releases/3.0.0-migration.md)",
+    '[details](docs/details.md?mode=full#section "Details")',
+    "![image](./assets/figure.png#view)",
+    "[balanced](docs/example(v2).md)",
+    '[spaced](<docs/file name.md?x=1#part> "Title")',
+    "[reference][guide]\n\n[guide]: docs/guide.md?q=1#part 'Guide'",
+    unchanged,
+  ].join("\n\n");
+  const expected = original
+    .replace("(docs/releases/3.0.0-migration.md)", "(../../docs/releases/3.0.0-migration.md)")
+    .replace('(docs/details.md?', '(../../docs/details.md?')
+    .replace('(./assets/', '(../.././assets/')
+    .replace('(docs/example(v2).md)', '(../../docs/example(v2).md)')
+    .replace('(<docs/file name.md?', '(<../../docs/file name.md?')
+    .replace('[guide]: docs/guide.md?', '[guide]: ../../docs/guide.md?');
+  await writeText(fixture.engineRoot, "docs/releases/3.0.0-migration.md", "# Migration\n");
+  await writeText(fixture.engineRoot, "CHANGELOG.md", `# Changelog\n\n## Unreleased\n\n${original}\n\n## ${OLD_VERSION}\n\nEarlier release.\n`);
+  await commitAll(fixture.engineRoot, "release note source links");
+  await generateFixture(fixture);
+  const changelog = await readFile(join(fixture.engineRoot, "CHANGELOG.md"), "utf8");
+  const note = await readFile(join(fixture.engineRoot, `docs/releases/${NEXT_VERSION}.md`), "utf8");
+  assert.ok(changelog.includes(original), "the root CHANGELOG keeps its original prose and destinations");
+  const sectionStart = changelog.indexOf(`\n## ${NEXT_VERSION}\n`) + `\n## ${NEXT_VERSION}\n`.length;
+  const section = changelog.slice(sectionStart, changelog.indexOf(`\n## ${OLD_VERSION}\n`, sectionStart)).trim();
+  assert.equal(note, `# Einzbern ${NEXT_VERSION}\n\n${section.replace(original, expected)}\n`);
+  assert.ok(note.includes(unchanged), "external URLs, anchors, prose and code stay byte-identical");
+  assert.equal(await realpath(join(fixture.engineRoot, "docs/releases", "../../docs/releases/3.0.0-migration.md")), await realpath(join(fixture.engineRoot, "docs/releases/3.0.0-migration.md")));
+});
+
 test("SUB-357 R41 B1: generate writes the release files and a receipt without a commit or a gate; finish checks both commits, moves stale artifacts, gates and packs", async () => {
   const fixture = await createReleaseFixture("two-phase", { ignoredExtra: true });
   const heads = { engine: git(fixture.engineRoot, ["rev-parse", "HEAD"]), helper: git(fixture.helperRoot, ["rev-parse", "HEAD"]) };
@@ -805,6 +845,17 @@ test("SUB-357 R41 B1: generate and finish need a receipt, and every release opti
 // SUB-544: configuration scope is independent of the registered filesystem root. These
 // fixtures use native project creation, scoped declarations and the actual built CLI.
 async function scopedReleaseProject(fixture, key, { required = true, helperRequired = true, enabled = true, rootOverride, covers = ["**"], red = false } = {}) {
+  if (!fixture.coordinationReady) {
+    const cli = join(fixture.engineRoot, "scripts/einzbern.mjs");
+    const libraryId = (await materializeWorkspace(fixture.workspace)).metadata.workspaceId;
+    // Only these scoped fixtures need a coordination chain. Legacy default-library fixtures
+    // keep their undeclared identity and registration, exercising the compatibility path.
+    execFileSync(process.execPath, [cli, "chain-declare", "--workspace", fixture.workspace, "--role", "coordination", "--coordination-library-id", libraryId, "--at", "2026-10-08T00:00:00Z"], { env: { ...fixture.environment, [SURFACE_ENVIRONMENT_VARIABLE]: ATELIER_SURFACE }, stdio: ["ignore", "pipe", "pipe"] });
+    // A coordination directory has one unscoped registration; A and B are configuration
+    // identities inside that chain, never competing registrations for the same directory.
+    execFileSync(process.execPath, [cli, "library-register", "--project", fixture.projectRoot, "--library", fixture.workspace, "--at", "2026-10-08T00:00:00Z"], { env: fixture.environment, stdio: ["ignore", "pipe", "pipe"] });
+    fixture.coordinationReady = true;
+  }
   const created = JSON.parse(execFileSync(process.execPath, [join(fixture.engineRoot, "scripts/einzbern.mjs"), "project-create", "--workspace", fixture.workspace, "--external-key", key, "--name", key, "--at", "2026-10-08T00:00:01Z"], { env: fixture.environment, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
   const projectId = created.record.id;
   for (const [index, [name, root]] of [["engine:fixture", fixture.engineRoot], ["helper:fixture", fixture.helperRoot]].entries()) {
@@ -868,6 +919,8 @@ test("SUB-544: identical project A/B declarations still bind generate and finish
   const other = await scopedReleaseProject(fixture, "scope-two-phase-B");
   const a = await checkReleaseGatePlan({ ...fixture, env: fixture.environment });
   const b = await checkReleaseGatePlan({ ...fixture, env: fixture.environment, projectId: other });
+  assert.notEqual(fixture.projectId, other);
+  assert.equal(a.projectRoot, b.projectRoot);
   assert.equal(a.plan.declarationsDigest, b.plan.declarationsDigest);
   const generated = await generateFixture(fixture);
   const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));

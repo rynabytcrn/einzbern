@@ -25,7 +25,7 @@ C'est le skill qui amène Einzbern dans Claude Code, Codex et DeepSeek Harness. 
 
 **Il dit au modèle quand faire quoi.** Une table de navigation : rappeler la mémoire avant de commencer, reporter le résultat dans l'élément de travail une fois fini, noter les décisions en comptes rendus, écrire les leçons en cartes. Le moteur génère la table pour sa propre version, si bien que chaque verbe lu par le modèle correspond à un verbe du moteur.
 
-**Il ne détient rien.** Ni données, ni règles, ni configuration. La mémoire vit dans le `.ether` du projet, d'après l'éther, là où les enregistrements prennent forme ; les principes et les variables vivent dans Atelier, l'atelier d'un mage, ici la page de gestion locale. Le skill n'est que cette table et cet assistant.
+**Il ne détient rien.** Ni données, ni règles, ni configuration. La mémoire vit dans la bibliothèque partagée `Ether`, sous un dossier parent choisi par l’utilisateur ; les projets sont séparés par leur identité et les bibliothèques de projet `.ether` existantes restent utilisables. Les principes et les variables vivent dans Atelier, l’atelier d’un mage, ici la page de gestion locale. Le skill n’est que cette table et cet assistant.
 
 ## Installation
 
@@ -39,7 +39,7 @@ Ou dites à votre hôte : trouve un skill nommé Mana Orchestrate et installe-le
 
 Il se place dans le répertoire des skills de l'hôte, `~/.claude/skills` pour Claude Code et `~/.agents/skills` pour Codex et DeepSeek Harness. Dans DeepSeek Harness, le rappel avant chaque prompt passe par le plugin dsh-mana-orchestrate ; aucun fichier de hook n'est écrit. Puis, dans le répertoire du projet, dites : installe Einzbern.
 
-L'assistant demande : installation neuve ou restauration depuis un `.ether` existant, où placer les artefacts, si ce dossier est synchronisé dans le cloud, quelle langue, et s'il faut écrire une section de navigation dans AGENTS.md. Il liste ensuite chaque fichier qu'il s'apprête à écrire, et vous confirmez une seule fois. Le moteur est téléchargé depuis la release qui porte la même version que ce skill et vérifié contre son empreinte avant d'être posé ; avec une archive locale, il s'installe hors ligne.
+L’assistant demande : installation neuve ou restauration depuis une bibliothèque existante, où placer `Ether`, si ce dossier est synchronisé dans le cloud, quelle langue, et s’il faut écrire une section de navigation dans AGENTS.md. `Ether` est le nom du dossier ; vous choisissez son parent sur un disque local, externe ou dans un dossier synchronisé. Les projets suivants réutilisent par défaut cet emplacement enregistré. Il liste ensuite chaque fichier qu’il s’apprête à écrire, et vous confirmez une seule fois. Le moteur est téléchargé depuis la release qui porte la même version que ce skill et vérifié contre son empreinte avant d’être posé ; avec une archive locale, il s’installe hors ligne.
 
 Tout ce qui suit est un mode du même assistant : mise à jour, réparation, migration depuis TCRN Workflow, désinstallation, bilan de santé. Dites « mets à jour Einzbern », et c'est tout.
 

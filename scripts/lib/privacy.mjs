@@ -113,6 +113,9 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
   "tests/variables.test.mjs\u0000GITHUB_CLASSIC_TOKEN\u0000dec6a48dd5610e7f4a00f2e4d35d2dfb29a720b9cb491360d9a137e366a3adae\u0000ceaa7e71f920b390511956dc7523cf98b26ac76e367c8da7fceb0e42283a7dcf",
   "tests/variables.test.mjs\u0000PRIVATE_KEY\u00003021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d\u000056fdf99f9a1bb9c9d439ab956e301ffaea7cc41388f4639f76aa21dc39c5b496",
   "tests/variables.test.mjs\u0000PRIVATE_KEY\u00008bcac7908eb950419537b91e19adc83ce2c9cbfdacf4f81157fdadfec11f7017\u0000a77bca7ce9555b3bde511730134d511cf811229f140f55f40747e1b85462c217",
+  // MIN-337: exact synthetic fixture lines retained in the two historical development blobs.
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u00006e79bccba9851e08f3f58184a9371d91fe3ac662d6c59539d089944191135644",
+  "tests/cloud-roots.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u0000b06d683bf4ce4ef897452935a9e41a61ea1ed5a4c8fb852127d420c5fe0d90fc",
 ]);
 
 // R12: these three P8 tar members are the only packaged copies of the reviewed

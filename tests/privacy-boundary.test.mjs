@@ -1385,3 +1385,22 @@ test("reviewed diagnostic 3.0.0 package owner classification is exact in version
     assert.ok(findings.some((value) => value.startsWith("PRIVATE_HOSTNAME:")), "other private content is not exempt");
   }
 });
+
+test("MIN-337: historical Ether fixture variants remain exact path-and-line classifications", async () => {
+  const root = resolve(import.meta.dirname, "..");
+  const sourcePath = "tests/cloud-roots.test.mjs";
+  for (const object of ["c35e701d807eeb92c189b39e77189510c641c202", "4af4aac75a4c77668a1412c8004a3f2ea094e4c0"]) {
+    const loaded = spawnSync("git", ["cat-file", "blob", object], { cwd: root, encoding: "utf8" });
+    assert.equal(loaded.status, 0);
+    const content = loaded.stdout, label = `git-blob:${object}`;
+    const entry = { label, kind: "blob", sourcePaths: [sourcePath], content };
+    assert.deepEqual(scanPrivacyEntries([entry], { owner: LEGACY_REPOSITORY_NAMES.owner }), []);
+    const line = content.split("\n").find(value => value.includes("assert.equal(defaultCloudLibraryPath(") && value.includes("darwin"));
+    assert.ok(line);
+    const changedLine = { ...entry, content: content.replace(line, `${line} // unreviewed change`) };
+    assert.ok(scanPrivacyEntries([changedLine], { owner: LEGACY_REPOSITORY_NAMES.owner }).includes(`LOCAL_ABSOLUTE_PATH:blob:${label}`));
+    const changedOwner = { ...entry, content: content.replace(line, line.replaceAll("owner", "unreviewed-owner")) };
+    assert.ok(scanPrivacyEntries([changedOwner], { owner: LEGACY_REPOSITORY_NAMES.owner }).includes(`LOCAL_ABSOLUTE_PATH:blob:${label}`));
+    assert.ok(scanPrivacyEntries([{ ...entry, sourcePaths: ["tests/unreviewed-cloud.test.mjs"] }], { owner: LEGACY_REPOSITORY_NAMES.owner }).includes(`LOCAL_ABSOLUTE_PATH:blob:${label}`));
+  }
+});

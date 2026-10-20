@@ -19,6 +19,18 @@ background lifecycle manager or synchronization service. Installing files does n
 execution session read them or that native admission passed. A rendered version is not release
 certification; use the actual engine artifact and its verified installation source.
 
+### Locate the installed input contracts
+
+The actual engine bundle root contains `scripts/einzbern.mjs` and its sibling `specs/`.
+The device's `engine/einzbern.mjs` launcher is not the bundle-root locator; resolve the actual
+bundle in use. These contracts are not in this Skill's directory. Read the bundle's
+`specs/dot-rules-v1.md`, `specs/dot-execution-v1.md`, `specs/native-tool-evidence-v1.md`,
+`specs/shared-submit-v1.md` and `specs/config-backup-v1.md` for complete closed input shapes,
+required/optional/null fields, enums and digest rules. Traditional process evidence uses
+`specs/dispatch-admission-evidence-v1.md`. Command help supplies flags, not a substitute for
+these JSON contracts; no TypeScript checkout or bundle reverse engineering is needed.
+An absent contract is a packaging gap, not permission to invent fields or use another version.
+
 ### dot: collect observations and plan
 
 Use the selected project's explicit root and existing compatible engine and Mana Skill files.
@@ -39,6 +51,15 @@ The `setup --dot-input` file is the closed input type
 | `enginePath`, `manaSkillPath` | Explicit readable engine and Skill files, whose actual content digests are rechecked before apply. A path or claimed version alone is not authentication. |
 | `preInjection` | `apply` or `skip`; skip performs no target write and never silently writes elsewhere. |
 
+Read `rule-list --workspace <actual-library> --project-id <actual-project>` or the existing
+registered `--project` form. Only `dotRuleSources.status: "available"` supplies the effective
+`language` and `enabledRules` for this target: inherited enabled rules are included, disabled
+rules excluded. Copy that machine output, including its source references and hashes, rather
+than manually computing rule hashes. Missing language or unsupported recorded versions
+leaves this projection unavailable; `DOT_SOURCE_MISMATCH` with `enabledRules: null` is not
+an empty rule set. Keep the reason and stop the dependent plan; the original rule list remains
+readable. Never substitute catalog entries or `[]` for unavailable source observations.
+
 Optional `resolution` is `{kind: "keep"}` or `{kind: "review"}`, or an explicitly approved
 `{kind: "merge", originalDigest, mergedBody, approvalEvidenceRef}`. Optional `uninstall` is
 `keep` (default) or `remove`; `sharedRootAcknowledgementRef` refers to an actual decision about
@@ -53,11 +74,17 @@ The engine returns `SETUP_PLAN_READY`; inspect `dot.status`, changes, ownership,
 hashes, backups, warnings and blockers, not only the top-level reason code. Keep pending user
 edits visible. Same inputs and content are a no-op; a changed original/source invalidates the old
 plan. Present the concrete file changes and recovery locations together for installation approval.
+Save that preview's `dot.planDigest` automatically with the exact planned inputs.
 
 ### dot: apply, maintain and read in the actual session
 
-After approval, repeat the planned command with `--yes true`. The apply rechecks source and
-original digests, preserves recoverable originals and reports each file independently. Read the
+After approval, repeat the same mode, project, at and dot-input with `--yes true` and
+`--approved-plan-digest <saved-digest>`, carrying the previously reviewed `dot.planDigest`
+unchanged. Do not compute a new digest at apply time and call it approved. Missing/mismatching
+digest or changed source/input/original returns a new preview and refuses before writing;
+review and authorize that new preview separately. The user does not hand-fill JSON or hashes.
+The apply rechecks source and original digests, preserves recoverable originals and reports
+each file independently. Read the
 actual `dot.files`, `fileVerification` and status; `SETUP_DOT_PENDING`, `SETUP_DOT_PARTIAL`,
 `SETUP_DOT_SKIPPED` and `SETUP_DOT_KEPT` are not successful installation claims. A dot receipt
 has no traditional hook self-check. `sessionRead: "not-verified"` remains until separate actual
@@ -86,12 +113,30 @@ and `execution-native-evidence`. Prepare requires `--workspace`, `--request`, `-
 `--tool-contract`, `--arguments`, `--output`; the request is `DotExecutionRequest` including
 actual-session `contextRead`, the tool contract is `{ref, sha256}`, and arguments are the actual
 tool parameters. Record takes `--binding`, `--output` and optional `--response`; absent response
-means pending attempt, never an empty provider response. Evidence takes `--from-file` and
-optional `--work-id` / `--work-revision`. Inputs must be collected by the calling environment;
+means pending attempt, never an empty provider response. Use the saved prepare `--output`
+file, the full `tcrn.native-dispatch-preparation.v1`, as `--binding`; do not pass stdout's
+outer object containing `reasonCode`. Omit `--prior` only for the first record of an attempt.
+Every later observation supplies the previous full saved output through `--prior`, including
+its history, and a new create-only `--output`; never overwrite the predecessor. Evidence takes
+`--from-file` and optional `--work-id` / `--work-revision`. Inspect the revalidated merged
+`history` / `normalized` result from evidence/review, not only the last return or cached pass.
+Inputs must be collected by the calling environment;
 these commands do not install a platform collector or invoke a native tool. Follow the shipped
 `specs/dot-execution-v1.md` and `specs/native-tool-evidence-v1.md`. Preserve real source,
 association, failures and unknown finality, without a fabricated model, provider ID or process
 streams. An unavailable exact-model interface blocks that specific delegation, not unrelated work.
+
+Retry preparation requires both `--retry-from <previous-saved-record>` and
+`--reconciliation <private-json>`, never either alone. Query unknown outcomes first.
+The reconciliation is either `{outcome: "confirmed-terminal", record: <saved record>}` for
+an associated confirmed failed/cancelled predecessor, or an actual confirmed-not-executed
+query carrying `queryTool`, `queryRef`, `queriedAttemptId`, `responseValue`, `observedAt`,
+`notExecutedPointer`, `notExecutedValue`, `contractRef` as specified in the native contract.
+Completed, conflicting or unresolved predecessors cannot retry merely under another filename.
+Preserve the full predecessor and reconciliation; new attempts have new local IDs, not invented
+provider IDs. History is explicit and bounded, not automatically discovered from other files
+or a global attempt database. Source association and digests are not provider authentication.
+Traditional `execution-evidence --from-file <json>` likewise validates read-only, not authenticates.
 
 ### Two independent optional schedules
 
@@ -106,6 +151,8 @@ or `blocked_terminal` state and fingerprint before considering pause. Ordinary b
 work is not terminal; unknown or failed observations cannot count. Re-read tasks before disabling
 the same ID, then read tasks and disabled state back. Received new work resumes that same ID
 and needs enabled readback; failure retains `pending-resume`, actual error and work references.
+Ordinary terminal checks do not clear pending resume/pause or erase its error. Only matching
+actual scheduler state readback resolves that pending action.
 Respect an explicit scoped keep-enabled override. Pausing patrol neither cancels work nor stops
 children. Delays collapse to one current check; there is no atomic or invisible-event guarantee.
 
@@ -113,8 +160,10 @@ Daily configuration backup is a separate optional instance at fixed 00:00 Asia/S
 (UTC+08:00), independent of patrol and travel timezone. Do not enable it until all of the following
 are verified: actual whitelist and restore support, bound group/writer, complete approved retention
 policy, safe recoverable retirement, scheduler deduplication/readback and explicit runtime
-enablement authorization. Missing policy means disabled, never guessed defaults. Unknown
-actual enabled state must be reported as unknown, not described as disabled. Cancelling this
+enablement authorization. Missing policy forbids enablement, never supplies guessed defaults.
+Unknown actual enabled state stays unknown after eligibility loss or repeated evaluation, not
+disabled. Query, disable through the authorized scheduler, then read back; only a matching actual
+false readback confirms disabled. Cancelling this
 schedule neither deletes packages nor changes patrol. A delayed run stores one current snapshot
 with actual time; it cannot reconstruct midnight contents.
 
@@ -138,6 +187,12 @@ requires `--package`, `--actor`, optional `--decided-in`, and apply requires the
 `--approved-plan-digest`. Private output is create-new, never overwrite. A timeout is not a
 retention policy. Previews and digests grant no permissions; restore reuses the existing per-key
 write authority and returns per-item outcomes with readbacks and recoverable originals.
+
+Independent dot user fragments and rules are unmappable by generic restore. Authorized
+settings/variables may change their declarations, but a full configuration refresh preserves
+the independent AGENTS and provenance bytes and reports the dot projection pending, not
+rendered. Use the separate dot maintenance plan for that document; never overwrite it through
+a traditional managed-section or generic restore path.
 
 Source identity is obtained asynchronously from the executing packaged bundle's actual version
 and two stable content-tree observations, not from request JSON, cwd or stale compiled output.
@@ -163,6 +218,11 @@ Never splice events, edit hashes or overwrite projections. Current serial writer
 same-library advisory are prerequisites, not a distributed lock; absent or old means unknown,
 not free. Publish segments then manifest, verify actual remote IDs/parents/paths/bytes/digests,
 replay the complete destination copy and read records back; release unknown stays pending.
+Supply `merge.observedAt` and `writerHandoff.observedAt` from actual phase readbacks, or null
+when unavailable. The order is local completion <= fresh refresh <= merge observation <=
+handoff observation <= advisory observation <= every publication. Missing times stay pending;
+reversed observations refuse. Never fill phase timestamps with JSON assembly time. Segment
+readback must precede every manifest publication; complete destination replay precedes release.
 Synced-folder hosts skip unnecessary manual transfers but retain those consistency obligations.
 These commands assess evidence and store a constrained local advisory; they do not transfer files,
 provide a storage SDK or implement background synchronization. Local write queues are not

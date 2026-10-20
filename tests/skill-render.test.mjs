@@ -229,6 +229,9 @@ test("488-AC2 (MIN-238 D4): the install line and the fetch script name both repo
 test("552: generated dispatch workflow consumes admission rather than treating a catalog as permission", () => {
   const row = tableRows(render()).find(([, verbs]) => verbs.includes("`work-project-context`"));
   for (const phrase of ["--execution-request", "`dispatchAdmitted` is true", "Pass its selected runner/model/effort exactly", "never substitute", "not a reusable permit or a global scheduler", "stdout, stderr and exit code"]) assert.ok(row[2].includes(phrase), phrase);
+  assert.ok(row[2].includes("`execution-evidence --from-file <json>` remains read-only validation, not authentication"),
+    "J17: retain the exact public process-evidence navigation and its non-authentication boundary");
+  assert.ok(row[2].includes("specs/dispatch-admission-evidence-v1.md"));
 });
 
 // Original DOT-R01/R02/R03 generation consumers: authored here, actual sessions remain E4.
@@ -236,7 +239,10 @@ test("DOT-R01/R02: generated navigation separates native evidence, rules, schedu
   const markdown = render();
   const native = tableRows(markdown).find(([, verbs]) => verbs.includes("`execution-native-prepare`"))[2];
   for (const phrase of ["Machine-assemble private inputs from current tool results", "never ask users to hand-fill JSON", "reapprove authorized dispatch bookkeeping", "Unknown capability is not pass", "not-applicable", "actual model may be unavailable", "targetDispatchAdmitted", "pending attempt", "raw source and attempt association", "unknown retains responsibility", "validates, not authenticates"]) assert.ok(native.includes(phrase), phrase);
-  for (const phrase of ["parent or patrol reads do not substitute", "INIT batch covers all pending Stories", "at most five sourced lessons", "No dynamic progress in AGENTS", "independent dot target", "Installation, policy changes, restoration and publication retain their separate approvals", "20-minute patrol", "00:00 Asia/Shanghai", "unapproved policy keeps daily backup disabled"]) assert.ok(markdown.includes(phrase), phrase);
+  for (const phrase of ["parent or patrol reads do not substitute", "INIT batch covers all pending Stories", "at most five sourced lessons", "No dynamic progress in AGENTS", "independent dot target", "Installation, policy changes, restoration and publication retain their separate approvals", "20-minute patrol", "00:00 Asia/Shanghai", "unapproved policy forbids daily enablement", "unknown stays unknown"]) assert.ok(markdown.includes(phrase), phrase);
+  for (const phrase of ["saved prepare output as `--binding`", "prior full output as `--prior`", "inspect merged history", "--retry-from", "--reconciliation", "query unknown first"]) assert.ok(native.includes(phrase), phrase);
+  assert.ok(markdown.includes("actual engine bundle root `specs/` (beside `scripts/`), not this Skill"),
+    "J02: closed inputs come from the actual shipped contracts, not only flag help or source TS");
   const shared = tableRows(markdown).find(([, verbs]) => verbs.includes("`shared-submit-plan`"))[2];
   for (const phrase of ["Complete baseline", "one complete pre-submit refresh", "engine reapply", "serial handoff", "segments before manifest", "verify remote bytes", "complete destination", "observe release", "Advisory is not a lock", "absence/age grants nothing", "Query unknown publication before retry"]) assert.ok(shared.includes(phrase), phrase);
 });
@@ -250,4 +256,35 @@ test("DOT-R02: dot install reference is complete, source-bound and separate from
   assert.ok(dotSection.includes("No retention amounts or cleanup permission"));
   assert.ok(dotSection.includes("sourceVersion") || dotSection.includes("Source identity is obtained asynchronously"));
   assert.ok(text.indexOf("## Traditional target workflow") < text.indexOf("## Questions (one screen)"));
+});
+
+test("J01/J02/J03/J04/J09–J13: install guidance consumes reviewed source interfaces without promoting unknown or cached claims", async () => {
+  const text = (await readFile(join(referenceDirectory, "install.md"), "utf8")).replace(/\s+/gu, " ");
+  for (const phrase of [
+    "actual engine bundle root contains `scripts/einzbern.mjs` and its sibling `specs/`",
+    "contracts are not in this Skill's directory",
+    "required/optional/null fields, enums and digest rules",
+    "rule-list --workspace <actual-library> --project-id <actual-project>",
+    'dotRuleSources.status: "available"', "inherited enabled rules are included",
+    "enabledRules: null", "Never substitute catalog entries or `[]`",
+    "--approved-plan-digest <saved-digest>", "previously reviewed `dot.planDigest` unchanged",
+    "same mode, project, at and dot-input", "Do not compute a new digest at apply time",
+    "returns a new preview and refuses before writing",
+    "full `tcrn.native-dispatch-preparation.v1`", "do not pass stdout's outer object",
+    "Omit `--prior` only for the first record", "previous full saved output",
+    "new create-only `--output`", "revalidated merged `history` / `normalized`",
+    "--retry-from <previous-saved-record>", "--reconciliation <private-json>",
+    "Query unknown outcomes first", "confirmed-not-executed", "notExecutedPointer",
+    "Completed, conflicting or unresolved predecessors cannot retry",
+    "Source association and digests are not provider authentication",
+    "Independent dot user fragments and rules are unmappable",
+    "preserves the independent AGENTS and provenance bytes",
+    "projection pending, not rendered",
+    "Ordinary terminal checks do not clear pending resume/pause",
+    "Unknown actual enabled state stays unknown",
+    "only a matching actual false readback confirms disabled",
+    "merge.observedAt", "writerHandoff.observedAt",
+    "local completion <= fresh refresh <= merge observation <= handoff observation <= advisory observation <= every publication",
+    "Missing times stay pending", "Never fill phase timestamps with JSON assembly time",
+  ]) assert.ok(text.includes(phrase), phrase);
 });

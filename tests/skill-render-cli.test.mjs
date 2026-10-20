@@ -127,6 +127,9 @@ test("479-AC1, AC3 through the CLI: every verb the generated table names is list
   // The full-text moment includes both project context and the packaged evidence entry.
   assert.equal(verbs.length, 28, "nine moments include all fifteen native/shared/backup commands and batch capture");
   assert.ok(verbs.includes("execution-evidence"), "the installed workflow names its public evidence entry");
+  assert.match(markdown, /`execution-evidence --from-file <json>` remains read-only validation, not authentication/);
+  assert.match(markdown, /specs\/dispatch-admission-evidence-v1\.md/);
+  assert.ok(Buffer.byteLength(markdown, "utf8") < 6000, "J17 preserves the ordinary Skill quality budget");
   for (const verb of verbs) assert.ok(listed.includes(verb), `${verb} is listed by commands`);
   assert.ok(listed.includes("skill-render"), "skill-render is itself listed by commands");
   assert.ok(Buffer.byteLength(markdown, "utf8") < SKILL_MARKDOWN_BYTE_LIMIT);

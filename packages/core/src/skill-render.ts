@@ -65,17 +65,17 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall"],
-    action: "Run `recall --query \"<task>\"`. Each new, resumed or delegated execution session reads its own AGENTS, this Skill and current work; parent or patrol reads do not substitute.",
+    action: "Run `recall --query \"<task>\"`. New/resumed/delegated sessions read their AGENTS, Skill and current work; parent or patrol reads do not substitute.",
   },
   {
     moment: "Need the full text",
     verbs: ["work-show", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Resolve each target's configuration, permissions and `handoff`: a native host dispatch passes that object for that target; gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. `--execution-request` alone grants nothing. Traditional dispatch: fresh machine observations, `dispatchAdmitted` is true and admitted target. Pass its selected runner/model/effort exactly; never substitute. Record tuple, start time, stdout, stderr and exit code. Re-prepare after changes; not a reusable permit or a global scheduler. See `specs/dispatch-admission-evidence-v1.md`.",
+    action: "Read whole work/minutes. Resolve target configuration, permissions and `handoff`: a native host dispatch passes that object for that target; gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. `--execution-request` alone grants nothing. Traditional: fresh machine observations, `dispatchAdmitted` is true and admitted target. Pass its selected runner/model/effort exactly; never substitute. Record tuple, start time, stdout, stderr and exit code. Re-prepare after changes; not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. See `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
     moment: "dot native dispatch",
     verbs: ["execution-native-prepare", "execution-native-record", "execution-native-evidence"],
-    action: "Use `chatgpt-dot` / `dot-autonomous`. Machine-assemble private inputs from current tool results; never ask users to hand-fill JSON or reapprove authorized dispatch bookkeeping. Unknown capability is not pass. Self-model/quota are not-applicable; actual model may be unavailable. Prepare per command help; require `targetDispatchAdmitted`. Record `--binding` and new private `--output`; absent `--response` keeps a pending attempt. Real responses need raw source and attempt association, never invented providerRef, selectedTuple or process fields. Acceptance, finality and independent delivery verification differ; unknown retains responsibility. Evidence validates, not authenticates. See `specs/native-tool-evidence-v1.md`.",
+    action: "Use `chatgpt-dot` / `dot-autonomous`. Machine-assemble private inputs from current tool results; never ask users to hand-fill JSON or reapprove authorized dispatch bookkeeping. Unknown capability is not pass. Self-model/quota are not-applicable; actual model may be unavailable. Require `targetDispatchAdmitted`; use saved prepare output as `--binding`. New private `--output`; absent `--response` keeps a pending attempt. After first record use prior full output as `--prior`; inspect merged history. Retry pairs `--retry-from` / `--reconciliation`; query unknown first. Require raw source and attempt association; never invent providerRef, tuple or process fields. Acceptance/finality/independent verification differ; unknown retains responsibility. Evidence validates, not authenticates. See `specs/native-tool-evidence-v1.md`.",
   },
   {
     moment: "Shared submission",
@@ -90,12 +90,12 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Work is done",
     verbs: ["work-transition", "work-annotate"],
-    action: "Record results through the engine with the actual actor, then read back. Partial or pending is not complete.",
+    action: "Use the engine and actual actor; read back results. Partial/pending is not complete.",
   },
   {
     moment: "A decision is made",
     verbs: ["minutes-record"],
-    action: "As soon as you judge something a decision, record D1 to Dn; end the reply with `已记 <minutes key> Dn` (`Recorded <minutes key> Dn` outside Chinese). Use `--supersedes`, `--withdraws` or `--coexists` for its relation to an existing decision.",
+    action: "As soon as you judge something a decision, record D1 to Dn; end the reply with `已记 <minutes key> Dn` (`Recorded <minutes key> Dn` outside Chinese). Use `--supersedes`, `--withdraws` or `--coexists` for existing decisions.",
   },
   {
     moment: "A lesson is learned",
@@ -105,7 +105,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "UI design",
     verbs: ["settings-catalog"],
-    action: "Read optional `design.authority`; follow a declared source, never invent one.",
+    action: "Read optional `design.authority`; follow it, never invent it.",
   },
 ].map((entry) => Object.freeze({ ...entry, verbs: Object.freeze([...entry.verbs]) })));
 
@@ -157,7 +157,7 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     "## Navigation",
     "",
-    `Run \`node "<device directory>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb> --<flag> <value>\`. Device root: \`~/${DIRECTORY.device}\` or \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\`; missing engine means install first. \`commands\` and \`<verb> --help\` give current verbs/flags. Supply current UTC \`--at\` where required; pass \`--workspace <library>\` when needed or required by help.`,
+    `Run \`node "<device directory>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb> --<flag> <value>\`. Root: \`~/${DIRECTORY.device}\` or \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\`; missing engine means install first. \`commands\` / \`<verb> --help\`: verbs/flags. Use current UTC \`--at\` and \`--workspace <library>\` as required. Closed inputs: actual engine bundle root \`specs/\` (beside \`scripts/\`), not this Skill.`,
     "",
     "Local sessions share queued writes without stepping aside, not cross-device exclusion. Remote submission needs serial handoff. No platform-native dot hook, background lifecycle manager or sync service is installed.",
     "",
@@ -168,12 +168,12 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "## Three steps",
     "",
     "1. Install this skill: `npx skills add tpmoonchefryan/mana-orchestrate`.",
-    `2. Say "install ${BRAND.engine.name}". Choose traditional hooks or the independent dot target via \`setup\`; install.md guides the plan and approval.`,
-    "3. Follow the navigation. Installation, policy changes, restoration and publication retain their separate approvals. Optional 20-minute patrol and daily 00:00 Asia/Shanghai backup are independent; unapproved policy keeps daily backup disabled.",
+    `2. Say "install ${BRAND.engine.name}". Choose traditional hooks or independent dot target via \`setup\`; install.md guides approval.`,
+    "3. Follow the navigation. Installation, policy changes, restoration and publication retain their separate approvals. 20-minute patrol and daily 00:00 Asia/Shanghai backup are independent; unapproved policy forbids daily enablement; unknown stays unknown.",
     "",
     "## Install-type tasks",
     "",
-    "For an install, restore, update, repair, rollback, migration, uninstall or health check, read the matching file in `references/` (`install.md`, `restore.md`, `update.md`, `migrate.md`, `uninstall.md`, `doctor.md`); dot uses the install reference for its supported maintenance modes; never load them for any other work.",
+    "For install, restore, update, repair, rollback, migration, uninstall or health check, read `references/` (`install.md`, `restore.md`, `update.md`, `migrate.md`, `uninstall.md`, `doctor.md`); dot uses install; never load them for any other work.",
     "",
   ];
   const markdown = lines.join("\n");

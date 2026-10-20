@@ -144,6 +144,10 @@ These are guidance and pure engine state contracts, not an installed scheduler. 
 scheduler's supported create/query/update/readback capabilities first. If missing or unknown,
 report that gap without enabling a substitute service. Use a saved real ID and scope, not a
 matching name; query uncertain outcomes before retrying. Schedule state stays outside AGENTS.
+Discovery groups receipts by actual `automationId` and uses each ID's newest valid observation
+before matching scope, not array order or receipt count. Conflicting fields at the same newest
+time require a fresh query (`same-instance-observation-conflict`), not another instance.
+Malformed observations refuse; do not fall back to an older favorable receipt.
 
 Context patrol runs every 20 minutes only over authorized tasks. New-task/session reads remain
 mandatory. Two distinct successful checks at least 20 minutes apart must see the same completed
@@ -197,10 +201,26 @@ are verified: actual whitelist and restore support, bound group/writer, complete
 policy, safe recoverable retirement, scheduler deduplication/readback and explicit runtime
 enablement authorization. Missing policy forbids enablement, never supplies guessed defaults.
 Unknown actual enabled state stays unknown after eligibility loss or repeated evaluation, not
-disabled. Query, disable through the authorized scheduler, then read back; only a matching actual
-false readback confirms disabled. Cancelling this
-schedule neither deletes packages nor changes patrol. A delayed run stores one current snapshot
-with actual time; it cannot reconstruct midnight contents.
+disabled. Query, disable through the authorized scheduler, then obtain a fresh matching false
+readback after the current action boundary; historical disabled state cannot confirm this request.
+
+For the pure daily contract, preserve `lastReadbackAt`, `lastActionAt` and
+`pendingReadback { desiredEnabled, boundary }` between evaluations. Machine-assemble
+`scheduler.actionObservation { automationId, desiredEnabled, returnedAt, evidenceRef }` only
+from this request's actual same-instance query/update return or error observation. It is a causal
+boundary, not success or authentication; old task/readback times and the assembly clock are not
+substitutes. The actual return cannot predate the latest accepted readback or reuse an earlier
+action for a new request. Re-evaluating the same unresolved request retains its binding; changing
+the desired state or policy clears that binding but preserves `lastActionAt`.
+Readback must match the original ID, group, selection and fixed schedule, and be strictly later
+than both `lastReadbackAt` and the current boundary's `returnedAt`. Older/equal reads refuse;
+a fresh opposite enabled state retains the request and error. Missing boundaries, including
+legacy unknown state, stay unknown rather than treating a late read as proof. These are pure
+state/input fields, not new CLI flags or an installed scheduler/controller; actual enablement
+still needs the policy, capabilities and separate runtime authorization above.
+
+Cancelling this schedule neither deletes packages nor changes patrol. A delayed run stores one
+current snapshot with actual time; it cannot reconstruct midnight contents.
 
 The policy requires explicit `activeLimit`, `transactionLimit`, `recoveryLimit`, `maxPackageBytes`,
 `maxTotalBytes`, `retentionDuration`, `recoveryDuration` (durations in milliseconds),

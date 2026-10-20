@@ -212,7 +212,25 @@ export function dailyConfigBackupSlot(now: string): string {
   const shifted = new Date(Date.parse(now) + 8 * 60 * 60 * 1000);
   return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - 8 * 60 * 60 * 1000).toISOString();
 }
+function retainDailyAutomationIdentity(state: DailyConfigBackupState): DailyConfigBackupState {
+  const boundaryId = state.pendingReadback?.boundary?.automationId;
+  if (boundaryId != null) {
+    dotText(boundaryId, "daily boundary automationId");
+    if (state.automationId !== null && state.automationId !== boundaryId) throw new Error("daily boundary differs from the original same-instance request");
+  }
+  // A legacy boundary may be the only remaining record of the original ID.
+  // Preserve it before a new request can clear or replace that boundary.
+  return state.automationId === null && boundaryId != null ? { ...state, automationId: boundaryId } : state;
+}
+function dailyOriginalIdentityUnavailable(state: DailyConfigBackupState): boolean {
+  return state.automationId === null && (state.lastActionAt != null || state.lastReadbackAt != null || state.state === "unknown" && state.pendingReadback == null);
+}
 export function evaluateDailyConfigBackup(state: DailyConfigBackupState, prerequisites: ConfigBackupEnablementPrerequisites, scheduler: { readonly deduplicationVerified: boolean; readonly readbackAvailable: boolean; readonly actualEnablementAuthorizationRef: string | null; readonly actionObservation?: DailyScheduleObservation | null }): { readonly state: DailyConfigBackupState; readonly eligible: boolean; readonly reason: string; readonly next: "keep-disabled" | "query-disable-and-readback" | "request-authorized-update-and-readback" } {
+  state = retainDailyAutomationIdentity(state);
+  if (dailyOriginalIdentityUnavailable(state)) {
+    if (scheduler.actionObservation != null) throw new Error("daily original instance identity is unknown; a new action cannot rebind it");
+    return { state: { ...state, state: "unknown", lastError: state.lastError ?? "daily-original-instance-identity-required" }, eligible: false, reason: "daily-original-instance-identity-required", next: "query-disable-and-readback" };
+  }
   const gate = evaluateConfigBackupEnablement(prerequisites);
   const eligible = gate.eligible && scheduler.deduplicationVerified && scheduler.readbackAvailable && scheduler.actualEnablementAuthorizationRef !== null && scheduler.actualEnablementAuthorizationRef.trim().length > 0;
   const reason = !gate.eligible ? gate.reason : !scheduler.deduplicationVerified || !scheduler.readbackAvailable ? "scheduler-unavailable" : !scheduler.actualEnablementAuthorizationRef?.trim() ? "enablement-unapproved" : "ready";
@@ -231,9 +249,11 @@ export function evaluateDailyConfigBackup(state: DailyConfigBackupState, prerequ
   }
   // Neither eligibility nor an old readback time stands in for a real current
   // query/update return. Re-evaluation preserves an unresolved same request.
-  return { state: { ...state, state: eligible ? "pending-enablement" : needsReadback ? "unknown" : "disabled", policyRef: gate.policyDigest, lastActionAt: observation?.returnedAt ?? state.lastActionAt ?? null, pendingReadback: needsReadback ? { desiredEnabled: eligible, boundary } : null, lastError: needsReadback && state.lastError !== null ? state.lastError : eligible ? null : reason }, eligible, reason, next: eligible ? "request-authorized-update-and-readback" : needsReadback ? "query-disable-and-readback" : "keep-disabled" };
+  return { state: { ...state, automationId: state.automationId ?? observation?.automationId ?? null, state: eligible ? "pending-enablement" : needsReadback ? "unknown" : "disabled", policyRef: gate.policyDigest, lastActionAt: observation?.returnedAt ?? state.lastActionAt ?? null, pendingReadback: needsReadback ? { desiredEnabled: eligible, boundary } : null, lastError: needsReadback && state.lastError !== null ? state.lastError : eligible ? null : reason }, eligible, reason, next: eligible ? "request-authorized-update-and-readback" : needsReadback ? "query-disable-and-readback" : "keep-disabled" };
 }
 export function readbackDailyConfigBackup(state: DailyConfigBackupState, readback: DailyBackupReadback, prerequisites: ConfigBackupEnablementPrerequisites): DailyConfigBackupState {
+  state = retainDailyAutomationIdentity(state);
+  if (dailyOriginalIdentityUnavailable(state)) throw new Error("daily original instance identity is unknown; a new readback cannot rebind it");
   const at = dotInstant(readback.observedAt, "backup readback at"); dotText(readback.evidenceRef, "backup readback ref"); dotText(readback.automationId, "backup automation ID");
   if (state.automationId !== null && state.automationId !== readback.automationId || readback.groupRef !== state.groupRef || readback.selectionDigest !== state.selectionDigest || readback.timezone !== DAILY_CONFIG_BACKUP_TIMEZONE || readback.dailyLocalTime !== DAILY_CONFIG_BACKUP_LOCAL_TIME) throw new Error("daily backup readback differs from original ID, group, selection or fixed schedule");
   const gate = evaluateConfigBackupEnablement(prerequisites);

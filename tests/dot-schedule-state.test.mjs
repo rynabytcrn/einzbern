@@ -474,3 +474,70 @@ test("R1 missing and legacy daily boundaries stay unknown; request changes canno
   const queried = evaluateDailyConfigBackup(changed, denied, { ...dailyScheduler(), actionObservation: dailyObservation(initial, false, "2026-10-20T00:11:00Z") }).state;
   assert.equal(readbackDailyConfigBackup(queried, { ...read, isEnabled: false, observedAt: "2026-10-20T00:12:00Z" }, denied).state, "disabled");
 });
+
+test("D-OR01 first actual daily ID stays bound across same-request observations and legacy null-ID readback", () => {
+  const initial = initialDailyConfigBackupState({ automationId: null, groupRef: "fixture:group", selectionDigest: "a".repeat(64) });
+  const pending = evaluateDailyConfigBackup(initial, backupGate(), dailyScheduler()).state;
+  assert.equal(pending.automationId, null); assert.equal(pending.pendingReadback.boundary, null);
+  const action = { automationId: "fixture:A", desiredEnabled: true, returnedAt: "2026-10-20T00:09:00Z", evidenceRef: "fixture:A-action" };
+  const observed = evaluateDailyConfigBackup({ ...pending, lastError: "fixture:unresolved-A" }, backupGate(), { ...dailyScheduler(), actionObservation: action }).state;
+  assert.equal(observed.automationId, "fixture:A"); assert.equal(observed.state, "pending-enablement");
+  assert.equal(observed.lastError, "fixture:unresolved-A"); assert.deepEqual(observed.pendingReadback.boundary, action);
+  const read = { automationId: "fixture:A", groupRef: initial.groupRef, selectionDigest: initial.selectionDigest, timezone: "Asia/Shanghai", dailyLocalTime: "00:00", isEnabled: true, observedAt: "2026-10-20T00:12:00Z", evidenceRef: "fixture:A-read" };
+  for (const state of [observed, { ...observed, automationId: null }]) {
+    const before = structuredClone(state);
+    assert.throws(() => evaluateDailyConfigBackup(state, backupGate(), { ...dailyScheduler(), actionObservation: { ...action, automationId: "fixture:B", returnedAt: "2026-10-20T00:11:00Z" } }), /same-instance request/u);
+    assert.throws(() => readbackDailyConfigBackup(state, { ...read, automationId: "fixture:B" }, backupGate()), /original ID/u);
+    assert.deepEqual(state, before, "rejected B cannot mutate or discard A responsibility");
+    const refreshed = evaluateDailyConfigBackup(state, backupGate(), { ...dailyScheduler(), actionObservation: { ...action, returnedAt: "2026-10-20T00:11:00Z" } }).state;
+    assert.equal(refreshed.automationId, "fixture:A"); assert.equal(refreshed.state, "pending-enablement");
+    const enabled = readbackDailyConfigBackup(refreshed, read, backupGate());
+    assert.equal(enabled.automationId, "fixture:A"); assert.equal(enabled.state, "enabled");
+    assert.equal(enabled.pendingReadback, null); assert.equal(enabled.lastError, null);
+    assert.equal(readbackDailyConfigBackup(state, read, backupGate()).automationId, "fixture:A");
+  }
+});
+
+test("D-OR01 direction and policy changes preserve the first daily ID before clearing a legacy boundary", () => {
+  const initial = initialDailyConfigBackupState({ automationId: null, groupRef: "fixture:group", selectionDigest: "a".repeat(64) });
+  const action = { automationId: "fixture:A", desiredEnabled: true, returnedAt: "2026-10-20T00:09:00Z", evidenceRef: "fixture:A-action" };
+  const observed = evaluateDailyConfigBackup({ ...initial, lastError: "fixture:unresolved-A" }, backupGate(), { ...dailyScheduler(), actionObservation: action }).state;
+  const policy = { ...backupGate().policy, noChangePolicy: "create" }; const validation = validateConfigBackupRetentionPolicy(policy);
+  const newPolicy = { ...backupGate(), policy, approval: { approved: true, policyDigest: validation.policyDigest, approvalEvidenceRef: policy.approvalEvidenceRef } };
+  for (const state of [observed, { ...observed, automationId: null }]) for (const prerequisites of [{ ...backupGate(), enablementAuthorized: false }, newPolicy]) {
+    const desiredEnabled = prerequisites.enablementAuthorized;
+    const newAction = { ...action, desiredEnabled, returnedAt: "2026-10-20T00:11:00Z" };
+    assert.throws(() => evaluateDailyConfigBackup(state, prerequisites, { ...dailyScheduler(), actionObservation: { ...newAction, automationId: "fixture:B" } }), /same-instance request/u);
+    const changed = evaluateDailyConfigBackup(state, prerequisites, dailyScheduler()).state;
+    assert.equal(changed.automationId, "fixture:A"); assert.equal(changed.pendingReadback.boundary, null);
+    assert.equal(changed.lastActionAt, action.returnedAt); assert.equal(changed.lastError, "fixture:unresolved-A");
+    const read = { automationId: "fixture:A", groupRef: initial.groupRef, selectionDigest: initial.selectionDigest, timezone: "Asia/Shanghai", dailyLocalTime: "00:00", isEnabled: desiredEnabled, observedAt: "2026-10-20T00:12:00Z", evidenceRef: "fixture:A-new-read" };
+    assert.throws(() => evaluateDailyConfigBackup(changed, prerequisites, { ...dailyScheduler(), actionObservation: { ...newAction, automationId: "fixture:B" } }), /same-instance request/u);
+    assert.throws(() => readbackDailyConfigBackup(changed, { ...read, automationId: "fixture:B" }, prerequisites), /original ID/u);
+    assert.equal(readbackDailyConfigBackup(changed, read, prerequisites).state, "unknown", "identity binding is not an actual current action");
+    const refreshed = evaluateDailyConfigBackup(changed, prerequisites, { ...dailyScheduler(), actionObservation: newAction }).state;
+    const settled = readbackDailyConfigBackup(refreshed, read, prerequisites);
+    assert.equal(settled.automationId, "fixture:A"); assert.equal(settled.state, desiredEnabled ? "enabled" : "disabled");
+    assert.equal(settled.pendingReadback, null); assert.equal(settled.lastError, null);
+  }
+});
+
+test("D-OR01 already-lost daily identity remains unknown rather than rebinding to a new action or readback", () => {
+  const initial = initialDailyConfigBackupState({ automationId: null, groupRef: "fixture:group", selectionDigest: "a".repeat(64) });
+  const lost = { ...initial, state: "unknown", lastActionAt: "2026-10-20T00:09:00Z", pendingReadback: { desiredEnabled: false, boundary: null }, lastError: "fixture:original-ID-lost" };
+  const legacy = { ...initial, state: "unknown", lastError: "fixture:legacy-unresolved" };
+  delete legacy.lastActionAt; delete legacy.lastReadbackAt; delete legacy.pendingReadback;
+  const action = { automationId: "fixture:B", desiredEnabled: false, returnedAt: "2026-10-20T00:11:00Z", evidenceRef: "fixture:B-action" };
+  const read = { automationId: "fixture:B", groupRef: initial.groupRef, selectionDigest: initial.selectionDigest, timezone: "Asia/Shanghai", dailyLocalTime: "00:00", isEnabled: false, observedAt: "2026-10-20T00:12:00Z", evidenceRef: "fixture:B-read" };
+  for (const state of [lost, legacy]) {
+    const before = structuredClone(state);
+    const once = evaluateDailyConfigBackup(state, backupGate(), dailyScheduler());
+    const twice = evaluateDailyConfigBackup(once.state, backupGate(), dailyScheduler());
+    assert.equal(once.eligible, false); assert.equal(once.reason, "daily-original-instance-identity-required");
+    assert.equal(once.next, "query-disable-and-readback"); assert.deepEqual(twice, once);
+    assert.equal(once.state.state, "unknown"); assert.equal(once.state.automationId, null); assert.equal(once.state.lastError, state.lastError);
+    assert.throws(() => evaluateDailyConfigBackup(once.state, { ...backupGate(), enablementAuthorized: false }, { ...dailyScheduler(), actionObservation: action }), /original instance identity is unknown/u);
+    assert.throws(() => readbackDailyConfigBackup(once.state, read, backupGate()), /original instance identity is unknown/u);
+    assert.deepEqual(state, before);
+  }
+});

@@ -468,7 +468,9 @@ export async function listConfigBackups(input: { readonly reservedRoot?: string;
               const verified = await verifyConfigBackup(packageRoot);
               if (verified.integrity !== "verified" || verified.manifest?.manifestDigest !== entry.manifestDigest) integrity = "corrupt";
             }
-            for (const transaction of index.transactions.filter(t => !index.active.some(p => p.backupId === t.backupId))) {
+            // Active entries may reference this package too, but cannot excuse a
+            // second transaction location. The measured set de-duplicates bytes.
+            for (const transaction of index.transactions) {
               const locations: string[] = [];
               for (const root of [paths.staging, paths.active, ...(transaction.phase === "staging" ? [paths.recovery] : [])]) {
                 const pending = join(root, transaction.directory); if (await exists(pending)) locations.push(pending);

@@ -190,3 +190,26 @@ test("R2 missing, duplicated or unbound retirement locations retain index metada
     else { assert.equal(row.error, "CONFIG_BACKUP_GROUP_UNREADABLE"); assert.equal(row.bytes, null); }
   }
 });
+
+test("C-PR29-01 every active-mapped transaction is audited for an extra staging copy without changing the index", async t => {
+  for (const location of ["active", "recovery"]) {
+    const f = await rotationCut(t);
+    if (location === "active") await rename(f.recovery, f.source);
+    const before = await readFile(f.indexPath, "utf8");
+    const valid = (await listConfigBackups({ reservedRoot: f.store.reservedRoot, at: "2026-10-20T00:00:04Z" })).groups[0];
+    assert.equal(valid.integrity, "discovered"); assert.equal(valid.bytes, f.first.bytes + f.second.bytes, "the active and transaction references count one physical new package");
+    const transaction = f.pending.transactions[0];
+    assert.ok(f.pending.active.some(entry => entry.backupId === transaction.backupId));
+    const staging = join(f.store.reservedRoot, "config-backup-staging", "device", f.store.binding.backupGroupId, transaction.directory);
+    await writeConfigBackupPackage(staging, f.second);
+    const list = await listConfigBackups({ reservedRoot: f.store.reservedRoot, at: "2026-10-20T00:00:05Z" });
+    const row = list.groups[0];
+    assert.equal(list.scanStatus, "partial"); assert.equal(row.integrity, "corrupt"); assert.equal(row.bytes, null);
+    assert.equal(row.error, "CONFIG_BACKUP_GROUP_UNREADABLE"); assert.deepEqual(row.projectRef, ref);
+    assert.equal(row.hostname, "device"); assert.equal(row.completedAt, f.second.manifest.createdAtUtc);
+    assert.deepEqual([row.activeCount, row.transactionCount, row.recoverableCount], [2, 1, 0]);
+    assert.deepEqual(row.transactionPhases, ["rotation-pending"]); assert.equal(row.syncStatus, "unknown");
+    assert.equal(await readFile(f.indexPath, "utf8"), before, "list does not settle or repair an ambiguous transaction");
+    assert.equal(JSON.parse(await readFile(join(staging, "manifest.json"), "utf8")).backupId, transaction.backupId, "list does not remove the extra package");
+  }
+});

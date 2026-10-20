@@ -23,6 +23,7 @@ import test, { after } from "node:test";
 
 import { BRAND, FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
 import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
+import { normalizedInstallBytes } from "../dist/build/packages/core/src/install-tree-digest.js";
 import {
   P8_RELEASE_ARTIFACTS,
   P8_RELEASE_ARCHIVE,
@@ -37,6 +38,10 @@ const packScript = join(repositoryRoot, "scripts/pack-release.mjs");
 const RELEASE = `einzbern-${FRAMEWORK_VERSION}`;
 const ARCHIVE = `${RELEASE}.tar.gz`;
 const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
+const SPECIFICATIONS = Object.freeze([
+  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md",
+  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md",
+]);
 
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-pack-release-")));
 after(() => rm(base, { recursive: true, force: true }));
@@ -159,11 +164,15 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
     "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
-    "specs/dispatch-admission-evidence-v1.md",
+    ...SPECIFICATIONS.map(name => `specs/${name}`),
     ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "manifest.json",
   ];
   assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());
   const byPath = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry]));
+  for (const name of SPECIFICATIONS) {
+    const path = `specs/${name}`;
+    assert.deepEqual(byPath.get(path).bytes, await readFile(join(repositoryRoot, path)), `${path}: public contract bytes are preserved, not rendered or rewritten`);
+  }
   assert.ok(byPath.get("atelier/ds-static-bridges.snapshot.js").bytes.equals(await readFile(join(repositoryRoot, "portal/ds-static-bridges.snapshot.js"))), "the archive retains exact published bridge bytes");
   assert.ok(byPath.get("THIRD_PARTY_NOTICES.txt").bytes.equals(await readFile(join(repositoryRoot, "THIRD_PARTY_NOTICES.txt"))), "the archive retains vendored runtime license notices");
   assert.ok(byPath.get("launchers/einzbern.mjs").bytes.equals(await readFile(join(repositoryRoot, "scripts/einzbern-launcher.mjs"))));
@@ -219,6 +228,11 @@ test("481-R2: the manifest states the install-tree digest of the unpacked direct
   assert.equal(manifest.version, FRAMEWORK_VERSION);
   assert.notEqual(manifest.schemaVersion, manifest.version);
   assert.equal(manifest.nodeFloor, NODE_FLOOR);
+  for (const name of SPECIFICATIONS) {
+    const path = `specs/${name}`; const contract = manifest.files.find(entry => entry.path === path);
+    assert.ok(contract, `${path} participates in the installed content manifest`);
+    assert.equal(contract.sha256, sha256(normalizedInstallBytes(await readFile(join(tree, path)))));
+  }
   const aside = join(base, "manifest-aside");
   await mkdir(aside, { recursive: true });
   await rename(join(tree, "manifest.json"), join(aside, "manifest.json"));

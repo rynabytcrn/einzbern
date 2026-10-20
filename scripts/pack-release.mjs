@@ -21,6 +21,7 @@
 //                               bundle carries the engine's registry lock and device-home modules, the
 //                               same builds register, unregister and repoint use, once each
 //   skill/mana-orchestrate/     the skill as skill-render writes it for this version
+//   specs/                      explicit public CLI payload/evidence contracts
 //   README*.md, CHANGELOG.md, LICENSE, NOTICE, THIRD_PARTY_NOTICES.txt
 //   manifest.json               einzbern.release-manifest.v1: version, nodeFloor, installTreeDigest, files
 //
@@ -74,6 +75,11 @@ const registryLockStagedSpecifier = (module) => `"../../packages/core/src/${modu
 const BUNDLED_CLI_DECLARATION = /^const BUNDLED_CLI = .*;$/gmu;
 const README = /^README(?:\.[A-Za-z-]+)?\.md$/u;
 const DOCUMENTS = Object.freeze(["CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt"]);
+// Only public CLI contracts consumed by the installed helper, not the whole source specs tree.
+const SPECIFICATIONS = Object.freeze([
+  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md",
+  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md",
+]);
 
 class PackError extends Error {
   constructor(reasonCode, message, details = {}) {
@@ -241,7 +247,7 @@ async function packRelease({ version: requested, out }) {
       },
     });
     if (JSON.parse(rendered).reasonCode !== "SKILL_RENDERED") fail("PACK_INTERNAL_ERROR", "skill-render did not render the skill");
-    await copyStaged(tree, "specs/dispatch-admission-evidence-v1.md", join(repositoryRoot, "specs/dispatch-admission-evidence-v1.md"));
+    for (const specification of SPECIFICATIONS) await copyStaged(tree, `specs/${specification}`, join(repositoryRoot, "specs", specification));
     const documents = [...(await readdir(repositoryRoot)).filter((file) => README.test(file)).sort(), ...DOCUMENTS];
     for (const file of documents) await copyStaged(tree, file, join(repositoryRoot, file));
     const digest = await core.computeInstallTreeDigest(tree);

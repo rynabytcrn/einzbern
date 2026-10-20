@@ -141,3 +141,66 @@ test("J10 public saved history preserves duplicates, conflicts and late returns 
   assert.equal(conflict.saved.appendStatus, "conflict"); assert.equal(conflict.saved.normalized.valid, false); assert.equal(conflict.saved.normalized.executionResponsibility, "retained"); assert.ok(conflict.saved.rejectedRecord);
   assert.equal(normalizeReviewDispatchEvidence(conflict.saved, { workId: f.attempt.workId, workRevision: 1 }).complete, false);
 });
+
+test("RJ01 public history separates confirmed execution from later independent verification", async t => {
+  const { mkdtemp, readFile, rm, writeFile } = await import("node:fs/promises"); const { join } = await import("node:path"); const { tmpdir } = await import("node:os");
+  const { runNativeToolCommand } = await import("../dist/build/packages/cli/src/native-tool-commands.js");
+  const { normalizeReviewDispatchEvidence } = await import("../scripts/review-evidence.mjs");
+  const root = await mkdtemp(join(tmpdir(), "einzbern-native-verification-fixture-")); t.after(() => rm(root, { recursive: true, force: true }));
+  const f = fixture(); const binding = join(root, "preparation.json"); await writeFile(binding, JSON.stringify(f.preparation));
+  const context = { home: join(root, "device"), resolveWorkspace: async () => { throw new Error("not used"); } };
+  const recordReturn = async (id, response, prior, complete) => {
+    const path = join(root, `${id}-response.json`), output = join(root, `${id}-record.json`); await writeFile(path, JSON.stringify(response));
+    await runNativeToolCommand("execution-native-record", { binding, response: path, ...(prior ? { prior } : {}), output }, context);
+    const saved = JSON.parse(await readFile(output, "utf8"));
+    assert.equal(saved.appendStatus, "appended"); assert.equal(saved.normalized.complete, complete);
+    const assessed = await runNativeToolCommand("execution-native-evidence", { "from-file": output }, context);
+    assert.equal(assessed.valid, true); assert.equal(assessed.complete, complete); assert.equal(assessed.executionResponsibility, "terminal-confirmed");
+    const review = normalizeReviewDispatchEvidence(saved, { workId: f.attempt.workId, workRevision: 1 });
+    assert.equal(review.valid, true); assert.equal(review.complete, complete);
+    return { output, saved };
+  };
+  const returned = { ...f.response, terminalObservation: terminal, verification: { status: "unverified", evidenceRefs: [] } };
+  const unverified = await recordReturn("unverified", returned, null, false);
+  // The original raw return and observedAt are unchanged; only the actual independent check is later.
+  const passed = await recordReturn("same-event-pass", { ...returned, verification: f.response.verification }, unverified.output, true);
+  const failedVerification = { ...f.response.verification, status: "fail", evidenceRefs: ["fixture:later-failure"], verifiedAt: "2026-10-20T05:00:04Z" };
+  const failed = await recordReturn("same-event-fail", { ...returned, verification: failedVerification }, passed.output, false);
+  assert.deepEqual(failed.saved.history.current, unverified.saved.history.current);
+  assert.equal(failed.saved.history.records.length, 3); assert.deepEqual(failed.saved.history.records[1].response.verification, f.response.verification);
+  const omitted = { ...failed.saved, history: passed.saved.history };
+  assert.equal(normalizeNativeToolEvidence(omitted).valid, false);
+  const another = { ...returned, rawResponseValue: { ...returned.rawResponseValue, event: "event-2" }, observedAt: "2026-10-20T05:00:05Z" };
+  const passedAgain = await recordReturn("different-event-pass", { ...another, verification: { ...f.response.verification, verifiedAt: "2026-10-20T05:00:06Z" } }, failed.output, true);
+  const failedAgain = await recordReturn("different-event-fail", { ...another, rawResponseValue: { ...another.rawResponseValue, event: "event-3" }, observedAt: "2026-10-20T05:00:07Z", verification: { ...failedVerification, verifiedAt: "2026-10-20T05:00:08Z" } }, passedAgain.output, false);
+  const accepted = { ...f.response, executionStatus: "accepted", rawResponseValue: { ...f.response.rawResponseValue, event: "event-late", state: "accepted", terminal: false }, observedAt: "2026-10-20T05:00:09Z" };
+  const stale = await recordReturn("late-stale-pass", accepted, failedAgain.output, false);
+  assert.equal(stale.saved.history.current.executionStatus, "reported-completed");
+  const fresh = await recordReturn("late-current-pass", { ...accepted, verification: { ...f.response.verification, verifiedAt: "2026-10-20T05:00:10Z" } }, stale.output, true);
+  await recordReturn("late-current-fail", { ...accepted, verification: { ...failedVerification, verifiedAt: "2026-10-20T05:00:11Z" } }, fresh.output, false);
+});
+
+test("RJ01 stale, unrelated, unassociated or evidenceless checks cannot promote completion", () => {
+  const f = fixture(); const first = record(f, { ...f.response, terminalObservation: terminal, verification: { status: "unverified", evidenceRefs: [] } });
+  const history = appendNativeToolRecord({ records: [], observations: [], current: null }, first).history;
+  const append = response => { const nextRecord = record(f, response); const next = appendNativeToolRecord(history, nextRecord); assert.equal(next.status, "appended"); return normalizeNativeToolEvidence({ record: nextRecord, history: next.history, appendStatus: next.status }); };
+  for (const response of [
+    { ...f.response, terminalObservation: terminal, verification: { ...f.response.verification, verifiedAt: at } },
+    { ...f.response, terminalObservation: terminal, resultRefs: ["fixture:other-deliverable"] },
+    { ...f.response, terminalObservation: terminal, resultRefs: [] },
+    { ...f.response, rawResponseValue: { ...f.response.rawResponseValue, event: "event-unassociated" }, terminalObservation: terminal, association: { status: "unverified", invocationRef: null, responseRef: null, argumentsDigest: null, evidenceRefs: [], reason: "linkage unavailable" } },
+  ]) { const result = append(response); assert.equal(result.valid, true); assert.equal(result.complete, false); }
+  assert.throws(() => record(f, { ...f.response, terminalObservation: terminal, verification: { ...f.response.verification, evidenceRefs: [] } }));
+  assert.equal(normalizeNativeToolEvidence(record(f, { ...f.response, terminalObservation: terminal, resultRefs: [] })).complete, false);
+  const passed = record(f, { ...f.response, terminalObservation: terminal });
+  const failed = record(f, { ...f.response, terminalObservation: terminal, verification: { ...f.response.verification, status: "fail" } });
+  for (const records of [[passed, failed], [failed, passed]]) {
+    let sameTime = history;
+    for (const item of records) sameTime = appendNativeToolRecord(sameTime, item).history;
+    assert.equal(normalizeNativeToolEvidence({ record: records.at(-1), history: sameTime, appendStatus: "appended" }).complete, false);
+    const unverified = record(f, { ...f.response, terminalObservation: terminal, rawResponseValue: { ...f.response.rawResponseValue, event: "later-unverified" }, observedAt: "2026-10-20T05:00:03Z", verification: { status: "unverified", evidenceRefs: [] } });
+    const next = appendNativeToolRecord(sameTime, unverified);
+    assert.equal(next.status, "appended");
+    assert.equal(normalizeNativeToolEvidence({ record: unverified, history: next.history, appendStatus: next.status }).complete, false);
+  }
+});

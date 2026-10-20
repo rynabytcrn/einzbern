@@ -96,6 +96,34 @@ test("J11 scheduler action responsibility survives later terminal task checks", 
   assert.equal(advanceContextPatrol(failed, { kind: "readback", readback: readback(true, "2026-10-20T05:41:00Z") }).state, "active");
 });
 
+test("RJ02 failed pause stays unknown across ordinary checks and new work until fresh same-instance readback", () => {
+  const pending = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
+  const failed = advanceContextPatrol(pending, { kind: "action-failed", action: "pause", error: "fixture:pause-outcome-unknown" });
+  for (const override of [null, { mode: "keep-enabled", evidenceRef: "fixture:owner-override" }]) {
+    let unresolved = { ...failed, ownerOverride: override };
+    for (const [kind, extra] of [["check", {}], ["check", { terminalKind: null }], ["before-pause", { receivedWorkRefs: ["fixture:check-work"] }], ["check", { outcome: "unknown" }]]) {
+      unresolved = advanceContextPatrol(unresolved, { kind, check: check("later", "2026-10-20T05:40:00Z", extra) });
+      assert.equal(unresolved.state, "unknown"); assert.equal(unresolved.pendingAction, "query-instance"); assert.equal(unresolved.lastError, failed.lastError);
+      assert.deepEqual(unresolved.lastReadback, failed.lastReadback); assert.equal(unresolved.terminal, null);
+    }
+    unresolved = advanceContextPatrol(unresolved, { kind: "new-work", workRefs: ["fixture:new-work"] });
+    assert.equal(unresolved.state, "unknown"); assert.equal(unresolved.pendingAction, "query-instance"); assert.equal(unresolved.lastError, failed.lastError);
+    assert.deepEqual(unresolved.receivedWorkRefs, ["fixture:check-work", "fixture:new-work"]);
+    assert.throws(() => advanceContextPatrol(unresolved, { kind: "readback", readback: failed.lastReadback }), /new same-instance readback/u);
+    assert.throws(() => advanceContextPatrol(unresolved, { kind: "readback", readback: { ...readback(true, "2026-10-20T05:41:00Z"), automationId: "fixture:wrong-id" } }), /original instance/u);
+    const disabled = advanceContextPatrol(unresolved, { kind: "readback", readback: readback(false, "2026-10-20T05:41:00Z") });
+    assert.equal(disabled.state, "pending-resume"); assert.equal(disabled.pendingAction, "enable-same-instance"); assert.equal(disabled.lastError, failed.lastError);
+    assert.deepEqual(disabled.receivedWorkRefs, unresolved.receivedWorkRefs); assert.equal(disabled.automationId, failed.automationId);
+    const enabled = advanceContextPatrol(disabled, { kind: "readback", readback: readback(true, "2026-10-20T05:42:00Z") });
+    assert.equal(enabled.state, "active"); assert.equal(enabled.pendingAction, null); assert.equal(enabled.lastError, null); assert.deepEqual(enabled.receivedWorkRefs, []);
+    const enabledDirectly = advanceContextPatrol(unresolved, { kind: "readback", readback: readback(true, "2026-10-20T05:41:00Z") });
+    assert.equal(enabledDirectly.state, "active"); assert.equal(enabledDirectly.lastError, null);
+  }
+  assert.equal(advanceContextPatrol(failed, { kind: "readback", readback: readback(false, "2026-10-20T05:41:00Z") }).state, "paused");
+  const kept = advanceContextPatrol({ ...failed, ownerOverride: { mode: "keep-enabled", evidenceRef: "fixture:owner-override" } }, { kind: "readback", readback: readback(false, "2026-10-20T05:41:00Z") });
+  assert.equal(kept.state, "pending-resume");
+});
+
 test("J12 eligibility loss cannot establish an observed disabled daily task", () => {
   const initial = initialDailyConfigBackupState({ automationId: "fixture:backup-id", groupRef: "fixture:group", selectionDigest: "a".repeat(64) });
   const scheduler = { deduplicationVerified: true, readbackAvailable: true, actualEnablementAuthorizationRef: "fixture:enable" };

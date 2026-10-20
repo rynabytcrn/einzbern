@@ -56,9 +56,11 @@ function validateReadback(state: ContextPatrolState, readback: ScheduleReadback)
 }
 /** Sequential guidance only. The caller performs each actual action and supplies real readbacks. */
 export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEvent): ContextPatrolState {
+  const queryUnresolved = state.state === "unknown" && state.pendingAction === "query-instance";
   const resume = (workRefs: readonly string[], error: string | null = state.lastError): ContextPatrolState => ({ ...state, state: "pending-resume", terminal: null, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...workRefs])], pendingAction: state.automationId === null ? "query-instance" : "enable-same-instance", lastError: error });
   if (event.kind === "new-work") {
     if (event.workRefs.length === 0) throw new Error("new work needs actual references");
+    if (queryUnresolved) return { ...state, terminal: null, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...event.workRefs])] };
     return state.state === "active" && state.lastReadback?.isEnabled === true ? { ...state, terminal: null, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...event.workRefs])], pendingAction: null } : resume(event.workRefs);
   }
   if (event.kind === "action-failed") {
@@ -67,9 +69,10 @@ export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEve
   }
   if (event.kind === "readback") {
     validateReadback(state, event.readback);
+    if (queryUnresolved && state.lastReadback !== null && dotInstant(event.readback.observedAt, "readback.observedAt") <= dotInstant(state.lastReadback.observedAt, "previous observedAt")) throw new Error("an unresolved scheduler action requires a new same-instance readback");
     const next = { ...state, automationId: event.readback.automationId, lastReadback: event.readback, lastError: null };
     if (state.state === "pending-pause") return { ...next, pendingAction: "read-after-pause" };
-    if (state.state === "pending-resume" && !event.readback.isEnabled || state.ownerOverride !== null && !event.readback.isEnabled) return { ...next, state: "pending-resume", pendingAction: "enable-same-instance", lastError: state.lastError };
+    if ((state.state === "pending-resume" || state.ownerOverride !== null || state.receivedWorkRefs.length > 0) && !event.readback.isEnabled) return { ...next, state: "pending-resume", pendingAction: "enable-same-instance", lastError: state.lastError };
     return { ...next, state: event.readback.isEnabled ? "active" : "paused", terminal: null, receivedWorkRefs: event.readback.isEnabled ? [] : state.receivedWorkRefs, pendingAction: null };
   }
   const check = event.check;
@@ -87,7 +90,7 @@ export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEve
   }
   // Task observations cannot settle an outstanding scheduler action. Only the
   // matching scheduler readback/post-pause path above can discharge it.
-  if (state.state === "pending-resume") return { ...state, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...check.receivedWorkRefs])] };
+  if (queryUnresolved || state.state === "pending-resume") return { ...state, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...check.receivedWorkRefs])] };
   if (state.state === "pending-pause") return validTerminal && check.receivedWorkRefs.length === 0 ? state : resume(check.receivedWorkRefs, state.lastError);
   if (!validTerminal) {
     if (state.state === "paused") return resume(check.receivedWorkRefs, check.outcome === "success" ? null : "task state unknown; pause not established");

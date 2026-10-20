@@ -195,13 +195,15 @@ export function normalizeNativeToolEvidence(value: unknown, expected: { readonly
     if (depth > 16) fail("retry ancestry exceeds the bounded evidence limit");
     const saved = wrapped ? dotObject(value, "native saved record", ["record", "normalized", "history", "appendStatus", "problems", "rejectedRecord"]) : null;
     let source = saved ? saved.record : value;
+    let historyRecords: readonly NativeToolRecord[] | null = null;
     if (saved?.history !== undefined) {
       const latest = normalizeNativeToolEvidence(saved.record, expected, depth);
       if (!latest.valid) fail("saved latest record is invalid");
       const history = validateNativeToolHistory(saved.history, depth);
+      historyRecords = history.records;
       if (saved.appendStatus === "conflict" || saved.rejectedRecord !== undefined) fail("unresolved conflicting native return");
       const newest = source as NativeToolRecord;
-      if (newest.response !== undefined && !history.records.some(item => nativeEventContent(item.evidence) === nativeEventContent(newest.evidence))) fail("saved return is absent from validated history");
+      if (newest.response !== undefined && !history.records.some(item => nativeObservationContent(item.evidence) === nativeObservationContent(newest.evidence))) fail("saved return is absent from validated history");
       if (history.records.some(item => dotDigest(item.attempt) !== dotDigest(newest.attempt))) fail("saved history belongs to another attempt");
       if (history.current !== null) source = history.records.find(item => dotDigest(item.evidence) === dotDigest(history.current));
     }
@@ -219,7 +221,7 @@ export function normalizeNativeToolEvidence(value: unknown, expected: { readonly
       if (rebuilt.association.status === "invalid") fail("response association is invalid");
       associated = rebuilt.association.status === "associated";
       terminalConfirmed = associated && rebuilt.executionFinality === "confirmed";
-      complete = terminalConfirmed && rebuilt.executionStatus === "reported-completed" && rebuilt.verification.status === "pass";
+      complete = terminalConfirmed && rebuilt.executionStatus === "reported-completed" && verifiedDeliveryPass(rebuilt, historyRecords?.map(item => item.evidence) ?? [rebuilt]);
     }
   } catch (error) { problems.push(String(error)); }
   return { requested: true, evidenceType: "native-tool", valid: problems.length === 0, complete, status: problems.length ? "invalid" : pending ? "pending" : associated ? "associated" : "unverified", problems, evidence: value, authentication: "source-association-only-not-provider-authentication", executionResponsibility: problems.length === 0 && terminalConfirmed ? "terminal-confirmed" : "retained" };
@@ -227,7 +229,25 @@ export function normalizeNativeToolEvidence(value: unknown, expected: { readonly
 /** Storage locations and local reread times do not change provider event content. */
 function nativeEventContent(e: NativeToolEvidence): string {
   const provider = Object.fromEntries(["providerRef", "providerEventRef", "providerStartedAt", "providerFinishedAt"].map(key => [key, (e[key as keyof NativeToolEvidence] as ProviderObservation | undefined)?.value ?? null]));
-  return dotDigest({ attemptId: e.attemptId, toolName: e.toolName, rawSha256: e.rawResponse.sha256, executionStatus: e.executionStatus, executionFinality: e.executionFinality, association: e.association.status, verification: e.verification.status, ...provider });
+  return dotDigest({ attemptId: e.attemptId, toolName: e.toolName, rawSha256: e.rawResponse.sha256, executionStatus: e.executionStatus, executionFinality: e.executionFinality, association: e.association.status, ...provider });
+}
+/** Independent checks are observations of bound deliverables, not provider events. */
+function nativeObservationContent(e: NativeToolEvidence): string {
+  return dotDigest({ event: nativeEventContent(e), resultRefs: [...new Set(e.resultRefs)].sort(), verification: e.verification });
+}
+function verifiedDeliveryPass(current: NativeToolEvidence, records: readonly NativeToolEvidence[]): boolean {
+  if (current.resultRefs.length === 0) return false;
+  const delivery = dotDigest([...new Set(current.resultRefs)].sort());
+  let newest: bigint | null = null; let status: "unverified" | "pass" | "fail" = "unverified";
+  for (const evidence of records) {
+    const verification = evidence.verification;
+    if (evidence.attemptId !== current.attemptId || evidence.association.status !== "associated" || dotDigest([...new Set(evidence.resultRefs)].sort()) !== delivery || verification.status === "unverified") continue;
+    const at = dotInstant(verification.verifiedAt, "verifiedAt");
+    if (at < dotInstant(current.observedAt, "terminal observedAt") || at < dotInstant(evidence.observedAt, "verified source observedAt")) continue;
+    if (newest === null || at > newest) { newest = at; status = verification.status; }
+    else if (at === newest && verification.status === "fail") status = "fail";
+  }
+  return status === "pass";
 }
 export function nativeSavedAttempt(value: unknown, forRetry = false): NativeToolAttempt {
   const saved = dotObject(value, "saved native return", ["record", "normalized", "history", "appendStatus", "problems", "rejectedRecord"]);
@@ -258,7 +278,9 @@ export function appendNativeToolRecord(history: NativeToolHistory, record: Nativ
   if (history.records.some(item => item.attempt.attemptId !== record.attempt.attemptId || dotDigest(item.attempt) !== dotDigest(record.attempt))) return { status: "conflict", history, rejectedRecord: record, problems: ["history belongs to another attempt, work, revision or tool"] };
   if (existing) {
     if (nativeEventContent(existing.evidence) !== nativeEventContent(evidence)) return { status: "conflict", history, rejectedRecord: record, problems: ["same event key has conflicting content"] };
-    return { status: "duplicate", history: { ...history, observations: [...history.observations, { key, observedAt: evidence.observedAt, sourceRef: evidence.rawResponse.ref }] }, problems: [] };
+    if (history.records.some(item => nativeObservationContent(item.evidence) === nativeObservationContent(evidence))) return { status: "duplicate", history: { ...history, observations: [...history.observations, { key, observedAt: evidence.observedAt, sourceRef: evidence.rawResponse.ref }] }, problems: [] };
+    // Same provider bytes with a different independent check retain both original
+    // records. Execution current remains monotone; completion is reassessed above.
   }
   const current = history.current;
   const currentConfirmed = current?.association.status === "associated" && current.executionFinality === "confirmed";

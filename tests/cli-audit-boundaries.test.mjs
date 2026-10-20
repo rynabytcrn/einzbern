@@ -160,3 +160,20 @@ test("INIT062 policy approval invokes existing Owner-decision authority with exa
   const denied = (await integrationFunction("configBackupContext", { ...globals, verifyWriteAuthorization: async () => { throw Object.assign(new Error("not Owner-authorized"), { reasonCode: "MODEL_WRITE_AUTHORIZATION_INVALID" }); } }))();
   assert.equal(await denied.approvePolicy(request, source, {}), null);
 });
+
+test("RJ03 public policy approval seam rejects non-string noChangePolicy before consulting authority", async () => {
+  const { validateConfigBackupRetentionPolicy } = await import("../dist/build/packages/core/src/config-backup-retention.js");
+  // Explicit synthetic values only; this exercises the existing CLI seam, not a production approval.
+  const policy = { schemaVersion: "einzbern.config-backup-retention.v1", activeLimit: 1, transactionLimit: 1, recoveryLimit: 2, maxPackageBytes: 65536, maxTotalBytes: 262144, retentionDuration: 1000, recoveryDuration: 86400000, noChangePolicy: "skip", atLimitAction: "stop-new-and-report", retirementMethod: "verified-recovery-move", approvalEvidenceRef: "fixture-only:retention-policy" };
+  const calls = [];
+  const context = (await integrationFunction("configBackupContext", {
+    configBackupRunningVersion: () => {}, configBackupSource: () => {}, configBackupProtectedRoots: () => {},
+    validateConfigBackupRetentionPolicy,
+    readDevice: async () => { calls.push("device"); return { deviceId: "fixture-device" }; },
+    verifyWriteAuthorization: async () => { calls.push("authority"); return {}; },
+  }))();
+  for (const noChangePolicy of [["skip"], ["create"], {}, null, 0, true]) {
+    assert.equal(await context.approvePolicy({ policy: { ...policy, noChangePolicy } }, {}, {}), null);
+  }
+  assert.deepEqual(calls, []);
+});

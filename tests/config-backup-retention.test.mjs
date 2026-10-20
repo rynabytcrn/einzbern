@@ -28,6 +28,23 @@ test("CFG-B03: every field and actual approval are required; no production defau
   assert.equal(evaluateConfigBackupEnablement({ ...fields, approval, safeRetirementSupported: false }).reason, "capability-unavailable");
   assert.equal(evaluateConfigBackupEnablement({ ...fields, approval, enablementAuthorized: false }).reason, "enablement-unapproved");
 });
+test("RJ03 no-change policy accepts only the literal JSON strings skip and create", async t => {
+  const f = await fixture(t);
+  for (const noChangePolicy of [["skip"], ["create"], {}, null, 0, true, "unknown"]) {
+    const policy = { ...fixturePolicy, noChangePolicy };
+    assert.equal(validateConfigBackupRetentionPolicy(policy).status, "policy-unapproved");
+    assert.equal(evaluateConfigBackupEnablement({ policy, approval: f.store.approval, whitelistSupported: true, restoreSupported: true, groupBound: true, safeRetirementSupported: true, enablementAuthorized: true }).reason, "policy-unapproved");
+    await assert.rejects(createConfigBackup({ ...f.store, policy }, f.proposal("5", "dark", "2026-10-20T00:00:00Z"), "2026-10-20T00:00:00Z"), { reasonCode: "policy-unapproved" });
+  }
+  assert.equal((await listConfigBackups({ reservedRoot: f.store.reservedRoot, at: "2026-10-20T00:00:00Z" })).scanStatus, "empty");
+  const policy = { ...fixturePolicy, noChangePolicy: "create" };
+  const approved = validateConfigBackupRetentionPolicy(policy);
+  const store = { ...f.store, policy, approval: { approved: true, policyDigest: approved.policyDigest, approvalEvidenceRef: policy.approvalEvidenceRef } };
+  const first = f.proposal("5", "dark", "2026-10-20T00:00:00Z"); const second = f.proposal("6", "dark", "2026-10-20T00:00:02Z");
+  assert.equal((await createConfigBackup(store, first, first.manifest.createdAtUtc)).status, "settled");
+  const created = await createConfigBackup(store, second, second.manifest.createdAtUtc);
+  assert.equal(created.status, "settled"); assert.deepEqual(created.index.activeBackupIds, [second.manifest.backupId]); assert.deepEqual(created.index.recoverableBackupIds, [first.manifest.backupId]);
+});
 test("CFG-B03: new verified publication precedes recoverable retirement; no bytes are deleted", async (t) => {
   const f = await fixture(t); const first = f.proposal("5", "dark", "2026-10-20T00:00:00Z");
   const a = await createConfigBackup(f.store, first, first.manifest.createdAtUtc); assert.equal(a.status, "settled");

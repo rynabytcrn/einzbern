@@ -37,7 +37,7 @@ export function validateConfigBackupRetentionPolicy(value: unknown): ConfigBacku
   if (Object.keys(v).some(key => !POLICY_FIELDS.includes(key))) reasons.push("unknown-policy-field");
   if (v.schemaVersion !== CONFIG_BACKUP_RETENTION_VERSION) reasons.push("unsupported-policy-version");
   for (const field of ["activeLimit", "transactionLimit", "recoveryLimit", "maxPackageBytes", "maxTotalBytes", "retentionDuration", "recoveryDuration"]) if (!Number.isSafeInteger(v[field]) || (v[field] as number) <= 0) reasons.push(`invalid:${field}`);
-  if (!["skip", "create"].includes(String(v.noChangePolicy)) || v.atLimitAction !== "stop-new-and-report" || v.retirementMethod !== "verified-recovery-move") reasons.push("unsupported-policy-action");
+  if (typeof v.noChangePolicy !== "string" || !["skip", "create"].includes(v.noChangePolicy) || v.atLimitAction !== "stop-new-and-report" || v.retirementMethod !== "verified-recovery-move") reasons.push("unsupported-policy-action");
   if (typeof v.approvalEvidenceRef !== "string" || !v.approvalEvidenceRef.trim() || /[\u0000-\u001f]/u.test(v.approvalEvidenceRef)) reasons.push("approval-evidence-required");
   if (typeof v.maxPackageBytes === "number" && typeof v.maxTotalBytes === "number" && v.maxPackageBytes > v.maxTotalBytes) reasons.push("package-exceeds-total-limit");
   if (reasons.length) return { status: "policy-unapproved", reasons };

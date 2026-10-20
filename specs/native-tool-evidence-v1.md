@@ -19,8 +19,11 @@ The normalized result preserves unverified rather than labelling it associated.
 Verification pass/fail is independent, with reviewer, time and evidence references.
 Process selectedTuple/stdout/stderr/exitCode are not native envelope fields.
 
-History preserves all returns. Equal event key/content is idempotent and retains
-each observation time. Conflicting content, tasks, revisions or tools refuses.
+History preserves all returns. Provider event identity excludes independent
+verification: equal event key/content, deliverable set and verification are idempotent and retain
+each observation time; different independent checks of the same raw return retain
+separate original records, not a provider-content conflict.
+Conflicting provider content, tasks, revisions or tools refuses.
 Late returns never downgrade confirmed finality. A retry must create a new local
 attempt and preserve the old attempt; an unknown outcome must first be queried,
 never interpreted as not executed. Private outputs use the existing create-new
@@ -29,7 +32,10 @@ Conflict results also retain the rejected source record. Retry request time must
 follow its actual reconciliation observation; neither attempt is redated.
 
 A complete review requires associated, provider-confirmed reported-completed and
-independent verification pass. Failed/cancelled returns remain retained failures;
+the latest valid independent verification of that attempt's same nonempty
+deliverable resultRefs to pass. Execution finality and verification are separate:
+a later bound failure invalidates an earlier pass without reopening execution.
+Failed/cancelled returns remain retained failures;
 accepted/running or delivery pass without terminal evidence is not complete.
 
 The saved native record wrapper can be read directly by the evidence command.
@@ -108,6 +114,10 @@ string value must appear in the nonempty terminalValues observed from that
 contract. Do not infer terminality from a sentence or a delivered file. Verification
 pass/fail requires evidenceRefs, verifiedAt and verifiedBy from the actual
 independent verification; unverified can omit those two optional fields.
+To add a later verification of an existing return, retain its original raw bytes,
+source reference and observedAt; supply the actual new verification, carry the
+previous saved output with `--prior`, and write a new output. Do not invent a new
+provider return or redate the old one to represent the independent check.
 
 The saved output contains `record` (complete preparation, attempt, admission,
 response and rebuilt evidence; response/evidence absent when pending), `history`
@@ -116,9 +126,17 @@ response and rebuilt evidence; response/evidence absent when pending), `history`
 `normalized`. The normalizer rebuilds every retained record and current state,
 requires selected target readiness and repository roots consistent with the saved
 three-source context, and rejects a bare attempt/admission as dispatch completion.
-Conflicts retain execution responsibility. A late accepted/running observation
-cannot downgrade an associated confirmed terminal result. Histories are bounded
-at 256 distinct records and 1024 observations, retry ancestry at 16; reaching a
+Conflicts retain execution responsibility. History `current` selects execution
+state, not an immutable verification result. A late accepted/running observation
+cannot downgrade an associated confirmed terminal result. Completion separately
+uses retained associated checks with the same attempt and exact resultRefs set
+as that terminal result. A check's verifiedAt must not predate either the terminal
+observation or its own source observation. The newest valid verification time
+wins; a fail wins a same-time pass/fail tie. Unverified, stale, unrelated or
+evidenceless observations cannot promote completion or erase a retained failure.
+A late execution observation may carry a new bound independent check, but cannot
+change execution finality. Histories are bounded at 256 distinct source/check
+records and 1024 observations, retry ancestry at 16; reaching a
 bound refuses another append, never deletes earlier evidence.
 
 ### Explicit retry inputs

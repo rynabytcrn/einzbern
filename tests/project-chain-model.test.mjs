@@ -770,6 +770,21 @@ test("DOT-E02 actual dot readiness consumes B4 session reads without weakening r
   const plain = await workProjectContexts(state, work.id, f.home); assert.equal(plain.dispatchAdmitted, false); assert.equal(plain.contexts[0].readiness.model.ready, false);
   await writeFile(join(f.home, "engine-model-policy.json"), "{malformed-unrelated-host-policy");
   const native = await workProjectContexts(state, work.id, f.home, request); assert.equal(native.dispatchAdmitted, true); assert.equal(native.contexts[0].modelApplicability.accountQuota.status, "not-applicable");
+  for (const scopeDigest of [undefined, null, "", "not-a-digest"]) {
+    const missingScope = { ...state, work: state.work.map(item => item.id === work.id ? { ...item, scopeDigest } : item) };
+    const refused = await workProjectContexts(missingScope, work.id, f.home, request);
+    const admission = refused.contexts[0].executionAdmission;
+    assert.equal(refused.dispatchAdmitted, false, "the request's valid digest cannot replace an unavailable current observation");
+    assert.equal(admission.status, "refused");
+    assert.equal(admission.checks.work.status, "fail");
+    assert.equal(admission.checks.scope.status, "unknown");
+    assert.equal(admission.checks.context.status, "unknown");
+    assert.match(admission.contextDigest, /^[a-f0-9]{64}$/u, "missing source stays explicit null in the refusal digest rather than causing undefined serialization");
+  }
+  await assert.rejects(workProjectContexts({ ...state, work: [] }, work.id, f.home, request), /work does not exist/u);
+  const differentWork = await workProjectContexts(state, work.id, f.home, { ...request, workId: "work:other" });
+  assert.equal(differentWork.dispatchAdmitted, false);
+  assert.equal(differentWork.contexts[0].executionAdmission.checks.work.status, "fail");
   const parentReads = { ...request, contextRead: { ...request.contextRead, observations: request.contextRead.observations.map(item => ({ ...item, source: "parent-session" })) } };
   assert.equal((await workProjectContexts(state, work.id, f.home, parentReads)).dispatchAdmitted, false);
   assert.equal((await workProjectContexts(state, work.id, f.home, { ...request, revisionBinding: { ...request.revisionBinding, workRevision: work.revision + 1 } })).dispatchAdmitted, false);

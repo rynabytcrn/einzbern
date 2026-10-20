@@ -218,15 +218,19 @@ export async function workProjectContexts(state: WorkspaceState, workId: string,
       const revision = dotRequest.revisionBinding;
       // A freeze is never accepted merely because the caller supplied a digest. This consumer
       // only has an actual revision observation; a supported freeze verifier can be added later.
-      const sameWork = dotRequest.workId === workId && revision.kind === "revision" && revision.workRevision === work.revision && revision.scopeDigest === work.scopeDigest;
-      const contextAssessment = dotRequest.contextRead === undefined ? null : assessExecutionContextRead(dotRequest.contextRead.record, { ...dotRequest.contextRead.expected, workReference: workId, workRevision: work.revision, scopeDigest: work.scopeDigest, now: evaluatedAt, effectiveRoots: (context.repositoryContexts as { projectPath: string }[]).map(repository => repository.projectPath) }, dotRequest.contextRead.observations);
+      const currentScopeDigest = typeof work.scopeDigest === "string" && /^[a-f0-9]{64}$/u.test(work.scopeDigest) ? work.scopeDigest : null;
+      const sameWork = currentScopeDigest !== null && dotRequest.workId === workId && revision.kind === "revision" && revision.workRevision === work.revision && revision.scopeDigest === currentScopeDigest;
+      // Legacy/missing scope is an unavailable current observation, not a caller-provided
+      // substitute. Only a validated actual digest may enter the context expectation.
+      const contextAssessment = dotRequest.contextRead === undefined || currentScopeDigest === null ? null : assessExecutionContextRead(dotRequest.contextRead.record, { ...dotRequest.contextRead.expected, workReference: workId, workRevision: work.revision, scopeDigest: currentScopeDigest, now: evaluatedAt, effectiveRoots: (context.repositoryContexts as { projectPath: string }[]).map(repository => repository.projectPath) }, dotRequest.contextRead.observations);
       const checks = { ...dotRequest.checks,
-        context: contextAssessment?.check ?? { status: "unknown" as const, evidenceRefs: [], reason: "actual-session AGENTS, Mana and work source observations are required" },
+        context: contextAssessment?.check ?? { status: "unknown" as const, evidenceRefs: [], reason: currentScopeDigest === null ? "current work scope digest is unavailable" : "actual-session AGENTS, Mana and work source observations are required" },
+        ...(currentScopeDigest === null ? { scope: { status: "unknown" as const, evidenceRefs: [], reason: "current work scope digest is unavailable" } } : {}),
         ...(!sameWork ? { work: failCheck("current work revision/scope differs, or freeze authority is unavailable") } : {}),
         ...(!sameTarget || involvedProjects.state !== "selected" ? { target: failCheck("explicit selected target binding differs") } : {}),
         ...(["blocked", "pending-owner-acceptance", "done", "cancelled"].includes(work.status) ? { state: failCheck("current work state does not allow dispatch") } : {}),
       };
-      executionAdmission = resolveDotExecutionAdmission({ ...dotRequest, checks }, { deviceLimit, ...(budget == null ? {} : { projectLimit: Number(budget) }), now: evaluatedAt, contextDigest: dotDigest({ workLibraryId: state.metadata.workspaceId, workId, workRevision: work.revision, scopeDigest: work.scopeDigest, context }) });
+      executionAdmission = resolveDotExecutionAdmission({ ...dotRequest, checks }, { deviceLimit, ...(budget == null ? {} : { projectLimit: Number(budget) }), now: evaluatedAt, contextDigest: dotDigest({ workLibraryId: state.metadata.workspaceId, workId, workRevision: work.revision, scopeDigest: currentScopeDigest, context }) });
       const readiness = context.readiness as Record<string, { ready: boolean; missing: string[] }> | undefined;
       if (readiness !== undefined) {
         const dotAdmission = executionAdmission as DotAdmission;

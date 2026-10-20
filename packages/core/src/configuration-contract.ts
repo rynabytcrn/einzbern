@@ -165,6 +165,8 @@ export interface IndependentConfigurationEntry {
 }
 
 const INDEPENDENT_ENTRIES: readonly IndependentConfigurationEntry[] = Object.freeze([
+  { kind: "config-backup", classification: "configuration", scope: "explicit backup group", source: "allowlisted authority inputs and immutable verified manifest", editing: "config-backup-plan/create/verify/list/resume/retire with explicit approved retention policy", sharing: "explicit reserved root only; sync remains unknown without remote readback", consumer: "config-backup.ts, config-backup-retention.ts and Portal read-only inventory" },
+  { kind: "config-restore", classification: "configuration", scope: "explicit target project/device", source: "verified configuration package; target authorities remain authoritative", editing: "review digest-bound plan; apply selected inputs through existing setters and independent readback", sharing: "no credentials, identity, authorization or runtime-state restore", consumer: "config-restore.ts; no projection overwrite or legacy full-home restore" },
   { kind: "engine-host-policy", classification: "configuration", scope: "device/host", source: "engine-model-policy.json", editing: "governed whole-host replacement; categories/tiers/escalation/optional quota", sharing: "not library synced; runtime handoff only", consumer: "resolveEngineExecutionPolicy" },
   { kind: "variable", classification: "configuration", scope: "project", source: "library config records", editing: "typed string/number/boolean declarations; replace versus patch explicit", sharing: "library sync; explicit export targets only", consumer: "variables-sections.ts and project context" },
   { kind: "rule", classification: "configuration", scope: "project with explicit inheritance", source: "library config records", editing: "governed rule operations", sharing: "library sync and managed outputs", consumer: "rules catalog and renderer" },
@@ -182,8 +184,8 @@ const INDEPENDENT_ENTRIES: readonly IndependentConfigurationEntry[] = Object.fre
 ].map((entry) => Object.freeze({
   ...entry,
   semanticType: "structured-record",
-  owner: entry.classification === "projection" || entry.classification === "installation" ? "installed-engine" : entry.scope === "device" || entry.scope === "browser" ? "device-user" : entry.classification === "runtime-state" ? "runtime-producer" : "governed-owner",
-  export: entry.classification === "projection" ? "derived output only; never read back as authority" : entry.scope === "device" || entry.scope === "browser" || entry.scope === "host invocation" ? "local runtime only" : "dedicated consumer contract; not a generic string setting",
+  owner: entry.kind === "config-backup" ? "device-user" : entry.kind === "config-restore" ? "selected-authority" : entry.classification === "projection" || entry.classification === "installation" ? "installed-engine" : entry.scope === "device" || entry.scope === "browser" ? "device-user" : entry.classification === "runtime-state" ? "runtime-producer" : "governed-owner",
+  export: entry.kind === "config-backup" ? "explicit non-secret allowlist package only; never identity or runtime state" : entry.kind === "config-restore" ? "selected inputs through their real target authorities; no projection overwrite" : entry.classification === "projection" ? "derived output only; never read back as authority" : entry.scope === "device" || entry.scope === "browser" || entry.scope === "host invocation" ? "local runtime only" : "dedicated consumer contract; not a generic string setting",
   effect: entry.classification === "installation" ? "verified lifecycle operation" : entry.classification === "projection" ? "explicit regeneration" : "dedicated consumer operation",
   compatibility: "retain historical records; migration and write permissions belong to the dedicated API",
 })) as IndependentConfigurationEntry[]);

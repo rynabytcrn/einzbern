@@ -97,3 +97,13 @@ test("configuration inventory retains exact command flags including capture host
   const capture = inventory.runtimeInputs.commandCatalog.find((command) => command.name === "knowledge-capture");
   assert.deepEqual(capture.flags.find((flag) => flag.name === "host"), { name: "host", required: false, valueKind: "string", valueShape: "Explicit host for configured artifact-language model policy; required by that policy, not inferred." });
 });
+
+test("configuration backup and restore identify authority inputs, not projection or identity ownership", () => {
+  const entries = configurationContract().independentEntries;
+  const backup = entries.find(entry => entry.kind === "config-backup");
+  const restore = entries.find(entry => entry.kind === "config-restore");
+  assert.match(backup.editing, /explicit approved retention policy/);
+  assert.match(backup.sharing, /sync remains unknown/);
+  assert.match(restore.editing, /existing setters and independent readback/);
+  assert.match(restore.sharing, /no credentials, identity, authorization or runtime-state/);
+});

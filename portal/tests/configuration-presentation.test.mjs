@@ -148,3 +148,23 @@ test("all rendered configuration field labels and browser preference description
   assert.ok(source.includes('control?.setAttribute("aria-description", t("configuration.browserPreference"))'));
   assert.equal(source.match(/\$\{modelPolicyConfiguration\(host, entry\)\}/gu)?.length, 2, "both host policy entry points carry the same contract");
 });
+
+test("CFG-P01: backup inventory separates counts, completion and scan times in all five locales", () => {
+  for (const locale of Object.keys(locales)) {
+    const t = (key) => locales[locale][key] ?? key;
+    const renderer = new Function("t", "esc", block("  const configBackupStatus =", "  const renderConfigBackups =") + "return configBackupMarkup;")(t, esc);
+    const result = renderer({ schemaVersion: "einzbern.config-backup-list.v1", scanStatus: "partial", scannedAt: "2026-10-20T10:00:00Z", groups: [{ backupGroupId: "group-1", hostname: "Device <one>", activeCount: 2, transactionCount: 1, recoverableCount: 3, bytes: 4096, completedAt: "2026-10-19T00:00:00Z", integrity: "missing-index", syncStatus: "unknown", error: "INDEX_MISSING" }] });
+    const document = dom(result);
+    assert.equal(document.querySelector('[data-backup-field="active"] dd').textContent, "2");
+    assert.equal(document.querySelector('[data-backup-field="transactions"] dd').textContent, "1");
+    assert.equal(document.querySelector('[data-backup-field="recoverable"] dd').textContent, "3");
+    assert.equal(document.querySelector('[data-backup-field="completedAt"] dd').textContent, "2026-10-19T00:00:00Z");
+    assert.equal(document.querySelector('[data-backup-field="sync"] dd').textContent, locales[locale]["backup.status.unknown"]);
+    assert.ok(document.querySelector('[data-backup-error]'));
+    assert.equal(document.querySelector("one"), null);
+    assert.equal(document.querySelector("button, input, form"), null);
+    assert.ok(!document.body.textContent.includes("backup."));
+    assert.ok(renderer(null).includes('data-backup-scan-status="not-scanned"'));
+    assert.ok(renderer({}).includes('data-backup-scan-status="unreadable"'));
+  }
+});

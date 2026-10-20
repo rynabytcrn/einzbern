@@ -974,7 +974,7 @@ function isLoopbackHost(hostHeader) {
 // The routes that answer for this device or engine rather than for the selected target, and the two
 // switches, which name the target they select (TCRN-CROSS-INIT-053 R46 I05). The writes are the ones the
 // target check left alone before.
-const TARGET_EXEMPT_READS = Object.freeze(["/api/libraries", "/api/project-targets", "/api/machine-settings", "/api/model-policy", "/api/vocabulary", "/api/commands"]);
+const TARGET_EXEMPT_READS = Object.freeze(["/api/config-backups", "/api/libraries", "/api/project-targets", "/api/machine-settings", "/api/model-policy", "/api/vocabulary", "/api/commands"]);
 const TARGET_EXEMPT_WRITES = Object.freeze(["/api/library", "/api/configuration-scope", "/api/machine-settings", "/api/model-policy"]);
 
 const server = createServer((request, response) => requestContext.run({ epoch: selectionEpoch, library: { ...selectedLibrary, configurationProjectId: selectedConfigurationProjectId }, authenticated: false }, async () => {
@@ -1092,6 +1092,17 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
     if (request.method === "GET" && pathname === "/api/rules") {
       const result = await rulesProjection();
       send(response, result.ok ? 200 : 502, result);
+      return;
+    }
+    // Device-scoped read only. The root is an explicit server startup argument, never a
+    // browser path or a scan of arbitrary home directories. No restore/upload routes exist.
+    if (request.method === "GET" && pathname === "/api/config-backups") {
+      const root = argument("config-backup-root", null);
+      if (root !== null && (!isAbsolute(root) || resolve(root) !== root)) {
+        send(response, 400, { reasonCode: "CONFIG_BACKUP_ROOT_INVALID" });
+        return;
+      }
+      send(response, 200, await cli(["config-backup-list", "--at", new Date().toISOString(), ...(root === null ? [] : ["--root", root])]));
       return;
     }
     if (request.method === "GET" && pathname === "/api/machine-settings") {

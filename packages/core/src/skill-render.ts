@@ -60,42 +60,57 @@ export interface SkillNavigationEntry {
   readonly action: string;
 }
 
-// The six moments of TCRN-CROSS-STORY-479 R1, in the order a task meets them.
+// Keep routine guidance compact; detailed installation and optional scheduling live in install.md.
 export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall"],
-    action: "Before you start, run `recall --query \"<the task in a few words>\"` and read what comes back.",
+    action: "Run `recall --query \"<task>\"`. Each new, resumed or delegated execution session reads its own AGENTS, this Skill and current work; parent or patrol reads do not substitute.",
   },
   {
     moment: "Need the full text",
     verbs: ["work-show", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Read the work item or the minutes whole (`--id` or `--external-key`) before relying on a headline. Before development dispatch, run `execution-prepare --id <work> --host <host> --category <category> --rejections <count> --requested-agents <count> --observations <machine-file> --output <new-private-file>`. The host supplies actual capabilities and fresh quota observations, never inferred tuples or retimestamped old usage. Do not ask the user to hand-fill JSON or repeatedly approve bookkeeping. Native collectors, dispatchers and tool-result adapters are not installed: report an unsupported mode once and stop its dispatch; do not request manual substitutes. Dispatch only when `dispatchAdmitted` is true and the target admission is admitted. Pass its selected runner/model/effort exactly; never substitute. Re-prepare immediately before dispatch and after policy, rejection, usage or batch changes: this is not a reusable permit or a global scheduler. Account for active agents separately. Retain actual invocation tuple, start time, stdout, stderr and exit code via `execution-record --binding <saved-file> --target <index> --process-return <machine-file> --output <new-private-file>`. It derives binding metadata and saves raw results, including failures and unavailable observations. See shipped `specs/dispatch-admission-evidence-v1.md` and command help. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `work-project-context --execution-request <json>` remains available; a plain context read is not dispatch permission. Apply each project’s own configuration and check write permission independently; declarations are not publication proof. `gates-plan` and `gates-run --work-id <work>` resolve Cross Project targets separately. Each resolved target carries its own `handoff` (reference, work revision, configuration): a native host dispatch passes that object for that target, and gate processes receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target.",
+    action: "Resolve each target's configuration, permissions and `handoff`: a native host dispatch passes that object for that target; gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. `--execution-request` alone grants nothing. Traditional dispatch: fresh machine observations, `dispatchAdmitted` is true and admitted target. Pass its selected runner/model/effort exactly; never substitute. Record tuple, start time, stdout, stderr and exit code. Re-prepare after changes; not a reusable permit or a global scheduler. See `specs/dispatch-admission-evidence-v1.md`.",
+  },
+  {
+    moment: "dot native dispatch",
+    verbs: ["execution-native-prepare", "execution-native-record", "execution-native-evidence"],
+    action: "Use `chatgpt-dot` / `dot-autonomous`. Machine-assemble private inputs from current tool results; never ask users to hand-fill JSON or reapprove authorized dispatch bookkeeping. Unknown capability is not pass. Self-model/quota are not-applicable; actual model may be unavailable. Prepare per command help; require `targetDispatchAdmitted`. Record `--binding` and new private `--output`; absent `--response` keeps a pending attempt. Real responses need raw source and attempt association, never invented providerRef, selectedTuple or process fields. Acceptance, finality and independent delivery verification differ; unknown retains responsibility. Evidence validates, not authenticates. See `specs/native-tool-evidence-v1.md`.",
+  },
+  {
+    moment: "Shared submission",
+    verbs: ["shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"],
+    action: "Complete baseline, engine semantic changes, one complete pre-submit refresh and engine reapply precede serial handoff. Publish segments before manifest, verify remote bytes, replay a complete destination and observe release. Advisory is not a lock: absence/age grants nothing. Query unknown publication before retry. Synced folders omit transfer, not verification. See `specs/shared-submit-v1.md`.",
+  },
+  {
+    moment: "Configuration backup or restore",
+    verbs: ["config-backup-plan", "config-backup-create", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
+    action: "Allowlisted inputs only; no secrets, identity, runtime state or generated projections. Preview, preserve originals, restore via supported setters and read each item back. Unapproved policy blocks creation/daily enablement; missing capability blocks dependent work. See `specs/config-backup-v1.md`.",
   },
   {
     moment: "Work is done",
     verbs: ["work-transition", "work-annotate"],
-    action: "Write the result back to the work item: `work-annotate` records what was done, `work-transition` moves its status on.",
+    action: "Record results through the engine with the actual actor, then read back. Partial or pending is not complete.",
   },
   {
     moment: "A decision is made",
     verbs: ["minutes-record"],
-    action: "As soon as you judge that something is a decision, record it: each decision gets its number, D1 to Dn. End your reply with `已记 <minutes key> Dn` for each one (`Recorded <minutes key> Dn` when the conversation is not in Chinese). To replace, withdraw or stand beside a recorded decision (`minutes:<id>#D<n>`), declare it in the same record: `--supersedes <decision>=D<n>`, `--withdraws <decision>` or `--coexists <decision>`.",
+    action: "As soon as you judge something a decision, record D1 to Dn; end the reply with `已记 <minutes key> Dn` (`Recorded <minutes key> Dn` outside Chinese). Use `--supersedes`, `--withdraws` or `--coexists` for its relation to an existing decision.",
   },
   {
     moment: "A lesson is learned",
-    verbs: ["knowledge-create"],
-    action: "Keep the lesson as a knowledge card. A card that replaces an older one names it with `--supersedes`.",
+    verbs: ["knowledge-create", "knowledge-capture"],
+    action: "Keep lessons as cards. An INIT batch covers all pending Stories with its approved roles and batch stages; capture at most five sourced lessons via `knowledge-capture` and read each back. No dynamic progress in AGENTS.",
   },
   {
     moment: "UI design",
     verbs: ["settings-catalog"],
-    action: "Before designing, read `design.authority` from `settings-catalog` and follow the design source it names.",
+    action: "Read optional `design.authority`; follow a declared source, never invent one.",
   },
 ].map((entry) => Object.freeze({ ...entry, verbs: Object.freeze([...entry.verbs]) })));
 
 // Verbs the text names outside the table.
-const OTHER_NAMED_VERBS: readonly string[] = Object.freeze(["commands"]);
+const OTHER_NAMED_VERBS: readonly string[] = Object.freeze(["commands", "setup"]);
 
 /** Every engine verb SKILL.md names, the table's first and in its order, without repeats. */
 export function skillNamedVerbs(): readonly string[] {
@@ -138,16 +153,13 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     `# ${BRAND.helper.name}`,
     "",
-    `Navigation for ${BRAND.engine.name} ${input.version}: which engine verb to run at which moment. The engine generated this file for that version; do not edit it by hand.`,
+    `Navigation for ${BRAND.engine.name} ${input.version}: generated by this engine; do not edit by hand.`,
     "",
     "## Navigation",
     "",
-    `Run a verb as \`node "<device directory>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb> --<flag> <value>\`. The device directory is \`~/${DIRECTORY.device}\`, or the directory \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\` names when it is set; if that file does not exist, ${BRAND.engine.name} is not installed on this device yet, so treat the request as an install. Each verb prints one JSON object with a \`reasonCode\`; \`commands\` lists every verb, and \`<verb> --help\` lists one verb's flags. Give \`--at\` the current UTC instant, \`YYYY-MM-DDTHH:MM:SSZ\`, wherever a verb takes it. Inside a registered project the library is found from the current directory; pass \`--workspace <library>\` only elsewhere.`,
+    `Run \`node "<device directory>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb> --<flag> <value>\`. Device root: \`~/${DIRECTORY.device}\` or \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\`; missing engine means install first. \`commands\` and \`<verb> --help\` give current verbs/flags. Supply current UTC \`--at\` where required; pass \`--workspace <library>\` when needed or required by help.`,
     "",
-    // TCRN-CROSS-STORY-532 (MIN-256 D6): the engine's file lock queues concurrent writes to one
-    // library, so sessions share it without making way, and outside a migration the user is never
-    // asked to stop one.
-    "Several sessions can work in one library at the same time: the engine queues their writes, so no session has to stop or step aside for another. Except for a migration, never ask the user to stop the other sessions.",
+    "Local sessions share queued writes without stepping aside, not cross-device exclusion. Remote submission needs serial handoff. No platform-native dot hook, background lifecycle manager or sync service is installed.",
     "",
     "| Moment | Verb | What to do |",
     "| --- | --- | --- |",
@@ -155,13 +167,13 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     "## Three steps",
     "",
-    `1. Install this skill: \`npx skills add tpmoonchefryan/mana-orchestrate\`, or ask the host to find the skill called ${BRAND.helper.name} and install it.`,
-    `2. In the project, say "install ${BRAND.engine.name}". The wizard asks one screen of questions, confirms once, and sets up the engine and its hook for Claude Code and Codex together.`,
-    `3. Then work as usual. Before every prompt the hook asks the engine for strongly relevant memory and puts it in the context; you record at the moments in the table above.`,
+    "1. Install this skill: `npx skills add tpmoonchefryan/mana-orchestrate`.",
+    `2. Say "install ${BRAND.engine.name}". Choose traditional hooks or the independent dot target via \`setup\`; install.md guides the plan and approval.`,
+    "3. Follow the navigation. Installation, policy changes, restoration and publication retain their separate approvals. Optional 20-minute patrol and daily 00:00 Asia/Shanghai backup are independent; unapproved policy keeps daily backup disabled.",
     "",
     "## Install-type tasks",
     "",
-    "For an install, restore, update, repair, rollback, migration, uninstall or health check, read the matching file in `references/` (`install.md`, `restore.md`, `update.md`, `migrate.md`, `uninstall.md`, `doctor.md`); never load them for any other work.",
+    "For an install, restore, update, repair, rollback, migration, uninstall or health check, read the matching file in `references/` (`install.md`, `restore.md`, `update.md`, `migrate.md`, `uninstall.md`, `doctor.md`); dot uses the install reference for its supported maintenance modes; never load them for any other work.",
     "",
   ];
   const markdown = lines.join("\n");

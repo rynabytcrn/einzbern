@@ -8,8 +8,8 @@
 //     into their {{version}} slots and nothing else changed;
 //   - skill/<skill id>/: the skill directory exactly as skill-render writes it for that version;
 //   - package.json: the helper's name, the engine's version, and the skill's description A.
-// Then it lists every file of the working tree that the generated tree does not hold, for the
-// release to remove with git rm. It deletes nothing: the files it generates are written over, and
+// Then it lists every file of the working tree that the generated tree does not hold, for explicit
+// review, never as deletion authorization. It deletes nothing: the files it generates are written over, and
 // every other file is left as it was. Build first: skill-render runs from dist/build.
 //
 // Usage: node scripts/render-helper-docs.mjs --out <helper working tree> [--version <version>]
@@ -34,7 +34,7 @@ export const HELPER_README_TEMPLATE_DIRECTORY = `docs/readme/${BRAND.helper.id}`
 // Where the skill directory sits in the helper repository.
 export const HELPER_SKILL_DIRECTORY = `skill/${BRAND.helper.id}`;
 // Files a helper working tree keeps that are not documents: never generated and never listed.
-export const HELPER_KEPT_FILES = Object.freeze(["LICENSE", ".gitignore"]);
+export const HELPER_KEPT_FILES = Object.freeze(["LICENSE", ".gitignore", `${HELPER_SKILL_DIRECTORY}/scripts/create-skill-archive.mjs`]);
 // Git's own entry (a directory, or a file in a linked worktree) and installed packages are not
 // files of the working tree.
 const SKIPPED_ENTRIES = new Set([".git", "node_modules"]);

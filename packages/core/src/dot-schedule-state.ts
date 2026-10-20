@@ -14,6 +14,8 @@ export interface PatrolCheck {
 }
 type PatrolMutation = {
   readonly action: "pause" | "resume";
+  /** Known request prerequisites only, never an actual return or completion observation. */
+  readonly requestNotBefore: string | null;
   /** Prior actual boundary is a lower bound only, never proof of this mutation. */
   readonly priorReturnedAt: string | null;
   /** Actual update return/error observation, never the earlier task check or assembly clock. */
@@ -22,6 +24,8 @@ type PatrolMutation = {
 export interface ContextPatrolState {
   readonly schemaVersion: "tcrn.context-patrol-state.v1";
   readonly scope: ScheduleScope; readonly automationId: string | null; readonly lastReadback: ScheduleReadback | null;
+  /** Latest supplied observation for future requests, never a replacement for current action evidence. */
+  readonly knownObservationAt: string | null;
   readonly state: "unknown" | "active" | "pause-candidate" | "pending-pause" | "paused" | "pending-resume";
   readonly terminal: { readonly kind: "completed" | "blocked_terminal"; readonly fingerprint: string; readonly count: number; readonly firstAt: string; readonly lastAt: string; readonly checkIds: readonly string[]; readonly visibleTaskRevisions: readonly string[] } | null;
   readonly receivedWorkRefs: readonly string[];
@@ -51,7 +55,7 @@ export function resolveScheduleInstance(scope: ScheduleScope, savedId: string | 
 export function initialContextPatrolState(scope: ScheduleScope, automationId: string | null, ownerOverride: ContextPatrolState["ownerOverride"] = null): ContextPatrolState {
   if (automationId !== null) dotText(automationId, "automationId");
   if (ownerOverride !== null) dotText(ownerOverride.evidenceRef, "ownerOverride.evidenceRef");
-  return { schemaVersion: "tcrn.context-patrol-state.v1", scope, automationId, lastReadback: null, state: "unknown", terminal: null, receivedWorkRefs: [], pendingAction: "query-instance", pendingMutation: null, lastError: null, ownerOverride };
+  return { schemaVersion: "tcrn.context-patrol-state.v1", scope, automationId, lastReadback: null, knownObservationAt: null, state: "unknown", terminal: null, receivedWorkRefs: [], pendingAction: "query-instance", pendingMutation: null, lastError: null, ownerOverride };
 }
 function terminalCheck(check: PatrolCheck): boolean {
   dotText(check.checkId, "checkId"); dotInstant(check.observedAt, "check.observedAt"); dotText(check.evidenceRef, "check.evidenceRef");
@@ -63,21 +67,33 @@ function validateReadback(state: ContextPatrolState, readback: ScheduleReadback)
   if (state.automationId !== null && state.automationId !== readback.automationId || readback.scopeDigest !== scheduleScopeDigest(state.scope) || readback.intervalMinutes !== CONTEXT_PATROL_INTERVAL_MINUTES || typeof readback.isEnabled !== "boolean") throw new Error("patrol readback differs from the original instance, scope or 20 minute interval");
   if (state.lastReadback && dotInstant(readback.observedAt, "observedAt") < dotInstant(state.lastReadback.observedAt, "previous observedAt")) throw new Error("stale schedule readback cannot overwrite current observation");
 }
+function latestPatrolPrerequisite(...times: readonly (string | null | undefined)[]): string | null {
+  return times.reduce<string | null>((latest, at) => at == null ? latest : latest === null || dotInstant(at, "request prerequisite") > dotInstant(latest, "previous request prerequisite") ? at : latest, null);
+}
 /** Sequential guidance only. The caller performs each actual action and supplies real readbacks. */
 export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEvent): ContextPatrolState {
+  const next = advancePatrolEvent(state, event);
+  // Accepted later observations constrain future requests, not an already pending
+  // action. Rejected events throw above and cannot advance either boundary.
+  const knownObservationAt = latestPatrolPrerequisite(state.knownObservationAt, "check" in event ? event.check.observedAt : null, "readback" in event ? event.readback.observedAt : null, event.kind === "action-observed" ? event.returnedAt : null);
+  return knownObservationAt === state.knownObservationAt ? next : { ...next, knownObservationAt };
+}
+function advancePatrolEvent(state: ContextPatrolState, event: PatrolEvent): ContextPatrolState {
   const queryUnresolved = state.state === "unknown" && state.pendingAction === "query-instance";
-  const mutation: PatrolMutation | null = state.pendingMutation ?? (state.state === "pending-pause" ? { action: "pause", priorReturnedAt: null, observation: null } : state.state === "pending-resume" ? { action: "resume", priorReturnedAt: null, observation: null } : null);
+  const mutation: PatrolMutation | null = state.pendingMutation ?? (state.state === "pending-pause" ? { action: "pause", requestNotBefore: null, priorReturnedAt: null, observation: null } : state.state === "pending-resume" ? { action: "resume", requestNotBefore: null, priorReturnedAt: null, observation: null } : null);
   const actionFloor = mutation?.observation?.returnedAt ?? mutation?.priorReturnedAt ?? null;
-  const requestedMutation = (action: PatrolMutation["action"]): PatrolMutation => ({ action, priorReturnedAt: actionFloor, observation: null });
-  const resumeMutation: PatrolMutation = mutation?.action === "resume" ? mutation : requestedMutation("resume");
-  const resume = (workRefs: readonly string[], error: string | null = state.lastError): ContextPatrolState => ({ ...state, state: "pending-resume", terminal: null, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...workRefs])], pendingAction: state.automationId === null ? "query-instance" : "enable-same-instance", pendingMutation: resumeMutation, lastError: error });
+  const requestedMutation = (action: PatrolMutation["action"], ...prerequisites: readonly string[]): PatrolMutation => ({ action, requestNotBefore: latestPatrolPrerequisite(mutation?.requestNotBefore, state.knownObservationAt, state.terminal?.lastAt, state.lastReadback?.observedAt, actionFloor, ...prerequisites), priorReturnedAt: actionFloor, observation: null });
+  // Only creation of a new request adds prerequisites. Later checks/readbacks of
+  // the same pending resume must not retrospectively invalidate its actual source.
+  const resumeMutation = (...prerequisites: readonly string[]): PatrolMutation => mutation?.action === "resume" ? mutation : requestedMutation("resume", ...prerequisites);
+  const resume = (workRefs: readonly string[], error: string | null = state.lastError, ...prerequisites: readonly string[]): ContextPatrolState => ({ ...state, state: "pending-resume", terminal: null, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...workRefs])], pendingAction: state.automationId === null ? "query-instance" : "enable-same-instance", pendingMutation: resumeMutation(...prerequisites), lastError: error });
   // Both readback consumers require a real action boundary. Missing legacy/action
   // data stays unresolved; no task-check time is promoted to an update observation.
   const actionReadbackReady = (readback: ScheduleReadback): boolean => {
     validateReadback(state, readback);
     const observation = mutation?.observation;
     if (mutation !== null || state.pendingMutation === undefined && queryUnresolved && state.lastError !== null) {
-      if (!observation) return false;
+      if (!observation || mutation?.requestNotBefore == null) return false;
       if (observation.automationId !== readback.automationId || dotInstant(readback.observedAt, "readback.observedAt") <= dotInstant(observation.returnedAt, "action returnedAt")) throw new Error("scheduler readback must follow the actual same-instance action observation");
     }
     if (queryUnresolved && state.lastReadback !== null && dotInstant(readback.observedAt, "readback.observedAt") <= dotInstant(state.lastReadback.observedAt, "previous observedAt")) throw new Error("an unresolved scheduler action requires a new same-instance readback");
@@ -88,7 +104,8 @@ export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEve
     dotText(event.automationId, "action automationId"); dotText(event.evidenceRef, "action evidenceRef");
     const at = dotInstant(event.returnedAt, "action returnedAt");
     if (mutation === null || mutation.action !== event.action || state.automationId === null || event.automationId !== state.automationId) throw new Error("action observation must match the pending same-instance mutation");
-    if (state.lastReadback && at < dotInstant(state.lastReadback.observedAt, "last readback") || state.terminal && at < dotInstant(state.terminal.lastAt, "before-pause check") || actionFloor !== null && (mutation.observation === null ? at <= dotInstant(actionFloor, "previous action observation") : at < dotInstant(actionFloor, "previous action observation"))) throw new Error("action observation predates or reuses an unresolved prior causal boundary");
+    if (mutation.requestNotBefore == null) throw new Error("action observation requires the pending request's known causal boundary");
+    if (at < dotInstant(mutation.requestNotBefore, "request not before") || actionFloor !== null && (mutation.observation === null ? at <= dotInstant(actionFloor, "previous action observation") : at < dotInstant(actionFloor, "previous action observation"))) throw new Error("action observation predates or reuses an unresolved prior causal boundary");
     return { ...state, pendingMutation: { ...mutation, observation: { automationId: event.automationId, returnedAt: event.returnedAt, evidenceRef: event.evidenceRef } } };
   }
   if (event.kind === "new-work") {
@@ -104,14 +121,14 @@ export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEve
     }
     // An unlinked failure may belong to a later actual attempt. Never reuse the
     // earlier attempt's boundary merely because pause/resume has the same name.
-    const pendingMutation: PatrolMutation = event.actionEvidenceRef === undefined ? requestedMutation(event.action) : { action: event.action, priorReturnedAt: mutation?.priorReturnedAt ?? null, observation: mutation?.observation ?? null };
+    const pendingMutation: PatrolMutation = event.actionEvidenceRef === undefined ? requestedMutation(event.action) : { action: event.action, requestNotBefore: mutation?.requestNotBefore ?? null, priorReturnedAt: mutation?.priorReturnedAt ?? null, observation: mutation?.observation ?? null };
     return event.action === "resume" ? { ...resume([], event.error), pendingMutation } : { ...state, state: "unknown", terminal: null, pendingAction: "query-instance", pendingMutation, lastError: event.error };
   }
   if (event.kind === "readback") {
     if (!actionReadbackReady(event.readback)) return missingAction();
     const next = { ...state, automationId: event.readback.automationId, lastReadback: event.readback, lastError: null };
     if (state.state === "pending-pause") return { ...next, pendingAction: "read-after-pause" };
-    if ((mutation?.action === "resume" || state.ownerOverride !== null || state.receivedWorkRefs.length > 0) && !event.readback.isEnabled) return { ...next, state: "pending-resume", pendingAction: "enable-same-instance", pendingMutation: resumeMutation, lastError: state.lastError };
+    if ((mutation?.action === "resume" || state.ownerOverride !== null || state.receivedWorkRefs.length > 0) && !event.readback.isEnabled) return { ...next, state: "pending-resume", pendingAction: "enable-same-instance", pendingMutation: resumeMutation(event.readback.observedAt), lastError: state.lastError };
     return { ...next, state: event.readback.isEnabled ? "active" : "paused", terminal: null, receivedWorkRefs: event.readback.isEnabled ? [] : state.receivedWorkRefs, pendingAction: null, pendingMutation: null };
   }
   const check = event.check;
@@ -121,27 +138,27 @@ export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEve
     if (!actionReadbackReady(event.readback)) return missingAction(check.receivedWorkRefs);
     if (state.state === "pending-resume") return event.readback.isEnabled
       ? { ...state, automationId: event.readback.automationId, lastReadback: event.readback, state: "active", terminal: null, receivedWorkRefs: [], pendingAction: null, pendingMutation: null, lastError: null }
-      : { ...resume(check.receivedWorkRefs), automationId: event.readback.automationId, lastReadback: event.readback };
+      : { ...resume(check.receivedWorkRefs, state.lastError, check.observedAt, event.readback.observedAt), automationId: event.readback.automationId, lastReadback: event.readback };
     const unchanged = validTerminal && dotInstant(check.observedAt, "post-pause task read") >= dotInstant(event.readback.observedAt, "post-pause schedule read") && state.terminal !== null && check.terminalKind === state.terminal.kind && check.terminalFingerprint === state.terminal.fingerprint && dotDigest(check.visibleTaskRevisions) === dotDigest(state.terminal.visibleTaskRevisions);
-    if (!unchanged || state.ownerOverride !== null || state.receivedWorkRefs.length > 0) return { ...resume(check.receivedWorkRefs), automationId: event.readback.automationId, lastReadback: event.readback };
+    if (!unchanged || state.ownerOverride !== null || state.receivedWorkRefs.length > 0) return { ...resume(check.receivedWorkRefs, state.lastError, check.observedAt, event.readback.observedAt), automationId: event.readback.automationId, lastReadback: event.readback };
     if (event.readback.isEnabled) return { ...state, lastReadback: event.readback, state: "active", terminal: null, pendingAction: null, pendingMutation: null, lastError: null };
     return { ...state, lastReadback: event.readback, state: "paused", pendingAction: null, pendingMutation: null, lastError: null };
   }
   // Task observations cannot settle an outstanding scheduler action. Only the
   // matching scheduler readback/post-pause path above can discharge it.
   if (queryUnresolved || state.state === "pending-resume") return { ...state, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...check.receivedWorkRefs])] };
-  if (state.state === "pending-pause") return validTerminal && check.receivedWorkRefs.length === 0 ? state : resume(check.receivedWorkRefs, state.lastError);
+  if (state.state === "pending-pause") return validTerminal && check.receivedWorkRefs.length === 0 ? state : resume(check.receivedWorkRefs, state.lastError, check.observedAt);
   if (!validTerminal) {
-    if (state.state === "paused") return resume(check.receivedWorkRefs, check.outcome === "success" ? null : "task state unknown; pause not established");
+    if (state.state === "paused") return resume(check.receivedWorkRefs, check.outcome === "success" ? null : "task state unknown; pause not established", check.observedAt);
     return { ...state, terminal: null, state: state.lastReadback?.isEnabled ? "active" : "unknown", pendingAction: state.lastReadback?.isEnabled ? null : "query-instance", lastError: check.outcome === "success" ? null : "check failed or unknown" };
   }
-  if (state.ownerOverride !== null) return state.lastReadback?.isEnabled ? { ...state, state: "active", terminal: null, pendingAction: null } : resume([]);
+  if (state.ownerOverride !== null) return state.lastReadback?.isEnabled ? { ...state, state: "active", terminal: null, pendingAction: null } : resume([], state.lastError, check.observedAt);
   if (state.automationId === null || state.lastReadback === null) return { ...state, terminal: null, pendingAction: "query-instance" };
   const old = state.terminal;
   const same = old !== null && old.kind === check.terminalKind && old.fingerprint === check.terminalFingerprint && dotDigest(old.visibleTaskRevisions) === dotDigest(check.visibleTaskRevisions);
   if (event.kind === "before-pause") {
     if (!same || old.count < 2 || state.pendingAction !== "read-before-pause" || dotInstant(check.observedAt, "before pause") < dotInstant(old.lastAt, "last check")) return { ...state, terminal: null, state: "active", pendingAction: null };
-    return { ...state, terminal: { ...old, lastAt: check.observedAt }, state: "pending-pause", pendingAction: "disable-same-instance", pendingMutation: requestedMutation("pause") };
+    return { ...state, terminal: { ...old, lastAt: check.observedAt }, state: "pending-pause", pendingAction: "disable-same-instance", pendingMutation: requestedMutation("pause", check.observedAt) };
   }
   if (same && old.checkIds.includes(check.checkId)) return state;
   if (same && dotInstant(check.observedAt, "check at") < dotInstant(old.lastAt, "last at")) return { ...state, terminal: null, state: "active", pendingAction: null, lastError: "out-of-order check" };

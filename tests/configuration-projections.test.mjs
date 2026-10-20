@@ -12,6 +12,7 @@ import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
 import { planConfigurationProjectionRefresh, refreshConfigurationProjections, diagnoseLegacySharedPaths } from "../dist/build/packages/core/src/configuration-projections.js";
 
 import { sortWorkspaceSettings, validateWorkspaceSettingRecord } from "../dist/build/packages/core/src/settings.js";
+import { DOT_AGENTS_MARKER } from "../dist/build/packages/core/src/dot-agents.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 
 const at = "2026-10-17T08:00:00Z";
@@ -123,4 +124,21 @@ test("CLI plans and selectively refreshes registered outputs and reports value-f
   assert.equal(catalog.migrationDiagnostics[0].key, "knowledge.articlesPath");
   assert.equal(catalog.migrationDiagnostics[0].target.projectId, target.projectId);
   assert.doesNotMatch(JSON.stringify(catalog.migrationDiagnostics), /private-history|Users/u);
+}));
+
+// DOT-I03/R02: a generic projection must not take ownership of independent dot output.
+test("independent dot targets remain pending without generic sections or Claude imports", async t => asPinnedDevice(async home => {
+  const f = await fixture(t, home), lib = await f.library("dot-library");
+  const target = await f.project(lib, "DOT");
+  const agents = `${DOT_AGENTS_MARKER}\n# Independent fixture rules\n`;
+  const sidecar = "fixture provenance bytes, not a runtime receipt\n";
+  await writeFile(join(target.output, "AGENTS.md"), agents);
+  await writeFile(join(target.output, "dot-provenance.json"), sidecar);
+  const result = await refreshConfigurationProjections({ libraryId: target.libraryId, projectId: target.projectId }, { occurredAt: at });
+  assert.equal(result.outcomes[0].status, "pending");
+  assert.equal(result.outcomes[0].reason, "independent-dot-maintenance-required");
+  assert.equal(result.outcomes.some(outcome => outcome.status === "refreshed"), false);
+  assert.equal(await readFile(join(target.output, "AGENTS.md"), "utf8"), agents);
+  assert.equal(await readFile(join(target.output, "dot-provenance.json"), "utf8"), sidecar);
+  await assert.rejects(readFile(join(target.output, "CLAUDE.md")), { code: "ENOENT" });
 }));

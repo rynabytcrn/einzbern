@@ -298,3 +298,14 @@ test("test seams and unconsumed observability helper are not advertised as worki
   }
   assert.match(byKey.get("host:codex-hook-trust").validation, /does not manufacture user approval/u);
 });
+
+test("dot setup inputs have explicit independent ownership and no invented source defaults", () => {
+  const target = byKey.get("cli:setup:execution-target");
+  assert.deepEqual(target.allowedValues, ["traditional", "chatgpt-dot"]);
+  assert.equal(target.defaultValue, "traditional");
+  const input = byKey.get("cli:setup:dot-input");
+  assert.equal(input.defaultValue, null);
+  assert.equal(input.pathBase, "explicit absolute path");
+  assert.equal(input.sensitivity, "context-may-contain-private-data");
+  assert.match(input.sharing, /no remote or library/u);
+});

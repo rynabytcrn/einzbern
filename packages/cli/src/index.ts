@@ -15,6 +15,8 @@ import { readMachineSettings } from "../../core/src/machine-settings.js";
 import { configurationContract, annotateConfigValue } from "../../core/src/configuration-contract.js";
 import { evaluateExecutionQuota, resolveExecutionConcurrency } from "../../core/src/execution-policy.js";
 import { ensureSetupProjectBinding } from "../../core/src/setup-fresh.js";
+import { DOT_INSTALLATION_TARGET, SETUP_EXECUTION_TARGETS } from "../../core/src/dot-agents.js";
+import type { SetupExecutionTarget } from "../../core/src/dot-agents.js";
 import { resolveEngineExecutionPolicy, engineModelPolicyCatalogFromSnapshot } from "../../core/src/engine-model-policy.js";
 import { setConfigRecord, removeConfigRecord } from "../../core/src/config-records.js";
 import { coordinationCatalogRows } from "../../core/src/project-scope.js";
@@ -218,7 +220,7 @@ import type {
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { cp, lstat, mkdir, readdir, realpath, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ProtocolError, assertStrictInstant, canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
@@ -1795,7 +1797,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-480 (C7 of INIT-053): the installation wizard in one of six modes. Without
   // --yes true it answers SETUP_PLAN_READY and writes nothing; with it, SETUP_APPLIED, whose
   // self-check is doctor's eight checks and the hook run once with the project's name as the prompt.
-  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "absolute path to JSON dot target options; required for chatgpt-dot" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   // TCRN-CROSS-STORY-479 R1: the skill directory this engine generates for its version, written
   // into a missing or empty --out; it runs only where the skill template sits beside the engine.
   { name: "skill-render", availability: "cli", mutates: true, flags: [{ name: "out", required: true, valueKind: "string" }, { name: "version", required: false, valueKind: "string" }] },
@@ -2155,12 +2157,15 @@ async function namingSection<T>(operation: () => Promise<T>): Promise<T> {
 // TCRN-CROSS-STORY-480 (C7 of INIT-053): the setup flags as planSetup takes them. A relative
 // --artifacts, --restore or --archive is taken from the project; --project from here.
 function setupOptions(values: Readonly<Record<string, string>>): SetupOptions {
+  const target = values["execution-target"];
+  if (target !== undefined && !(SETUP_EXECUTION_TARGETS as readonly string[]).includes(target)) fail("SETUP_TARGET_UNSUPPORTED", "unknown installation target");
   const managed = values["managed-sections"];
   if (managed !== undefined && managed !== "keep" && managed !== "remove") fail("CLI_ARGUMENT_MALFORMED", "managed-sections");
   const cloud = optionalBoolean(values.cloud, "cloud");
   const navigation = optionalBoolean(values.navigation, "navigation");
   const rollback = optionalBoolean(values.rollback, "rollback");
   return {
+    ...(target === undefined ? {} : { executionTarget: target as SetupExecutionTarget }),
     mode: values.mode ?? "",
     projectRoot: values.project ?? "",
     at: values.at ?? "",
@@ -2737,9 +2742,18 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-480 (setup.ts): plan in the chosen mode; apply the plan only with --yes true. The
   // device directory is this process's (EINZBERN_HOME), the one the library records go through.
   if (command === "setup") {
-    const values = parseArguments(rest, ["mode", "project", "at", "artifacts", "cloud", "restore", "language", "navigation", "archive", "rollback", "managed-sections", "mapping", "yes"]);
+    const values = parseArguments(rest, ["execution-target", "dot-input", "mode", "project", "at", "artifacts", "cloud", "restore", "language", "navigation", "archive", "rollback", "managed-sections", "mapping", "yes"]);
     required(values, ["mode", "project", "at"]);
-    const options = setupOptions(values);
+    let options = setupOptions(values);
+    if (options.executionTarget === DOT_INSTALLATION_TARGET) {
+      required(values, ["dot-input"]);
+      if (!isAbsolute(values["dot-input"]!)) fail("CLI_ARGUMENT_MALFORMED", "--dot-input must name an absolute JSON path");
+      let dot: unknown;
+      try { dot = JSON.parse(await readFile(values["dot-input"]!, "utf8")); }
+      catch { fail("SETUP_INPUT_INVALID", "--dot-input must name a readable JSON options file"); }
+      if (dot === null || typeof dot !== "object" || Array.isArray(dot) || ["executionTarget", "operation", "at"].some(key => Object.hasOwn(dot as object, key))) fail("SETUP_INPUT_INVALID", "dot-input contains only dot target options; target, mode and at come from CLI flags");
+      options = { ...options, dot: dot as NonNullable<SetupOptions["dot"]> };
+    } else if (values["dot-input"] !== undefined) fail("SETUP_OPTION_NOT_APPLICABLE", "--dot-input requires --execution-target chatgpt-dot");
     const confirmed = booleanValue(values.yes, "yes");
     const plan: SetupPlan = await planSetup(options);
     if (!confirmed) {
@@ -2747,7 +2761,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       return;
     }
     const applied = await applySetup(plan);
-    io.write(canonicalJson({ ...applied, selfCheck: { checks: applied.selfCheck, ...hookSelfCheck(applied) } } as unknown as JsonValue));
+    // Native installation has its own file receipt. Never run a traditional hook or
+    // attach synthetic process fields to the dot result.
+    io.write(canonicalJson((applied.executionTarget === DOT_INSTALLATION_TARGET
+      ? applied
+      : { ...applied, selfCheck: { checks: applied.selfCheck, ...hookSelfCheck(applied) } }) as unknown as JsonValue));
     return;
   }
   // TCRN-CROSS-STORY-480 R4, AC5 (doctor.ts): the eight checks, each {check, ok, reasonCode, detail}.

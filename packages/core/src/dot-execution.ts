@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash } from "node:crypto";
 import { canonicalJson, parseStrictInstant } from "../../protocol/src/index.js";
+import { assessExecutionContextRead, normalizeExecutionContextRead } from "./dot-agents.js";
 import type { ExecutionContextRead, ExecutionContextReadExpectation, ExecutionContextReadObservation } from "./dot-agents.js";
 import type { ProjectReference } from "../../protocol/src/index.js";
 import { resolveNativeExecutionConcurrency } from "./execution-policy.js";
@@ -89,6 +90,20 @@ export function validateDotExecutionRequest(value: unknown): DotExecutionRequest
   if (model.status === "unavailable") { if (Object.keys(model).length !== 2) throw new DotExecutionError("unavailable model has no invented value"); dotText(model.reason, "model.reason"); }
   else if (model.status === "observed") { if (Object.keys(model).length !== 3) throw new DotExecutionError("observed model requires source"); dotText(model.value, "model.value"); dotText(model.sourceRef, "model.sourceRef"); }
   else throw new DotExecutionError("model observation required");
+  if (r.contextRead !== undefined) {
+    const read = dotObject(r.contextRead, "contextRead", ["record", "expected", "observations"]);
+    normalizeExecutionContextRead(read.record);
+    const expected = dotObject(read.expected, "contextRead.expected", ["sessionRef", "workReference", "workRevision", "scopeDigest", "notBefore", "now", "files", "effectiveRoots"]);
+    dotText(expected.sessionRef, "expected.sessionRef"); dotText(expected.workReference, "expected.workReference"); dotSha(expected.scopeDigest, "expected.scopeDigest");
+    if (!Number.isSafeInteger(expected.workRevision) || Number(expected.workRevision) < 1 || !Array.isArray(expected.files) || expected.files.length !== 3 || !Array.isArray(read.observations)) throw new DotExecutionError("complete current context expectation and observations required");
+    dotInstant(expected.notBefore, "expected.notBefore"); dotInstant(expected.now, "expected.now"); dotRefs(expected.effectiveRoots, "expected.effectiveRoots", true);
+    const keys = new Set<string>();
+    for (const item of expected.files) { const file = dotObject(item, "expected file", ["logicalKey", "sourceVersion", "sha256"]); dotText(file.logicalKey, "logicalKey"); if (!["agents", "mana-orchestrate", "work"].includes(file.logicalKey) || keys.has(file.logicalKey)) throw new DotExecutionError("expected context sources must be complete and unique"); keys.add(file.logicalKey); dotText(file.sourceVersion, "sourceVersion"); dotSha(file.sha256, "sha256"); }
+    for (const item of read.observations) { const observation = dotObject(item, "context observation", ["sessionRef", "source", "logicalKey", "evidenceRef", "toolName", "readAt", "sha256", "association"]);
+      for (const key of ["sessionRef", "evidenceRef", "toolName", "source", "logicalKey", "association"]) dotText(observation[key], key); dotInstant(observation.readAt, "readAt"); dotSha(observation.sha256, "sha256");
+      if (!["execution-session", "parent-session", "patrol", "unavailable"].includes(String(observation.source)) || !keys.has(String(observation.logicalKey)) || !["associated", "unverified"].includes(String(observation.association))) throw new DotExecutionError("unsupported context observation");
+    }
+  }
   if (r.exactDelegation !== undefined) {
     const d = dotObject(r.exactDelegation, "exactDelegation", ["runner", "model", "effort", "supported", "actualInvocationMetadataRef", "observedTuple"]);
     for (const key of ["runner", "model", "effort"]) dotText(d[key], key);
@@ -99,7 +114,12 @@ export function validateDotExecutionRequest(value: unknown): DotExecutionRequest
 }
 /** Pure evidence assessment, not authentication, a reservation, or a host fallback. */
 export function resolveDotExecutionAdmission(value: DotExecutionRequest, options: { readonly deviceLimit: number; readonly projectLimit?: number; readonly now: string; readonly contextDigest: string }): DotAdmission {
-  const request = validateDotExecutionRequest(value); const now = dotInstant(options.now, "now"); dotSha(options.contextDigest, "contextDigest");
+  const original = validateDotExecutionRequest(value);
+  const read = original.contextRead;
+  const contextCheck: DotCheck = read === undefined || original.revisionBinding.kind !== "revision"
+    ? { status: "unknown", evidenceRefs: [], reason: "actual-session current context reads are required" }
+    : assessExecutionContextRead(read.record, { ...read.expected, workReference: original.workId, workRevision: original.revisionBinding.workRevision, scopeDigest: original.revisionBinding.scopeDigest, now: options.now }, read.observations).check;
+  const request: DotExecutionRequest = { ...original, checks: { ...original.checks, context: contextCheck } }; const now = dotInstant(options.now, "now"); dotSha(options.contextDigest, "contextDigest");
   const o = request.occupancyObservation;
   const concurrency = resolveNativeExecutionConcurrency(options.deviceLimit, options.projectLimit, o.platformLimit, o.activeAgents, o.includesParent, o.parentActive);
   const reasonCodes = DOT_REQUIRED_CHECKS.filter(name => request.checks[name].status !== "pass").map(name => `DOT_${name.toUpperCase()}_${request.checks[name].status.toUpperCase()}`);

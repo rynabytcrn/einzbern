@@ -239,3 +239,31 @@ grant write permission.
 Independent acceptance must cover the actual packaged CLI positively and reject
 source/dist, wrong-version, missing-identity and changed-tree cases. Authored source
 or fixture coverage is not evidence of package execution or E4 completion.
+
+## Review-round consumer clarifications
+
+No-change skipping requires a freshly verified previous manifest with both the
+same selectionDigest and compatible exact sourceVersion. Equal selected values
+under a different observed engine artifact are not recoverable originals for
+this running version. Restore re-verifies the retained originals' actual bytes,
+selection and sourceVersion before any target write; capacity refusal stops the
+restore rather than treating an incompatible prior package as protection.
+
+Manifest identifiers, sourceVersion fields, enums and digests must have their
+actual declared JSON types. A single-element array that string-coerces to a valid
+identifier/hash is invalid even when its manifest digest has been recalculated.
+
+Independent dot AGENTS is not a user fragment or a generic rule projection.
+Restore classifies user/rule file operations against that target as unmappable;
+supported setting/variable declarations can be restored through the existing
+authority but full projection refresh reports independent-dot maintenance pending.
+No generic writer appends blocks or changes dot provenance. Traditional scalar,
+variable and rule restoration refreshes the affected registered projection set;
+unavailable/disabled/independent/user-decision targets remain pending, not rendered.
+
+Existing transaction/index updates retain bounded safe machine reason codes on
+pending/capacity failures. A failed reason persistence/readback is itself unknown,
+not success. List results expose transactionPhases separately from integrity,
+counts and synchronization unknown. Portal shows those phases, actual project
+reference and retained errors in its existing read-only definition list. Hostname
+is only a label and cannot collapse different project/group identities.

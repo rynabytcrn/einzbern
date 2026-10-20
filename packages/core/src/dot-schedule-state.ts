@@ -56,7 +56,7 @@ function validateReadback(state: ContextPatrolState, readback: ScheduleReadback)
 }
 /** Sequential guidance only. The caller performs each actual action and supplies real readbacks. */
 export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEvent): ContextPatrolState {
-  const resume = (workRefs: readonly string[], error: string | null = null): ContextPatrolState => ({ ...state, state: "pending-resume", terminal: null, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...workRefs])], pendingAction: state.automationId === null ? "query-instance" : "enable-same-instance", lastError: error });
+  const resume = (workRefs: readonly string[], error: string | null = state.lastError): ContextPatrolState => ({ ...state, state: "pending-resume", terminal: null, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...workRefs])], pendingAction: state.automationId === null ? "query-instance" : "enable-same-instance", lastError: error });
   if (event.kind === "new-work") {
     if (event.workRefs.length === 0) throw new Error("new work needs actual references");
     return state.state === "active" && state.lastReadback?.isEnabled === true ? { ...state, terminal: null, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...event.workRefs])], pendingAction: null } : resume(event.workRefs);
@@ -69,7 +69,7 @@ export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEve
     validateReadback(state, event.readback);
     const next = { ...state, automationId: event.readback.automationId, lastReadback: event.readback, lastError: null };
     if (state.state === "pending-pause") return { ...next, pendingAction: "read-after-pause" };
-    if (state.state === "pending-resume" && !event.readback.isEnabled || state.ownerOverride !== null && !event.readback.isEnabled) return { ...next, state: "pending-resume", pendingAction: "enable-same-instance" };
+    if (state.state === "pending-resume" && !event.readback.isEnabled || state.ownerOverride !== null && !event.readback.isEnabled) return { ...next, state: "pending-resume", pendingAction: "enable-same-instance", lastError: state.lastError };
     return { ...next, state: event.readback.isEnabled ? "active" : "paused", terminal: null, receivedWorkRefs: event.readback.isEnabled ? [] : state.receivedWorkRefs, pendingAction: null };
   }
   const check = event.check;
@@ -77,13 +77,20 @@ export function advanceContextPatrol(state: ContextPatrolState, event: PatrolEve
   if (event.kind === "after-pause") {
     if (state.state !== "pending-pause" && state.state !== "pending-resume") throw new Error("post-pause read requires an actual pending same-instance pause/resume");
     validateReadback(state, event.readback);
+    if (state.state === "pending-resume") return event.readback.isEnabled
+      ? { ...state, automationId: event.readback.automationId, lastReadback: event.readback, state: "active", terminal: null, receivedWorkRefs: [], pendingAction: null, lastError: null }
+      : { ...resume(check.receivedWorkRefs), automationId: event.readback.automationId, lastReadback: event.readback };
     const unchanged = validTerminal && dotInstant(check.observedAt, "post-pause task read") >= dotInstant(event.readback.observedAt, "post-pause schedule read") && state.terminal !== null && check.terminalKind === state.terminal.kind && check.terminalFingerprint === state.terminal.fingerprint && dotDigest(check.visibleTaskRevisions) === dotDigest(state.terminal.visibleTaskRevisions);
     if (!unchanged || state.ownerOverride !== null || state.receivedWorkRefs.length > 0) return { ...resume(check.receivedWorkRefs), automationId: event.readback.automationId, lastReadback: event.readback };
     if (event.readback.isEnabled) return { ...state, lastReadback: event.readback, state: "active", terminal: null, pendingAction: null };
     return { ...state, lastReadback: event.readback, state: "paused", pendingAction: null, lastError: null };
   }
+  // Task observations cannot settle an outstanding scheduler action. Only the
+  // matching scheduler readback/post-pause path above can discharge it.
+  if (state.state === "pending-resume") return { ...state, receivedWorkRefs: [...new Set([...state.receivedWorkRefs, ...check.receivedWorkRefs])] };
+  if (state.state === "pending-pause") return validTerminal && check.receivedWorkRefs.length === 0 ? state : resume(check.receivedWorkRefs, state.lastError);
   if (!validTerminal) {
-    if (state.state === "paused" || state.state === "pending-pause" || state.state === "pending-resume") return resume(check.receivedWorkRefs, check.outcome === "success" ? null : "task state unknown; pause not established");
+    if (state.state === "paused") return resume(check.receivedWorkRefs, check.outcome === "success" ? null : "task state unknown; pause not established");
     return { ...state, terminal: null, state: state.lastReadback?.isEnabled ? "active" : "unknown", pendingAction: state.lastReadback?.isEnabled ? null : "query-instance", lastError: check.outcome === "success" ? null : "check failed or unknown" };
   }
   if (state.ownerOverride !== null) return state.lastReadback?.isEnabled ? { ...state, state: "active", terminal: null, pendingAction: null } : resume([]);
@@ -126,12 +133,12 @@ export function dailyConfigBackupSlot(now: string): string {
   const shifted = new Date(Date.parse(now) + 8 * 60 * 60 * 1000);
   return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - 8 * 60 * 60 * 1000).toISOString();
 }
-export function evaluateDailyConfigBackup(state: DailyConfigBackupState, prerequisites: ConfigBackupEnablementPrerequisites, scheduler: { readonly deduplicationVerified: boolean; readonly readbackAvailable: boolean; readonly actualEnablementAuthorizationRef: string | null }): { readonly state: DailyConfigBackupState; readonly eligible: boolean; readonly reason: string; readonly next: "keep-disabled" | "request-authorized-update-and-readback" } {
+export function evaluateDailyConfigBackup(state: DailyConfigBackupState, prerequisites: ConfigBackupEnablementPrerequisites, scheduler: { readonly deduplicationVerified: boolean; readonly readbackAvailable: boolean; readonly actualEnablementAuthorizationRef: string | null }): { readonly state: DailyConfigBackupState; readonly eligible: boolean; readonly reason: string; readonly next: "keep-disabled" | "query-disable-and-readback" | "request-authorized-update-and-readback" } {
   const gate = evaluateConfigBackupEnablement(prerequisites);
   const eligible = gate.eligible && scheduler.deduplicationVerified && scheduler.readbackAvailable && scheduler.actualEnablementAuthorizationRef !== null && scheduler.actualEnablementAuthorizationRef.trim().length > 0;
   const reason = !gate.eligible ? gate.reason : !scheduler.deduplicationVerified || !scheduler.readbackAvailable ? "scheduler-unavailable" : !scheduler.actualEnablementAuthorizationRef?.trim() ? "enablement-unapproved" : "ready";
   // Eligibility is not a tool update, and never flips observed enablement to true.
-  return { state: { ...state, state: eligible ? "pending-enablement" : state.state === "enabled" ? "unknown" : "disabled", policyRef: gate.policyDigest, lastError: eligible ? null : reason }, eligible, reason, next: eligible ? "request-authorized-update-and-readback" : "keep-disabled" };
+  return { state: { ...state, state: eligible ? "pending-enablement" : state.state === "disabled" ? "disabled" : "unknown", policyRef: gate.policyDigest, lastError: state.state === "unknown" && state.lastError !== null ? state.lastError : eligible ? null : reason }, eligible, reason, next: eligible ? "request-authorized-update-and-readback" : state.state === "disabled" ? "keep-disabled" : "query-disable-and-readback" };
 }
 export function readbackDailyConfigBackup(state: DailyConfigBackupState, readback: DailyBackupReadback, prerequisites: ConfigBackupEnablementPrerequisites): DailyConfigBackupState {
   dotInstant(readback.observedAt, "backup readback at"); dotText(readback.evidenceRef, "backup readback ref"); dotText(readback.automationId, "backup automation ID");

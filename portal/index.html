@@ -5023,7 +5023,10 @@ const BOOT = __PORTAL_BOOT__;
       : controlFor(entry);
     return `<div class="tcrn-setting-row ${modified ? "tcrn-setting-row--modified tcrn-highlightable" : ""}" data-setting-row="${esc(entry.key)}" data-setting-shape="scalar" data-modified="${modified ? "true" : "false"}">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control">${control}</div><div class="tcrn-setting-row__tools">${dot}${dictionary}${reset}</div></div>`;
   };
-  const configBackupStatus = (value) => t(`backup.status.${["not-scanned", "empty", "scanned", "unreadable", "partial", "verified", "corrupt", "missing-index", "discovered", "unknown"].includes(value) ? value : "unknown"}`);
+  const configBackupStatus = (value) => ({
+    "not-scanned": t("backup.status.not-scanned"), empty: t("backup.status.empty"), scanned: t("backup.status.scanned"), unreadable: t("backup.status.unreadable"), partial: t("backup.status.partial"), verified: t("backup.status.verified"), corrupt: t("backup.status.corrupt"), "missing-index": t("backup.status.missing-index"), discovered: t("backup.status.discovered"), unknown: t("backup.status.unknown"),
+  }[value] ?? t("backup.status.unknown"));
+  const configBackupPhase = (value) => ({ staging: t("backup.phase.staging"), verified: t("backup.phase.verified"), committed: t("backup.phase.committed"), "rotation-pending": t("backup.phase.rotation-pending") }[value] ?? t("backup.status.unknown"));
   const configBackupMarkup = (snapshot) => {
     const known = snapshot?.schemaVersion === "einzbern.config-backup-list.v1";
     const status = known ? snapshot.scanStatus : snapshot === null ? "not-scanned" : "unreadable";
@@ -5031,8 +5034,10 @@ const BOOT = __PORTAL_BOOT__;
     const summary = `<p class="tcrn-text" data-backup-scan-status="${esc(status)}">${esc(configBackupStatus(status))}</p><p class="tcrn-text">${esc(t("backup.scannedAt"))}: ${esc(value(known ? snapshot.scannedAt : null))}</p>${known && snapshot.error ? `<p class="tcrn-text" data-backup-error>${esc(t("backup.error"))}: ${esc(snapshot.error)}</p>` : ""}`;
     const groups = known && Array.isArray(snapshot.groups) ? snapshot.groups : [];
     return summary + groups.map((group) => `<section class="tcrn-surface" data-backup-group="${esc(group.backupGroupId)}"><h3 class="tcrn-heading">${esc(group.hostname)}</h3><p class="tcrn-text">${esc(group.backupGroupId)}</p><dl class="tcrn-definition-list tcrn-definition-list--dense">${[
-      ["active", group.activeCount], ["transactions", group.transactionCount], ["recoverable", group.recoverableCount], ["bytes", group.bytes], ["completedAt", group.completedAt], ["integrity", configBackupStatus(group.integrity)], ["sync", configBackupStatus(group.syncStatus)],
-    ].map(([name, entry]) => `<div class="tcrn-definition-list__item" data-backup-field="${esc(name)}"><dt class="tcrn-definition-list__term">${esc(t(`backup.${name}`))}</dt><dd class="tcrn-definition-list__definition">${esc(value(entry))}</dd></div>`).join("")}</dl>${group.error ? `<p class="tcrn-text" data-backup-error>${esc(t("backup.error"))}: ${esc(group.error)}</p>` : ""}</section>`).join("");
+      ["project", t("backup.project"), group.projectRef ? `${group.projectRef.libraryId} / ${group.projectRef.projectId}` : null],
+      ["active", t("backup.active"), group.activeCount], ["transactions", t("backup.transactions"), group.transactionCount], ["recoverable", t("backup.recoverable"), group.recoverableCount], ["bytes", t("backup.bytes"), group.bytes], ["completedAt", t("backup.completedAt"), group.completedAt], ["integrity", t("backup.integrity"), configBackupStatus(group.integrity)], ["sync", t("backup.sync"), configBackupStatus(group.syncStatus)],
+      ["phases", t("backup.phases"), Array.isArray(group.transactionPhases) ? group.transactionPhases.length ? group.transactionPhases.map(configBackupPhase).join(", ") : t("backup.phase.none") : null],
+    ].map(([name, label, entry]) => `<div class="tcrn-definition-list__item" data-backup-field="${esc(name)}"><dt class="tcrn-definition-list__term">${esc(label)}</dt><dd class="tcrn-definition-list__definition">${esc(value(entry))}</dd></div>`).join("")}</dl>${group.error ? `<p class="tcrn-text" data-backup-error>${esc(t("backup.error"))}: ${esc(group.error)}</p>` : ""}</section>`).join("");
   };
   const renderConfigBackups = () => {
     const panel = $("#config-backups");

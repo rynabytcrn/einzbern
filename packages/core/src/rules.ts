@@ -1,3 +1,4 @@
+import { assertNotDotAgentsTarget } from "./dot-agents.js";
 import { effectiveProjectState } from "./project-chain.js";
 import { scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
@@ -338,6 +339,7 @@ async function commitRecordOnlyRule(root: string, append: () => Promise<Workspac
  * otherwise (workspace.ts, appendPlannedWrite).
  */
 export async function enableRule(input: RuleChangeInput & { readonly order?: number }): Promise<RuleChange> {
+  await assertNotDotAgentsTarget(input.projectRoot);
   const catalog = input.catalog ?? BUILT_IN_RULES;
   const rule = catalog.find((entry) => entry.id === input.id) ?? fail("RULE_UNKNOWN", `the engine ships no rule ${JSON.stringify(input.id)}`, {
     id: String(input.id),
@@ -447,6 +449,7 @@ interface DisableRulePlan {
  * they were read.
  */
 export async function disableRule(input: RuleChangeInput & { readonly force?: boolean }): Promise<RuleChange> {
+  await assertNotDotAgentsTarget(input.projectRoot);
   const catalog = input.catalog ?? BUILT_IN_RULES;
   return appendPlannedWrite<RecordOnlyRulePlan | DisableRulePlan, RuleChange>(input.libraryRoot, input, {
     plan: async (root, nativeState) => {

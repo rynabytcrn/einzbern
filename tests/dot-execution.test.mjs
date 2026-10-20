@@ -3,9 +3,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DOT_REQUIRED_CHECKS, resolveDotExecutionAdmission, validateDotExecutionRequest } from "../dist/build/packages/core/src/dot-execution.js";
 import { EXECUTION_HOSTS } from "../dist/build/packages/core/src/execution-config.js";
+import { contextReadFixture } from "./helpers/dot-native-fixture.mjs";
 const at = "2026-10-20T05:00:00Z";
 function request() {
-  return { mode: "dot-autonomous", executionTarget: "chatgpt-dot", libraryId: `library:${"a".repeat(24)}`, projectRef: { libraryId: `library:${"a".repeat(24)}`, projectId: `project:${"b".repeat(24)}` }, workId: `work:${"c".repeat(24)}`, revisionBinding: { kind: "revision", workRevision: 1, scopeDigest: "d".repeat(64) }, requestedAgents: 1, requiredTools: ["native.fixture"], actualCapabilityEvidenceRefs: ["fixture:capability"], authorizationEvidenceRef: "fixture:authorization", checks: Object.fromEntries(DOT_REQUIRED_CHECKS.map(name => [name, { status: "pass", evidenceRefs: [`fixture:${name}`], reason: "synthetic unit-test input, not a production observation" }])), occupancyObservation: { status: "observed", activeAgents: 1, includesParent: true, parentActive: true, platformLimit: 7, observedAt: at, evidenceRef: "fixture:occupancy" }, modelObservation: { status: "unavailable", reason: "not exposed" } };
+  const result = { mode: "dot-autonomous", executionTarget: "chatgpt-dot", libraryId: `library:${"a".repeat(24)}`, projectRef: { libraryId: `library:${"a".repeat(24)}`, projectId: `project:${"b".repeat(24)}` }, workId: `work:${"c".repeat(24)}`, revisionBinding: { kind: "revision", workRevision: 1, scopeDigest: "d".repeat(64) }, requestedAgents: 1, requiredTools: ["native.fixture"], actualCapabilityEvidenceRefs: ["fixture:capability"], authorizationEvidenceRef: "fixture:authorization", checks: Object.fromEntries(DOT_REQUIRED_CHECKS.map(name => [name, { status: "pass", evidenceRefs: [`fixture:${name}`], reason: "synthetic unit-test input, not a production observation" }])), occupancyObservation: { status: "observed", activeAgents: 1, includesParent: true, parentActive: true, platformLimit: 7, observedAt: at, evidenceRef: "fixture:occupancy" }, modelObservation: { status: "unavailable", reason: "not exposed" } };
+  return { ...result, contextRead: contextReadFixture(result, at) };
 }
 const options = { deviceLimit: 6, projectLimit: 4, now: at, contextDigest: "e".repeat(64) };
 test("DOT-E02 native applicability is not a model/quota pass or a legacy host", () => {

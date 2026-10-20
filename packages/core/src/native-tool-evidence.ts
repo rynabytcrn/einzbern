@@ -118,6 +118,10 @@ export function recordNativeToolResponse(attemptValue: NativeToolAttempt, admiss
   dotRefs(input.resultRefs, "resultRefs");
   const statuses: readonly NativeExecutionStatus[] = ["accepted", "running", "reported-completed", "failed", "cancelled", "unknown"];
   if (!statuses.includes(input.executionStatus)) fail("unsupported execution status");
+  if (input.statusMapping !== undefined) {
+    dotObject(input.statusMapping, "statusMapping", Object.keys(input.statusMapping));
+    if (Object.values(input.statusMapping).some(status => !statuses.includes(status))) fail("unsupported status mapping");
+  }
   if (input.executionStatus !== "unknown") {
     if (!input.statusPointer || !input.statusMapping || input.statusMapping[String(pointer(input.rawResponseValue, input.statusPointer))] !== input.executionStatus) fail("execution status needs actual raw field and explicit tool mapping");
   }
@@ -149,17 +153,63 @@ export function recordNativeToolResponse(attemptValue: NativeToolAttempt, admiss
   }
   return { schemaVersion: NATIVE_TOOL_EVIDENCE_VERSION, evidenceType: "native-tool", source: "native-tool-return", attemptId: attempt.attemptId, libraryId: attempt.libraryId, projectRef: attempt.projectRef, workId: attempt.workId, revisionBinding: attempt.revisionBinding, admissionDigest: attempt.admissionDigest, toolName: attempt.toolName, observedAt: input.observedAt, executionStatus: input.executionStatus, executionFinality, ...(input.terminalObservation ? { finalityEvidenceRef: input.terminalObservation.evidenceRef } : {}), resultRefs: input.resultRefs, rawResponse: { ref: input.rawResponseRef, sha256: dotDigest(input.rawResponseValue), sourceTool: input.sourceTool }, association: { status: input.association.status, evidenceRefs: input.association.evidenceRefs, reason: input.association.reason }, verification: input.verification, ...provider };
 }
-export interface NativeToolRecord { readonly attempt: NativeToolAttempt; readonly admission: DotAdmission; readonly response: NativeToolResponseInput; readonly evidence: NativeToolEvidence }
+export interface NativeDispatchBinding {
+  readonly schemaVersion: "tcrn.native-dispatch-preparation.v1";
+  readonly context: Record<string, unknown>;
+  readonly targetDispatchAdmitted: boolean;
+  readonly admission: DotAdmission | null;
+  readonly attempt: NativeToolAttempt | null;
+  readonly retry?: { readonly previous: unknown; readonly reconciliation: NativeRetryReconciliation };
+  readonly digest: string;
+}
+/** Reconsume the saved real target/context; an isolated pure admission is not dispatch. */
+export function validateNativeDispatchBinding(value: unknown, depth = 0): NativeDispatchBinding {
+  if (depth > 16) fail("retry ancestry exceeds the bounded evidence limit");
+  const p = dotObject(value, "native preparation", ["schemaVersion", "context", "targetDispatchAdmitted", "admission", "attempt", "retry", "digest"]);
+  const { digest, ...payload } = p;
+  if (p.schemaVersion !== "tcrn.native-dispatch-preparation.v1" || dotDigest(payload) !== digest || p.targetDispatchAdmitted !== true) fail("native preparation must be admitted and intact");
+  const admission = validateDotAdmission(p.admission); const attempt = validateNativeToolAttempt(p.attempt, admission);
+  const context = p.context as Record<string, unknown>;
+  const targets = (context?.involvedProjects as { state?: unknown; targets?: unknown[] } | undefined);
+  const target = Array.isArray(context?.contexts) ? context.contexts.find((item: Record<string, unknown>) => dotDigest(item.reference) === dotDigest(attempt.projectRef)) as Record<string, unknown> | undefined : undefined;
+  if (!target || targets?.state !== "selected" || !Array.isArray(targets.targets) || !targets.targets.some(item => dotDigest(item) === dotDigest(attempt.projectRef)) || (target.readiness as { development?: { ready?: unknown } } | undefined)?.development?.ready !== true || dotDigest(target.executionAdmission) !== dotDigest(admission) || context.workId !== attempt.workId || attempt.revisionBinding.kind !== "revision" || context.workRevision !== attempt.revisionBinding.workRevision) fail("native attempt differs from captured project context");
+  const roots = Array.isArray(target.repositoryContexts) ? target.repositoryContexts.map((item: { projectPath: string }) => item.projectPath).sort() : null;
+  if (!roots || !admission.request.contextRead || dotDigest(roots) !== dotDigest([...admission.request.contextRead.expected.effectiveRoots].sort())) fail("captured target roots differ from actual-session context");
+  if (p.retry !== undefined) {
+    const retry = dotObject(p.retry, "retry", ["previous", "reconciliation"]);
+    const prior = normalizeNativeToolEvidence(retry.previous, {}, depth + 1);
+    if (!prior.valid) fail("retry predecessor is invalid");
+    const previous = nativeSavedAttempt(retry.previous, true);
+    validateNativeRetry(previous, admission, { toolName: attempt.toolName, requestedAt: attempt.requestedAt }, retry.reconciliation as NativeRetryReconciliation, depth + 1);
+    if (previous.attemptId === attempt.attemptId) fail("retry must use a new attempt ID");
+  }
+  return value as NativeDispatchBinding;
+}
+export interface NativeToolRecord { readonly preparation: NativeDispatchBinding; readonly attempt: NativeToolAttempt; readonly admission: DotAdmission; readonly response: NativeToolResponseInput; readonly evidence: NativeToolEvidence }
 export interface NativeEvidenceAssessment { readonly requested: true; readonly evidenceType: "native-tool"; readonly valid: boolean; readonly complete: boolean; readonly status: "invalid" | "pending" | "unverified" | "associated"; readonly problems: readonly string[]; readonly evidence: unknown; readonly authentication: "source-association-only-not-provider-authentication"; readonly executionResponsibility: "retained" | "terminal-confirmed" }
 /** Review accepts original source material, not a bare envelope or a passed flag. */
-export function normalizeNativeToolEvidence(value: unknown, expected: { readonly workId?: string | null; readonly workRevision?: number | null } = {}): NativeEvidenceAssessment {
+export function normalizeNativeToolEvidence(value: unknown, expected: { readonly workId?: string | null; readonly workRevision?: number | null } = {}, depth = 0): NativeEvidenceAssessment {
   const problems: string[] = []; let complete = false; let pending = false; let associated = false; let terminalConfirmed = false;
   try {
     const wrapped = value !== null && typeof value === "object" && !Array.isArray(value) && Object.hasOwn(value, "record");
-    const source = wrapped ? dotObject(value, "native saved record", ["record", "normalized"]).record : value;
-    const record = dotObject(source, "native record", ["attempt", "admission", "response", "evidence"]);
+    if (depth > 16) fail("retry ancestry exceeds the bounded evidence limit");
+    const saved = wrapped ? dotObject(value, "native saved record", ["record", "normalized", "history", "appendStatus", "problems", "rejectedRecord"]) : null;
+    let source = saved ? saved.record : value;
+    if (saved?.history !== undefined) {
+      const latest = normalizeNativeToolEvidence(saved.record, expected, depth);
+      if (!latest.valid) fail("saved latest record is invalid");
+      const history = validateNativeToolHistory(saved.history, depth);
+      if (saved.appendStatus === "conflict" || saved.rejectedRecord !== undefined) fail("unresolved conflicting native return");
+      const newest = source as NativeToolRecord;
+      if (newest.response !== undefined && !history.records.some(item => nativeEventContent(item.evidence) === nativeEventContent(newest.evidence))) fail("saved return is absent from validated history");
+      if (history.records.some(item => dotDigest(item.attempt) !== dotDigest(newest.attempt))) fail("saved history belongs to another attempt");
+      if (history.current !== null) source = history.records.find(item => dotDigest(item.evidence) === dotDigest(history.current));
+    }
+    const record = dotObject(source, "native record", ["preparation", "attempt", "admission", "response", "evidence"]);
+    const preparation = validateNativeDispatchBinding(record.preparation, depth);
     const admission = validateDotAdmission(record.admission);
     const attempt = validateNativeToolAttempt(record.attempt, admission);
+    if (dotDigest(preparation.attempt) !== dotDigest(attempt) || dotDigest(preparation.admission) !== dotDigest(admission)) fail("record differs from saved preparation");
     if (expected.workId != null && attempt.workId !== expected.workId) fail("review work differs from attempt");
     if (expected.workRevision != null && (attempt.revisionBinding.kind !== "revision" || attempt.revisionBinding.workRevision !== expected.workRevision)) fail("review revision differs from attempt");
     if (record.response === undefined && record.evidence === undefined) pending = true;
@@ -174,43 +224,71 @@ export function normalizeNativeToolEvidence(value: unknown, expected: { readonly
   } catch (error) { problems.push(String(error)); }
   return { requested: true, evidenceType: "native-tool", valid: problems.length === 0, complete, status: problems.length ? "invalid" : pending ? "pending" : associated ? "associated" : "unverified", problems, evidence: value, authentication: "source-association-only-not-provider-authentication", executionResponsibility: problems.length === 0 && terminalConfirmed ? "terminal-confirmed" : "retained" };
 }
-export interface NativeToolHistory { readonly records: readonly NativeToolRecord[]; readonly observations: readonly { readonly key: string; readonly observedAt: string }[]; readonly current: NativeToolEvidence | null }
+/** Storage locations and local reread times do not change provider event content. */
+function nativeEventContent(e: NativeToolEvidence): string {
+  const provider = Object.fromEntries(["providerRef", "providerEventRef", "providerStartedAt", "providerFinishedAt"].map(key => [key, (e[key as keyof NativeToolEvidence] as ProviderObservation | undefined)?.value ?? null]));
+  return dotDigest({ attemptId: e.attemptId, toolName: e.toolName, rawSha256: e.rawResponse.sha256, executionStatus: e.executionStatus, executionFinality: e.executionFinality, association: e.association.status, verification: e.verification.status, ...provider });
+}
+export function nativeSavedAttempt(value: unknown, forRetry = false): NativeToolAttempt {
+  const saved = dotObject(value, "saved native return", ["record", "normalized", "history", "appendStatus", "problems", "rejectedRecord"]);
+  const current = (saved.history as NativeToolHistory | undefined)?.current ?? (saved.record as NativeToolRecord).evidence;
+  if (forRetry && current?.association.status === "associated" && current.executionFinality === "confirmed" && current.executionStatus === "reported-completed") fail("a completed predecessor is not retryable");
+  return validateNativeToolAttempt((saved.record as NativeToolRecord).attempt);
+}
+export function validateNativeToolHistory(value: unknown, depth = 0): NativeToolHistory {
+  const raw = dotObject(value, "native history", ["records", "observations", "current"]);
+  if (!Array.isArray(raw.records) || !Array.isArray(raw.observations) || raw.records.length > 256 || raw.observations.length > 1024) fail("native history exceeds bounded evidence limits");
+  let rebuilt: NativeToolHistory = { records: [], observations: [], current: null };
+  for (const record of raw.records) { const next = appendNativeToolRecord(rebuilt, record as NativeToolRecord, depth); if (next.status !== "appended") fail("history contains conflicting or duplicate records"); rebuilt = next.history; }
+  if (dotDigest(rebuilt.current) !== dotDigest(raw.current)) fail("history current state differs from actual retained returns");
+  for (const rawObservation of raw.observations) { const observation = dotObject(rawObservation, "history observation", ["key", "observedAt", "sourceRef"]); dotSha(observation.key, "event key"); dotInstant(observation.observedAt, "observedAt"); dotText(observation.sourceRef, "observation sourceRef"); if (!rebuilt.observations.some(item => item.key === observation.key)) fail("history observation has no retained event"); }
+  if (rebuilt.observations.some(expected => !(raw.observations as NativeToolHistory["observations"]).some(item => item.key === expected.key && item.observedAt === expected.observedAt && item.sourceRef === expected.sourceRef))) fail("history omitted an original event observation");
+  return value as NativeToolHistory;
+}
+export interface NativeToolHistory { readonly records: readonly NativeToolRecord[]; readonly observations: readonly { readonly key: string; readonly observedAt: string; readonly sourceRef: string }[]; readonly current: NativeToolEvidence | null }
 /** No mutation of prior records; late accepted/running observations cannot regress confirmed finality. */
-export function appendNativeToolRecord(history: NativeToolHistory, record: NativeToolRecord): { readonly status: "appended" | "duplicate" | "conflict"; readonly history: NativeToolHistory; readonly problems: readonly string[]; readonly rejectedRecord?: NativeToolRecord } {
-  if (history.records.some(item => !normalizeNativeToolEvidence(item).valid) || history.current !== null && !history.records.some(item => dotDigest(item.evidence) === dotDigest(history.current)) || history.current === null && history.records.length > 0) return { status: "conflict", history, rejectedRecord: record, problems: ["history current state must come from retained validated returns"] };
-  const assessment = normalizeNativeToolEvidence(record);
+export function appendNativeToolRecord(history: NativeToolHistory, record: NativeToolRecord, depth = 0): { readonly status: "appended" | "duplicate" | "conflict"; readonly history: NativeToolHistory; readonly problems: readonly string[]; readonly rejectedRecord?: NativeToolRecord } {
+  if (history.records.length >= 256 || history.observations.length >= 1024) return { status: "conflict", history, rejectedRecord: record, problems: ["history capacity reached; preserve existing evidence"] };
+  if (history.records.some(item => !normalizeNativeToolEvidence(item, {}, depth).valid) || history.current !== null && !history.records.some(item => dotDigest(item.evidence) === dotDigest(history.current)) || history.current === null && history.records.length > 0) return { status: "conflict", history, rejectedRecord: record, problems: ["history current state must come from retained validated returns"] };
+  const assessment = normalizeNativeToolEvidence(record, {}, depth);
   if (!assessment.valid) return { status: "conflict", history, rejectedRecord: record, problems: assessment.problems };
   const evidence = record.evidence;
   const key = dotDigest([evidence.attemptId, evidence.toolName, evidence.providerRef?.value ?? null, evidence.providerEventRef?.value ?? evidence.rawResponse.sha256]);
   const existing = history.records.find(item => dotDigest([item.evidence.attemptId, item.evidence.toolName, item.evidence.providerRef?.value ?? null, item.evidence.providerEventRef?.value ?? item.evidence.rawResponse.sha256]) === key);
   if (history.records.some(item => item.attempt.attemptId !== record.attempt.attemptId || dotDigest(item.attempt) !== dotDigest(record.attempt))) return { status: "conflict", history, rejectedRecord: record, problems: ["history belongs to another attempt, work, revision or tool"] };
   if (existing) {
-    if (dotDigest({ ...existing.evidence, observedAt: null }) !== dotDigest({ ...evidence, observedAt: null })) return { status: "conflict", history, rejectedRecord: record, problems: ["same event key has conflicting content"] };
-    return { status: "duplicate", history: { ...history, observations: [...history.observations, { key, observedAt: evidence.observedAt }] }, problems: [] };
+    if (nativeEventContent(existing.evidence) !== nativeEventContent(evidence)) return { status: "conflict", history, rejectedRecord: record, problems: ["same event key has conflicting content"] };
+    return { status: "duplicate", history: { ...history, observations: [...history.observations, { key, observedAt: evidence.observedAt, sourceRef: evidence.rawResponse.ref }] }, problems: [] };
   }
   const current = history.current;
   const currentConfirmed = current?.association.status === "associated" && current.executionFinality === "confirmed";
   const returnedConfirmed = evidence.association.status === "associated" && evidence.executionFinality === "confirmed";
   if (currentConfirmed && returnedConfirmed && current!.executionStatus !== evidence.executionStatus) return { status: "conflict", history, rejectedRecord: record, problems: ["contradictory confirmed terminal states"] };
   const useNew = current === null || !currentConfirmed && (returnedConfirmed || dotInstant(evidence.observedAt, "observedAt") >= dotInstant(current.observedAt, "observedAt"));
-  return { status: "appended", history: { records: [...history.records, record], observations: [...history.observations, { key, observedAt: evidence.observedAt }], current: useNew ? evidence : current }, problems: [] };
+  return { status: "appended", history: { records: [...history.records, record], observations: [...history.observations, { key, observedAt: evidence.observedAt, sourceRef: evidence.rawResponse.ref }], current: useNew ? evidence : current }, problems: [] };
 }
 
 export type NativeRetryReconciliation = { readonly outcome: "confirmed-terminal"; readonly record: NativeToolRecord }
   | { readonly outcome: "confirmed-not-executed"; readonly queryTool: string; readonly queryRef: string; readonly queriedAttemptId: string; readonly responseValue: unknown; readonly observedAt: string; readonly notExecutedPointer: string; readonly notExecutedValue: string; readonly contractRef: string };
 /** Unknown outcome is not retry permission. The original attempt and evidence remain immutable. */
 export function createNativeToolRetry(previous: NativeToolAttempt, admission: DotAdmission, input: Parameters<typeof createNativeToolAttempt>[1], reconciliation: NativeRetryReconciliation): { readonly previousAttemptId: string; readonly reconciliationDigest: string; readonly attempt: NativeToolAttempt } {
+  validateNativeRetry(previous, admission, input, reconciliation);
+  return { previousAttemptId: previous.attemptId, reconciliationDigest: dotDigest(reconciliation), attempt: createNativeToolAttempt(admission, input) };
+}
+function validateNativeRetry(previous: NativeToolAttempt, admission: DotAdmission, input: { readonly toolName: string; readonly requestedAt: string }, reconciliation: NativeRetryReconciliation, depth = 0): void {
   validateNativeToolAttempt(previous);
   let reconciledAt: string;
   if (reconciliation.outcome === "confirmed-terminal") {
-    if (!normalizeNativeToolEvidence(reconciliation.record).valid || dotDigest(reconciliation.record.attempt) !== dotDigest(previous) || reconciliation.record.evidence.association.status !== "associated" || reconciliation.record.evidence.executionFinality !== "confirmed" || !["failed", "cancelled"].includes(reconciliation.record.evidence.executionStatus)) fail("retry needs an associated confirmed failure/cancellation or actual non-execution query");
+    dotObject(reconciliation, "terminal reconciliation", ["outcome", "record"]);
+    if (!normalizeNativeToolEvidence(reconciliation.record, {}, depth).valid || dotDigest(reconciliation.record.attempt) !== dotDigest(previous) || reconciliation.record.evidence.association.status !== "associated" || reconciliation.record.evidence.executionFinality !== "confirmed" || !["failed", "cancelled"].includes(reconciliation.record.evidence.executionStatus)) fail("retry needs an associated confirmed failure/cancellation or actual non-execution query");
     reconciledAt = reconciliation.record.evidence.observedAt;
   } else if (reconciliation.outcome === "confirmed-not-executed") {
+    dotObject(reconciliation, "non-execution reconciliation", ["outcome", "queryTool", "queryRef", "queriedAttemptId", "responseValue", "observedAt", "notExecutedPointer", "notExecutedValue", "contractRef"]);
     dotText(reconciliation.queryRef, "queryRef"); dotText(reconciliation.queryTool, "queryTool"); dotText(reconciliation.notExecutedValue, "notExecutedValue");
     if (reconciliation.queriedAttemptId !== previous.attemptId || reconciliation.contractRef !== previous.toolContractObservation.ref || String(pointer(reconciliation.responseValue, reconciliation.notExecutedPointer)) !== reconciliation.notExecutedValue) fail("non-execution query does not bind the original attempt and tool contract");
     reconciledAt = reconciliation.observedAt;
   } else fail("pending outcome requires an actual query before retry");
   if (dotInstant(reconciledAt, "reconciledAt") < dotInstant(previous.requestedAt, "previous requestedAt") || dotInstant(input.requestedAt, "retry requestedAt") < dotInstant(reconciledAt, "reconciledAt")) fail("retry must follow the actual reconciliation, never redate an old attempt");
-  if (admission.request.workId !== previous.workId || input.toolName !== previous.toolName) fail("retry cannot silently change work or tool");
-  return { previousAttemptId: previous.attemptId, reconciliationDigest: dotDigest(reconciliation), attempt: createNativeToolAttempt(admission, input) };
+  if (admission.request.workId !== previous.workId || admission.request.libraryId !== previous.libraryId || dotDigest(admission.request.projectRef) !== dotDigest(previous.projectRef) || input.toolName !== previous.toolName) fail("retry cannot silently change work or tool");
+
 }

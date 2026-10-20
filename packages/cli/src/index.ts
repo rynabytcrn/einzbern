@@ -26,7 +26,7 @@ import { readMachineSettings } from "../../core/src/machine-settings.js";
 import { configurationContract, annotateConfigValue } from "../../core/src/configuration-contract.js";
 import { evaluateExecutionQuota, resolveExecutionConcurrency } from "../../core/src/execution-policy.js";
 import { ensureSetupProjectBinding } from "../../core/src/setup-fresh.js";
-import { DOT_AGENTS_TEMPLATE_VERSION, DOT_INSTALLATION_TARGET, SETUP_EXECUTION_TARGETS } from "../../core/src/dot-agents.js";
+import { DOT_AGENTS_TEMPLATE_VERSION, DOT_INSTALLATION_TARGET, SETUP_EXECUTION_TARGETS, dotEnabledRuleSources } from "../../core/src/dot-agents.js";
 import type { SetupExecutionTarget } from "../../core/src/dot-agents.js";
 import { resolveEngineExecutionPolicy, engineModelPolicyCatalogFromSnapshot } from "../../core/src/engine-model-policy.js";
 import { setConfigRecord, removeConfigRecord } from "../../core/src/config-records.js";
@@ -1811,7 +1811,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // --yes true it answers SETUP_PLAN_READY and writes nothing; with it, SETUP_APPLIED, whose
   // traditional self-check is doctor's eight checks and the hook run once. The dot target returns
   // only its independent file receipt; it never invokes a legacy hook.
-  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "absolute path to JSON dot target options; required for chatgpt-dot" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "absolute path to JSON dot target options; required for chatgpt-dot" }, { name: "approved-plan-digest", required: false, valueKind: "string", valueShape: "saved preview dot.planDigest; required for dot apply" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   // TCRN-CROSS-STORY-479 R1: the skill directory this engine generates for its version, written
   // into a missing or empty --out; it runs only where the skill template sits beside the engine.
   { name: "skill-render", availability: "cli", mutates: true, flags: [{ name: "out", required: true, valueKind: "string" }, { name: "version", required: false, valueKind: "string" }] },
@@ -2733,8 +2733,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const projectRoot = candidate === undefined || !coordination ? candidate
       : await managedOutputBinding(libraryRoot, candidate, native).then((binding) => binding === "bound" ? candidate : undefined, () => undefined);
     const rules = await namingSection(() => listRules({ libraryRoot, ...(projectRoot === undefined ? {} : { projectRoot }), ...(projectId === undefined ? {} : { configurationProjectId: projectId }) }));
+    const ruleLanguage = state.settings.find(entry => entry.key === "artifact.language")?.value;
+    const dotRuleSources = (() => {
+      if (typeof ruleLanguage !== "string" || !["zh-CN", "en", "ja", "ko", "fr"].includes(ruleLanguage)) return { status: "unavailable", reason: "artifact-language-unconfigured", enabledRules: null };
+      try { return { status: "available", language: ruleLanguage, enabledRules: dotEnabledRuleSources(state, ruleLanguage, `rule-list:${state.metadata.workspaceId}:${projectId ?? "common"}`) }; }
+      catch (error) { if ((error as { reasonCode?: string }).reasonCode !== "DOT_SOURCE_MISMATCH") throw error; return { status: "unavailable", reason: "DOT_SOURCE_MISMATCH", enabledRules: null }; }
+    })();
     io.write(canonicalJson({ reasonCode: "RULE_LIST_READY", schemaVersion: "einzbern.rule-list.v1", projectPath: projectRoot ?? null, projectId: projectId ?? null, libraryPath: libraryRoot,
-      outputBindingStatus: projectRoot === undefined ? "unconfigured" : "bound",
+      outputBindingStatus: projectRoot === undefined ? "unconfigured" : "bound", dotRuleSources,
       catalog: BUILT_IN_RULES.map((rule) => ({ id: rule.id, version: rule.version, title: rule.title })),
       rules: rules.map((rule) => ({ ...ruleStatusJson(rule) as Readonly<Record<string, JsonValue>>, source: state.configSources[JSON.stringify(["rule", rule.id])] ?? null })) }));
     return;
@@ -2913,7 +2919,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-480 (setup.ts): plan in the chosen mode; apply the plan only with --yes true. The
   // device directory is this process's (EINZBERN_HOME), the one the library records go through.
   if (command === "setup") {
-    const values = parseArguments(rest, ["execution-target", "dot-input", "mode", "project", "at", "artifacts", "cloud", "restore", "language", "navigation", "archive", "rollback", "managed-sections", "mapping", "yes"]);
+    const values = parseArguments(rest, ["execution-target", "dot-input", "approved-plan-digest", "mode", "project", "at", "artifacts", "cloud", "restore", "language", "navigation", "archive", "rollback", "managed-sections", "mapping", "yes"]);
     required(values, ["mode", "project", "at"]);
     let options = setupOptions(values);
     if (options.executionTarget === DOT_INSTALLATION_TARGET) {
@@ -2925,11 +2931,19 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       if (dot === null || typeof dot !== "object" || Array.isArray(dot) || ["executionTarget", "operation", "at"].some(key => Object.hasOwn(dot as object, key))) fail("SETUP_INPUT_INVALID", "dot-input contains only dot target options; target, mode and at come from CLI flags");
       options = { ...options, dot: dot as NonNullable<SetupOptions["dot"]> };
     } else if (values["dot-input"] !== undefined) fail("SETUP_OPTION_NOT_APPLICABLE", "--dot-input requires --execution-target chatgpt-dot");
+    if (values["approved-plan-digest"] !== undefined && options.executionTarget !== DOT_INSTALLATION_TARGET) fail("SETUP_OPTION_NOT_APPLICABLE", "--approved-plan-digest requires --execution-target chatgpt-dot");
     const confirmed = booleanValue(values.yes, "yes");
     const plan: SetupPlan = await planSetup(options);
     if (!confirmed) {
       io.write(canonicalJson(plan as unknown as JsonValue));
       return;
+    }
+    if (options.executionTarget === DOT_INSTALLATION_TARGET) {
+      const approved = values["approved-plan-digest"];
+      if (approved === undefined || !/^[a-f0-9]{64}$/u.test(approved) || approved !== plan.dot?.planDigest) {
+        io.write(canonicalJson(plan as unknown as JsonValue));
+        fail("DOT_PLAN_STALE", "dot apply requires the exact approved preview dot.planDigest; review the returned plan without writing");
+      }
     }
     const applied = await applySetup(plan);
     // Native installation has its own file receipt. Never run a traditional hook or

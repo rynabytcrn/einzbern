@@ -352,14 +352,24 @@ test("dot CLI applies its independent receipt without spawning the traditional s
   const flags = ["setup", "--mode", "fresh", "--project", project, "--at", at(), "--execution-target", "chatgpt-dot", "--dot-input", inputPath];
   const plan = await cli(flags); assert.equal(plan.executionTarget, "chatgpt-dot");
   await assert.rejects(readFile(input.binding.agentsPath), { code: "ENOENT" });
-  const applied = await cli([...flags, "--yes", "true"]);
+  await assert.rejects(cli([...flags, "--yes", "true"]), { reasonCode: "DOT_PLAN_STALE" });
+  // The saved approved preview, not a newly calculated plan, authorizes the write.
+  await writeFile(enginePath, "// changed actual engine bytes\n");
+  await assert.rejects(cli([...flags, "--yes", "true", "--approved-plan-digest", plan.dot.planDigest]), { reasonCode: "DOT_PLAN_STALE" });
+  await assert.rejects(readFile(input.binding.agentsPath), { code: "ENOENT" });
+  await writeFile(enginePath, "// fixture engine, not release evidence\n");
+  await writeFile(inputPath, JSON.stringify({ ...input, source: { ...input.source, language: "fr" } }));
+  await assert.rejects(cli([...flags, "--yes", "true", "--approved-plan-digest", plan.dot.planDigest]), { reasonCode: "DOT_PLAN_STALE" });
+  await writeFile(inputPath, JSON.stringify(input));
+  const applied = await cli([...flags, "--yes", "true", "--approved-plan-digest", plan.dot.planDigest]);
   assert.equal(applied.reasonCode, "SETUP_APPLIED"); assert.equal(applied.dot.status, "applied");
   assert.equal(applied.dot.sessionRead, "not-verified"); assert.deepEqual(applied.selfCheck, []);
   for (const key of ["exitCode", "prompt", "injected", "hookReasonCode"]) assert.equal(Object.hasOwn(applied.selfCheck, key), false);
   await assert.rejects(readFile(marker), { code: "ENOENT" });
   await assert.rejects(readFile(join(project, "CLAUDE.md")), { code: "ENOENT" });
   await writeFile(inputPath, JSON.stringify({ ...input, preInjection: "skip", source: null }));
-  assert.equal((await cli([...flags, "--yes", "true"])).reasonCode, "SETUP_DOT_SKIPPED");
+  const skipped = await cli(flags);
+  assert.equal((await cli([...flags, "--yes", "true", "--approved-plan-digest", skipped.dot.planDigest])).reasonCode, "SETUP_DOT_SKIPPED");
   await assert.rejects(cli([...flags, "--cloud", "true"]), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
   await assert.rejects(cli(flags.map(value => value === inputPath ? "relative.json" : value)), { reasonCode: "CLI_ARGUMENT_MALFORMED" });
   await writeFile(inputPath, JSON.stringify({ ...input, at: "override" }));

@@ -207,7 +207,7 @@ const INC_225_CLAUSES = Object.freeze([
 ]);
 
 test("540 (MIN-259 D1): residue-cleanup v1 and goal-writing v1 carry the Owner's Chinese and their English, clause for clause", async () => {
-  assert.deepEqual(BUILT_IN_RULE_IDS.slice(-3), ["design-authority", "residue-cleanup", "goal-writing"]);
+  assert.deepEqual(BUILT_IN_RULE_IDS.slice(4, 7), ["design-authority", "residue-cleanup", "goal-writing"]);
   const residue = builtInRule("residue-cleanup");
   const goal = builtInRule("goal-writing");
   assert.deepEqual([residue.version, { ...residue.title }], [1, { zh: "无效残余收尾原则", en: "Residue Cleanup Principle" }]);

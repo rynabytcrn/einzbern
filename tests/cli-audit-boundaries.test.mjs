@@ -148,7 +148,7 @@ test("INIT062 policy approval invokes existing Owner-decision authority with exa
   const globals = {
     configBackupRunningVersion: () => {}, configBackupSource: () => {}, configBackupProtectedRoots: () => {},
     validateConfigBackupRetentionPolicy: () => ({ status: "policy-valid", policyDigest: "a".repeat(64), policy: { approvalEvidenceRef: "minutes:fixture#D1" } }),
-    readDevice: async () => ({ deviceId: "fixture-device" }), canonicalSha256, materializeWorkspace: async () => ({ fixture: true }),
+    readDevice: async () => ({ deviceId: "fixture-device" }), canonicalSha256: value => canonicalSha256(JSON.parse(JSON.stringify(value))), materializeWorkspace: async () => ({ fixture: true }),
     verifyWriteAuthorization: async input => { calls.push(input); return {}; },
   };
   const context = (await integrationFunction("configBackupContext", globals))();

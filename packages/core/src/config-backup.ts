@@ -90,7 +90,7 @@ export function configBackupInstant(value: unknown): string {
 }
 export function configBackupProjectRef(value: unknown): ConfigBackupProjectRef {
   const v = configBackupObject(value, ["libraryId", "projectId"]);
-  if (!/^(?:library|workspace):[a-f0-9]{24}$/u.test(String(v.libraryId)) || !/^project:[a-f0-9]{24}$/u.test(String(v.projectId))) configBackupFail("CONFIG_BACKUP_PROJECT_INVALID");
+  if (!/^(?:library|workspace):[a-f0-9]{24}$/u.test(configBackupString(v.libraryId)) || !/^project:[a-f0-9]{24}$/u.test(configBackupString(v.projectId))) configBackupFail("CONFIG_BACKUP_PROJECT_INVALID");
   return { libraryId: v.libraryId as string, projectId: v.projectId as string };
 }
 export function configBackupId(value: unknown): string {
@@ -112,7 +112,7 @@ export function validateConfigBackupPayload(value: unknown): ConfigBackupPayload
     safeText(raw.text);
   } else if (raw.kind === "setting") {
     configBackupObject(raw, ["kind", "key", "value", "source"]);
-    if (!CONFIG_BACKUP_SETTING_KEYS.includes(raw.key as typeof CONFIG_BACKUP_SETTING_KEYS[number]) || !["project-declaration", "library-declaration"].includes(String(raw.source))) configBackupFail("CONFIG_BACKUP_KEY_EXCLUDED");
+    if (!CONFIG_BACKUP_SETTING_KEYS.includes(raw.key as typeof CONFIG_BACKUP_SETTING_KEYS[number]) || !["project-declaration", "library-declaration"].includes(configBackupString(raw.source))) configBackupFail("CONFIG_BACKUP_KEY_EXCLUDED");
     if (raw.value !== null) safeText(validateSettingValue(raw.key, raw.value));
   } else if (raw.kind === "device-preference") {
     configBackupObject(raw, ["kind", "key", "value", "source"]);
@@ -120,11 +120,11 @@ export function validateConfigBackupPayload(value: unknown): ConfigBackupPayload
     if (raw.value !== null) safeText(validateMachineSettingValue(raw.key as typeof CONFIG_BACKUP_MACHINE_KEYS[number], raw.value));
   } else if (raw.kind === "path-remapping") {
     configBackupObject(raw, ["kind", "key", "remappingRequired"]);
-    if (!["paths.artifacts", "paths.knowledgeArticles"].includes(String(raw.key)) || raw.remappingRequired !== true) configBackupFail("CONFIG_BACKUP_KEY_EXCLUDED");
+    if (!["paths.artifacts", "paths.knowledgeArticles"].includes(configBackupString(raw.key)) || raw.remappingRequired !== true) configBackupFail("CONFIG_BACKUP_KEY_EXCLUDED");
   } else if (raw.kind === "variable") {
     configBackupObject(raw, ["kind", "name", "declaration", "source"]);
     const name = configBackupString(raw.name);
-    if (/(?:secret|token|password|credential|identity|oauth|trust|lease|admission)/iu.test(name) || !["project-declaration", "library-declaration"].includes(String(raw.source))) configBackupFail("CONFIG_BACKUP_KEY_EXCLUDED");
+    if (/(?:secret|token|password|credential|identity|oauth|trust|lease|admission)/iu.test(name) || !["project-declaration", "library-declaration"].includes(configBackupString(raw.source))) configBackupFail("CONFIG_BACKUP_KEY_EXCLUDED");
     if (raw.declaration === null) checkVariableInput({ name, type: "string", value: "", exports: [] });
     else {
       const d = configBackupObject(raw.declaration, ["type", "value", "description", "exports", "order"]);
@@ -134,7 +134,7 @@ export function validateConfigBackupPayload(value: unknown): ConfigBackupPayload
     }
   } else if (raw.kind === "rule") {
     configBackupObject(raw, ["kind", "id", "version", "enabled", "order", "source"]);
-    if (!BUILT_IN_RULES.some(rule => rule.id === raw.id) || !Number.isSafeInteger(raw.version) || (raw.version as number) < 1 || typeof raw.enabled !== "boolean" || !["project-declaration", "library-declaration"].includes(String(raw.source)) || (raw.order !== undefined && (!Number.isSafeInteger(raw.order) || (raw.order as number) < 1))) configBackupFail("CONFIG_BACKUP_RULE_INVALID");
+    if (!BUILT_IN_RULES.some(rule => rule.id === raw.id) || !Number.isSafeInteger(raw.version) || (raw.version as number) < 1 || typeof raw.enabled !== "boolean" || !["project-declaration", "library-declaration"].includes(configBackupString(raw.source)) || (raw.order !== undefined && (!Number.isSafeInteger(raw.order) || (raw.order as number) < 1))) configBackupFail("CONFIG_BACKUP_RULE_INVALID");
   } else configBackupFail("CONFIG_BACKUP_KEY_EXCLUDED");
   return raw as unknown as ConfigBackupPayload;
 }
@@ -148,7 +148,7 @@ function sourceVersion(value: unknown): ConfigBackupSourceVersion {
   const v = configBackupObject(value, ["engineVersion", "engineCommit", "engineCommitStatus", "artifactIdentity", "templateVersions"]);
   configBackupString(v.engineVersion);
   const artifact = configBackupObject(v.artifactIdentity, ["kind", "schemaVersion", "sha256"]);
-  if (artifact.kind !== "observed-artifact-identity" || artifact.schemaVersion !== "einzbern.install-tree-digest.v1" || !/^[a-f0-9]{64}$/u.test(String(artifact.sha256))) configBackupFail("CONFIG_BACKUP_VERSION_INVALID");
+  if (artifact.kind !== "observed-artifact-identity" || artifact.schemaVersion !== "einzbern.install-tree-digest.v1" || !/^[a-f0-9]{64}$/u.test(configBackupString(artifact.sha256))) configBackupFail("CONFIG_BACKUP_VERSION_INVALID");
   if (!(v.engineCommitStatus === "unknown" && v.engineCommit === null || v.engineCommitStatus === "known" && typeof v.engineCommit === "string" && /^[a-f0-9]{40}$/u.test(v.engineCommit)) || !Array.isArray(v.templateVersions) || v.templateVersions.some(item => typeof item !== "string" || !item)) configBackupFail("CONFIG_BACKUP_VERSION_INVALID");
   return v as unknown as ConfigBackupSourceVersion;
 }
@@ -171,9 +171,10 @@ export function validateConfigBackupManifest(value: unknown): ConfigBackupManife
     const key = configBackupString(f.logicalKey); const path = configBackupMemberPath(f.memberPath);
     if (logical.has(key) || paths.has(path.toLowerCase()) || previous >= path || !/^members\/[a-f0-9]{64}\.json$/u.test(path)) configBackupFail("CONFIG_BACKUP_MEMBER_DUPLICATE");
     logical.add(key); paths.add(path.toLowerCase()); previous = path;
-    if (!["user-content", "governed-input", "device-preference", "regeneration-input"].includes(String(f.category)) || f.restoreStrategy !== CONFIG_BACKUP_MAPPING_VERSION || !Number.isSafeInteger(f.bytes) || (f.bytes as number) < 0 || !/^[a-f0-9]{64}$/u.test(String(f.sha256)) || !/^[a-f0-9]{64}$/u.test(String(f.sourceDigest))) configBackupFail("CONFIG_BACKUP_MANIFEST_INVALID");
+    if (!["user-content", "governed-input", "device-preference", "regeneration-input"].includes(configBackupString(f.category)) || f.restoreStrategy !== CONFIG_BACKUP_MAPPING_VERSION || !Number.isSafeInteger(f.bytes) || (f.bytes as number) < 0 || !/^[a-f0-9]{64}$/u.test(configBackupString(f.sha256)) || !/^[a-f0-9]{64}$/u.test(configBackupString(f.sourceDigest))) configBackupFail("CONFIG_BACKUP_MANIFEST_INVALID");
     if (f.requiredPermissionDescription !== `Restore selected ${f.category as string} through its supported authority`) configBackupFail("CONFIG_BACKUP_MANIFEST_INVALID");
   }
+  for (const value of [v.selectionDigest, v.manifestDigest]) if (!/^[a-f0-9]{64}$/u.test(configBackupString(value))) configBackupFail("CONFIG_BACKUP_MANIFEST_INVALID");
   const manifest = v as unknown as ConfigBackupManifest;
   if (selectionDigest(manifest.files) !== manifest.selectionDigest || configBackupManifestDigest(manifest) !== manifest.manifestDigest) configBackupFail("CONFIG_BACKUP_DIGEST_MISMATCH");
   return manifest;

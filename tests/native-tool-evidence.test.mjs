@@ -3,18 +3,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DOT_REQUIRED_CHECKS, resolveDotExecutionAdmission, dotDigest } from "../dist/build/packages/core/src/dot-execution.js";
 import { createNativeToolAttempt, recordNativeToolResponse, normalizeNativeToolEvidence, appendNativeToolRecord } from "../dist/build/packages/core/src/native-tool-evidence.js";
+import { contextReadFixture, preparationFixture } from "./helpers/dot-native-fixture.mjs";
 const at = "2026-10-20T05:00:00Z";
 function fixture() {
   const request = { mode: "dot-autonomous", executionTarget: "chatgpt-dot", libraryId: `library:${"a".repeat(24)}`, projectRef: { libraryId: `library:${"a".repeat(24)}`, projectId: `project:${"b".repeat(24)}` }, workId: `work:${"c".repeat(24)}`, revisionBinding: { kind: "revision", workRevision: 1, scopeDigest: "d".repeat(64) }, requestedAgents: 1, requiredTools: ["native.fixture"], actualCapabilityEvidenceRefs: ["fixture:capability"], authorizationEvidenceRef: "fixture:authorization", checks: Object.fromEntries(DOT_REQUIRED_CHECKS.map(name => [name, { status: "pass", evidenceRefs: [`fixture:${name}`], reason: "synthetic test evidence only" }])), occupancyObservation: { status: "observed", activeAgents: 0, includesParent: true, parentActive: false, platformLimit: 4, observedAt: at, evidenceRef: "fixture:occupancy" }, modelObservation: { status: "unavailable", reason: "not exposed" } };
+  request.contextRead = contextReadFixture(request, at);
   const admission = resolveDotExecutionAdmission(request, { deviceLimit: 4, now: at, contextDigest: "e".repeat(64) });
   const attempt = createNativeToolAttempt(admission, { toolName: "native.fixture", toolContractObservation: { ref: "fixture:contract", sha256: "f".repeat(64) }, requestedAt: at, argumentsValue: { task: "fixture" } });
   const response = { sourceTool: "native.fixture", rawResponseRef: "fixture:raw", rawResponseValue: { id: "provider-real-fixture", event: "event-1", state: "completed", terminal: true }, observedAt: "2026-10-20T05:00:01Z", executionStatus: "reported-completed", statusPointer: "/state", statusMapping: { completed: "reported-completed", accepted: "accepted", failed: "failed" }, providerPointers: { providerRef: "/id", providerEventRef: "/event" }, resultRefs: ["fixture:deliverable"], association: { status: "associated", invocationRef: "fixture:invocation", responseRef: "fixture:raw", argumentsDigest: attempt.argumentsDigest, evidenceRefs: ["fixture:association"], reason: "fixture invocation and response pair" }, verification: { status: "pass", evidenceRefs: ["fixture:independent-check"], verifiedAt: "2026-10-20T05:00:02Z", verifiedBy: "fixture:reviewer" } };
-  return { admission, attempt, response };
+  return { admission, attempt, response, preparation: preparationFixture(admission, attempt) };
 }
-function record(f, response = f.response) { return { admission: f.admission, attempt: f.attempt, response, evidence: recordNativeToolResponse(f.attempt, f.admission, response) }; }
+function record(f, response = f.response) { return { preparation: f.preparation, admission: f.admission, attempt: f.attempt, response, evidence: recordNativeToolResponse(f.attempt, f.admission, response) }; }
 const terminal = { jsonPointer: "/terminal", terminalValues: ["true"], contractRef: "fixture:contract", evidenceRef: "fixture:terminal" };
 test("DOT-E01/E03 pending has no response or provider ID; retries use separate local IDs", () => {
-  const f = fixture(); const pending = normalizeNativeToolEvidence({ attempt: f.attempt, admission: f.admission });
+  const f = fixture(); const pending = normalizeNativeToolEvidence({ preparation: f.preparation, attempt: f.attempt, admission: f.admission });
   assert.equal(pending.valid, true); assert.equal(pending.complete, false); assert.equal(pending.status, "pending"); assert.equal(pending.executionResponsibility, "retained");
   assert.notEqual(f.attempt.attemptId, fixture().attempt.attemptId);
   assert.throws(() => record(f, { ...f.response, rawResponseValue: {} }), /actual response/u);
@@ -87,8 +89,7 @@ test("DOT-E01/E03 native workflow saves pending and failed source artifacts with
   const { runNativeToolCommand } = await import("../dist/build/packages/cli/src/native-tool-commands.js");
   const root = await mkdtemp(join(tmpdir(), "einzbern-native-source-fixture-")); t.after(() => rm(root, { recursive: true, force: true }));
   const f = fixture();
-  const payload = { schemaVersion: "tcrn.native-dispatch-preparation.v1", targetDispatchAdmitted: true, context: { workId: f.attempt.workId, workRevision: 1, involvedProjects: { state: "selected", targets: [f.attempt.projectRef] }, contexts: [{ reference: f.attempt.projectRef, executionAdmission: f.admission, readiness: { development: { ready: true } } }] }, admission: f.admission, attempt: f.attempt };
-  const preparation = { ...payload, digest: dotDigest(payload) }; const binding = join(root, "preparation.json"); await writeFile(binding, JSON.stringify(preparation));
+  const preparation = f.preparation; const binding = join(root, "preparation.json"); await writeFile(binding, JSON.stringify(preparation));
   const context = { home: join(root, "private-device"), resolveWorkspace: async () => { throw new Error("not used for saved evidence"); } };
   const pendingOutput = join(root, "pending.json");
   await runNativeToolCommand("execution-native-record", { binding, output: pendingOutput }, context);
@@ -98,4 +99,45 @@ test("DOT-E01/E03 native workflow saves pending and failed source artifacts with
   const failedOutput = join(root, "failed.json"); await runNativeToolCommand("execution-native-record", { binding, response, output: failedOutput }, context);
   const failed = JSON.parse(await readFile(failedOutput, "utf8")); assert.equal(failed.normalized.valid, false); assert.deepEqual(failed.response, invalid);
   await assert.rejects(runNativeToolCommand("execution-native-record", { binding, output: pendingOutput }, context), /exist/u);
+});
+
+test("J09 complete native evidence retains preparation and rechecks actual-session sources", () => {
+  const f = fixture(); const r = record(f, { ...f.response, terminalObservation: terminal });
+  assert.equal(normalizeNativeToolEvidence(r).complete, true);
+  const { preparation, ...bare } = r; assert.equal(normalizeNativeToolEvidence(bare).valid, false);
+  for (const mutate of [
+    request => { delete request.contextRead; },
+    request => { request.contextRead.observations.forEach(row => { row.source = "parent-session"; }); },
+    request => { request.contextRead.observations.forEach(row => { row.source = "patrol"; }); },
+    request => { request.contextRead.record.files[0].sourceVersion = "stale"; },
+    request => { request.contextRead.record.files[0].sha256 = "9".repeat(64); },
+    request => { request.contextRead.record.effectiveRoots = ["/fixture/wrong"]; },
+  ]) {
+    const request = structuredClone(f.admission.request); mutate(request);
+    const admission = resolveDotExecutionAdmission(request, { deviceLimit: 4, now: at, contextDigest: "e".repeat(64) });
+    assert.equal(admission.status, "refused"); assert.notEqual(admission.checks.context.status, "pass");
+    assert.equal(normalizeNativeToolEvidence({ ...r, admission }).complete, false);
+  }
+  const missing = structuredClone(f.admission.request); missing.contextRead.record.files.pop(); assert.throws(() => resolveDotExecutionAdmission(missing, { deviceLimit: 4, now: at, contextDigest: "e".repeat(64) }));
+  const changed = structuredClone(preparation); changed.context.contexts[0].repositoryContexts[0].projectPath = "/fixture/other"; const { digest, ...payload } = changed; changed.digest = dotDigest(payload);
+  assert.equal(normalizeNativeToolEvidence({ ...r, preparation: changed }).valid, false);
+});
+
+test("J10 public saved history preserves duplicates, conflicts and late returns for evidence and patrol", async t => {
+  const { mkdtemp, readFile, rm, writeFile } = await import("node:fs/promises"); const { join } = await import("node:path"); const { tmpdir } = await import("node:os");
+  const { runNativeToolCommand } = await import("../dist/build/packages/cli/src/native-tool-commands.js");
+  const { normalizeReviewDispatchEvidence } = await import("../scripts/review-evidence.mjs");
+  const root = await mkdtemp(join(tmpdir(), "einzbern-native-history-fixture-")); t.after(() => rm(root, { recursive: true, force: true }));
+  const f = fixture(); const binding = join(root, "preparation.json"); await writeFile(binding, JSON.stringify(f.preparation));
+  const context = { home: join(root, "device"), resolveWorkspace: async () => { throw new Error("not used"); } };
+  const recordReturn = async (id, response, prior) => { const path = join(root, `${id}-response.json`), output = join(root, `${id}-record.json`); await writeFile(path, JSON.stringify(response)); await runNativeToolCommand("execution-native-record", { binding, response: path, ...(prior ? { prior } : {}), output }, context); return { output, saved: JSON.parse(await readFile(output, "utf8")) }; };
+  const completed = await recordReturn("completed", { ...f.response, terminalObservation: terminal }); assert.equal(completed.saved.normalized.complete, true);
+  const reread = { ...f.response, rawResponseRef: "fixture:another-private-copy", observedAt: "2026-10-20T05:00:03Z", association: { ...f.response.association, responseRef: "fixture:another-private-copy" }, terminalObservation: terminal };
+  const duplicate = await recordReturn("duplicate", reread, completed.output); assert.equal(duplicate.saved.appendStatus, "duplicate"); assert.equal(duplicate.saved.history.records.length, 1); assert.equal(duplicate.saved.history.observations.length, 2); assert.equal(duplicate.saved.history.observations[1].sourceRef, reread.rawResponseRef);
+  const late = await recordReturn("late", { ...f.response, executionStatus: "accepted", observedAt: "2026-10-20T05:00:04Z", rawResponseValue: { ...f.response.rawResponseValue, event: "event-late", state: "accepted" } }, duplicate.output);
+  const assessed = await runNativeToolCommand("execution-native-evidence", { "from-file": late.output }, context); assert.equal(assessed.complete, true); assert.equal(assessed.executionResponsibility, "terminal-confirmed");
+  const review = normalizeReviewDispatchEvidence(late.saved, { workId: f.attempt.workId, workRevision: 1 }); assert.equal(review.valid, true); assert.equal(review.complete, true);
+  const conflict = await recordReturn("conflict", { ...reread, rawResponseValue: { ...reread.rawResponseValue, extra: "changed bytes" } }, late.output);
+  assert.equal(conflict.saved.appendStatus, "conflict"); assert.equal(conflict.saved.normalized.valid, false); assert.equal(conflict.saved.normalized.executionResponsibility, "retained"); assert.ok(conflict.saved.rejectedRecord);
+  assert.equal(normalizeReviewDispatchEvidence(conflict.saved, { workId: f.attempt.workId, workRevision: 1 }).complete, false);
 });

@@ -50,8 +50,8 @@ export interface SharedSubmitInput {
   readonly workRefs: readonly { readonly workId: string; readonly revisionBinding: RevisionBinding }[];
   readonly baseBaseline: SharedBaseline; readonly refreshedBaseline: SharedBaseline | null; readonly localWorkCompletedAt: string;
   readonly semanticChangePlanDigest: string; readonly engineReceipts: readonly SharedSemanticReceipt[];
-  readonly merge: { readonly kind: "engine-replay" | "engine-reapply"; readonly refreshedBaselineDigest: string; readonly semanticChangePlanDigest: string; readonly engineOutputMembers: readonly Pick<SharedPublicationMember, "exactPath" | "bytes" | "sha256" | "kind">[]; readonly receiptRef: string; readonly readbackRef: string; readonly status: "verified" | "unknown" | "refused" } | null;
-  readonly writerHandoff: { readonly libraryId: string; readonly operationId: string; readonly status: "confirmed" | "occupied" | "unknown"; readonly writerScopeRefs: readonly string[]; readonly evidenceRef: string; readonly baselineDigest: string } | null;
+  readonly merge: { readonly kind: "engine-replay" | "engine-reapply"; readonly refreshedBaselineDigest: string; readonly semanticChangePlanDigest: string; readonly engineOutputMembers: readonly Pick<SharedPublicationMember, "exactPath" | "bytes" | "sha256" | "kind">[]; readonly receiptRef: string; readonly readbackRef: string; readonly status: "verified" | "unknown" | "refused"; readonly observedAt: string | null } | null;
+  readonly writerHandoff: { readonly libraryId: string; readonly operationId: string; readonly status: "confirmed" | "occupied" | "unknown"; readonly writerScopeRefs: readonly string[]; readonly evidenceRef: string; readonly baselineDigest: string; readonly observedAt: string | null } | null;
   readonly advisory: SharedSubmitAdvisory | null;
   readonly publicationMembers: readonly SharedPublicationMember[]; readonly remoteReadbacks: readonly SharedRemoteReadback[];
   readonly replay: { readonly libraryId: string; readonly operationId: string; readonly status: "verified" | "unknown" | "failed"; readonly receiptRef: string; readonly readbackRefs: readonly string[]; readonly memberSetDigest: string; readonly observedAt: string } | null;
@@ -119,8 +119,10 @@ export function planSharedSubmit(value: SharedSubmitInput): SharedSubmitAssessme
   const fresh = validateSharedBaseline(value.refreshedBaseline); const freshDigest = dotDigest(fresh);
   if (fresh.libraryId !== base.libraryId || fresh.format !== base.format || fresh.sourceVersion < base.sourceVersion || fresh.minEngine !== base.minEngine || fresh.coverageStatus !== "complete" || dotInstant(fresh.refreshedAt, "refresh") < dotInstant(value.localWorkCompletedAt, "localWorkCompletedAt")) return result("refresh-ready", "refused", "REFRESH_STALE_OR_INCOMPATIBLE", "refresh and reassess work revisions");
   const merge = value.merge;
-  if (merge !== null) dotObject(merge, "merge", ["kind", "refreshedBaselineDigest", "semanticChangePlanDigest", "engineOutputMembers", "receiptRef", "readbackRef", "status"]);
+  if (merge !== null) dotObject(merge, "merge", ["kind", "refreshedBaselineDigest", "semanticChangePlanDigest", "engineOutputMembers", "receiptRef", "readbackRef", "status", "observedAt"]);
   if (merge === null || !["engine-replay", "engine-reapply"].includes(merge.kind) || merge.status !== "verified" || merge.refreshedBaselineDigest !== freshDigest || merge.semanticChangePlanDigest !== value.semanticChangePlanDigest || !merge.receiptRef || !merge.readbackRef) return result("merge-ready", "pending", "SUPPORTED_REPLAY_OR_REAPPLICATION_REQUIRED", "use engine semantic replay/reapplication, never splice stale hashes");
+  if (merge.observedAt == null) return result("merge-ready", "pending", "MERGE_TIME_UNKNOWN", "read the actual merge/reapplication completion time");
+  if (dotInstant(merge.observedAt, "merge.observedAt") < dotInstant(fresh.refreshedAt, "fresh.refreshedAt")) return result("merge-ready", "refused", "MERGE_PREDATES_REFRESH", "reconcile actual operation order without redating evidence");
   if (!Array.isArray(merge.engineOutputMembers) || !merge.engineOutputMembers.some(item => item.kind === "segment") || !merge.engineOutputMembers.some(item => item.kind === "manifest")) fail("supported merge must identify the complete engine output member plan");
   const plannedPaths = new Set<string>();
   for (const item of merge.engineOutputMembers) {
@@ -129,12 +131,15 @@ export function planSharedSubmit(value: SharedSubmitInput): SharedSubmitAssessme
     plannedPaths.add(item.exactPath);
   }
   const handoff = value.writerHandoff;
-  if (handoff !== null) { dotObject(handoff, "writerHandoff", ["libraryId", "operationId", "status", "writerScopeRefs", "evidenceRef", "baselineDigest"]); dotRefs(handoff.writerScopeRefs, "writerScopeRefs"); }
+  if (handoff !== null) { dotObject(handoff, "writerHandoff", ["libraryId", "operationId", "status", "writerScopeRefs", "evidenceRef", "baselineDigest", "observedAt"]); dotRefs(handoff.writerScopeRefs, "writerScopeRefs"); }
   if (handoff?.status === "occupied") return result("handoff-confirmed", "waiting", "WRITER_OCCUPIED", "wait for the actual current writer");
   if (!handoff || handoff.status !== "confirmed" || handoff.libraryId !== value.libraryId || handoff.operationId !== value.operationId || handoff.baselineDigest !== freshDigest || !handoff.evidenceRef || !handoff.writerScopeRefs.length) return result("handoff-confirmed", "pending", "CURRENT_SERIAL_HANDOFF_REQUIRED", "confirm this operation's actual writer scope and handoff");
+  if (handoff.observedAt == null) return result("handoff-confirmed", "pending", "HANDOFF_TIME_UNKNOWN", "read the actual current writer handoff time");
+  if (dotInstant(handoff.observedAt, "handoff.observedAt") < dotInstant(merge.observedAt, "merge.observedAt")) return result("handoff-confirmed", "refused", "HANDOFF_PREDATES_MERGE", "reconcile actual writer handoff order");
   if (!value.advisory) return result("handoff-confirmed", "pending", "ADVISORY_UNKNOWN", "read the same library advisory; absence is not free");
   const advisory = validateSharedSubmitAdvisory(value.advisory);
   if (advisory.libraryId !== value.libraryId || advisory.operationId !== value.operationId || advisory.holder.actor !== value.actor || advisory.baseDigest !== freshDigest || advisory.handoffEvidenceRef !== handoff.evidenceRef) return result("handoff-confirmed", "waiting", "ADVISORY_DIFFERENT_WRITER_OR_OPERATION", "resolve current writer; never take over by age");
+  if (dotInstant(advisory.observedAt, "advisory.observedAt") < dotInstant(handoff.observedAt, "handoff.observedAt")) return result("handoff-confirmed", "refused", "ADVISORY_PREDATES_HANDOFF", "read the current handoff-bound advisory");
   if (advisory.state === "announced") return result("handoff-confirmed", value.publicationMembers.length ? "refused" : "ready", "ADVISORY_NOT_SUBMITTING", "read back this operation as submitting before publication");
   if (advisory.state === "unknown" || advisory.state === "waiting") return result("handoff-confirmed", "pending", "ADVISORY_NOT_SUBMITTING", "resolve coordination state");
   if (value.lastError !== null) { dotObject(value.lastError, "lastError", ["phase", "message", "outcome"]); dotText(value.lastError.message, "last error"); }
@@ -143,6 +148,7 @@ export function planSharedSubmit(value: SharedSubmitInput): SharedSubmitAssessme
   for (const member of value.publicationMembers) {
     dotObject(member, "publication member", ["exactPath", "providerId", "parentId", "bytes", "sha256", "kind", "actualReceipt", "publishedAt"]);
     safePath(member.exactPath); dotSha(member.sha256, "publication digest"); dotText(member.providerId, "providerId"); dotText(member.parentId, "parentId"); dotText(member.actualReceipt, "actualReceipt"); dotInstant(member.publishedAt, "publishedAt");
+    if (dotInstant(member.publishedAt, "publishedAt") < dotInstant(advisory.observedAt, "advisory.observedAt")) return result("publishing-segments", "refused", "PUBLICATION_PREDATES_HANDOFF", "preserve the actual order and reconcile publication");
     if (!Number.isSafeInteger(member.bytes) || member.bytes < 0 || !["segment", "manifest"].includes(member.kind) || paths.has(member.exactPath) || ids.has(member.providerId)) fail("duplicate or invalid publication member");
     if (!member.exactPath.startsWith(`${DIRECTORY.events}/`) || member.kind === "manifest" && !member.exactPath.endsWith("/manifest.json") || member.kind === "segment" && !member.exactPath.endsWith(".ndjson")) fail("publication must be actual engine event segments or their manifests");
     const planned = merge.engineOutputMembers.find(item => item.exactPath === member.exactPath);

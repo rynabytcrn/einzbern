@@ -230,7 +230,8 @@ export async function workProjectContexts(state: WorkspaceState, workId: string,
         ...(!sameTarget || involvedProjects.state !== "selected" ? { target: failCheck("explicit selected target binding differs") } : {}),
         ...(["blocked", "pending-owner-acceptance", "done", "cancelled"].includes(work.status) ? { state: failCheck("current work state does not allow dispatch") } : {}),
       };
-      executionAdmission = resolveDotExecutionAdmission({ ...dotRequest, checks }, { deviceLimit, ...(budget == null ? {} : { projectLimit: Number(budget) }), now: evaluatedAt, contextDigest: dotDigest({ workLibraryId: state.metadata.workspaceId, workId, workRevision: work.revision, scopeDigest: currentScopeDigest, context }) });
+      const { contextRead, ...requestWithoutContextRead } = dotRequest;
+      executionAdmission = resolveDotExecutionAdmission({ ...requestWithoutContextRead, checks, ...(contextRead === undefined || currentScopeDigest === null ? {} : { contextRead: { ...contextRead, expected: { ...contextRead.expected, workReference: workId, workRevision: work.revision, scopeDigest: currentScopeDigest, now: evaluatedAt, effectiveRoots: (context.repositoryContexts as { projectPath: string }[]).map(repository => repository.projectPath) } } }) }, { deviceLimit, ...(budget == null ? {} : { projectLimit: Number(budget) }), now: evaluatedAt, contextDigest: dotDigest({ workLibraryId: state.metadata.workspaceId, workId, workRevision: work.revision, scopeDigest: currentScopeDigest, context }) });
       const readiness = context.readiness as Record<string, { ready: boolean; missing: string[] }> | undefined;
       if (readiness !== undefined) {
         const dotAdmission = executionAdmission as DotAdmission;

@@ -148,3 +148,29 @@ remaining admission checks, D2 owns actual native attempt/response/finality and
 independent verification. Frozen-scope admission does not manufacture a current
 work revision for this read schema. The three new/resumed/delegated real scenes
 and G1–G5 closure remain the independent E4 acceptance responsibility.
+
+## Public source and approved preview binding
+
+`rule-list --workspace <actual-library> --project-id <actual-project>` (or its
+existing registered `--project` form) returns `dotRuleSources` from effective
+scoped configuration. Available output includes the actual artifact language and
+`enabledRules:[{id,version,bodyDigest,sourceReference}]`. A disabled declaration is
+not included, inherited enabled declarations are included, and an unsupported
+recorded version refuses rather than silently upgrading. Missing artifact language
+returns unavailable. The catalog, including the eighth incremental-update
+candidate, is not enablement. Copy this machine output into setup's source input;
+do not compute hashes manually or enable a rule merely because it is cataloged.
+
+For dot only, save the preview's `dot.planDigest` and carry it unchanged in
+`setup ... --yes true --approved-plan-digest <saved-digest>`. Keep the same mode,
+project, at and dot-input. The digest is the machine binding to the approved
+preview, not a new approval from a caller-supplied string. A missing/mismatching
+digest, changed source/input/original produces a new preview and refuses before
+writing. Review and authorize that new preview separately. Traditional setup
+semantics and hook self-check remain unchanged; the dot receipt never invokes
+that hook or invents process fields. The machine assembles/carries these artifacts;
+the user is not asked to hand-edit JSON or invent source hashes.
+
+An unsupported enabled rule version makes only dotRuleSources unavailable with
+reason DOT_SOURCE_MISMATCH and enabledRules null; the existing rule list remains
+readable. Never substitute an empty array or catalog entries for that refusal.

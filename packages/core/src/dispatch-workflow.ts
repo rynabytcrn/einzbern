@@ -104,35 +104,36 @@ export async function writeDispatchArtifact(path: string, value: unknown, forbid
 }
 
 /** Native preparation stays separate from the legacy process preparation and bindings. */
-export async function prepareNativeDispatch(state: WorkspaceState, request: import("./dot-execution.js").DotExecutionRequest, tool: { readonly toolName: string; readonly toolContractObservation: import("./native-tool-evidence.js").NativeToolAttempt["toolContractObservation"]; readonly argumentsValue: unknown }, home?: string): Promise<NativeDispatchPreparation> {
+export async function prepareNativeDispatch(state: WorkspaceState, request: import("./dot-execution.js").DotExecutionRequest, tool: { readonly toolName: string; readonly toolContractObservation: import("./native-tool-evidence.js").NativeToolAttempt["toolContractObservation"]; readonly argumentsValue: unknown }, home?: string, retry?: NativeDispatchBinding["retry"]): Promise<NativeDispatchPreparation> {
   const context = await workProjectContexts(state, request.workId, home, request);
   const contexts = context.contexts as Record<string, unknown>[];
   const target = contexts.find(item => dotDigest(item.reference) === dotDigest(request.projectRef));
   const admission = target?.executionAdmission as DotAdmission | undefined;
   const targetDispatchAdmitted = (context.involvedProjects as { state: string }).state === "selected" && admission?.status === "admitted" && (target?.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true;
+  const toolInput = { ...tool, requestedAt: new Date().toISOString() };
+  if (retry !== undefined && !normalizeNativeToolEvidence(retry.previous).valid) throw new DispatchWorkflowError("retry requires intact previous saved evidence");
   const attempt = targetDispatchAdmitted && admission?.status === "admitted"
-    ? createNativeToolAttempt(admission, { ...tool, requestedAt: new Date().toISOString() }) : null;
-  const payload = { schemaVersion: "tcrn.native-dispatch-preparation.v1" as const, context, targetDispatchAdmitted, admission: admission ?? null, attempt };
+    ? retry === undefined ? createNativeToolAttempt(admission, toolInput) : createNativeToolRetry(nativeSavedAttempt(retry.previous, true), admission, toolInput, retry.reconciliation).attempt : null;
+  const payload = { schemaVersion: "tcrn.native-dispatch-preparation.v1" as const, context, targetDispatchAdmitted, admission: admission ?? null, attempt, ...(retry === undefined ? {} : { retry }) };
   return { ...payload, digest: dotDigest(payload) };
 }
 import { dotDigest } from "./dot-execution.js";
 import type { DotAdmission } from "./dot-execution.js";
-import { createNativeToolAttempt, recordNativeToolResponse, normalizeNativeToolEvidence } from "./native-tool-evidence.js";
-import type { NativeToolAttempt, NativeToolResponseInput, NativeToolRecord } from "./native-tool-evidence.js";
-export interface NativeDispatchPreparation {
-  readonly schemaVersion: "tcrn.native-dispatch-preparation.v1";
-  readonly context: Record<string, unknown>;
-  readonly targetDispatchAdmitted: boolean;
-  readonly admission: DotAdmission | null;
-  readonly attempt: NativeToolAttempt | null;
-  readonly digest: string;
-}
-export function recordNativeDispatch(preparation: NativeDispatchPreparation, response?: NativeToolResponseInput): { readonly record: NativeToolRecord | { readonly attempt: NativeToolAttempt; readonly admission: DotAdmission }; readonly normalized: ReturnType<typeof normalizeNativeToolEvidence> } {
-  const { digest, ...payload } = preparation;
-  if (preparation.schemaVersion !== "tcrn.native-dispatch-preparation.v1" || dotDigest(payload) !== digest || preparation.targetDispatchAdmitted !== true || !preparation.attempt || !preparation.admission) throw new DispatchWorkflowError("native preparation must be admitted and intact");
-  const target = (preparation.context.contexts as Record<string, unknown>[]).find(item => dotDigest(item.reference) === dotDigest(preparation.attempt!.projectRef));
-  if (!target || (preparation.context.involvedProjects as { state: string }).state !== "selected" || (target.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready !== true || dotDigest(target.executionAdmission) !== dotDigest(preparation.admission) || preparation.context.workId !== preparation.attempt.workId || preparation.attempt.revisionBinding.kind !== "revision" || preparation.context.workRevision !== preparation.attempt.revisionBinding.workRevision) throw new DispatchWorkflowError("native attempt differs from captured project context");
-  const record = response === undefined ? { attempt: preparation.attempt, admission: preparation.admission }
-    : { attempt: preparation.attempt, admission: preparation.admission, response, evidence: recordNativeToolResponse(preparation.attempt, preparation.admission, response) };
-  return { record, normalized: normalizeNativeToolEvidence(record) };
+import { createNativeToolAttempt, recordNativeToolResponse, normalizeNativeToolEvidence, validateNativeDispatchBinding, appendNativeToolRecord, validateNativeToolHistory, nativeSavedAttempt, createNativeToolRetry } from "./native-tool-evidence.js";
+import type { NativeToolResponseInput, NativeToolRecord, NativeDispatchBinding, NativeToolHistory } from "./native-tool-evidence.js";
+export type NativeDispatchPreparation = NativeDispatchBinding;
+export function recordNativeDispatch(preparationValue: NativeDispatchPreparation, response?: NativeToolResponseInput, prior?: unknown): Record<string, unknown> {
+  const preparation = validateNativeDispatchBinding(preparationValue);
+  const attempt = preparation.attempt; const admission = preparation.admission;
+  if (attempt === null || admission === null) throw new DispatchWorkflowError("native preparation is pending or refused");
+  let history: NativeToolHistory = { records: [], observations: [], current: null };
+  if (prior !== undefined) {
+    if (!normalizeNativeToolEvidence(prior).valid || dotDigest(nativeSavedAttempt(prior)) !== dotDigest(attempt)) throw new DispatchWorkflowError("prior history must belong to this actual attempt and be reconciled");
+    history = validateNativeToolHistory((prior as { history: unknown }).history);
+  }
+  const record = response === undefined ? { preparation, attempt, admission }
+    : { preparation, attempt, admission, response, evidence: recordNativeToolResponse(attempt, admission, response) };
+  const appended = response === undefined ? { status: "pending", history, problems: [] } : appendNativeToolRecord(history, record as NativeToolRecord);
+  const saved = { record, history: appended.history, appendStatus: appended.status, problems: appended.problems, ...("rejectedRecord" in appended ? { rejectedRecord: appended.rejectedRecord } : {}) };
+  return { ...saved, normalized: normalizeNativeToolEvidence(saved) };
 }

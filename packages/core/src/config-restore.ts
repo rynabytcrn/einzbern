@@ -7,11 +7,12 @@ import { disableRule, enableRule } from "./rules.js";
 import { BUILT_IN_RULES } from "./rules-catalog.js";
 import { effectiveProjectState } from "./project-chain.js";
 import { removeVariable, setVariable } from "./variables.js";
-import { writeVariablesSections } from "./variables-sections.js";
+import { refreshConfigurationProjections } from "./configuration-projections.js";
+import { assertNotDotAgentsTarget } from "./dot-agents.js";
 import { materializeWorkspace, removeWorkspaceSetting, setWorkspaceSetting } from "./workspace.js";
 import type { WorkspaceMutationOptions } from "./workspace.js";
 import {
-  CONFIG_BACKUP_MAPPING_VERSION, assertConfigBackupDirectory, assertConfigBackupSource, collectConfigBackupPayloads,
+  CONFIG_BACKUP_MAPPING_VERSION, CONFIG_BACKUP_RESERVED_ROOTS, safeConfigBackupHostname, assertConfigBackupDirectory, assertConfigBackupSource, collectConfigBackupPayloads,
   configBackupCanonical, configBackupDigest, configBackupFail, configBackupInstant,
   configBackupObject, planConfigBackup, readConfigBackupFile,
   validateConfigBackupPayload, verifyConfigBackup,
@@ -97,6 +98,8 @@ export async function planConfigRestore(input: { readonly packageRoot: string; r
   const target = input.target; await assertConfigBackupSource(target.source);
   const native = await materializeWorkspace(target.source.libraryRoot);
   if (native.metadata.workspaceId !== target.source.projectRef.libraryId || !native.projects.some(project => project.id === target.source.projectRef.projectId && !project.tombstone) || configBackupCanonical(target.originalsStore.binding.projectRef) !== configBackupCanonical(target.source.projectRef)) configBackupFail("CONFIG_RESTORE_TARGET_MISMATCH");
+  let independentDot = false;
+  try { await assertNotDotAgentsTarget(target.source.projectRoot); } catch (error) { if ((error as { reasonCode?: string }).reasonCode !== "DOT_INDEPENDENT_TARGET") throw error; independentDot = true; }
   const compatible = configBackupCanonical(verified.manifest.sourceVersion) === configBackupCanonical(target.sourceVersion);
   const items: ConfigRestorePlanItem[] = [];
   for (const file of verified.manifest.files) {
@@ -104,6 +107,7 @@ export async function planConfigRestore(input: { readonly packageRoot: string; r
     let classification: ConfigRestoreClassification = "conflict"; let current: CurrentValue | null = null;
     const governed = payload.kind === "setting" || payload.kind === "variable" || payload.kind === "rule";
     if (!compatible || (payload.kind === "rule" && BUILT_IN_RULES.find(rule => rule.id === payload.id)?.version !== payload.version)) classification = "incompatible";
+    else if (independentDot && (payload.kind === "agents-user-fragment" || payload.kind === "rule")) classification = "unmappable";
     else if (governed && "source" in payload && payload.source !== (target.source.declarationScope === "project" ? "project-declaration" : "library-declaration")) classification = "unmappable";
     else if (payload.kind === "path-remapping" || (payload.kind === "device-preference" && payload.key === "portal.defaultPartition" && payload.value !== null && !target.availablePartitions.includes(payload.value))) classification = "unmappable";
     else if (!target.permittedKeys.includes(file.logicalKey) || (governed && target.authorizations[file.logicalKey] === undefined)) classification = "permission-denied";
@@ -163,8 +167,11 @@ export async function applyConfigRestore(input: { readonly packageRoot: string; 
     if (backup.excluded.length) configBackupFail("CONFIG_RESTORE_ORIGINAL_EXCLUDED");
     const saved = await createConfigBackup(input.target.originalsStore, backup, input.at);
     if (saved.status !== "settled" && saved.status !== "unchanged") configBackupFail("CONFIG_RESTORE_ORIGINAL_PENDING");
-    originalBackupId = saved.index.active.at(-1)?.backupId ?? null;
-    if (originalBackupId === null) configBackupFail("CONFIG_RESTORE_ORIGINAL_PENDING");
+    const original = saved.index.active.at(-1);
+    if (!original) configBackupFail("CONFIG_RESTORE_ORIGINAL_PENDING");
+    const verifiedOriginal = await verifyConfigBackup(join(input.target.originalsStore.reservedRoot, CONFIG_BACKUP_RESERVED_ROOTS[0], safeConfigBackupHostname(input.target.originalsStore.binding.hostname), input.target.originalsStore.binding.backupGroupId, original.directory));
+    if (verifiedOriginal.integrity !== "verified" || verifiedOriginal.manifest === null || verifiedOriginal.manifest.manifestDigest !== original.manifestDigest || verifiedOriginal.manifest.selectionDigest !== backup.manifest.selectionDigest || configBackupCanonical(verifiedOriginal.manifest.sourceVersion) !== configBackupCanonical(input.target.sourceVersion)) configBackupFail("CONFIG_RESTORE_ORIGINAL_PENDING");
+    originalBackupId = original.backupId;
   }
   const results: ConfigRestoreItemResult[] = [];
   // User-owned fragments are restored before supported setters regenerate managed sections.
@@ -213,9 +220,9 @@ export async function applyConfigRestore(input: { readonly packageRoot: string; 
           const change = payload.enabled ? await enableRule({ ...common, ...(payload.order === undefined ? {} : { order: payload.order }) }) : await disableRule(common);
           projection = change.result === "refused-user-modified" || change.status.state === "pending" ? "pending" : "rendered";
         }
-        if (payload.kind !== "rule") {
-          const rendered = await writeVariablesSections(input.target.source.libraryRoot, { ...options, projectRoot: input.target.source.projectRoot });
-          projection = rendered.pendingSections.length || rendered.withheld.length ? "pending" : "rendered";
+        {
+          const rendered = await refreshConfigurationProjections({ libraryId: input.target.source.projectRef.libraryId, ...(input.target.source.declarationScope === "project" ? { projectId: input.target.source.projectRef.projectId } : {}) }, options);
+          projection = projection === "pending" || rendered.plan.gaps.length || !rendered.outcomes.length || rendered.outcomes.some(outcome => outcome.status !== "refreshed") ? "pending" : "rendered";
         }
       } else configBackupFail("CONFIG_RESTORE_UNMAPPABLE");
       const readback = await currentValue(payload, input.target);

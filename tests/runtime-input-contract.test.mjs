@@ -321,3 +321,11 @@ test("INIT062 all package flags and backup read startup input are described with
   assert.match(byKey.get("cli:config-backup-create:request").effect, /actual running package artifact/u);
   assert.match(byKey.get("cli:work-project-context:execution-request").validation, /DotExecutionRequest/u);
 });
+
+test("J01/J10 approval binding and retry/history files remain explicit transient inputs", () => {
+  assert.equal(byKey.get("cli:setup:approved-plan-digest").semanticType, "digest");
+  for (const key of ["cli:execution-native-record:prior", "cli:execution-native-prepare:retry-from", "cli:execution-native-prepare:reconciliation"]) {
+    assert.equal(byKey.get(key).semanticType, "path"); assert.equal(byKey.get(key).defaultValue, null);
+    assert.equal(byKey.get(key).sensitivity, "context-may-contain-private-data");
+  }
+});

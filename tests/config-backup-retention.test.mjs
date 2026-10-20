@@ -53,7 +53,12 @@ test("CFG-B03: failure retains prior active package and blocks a new transaction
   await writeFile(join(stage, "members", "a".repeat(64) + ".json"), "{}");
   await writeFile(join(group, "index.json"), configBackupCanonical({ ...index, revision: index.revision + 1, transactions: [transaction], transactionIds: [transaction.transactionId] }));
   assert.equal((await createConfigBackup(f.store, f.proposal("7", "light", "2026-10-20T00:00:03Z"), "2026-10-20T00:00:03Z")).status, "pending");
-  assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:04Z")).status, "pending");
+  const pending = await resumeConfigBackup(f.store, "2026-10-20T00:00:04Z");
+  assert.equal(pending.status, "pending"); assert.equal(pending.index.lastError, "transaction-needs-explicit-recovery");
+  const pendingList = await listConfigBackups({ reservedRoot: f.store.reservedRoot, at: "2026-10-20T00:00:04Z" });
+  assert.equal(pendingList.groups[0].error, pending.index.lastError); assert.deepEqual(pendingList.groups[0].transactionPhases, ["staging"]);
+  const blocked = await createConfigBackup(f.store, f.proposal("7", "light", "2026-10-20T00:00:04Z"), "2026-10-20T00:00:04Z");
+  assert.equal(blocked.status, "pending"); assert.equal(blocked.index.lastError, pending.index.lastError);
   const recovered = await resumeConfigBackup(f.store, "2026-10-20T00:00:05Z", "recover-failed");
   assert.equal(recovered.status, "settled"); assert.deepEqual(recovered.index.activeBackupIds, [first.manifest.backupId]);
   assert.equal(recovered.index.recoverable[0].origin, "failed-transaction");
@@ -84,4 +89,35 @@ test("CFG-B04: losing the local binding cannot be repaired by copying the hostna
   await createConfigBackup(f.store, first, first.manifest.createdAtUtc);
   await rm(join(f.store.localBindingRoot, f.store.binding.backupGroupId + ".json"));
   await assert.rejects(resumeConfigBackup(f.store, "2026-10-20T00:00:02Z"), { reasonCode: "CONFIG_BACKUP_GROUP_UNBOUND" });
+});
+
+test("J05 no-change skip includes the verified recoverable source version", async t => {
+  const f = await fixture(t); const first = f.proposal("5", "dark", "2026-10-20T00:00:00Z");
+  await createConfigBackup(f.store, first, first.manifest.createdAtUtc);
+  const next = planConfigBackup({ projectRef: ref, backupId: "6".repeat(32), backupGroupId: f.store.binding.backupGroupId, hostname: "device", sourceVersion: { ...version, artifactIdentity: { ...version.artifactIdentity, sha256: "9".repeat(64) } }, at: "2026-10-20T00:00:02Z", payloads: first.members.map(member => member.payload) });
+  assert.equal(next.manifest.selectionDigest, first.manifest.selectionDigest);
+  const result = await createConfigBackup(f.store, next, next.manifest.createdAtUtc);
+  assert.equal(result.status, "settled"); assert.equal(result.index.active.at(-1).backupId, next.manifest.backupId);
+});
+
+test("J07 existing capacity refusal is persisted and visible through the list surface", async t => {
+  const f = await fixture(t); const first = f.proposal("5", "dark", "2026-10-20T00:00:00Z");
+  await createConfigBackup(f.store, first, first.manifest.createdAtUtc);
+  const result = await retireConfigBackup(f.store, first.manifest.backupId, "2026-10-20T00:00:01Z");
+  assert.equal(result.reason, "retain-last-active"); assert.equal(result.index.lastError, result.reason);
+  const list = await listConfigBackups({ reservedRoot: f.store.reservedRoot, at: "2026-10-20T00:00:02Z" });
+  assert.equal(list.groups[0].error, result.reason); assert.deepEqual(list.groups[0].transactionPhases, []);
+});
+
+test("J07 sequential rotation capacity retains transaction phase and reason on a later list", async t => {
+  const f = await fixture(t);
+  const policy = { ...fixturePolicy, activeLimit: 2, recoveryLimit: 1 };
+  const approved = validateConfigBackupRetentionPolicy(policy);
+  const store = { ...f.store, policy, approval: { approved: true, policyDigest: approved.policyDigest, approvalEvidenceRef: policy.approvalEvidenceRef } };
+  for (const [id, theme, at] of [["5", "dark", "2026-10-20T00:00:00Z"], ["6", "light", "2026-10-20T00:00:02Z"], ["7", "dark", "2026-10-20T00:00:04Z"]]) assert.equal((await createConfigBackup(store, f.proposal(id, theme, at), at)).status, "settled");
+  const result = await retireConfigBackup(store, "6".repeat(32), "2026-10-20T00:00:06Z");
+  assert.equal(result.status, "stop-new-and-report"); assert.equal(result.index.lastError, "retirement-capacity-or-retention");
+  assert.deepEqual(result.index.activeBackupIds, ["6".repeat(32), "7".repeat(32)]);
+  const listed = await listConfigBackups({ reservedRoot: store.reservedRoot, at: "2026-10-20T00:00:07Z" });
+  assert.deepEqual(listed.groups[0].transactionPhases, ["rotation-pending"]); assert.equal(listed.groups[0].error, result.index.lastError);
 });

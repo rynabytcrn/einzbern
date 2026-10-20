@@ -173,6 +173,12 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     const path = `specs/${name}`;
     assert.deepEqual(byPath.get(path).bytes, await readFile(join(repositoryRoot, path)), `${path}: public contract bytes are preserved, not rendered or rewritten`);
   }
+  // Installed consumers can obtain the closed input vocabulary without TS sources.
+  for (const [name, fields] of Object.entries({
+    "dot-execution-v1.md": ["actualCapabilityEvidenceRefs", "authorizationEvidenceRef", "occupancyObservation", "revisionBinding", "contextRead", "effectiveRoots", "exactDelegation"],
+    "native-tool-evidence-v1.md": ["rawResponseValue", "statusPointer", "statusMapping", "terminalObservation", "providerPointers", "NativeRetryReconciliation", "--prior", "--retry-from", "--reconciliation"],
+    "shared-submit-v1.md": ["completeInventoryDigest", "engineOutputMembers", "writerHandoff", "observedAt", "contentBase64", "memberSetDigest", "lastError"],
+  })) for (const field of fields) assert.ok(byPath.get(`specs/${name}`).bytes.toString("utf8").includes(field), `${name} documents ${field}`);
   assert.ok(byPath.get("atelier/ds-static-bridges.snapshot.js").bytes.equals(await readFile(join(repositoryRoot, "portal/ds-static-bridges.snapshot.js"))), "the archive retains exact published bridge bytes");
   assert.ok(byPath.get("THIRD_PARTY_NOTICES.txt").bytes.equals(await readFile(join(repositoryRoot, "THIRD_PARTY_NOTICES.txt"))), "the archive retains vendored runtime license notices");
   assert.ok(byPath.get("launchers/einzbern.mjs").bytes.equals(await readFile(join(repositoryRoot, "scripts/einzbern-launcher.mjs"))));

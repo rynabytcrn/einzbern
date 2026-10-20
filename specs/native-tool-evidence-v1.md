@@ -37,3 +37,113 @@ Its cached assessment is ignored and rebuilt from original sources. Review route
 native records to that official command; an older engine without it refuses rather
 than interpreting native output as process evidence. A complete native assessment
 still does not itself prove the separate G5 engine-write/readback or E4 acceptance.
+
+## Installed CLI and complete input shapes
+
+Read this file at `specs/native-tool-evidence-v1.md` in the engine bundle. The
+request shape and primitives Ref/Sha/Instant are fully defined in the adjacent
+`dot-execution-v1.md`. JSON objects below are closed; all fields are required
+unless `?` is shown. Null is accepted only where shown. No process fields, local
+IDs relabelled as provider IDs, or invented tool returns are permitted.
+
+1. `execution-native-prepare --workspace <actual-library> --request <json>
+   --tool <actual-tool-name> --tool-contract <json> --arguments <json>
+   --output <new-private-file>` consumes DotExecutionRequest, the contract object
+   `{ref:Ref,sha256:Sha}`, and the exact JSON argument value intended for the tool.
+   Contract ref/hash come from the actual exposed native contract, not the package
+   spec or a made-up provider version. Output is the full engine-generated
+   `tcrn.native-dispatch-preparation.v1` binding. Preserve it verbatim, including
+   context, selected target, admission, attempt and digest. Refused preparation
+   has no executable attempt and cannot be recorded as successful dispatch.
+2. Invoke the actual native tool only if authorized and actually supported.
+3. `execution-native-record --binding <saved-preparation> --response <json>
+   --prior <previous-saved-record> --output <new-private-file>` records an actual
+   return. Omit response only when none was returned; this retains pending rather
+   than fabricating evidence. Omit prior only on the first record of this attempt.
+   Every subsequent observation carries the previous saved output, including its
+   full history. Each output is create-new; do not overwrite the predecessor.
+4. `execution-native-evidence --from-file <saved-output> [--work-id <id>]
+   [--work-revision <integer>]` and the existing review surface revalidate original
+   sources and history. Cached normalized claims confer no authority.
+
+```typescript
+type NativeStatus = "accepted"|"running"|"reported-completed"|"failed"|"cancelled"|"unknown";
+type NativeToolResponseInput = {
+  sourceTool:string, rawResponseRef:Ref, rawResponseValue:Json,
+  observedAt:Instant, executionStatus:NativeStatus,
+  statusPointer?:string, statusMapping?:{[actualRawStatus:string]:NativeStatus},
+  providerPointers?:{providerRef?:string, providerEventRef?:string,
+    providerStartedAt?:string, providerFinishedAt?:string},
+  resultRefs:Ref[],
+  association:{status:"associated"|"unverified"|"invalid",
+    invocationRef:Ref|null, responseRef:Ref|null, argumentsDigest:Sha|null,
+    evidenceRefs:Ref[], reason:string},
+  terminalObservation?:{jsonPointer:string, terminalValues:string[],
+    contractRef:Ref, evidenceRef:Ref},
+  verification:{status:"unverified"|"pass"|"fail", evidenceRefs:Ref[],
+    verifiedAt?:Instant, verifiedBy?:Ref}
+};
+```
+
+Json is an actual protocol-canonical JSON response value (numbers must be safe
+integers, objects must be plain JSON; hashing adds exactly one terminal LF); null, missing and empty object/array are
+not actual returned evidence. A non-unknown executionStatus requires statusPointer
+and statusMapping. Pointers are RFC 6901 paths beginning `/`, with only `~0`/`~1`
+escapes, and must resolve in rawResponseValue. Compare the raw pointed value's
+string representation with the explicit mapping derived from the actual tool
+contract. Provider pointer values must be actual nonempty strings; provider time
+values must be UTC instants. Missing provider IDs stay omitted.
+
+For associated status, invocationRef and evidenceRefs are nonempty, responseRef
+matches rawResponseRef, and argumentsDigest matches the saved attempt's actual
+argument digest. If the platform cannot expose this association, use unverified
+with unavailable linkage nulls, not invented references. RawResponseRef is the
+actual private observation/storage reference; it is not event content identity.
+Duplicate event bytes at another storage reference are idempotent. A same event
+key with different bytes or inconsistent status/finality is a retained conflict.
+
+Only reported-completed/failed/cancelled can carry terminalObservation. Its
+contractRef must equal the saved observed tool contract; the actual raw field's
+string value must appear in the nonempty terminalValues observed from that
+contract. Do not infer terminality from a sentence or a delivered file. Verification
+pass/fail requires evidenceRefs, verifiedAt and verifiedBy from the actual
+independent verification; unverified can omit those two optional fields.
+
+The saved output contains `record` (complete preparation, attempt, admission,
+response and rebuilt evidence; response/evidence absent when pending), `history`
+(records, event observation keys/times/sourceRefs, derived current evidence), `appendStatus`
+(pending/appended/duplicate/conflict), `problems`, optional `rejectedRecord`, and
+`normalized`. The normalizer rebuilds every retained record and current state,
+requires selected target readiness and repository roots consistent with the saved
+three-source context, and rejects a bare attempt/admission as dispatch completion.
+Conflicts retain execution responsibility. A late accepted/running observation
+cannot downgrade an associated confirmed terminal result. Histories are bounded
+at 256 distinct records and 1024 observations, retry ancestry at 16; reaching a
+bound refuses another append, never deletes earlier evidence.
+
+### Explicit retry inputs
+
+Only a retry uses the paired optional prepare flags `--retry-from <previous-saved-
+record>` and `--reconciliation <json>`. Neither is valid alone. The previous saved
+artifact and this reconciliation are retained in the new preparation's `retry`
+field and covered by its digest. The new attempt has a new local ID and the same
+work/project/tool identity. Unknown outcomes must be queried first; retry is not
+an alternative to recording an existing response.
+
+```typescript
+type NativeRetryReconciliation =
+  | {outcome:"confirmed-terminal", record:NativeToolRecord}
+  | {outcome:"confirmed-not-executed", queryTool:string, queryRef:Ref,
+      queriedAttemptId:string, responseValue:Json, observedAt:Instant,
+      notExecutedPointer:string, notExecutedValue:string, contractRef:Ref};
+```
+
+NativeToolRecord is the verbatim `record` from a previously generated saved output,
+not a hand-assembled completion flag. Confirmed-terminal must be an associated,
+confirmed failed/cancelled record for the exact predecessor. A non-execution
+query must come from the actual query tool/return, bind the previous attempt ID
+and exact observed contract, and expose the matching notExecutedValue at its
+pointer. The query/terminal observation cannot predate the original attempt; the
+new request cannot predate reconciliation. Completed, conflicting or unresolved
+predecessors never become retries merely because another local filename or UUID
+is available. No SDK, global attempt database or automatic tool call is implied.

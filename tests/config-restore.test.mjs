@@ -149,3 +149,67 @@ test("CFG-B01/R01: missing rule declarations are not relabeled as explicit local
   assert.equal(result.status, "refused");
   assert.equal((await materializeWorkspace(f.source.libraryRoot)).configRecords.some(record => record.collection === "rule" && record.key === rule.id), false);
 }));
+
+test("J04 independent dot ownership survives user, rule, variable and language restore", async t => asPinnedDevice(async home => {
+  const { DOT_AGENTS_MARKER } = await import("../dist/build/packages/core/src/dot-agents.js");
+  const { BUILT_IN_RULES } = await import("../dist/build/packages/core/src/rules-catalog.js");
+  const rule = BUILT_IN_RULES.find(entry => entry.id === "autonomy");
+  const f = await fixture(t, home, [
+    { kind: "agents-user-fragment", index: 0, ownership: "user", text: "Never replace independent rules.\n" },
+    { kind: "rule", id: rule.id, version: rule.version, enabled: true, source: "project-declaration" },
+    { kind: "variable", name: "example.count", declaration: { type: "number", value: "2", description: "Count", exports: ["handoff"], order: 1 }, source: "project-declaration" },
+    { kind: "setting", key: "artifact.language", value: "fr", source: "project-declaration" },
+  ]);
+  const body = `${DOT_AGENTS_MARKER}\nIndependent fixture rules, not a user fragment.\n`;
+  await writeFile(join(f.source.projectRoot, "AGENTS.md"), body);
+  await writeFile(join(f.source.projectRoot, "dot-provenance.json"), "fixture:unchanged provenance\n");
+  const { enableRule, disableRule } = await import("../dist/build/packages/core/src/rules.js");
+  const { writeVariablesSections } = await import("../dist/build/packages/core/src/variables-sections.js");
+  const direct = { libraryRoot: f.source.libraryRoot, projectRoot: f.source.projectRoot, id: rule.id, occurredAt: at };
+  await assert.rejects(enableRule(direct), { reasonCode: "DOT_INDEPENDENT_TARGET" });
+  await assert.rejects(disableRule(direct), { reasonCode: "DOT_INDEPENDENT_TARGET" });
+  await assert.rejects(writeVariablesSections(f.source.libraryRoot, { projectRoot: f.source.projectRoot, occurredAt: at }), { reasonCode: "DOT_INDEPENDENT_TARGET" });
+  const plan = await planConfigRestore({ packageRoot: f.packageRoot, target: f.target, at });
+  for (const key of ["agents-user-fragment:0", `rule:${rule.id}`]) assert.equal(plan.items.find(item => item.logicalKey === key).classification, "unmappable");
+  const result = await applyConfigRestore({ packageRoot: f.packageRoot, target: f.target, plan, approvedPlanDigest: plan.planDigest, at });
+  for (const key of ["variable:example.count", "setting:artifact.language"]) assert.equal(result.items.find(item => item.logicalKey === key).receipt.projection, "pending");
+  assert.equal(await readFile(join(f.source.projectRoot, "AGENTS.md"), "utf8"), body);
+  assert.equal(await readFile(join(f.source.projectRoot, "dot-provenance.json"), "utf8"), "fixture:unchanged provenance\n");
+}));
+
+test("J04 scalar restore uses complete traditional projections, not only variables", async t => asPinnedDevice(async home => {
+  const f = await fixture(t, home, [{ kind: "setting", key: "agents.generation", value: "managed", source: "project-declaration" }]);
+  await setWorkspaceSetting(f.source.libraryRoot, { key: "agents.generation", value: "none", occurredAt: at, configurationProjectId: f.source.projectRef.projectId });
+  await setWorkspaceSetting(f.source.libraryRoot, { key: "artifact.language", value: "en", occurredAt: at, configurationProjectId: f.source.projectRef.projectId });
+  const plan = await planConfigRestore({ packageRoot: f.packageRoot, target: f.target, at });
+  const result = await applyConfigRestore({ packageRoot: f.packageRoot, target: f.target, plan, approvedPlanDigest: plan.planDigest, at });
+  const receipt = result.items[0].receipt;
+  assert.ok(["rendered", "pending"].includes(receipt.projection));
+  if (receipt.projection === "rendered") assert.match(await readFile(join(f.source.projectRoot, "AGENTS.md"), "utf8"), /einzbern:.*section|einzbern:begin/u);
+}));
+
+test("J05 original recovery cannot reuse an incompatible same-selection package", async t => asPinnedDevice(async home => {
+  const { createConfigBackup } = await import("../dist/build/packages/core/src/config-backup-retention.js");
+  const f = await fixture(t, home, [{ kind: "device-preference", key: "portal.defaultTheme", value: "dark", source: "device-declaration" }]);
+  await applyMachineSettingSet({ key: "portal.defaultTheme", value: "light", occurredAt: at, path: f.source.machineSettingsPath });
+  const previous = planConfigBackup({ projectRef: f.source.projectRef, backupGroupId: f.target.originalsStore.binding.backupGroupId, hostname: f.target.originalsStore.binding.hostname, at, sourceVersion: { ...version, artifactIdentity: { ...version.artifactIdentity, sha256: "9".repeat(64) } }, payloads: [{ kind: "device-preference", key: "portal.defaultTheme", value: "light", source: "device-declaration" }] });
+  await createConfigBackup(f.target.originalsStore, previous, at);
+  const plan = await planConfigRestore({ packageRoot: f.packageRoot, target: f.target, at });
+  const result = await applyConfigRestore({ packageRoot: f.packageRoot, target: f.target, plan, approvedPlanDigest: plan.planDigest, at: "2026-10-20T00:00:02Z" });
+  assert.notEqual(result.items[0].originalBackupId, previous.manifest.backupId);
+  assert.equal(result.items[0].status, "applied");
+}));
+
+test("J05 incompatible originals at approved capacity stop before restoring the target", async t => asPinnedDevice(async home => {
+  const { createConfigBackup } = await import("../dist/build/packages/core/src/config-backup-retention.js");
+  const f = await fixture(t, home, [{ kind: "device-preference", key: "portal.defaultTheme", value: "dark", source: "device-declaration" }]);
+  await applyMachineSettingSet({ key: "portal.defaultTheme", value: "light", occurredAt: at, path: f.source.machineSettingsPath });
+  const previous = planConfigBackup({ projectRef: f.source.projectRef, backupGroupId: f.target.originalsStore.binding.backupGroupId, hostname: f.target.originalsStore.binding.hostname, at, sourceVersion: { ...version, artifactIdentity: { ...version.artifactIdentity, sha256: "9".repeat(64) } }, payloads: [{ kind: "device-preference", key: "portal.defaultTheme", value: "light", source: "device-declaration" }] });
+  const policy = { ...fixturePolicy, maxPackageBytes: previous.bytes, maxTotalBytes: previous.bytes };
+  const validated = validateConfigBackupRetentionPolicy(policy);
+  const originalsStore = { ...f.target.originalsStore, policy, approval: { approved: true, policyDigest: validated.policyDigest, approvalEvidenceRef: policy.approvalEvidenceRef } };
+  await createConfigBackup(originalsStore, previous, at);
+  const target = { ...f.target, originalsStore }, plan = await planConfigRestore({ packageRoot: f.packageRoot, target, at });
+  await assert.rejects(applyConfigRestore({ packageRoot: f.packageRoot, target, plan, approvedPlanDigest: plan.planDigest, at: "2026-10-20T00:00:02Z" }), { reasonCode: "CONFIG_RESTORE_ORIGINAL_PENDING" });
+  assert.equal((await readMachineSettings(f.source.machineSettingsPath)).values["portal.defaultTheme"], "light");
+}));

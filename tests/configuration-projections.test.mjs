@@ -142,3 +142,23 @@ test("independent dot targets remain pending without generic sections or Claude 
   assert.equal(await readFile(join(target.output, "dot-provenance.json"), "utf8"), sidecar);
   await assert.rejects(readFile(join(target.output, "CLAUDE.md")), { code: "ENOENT" });
 }));
+
+test("J03 public scoped rule sources feed dot setup without caller-computed rule hashes", async t => asPinnedDevice(async home => {
+  const f = await fixture(t, home); const lib = await f.library("rules-library"); const parent = await f.project(lib, "RULES-PARENT"); const child = await f.project(lib, "RULES-CHILD", parent.projectId);
+  const { BUILT_IN_RULES } = await import("../dist/build/packages/core/src/rules-catalog.js");
+  const rule = BUILT_IN_RULES.find(entry => entry.id === "autonomy");
+  await setWorkspaceSetting(lib.path, { key: "artifact.language", value: "en", configurationProjectId: parent.projectId, occurredAt: at });
+  await setConfigRecord(lib.path, { collection: "rule", key: rule.id, projectId: parent.projectId, value: { enabled: true, version: rule.version }, occurredAt: at });
+  const read = async args => { let output = ""; await runCli(args, { write: text => { output += text; } }); return JSON.parse(output); };
+  const args = ["rule-list", "--workspace", lib.path, "--project-id", child.projectId];
+  const listed = await read(args); assert.equal(listed.dotRuleSources.status, "available"); assert.deepEqual(listed.dotRuleSources.enabledRules.map(item => item.id), [rule.id]);
+  assert.equal(listed.dotRuleSources.enabledRules.some(item => item.id === "incremental-update"), false);
+  const enginePath = join(f.root, "fixture-engine.mjs"), manaSkillPath = join(f.root, "fixture-mana.md"), inputPath = join(f.root, "dot-input.json");
+  await writeFile(enginePath, "// fixture\n"); await writeFile(manaSkillPath, "# Fixture\n");
+  await writeFile(inputPath, JSON.stringify({ binding: { root: child.output, agentsPath: join(child.output, "AGENTS.md"), provenancePath: join(child.output, ".dot", "provenance.json"), backupRoot: join(child.output, ".dot", "recovery"), projectReference: child.projectId, ownerId: "fixture:owner" }, source: { engineVersion: "fixture", engineCommit: "unavailable", engineSourceRef: "fixture:engine", language: listed.dotRuleSources.language, enabledRules: listed.dotRuleSources.enabledRules }, enginePath, manaSkillPath, preInjection: "apply" }));
+  assert.equal((await read(["setup", "--mode", "fresh", "--project", child.output, "--at", at, "--execution-target", "chatgpt-dot", "--dot-input", inputPath])).executionTarget, "chatgpt-dot");
+  await setConfigRecord(lib.path, { collection: "rule", key: rule.id, projectId: child.projectId, value: { enabled: false, version: rule.version }, occurredAt: at });
+  assert.deepEqual((await read(args)).dotRuleSources.enabledRules, []);
+  await setConfigRecord(lib.path, { collection: "rule", key: rule.id, projectId: child.projectId, value: { enabled: true, version: rule.version + 1 }, occurredAt: at });
+  const unsupported = await read(args); assert.equal(unsupported.dotRuleSources.status, "unavailable"); assert.equal(unsupported.dotRuleSources.reason, "DOT_SOURCE_MISMATCH"); assert.equal(unsupported.dotRuleSources.enabledRules, null);
+}));

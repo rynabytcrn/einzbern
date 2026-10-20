@@ -90,3 +90,22 @@ test("CFG-B01 sourceVersion binds actual artifact identity and explicit commit u
   const changed = make({ ...sourceVersion, artifactIdentity: { ...sourceVersion.artifactIdentity, sha256: "f".repeat(64) } });
   assert.notEqual(changed.manifest.manifestDigest, make(sourceVersion).manifest.manifestDigest);
 });
+
+test("J06 closed manifest identity and digests reject coercible arrays even with a fresh digest", () => {
+  for (const path of [["projectRef", "libraryId"], ["projectRef", "projectId"], ["sourceVersion", "engineVersion"], ["sourceVersion", "artifactIdentity", "sha256"], ["files", 0, "sha256"], ["files", 0, "sourceDigest"], ["files", 0, "category"], ["selectionDigest"], ["backupId"], ["backupGroupId"]]) {
+    const changed = structuredClone(plan().manifest); let row = changed;
+    for (const key of path.slice(0, -1)) row = row[key];
+    row[path.at(-1)] = [row[path.at(-1)]];
+    changed.manifestDigest = configBackupManifestDigest(changed);
+    assert.throws(() => validateConfigBackupManifest(changed), path.join("."));
+  }
+});
+
+test("J06 on-disk verification does not coerce an array project ID or artifact hash", async t => {
+  const root = await temporary(t); const proposal = plan(); const packageRoot = join(root, "package"); await writeConfigBackupPackage(packageRoot, proposal);
+  for (const mutate of [manifest => { manifest.projectRef.projectId = [manifest.projectRef.projectId]; }, manifest => { manifest.sourceVersion.artifactIdentity.sha256 = [manifest.sourceVersion.artifactIdentity.sha256]; }]) {
+    const changed = structuredClone(proposal.manifest); mutate(changed); changed.manifestDigest = configBackupManifestDigest(changed);
+    await writeFile(join(packageRoot, "manifest.json"), configBackupCanonical(changed));
+    const verified = await verifyConfigBackup(packageRoot); assert.equal(verified.integrity, "corrupt"); assert.equal(verified.manifest, null);
+  }
+});

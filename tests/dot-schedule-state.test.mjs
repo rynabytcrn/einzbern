@@ -78,3 +78,35 @@ test("DOT-S03 fixed UTC+08 midnight and delayed snapshot are independent from pa
   assert.equal(disabled.backupReceiptRef, completed.backupReceiptRef); assert.equal(disabled.state, "disabled");
 });
 function atForBackup() { return "2026-10-20T16:00:00Z"; }
+
+test("J11 scheduler action responsibility survives later terminal task checks", () => {
+  const pendingPause = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
+  assert.deepEqual(advanceContextPatrol(pendingPause, { kind: "check", check: check("late", "2026-10-20T05:40:00Z") }), pendingPause);
+  const paused = advanceContextPatrol(pendingPause, { kind: "after-pause", check: check("after", "2026-10-20T05:20:02Z"), readback: readback(false, "2026-10-20T05:20:02Z") });
+  const resume = advanceContextPatrol(paused, { kind: "new-work", workRefs: ["fixture:new-work"] });
+  const failed = advanceContextPatrol(resume, { kind: "action-failed", action: "resume", error: "fixture:resume-unknown" });
+  for (const kind of ["check", "before-pause"]) {
+    const unchanged = advanceContextPatrol(failed, { kind, check: check("late", "2026-10-20T05:40:00Z") });
+    assert.equal(unchanged.state, "pending-resume"); assert.equal(unchanged.lastError, failed.lastError);
+    assert.deepEqual(unchanged.receivedWorkRefs, failed.receivedWorkRefs); assert.equal(unchanged.pendingAction, "enable-same-instance");
+  }
+  const stillDisabled = advanceContextPatrol(failed, { kind: "after-pause", check: check("after-resume", "2026-10-20T05:40:00Z"), readback: readback(false, "2026-10-20T05:40:00Z") });
+  assert.equal(stillDisabled.state, "pending-resume"); assert.equal(stillDisabled.lastError, failed.lastError);
+  assert.deepEqual(stillDisabled.receivedWorkRefs, failed.receivedWorkRefs);
+  assert.equal(advanceContextPatrol(failed, { kind: "readback", readback: readback(true, "2026-10-20T05:41:00Z") }).state, "active");
+});
+
+test("J12 eligibility loss cannot establish an observed disabled daily task", () => {
+  const initial = initialDailyConfigBackupState({ automationId: "fixture:backup-id", groupRef: "fixture:group", selectionDigest: "a".repeat(64) });
+  const scheduler = { deduplicationVerified: true, readbackAvailable: true, actualEnablementAuthorizationRef: "fixture:enable" };
+  const read = { automationId: initial.automationId, groupRef: initial.groupRef, selectionDigest: initial.selectionDigest, timezone: "Asia/Shanghai", dailyLocalTime: "00:00", isEnabled: true, observedAt: atForBackup(), evidenceRef: "fixture:backup-read" };
+  const enabled = readbackDailyConfigBackup(evaluateDailyConfigBackup(initial, backupGate(), scheduler).state, read, backupGate());
+  const denied = { ...backupGate(), approval: null };
+  const unauthorized = readbackDailyConfigBackup(initial, read, denied);
+  assert.equal(unauthorized.state, "unknown");
+  assert.equal(evaluateDailyConfigBackup(evaluateDailyConfigBackup(unauthorized, denied, scheduler).state, denied, scheduler).state.state, "unknown");
+  const once = evaluateDailyConfigBackup(enabled, denied, scheduler);
+  const twice = evaluateDailyConfigBackup(once.state, denied, scheduler);
+  assert.equal(once.state.state, "unknown"); assert.equal(twice.state.state, "unknown"); assert.equal(twice.next, "query-disable-and-readback");
+  assert.equal(readbackDailyConfigBackup(twice.state, { ...read, isEnabled: false }, denied).state, "disabled");
+});

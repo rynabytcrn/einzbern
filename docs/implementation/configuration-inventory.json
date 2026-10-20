@@ -2700,6 +2700,45 @@
         "transport": "argv-string",
         "defaultValue": null,
         "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "ordinary",
+        "pathBase": null,
+        "sharing": "device-local; never a shared library declaration",
+        "export": "not exported to shared AGENTS or config/project.json",
+        "restart": "applies only through the requested lifecycle operation; plan alone writes nothing",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:setup:approved-plan-digest",
+        "kind": "cli-argument",
+        "name": "--approved-plan-digest",
+        "command": "setup",
+        "catalogReference": "COMMAND_CATALOG[setup].flags[approved-plan-digest]",
+        "consumer": [
+          "packages/cli/src/index.ts setup handler"
+        ],
+        "precedence": [
+          "explicit setup --approved-plan-digest",
+          "consumer-specific fallback described below"
+        ],
+        "semanticType": "digest",
+        "validation": "Exact saved dot preview planDigest; required with --yes true for chatgpt-dot, forbidden for traditional. Drift returns a new preview without writing.",
+        "defaultDescription": "no default; machine carries the reviewed digest unchanged",
+        "scope": "one approved dot setup preview",
+        "effect": "Binds apply to the previously approved source/input/originals instead of approving a new plan implicitly.",
+        "flag": {
+          "name": "approved-plan-digest",
+          "required": false,
+          "valueKind": "string",
+          "valueShape": "saved preview dot.planDigest; required for dot apply"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
         "source": "machine-collected current engine, rule and path observations",
         "persistence": "invocation",
         "sensitivity": "context-may-contain-private-data",
@@ -5539,6 +5578,86 @@
         "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
         "editing": "dedicated invocation only; not a generic settings-editor field",
         "consumption": "wired",
+        "key": "cli:execution-native-prepare:retry-from",
+        "kind": "cli-argument",
+        "name": "--retry-from",
+        "command": "execution-native-prepare",
+        "catalogReference": "COMMAND_CATALOG[execution-native-prepare].flags[retry-from]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-native-prepare --retry-from",
+          "absent; no fabricated evidence, identity, approval or revision"
+        ],
+        "semanticType": "path",
+        "validation": "previous saved native record, required for an explicit retry. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "absent; no fabricated evidence, identity, approval or revision",
+        "scope": "one native attempt or shared-submit advisory",
+        "effect": "Native evidence never supplies a process exit code. Unknown terminality, acceptance without readback, parallel serial-only requests and unmet independent verification cannot become completed; advisory is not a distributed lock.",
+        "flag": {
+          "name": "retry-from",
+          "required": false,
+          "valueKind": "string",
+          "valueShape": "previous saved native record, required for an explicit retry"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-native-prepare:reconciliation",
+        "kind": "cli-argument",
+        "name": "--reconciliation",
+        "command": "execution-native-prepare",
+        "catalogReference": "COMMAND_CATALOG[execution-native-prepare].flags[reconciliation]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-native-prepare --reconciliation",
+          "absent; no fabricated evidence, identity, approval or revision"
+        ],
+        "semanticType": "path",
+        "validation": "NativeRetryReconciliation; paired with retry-from. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "absent; no fabricated evidence, identity, approval or revision",
+        "scope": "one native attempt or shared-submit advisory",
+        "effect": "Native evidence never supplies a process exit code. Unknown terminality, acceptance without readback, parallel serial-only requests and unmet independent verification cannot become completed; advisory is not a distributed lock.",
+        "flag": {
+          "name": "reconciliation",
+          "required": false,
+          "valueKind": "string",
+          "valueShape": "NativeRetryReconciliation; paired with retry-from"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
         "key": "cli:execution-native-prepare:output",
         "kind": "cli-argument",
         "name": "--output",
@@ -5640,6 +5759,46 @@
           "required": false,
           "valueKind": "string",
           "valueShape": "NativeToolResponseInput JSON; absent keeps pending attempt"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-native-record:prior",
+        "kind": "cli-argument",
+        "name": "--prior",
+        "command": "execution-native-record",
+        "catalogReference": "COMMAND_CATALOG[execution-native-record].flags[prior]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-native-record --prior",
+          "absent; no fabricated evidence, identity, approval or revision"
+        ],
+        "semanticType": "path",
+        "validation": "previous saved record/history for this same attempt. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "absent; no fabricated evidence, identity, approval or revision",
+        "scope": "one native attempt or shared-submit advisory",
+        "effect": "Native evidence never supplies a process exit code. Unknown terminality, acceptance without readback, parallel serial-only requests and unmet independent verification cannot become completed; advisory is not a distributed lock.",
+        "flag": {
+          "name": "prior",
+          "required": false,
+          "valueKind": "string",
+          "valueShape": "previous saved record/history for this same attempt"
         }
       },
       {
@@ -6960,6 +7119,18 @@
             "valueShape": "actual tool arguments JSON"
           },
           {
+            "name": "retry-from",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "previous saved native record, required for an explicit retry"
+          },
+          {
+            "name": "reconciliation",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "NativeRetryReconciliation; paired with retry-from"
+          },
+          {
             "name": "output",
             "required": true,
             "valueKind": "string"
@@ -6981,6 +7152,12 @@
             "required": false,
             "valueKind": "string",
             "valueShape": "NativeToolResponseInput JSON; absent keeps pending attempt"
+          },
+          {
+            "name": "prior",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "previous saved record/history for this same attempt"
           },
           {
             "name": "output",
@@ -9453,6 +9630,12 @@
             "required": false,
             "valueKind": "string",
             "valueShape": "absolute path to JSON dot target options; required for chatgpt-dot"
+          },
+          {
+            "name": "approved-plan-digest",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "saved preview dot.planDigest; required for dot apply"
           },
           {
             "name": "mode",

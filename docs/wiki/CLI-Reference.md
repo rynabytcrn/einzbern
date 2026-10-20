@@ -336,6 +336,8 @@
 | `--tool` | 必填 | `string` |  |
 | `--tool-contract` | 必填 | `string` | `{ref,sha256} JSON` |
 | `--arguments` | 必填 | `string` | `actual tool arguments JSON` |
+| `--retry-from` | 可选 | `string` | `previous saved native record, required for an explicit retry` |
+| `--reconciliation` | 可选 | `string` | `NativeRetryReconciliation; paired with retry-from` |
 | `--output` | 必填 | `string` |  |
 
 ## `execution-native-record`
@@ -347,6 +349,7 @@
 | --- | --- | --- | --- |
 | `--binding` | 必填 | `string` |  |
 | `--response` | 可选 | `string` | `NativeToolResponseInput JSON; absent keeps pending attempt` |
+| `--prior` | 可选 | `string` | `previous saved record/history for this same attempt` |
 | `--output` | 必填 | `string` |  |
 
 ## `execution-policy-resolve`
@@ -1249,6 +1252,7 @@
 | --- | --- | --- | --- |
 | `--execution-target` | 可选 | `string` | `traditional | chatgpt-dot` |
 | `--dot-input` | 可选 | `string` | `absolute path to JSON dot target options; required for chatgpt-dot` |
+| `--approved-plan-digest` | 可选 | `string` | `saved preview dot.planDigest; required for dot apply` |
 | `--mode` | 必填 | `string` |  |
 | `--project` | 必填 | `string` |  |
 | `--at` | 必填 | `instant` |  |

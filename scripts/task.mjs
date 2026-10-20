@@ -47,6 +47,7 @@ import {
   withExclusiveOutputSession,
 } from "./lib/safe-io.mjs";
 import { delay, PROGRESS_WAIT_MAX_MS, readProgressDelta, summarizeProgress, waitForProgress } from "./lib/incremental-output.mjs";
+import { collectTestDiagnostics, prepareTestDiagnostics, snapshotTestController } from "./lib/test-run-diagnostics.mjs";
 import { installNoNetworkGuard } from "./no-network.mjs";
 import { ScopedStripTypesError, stripTypesWithScopedExperimentalWarning } from "./lib/scoped-strip-types.mjs";
 import { TarError, writeUstar } from "./lib/tar.mjs";
@@ -114,7 +115,7 @@ function terminateTestControllerGroup(processGroup) {
   }
 }
 
-async function runDetachedTestController(arguments_, extraEnvironment) {
+async function runDetachedTestController(arguments_, extraEnvironment, tests) {
   const progressDirectory = await mkdtemp(join(tmpdir(), "tcrn-test-progress-"));
   const progressPath = join(progressDirectory, "events.ndjson");
   const reaperReadyPath = join(progressDirectory, "reaper.json");
@@ -123,6 +124,7 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
   try {
     // The runner owns creation; a late reaper must never recreate this file during cleanup.
     await writeFile(progressPath, "", { mode: 0o600, flag: "wx" });
+    const diagnostics = prepareTestDiagnostics(progressDirectory, tests, repositoryRoot, resolve(repositoryRoot, "scripts/test-file-progress-reporter.mjs"));
     const controllerEnvironment = {
       ...process.env,
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
@@ -136,13 +138,17 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
       TCRN_TEST_CONTROLLER_PROGRESS_PATH: progressPath,
       TCRN_TEST_CONTROLLER_REAPER_READY_PATH: reaperReadyPath,
     };
+    // Inherited observer paths never authorize writing a parent task's ledger.
+    delete controllerEnvironment.TCRN_TEST_CONTROLLER_DIAGNOSTIC_PLAN;
+    delete controllerEnvironment.TCRN_TEST_CONTROLLER_DIAGNOSTIC_LEDGER;
+    Object.assign(controllerEnvironment, diagnostics.environment);
     // The supervisor and reaper are lifecycle owners, not coverage writers.
     // Remove the inherited collector only from this child environment; the
     // worker receives the explicit path below and keeps coverage enabled.
     delete controllerEnvironment.NODE_V8_COVERAGE;
     if (coverageDirectory) controllerEnvironment.TCRN_TEST_CONTROLLER_COVERAGE_DIRECTORY = coverageDirectory;
     else delete controllerEnvironment.TCRN_TEST_CONTROLLER_COVERAGE_DIRECTORY;
-    child = spawn(process.execPath, [testControllerBootstrapPath, ...arguments_], {
+    child = spawn(process.execPath, [testControllerBootstrapPath, ...diagnostics.arguments], {
       cwd: repositoryRoot,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -191,6 +197,7 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
     while (completed === undefined) {
       const remaining = timeoutMs - (Date.now() - startedAt);
       if (remaining <= 0) {
+        const diagnosticSnapshot = { trigger: "deadline", triggerElapsedMs: Date.now() - startedAt, timeoutMs, terminalProgressStatus: null, controllerAtTrigger: snapshotTestController(events, cursor, counters) };
         terminateTestControllerGroup(child.pid);
         await resultOutcome;
         let groupJoinError = null;
@@ -203,6 +210,7 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
           cleanupErrors: groupJoinError === null ? [] : [groupJoinError],
           processGroup: child.pid,
           coverageDirectory,
+          diagnostics: collectTestDiagnostics(diagnostics, diagnosticSnapshot, progressPath, groupJoinError === null),
         }));
       }
       const waitController = new AbortController();
@@ -255,6 +263,7 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
           });
         }
         if (exitOutcome.kind === "timeout") {
+          const diagnosticSnapshot = { trigger: "terminal-without-close", triggerElapsedMs: Date.now() - startedAt, timeoutMs, terminalProgressStatus: outcome.value.status, controllerAtTrigger: snapshotTestController(events, cursor, counters) };
           terminateTestControllerGroup(child.pid);
           await resultOutcome;
           let groupJoinError = null;
@@ -267,6 +276,7 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
             cleanupErrors: groupJoinError === null ? [] : [groupJoinError],
             processGroup: child.pid,
             coverageDirectory,
+            diagnostics: collectTestDiagnostics(diagnostics, diagnosticSnapshot, progressPath, groupJoinError === null),
           }));
         }
         if (exitOutcome.kind === "error") throw exitOutcome.error;
@@ -274,9 +284,10 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
         break;
       }
     }
+    const diagnosticSnapshot = { trigger: "process-exit", triggerElapsedMs: Date.now() - startedAt, timeoutMs, terminalProgressStatus: null, controllerAtTrigger: snapshotTestController(events, cursor, counters) };
     await waitForProcessGroupExit(child.pid);
     await waitForProcessGroupExit(reaperProcessGroup);
-    const progress = { ...summarizeProgress(events), cursor, ...counters, lastProgress: events.at(-1) ?? null };
+    const progress = { ...summarizeProgress(events), cursor, ...counters, lastProgress: events.at(-1) ?? null, diagnostics: collectTestDiagnostics(diagnostics, diagnosticSnapshot, progressPath, true) };
     if (completed.code === 0 && progress.status !== "completed") {
       fail("TEST_CONTROLLER_PROGRESS_MISSING", JSON.stringify(progress));
     }
@@ -642,7 +653,7 @@ async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
       EINZBERN_HOME: join(deviceDirectory, "einzbern"),
       EINZBERN_TEST_DEVICE_ROOT: deviceDirectory,
       ...extraEnvironment,
-    });
+    }, tests);
   } finally {
     await rm(deviceDirectory, { recursive: true, force: true });
   }

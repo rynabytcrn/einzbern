@@ -160,19 +160,29 @@ actual scheduler update return/error observation: `action` (`pause` or `resume`)
 It must match the pending same-instance mutation. The task's `before-pause` time, invocation
 start, old readback and JSON assembly clock are not an update return; never fabricate a boundary.
 An observed action is not successful pause/resume. Preserve the returned `pendingMutation`
-with its `action`, `priorReturnedAt` and nullable `observation`; a prior boundary is only a lower
-bound, not proof of the next mutation. A new action observation must be strictly later than that
-prior boundary. Keep this dynamic state outside AGENTS, not as a setting.
+with its `action`, `requestNotBefore`, `priorReturnedAt` and nullable `observation`.
+`requestNotBefore` freezes the current request's maximum known prerequisite time, including
+the real check/readback that creates it; actual `returnedAt` cannot be earlier. `priorReturnedAt`
+is only a prior actual lower bound: a new action observation must be strictly later than it.
+Neither bound proves the request was sent or the action completed, nor replaces an actual return.
+Also preserve state `knownObservationAt`, the maximum supplied real time of accepted check,
+readback and action events. It constrains future new requests, never retrospectively moves the
+current request's bound or redates an already associated action. A new pause/resume retains all
+known prerequisites but starts with no action observation. Untimed `new-work` preserves existing
+bounds without inventing a receipt time. Keep this dynamic state outside AGENTS, not as a setting.
 
 An `action-failed` event carries the actual `action` and `error`. When its failure belongs to
-the recorded observation, carry that exact source as `actionEvidenceRef`. A mismatched reference
-refuses; an unlinked failure clears the current observation and retains only the prior lower bound,
-error and work references, without reusing an earlier action's proof.
+the recorded observation, carry that exact source as `actionEvidenceRef` and retain its mutation.
+A mismatched reference refuses; an unlinked failure clears the current observation and retains
+and combines known request prerequisites and the prior actual lower bound, error and work
+references, without reusing an earlier action's proof. Unknown, missing-source and terminal-reset
+transitions do not discard those bounds.
 Do not invent a reference to avoid unknown. Both `readback` and `after-pause` require the same
 actual instance/scope/20-minute interval and a readback `observedAt` strictly later than the
 pending observation's `returnedAt`. Equal/earlier observations, even later than the old readback
 or pre-pause check, cannot confirm the action. Obtain an actual post-action query/readback.
-Missing or unassociated action evidence keeps unknown/query and received work/error intact.
+Missing current request prerequisites or missing/unassociated action evidence keeps unknown/query
+and received work/error intact, including legacy states; a late readback cannot supply either.
 Post-pause task reads remain required; disabled readback with new work or keep-enabled retains
 same-ID resume responsibility, with a new resume observation and subsequent enabled readback.
 These are state-event fields, not CLI flags, a scheduler/controller or permission to mutate one;

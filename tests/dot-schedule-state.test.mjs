@@ -8,6 +8,12 @@ function active(override = null) { return advanceContextPatrol(initialContextPat
 function check(id, at, extra = {}) { return { checkId: id, observedAt: at, outcome: "success", nativeAttempts: [], visibleTaskRevisions: ["fixture:work@1"], activeAttemptRefs: [], receivedWorkRefs: [], terminalKind: "completed", terminalFingerprint: "fixture:completed", allActionablePathsBlocked: false, blockersExplained: false, independentWorkAvailable: false, evidenceRef: "fixture:check", ...extra }; }
 const one = check("one", "2026-10-20T05:00:00Z"); const two = check("two", "2026-10-20T05:20:00Z");
 function candidate() { return advanceContextPatrol(advanceContextPatrol(active(), { kind: "check", check: one }), { kind: "check", check: two }); }
+// Explicit synthetic action-return observations, not a scheduler call or assembly clock.
+function observeAction(state, action, returnedAt) { return advanceContextPatrol(state, { kind: "action-observed", action, automationId: "fixture:actual-id", returnedAt, evidenceRef: `fixture:${action}-return:${returnedAt}` }); }
+function failedAction(state, action, returnedAt, error) {
+  const observed = observeAction(state, action, returnedAt);
+  return advanceContextPatrol(observed, { kind: "action-failed", action, error, actionEvidenceRef: observed.pendingMutation.observation.evidenceRef });
+}
 test("DOT-S01 actual ID and scope deduplicate; unknown create is queried", () => {
   assert.equal(resolveScheduleInstance(scope, null, [], "unknown").status, "query-required");
   assert.equal(resolveScheduleInstance(scope, "fixture:actual-id", [readback()]).status, "reuse");
@@ -30,17 +36,17 @@ test("DOT-S02 ordinary blocked/running/failed/unknown is not terminal", () => {
 test("DOT-S02 pause requires before and after reads; interleaved new work resumes same ID", () => {
   const pending = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
   assert.equal(pending.pendingAction, "disable-same-instance");
-  const disabled = advanceContextPatrol(pending, { kind: "readback", readback: readback(false, "2026-10-20T05:20:02Z") });
+  const disabled = advanceContextPatrol(observeAction(pending, "pause", "2026-10-20T05:20:01.500Z"), { kind: "readback", readback: readback(false, "2026-10-20T05:20:02Z") });
   assert.equal(disabled.pendingAction, "read-after-pause");
   const resumed = advanceContextPatrol(disabled, { kind: "after-pause", check: check("after", "2026-10-20T05:20:03Z", { receivedWorkRefs: ["fixture:new"] }), readback: readback(false, "2026-10-20T05:20:03Z") });
   assert.equal(resumed.state, "pending-resume"); assert.equal(resumed.automationId, "fixture:actual-id");
-  const failed = advanceContextPatrol(resumed, { kind: "action-failed", action: "resume", error: "fixture:unknown outcome" });
+  const failed = failedAction(resumed, "resume", "2026-10-20T05:20:03.500Z", "fixture:unknown outcome");
   assert.equal(failed.state, "pending-resume"); assert.deepEqual(failed.receivedWorkRefs, ["fixture:new"]);
   assert.equal(advanceContextPatrol(failed, { kind: "readback", readback: readback(true, "2026-10-20T05:20:04Z") }).state, "active");
 });
 test("DOT-S02 pause readback with unchanged terminal permits paused only after post-read", () => {
   const pending = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
-  assert.equal(advanceContextPatrol(pending, { kind: "after-pause", check: check("after", "2026-10-20T05:20:02Z"), readback: readback(false, "2026-10-20T05:20:02Z") }).state, "paused");
+  assert.equal(advanceContextPatrol(observeAction(pending, "pause", "2026-10-20T05:20:01.500Z"), { kind: "after-pause", check: check("after", "2026-10-20T05:20:02Z"), readback: readback(false, "2026-10-20T05:20:02Z") }).state, "paused");
 });
 test("DOT-S02 keep-enabled override is independent of the stable pause policy", () => {
   const state = active({ mode: "keep-enabled", evidenceRef: "fixture:owner-override" });
@@ -82,9 +88,9 @@ function atForBackup() { return "2026-10-20T16:00:00Z"; }
 test("J11 scheduler action responsibility survives later terminal task checks", () => {
   const pendingPause = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
   assert.deepEqual(advanceContextPatrol(pendingPause, { kind: "check", check: check("late", "2026-10-20T05:40:00Z") }), pendingPause);
-  const paused = advanceContextPatrol(pendingPause, { kind: "after-pause", check: check("after", "2026-10-20T05:20:02Z"), readback: readback(false, "2026-10-20T05:20:02Z") });
+  const paused = advanceContextPatrol(observeAction(pendingPause, "pause", "2026-10-20T05:20:01.500Z"), { kind: "after-pause", check: check("after", "2026-10-20T05:20:02Z"), readback: readback(false, "2026-10-20T05:20:02Z") });
   const resume = advanceContextPatrol(paused, { kind: "new-work", workRefs: ["fixture:new-work"] });
-  const failed = advanceContextPatrol(resume, { kind: "action-failed", action: "resume", error: "fixture:resume-unknown" });
+  const failed = failedAction(resume, "resume", "2026-10-20T05:30:00Z", "fixture:resume-unknown");
   for (const kind of ["check", "before-pause"]) {
     const unchanged = advanceContextPatrol(failed, { kind, check: check("late", "2026-10-20T05:40:00Z") });
     assert.equal(unchanged.state, "pending-resume"); assert.equal(unchanged.lastError, failed.lastError);
@@ -98,7 +104,7 @@ test("J11 scheduler action responsibility survives later terminal task checks", 
 
 test("RJ02 failed pause stays unknown across ordinary checks and new work until fresh same-instance readback", () => {
   const pending = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
-  const failed = advanceContextPatrol(pending, { kind: "action-failed", action: "pause", error: "fixture:pause-outcome-unknown" });
+  const failed = failedAction(pending, "pause", "2026-10-20T05:30:00Z", "fixture:pause-outcome-unknown");
   for (const override of [null, { mode: "keep-enabled", evidenceRef: "fixture:owner-override" }]) {
     let unresolved = { ...failed, ownerOverride: override };
     for (const [kind, extra] of [["check", {}], ["check", { terminalKind: null }], ["before-pause", { receivedWorkRefs: ["fixture:check-work"] }], ["check", { outcome: "unknown" }]]) {
@@ -109,12 +115,12 @@ test("RJ02 failed pause stays unknown across ordinary checks and new work until 
     unresolved = advanceContextPatrol(unresolved, { kind: "new-work", workRefs: ["fixture:new-work"] });
     assert.equal(unresolved.state, "unknown"); assert.equal(unresolved.pendingAction, "query-instance"); assert.equal(unresolved.lastError, failed.lastError);
     assert.deepEqual(unresolved.receivedWorkRefs, ["fixture:check-work", "fixture:new-work"]);
-    assert.throws(() => advanceContextPatrol(unresolved, { kind: "readback", readback: failed.lastReadback }), /new same-instance readback/u);
+    assert.throws(() => advanceContextPatrol(unresolved, { kind: "readback", readback: failed.lastReadback }), /actual same-instance action observation/u);
     assert.throws(() => advanceContextPatrol(unresolved, { kind: "readback", readback: { ...readback(true, "2026-10-20T05:41:00Z"), automationId: "fixture:wrong-id" } }), /original instance/u);
     const disabled = advanceContextPatrol(unresolved, { kind: "readback", readback: readback(false, "2026-10-20T05:41:00Z") });
     assert.equal(disabled.state, "pending-resume"); assert.equal(disabled.pendingAction, "enable-same-instance"); assert.equal(disabled.lastError, failed.lastError);
     assert.deepEqual(disabled.receivedWorkRefs, unresolved.receivedWorkRefs); assert.equal(disabled.automationId, failed.automationId);
-    const enabled = advanceContextPatrol(disabled, { kind: "readback", readback: readback(true, "2026-10-20T05:42:00Z") });
+    const enabled = advanceContextPatrol(observeAction(disabled, "resume", "2026-10-20T05:41:30Z"), { kind: "readback", readback: readback(true, "2026-10-20T05:42:00Z") });
     assert.equal(enabled.state, "active"); assert.equal(enabled.pendingAction, null); assert.equal(enabled.lastError, null); assert.deepEqual(enabled.receivedWorkRefs, []);
     const enabledDirectly = advanceContextPatrol(unresolved, { kind: "readback", readback: readback(true, "2026-10-20T05:41:00Z") });
     assert.equal(enabledDirectly.state, "active"); assert.equal(enabledDirectly.lastError, null);
@@ -122,6 +128,81 @@ test("RJ02 failed pause stays unknown across ordinary checks and new work until 
   assert.equal(advanceContextPatrol(failed, { kind: "readback", readback: readback(false, "2026-10-20T05:41:00Z") }).state, "paused");
   const kept = advanceContextPatrol({ ...failed, ownerOverride: { mode: "keep-enabled", evidenceRef: "fixture:owner-override" } }, { kind: "readback", readback: readback(false, "2026-10-20T05:41:00Z") });
   assert.equal(kept.state, "pending-resume");
+});
+
+test("RJ02 actual action boundary rejects late pre-action observations in both readback consumers", () => {
+  const prepared = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
+  const pending = observeAction(prepared, "pause", "2026-10-20T05:30:00Z");
+  const failed = advanceContextPatrol(pending, { kind: "action-failed", action: "pause", error: "fixture:pause-unknown", actionEvidenceRef: pending.pendingMutation.observation.evidenceRef });
+  const unresolved = advanceContextPatrol(failed, { kind: "new-work", workRefs: ["fixture:received-after-pause"] });
+  const original = structuredClone(unresolved);
+  // Old readback 05:00 < late 05:10 < precheck 05:20:01 < action 05:30.
+  // The 05:25 observation also cannot stand in for the later actual action.
+  for (const at of ["2026-10-20T05:10:00Z", "2026-10-20T05:25:00Z", "2026-10-20T05:30:00Z"]) {
+    assert.throws(() => advanceContextPatrol(unresolved, { kind: "readback", readback: readback(true, at) }), /actual same-instance action observation/u);
+    for (const kind of ["readback", "after-pause"]) {
+      assert.throws(() => advanceContextPatrol(pending, { kind, readback: readback(false, at), ...(kind === "after-pause" ? { check: check("after", "2026-10-20T05:31:00Z") } : {}) }), /actual same-instance action observation/u);
+    }
+  }
+  assert.deepEqual(unresolved, original);
+  for (const difference of [{ automationId: "fixture:wrong-id" }, { scopeDigest: "f".repeat(64) }, { intervalMinutes: 10 }]) {
+    assert.throws(() => advanceContextPatrol(unresolved, { kind: "readback", readback: { ...readback(true, "2026-10-20T05:31:00Z"), ...difference } }), /original instance/u);
+  }
+  const disabled = advanceContextPatrol(unresolved, { kind: "readback", readback: readback(false, "2026-10-20T05:31:00Z") });
+  assert.equal(disabled.state, "pending-resume"); assert.equal(disabled.pendingMutation.action, "resume"); assert.equal(disabled.pendingMutation.observation, null);
+  assert.equal(disabled.lastError, failed.lastError); assert.deepEqual(disabled.receivedWorkRefs, unresolved.receivedWorkRefs);
+  const resumed = observeAction(disabled, "resume", "2026-10-20T05:40:00Z");
+  for (const at of ["2026-10-20T05:35:00Z", "2026-10-20T05:40:00Z"]) {
+    for (const kind of ["readback", "after-pause"]) {
+      assert.throws(() => advanceContextPatrol(resumed, { kind, readback: readback(true, at), ...(kind === "after-pause" ? { check: check("after-resume", "2026-10-20T05:41:00Z") } : {}) }), /actual same-instance action observation/u);
+    }
+  }
+  for (const kind of ["readback", "after-pause"]) {
+    const enabled = advanceContextPatrol(resumed, { kind, readback: readback(true, "2026-10-20T05:41:00Z"), ...(kind === "after-pause" ? { check: check("after-resume", "2026-10-20T05:41:00Z") } : {}) });
+    assert.equal(enabled.state, "active"); assert.equal(enabled.pendingAction, null); assert.equal(enabled.pendingMutation, null); assert.equal(enabled.lastError, null); assert.deepEqual(enabled.receivedWorkRefs, []);
+  }
+});
+
+test("RJ02 missing or unlinked actual action boundary remains unknown without inventing a clock", () => {
+  const pending = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
+  const workRefs = ["fixture:received-work"];
+  for (const kind of ["readback", "after-pause"]) {
+    const unknown = advanceContextPatrol({ ...pending, receivedWorkRefs: workRefs, lastError: "fixture:missing-return" }, { kind, readback: readback(true, "2026-10-20T06:00:00Z"), ...(kind === "after-pause" ? { check: check("after", "2026-10-20T06:00:01Z") } : {}) });
+    assert.equal(unknown.state, "unknown"); assert.equal(unknown.pendingAction, "query-instance"); assert.equal(unknown.pendingMutation.observation, null);
+    assert.equal(unknown.lastError, "fixture:missing-return"); assert.deepEqual(unknown.receivedWorkRefs, workRefs); assert.deepEqual(unknown.lastReadback, pending.lastReadback);
+  }
+  const observed = observeAction(pending, "pause", "2026-10-20T05:30:00Z");
+  assert.throws(() => advanceContextPatrol(observed, { kind: "action-failed", action: "pause", error: "fixture:failed", actionEvidenceRef: "fixture:unrelated-action" }), /bind the actual/u);
+  // A later failure without an actual source cannot borrow the first attempt's time.
+  const unlinked = advanceContextPatrol(observed, { kind: "action-failed", action: "pause", error: "fixture:unlinked-failure" });
+  assert.equal(unlinked.pendingMutation.priorReturnedAt, "2026-10-20T05:30:00Z");
+  for (const at of ["2026-10-20T05:25:00Z", "2026-10-20T05:30:00Z"]) assert.throws(() => observeAction(unlinked, "pause", at), /causal boundary/u);
+  const received = advanceContextPatrol(unlinked, { kind: "new-work", workRefs });
+  const unknown = advanceContextPatrol(received, { kind: "readback", readback: readback(true, "2026-10-20T06:00:00Z") });
+  assert.equal(unknown.state, "unknown"); assert.equal(unknown.pendingAction, "query-instance"); assert.equal(unknown.pendingMutation.observation, null);
+  assert.equal(unknown.lastError, unlinked.lastError); assert.deepEqual(unknown.receivedWorkRefs, workRefs); assert.deepEqual(unknown.lastReadback, pending.lastReadback);
+  const legacy = structuredClone(received); delete legacy.pendingMutation;
+  const legacyUnknown = advanceContextPatrol(legacy, { kind: "readback", readback: readback(true, "2026-10-20T06:00:00Z") });
+  assert.equal(legacyUnknown.state, "unknown");
+  assert.equal(advanceContextPatrol(legacyUnknown, { kind: "readback", readback: readback(true, "2026-10-20T06:01:00Z") }).state, "unknown");
+  const known = observeAction(received, "pause", "2026-10-20T05:40:00Z");
+  const resumed = advanceContextPatrol(known, { kind: "readback", readback: readback(false, "2026-10-20T05:41:00Z") });
+  const missingResume = advanceContextPatrol(resumed, { kind: "readback", readback: readback(true, "2026-10-20T05:42:00Z") });
+  assert.equal(missingResume.state, "unknown"); assert.equal(missingResume.pendingMutation.action, "resume"); assert.equal(missingResume.lastError, unlinked.lastError);
+  assert.deepEqual(missingResume.receivedWorkRefs, workRefs);
+  const actualResume = observeAction(missingResume, "resume", "2026-10-20T05:43:00Z");
+  assert.equal(advanceContextPatrol(actualResume, { kind: "readback", readback: readback(true, "2026-10-20T05:44:00Z") }).state, "active");
+});
+
+test("RJ02 action observations bind the pending kind and instance and cannot move the boundary backward", () => {
+  const pending = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
+  assert.throws(() => observeAction(pending, "resume", "2026-10-20T05:30:00Z"), /pending same-instance mutation/u);
+  assert.throws(() => advanceContextPatrol(pending, { kind: "action-observed", action: "pause", automationId: "fixture:wrong-id", returnedAt: "2026-10-20T05:30:00Z", evidenceRef: "fixture:wrong-instance" }), /pending same-instance mutation/u);
+  assert.throws(() => observeAction(pending, "pause", "2026-10-20T05:10:00Z"), /causal boundary/u);
+  const observed = observeAction(pending, "pause", "2026-10-20T05:30:00Z");
+  assert.throws(() => observeAction(observed, "pause", "2026-10-20T05:25:00Z"), /causal boundary/u);
+  assert.deepEqual(observeAction(observed, "pause", "2026-10-20T05:30:00Z"), observed);
+  assert.equal(observed.state, "pending-pause"); assert.equal(observed.lastReadback.isEnabled, true);
 });
 
 test("J12 eligibility loss cannot establish an observed disabled daily task", () => {

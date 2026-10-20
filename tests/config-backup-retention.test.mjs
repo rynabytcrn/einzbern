@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // CFG-B03/B04/P01. Synthetic policy values below are fixture-only, not product defaults.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { configBackupCanonical, planConfigBackup } from "../dist/build/packages/core/src/config-backup.js";
+import { configBackupCanonical, planConfigBackup, writeConfigBackupPackage } from "../dist/build/packages/core/src/config-backup.js";
 import { createConfigBackup, evaluateConfigBackupEnablement, listConfigBackups, resumeConfigBackup, retireConfigBackup, validateConfigBackupRetentionPolicy } from "../dist/build/packages/core/src/config-backup-retention.js";
 const ref = { libraryId: `workspace:${"1".repeat(24)}`, projectId: `project:${"2".repeat(24)}` };
 const version = { engineVersion: "3.1.0", engineCommit: null, engineCommitStatus: "unknown", artifactIdentity: { kind: "observed-artifact-identity", schemaVersion: "einzbern.install-tree-digest.v1", sha256: "3".repeat(64) }, templateVersions: ["rules-v1"] };
@@ -137,4 +137,56 @@ test("J07 sequential rotation capacity retains transaction phase and reason on a
   assert.deepEqual(result.index.activeBackupIds, ["6".repeat(32), "7".repeat(32)]);
   const listed = await listConfigBackups({ reservedRoot: store.reservedRoot, at: "2026-10-20T00:00:07Z" });
   assert.deepEqual(listed.groups[0].transactionPhases, ["rotation-pending"]); assert.equal(listed.groups[0].error, result.index.lastError);
+});
+
+async function rotationCut(t) {
+  const f = await fixture(t);
+  const first = f.proposal("5", "dark", "2026-10-20T00:00:00Z"); const second = f.proposal("6", "light", "2026-10-20T00:00:02Z");
+  await createConfigBackup(f.store, first, first.manifest.createdAtUtc);
+  const completed = (await createConfigBackup(f.store, second, second.manifest.createdAtUtc)).index;
+  const old = completed.recoverable[0]; const newest = completed.active[0];
+  const group = join(f.store.reservedRoot, "config-backups", "device", f.store.binding.backupGroupId);
+  const recovery = join(f.store.reservedRoot, "config-backup-recovery", "device", f.store.binding.backupGroupId, old.directory);
+  const transaction = { transactionId: newest.backupId, backupId: newest.backupId, directory: newest.directory, manifestDigest: newest.manifestDigest, bytes: newest.bytes, startedAt: second.manifest.createdAtUtc, phase: "rotation-pending", retirementBackupId: old.backupId };
+  // A durable JSON cut only. Both immutable packages came from the normal
+  // sequential writer; no crash, kill, concurrent writer or actual device.
+  const pending = { ...completed, revision: completed.revision + 1, active: [{ ...old, origin: "created", recoverableUntil: null }, newest], activeBackupIds: [old.backupId, newest.backupId], recoverable: [], recoverableBackupIds: [], transactions: [transaction], transactionIds: [transaction.transactionId], lastError: "retirement-readback-unknown" };
+  const indexPath = join(group, "index.json"); await writeFile(indexPath, configBackupCanonical(pending));
+  return { ...f, first, second, pending, indexPath, source: join(group, old.directory), recovery };
+}
+test("R2 list understands both rotation rename cuts and counts each actual package once without settling the index", async t => {
+  for (const location of ["active", "recovery"]) {
+    const f = await rotationCut(t);
+    if (location === "active") await rename(f.recovery, f.source);
+    const before = await readFile(f.indexPath, "utf8");
+    const list = await listConfigBackups({ reservedRoot: f.store.reservedRoot, at: "2026-10-20T00:00:04Z" });
+    const row = list.groups[0];
+    assert.equal(list.scanStatus, "partial"); assert.equal(row.integrity, "discovered");
+    assert.deepEqual(row.projectRef, ref); assert.deepEqual([row.activeCount, row.transactionCount, row.recoverableCount], [2, 1, 0]);
+    assert.deepEqual(row.transactionPhases, ["rotation-pending"]); assert.equal(row.error, "retirement-readback-unknown");
+    assert.equal(row.bytes, f.first.bytes + f.second.bytes); assert.equal(row.syncStatus, "unknown");
+    assert.equal(await readFile(f.indexPath, "utf8"), before, "list is read-only, not an implicit resume");
+    assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:05Z")).status, "settled");
+    const settled = (await listConfigBackups({ reservedRoot: f.store.reservedRoot, at: "2026-10-20T00:00:06Z" })).groups[0];
+    assert.equal(settled.integrity, "verified"); assert.equal(settled.bytes, row.bytes);
+    assert.deepEqual([settled.activeCount, settled.transactionCount, settled.recoverableCount], [1, 0, 1]);
+  }
+});
+test("R2 missing, duplicated or unbound retirement locations retain index metadata but never claim verified bytes", async t => {
+  for (const kind of ["missing", "duplicated", "wrong-phase", "wrong-retirement-id", "corrupt-package"]) {
+    const f = await rotationCut(t);
+    if (kind === "missing") await rename(f.recovery, join(f.root, "retained-old-package"));
+    if (kind === "duplicated") await writeConfigBackupPackage(f.source, f.first);
+    if (kind === "wrong-phase" || kind === "wrong-retirement-id") {
+      const transaction = { ...f.pending.transactions[0], ...(kind === "wrong-phase" ? { phase: "committed" } : { retirementBackupId: "a".repeat(32) }) };
+      await writeFile(f.indexPath, configBackupCanonical({ ...f.pending, transactions: [transaction] }));
+    }
+    if (kind === "corrupt-package") await writeFile(join(f.recovery, "manifest.json"), "{}");
+    const row = (await listConfigBackups({ reservedRoot: f.store.reservedRoot, at: "2026-10-20T00:00:04Z" })).groups[0];
+    assert.equal(row.integrity, "corrupt", kind); assert.deepEqual(row.projectRef, ref);
+    assert.deepEqual([row.activeCount, row.transactionCount, row.recoverableCount], [2, 1, 0]);
+    assert.deepEqual(row.transactionPhases, [kind === "wrong-phase" ? "committed" : "rotation-pending"]);
+    if (kind === "corrupt-package") assert.equal(row.error, "CONFIG_BACKUP_VERIFICATION_FAILED");
+    else { assert.equal(row.error, "CONFIG_BACKUP_GROUP_UNREADABLE"); assert.equal(row.bytes, null); }
+  }
 });

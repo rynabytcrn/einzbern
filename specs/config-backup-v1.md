@@ -267,3 +267,13 @@ not success. List results expose transactionPhases separately from integrity,
 counts and synchronization unknown. Portal shows those phases, actual project
 reference and retained errors in its existing read-only definition list. Hostname
 is only a label and cannot collapse different project/group identities.
+
+During `rotation-pending`, an active index entry named by `retirementBackupId`
+may still be in active storage or may already have moved to recovery before the
+index settles. List resolves these two permitted locations, requires exactly one,
+and verifies/measures that physical package once. It does not settle the index:
+counts and transaction phases still describe the parsed durable index, and
+pending remains `discovered`, not `verified`. Missing/duplicate locations or bad
+bytes remain errors. After parsing and binding the index, later package errors
+retain its project, counts and phases; incomplete byte measurement stays null.
+This does not relax no-symlink reads or change resume/retirement authority.

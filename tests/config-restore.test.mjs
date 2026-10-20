@@ -2,7 +2,7 @@
 // CFG-R01/R02/R03. Only isolated, sequential package/engine fixtures. No real restore.
 import { asPinnedDevice } from "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,7 +10,7 @@ import { createProject, initializeLibrary, materializeWorkspace, setWorkspaceSet
 import { declareChainIdentity } from "../dist/build/packages/core/src/project-chain.js";
 import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
 import { applyMachineSettingSet, readMachineSettings } from "../dist/build/packages/core/src/machine-settings.js";
-import { collectConfigBackupPayloads, configBackupCanonical, planConfigBackup, writeConfigBackupPackage } from "../dist/build/packages/core/src/config-backup.js";
+import { assertConfigBackupDirectory, collectConfigBackupPayloads, configBackupCanonical, planConfigBackup, writeConfigBackupPackage } from "../dist/build/packages/core/src/config-backup.js";
 import { validateConfigBackupRetentionPolicy } from "../dist/build/packages/core/src/config-backup-retention.js";
 import { applyConfigRestore, planConfigRestore } from "../dist/build/packages/core/src/config-restore.js";
 const at = "2026-10-20T00:00:00Z";
@@ -18,6 +18,9 @@ const version = { engineVersion: "3.1.0", engineCommit: null, engineCommitStatus
 // Explicit synthetic values are never runtime approval or product defaults.
 const fixturePolicy = { schemaVersion: "einzbern.config-backup-retention.v1", activeLimit: 5, transactionLimit: 1, recoveryLimit: 2, maxPackageBytes: 65536, maxTotalBytes: 524288, retentionDuration: 1000, recoveryDuration: 86400000, noChangePolicy: "skip", atLimitAction: "stop-new-and-report", retirementMethod: "verified-recovery-move", approvalEvidenceRef: "fixture-only:restore-originals" };
 async function fixture(t, home, payloads) {
+  // macOS may supply /var/folders through an alias. Normalize the isolated home
+  // before constructing any source, binding or protected root; guards stay strict.
+  home = await realpath(home);
   const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-config-restore-"))); t.after(() => rm(root, { recursive: true, force: true }));
   const library = join(root, "library"); const project = join(root, "project"); const reserve = join(root, "originals");
   await mkdir(project); await mkdir(reserve);
@@ -36,6 +39,21 @@ async function fixture(t, home, payloads) {
   const target = { source, sourceVersion: version, availablePartitions: [projectRef.libraryId], permittedKeys: keys, originalsStore, actorId: "actor:fixture", authorizations: Object.fromEntries(keys.map(key => [key, { surface: "atelier" }])) };
   return { root, source, target, packageRoot, proposal };
 }
+test("R4 restore fixture canonicalizes an aliased device home while the production directory guard still rejects it", async t => asPinnedDevice(async home => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-restore-home-alias-"))); t.after(() => rm(root, { recursive: true, force: true }));
+  const canonicalHome = await realpath(home); const alias = join(root, "device-home-alias");
+  await symlink(canonicalHome, alias, "dir");
+  await assert.rejects(assertConfigBackupDirectory(alias), { reasonCode: "CONFIG_BACKUP_PATH_INVALID" });
+  const f = await fixture(t, alias, [{ kind: "device-preference", key: "portal.defaultTheme", value: "dark", source: "device-declaration" }]);
+  assert.equal(f.source.machineSettingsPath, join(canonicalHome, "machine-settings.json"));
+  assert.equal(f.target.originalsStore.localBindingRoot, join(canonicalHome, "config-backup-bindings"));
+  assert.ok(f.target.originalsStore.protectedRoots.includes(canonicalHome));
+  assert.ok(!f.target.originalsStore.protectedRoots.includes(alias));
+  const plan = await planConfigRestore({ packageRoot: f.packageRoot, target: f.target, at });
+  const result = await applyConfigRestore({ packageRoot: f.packageRoot, target: f.target, plan, approvedPlanDigest: plan.planDigest, at });
+  assert.equal(result.status, "applied");
+  assert.equal((await readMachineSettings(f.source.machineSettingsPath)).values["portal.defaultTheme"], "dark");
+}));
 test("CFG-R01: preview classifies local authorities, discovery remapping and denied items together", async t => asPinnedDevice(async home => {
   const f = await fixture(t, home, [
     { kind: "device-preference", key: "portal.defaultTheme", value: "dark", source: "device-declaration" },

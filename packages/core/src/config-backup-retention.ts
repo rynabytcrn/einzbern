@@ -446,20 +446,37 @@ export async function listConfigBackups(input: { readonly reservedRoot?: string;
           if (!index) row = { ...row, integrity: "missing-index", error: "CONFIG_BACKUP_INDEX_MISSING" };
           else {
             if (index.backupGroupId !== id || safeConfigBackupHostname(index.hostname) !== host) configBackupFail("CONFIG_BACKUP_GROUP_CONFLICT");
+            // Parsed index ownership and transaction responsibility remain useful
+            // even when a later package/location read is unavailable or corrupt.
+            row = { ...row, hostname: index.hostname, projectRef: index.projectRef, activeCount: index.active.length, transactionCount: index.transactions.length, recoverableCount: index.recoverable.length, transactionPhases: [...new Set(index.transactions.map(transaction => transaction.phase))], completedAt: index.active.map(p => p.completedAt).sort().at(-1) ?? null };
             await assertTracked(paths, index);
             let integrity: ConfigBackupListGroup["integrity"] = index.transactions.length ? "discovered" : "verified";
             let actualBytes = 0;
+            const measured = new Set<string>();
+            const measure = async (packageRoot: string): Promise<void> => {
+              if (!measured.has(packageRoot)) { actualBytes += await measuredPackageBytes(packageRoot); measured.add(packageRoot); }
+            };
             for (const [root, packages] of [[active, index.active], [paths.recovery, index.recoverable]] as const) for (const entry of packages) {
-              const packageRoot = join(root, entry.directory); actualBytes += await measuredPackageBytes(packageRoot);
-              if ((await verifyConfigBackup(packageRoot)).manifest?.manifestDigest !== entry.manifestDigest) integrity = "corrupt";
+              let packageRoot = join(root, entry.directory);
+              if (root === active && index.transactions.some(transaction => transaction.phase === "rotation-pending" && transaction.retirementBackupId === entry.backupId)) {
+                const recovery = join(paths.recovery, entry.directory);
+                const hasActive = await exists(packageRoot); const hasRecovery = await exists(recovery);
+                if (hasActive === hasRecovery) configBackupFail("CONFIG_BACKUP_RETIREMENT_LOCATION_UNKNOWN");
+                if (hasRecovery) packageRoot = recovery;
+              }
+              await measure(packageRoot);
+              const verified = await verifyConfigBackup(packageRoot);
+              if (verified.integrity !== "verified" || verified.manifest?.manifestDigest !== entry.manifestDigest) integrity = "corrupt";
             }
             for (const transaction of index.transactions.filter(t => !index.active.some(p => p.backupId === t.backupId))) {
-              const pending = join(paths.staging, transaction.directory);
-              if (await exists(pending)) actualBytes += await measuredPackageBytes(pending);
-              else if (await exists(join(paths.active, transaction.directory))) actualBytes += await measuredPackageBytes(join(paths.active, transaction.directory));
-              else if (await exists(join(paths.recovery, transaction.directory))) actualBytes += await measuredPackageBytes(join(paths.recovery, transaction.directory));
+              const locations: string[] = [];
+              for (const root of [paths.staging, paths.active, ...(transaction.phase === "staging" ? [paths.recovery] : [])]) {
+                const pending = join(root, transaction.directory); if (await exists(pending)) locations.push(pending);
+              }
+              if (locations.length > 1) configBackupFail("CONFIG_BACKUP_TRANSACTION_LOCATION_UNKNOWN");
+              if (locations[0]) await measure(locations[0]);
             }
-            row = { ...row, hostname: index.hostname, projectRef: index.projectRef, activeCount: index.active.length, transactionCount: index.transactions.length, recoverableCount: index.recoverable.length, bytes: actualBytes, transactionPhases: [...new Set(index.transactions.map(transaction => transaction.phase))], completedAt: index.active.map(p => p.completedAt).sort().at(-1) ?? null, integrity, error: integrity === "corrupt" ? "CONFIG_BACKUP_VERIFICATION_FAILED" : index.lastError ?? (index.transactions.length ? `transaction-${index.transactions[0]!.phase}` : null) };
+            row = { ...row, bytes: actualBytes, integrity, error: integrity === "corrupt" ? "CONFIG_BACKUP_VERIFICATION_FAILED" : index.lastError ?? (index.transactions.length ? `transaction-${index.transactions[0]!.phase}` : null) };
           }
         } catch (error) { row = { ...row, integrity: ["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "") ? "unreadable" : "corrupt", error: "CONFIG_BACKUP_GROUP_UNREADABLE" }; }
         groups.push(row);

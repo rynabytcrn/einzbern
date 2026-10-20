@@ -42,8 +42,22 @@ export type PatrolEvent = { readonly kind: "check" | "before-pause"; readonly ch
   | { readonly kind: "action-failed"; readonly action: "pause" | "resume"; readonly error: string; readonly actionEvidenceRef?: string };
 export function scheduleScopeDigest(scope: ScheduleScope): string { return dotDigest({ ...scope, libraryScope: [...new Set(scope.libraryScope)].sort(), projectScope: [...new Set(scope.projectScope)].sort() }); }
 /** No name matching, create operation or scheduler SDK. Unknown creation must be queried first. */
-export function resolveScheduleInstance(scope: ScheduleScope, savedId: string | null, observations: readonly ScheduleReadback[], createOutcome: "not-attempted" | "unknown" = "not-attempted"): { readonly status: "reuse" | "query-required" | "create-eligible" | "conflict"; readonly automationId: string | null } {
-  const matches = observations.filter(item => item.scopeDigest === scheduleScopeDigest(scope));
+export function resolveScheduleInstance(scope: ScheduleScope, savedId: string | null, observations: readonly ScheduleReadback[], createOutcome: "not-attempted" | "unknown" = "not-attempted"): { readonly status: "reuse" | "query-required" | "create-eligible" | "conflict"; readonly automationId: string | null; readonly reason?: "same-instance-observation-conflict" } {
+  const groups = new Map<string, { item: ScheduleReadback; at: number; conflicts: readonly ScheduleReadback[] }>();
+  for (const item of observations) {
+    dotText(item.automationId, "automationId"); dotSha(item.scopeDigest, "scopeDigest"); dotText(item.timezone, "timezone"); dotText(item.evidenceRef, "evidenceRef");
+    const at = dotInstant(item.observedAt, "observedAt");
+    if (!Number.isSafeInteger(item.intervalMinutes) || item.intervalMinutes <= 0 || typeof item.isEnabled !== "boolean") throw new Error("schedule observation requires an explicit interval and enabled state");
+    const previous = groups.get(item.automationId);
+    if (!previous || at > previous.at) groups.set(item.automationId, { item, at, conflicts: [] });
+    else if (at === previous.at && (item.scopeDigest !== previous.item.scopeDigest || item.intervalMinutes !== previous.item.intervalMinutes || item.timezone !== previous.item.timezone || item.isEnabled !== previous.item.isEnabled)) groups.set(item.automationId, { ...previous, conflicts: [...previous.conflicts, item] });
+  }
+  const digest = scheduleScopeDigest(scope);
+  // Conflicting observations of one instance require another read, not a claim
+  // that two instances exist. A strictly newer valid observation supersedes them.
+  const ambiguous = [...groups.values()].find(group => group.conflicts.length > 0 && (group.item.automationId === savedId || [group.item, ...group.conflicts].some(item => item.scopeDigest === digest)));
+  if (ambiguous) return { status: "query-required", automationId: savedId ?? ambiguous.item.automationId, reason: "same-instance-observation-conflict" };
+  const matches = [...groups.values()].map(group => group.item).filter(item => item.scopeDigest === digest);
   if (savedId !== null) {
     const item = matches.find(candidate => candidate.automationId === savedId);
     return { status: item === undefined ? "query-required" : matches.some(candidate => candidate.automationId !== savedId) ? "conflict" : "reuse", automationId: savedId };
@@ -179,12 +193,18 @@ export interface DailyConfigBackupState {
   readonly state: "disabled" | "pending-enablement" | "enabled" | "unknown";
   readonly lastScheduledAt: string | null; readonly actualCompletedAt: string | null; readonly missedScheduleAt: string | null;
   readonly backupReceiptRef: string | null; readonly lastReadbackRef: string | null; readonly lastError: string | null;
+  readonly lastReadbackAt: string | null;
+  /** Retained across request changes; an older action is never reused for a later request. */
+  readonly lastActionAt: string | null;
+  /** The current query/update responsibility, not evidence that its desired state was reached. */
+  readonly pendingReadback: { readonly desiredEnabled: boolean; readonly boundary: DailyScheduleObservation | null } | null;
 }
+interface DailyScheduleObservation { readonly automationId: string; readonly desiredEnabled: boolean; readonly returnedAt: string; readonly evidenceRef: string }
 export interface DailyBackupReadback { readonly automationId: string; readonly groupRef: string; readonly selectionDigest: string; readonly timezone: string; readonly dailyLocalTime: string; readonly isEnabled: boolean; readonly observedAt: string; readonly evidenceRef: string }
 export function initialDailyConfigBackupState(input: { readonly automationId: string | null; readonly groupRef: string; readonly selectionDigest: string }): DailyConfigBackupState {
   dotText(input.groupRef, "backup group"); dotSha(input.selectionDigest, "backup selection digest");
   if (input.automationId !== null) dotText(input.automationId, "backup automation ID");
-  return { schemaVersion: "tcrn.daily-config-backup-state.v1", ...input, policyRef: null, scheduleTimezone: DAILY_CONFIG_BACKUP_TIMEZONE, dailyLocalTime: DAILY_CONFIG_BACKUP_LOCAL_TIME, state: "disabled", lastScheduledAt: null, actualCompletedAt: null, missedScheduleAt: null, backupReceiptRef: null, lastReadbackRef: null, lastError: null };
+  return { schemaVersion: "tcrn.daily-config-backup-state.v1", ...input, policyRef: null, scheduleTimezone: DAILY_CONFIG_BACKUP_TIMEZONE, dailyLocalTime: DAILY_CONFIG_BACKUP_LOCAL_TIME, state: "disabled", lastScheduledAt: null, actualCompletedAt: null, missedScheduleAt: null, backupReceiptRef: null, lastReadbackRef: null, lastError: null, lastReadbackAt: null, lastActionAt: null, pendingReadback: null };
 }
 /** Fixed UTC+08:00 midnight; travel timezone and patrol state are deliberately not inputs. */
 export function dailyConfigBackupSlot(now: string): string {
@@ -192,20 +212,42 @@ export function dailyConfigBackupSlot(now: string): string {
   const shifted = new Date(Date.parse(now) + 8 * 60 * 60 * 1000);
   return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - 8 * 60 * 60 * 1000).toISOString();
 }
-export function evaluateDailyConfigBackup(state: DailyConfigBackupState, prerequisites: ConfigBackupEnablementPrerequisites, scheduler: { readonly deduplicationVerified: boolean; readonly readbackAvailable: boolean; readonly actualEnablementAuthorizationRef: string | null }): { readonly state: DailyConfigBackupState; readonly eligible: boolean; readonly reason: string; readonly next: "keep-disabled" | "query-disable-and-readback" | "request-authorized-update-and-readback" } {
+export function evaluateDailyConfigBackup(state: DailyConfigBackupState, prerequisites: ConfigBackupEnablementPrerequisites, scheduler: { readonly deduplicationVerified: boolean; readonly readbackAvailable: boolean; readonly actualEnablementAuthorizationRef: string | null; readonly actionObservation?: DailyScheduleObservation | null }): { readonly state: DailyConfigBackupState; readonly eligible: boolean; readonly reason: string; readonly next: "keep-disabled" | "query-disable-and-readback" | "request-authorized-update-and-readback" } {
   const gate = evaluateConfigBackupEnablement(prerequisites);
   const eligible = gate.eligible && scheduler.deduplicationVerified && scheduler.readbackAvailable && scheduler.actualEnablementAuthorizationRef !== null && scheduler.actualEnablementAuthorizationRef.trim().length > 0;
   const reason = !gate.eligible ? gate.reason : !scheduler.deduplicationVerified || !scheduler.readbackAvailable ? "scheduler-unavailable" : !scheduler.actualEnablementAuthorizationRef?.trim() ? "enablement-unapproved" : "ready";
-  // Eligibility is not a tool update, and never flips observed enablement to true.
-  return { state: { ...state, state: eligible ? "pending-enablement" : state.state === "disabled" ? "disabled" : "unknown", policyRef: gate.policyDigest, lastError: state.state === "unknown" && state.lastError !== null ? state.lastError : eligible ? null : reason }, eligible, reason, next: eligible ? "request-authorized-update-and-readback" : state.state === "disabled" ? "keep-disabled" : "query-disable-and-readback" };
+  const needsReadback = eligible || state.state !== "disabled" || state.pendingReadback != null;
+  const prior = state.pendingReadback;
+  const sameRequest = prior?.desiredEnabled === eligible && state.policyRef === gate.policyDigest;
+  let boundary = sameRequest ? prior?.boundary ?? null : null;
+  const observation = scheduler.actionObservation;
+  if (observation != null) {
+    dotText(observation.automationId, "daily action automationId"); dotText(observation.evidenceRef, "daily action evidenceRef");
+    const at = dotInstant(observation.returnedAt, "daily action returnedAt");
+    if (!needsReadback || observation.desiredEnabled !== eligible || state.automationId !== null && observation.automationId !== state.automationId) throw new Error("daily action observation must match the current same-instance request");
+    const repeatedBoundary = sameRequest && prior?.boundary?.returnedAt === observation.returnedAt && prior.boundary.evidenceRef === observation.evidenceRef && prior.boundary.automationId === observation.automationId;
+    if (state.lastReadbackAt != null && at < dotInstant(state.lastReadbackAt, "last daily readback") || state.lastActionAt != null && (at < dotInstant(state.lastActionAt, "previous daily action") || at === dotInstant(state.lastActionAt, "previous daily action") && !repeatedBoundary)) throw new Error("daily action observation predates or reuses the current causal boundary");
+    boundary = observation;
+  }
+  // Neither eligibility nor an old readback time stands in for a real current
+  // query/update return. Re-evaluation preserves an unresolved same request.
+  return { state: { ...state, state: eligible ? "pending-enablement" : needsReadback ? "unknown" : "disabled", policyRef: gate.policyDigest, lastActionAt: observation?.returnedAt ?? state.lastActionAt ?? null, pendingReadback: needsReadback ? { desiredEnabled: eligible, boundary } : null, lastError: needsReadback && state.lastError !== null ? state.lastError : eligible ? null : reason }, eligible, reason, next: eligible ? "request-authorized-update-and-readback" : needsReadback ? "query-disable-and-readback" : "keep-disabled" };
 }
 export function readbackDailyConfigBackup(state: DailyConfigBackupState, readback: DailyBackupReadback, prerequisites: ConfigBackupEnablementPrerequisites): DailyConfigBackupState {
-  dotInstant(readback.observedAt, "backup readback at"); dotText(readback.evidenceRef, "backup readback ref"); dotText(readback.automationId, "backup automation ID");
+  const at = dotInstant(readback.observedAt, "backup readback at"); dotText(readback.evidenceRef, "backup readback ref"); dotText(readback.automationId, "backup automation ID");
   if (state.automationId !== null && state.automationId !== readback.automationId || readback.groupRef !== state.groupRef || readback.selectionDigest !== state.selectionDigest || readback.timezone !== DAILY_CONFIG_BACKUP_TIMEZONE || readback.dailyLocalTime !== DAILY_CONFIG_BACKUP_LOCAL_TIME) throw new Error("daily backup readback differs from original ID, group, selection or fixed schedule");
   const gate = evaluateConfigBackupEnablement(prerequisites);
   if (typeof readback.isEnabled !== "boolean") throw new Error("daily backup enablement readback must be explicit");
-  if (readback.isEnabled && (!gate.eligible || state.policyRef !== gate.policyDigest || !["pending-enablement", "enabled"].includes(state.state))) return { ...state, automationId: readback.automationId, state: "unknown", lastReadbackRef: readback.evidenceRef, lastError: "enabled-without-required-policy-capability-or-authorization" };
-  return { ...state, automationId: readback.automationId, state: readback.isEnabled ? "enabled" : "disabled", lastReadbackRef: readback.evidenceRef, lastError: null };
+  if (state.lastReadbackAt != null && at <= dotInstant(state.lastReadbackAt, "last daily readback")) throw new Error("stale or replayed daily backup readback cannot overwrite the latest observation");
+  const next = { ...state, automationId: readback.automationId, lastReadbackAt: readback.observedAt, lastReadbackRef: readback.evidenceRef };
+  const pending = state.pendingReadback;
+  if (pending != null || state.state === "unknown" || state.state === "pending-enablement") {
+    if (!pending?.boundary) return { ...next, state: "unknown", lastError: state.lastError ?? "daily-query-or-update-observation-required" };
+    if (pending.boundary.automationId !== readback.automationId || at <= dotInstant(pending.boundary.returnedAt, "daily action returnedAt")) throw new Error("daily backup readback must follow the actual same-instance query or update");
+    if (readback.isEnabled !== pending.desiredEnabled) return { ...next, state: pending.desiredEnabled ? "pending-enablement" : "unknown", lastError: state.lastError ?? "daily-requested-state-not-observed" };
+  }
+  if (readback.isEnabled && (!gate.eligible || state.policyRef !== gate.policyDigest || !["pending-enablement", "enabled"].includes(state.state))) return { ...next, state: "unknown", lastError: "enabled-without-required-policy-capability-or-authorization" };
+  return { ...next, state: readback.isEnabled ? "enabled" : "disabled", pendingReadback: null, lastError: null };
 }
 /** Delayed execution records a current snapshot only; it never manufactures midnight history. */
 export function recordDailyConfigBackupCompletion(state: DailyConfigBackupState, completion: { readonly snapshotCapturedAt: string; readonly actualCompletedAt: string; readonly backupReceiptRef: string }): DailyConfigBackupState {

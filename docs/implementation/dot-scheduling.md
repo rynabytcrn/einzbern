@@ -10,6 +10,12 @@ Use purpose, library/project scope and execution environment as the logical key.
 Prefer the saved actual instance ID. A name is not identity; an unknown create
 outcome requires querying rather than blind recreation. After every create or
 update, read back the same ID, interval, scope, timezone and enabled state.
+Discovery groups observations by actual automation ID and uses the newest valid
+observation, irrespective of array order. Repeated receipts for one ID are not
+multiple instances. Conflicting fields at the same newest observation time return
+`query-required` with `same-instance-observation-conflict`; only different current
+IDs for the requested scope produce an instance conflict. Malformed observations
+are rejected rather than used to recover an older favorable state.
 
 The interval is 20 minutes. New-task/resume/delegated-session context reads remain
 independent. Active or ordinarily blocked work is not idle. `blocked_terminal`
@@ -50,6 +56,25 @@ readback capability. No policy amounts, durations or retention defaults are adde
 Eligibility returns a pending action, never observed enabled state; an actual
 same-ID schedule readback is still required. Unexpected enabled-without-policy
 state is unknown and must be surfaced, not described as safely disabled.
+
+Daily state retains `lastReadbackAt`, `lastActionAt` and
+`pendingReadback { desiredEnabled, boundary }`. When the host has an actual
+query/update return or error observation for this request, it supplies
+`scheduler.actionObservation { automationId, desiredEnabled, returnedAt,
+evidenceRef }` to `evaluateDailyConfigBackup`. This is only a causal boundary,
+not proof that enablement or disablement succeeded. A fresh readback must match
+the same instance, group, selection and fixed schedule, and be strictly later
+than both the latest accepted readback and that boundary. Older/equal reads
+cannot clear errors or pending responsibility. A fresh but opposite enabled
+state also retains the request.
+
+Missing boundary information, including legacy unknown state, remains unknown;
+an earlier task/readback time or the caller's assembly clock cannot stand in for
+a current query/update return. Re-evaluation of the same unresolved request keeps
+its boundary. A changed desired state or policy discards its old binding but
+retains the latest action time, preventing an earlier action from being reused.
+The host must retain these state fields between evaluations; this module creates
+neither a scheduler SDK nor a persistent controller.
 
 A delay produces one current snapshot with its real capture/completion time and
 the missed schedule reference. It never claims to reconstruct midnight contents.

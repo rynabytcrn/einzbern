@@ -20,6 +20,33 @@ test("DOT-S01 actual ID and scope deduplicate; unknown create is queried", () =>
   assert.equal(resolveScheduleInstance(scope, "fixture:actual-id", [{ ...readback(), automationId: "fixture:other" }]).status, "query-required");
   assert.equal(resolveScheduleInstance(scope, null, [readback(), { ...readback(), automationId: "fixture:other" }]).status, "conflict");
 });
+test("R3 schedule discovery groups repeated IDs and uses the newest observation regardless of input order", () => {
+  const earlier = readback(true, "2026-10-20T05:00:00Z");
+  const later = { ...readback(false, "2026-10-20T05:01:00Z"), evidenceRef: "fixture:newer-read" };
+  for (const observations of [[earlier, earlier], [earlier, later], [later, earlier]]) {
+    for (const savedId of [null, earlier.automationId]) assert.deepEqual(resolveScheduleInstance(scope, savedId, observations, "unknown"), { status: "reuse", automationId: earlier.automationId });
+  }
+  const moved = { ...later, scopeDigest: scheduleScopeDigest({ ...scope, environmentRef: "fixture:elsewhere" }) };
+  assert.equal(resolveScheduleInstance(scope, null, [earlier, moved], "unknown").status, "query-required");
+  assert.equal(resolveScheduleInstance(scope, earlier.automationId, [moved, earlier]).status, "query-required");
+  assert.equal(resolveScheduleInstance(scope, null, [earlier, later, { ...later, automationId: "fixture:other" }]).status, "conflict");
+});
+test("R3 same-ID conflicting observations require a fresh query, not duplicate-instance conflict", () => {
+  const original = readback();
+  for (const change of [{ isEnabled: false }, { intervalMinutes: 30 }, { timezone: "Asia/Shanghai" }, { scopeDigest: "a".repeat(64) }]) {
+    const conflict = { ...original, ...change, evidenceRef: "fixture:conflicting-read" };
+    for (const observations of [[original, conflict], [conflict, original]]) {
+      for (const savedId of [null, original.automationId]) {
+        const result = resolveScheduleInstance(scope, savedId, observations);
+        assert.equal(result.status, "query-required"); assert.equal(result.reason, "same-instance-observation-conflict");
+        assert.equal(result.automationId, original.automationId);
+      }
+      assert.equal(resolveScheduleInstance(scope, null, [...observations, readback(true, "2026-10-20T05:01:00Z")]).status, "reuse");
+    }
+  }
+  assert.equal(resolveScheduleInstance(scope, null, [original, { ...original, evidenceRef: "fixture:other-receipt" }]).status, "reuse");
+  for (const change of [{ observedAt: "not-an-instant" }, { isEnabled: "false" }, { intervalMinutes: -1 }, { evidenceRef: "" }]) assert.throws(() => resolveScheduleInstance(scope, null, [original, { ...original, ...change }]));
+});
 test("DOT-S02 two distinct successful checks are spaced by at least twenty minutes", () => {
   const first = advanceContextPatrol(active(), { kind: "check", check: one });
   assert.equal(advanceContextPatrol(first, { kind: "check", check: one }).terminal.count, 1);
@@ -75,7 +102,7 @@ test("DOT-S03 fixed UTC+08 midnight and delayed snapshot are independent from pa
   const initial = initialDailyConfigBackupState({ automationId: "fixture:backup-id", groupRef: "fixture:group", selectionDigest: "a".repeat(64) });
   const read = { automationId: "fixture:backup-id", groupRef: initial.groupRef, selectionDigest: initial.selectionDigest, timezone: "Asia/Shanghai", dailyLocalTime: "00:00", isEnabled: true, observedAt: atForBackup(), evidenceRef: "fixture:backup-read" };
   assert.equal(readbackDailyConfigBackup(initial, read, backupGate()).state, "unknown");
-  const pending = evaluateDailyConfigBackup(initial, backupGate(), { deduplicationVerified: true, readbackAvailable: true, actualEnablementAuthorizationRef: "fixture:enable" }).state;
+  const pending = evaluateDailyConfigBackup(initial, backupGate(), { ...dailyScheduler(), actionObservation: dailyObservation(initial, true, "2026-10-20T15:59:59Z") }).state;
   const enabled = readbackDailyConfigBackup(pending, read, backupGate());
   const completed = recordDailyConfigBackupCompletion(enabled, { snapshotCapturedAt: "2026-10-20T17:00:00Z", actualCompletedAt: "2026-10-20T17:01:00Z", backupReceiptRef: "fixture:backup-receipt" });
   assert.equal(completed.missedScheduleAt, "2026-10-20T16:00:00.000Z"); assert.equal(completed.actualCompletedAt, "2026-10-20T17:01:00Z");
@@ -84,6 +111,8 @@ test("DOT-S03 fixed UTC+08 midnight and delayed snapshot are independent from pa
   assert.equal(disabled.backupReceiptRef, completed.backupReceiptRef); assert.equal(disabled.state, "disabled");
 });
 function atForBackup() { return "2026-10-20T16:00:00Z"; }
+function dailyScheduler() { return { deduplicationVerified: true, readbackAvailable: true, actualEnablementAuthorizationRef: "fixture:enable" }; }
+function dailyObservation(state, desiredEnabled, returnedAt) { return { automationId: state.automationId, desiredEnabled, returnedAt, evidenceRef: `fixture:daily-query-or-update:${desiredEnabled}:${returnedAt}` }; }
 
 test("J11 scheduler action responsibility survives later terminal task checks", () => {
   const pendingPause = advanceContextPatrol(candidate(), { kind: "before-pause", check: check("before", "2026-10-20T05:20:01Z") });
@@ -379,9 +408,9 @@ test("RJ02 L14/L15 missing legacy prerequisite stays unknown and unlinked failur
 
 test("J12 eligibility loss cannot establish an observed disabled daily task", () => {
   const initial = initialDailyConfigBackupState({ automationId: "fixture:backup-id", groupRef: "fixture:group", selectionDigest: "a".repeat(64) });
-  const scheduler = { deduplicationVerified: true, readbackAvailable: true, actualEnablementAuthorizationRef: "fixture:enable" };
+  const scheduler = dailyScheduler();
   const read = { automationId: initial.automationId, groupRef: initial.groupRef, selectionDigest: initial.selectionDigest, timezone: "Asia/Shanghai", dailyLocalTime: "00:00", isEnabled: true, observedAt: atForBackup(), evidenceRef: "fixture:backup-read" };
-  const enabled = readbackDailyConfigBackup(evaluateDailyConfigBackup(initial, backupGate(), scheduler).state, read, backupGate());
+  const enabled = readbackDailyConfigBackup(evaluateDailyConfigBackup(initial, backupGate(), { ...scheduler, actionObservation: dailyObservation(initial, true, "2026-10-20T15:59:59Z") }).state, read, backupGate());
   const denied = { ...backupGate(), approval: null };
   const unauthorized = readbackDailyConfigBackup(initial, read, denied);
   assert.equal(unauthorized.state, "unknown");
@@ -389,5 +418,59 @@ test("J12 eligibility loss cannot establish an observed disabled daily task", ()
   const once = evaluateDailyConfigBackup(enabled, denied, scheduler);
   const twice = evaluateDailyConfigBackup(once.state, denied, scheduler);
   assert.equal(once.state.state, "unknown"); assert.equal(twice.state.state, "unknown"); assert.equal(twice.next, "query-disable-and-readback");
-  assert.equal(readbackDailyConfigBackup(twice.state, { ...read, isEnabled: false }, denied).state, "disabled");
+  assert.throws(() => readbackDailyConfigBackup(twice.state, { ...read, isEnabled: false }, denied), /stale or replayed/u);
+  const queried = evaluateDailyConfigBackup(twice.state, denied, { ...scheduler, actionObservation: dailyObservation(initial, false, "2026-10-20T16:01:00Z") }).state;
+  assert.equal(readbackDailyConfigBackup(queried, { ...read, isEnabled: false, observedAt: "2026-10-20T16:01:01Z" }, denied).state, "disabled");
+});
+
+test("R1 daily disable responsibility rejects stale, replayed and pre-action reads without losing its latest observation", () => {
+  const initial = initialDailyConfigBackupState({ automationId: "fixture:daily", groupRef: "fixture:group", selectionDigest: "a".repeat(64) });
+  const read = { automationId: initial.automationId, groupRef: initial.groupRef, selectionDigest: initial.selectionDigest, timezone: "Asia/Shanghai", dailyLocalTime: "00:00", isEnabled: true, observedAt: "2026-10-20T00:10:00Z", evidenceRef: "fixture:enabled-at-0010" };
+  const enabled = readbackDailyConfigBackup(evaluateDailyConfigBackup(initial, backupGate(), { ...dailyScheduler(), actionObservation: dailyObservation(initial, true, "2026-10-20T00:09:00Z") }).state, read, backupGate());
+  const denied = { ...backupGate(), enablementAuthorized: false };
+  const revoked = evaluateDailyConfigBackup(enabled, denied, dailyScheduler());
+  assert.equal(revoked.next, "query-disable-and-readback"); assert.equal(revoked.state.lastReadbackAt, read.observedAt);
+  for (const at of ["2026-10-20T00:00:00Z", read.observedAt]) assert.throws(() => readbackDailyConfigBackup(revoked.state, { ...read, isEnabled: false, observedAt: at }, denied), /stale or replayed/u);
+  assert.equal(revoked.state.state, "unknown"); assert.equal(revoked.state.lastError, "enablement-unapproved");
+  const missing = readbackDailyConfigBackup(revoked.state, { ...read, isEnabled: false, observedAt: "2026-10-20T00:11:00Z" }, denied);
+  assert.equal(missing.state, "unknown"); assert.equal(missing.lastError, revoked.state.lastError);
+  assert.equal(missing.lastReadbackAt, "2026-10-20T00:11:00Z"); assert.equal(missing.pendingReadback.boundary, null);
+  const observed = evaluateDailyConfigBackup(missing, denied, { ...dailyScheduler(), actionObservation: dailyObservation(initial, false, "2026-10-20T00:20:00Z") }).state;
+  for (const at of ["2026-10-20T00:15:00Z", "2026-10-20T00:20:00Z"]) assert.throws(() => readbackDailyConfigBackup(observed, { ...read, isEnabled: false, observedAt: at }, denied), /actual same-instance/u);
+  const stillEnabled = readbackDailyConfigBackup(observed, { ...read, observedAt: "2026-10-20T00:21:00Z" }, denied);
+  assert.equal(stillEnabled.state, "unknown"); assert.equal(stillEnabled.lastError, revoked.state.lastError);
+  assert.deepEqual(stillEnabled.pendingReadback, observed.pendingReadback);
+  for (const change of [{ automationId: "fixture:other" }, { groupRef: "fixture:other" }, { selectionDigest: "b".repeat(64) }, { timezone: "Etc/UTC" }]) assert.throws(() => readbackDailyConfigBackup(stillEnabled, { ...read, ...change, isEnabled: false, observedAt: "2026-10-20T00:22:00Z" }, denied), /original ID/u);
+  const disabled = readbackDailyConfigBackup(stillEnabled, { ...read, isEnabled: false, observedAt: "2026-10-20T00:22:00Z" }, denied);
+  assert.equal(disabled.state, "disabled"); assert.equal(disabled.lastError, null); assert.equal(disabled.pendingReadback, null);
+  assert.equal(evaluateDailyConfigBackup(disabled, denied, dailyScheduler()).next, "keep-disabled");
+  assert.throws(() => readbackDailyConfigBackup(disabled, read, backupGate()), /stale or replayed/u);
+});
+
+test("R1 missing and legacy daily boundaries stay unknown; request changes cannot reuse an earlier action", () => {
+  const initial = initialDailyConfigBackupState({ automationId: "fixture:daily", groupRef: "fixture:group", selectionDigest: "a".repeat(64) });
+  const read = { automationId: initial.automationId, groupRef: initial.groupRef, selectionDigest: initial.selectionDigest, timezone: "Asia/Shanghai", dailyLocalTime: "00:00", isEnabled: true, observedAt: "2026-10-20T00:10:00Z", evidenceRef: "fixture:daily-read" };
+  const pending = evaluateDailyConfigBackup(initial, backupGate(), dailyScheduler()).state;
+  assert.equal(readbackDailyConfigBackup(pending, read, backupGate()).state, "unknown");
+  const legacy = { ...pending, state: "unknown", lastError: "fixture:unresolved" };
+  delete legacy.lastReadbackAt; delete legacy.lastActionAt; delete legacy.pendingReadback;
+  assert.equal(readbackDailyConfigBackup(legacy, { ...read, isEnabled: false }, backupGate()).state, "unknown");
+  const observed = evaluateDailyConfigBackup(pending, backupGate(), { ...dailyScheduler(), actionObservation: dailyObservation(initial, true, "2026-10-20T00:09:00Z") }).state;
+  assert.deepEqual(evaluateDailyConfigBackup(observed, backupGate(), dailyScheduler()).state.pendingReadback, observed.pendingReadback);
+  assert.deepEqual(evaluateDailyConfigBackup(observed, backupGate(), { ...dailyScheduler(), actionObservation: observed.pendingReadback.boundary }).state, observed);
+  const opposite = readbackDailyConfigBackup(observed, { ...read, isEnabled: false }, backupGate());
+  assert.equal(opposite.state, "pending-enablement"); assert.equal(opposite.lastError, "daily-requested-state-not-observed");
+  assert.equal(evaluateDailyConfigBackup(opposite, backupGate(), dailyScheduler()).state.lastError, opposite.lastError);
+  const policy = { ...backupGate().policy, noChangePolicy: "create" }; const validation = validateConfigBackupRetentionPolicy(policy);
+  const newPolicy = { ...backupGate(), policy, approval: { approved: true, policyDigest: validation.policyDigest, approvalEvidenceRef: policy.approvalEvidenceRef } };
+  const policyChanged = evaluateDailyConfigBackup(observed, newPolicy, dailyScheduler()).state;
+  assert.equal(policyChanged.pendingReadback.boundary, null); assert.equal(policyChanged.lastActionAt, observed.lastActionAt);
+  assert.throws(() => evaluateDailyConfigBackup(policyChanged, newPolicy, { ...dailyScheduler(), actionObservation: observed.pendingReadback.boundary }), /causal boundary/u);
+  const denied = { ...backupGate(), enablementAuthorized: false };
+  const changed = evaluateDailyConfigBackup(observed, denied, dailyScheduler()).state;
+  assert.equal(changed.pendingReadback.boundary, null); assert.equal(changed.lastActionAt, "2026-10-20T00:09:00Z");
+  for (const returnedAt of ["2026-10-20T00:08:00Z", "2026-10-20T00:09:00Z"]) assert.throws(() => evaluateDailyConfigBackup(changed, denied, { ...dailyScheduler(), actionObservation: dailyObservation(initial, false, returnedAt) }), /causal boundary/u);
+  for (const change of [{ automationId: "fixture:other" }, { desiredEnabled: true }]) assert.throws(() => evaluateDailyConfigBackup(changed, denied, { ...dailyScheduler(), actionObservation: { ...dailyObservation(initial, false, "2026-10-20T00:11:00Z"), ...change } }), /same-instance request/u);
+  const queried = evaluateDailyConfigBackup(changed, denied, { ...dailyScheduler(), actionObservation: dailyObservation(initial, false, "2026-10-20T00:11:00Z") }).state;
+  assert.equal(readbackDailyConfigBackup(queried, { ...read, isEnabled: false, observedAt: "2026-10-20T00:12:00Z" }, denied).state, "disabled");
 });

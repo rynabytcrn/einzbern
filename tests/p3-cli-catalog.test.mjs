@@ -393,6 +393,7 @@ test("STORY-480: setup writes and takes the wizard's flags; doctor reads and tak
   const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
   assert.equal(entry("setup").mutates, true);
   assert.deepEqual(flags("setup"), [
+    ["execution-target", false, "string"], ["dot-input", false, "string"],
     ["mode", true, "string"], ["project", true, "string"], ["at", true, "instant"], ["artifacts", false, "string"],
     ["cloud", false, "boolean"], ["restore", false, "string"], ["language", false, "string"], ["navigation", false, "boolean"],
     ["archive", false, "string"], ["rollback", false, "boolean"], ["managed-sections", false, "string"], ["mapping", false, "string"],

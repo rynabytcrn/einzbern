@@ -17,7 +17,7 @@ import { parseHTML } from "linkedom";
 import { historicalModelPlan } from "../../tests/helpers/model-plan-history.mjs";
 import { appendHistoricalGateCreate } from "../../tests/helpers/workspace-fixture.mjs";
 import { disposablePortalFetch } from "./helpers/disposable-portal-fetch.mjs";
-import { registerLibraries } from "./helpers/register-libraries.mjs";
+import { registerLibraries } from "../../tests/helpers/register-portal-libraries.mjs";
 
 const execFileAsync = promisify(execFile);
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));

@@ -40,7 +40,7 @@ export async function runShard(shard, root = resolve(dirname(fileURLToPath(impor
     await retainVerificationStep(join(directory, "steps"), step, result);
     const report = receipt(result.stdout ?? "", result.stderr ?? "");
     if (result.status !== 0 || report.ok !== true) {
-      throw Object.assign(new Error(JSON.stringify(report)), { reasonCode: report.reasonCode ?? "P1_SHARD_CHILD_FAILED" });
+      throw Object.assign(new Error(`${task} failed; see steps/${step.id}.stdout and steps/${step.id}.stderr`), { reasonCode: report.reasonCode ?? "P1_SHARD_CHILD_FAILED" });
     }
     return report;
   };
@@ -53,12 +53,18 @@ export async function runShard(shard, root = resolve(dirname(fileURLToPath(impor
   return result;
 }
 
+export function writeShardReceipt(result, streams = process) {
+  // pnpm appends an ELIFECYCLE footer to stdout on failure. stderr keeps the
+  // original red receipt terminal and independently parseable.
+  (result.ok ? streams.stdout : streams.stderr).write(`${JSON.stringify(result)}\n`);
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === "--plan") {
     process.stdout.write(`${JSON.stringify({ shards: P1_SHARDS, prerequisites: PREREQUISITES, tasks: P1_TASKS })}\n`);
   } else {
     const result = await runShard(process.argv[2]);
-    process.stdout.write(`${JSON.stringify(result)}\n`);
+    writeShardReceipt(result);
     if (!result.ok) process.exitCode = 1;
   }
 }

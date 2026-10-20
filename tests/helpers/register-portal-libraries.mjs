@@ -35,9 +35,9 @@ export async function registerLibraries(libraries, env) {
 }
 
 if (process.argv[1] === self) {
-  const { assertNodeFloor } = await import("../../../dist/build/packages/core/src/node-floor.js");
+  const { assertNodeFloor } = await import("../../dist/build/packages/core/src/node-floor.js");
   assertNodeFloor(process.versions.node);
-  const { runCli } = await import("../../../dist/build/packages/cli/src/index.js");
+  const { runCli } = await import("../../dist/build/packages/cli/src/index.js");
   const ids = await register(JSON.parse(process.argv[2]), async (args) => {
     let output = "";
     await runCli(args, { write: (value) => { output += value; } });

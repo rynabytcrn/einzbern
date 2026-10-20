@@ -162,6 +162,8 @@ jobs:
           node "$engine" commands > commands.json
           node "$engine" init --workspace "$smoke/library" --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > init.json
           node "$engine" status --workspace "$smoke/library" > status.json
+          # JavaScript template expressions must reach Node without shell expansion.
+          # shellcheck disable=SC2016
           node --input-type=module -e '
             import assert from "node:assert/strict";
             import { readFileSync } from "node:fs";

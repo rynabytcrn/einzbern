@@ -32,6 +32,8 @@ jobs:
         id: source
         working-directory: helper
         run: |
+          # JavaScript template expressions must reach Node without shell expansion.
+          # shellcheck disable=SC2016
           node --input-type=module -e '
             import { readFileSync, appendFileSync } from "node:fs";
             import assert from "node:assert/strict";

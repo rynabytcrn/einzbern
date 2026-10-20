@@ -83,9 +83,10 @@ const CURRENT_PORTAL_PROOF_FILES = [
   "portal/tests/ui-work.test.mjs",
   "portal/tests/ui-configuration.test.mjs",
   "portal/tests/ui-library.test.mjs",
-  "portal/tests/helpers/register-libraries.mjs",
+  "tests/helpers/register-portal-libraries.mjs",
   "scripts/portal-tests.mjs",
   "scripts/lib/test-roster.mjs",
+  "scripts/lib/verification-evidence.mjs",
 
   "portal/tests/disposable-portal-fetch.test.mjs",
   "portal/tests/helpers/disposable-portal-fetch.mjs",

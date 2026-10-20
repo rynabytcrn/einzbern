@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Tests in this file run sequentially; Node isolates each file in a process.
-import { COMPLETE_ID, GHOST_TARGET, MUTATION, assert, cli, closePage, expectedTargetLabels, keydown, loadExecutedDom, localeTable, nextAt, openWorkEditor, policySwitchControls, policySwitchViews, preparePage, projectChainFixture, receiptText, scratch, test, waitFor, writeScratch } from './ui-presence-support.mjs';
+import { COMPLETE_ID, GHOST_TARGET, MUTATION, assert, cli, closePage, expectedTargetLabels, fixtureProjectIds, join, keydown, loadExecutedDom, localeTable, nextAt, openWorkEditor, preparePage, projectChainFixture, receiptText, rm, scratch, test, waitFor, writeScratch } from "./ui-presence-support.mjs";
+
 
 
 
@@ -17,6 +18,7 @@ if (!MUTATION) test("R43 navigation destinations are anchors and full identity s
     assert.equal(page.document.querySelector("header #engine-connection"), null);
   } finally { await page.cleanup(); }
 });
+
 
 
 if (!MUTATION) test("R45 U14: targets are named, not identified, in the filter, the selection and the common default; their identities are in keyboard Details with a copy action", async () => {
@@ -122,38 +124,6 @@ if (!MUTATION) test("R45 U14: targets are named, not identified, in the filter, 
 });
 
 
-// TCRN-CROSS-INIT-053 R46 (I09; I04, U20 D5): a library whose knowledge store was never created shows the
-// published EmptyState that says so, with the status filter in place, rather than a failed read; once
-// the library has a store the view is the ordinary one.
-if (!MUTATION) test("R46 I09: a library without a knowledge store shows an empty inventory, and a created store does not", async () => {
-  const page = await preparePage();
-  try {
-    const { document, window } = page;
-    const locales = await localeTable();
-    document.querySelector('[data-page-target="dashboard"]')?.click();
-    document.querySelector('[data-workspace-tab="knowledge"]')?.click();
-    const content = document.querySelector("#knowledge-view-content");
-    const empty = content.querySelector('[data-knowledge-store="absent"]');
-    assert.ok(empty, "the empty inventory is shown");
-    assert.equal(empty.tagName, "SECTION");
-    assert.deepEqual(["tcrn-state-surface", "tcrn-state-surface--neutral"].filter((name) => empty.classList.contains(name)), ["tcrn-state-surface", "tcrn-state-surface--neutral"]);
-    assert.equal(empty.dataset.stateSurfaceKind, "empty");
-    assert.equal(empty.querySelector("h3.tcrn-heading.tcrn-state-surface__title").textContent, locales.en["knowledge.storeAbsentTitle"]);
-    assert.equal(empty.querySelector("p.tcrn-text.tcrn-state-surface__description").textContent, locales.en["knowledge.storeAbsentBody"]);
-    assert.equal(content.textContent.includes(locales.en["config.readUnavailable"]), false, "not a failed read");
-    assert.ok(content.querySelector('[data-ui="knowledge-status-filter"]'), "the status filter stays");
-    document.querySelector('[data-locale-option="ja"]')?.click();
-    assert.equal(document.querySelector('#knowledge-view-content [data-knowledge-store="absent"] .tcrn-state-surface__title').textContent, locales.ja["knowledge.storeAbsentTitle"]);
-    document.querySelector('[data-locale-option="en"]')?.click();
-    await cli(["knowledge-init", "--workspace", page.workspace, "--acknowledge-disposable", "true"], page.deviceEnv);
-    const status = document.querySelector('[data-ui="knowledge-status-filter"]');
-    status.value = "all";
-    status.dispatchEvent(new window.Event("change", { bubbles: true }));
-    await waitFor(() => document.querySelector('#knowledge-view-content [data-ui="knowledge-status-filter"]')?.value === "all" && document.querySelector("#knowledge-view-content [data-knowledge-store]") === null, "the view of the created store");
-    assert.equal(document.querySelector("#knowledge-view-content .tcrn-state-surface").textContent, locales.en["dashboard.knowledgeEmpty"]);
-  } finally { await page.cleanup(); }
-});
-
 
 // TCRN-CROSS-INIT-053 R46 (I10; U20 D3, receipt badge): a library switch clears what the page showed for the
 // library it leaves -- the design authority panel, the receipt and the readiness result -- before the next
@@ -202,6 +172,7 @@ if (!MUTATION) test("R46 I10: a library switch clears the design authority panel
     assert.equal(receiptText(document), locales.en["chip.idle"], "a switch leaves no receipt of the library left");
   } finally { await closePage(page, fixture); }
 });
+
 
 
 // TCRN-CROSS-INIT-053 R46 (I10; U20 D13, PC-3): two tabs of one Atelier. When the other tab switches the
@@ -276,6 +247,7 @@ if (!MUTATION) test("R46 I10: another tab's switch is named on this page, which 
 });
 
 
+
 // TCRN-CROSS-INIT-053 R46 (I10): an answer that comes back after the page has left its library is dropped,
 // not rendered into the next one.
 if (!MUTATION) test("R46 I10: an answer for the library the page has left is dropped", async () => {
@@ -306,38 +278,6 @@ if (!MUTATION) test("R46 I10: an answer for the library the page has left is dro
   } finally { await closePage(page, fixture); }
 });
 
-
-// TCRN-CROSS-INIT-053 R46 (I16; EPIC-144 R3): the readiness view lists, for each setting whose value differs
-// between the targets, every target's value and where it comes from; "not ready" is information, so its
-// badge is the neutral one.
-if (!MUTATION) test("R46 I16: a differing setting is listed with each target's value and source, and not ready is neutral", async () => {
-  const fixture = await projectChainFixture("tcrn-r46-i16-context-");
-  const [, second, third] = fixture.targets;
-  await cli(["settings-set", "--workspace", fixture.second.library, "--at", nextAt(), "--actor", "agent:test", "--key", "artifact.language", "--value", "fr"], fixture.atelier);
-  await cli(["settings-set", "--workspace", fixture.third.library, "--at", nextAt(), "--actor", "agent:test", "--key", "artifact.language", "--value", "ja"], fixture.atelier);
-  const initiative = (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "R46-I16-CONTEXT", "--kind", "Initiative", "--title", "Two targets of record", "--involved-projects", JSON.stringify({ state: "selected", targets: [second, third] })], fixture.atelier)).record;
-  const locales = await localeTable();
-  const page = await loadExecutedDom(fixture);
-  try {
-    const { window } = page;
-    const editor = await openWorkEditor(page);
-    const work = editor.querySelector("[data-target-work]");
-    work.value = initiative.id;
-    work.dispatchEvent(new window.Event("change", { bubbles: true }));
-    editor.querySelector("[data-target-context]").click();
-    const view = await waitFor(() => editor.querySelector("[data-project-context]"), "the readiness view");
-    const conflict = view.querySelector('[data-context-conflict="artifact.language"]');
-    assert.ok(conflict, "the differing setting is listed");
-    const rows = [...conflict.querySelectorAll("[data-context-conflict-target]")].map((row) => [JSON.parse(row.dataset.contextConflictTarget).projectId, row.querySelector("dt").textContent, row.querySelector("[data-context-conflict-value]").textContent, row.querySelector("[data-context-conflict-source]").textContent]);
-    const byProject = (left, right) => left[0].localeCompare(right[0]);
-    assert.deepEqual([...rows].sort(byProject), [[second.projectId, "TCRN-INC148-DOM-SECOND", "fr", locales.en["scope.thisProject"]], [third.projectId, "TCRN-R45-THIRD", "ja", locales.en["scope.thisProject"]]].sort(byProject), "each target's value and its source");
-    assert.ok(conflict.querySelector(".tcrn-machine-token > .tcrn-machine-token__value"), "values use the published MachineToken");
-    const readiness = view.querySelector('[data-context-readiness="development"] .tcrn-badge');
-    assert.equal(readiness.textContent, locales.en["projects.notReady"]);
-    assert.equal(readiness.className, "tcrn-badge", "not ready is the neutral badge");
-    assert.equal(view.querySelectorAll("[data-context-readiness] .tcrn-badge--warning").length, 0, "no readiness badge is a warning");
-  } finally { await closePage(page, fixture); }
-});
 
 
 if (!MUTATION) test("R45 U14: execution contexts read as one row per target in the page's language, not as JSON", async () => {
@@ -375,6 +315,7 @@ if (!MUTATION) test("R45 U14: execution contexts read as one row per target in t
     assert.equal(focused, 1, "and returns focus to their summary");
   } finally { await closePage(page, fixture); }
 });
+
 
 
 // TCRN-CROSS-INIT-053 R45 (U15): the desktop rail has the published SideNavCollapseButton beside the
@@ -421,45 +362,88 @@ if (!MUTATION) test("R45 U15: the side navigation collapses and expands through 
   } finally { await page.cleanup(); }
 });
 
-for (const [name, selector] of policySwitchViews) test(`PR24 U1: ${name} recovers after a library switch`, async () => {
-  const fixture = await scratch("tcrn-pr24-switch-");
-  const page = await loadExecutedDom(fixture);
-  try {
-    page.document.querySelector(`[data-page-target="${name}"]`).click();
-    const controls = policySwitchControls(page, selector);
-    controls.recovered();
-    const before = page.requests.filter((path) => path.startsWith("/api/model-policy?")).length;
-    controls.change(page.document.querySelector("#library-select"), fixture.second.project);
-    await page.waitForSettled();
-    assert.equal(page.document.querySelector("#library-select").disabled, false);
-    controls.recovered();
-    assert.equal(page.requests.filter((path) => path.startsWith("/api/model-policy?")).length, before + 1, "completion redraw adds no network read");
-  } finally { await closePage(page, fixture); }
-});
+if (!MUTATION) {
 
+  // TCRN-CROSS-STORY-482 R3, AC1: the top bar's switcher lists the registry's two libraries, each
+  // by its project path and library id; choosing the other one moves the whole page to it (its path,
+  // its name and id in the rail, its status, its Rules file), and choosing back returns. The second
+  // library carries one event of its own, so its status differs from the first's.
+  test("STORY-482 AC1: the page switches between the registry's two libraries and shows each one's status", async () => {
+    const fixture = await scratch("tcrn-482-ac1-dom-");
+    await cli(["settings-set", "--workspace", fixture.second.library, "--at", nextAt(), "--actor", "agent:test", "--key", "artifact.language", "--value", "zh-CN"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
+    const page = await loadExecutedDom(fixture);
+    try {
+      const text = (selector) => page.document.querySelector(selector)?.textContent ?? "";
+      const select = page.document.querySelector('[data-ui="library-switcher"]');
+      assert.equal(select?.id, "library-select");
+      const options = [...select.querySelectorAll("option")];
+      assert.deepEqual(options.map((option) => option.getAttribute("value")), [fixture.proseRoot, fixture.second.project]);
+      // INIT-053 R46 (I01, I09): project-list names each project, and the page names a library by its
+      // project's own name end to end: the switcher, the rail and the top bar show the fixture's real
+      // names ("Unnamed project" is only for a project that has none).
+      const named = async (library) => ({
+        name: (await cli(["project-list", "--workspace", library], fixture.deviceEnv)).records.find(record => record.id === fixtureProjectIds.get(library)).name ?? null,
+        libraryId: (await cli(["status", "--workspace", library], fixture.deviceEnv)).workspaceId,
+        projectId: fixtureProjectIds.get(library),
+      });
+      const listed = [await named(fixture.workspace), await named(fixture.second.library)];
+      assert.deepEqual(listed.map((entry) => entry.name), ["TCRN-INC148-DOM", "TCRN-INC148-DOM-SECOND"], "project-list names both projects");
+      const locales = await localeTable();
+      const [firstName, secondName] = expectedTargetLabels(listed, (entry) => entry.name ?? locales.en["projects.unnamed"]);
+      assert.deepEqual([firstName, secondName], ["TCRN-INC148-DOM", "TCRN-INC148-DOM-SECOND"], "two named projects read as their names, with no id tail");
+      assert.deepEqual(options.map(option => option.textContent), [firstName, secondName], "navigation uses canonical names, full identity belongs in Details");
+      for (const option of options) assert.doesNotMatch(option.textContent, /(?:library|project):[0-9a-f]{24}/u, "no complete id in the visible label");
+      assert.equal(options[0].hasAttribute("selected"), true);
+      const firstId = text("#library-label");
+      assert.match(firstId, /^library:/u);
+      assert.equal(text("#rail-workspace-label"), firstName);
+      assert.equal(text("#workspace-label"), firstName);
+      assert.equal(text("#stat-version"), "1");
+      const healthReasons = () => [...page.document.querySelectorAll("[data-doctor-check]")].map((row) => [row.dataset.doctorCheck, row.querySelectorAll(".tcrn-operation-feedback__identity code")[1]?.textContent ?? ""]);
+      const initialDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
+      assert.deepEqual(healthReasons(), initialDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
 
-test("PR24 U3: switch completion retains pending write guard and old library draft cannot save", async () => {
-  const fixture = await scratch("tcrn-pr24-pending-switch-");
-  const page = await loadExecutedDom(fixture);
-  try {
-    page.document.querySelector('[data-page-target="engine-model-policy"]').click();
-    const { control, change, recovered } = policySwitchControls(page, "#engine-model-policy-view");
-    change(control("decision"), "minutes:synthetic-old#D1", "input");
-    const oldSave = control("save");
-    page.hold((path) => path === "/api/model-policy");
-    oldSave.click();
-    await waitFor(() => page.held() === 1, "the pending isolated write");
-    assert.equal(control("save").disabled, true);
-    change(page.document.querySelector("#library-select"), fixture.second.project);
-    await page.waitForSettled(); recovered();
-    change(control("decision"), "minutes:synthetic-new#D1", "input");
-    assert.equal(control("save").disabled, true, "write lock survives switching libraries and editing");
-    page.release();
-    await page.waitForSettled();
-    assert.equal(control("decision").value, "minutes:synthetic-new#D1", "old write cannot acknowledge or replace the new library draft");
-    assert.equal(control("save").disabled, false, "write completion recovers the new dirty draft without an extra edit");
-    const before = page.requests.filter((path) => path === "/api/model-policy").length;
-    oldSave.click();
-    assert.equal(page.requests.filter((path) => path === "/api/model-policy").length, before, "old library Save cannot submit the new library draft");
-  } finally { page.release(); await closePage(page, fixture); }
-});
+      const secondVersion = String((await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).version);
+      select.value = fixture.second.project;
+      select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(() => text("#workspace-label") === secondName && text("#stat-version") === secondVersion && text("#agents-path") === join(fixture.second.project, "AGENTS.md"), "the page to move to the second library");
+      assert.equal(text("#rail-workspace-label"), secondName);
+      assert.notEqual(text("#library-label"), firstId);
+      assert.ok(text("#library-label").includes(fixture.second.library), "Details retains the full selected path");
+      const secondDoctor = await cli(["doctor", "--project", fixture.second.project], { ...fixture.deviceEnv, HOME: fixture.home });
+      assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), secondDoctor.ok);
+      assert.deepEqual(healthReasons(), secondDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
+      assert.equal(text('#library-state [data-library-field="versionVector"]'), JSON.stringify((await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).versionVector));
+      assert.equal(page.requests.filter((path) => path === "/api/library").length, 1);
+
+      const stateLabels = {
+        en: ["Saved event count by device", "Device histories", "Rejected events", "Effective configuration"],
+        "zh-CN": ["各设备已保存事件数", "设备历史", "被拒事件数", "当前有效配置"],
+        ja: ["デバイス別の保存イベント数", "デバイスの履歴", "拒否されたイベント数", "適用中の設定"],
+        ko: ["기기별 저장 이벤트 수", "기기 기록", "거부된 이벤트 수", "적용 중인 설정"],
+        fr: ["Événements enregistrés par appareil", "Historiques des appareils", "Événements rejetés", "Configuration effective"],
+      };
+      const stateKeys = ["dashboard.versionVector", "dashboard.streams", "dashboard.rejectedEvents", "dashboard.configProjection"];
+      for (const [locale, labels] of Object.entries(stateLabels)) {
+        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        await waitFor(() => page.document.documentElement.lang === locale, `the ${locale} locale`);
+        assert.deepEqual(stateKeys.map((key) => page.document.querySelector(`#library-state [data-i18n="${key}"]`)?.textContent), labels);
+        // The switcher, the rail and the top bar keep a project's own name in every language (only an
+        // unnamed one would follow the language).
+        const localized = expectedTargetLabels(listed, (entry) => entry.name ?? locales[locale]["projects.unnamed"]);
+        assert.deepEqual([...select.querySelectorAll("option")].map((option) => option.textContent), localized, `${locale}: the switcher follows the language`);
+        assert.equal(text("#rail-workspace-label"), localized[1], `${locale}: the rail follows the language`);
+      }
+
+      const firstVersion = String((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version);
+      const [firstNameInFrench] = expectedTargetLabels(listed, (entry) => entry.name ?? locales.fr["projects.unnamed"]);
+      page.document.querySelector("#library-select").value = fixture.proseRoot;
+      page.document.querySelector("#library-select").dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(() => text("#workspace-label") === firstNameInFrench && text("#stat-version") === firstVersion && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
+      assert.equal(text("#library-label"), firstId);
+      const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
+      assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), firstDoctor.ok);
+      assert.deepEqual(healthReasons(), firstDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
+    } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
+  });
+}

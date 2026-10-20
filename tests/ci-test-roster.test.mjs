@@ -7,7 +7,7 @@ import test from "node:test";
 import { selectTestFiles } from "../scripts/lib/test-roster.mjs";
 import { judgeTestWiring } from "../scripts/lib/test-wiring.mjs";
 import { P1_TASKS } from "../scripts/p1-sequence.mjs";
-import { P1_SHARDS } from "../scripts/ci/p1-shard.mjs";
+import { P1_SHARDS, writeShardReceipt } from "../scripts/ci/p1-shard.mjs";
 import { recordVerificationTiming, retainVerificationStep } from "../scripts/lib/verification-evidence.mjs";
 
 test("CI shards partition every P1 task once and keep archive before full-history privacy", () => {
@@ -17,6 +17,16 @@ test("CI shards partition every P1 task once and keep archive before full-histor
   assert.ok(P1_SHARDS.checks.indexOf("archive") < P1_SHARDS.checks.indexOf("privacy"));
   assert.deepEqual(P1_SHARDS.core, ["test"]);
   assert.deepEqual(P1_SHARDS.portal, ["portal"]);
+});
+
+test("a red shard receipt goes to stderr independently of pnpm's stdout failure footer", () => {
+  const chunks = { stdout: "", stderr: "" };
+  const streams = Object.fromEntries(Object.keys(chunks).map((key) => [key, { write: (value) => { chunks[key] += value; } }]));
+  const red = { ok: false, reasonCode: "P1_SHARD_RED" };
+  writeShardReceipt(red, streams);
+  streams.stdout.write("[ELIFECYCLE] Command failed with exit code 1.\n");
+  assert.deepEqual(JSON.parse(chunks.stderr), red);
+  assert.equal(chunks.stdout, "[ELIFECYCLE] Command failed with exit code 1.\n");
 });
 
 test("wiring includes nested Portal tests and refuses an orphan or replaced runner", async (t) => {

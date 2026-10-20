@@ -67,7 +67,7 @@ test("pull-request CI scans the contributor head, not GitHub's synthetic merge c
 // the tag, which is the supply-chain hole SHA pinning exists to close. Stated over every
 // step so a step added later cannot quietly arrive unpinned.
 test("every CI action is pinned to a commit SHA, never to a movable tag", async () => {
-  const workflow = await readWorkflow();
+  const workflow = [await readWorkflow(), await readFile(resolve(process.cwd(), "scripts/templates/helper/ci.yml"), "utf8")].join("\n");
   const uses = [...workflow.matchAll(/uses:\s*(\S+)/gu)].map((match) => match[1]);
   assert.ok(uses.length > 0, "the workflow must reference at least one action");
   for (const reference of uses) {

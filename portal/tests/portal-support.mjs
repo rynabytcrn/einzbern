@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { registerLibraries } from "./helpers/register-libraries.mjs";
+import { registerLibraries } from "../../tests/helpers/register-portal-libraries.mjs";
 
 const withoutSource = ({ source, declaredHere, ...record }) => record;
 const execFileAsync = promisify(execFile);

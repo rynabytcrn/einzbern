@@ -22,7 +22,7 @@ def judge_shards(records, plan, sha, run_id, attempt):
         meta = records.get(shard, {})
         if meta.get("mode") != f"p1-{shard}" or meta.get("input", {}).get("head") != sha:
             failures.append(f"{shard}: mode or source SHA mismatch")
-        if meta.get("ciIdentity") != {"GITHUB_RUN_ID": run_id, "GITHUB_RUN_ATTEMPT": attempt}:
+        if meta.get("ciIdentity") != {"GITHUB_RUN_ID": run_id, "GITHUB_RUN_ATTEMPT": attempt, "GITHUB_JOB": "p1"}:
             failures.append(f"{shard}: evidence belongs to another run or attempt")
         final = meta.get("finalShardReceipt", {})
         for key, expected in (("legs", tasks), ("prerequisites", plan["prerequisites"][shard]), ("extras", ["test-wiring"] if shard == "checks" else [])):
@@ -48,6 +48,9 @@ def validate_directory(directory, mode, sha):
         (directory / f"{config['label']}.stderr").read_bytes())
     if final != meta.get(config["receiptKey"]) or stream != meta.get("finalReceiptStream"):
         failures.append("Final receipt differs from retained output")
+    totals_path = directory / f"{config['label']}-controller.stdout" if config["controller"] else directory / "portal/01.stdout"
+    if (config["controller"] or mode == "p1-portal") and evidence_runner.parse_test_totals(totals_path.read_bytes()) != meta.get("testTotals"):
+        failures.append("Test totals differ from retained raw output")
     if json.loads((directory / "receipt.json").read_text()) != meta.get("receipt") or meta.get("receipt", {}).get("ok") is not True:
         failures.append("Wrapper receipt missing, altered, or failed")
     if mode.startswith("p1-"):

@@ -458,7 +458,8 @@ def main():
                     "EINZBERN_CI_EVIDENCE_DIR": str(evidence),
                     "EINZBERN_PORTAL_EVIDENCE_DIR": str(evidence / "portal"),
                     "EINZBERN_PRIVACY_HISTORY_BASE": ""})
-        meta["ciIdentity"] = {key: os.environ.get(key) for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")}
+        meta["schemaVersion"] = "einzbern.ci-shard-evidence.v1"
+        meta["ciIdentity"] = {key: os.environ.get(key) for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB")}
         meta["testTotalsScope"] = "Portal functional tests" if args.mode == "p1-portal" else ("core controller" if config["controller"] else "not applicable")
     meta["environment"] = {key: env[key] for key in ENVIRONMENT_KEYS if key in env}
     repo = Path(args.repo)

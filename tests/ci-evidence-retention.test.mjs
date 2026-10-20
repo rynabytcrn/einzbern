@@ -117,7 +117,7 @@ print(json.dumps(dict(found=found, refused=refused)))
 test("a terminal P1_RED on stderr is retained; conflicting stdout/stderr receipts refuse", () => {
   const result = python(`
 red = b'{"ok":false,"reasonCode":"P1_RED","reds":[{"task":"portal"}]}\\n'
-stream, found = m.final_receipt(b'pnpm header\\n', red)
+stream, found = m.final_receipt(b'pnpm header\\n[ELIFECYCLE] Command failed with exit code 1.\\n', red)
 ambiguous = False
 try:
     m.final_receipt(b'{"ok":true,"reasonCode":"P1_VERIFIED"}\\n', red)
@@ -144,7 +144,7 @@ def block(tasks):
 records = {}
 for shard, tasks in plan["shards"].items():
     records[shard] = dict(mode="p1-" + shard, input=dict(head="a"*40),
-                         ciIdentity=dict(GITHUB_RUN_ID="10", GITHUB_RUN_ATTEMPT="2"),
+                         ciIdentity=dict(GITHUB_RUN_ID="10", GITHUB_RUN_ATTEMPT="2", GITHUB_JOB="p1"),
                          finalShardReceipt={**block(tasks), "prerequisites": block(plan["prerequisites"][shard]),
                                             "extras": block(["test-wiring"] if shard == "checks" else [])})
 def judge(value):

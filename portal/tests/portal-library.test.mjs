@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Tests in this file run sequentially; Node isolates each file in a process.
-import { CLI, R46_AT, TEST_ACTOR, assert, cli, clientTargets, ensureProjectCoordination, execFileAsync, httpRequest, join, lstat, mkdir, mkdtemp, namedRead, portalRoot, rawRequest, readBoot, readFile, readOptions, request, rm, scratch, servedBy, shownTarget, spawn, startPortal, test, tmpdir, unregisterLibrary, writeFile, writeOptions } from './portal-support.mjs';
+import { CLI, R46_AT, TEST_ACTOR, assert, cli, ensureProjectCoordination, execFileAsync, join, lstat, mkdir, mkdtemp, namedRead, portalRoot, rawRequest, readBoot, readFile, readOptions, realpath, registeredLibrary, request, rm, scratch, scratchHome, servedBy, shownTarget, spawn, startPortal, startupRefusal, test, tmpdir, writeFile, writeOptions } from "./portal-support.mjs";
+
 
 
 test("state surface uses the doctor's eight checks and selected library projection", async (t) => {
@@ -57,38 +58,6 @@ if (process.argv[2] === "status" && actual.status === 0) {
 });
 
 
-test("portal serves live catalog, commits a governed write, and refuses an untokened one", async (t) => {
-  const fixture = await scratch("tcrn-portal-conservation-read-", "TCRN-PORTAL-CONSERVATION-READ");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { page, boot } = await readBoot(url);
-  assert.ok(!page.includes("__PORTAL_BOOT__"));
-  assert.ok(boot.token.length >= 32);
-  const catalog = await request(url, "/api/settings", readOptions(boot.token));
-  const engineCatalog = await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv);
-  assert.deepEqual(catalog.body.settings, engineCatalog.settings);
-  assert.ok(!page.includes("gate-close"));
-  assert.match(page, /data-setting-control/u);
-  assert.ok(catalog.body.settings.every((entry) => entry.controlType));
-  const untokened = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "retrieval.tau", value: "3" }) });
-  assert.equal(untokened.response.status, 403);
-  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
-  const committed = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "retrieval.tau", value: "3" }));
-  assert.equal(committed.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(committed.body.setting.value, "3");
-  assert.equal(committed.body.readback.currentValue, "3");
-  assert.ok(committed.body.receiptDigest && committed.body.headEventHash);
-  const refused = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "bogus.key", value: "x" }));
-  assert.equal(refused.response.status, 409);
-  assert.equal(refused.body.reasonCode, "SETTINGS_KEY_UNREGISTERED");
-  const status = await request(url, "/api/status", readOptions(boot.token));
-  assert.equal(status.body.checks.length, 8);
-  assert.ok(status.body.checks.every((check) => Object.hasOwn(check, "check") && Object.hasOwn(check, "reasonCode") && Object.hasOwn(check, "detail")));
-  assert.deepEqual(Object.keys(status.body.library).sort(), ["configProjection", "rejectedEventCount", "streams", "versionVector"]);
-  const commands = await request(url, "/api/commands", readOptions(boot.token));
-  assert.ok(commands.body.commands.some((entry) => entry.name === "settings-set" && entry.mutates));
-});
-
 
 test("launcher generation emits regular files that carry only --library, starts the macOS launcher, and names a library the device has not registered", async (t) => {
   const fixture = await scratch("tcrn-portal-conservation-launchers-", "TCRN-PORTAL-LAUNCH");
@@ -135,26 +104,6 @@ test("launcher generation emits regular files that carry only --library, starts 
 });
 
 
-test("an admitted request whose body is still in flight refuses an unregistered binding", async t => {
-  const fixture = await scratch("portal-inflight-registry-", "INFLIGHT-REGISTRY");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const before = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
-  const body = JSON.stringify({ key: "artifact.language", value: "fr" });
-  let req;
-  const completed = new Promise((resolve, reject) => {
-    req = httpRequest(new URL("/api/settings", url), { method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "x-portal-token": boot.token, "x-configuration-target": JSON.stringify(clientTargets.get(boot.token)) } }, response => {
-      let text = ""; response.on("data", chunk => { text += chunk; }); response.on("end", () => resolve(JSON.parse(text)));
-    });
-    req.on("error", reject); req.flushHeaders(); req.write(body.slice(0, 1));
-  });
-  await unregisterLibrary(fixture.proseRoot, fixture.deviceEnv.EINZBERN_HOME);
-  req.end(body.slice(1));
-  assert.equal((await completed).reasonCode, "PORTAL_CONFIGURATION_TARGET_CHANGED");
-  assert.equal((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).headEventHash, before.headEventHash);
-});
-
 
 // R46 I03 (PP-2; approved contract items 6, 7): a target whose saved common default does not resolve is
 // still read: /api/settings answers the catalog with commonDefault and the rows that would inherit marked
@@ -189,21 +138,6 @@ test("INIT-053 R46 I03: a target with an unresolved common default is read, swit
   assert.equal(repaired.body.settings.some(entry => entry.source?.status === "unresolved"), false);
 });
 
-
-// R46 I04 (U20 D5): a new library's knowledge view is an empty inventory that says so; once a store
-// exists the view says present.
-test("INIT-053 R46 I04: /api/knowledge answers a library without a knowledge store as an empty inventory", async t => {
-  const fixture = await scratch("portal-r46-knowledge-", "R46-KNOWLEDGE");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const empty = await request(url, "/api/knowledge", readOptions(boot.token));
-  assert.equal(empty.response.status, 200);
-  assert.deepEqual([empty.body.ok, empty.body.reasonCode, empty.body.knowledgeStore, empty.body.records, empty.body.total], [true, "PORTAL_KNOWLEDGE_READY", "absent", [], 0]);
-  await cli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"], fixture.deviceEnv);
-  const present = await request(url, "/api/knowledge", readOptions(boot.token));
-  assert.deepEqual([present.body.reasonCode, present.body.knowledgeStore, present.body.total], ["PORTAL_KNOWLEDGE_READY", "present", 0]);
-});
 
 
 // R46 I05 (approved contract item 11; U20 D13): every answer names the target it was served for, refusals
@@ -273,6 +207,7 @@ test("INIT-053 R46 I05: answers name the target they served, and a read naming a
 
 
 
+
 test("Portal rejects relative EINZBERN_HOME before library selection in every cwd", async (t) => {
   const base = await mkdtemp(join(tmpdir(), "portal-relative-device-"));
   t.after(() => rm(base, { recursive: true, force: true }));
@@ -293,4 +228,188 @@ test("Portal rejects relative EINZBERN_HOME before library selection in every cw
     });
     await assert.rejects(lstat(join(cwd, "relative-device")), { code: "ENOENT" });
   }
+});
+
+
+
+// TCRN-CROSS-STORY-482 R3, AC1: the registry's two libraries are listed and can be switched, and
+// each one answers with its own status. The second library carries one event of its own, so the
+// two statuses differ in more than their ids.
+test("STORY-482 AC1: the registry's two libraries can be switched, and each answers with its own status", async (t) => {
+  const fixture = await scratch("tcrn-portal-libraries-", "TCRN-PORTAL-LIBRARIES");
+  await cli(["settings-set", "--workspace", fixture.second.library, "--at", "2026-08-11T15:01:00Z", "--actor", "agent:test", "--key", "artifact.language", "--value", "zh-CN"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
+  const first = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
+  const second = await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv);
+  const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
+  const secondDoctor = await cli(["doctor", "--project", fixture.second.project], { ...fixture.deviceEnv, HOME: fixture.home });
+  const { child, url, listening } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  assert.equal(listening.selectedBy, "argument");
+  const { boot } = await readBoot(url);
+  const listed = await request(url, "/api/libraries", readOptions(boot.token));
+  assert.equal(listed.body.reasonCode, "PORTAL_LIBRARIES_READY");
+  // The registry's name for a library is what project-list says of its project: its canonical name
+  // (TCRN-CROSS-INIT-053 R46 I01; the fixture names each project by its external key).
+  const firstName = (await cli(["project-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find(record => record.id === fixture.projectId).name;
+  const secondName = (await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.find(record => record.id === fixture.second.projectId).name;
+  assert.deepEqual([firstName, secondName], ["TCRN-PORTAL-LIBRARIES", "TCRN-PORTAL-LIBRARIES-SECOND"]);
+  assert.equal(boot.libraryName, firstName);
+  assert.deepEqual(listed.body.libraries, [
+    { projectPath: fixture.proseRoot, projectId: fixture.projectId, configurationProjectId: null, libraryId: first.workspaceId, libraryPath: fixture.workspace, name: firstName, chain: null },
+    { projectPath: fixture.second.project, projectId: fixture.second.projectId, configurationProjectId: null, libraryId: second.workspaceId, libraryPath: fixture.second.library, name: secondName, chain: null },
+  ]);
+  assert.deepEqual(listed.body.selected, { ...listed.body.libraries[0], configurationProjectId: fixture.projectId });
+  assert.deepEqual(boot.libraries, listed.body.libraries);
+
+  const statusNow = async () => (await request(url, "/api/status", readOptions(boot.token))).body;
+  const languageNow = async () => (await request(url, "/api/settings", readOptions(boot.token))).body.settings.find((entry) => entry.key === "artifact.language").currentValue;
+  let status = await statusNow();
+  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, first.version]);
+  assert.equal(status.ok, firstDoctor.ok);
+  assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), firstDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
+  assert.deepEqual(status.library.versionVector, first.versionVector);
+  assert.equal(status.library.rejectedEventCount, first.rejectedEventCount);
+  assert.deepEqual(status.library.configProjection, first.configProjection);
+  assert.equal(await languageNow(), "en");
+
+  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.second.project }));
+  assert.equal(switched.response.status, 200);
+  assert.equal(switched.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
+  assert.deepEqual(switched.body.library, { ...listed.body.libraries[1], configurationProjectId: listed.body.libraries[1].projectId });
+  assert.equal(switched.body.libraryName, secondName);
+  assert.equal(switched.body.workspace, fixture.second.library);
+  assert.equal(switched.body.proseRoot, fixture.second.project);
+  status = await statusNow();
+  assert.deepEqual([status.workspaceId, status.version], [second.workspaceId, second.version]);
+  assert.equal(status.ok, secondDoctor.ok);
+  assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), secondDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
+  assert.deepEqual(status.library.versionVector, second.versionVector);
+  assert.equal(status.library.rejectedEventCount, second.rejectedEventCount);
+  assert.deepEqual(status.library.configProjection, second.configProjection);
+  assert.equal(await languageNow(), "zh-CN");
+  assert.deepEqual((await request(url, "/api/libraries", readOptions(boot.token))).body.selected, { ...listed.body.libraries[1], configurationProjectId: fixture.second.projectId });
+
+  // A library is named by its id too; the switch back reads the first library again.
+  const back = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: first.workspaceId }));
+  assert.equal(back.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
+  status = await statusNow();
+  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, first.version]);
+  assert.equal(status.ok, firstDoctor.ok);
+  assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), firstDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
+  assert.deepEqual(status.library.versionVector, first.versionVector);
+
+  const unknown = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: join(fixture.base, "not-a-library") }));
+  assert.equal(unknown.response.status, 404);
+  assert.equal(unknown.body.reasonCode, "PORTAL_LIBRARY_UNKNOWN");
+  assert.equal((await statusNow()).workspaceId, first.workspaceId, "a refused switch leaves the selection alone");
+  // The partition catalog and its switch are gone with the container.
+  for (const path of ["/api/partitions", "/api/partition"]) {
+    const retired = await request(url, path, readOptions(boot.token));
+    assert.equal(retired.response.status, 404, path);
+    assert.equal(retired.body.reasonCode, "PORTAL_ROUTE_UNKNOWN", path);
+  }
+});
+
+
+
+test("STORY-355 GWT1+GWT2: a forged Host header is refused on every route, and the token now guards every GET under /api/", async (t) => {
+  const fixture = await scratch("tcrn-portal-security-", "TCRN-PORTAL-SECURITY");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+
+  // GWT1: a DNS-rebinding-style Host header is rejected before any route runs at all,
+  // including "/" -- the real TCP connection still lands on loopback (rawRequest talks
+  // to the portal's actual address), only the Host header is forged.
+  const rootForged = await rawRequest(url, "/", { host: "attacker.example" });
+  assert.equal(rootForged.status, 403);
+  assert.equal(rootForged.body.reasonCode, "PORTAL_HOST_REJECTED");
+  const prefixForged = await rawRequest(url, "/api/settings", { host: "127.0.0.1.attacker.example" });
+  assert.equal(prefixForged.status, 403);
+  assert.equal(prefixForged.body.reasonCode, "PORTAL_HOST_REJECTED");
+  const badPort = await rawRequest(url, "/api/settings", { host: "127.0.0.1:notaport" });
+  assert.equal(badPort.status, 403);
+  assert.equal(badPort.body.reasonCode, "PORTAL_HOST_REJECTED");
+  const upperLocalhost = await rawRequest(url, "/api/settings", { host: "LOCALHOST", headers: { "x-portal-token": boot.token } });
+  assert.equal(upperLocalhost.status, 200);
+
+  // GWT2: token coverage now spans GET, not just the mutating verbs it used to guard alone.
+  const untokenedGet = await request(url, "/api/settings");
+  assert.equal(untokenedGet.response.status, 403);
+  assert.equal(untokenedGet.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
+  const tokenedGet = await request(url, "/api/settings", readOptions(boot.token));
+  assert.equal(tokenedGet.response.status, 200);
+});
+
+
+
+// TCRN-CROSS-STORY-482 R3: without --library the portal chooses from the registry by where it was
+// started: the library of the registered project it runs in (library-resolve), else the machine's
+// default library when that names a registered one, else the first registered library.
+test("STORY-482 R3: without --library the portal opens the working directory's library, then the machine's default library, then the first registered one", async (t) => {
+  const fixture = await scratch("tcrn-portal-default-library-", "TCRN-PORTAL-DEFAULT-LIBRARY");
+  t.after(() => rm(fixture.base, { recursive: true, force: true }));
+  const second = await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv);
+  const open = async (cwd) => {
+    const portal = await startPortal({ ...fixture, library: null, cwd });
+    try {
+      const { boot } = await readBoot(portal.url);
+      return { selectedBy: portal.listening.selectedBy, libraryPath: boot.library.libraryPath, proseRoot: boot.proseRoot };
+    } finally { portal.child.kill(); }
+  };
+  assert.deepEqual(await open(fixture.second.project), { selectedBy: "working-directory", libraryPath: fixture.second.library, proseRoot: fixture.second.project });
+  await cli(["machine-settings-set", "--at", "2026-08-11T15:03:00Z", "--key", "portal.defaultPartition", "--value", second.workspaceId], fixture.deviceEnv);
+  assert.deepEqual(await open(fixture.base), { selectedBy: "machine-default", libraryPath: fixture.second.library, proseRoot: fixture.second.project });
+  // A default that names no registered library (an old partition id, say) is passed over.
+  await cli(["machine-settings-set", "--at", "2026-08-11T15:04:00Z", "--key", "portal.defaultPartition", "--value", "cross-project"], fixture.deviceEnv);
+  assert.deepEqual(await open(fixture.base), { selectedBy: "first-registered", libraryPath: fixture.workspace, proseRoot: fixture.proseRoot });
+});
+
+
+
+// STORY-355 carried over to libraries: AGENTS.md is the project's prose and never a file inside a
+// library, which only the engine writes. A project registered inside its own library is refused
+// at boot and on a switch, and the refusal names the path.
+test("STORY-355: a project registered inside its own library is refused at boot and on a switch", async (t) => {
+  const fixture = await scratch("tcrn-portal-prose-unsafe-", "TCRN-PORTAL-PROSE-UNSAFE");
+  const nested = join(fixture.second.library, "nested-project");
+  await mkdir(nested);
+  await cli(["library-register", "--project", nested, "--library", fixture.second.library, "--project-id", fixture.second.projectId, "--at", "2026-08-11T15:05:00Z"], fixture.deviceEnv);
+  const refused = await startupRefusal(["--library", nested], { ...fixture.deviceEnv, HOME: fixture.home });
+  assert.equal(refused.status, 2);
+  assert.equal(refused.report.ok, false);
+  assert.equal(refused.report.reasonCode, "PORTAL_PROSE_ROOT_UNSAFE");
+  assert.equal(refused.report.proseRoot, nested);
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: nested }));
+  assert.equal(switched.response.status, 409);
+  assert.equal(switched.body.reasonCode, "PORTAL_PROSE_ROOT_UNSAFE");
+  assert.equal((await request(url, "/api/libraries", readOptions(boot.token))).body.selected.libraryPath, fixture.workspace, "a refused switch leaves the selection alone");
+});
+
+
+
+// TCRN-CROSS-STORY-482 R3: a library outside the registry is not something Atelier opens. With no
+// registered library the portal refuses to start and names the remedy; a --library the device has
+// not registered is named back, with the libraries it has.
+test("STORY-482 R3: the portal refuses to start with no registered library, and names a --library the device has not registered", async (t) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-no-library-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const home = await scratchHome(base);
+  const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
+  const empty = await startupRefusal([], { ...deviceEnv, HOME: home }, base);
+  assert.equal(empty.status, 2);
+  assert.equal(empty.report.reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY");
+  assert.equal(empty.report.remedy, "library-register");
+  const project = join(base, "project");
+  await registeredLibrary(deviceEnv, project, join(project, ".ether"), "TCRN-PORTAL-NO-LIBRARY", "2026-08-11T15:00:00Z");
+  const loose = join(base, "unregistered-library");
+  await cli(["init", "--workspace", loose, "--project-name", "TCRN-PORTAL-UNREGISTERED", "--at", "2026-08-11T15:00:01Z"], deviceEnv);
+  const unknown = await startupRefusal(["--library", loose], { ...deviceEnv, HOME: home }, base);
+  assert.equal(unknown.status, 2);
+  assert.equal(unknown.report.reasonCode, "PORTAL_LIBRARY_UNKNOWN");
+  assert.equal(unknown.report.requestedLibrary, loose);
+  assert.deepEqual(unknown.report.libraries, [join(project, ".ether")]);
 });

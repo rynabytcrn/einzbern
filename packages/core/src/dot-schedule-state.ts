@@ -43,7 +43,7 @@ export type PatrolEvent = { readonly kind: "check" | "before-pause"; readonly ch
 export function scheduleScopeDigest(scope: ScheduleScope): string { return dotDigest({ ...scope, libraryScope: [...new Set(scope.libraryScope)].sort(), projectScope: [...new Set(scope.projectScope)].sort() }); }
 /** No name matching, create operation or scheduler SDK. Unknown creation must be queried first. */
 export function resolveScheduleInstance(scope: ScheduleScope, savedId: string | null, observations: readonly ScheduleReadback[], createOutcome: "not-attempted" | "unknown" = "not-attempted"): { readonly status: "reuse" | "query-required" | "create-eligible" | "conflict"; readonly automationId: string | null; readonly reason?: "same-instance-observation-conflict" } {
-  const groups = new Map<string, { item: ScheduleReadback; at: number; conflicts: readonly ScheduleReadback[] }>();
+  const groups = new Map<string, { item: ScheduleReadback; at: bigint; conflicts: readonly ScheduleReadback[] }>();
   for (const item of observations) {
     dotText(item.automationId, "automationId"); dotSha(item.scopeDigest, "scopeDigest"); dotText(item.timezone, "timezone"); dotText(item.evidenceRef, "evidenceRef");
     const at = dotInstant(item.observedAt, "observedAt");

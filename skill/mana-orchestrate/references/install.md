@@ -152,7 +152,32 @@ work is not terminal; unknown or failed observations cannot count. Re-read tasks
 the same ID, then read tasks and disabled state back. Received new work resumes that same ID
 and needs enabled readback; failure retains `pending-resume`, actual error and work references.
 Ordinary terminal checks do not clear pending resume/pause or erase its error. Only matching
-actual scheduler state readback resolves that pending action.
+actual scheduler state readback after the actual action observation can resolve that pending action.
+
+For the existing pure patrol state contract, machine-assemble `action-observed` only from the
+actual scheduler update return/error observation: `action` (`pause` or `resume`),
+`automationId`, `returnedAt` (actual UTC observation time) and `evidenceRef` (its real source).
+It must match the pending same-instance mutation. The task's `before-pause` time, invocation
+start, old readback and JSON assembly clock are not an update return; never fabricate a boundary.
+An observed action is not successful pause/resume. Preserve the returned `pendingMutation`
+with its `action`, `priorReturnedAt` and nullable `observation`; a prior boundary is only a lower
+bound, not proof of the next mutation. A new action observation must be strictly later than that
+prior boundary. Keep this dynamic state outside AGENTS, not as a setting.
+
+An `action-failed` event carries the actual `action` and `error`. When its failure belongs to
+the recorded observation, carry that exact source as `actionEvidenceRef`. A mismatched reference
+refuses; an unlinked failure clears the current observation and retains only the prior lower bound,
+error and work references, without reusing an earlier action's proof.
+Do not invent a reference to avoid unknown. Both `readback` and `after-pause` require the same
+actual instance/scope/20-minute interval and a readback `observedAt` strictly later than the
+pending observation's `returnedAt`. Equal/earlier observations, even later than the old readback
+or pre-pause check, cannot confirm the action. Obtain an actual post-action query/readback.
+Missing or unassociated action evidence keeps unknown/query and received work/error intact.
+Post-pause task reads remain required; disabled readback with new work or keep-enabled retains
+same-ID resume responsibility, with a new resume observation and subsequent enabled readback.
+These are state-event fields, not CLI flags, a scheduler/controller or permission to mutate one;
+the calling environment collects real observations without asking users to hand-fill them.
+
 Respect an explicit scoped keep-enabled override. Pausing patrol neither cancels work nor stops
 children. Delays collapse to one current check; there is no atomic or invisible-event guarantee.
 

@@ -61,7 +61,7 @@
 // import it.
 
 /** The ids of the built-in rules, in the order they are listed. */
-export const BUILT_IN_RULE_IDS = Object.freeze(["autonomy", "batch", "unattended-commands", "silent-reporting", "design-authority", "residue-cleanup", "goal-writing"] as const);
+export const BUILT_IN_RULE_IDS = Object.freeze(["autonomy", "batch", "unattended-commands", "silent-reporting", "design-authority", "residue-cleanup", "goal-writing", "incremental-update"] as const);
 export type BuiltInRuleId = typeof BUILT_IN_RULE_IDS[number];
 
 /** A rule's text in each language the engine ships it in. */
@@ -236,6 +236,49 @@ On 2026-10-08 the Owner adopted the three clauses of TCRN-CROSS-INC-225 "FIX, TY
 3. On encountering a speech-act condition, the working party explains once, replies minimally thereafter, and names the single exit.
 `;
 
+// INIT062 B5: one versioned principle, with only the necessary transport paragraph
+// adapted for dot. Catalog presence is not an enabled project rule or a published release.
+const INCREMENTAL_OPEN_ZH = "先取得覆盖实际必需闭包的完整有效基线，再在明确范围内做最少必要读取和增量变更；完整性未知、基线失效或安全判断需要时，仍补必要全量核对，不把增量当作跳过验证的理由。所有工单、纪要、知识卡与受治理配置仍经受支持引擎入口变更，使用实际行动者并读回。";
+const INCREMENTAL_CLOSE_ZH = "保留本机引擎互斥。共享标记仅告知占用、等待和交接，不授予跨设备原子排他；看不到标记不证明没有写入者。提交前核实当前写入者及本次串行交接，未知、占用或双写迹象只暂停受影响提交，不按超时擅自接管或删除标记。身份、基线、操作、发布和读回关联保存在动态记录，不放入本正文。增量原则不改变一个 INIT 全部待办 Story 的批单位、既定步骤、分包与角色。";
+const INCREMENTAL_OPEN_EN = "Obtain a complete, valid baseline covering the necessary closure before making minimal reads and incremental changes within an explicit scope. Unknown completeness, an invalid baseline or a safety decision still requires the necessary full checks; incremental work never skips verification. Change work items, minutes, knowledge cards and governed configuration only through supported engine entries, using the actual actor and reading the receipts back.";
+const INCREMENTAL_CLOSE_EN = "Preserve the local engine mutex. A shared marker only communicates occupancy, waiting and handoff; it grants no atomic exclusion across devices, and an absent marker does not establish that there is no writer. Confirm current writers and this operation's serial handoff before submitting. Unknown occupancy, an active writer or signs of concurrent writing pause only the affected submission; elapsed time never authorizes takeover or marker removal. Keep identity, baseline, operation, publication and readback associations in dynamic records, not in AGENTS. This principle does not change the batch unit of all open Stories under one INIT, its approved steps, packages or roles.";
+const INCREMENTAL_UPDATE_ZH = `## 增量更新与共享提交原则 v1
+
+${INCREMENTAL_OPEN_ZH}
+
+一般同步目录宿主直接使用其已验证的同步工作目录，不增加无必要的下载或上传。在本地经引擎工作，提交前刷新一次完整基线，以受支持的重放或重应用合并本轮差异，再串行提交并核对目的端读回。不能手拼事件流、覆盖他人新事件，或把工作副本回执称为生产完成。
+
+${INCREMENTAL_CLOSE_ZH}
+`;
+const INCREMENTAL_UPDATE_EN = `## Incremental Update and Shared Submission Principle v1
+
+${INCREMENTAL_OPEN_EN}
+
+Ordinary synchronized-directory hosts use their verified synchronized working directory directly, without unnecessary downloads or uploads. Work locally through the engine, refresh the complete baseline once before submission, merge this round's changes with supported replay or reapplication, submit serially and verify destination readback. Never splice event streams, overwrite another writer's new events or call a working-copy receipt production completion.
+
+${INCREMENTAL_CLOSE_EN}
+`;
+
+/** The dot transport adaptation of the same incremental-update v1 source. */
+export const INCREMENTAL_UPDATE_DOT_BODY: RuleText = Object.freeze({
+  zh: `## 增量更新与共享提交原则 · incremental-update
+
+${INCREMENTAL_OPEN_ZH}
+
+一般同步目录宿主直接使用其已验证的同步工作目录；dot 仅在环境实际需要时取得完整副本，在本地经引擎工作，提交前刷新一次完整基线，再以受支持的重放或重应用合并本轮差异，串行提交并核对远端读回。不能手拼事件流、覆盖他人新事件，或把工作副本回执称为生产完成。
+
+${INCREMENTAL_CLOSE_ZH}
+`,
+  en: `## Incremental Update and Shared Submission · incremental-update
+
+${INCREMENTAL_OPEN_EN}
+
+Ordinary synchronized-directory hosts use their verified working directory directly. Only when its environment requires transport does dot obtain a complete copy. Work locally through the engine, refresh the complete baseline once before submission, merge the round's changes with supported replay or reapplication, submit serially and verify remote readback. Never splice events, overwrite another writer's new events or call working-copy receipts production completion.
+
+${INCREMENTAL_CLOSE_EN}
+`,
+});
+
 function builtIn(id: BuiltInRuleId, version: number, title: RuleText, body: RuleText): BuiltInRule {
   return Object.freeze({ id, version, title: Object.freeze({ ...title }), body: Object.freeze({ ...body }) });
 }
@@ -254,6 +297,7 @@ export const BUILT_IN_RULES: readonly BuiltInRule[] = Object.freeze([
   builtIn("design-authority", 1, { zh: "\u8bbe\u8ba1\u6743\u5a01\u4e0e\u4e00\u81f4\u6027\u539f\u5219", en: "Design Authority and Consistency Principle" }, { zh: DESIGN_AUTHORITY_ZH, en: DESIGN_AUTHORITY_EN }),
   builtIn("residue-cleanup", 1, { zh: "无效残余收尾原则", en: "Residue Cleanup Principle" }, { zh: RESIDUE_CLEANUP_ZH, en: RESIDUE_CLEANUP_EN }),
   builtIn("goal-writing", 1, { zh: "目标书写契约", en: "Goal Writing Contract" }, { zh: GOAL_WRITING_ZH, en: GOAL_WRITING_EN }),
+  builtIn("incremental-update", 1, { zh: "增量更新与共享提交原则", en: "Incremental Update and Shared Submission Principle" }, { zh: INCREMENTAL_UPDATE_ZH, en: INCREMENTAL_UPDATE_EN }),
 ]);
 
 /** The built-in rule with this id, or null when the engine ships no rule by that id. */

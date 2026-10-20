@@ -40,6 +40,7 @@ import { gunzipSync } from "node:zlib";
 import { canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { AGENTS_FILE, CLAUDE_FILE, resolveSection } from "./agents-sections.js";
 import { writeFileAtomic } from "./atomic-file.js";
+import { DOT_INSTALLATION_TARGET, assertNotDotAgentsTarget } from "./dot-agents.js";
 import { DEVICE_HOME_ENTRIES, backupsPath, ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { readDevice } from "./device-identity.js";
 import { ENGINE_FILES, engineCurrentPath, engineVersionDirectory, readEngineCurrent, rollbackEngine, updateEngine } from "./engine-home.js";
@@ -71,6 +72,8 @@ import type {
 } from "./setup.js";
 import {
   FRESH_ENGINE_TREE,
+  planDotSetup,
+  applyDotSetup,
   SetupRecorder,
   applyDevice,
   applyHooks,
@@ -466,6 +469,7 @@ async function planRelease(recorder: SetupRecorder, input: SetupModeInput, sourc
  * become. Nothing is written, and no managed section is planned.
  */
 export async function planUpdateSetup(input: SetupModeInput): Promise<SetupModePlan> {
+  if (input.executionTarget === DOT_INSTALLATION_TARGET) return planDotSetup(input);
   const { context, answers, options } = input;
   const { projectRoot, home, deviceHome } = context;
   if (options.rollback === true && options.archive !== undefined) {
@@ -511,6 +515,7 @@ export async function planUpdateSetup(input: SetupModeInput): Promise<SetupModeP
  * copies, the launchers and the host hooks are laid from the version now current.
  */
 export async function applyUpdateSetup(plan: SetupPlan): Promise<SetupApplied> {
+  if (plan.executionTarget === DOT_INSTALLATION_TARGET) return applyDotSetup(plan);
   const { at, projectRoot, home, deviceHome } = plan;
   const planned = plan.engineSwitch;
   if (planned === undefined) return setupFail("SETUP_INPUT_INVALID", "the plan names no engine version to switch to", { field: "plan" });
@@ -601,6 +606,8 @@ function answerQuestions(input: SetupModeInput, resolved: ResolvedSetupAnswers):
  * repair of a whole installation plans no write.
  */
 export async function planRepairSetup(input: SetupModeInput): Promise<SetupModePlan> {
+  if (input.executionTarget === DOT_INSTALLATION_TARGET) return planDotSetup(input);
+  await assertNotDotAgentsTarget(input.context.projectRoot);
   const { context, answers } = input;
   const { projectRoot, home, deviceHome } = context;
   const recorder = new SetupRecorder(deviceHome, input.at);
@@ -630,6 +637,8 @@ export async function planRepairSetup(input: SetupModeInput): Promise<SetupModeP
 
 /** Apply a repair (R4): each step compares before it writes, so a second repair writes nothing. */
 export async function applyRepairSetup(plan: SetupPlan): Promise<SetupApplied> {
+  if (plan.executionTarget === DOT_INSTALLATION_TARGET) return applyDotSetup(plan);
+  await assertNotDotAgentsTarget(plan.projectRoot);
   const { at, projectRoot, home, deviceHome, resolved } = plan;
   const directory = plan.engine.directory;
   if (directory === null) return setupFail("SETUP_ENGINE_NOT_INSTALLED", "the plan names no engine version directory to install from", { deviceHome });
@@ -703,6 +712,8 @@ async function uninstallCoordination(registry: Registry, registered: RegistryEnt
  * read, to know which coordination it names, and never written.
  */
 export async function planUninstallSetup(input: SetupModeInput): Promise<SetupModePlan> {
+  if (input.executionTarget === DOT_INSTALLATION_TARGET) return planDotSetup(input);
+  await assertNotDotAgentsTarget(input.context.projectRoot);
   const { context, answers } = input;
   const { projectRoot, home, deviceHome } = context;
   const recorder = new SetupRecorder(deviceHome, input.at);
@@ -762,6 +773,8 @@ async function moveIntoBackup(from: string, to: string): Promise<void> {
  * project's files and their text stays.
  */
 export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied> {
+  if (plan.executionTarget === DOT_INSTALLATION_TARGET) return applyDotSetup(plan);
+  await assertNotDotAgentsTarget(plan.projectRoot);
   const { at, projectRoot, home, deviceHome } = plan;
   const recorder = new SetupRecorder(deviceHome, at);
 

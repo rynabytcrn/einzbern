@@ -19,6 +19,7 @@ import test from "node:test";
 import {
   CODEX_CONFIG_FILE,
   HOST_HOOK_FILES,
+  HOST_HOOK_HOSTS,
   applyHostHooks,
   codexHookConfig,
   hookLauncherPath,
@@ -520,4 +521,10 @@ test("478-AC5, BL34/35: declined navigation adds SessionStart; subagent recall a
   const after = await readJson(join(home, CLAUDE));
   assert.deepEqual(Object.keys(after.hooks), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
   assert.deepEqual(after.hooks.UserPromptSubmit, settings.hooks.UserPromptSubmit);
+});
+
+
+test("DOT-I01: chatgpt-dot is not a traditional hook host or fallback", () => {
+  assert.deepEqual(HOST_HOOK_HOSTS, ["claude-code", "codex", "dsh"]);
+  assert.throws(() => planHostHooks({ host: "chatgpt-dot", scope: "user", deviceHome: "/fixture/device" }), error => error.reasonCode === "HOST_HOOKS_INPUT_INVALID");
 });

@@ -55,6 +55,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { FRAMEWORK_VERSION } from "./framework-version.js";
 import { AGENTS_FILE, CLAUDE_FILE, agentsFileSections, disableAgentsSection, managedOutputBinding, planClaudeImport, renderAgentsSections } from "./agents-sections.js";
 import { writeFileAtomic } from "./atomic-file.js";
+import { DOT_INSTALLATION_TARGET, applyDotAgents, assertNotDotAgentsTarget, planDotAgents } from "./dot-agents.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 import { ENGINE_HOOK_LAUNCHER, backupsPath, deviceFilePath, engineRoot, ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { readDevice, readOrCreateDevice } from "./device-identity.js";
@@ -949,6 +950,8 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
  * a blocker of the plan.
  */
 export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePlan> {
+  if (input.executionTarget === DOT_INSTALLATION_TARGET) return planDotSetup(input);
+  await assertNotDotAgentsTarget(input.context.projectRoot);
   const { context, answers } = input;
   const { projectRoot, home, deviceHome } = context;
   const recorder = new SetupRecorder(deviceHome, input.at);
@@ -1043,6 +1046,8 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
  * written, the originals backed up and the backup directory of this run.
  */
 export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
+  if (plan.executionTarget === DOT_INSTALLATION_TARGET) return applyDotSetup(plan);
+  await assertNotDotAgentsTarget(plan.projectRoot);
   const { at, projectRoot, home, deviceHome, resolved } = plan;
   const directory = plan.engine.directory;
   if (directory === null) {
@@ -1126,4 +1131,39 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
       ? { libraryId: coordination.libraryId, status: "unregistered", path: null }
       : { libraryId: coordination.libraryId, status: "registered", path: await realpath(coordination.path!) },
   });
+}
+
+/** Explicit dot target route shared by fresh/update/repair/uninstall. It writes no
+ * device identity, registry, library, launcher, host hook or traditional skill copy. */
+export async function planDotSetup(input: SetupModeInput): Promise<SetupModePlan> {
+  if (input.executionTarget !== DOT_INSTALLATION_TARGET || input.dot === undefined || input.mode === "migrate" || input.mode === "restore") return setupFail("SETUP_TARGET_UNSUPPORTED", "explicit supported dot target required");
+  if (input.dot.binding.root !== input.context.projectRoot) return setupFail("SETUP_INPUT_INVALID", "dot root differs from the selected project");
+  const dot = await planDotAgents({ ...input.dot, executionTarget: DOT_INSTALLATION_TARGET, operation: input.mode, at: input.at });
+  return {
+    executionTarget: DOT_INSTALLATION_TARGET, dot, questions: [],
+    resolved: { artifacts: "", cloud: false, language: input.dot.source?.language ?? defaultLanguage(), navigation: false },
+    engine: { version: input.dot.source?.engineVersion ?? null, directory: dirname(input.dot.enginePath) },
+    library: null,
+    writes: dot.writes.map(write => ({ step: "dot-agents", ...write })),
+    backups: dot.backups, backupDir: dot.backups.length > 0 ? dot.request.binding.backupRoot : null,
+    pendingSections: dot.status === "pending" ? [{ file: dot.request.binding.agentsPath, id: "dot-independent" }] : [],
+    blockers: [], warnings: [],
+  };
+}
+export async function applyDotSetup(plan: SetupPlan): Promise<SetupApplied> {
+  if (plan.executionTarget !== DOT_INSTALLATION_TARGET || plan.dot === undefined || plan.dot.request.binding.root !== plan.projectRoot || plan.dot.request.operation !== plan.mode || plan.dot.request.at !== plan.at) return setupFail("SETUP_INPUT_INVALID", "dot target plan binding is invalid");
+  const dot = await applyDotAgents(plan.dot);
+  // Non-application has a distinct reason code. Neither S6 nor SETUP_APPLIED
+  // authenticates a session read or closes native acceptance.
+  return {
+    schemaVersion: SETUP_APPLIED_SCHEMA_VERSION, reasonCode: ({ applied: "SETUP_APPLIED", unchanged: "SETUP_APPLIED", skipped: "SETUP_DOT_SKIPPED", pending: "SETUP_DOT_PENDING", kept: "SETUP_DOT_KEPT", partial: "SETUP_DOT_PARTIAL" } as const)[dot.status], executionTarget: DOT_INSTALLATION_TARGET, dot,
+    mode: plan.mode, at: plan.at, engineVersion: FRAMEWORK_VERSION,
+    projectRoot: plan.projectRoot, home: plan.home, deviceHome: plan.deviceHome,
+    deviceId: null, answers: plan.resolved, library: null,
+    written: dot.files.filter(file => file.status !== "failed").map(file => ({ step: "dot-agents", path: file.path, action: file.status === "moved" ? "move" : plan.dot!.writes.find(write => write.path === file.path)!.action })),
+    backups: dot.files.flatMap(file => file.backupPath === null ? [] : [{ path: file.path, into: file.backupPath }]),
+    backupDir: dot.files.some(file => file.backupPath !== null) ? plan.dot.request.binding.backupRoot : null,
+    pendingSections: dot.status === "pending" || dot.status === "partial" ? [{ file: plan.dot.request.binding.agentsPath, id: "dot-independent" }] : [],
+    warnings: [], selfCheck: [],
+  };
 }

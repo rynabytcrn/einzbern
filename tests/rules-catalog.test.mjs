@@ -27,7 +27,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { BUILT_IN_RULE_IDS, BUILT_IN_RULES, builtInRule, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
+import { BUILT_IN_RULE_IDS, BUILT_IN_RULES, INCREMENTAL_UPDATE_DOT_BODY, builtInRule, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
 
 const fixtures = resolve(import.meta.dirname, "fixtures", "rules");
 const LANGUAGES = ["zh", "en"];
@@ -41,7 +41,7 @@ function absolutePath(text) {
   return ABSOLUTE_PATH.exec(text)?.[0] ?? null;
 }
 
-test("the engine ships seven built-in rules at their versions, batch processing at v3", () => {
+test("the engine ships eight built-in rules at their versions, batch processing at v3", () => {
   assert.deepEqual(BUILT_IN_RULES.map((rule) => [rule.id, rule.version]), [
     ["autonomy", 1],
     ["batch", 3],
@@ -50,6 +50,7 @@ test("the engine ships seven built-in rules at their versions, batch processing 
     ["design-authority", 1],
     ["residue-cleanup", 1],
     ["goal-writing", 1],
+    ["incremental-update", 1],
   ]);
   assert.deepEqual([...BUILT_IN_RULE_IDS], BUILT_IN_RULES.map((rule) => rule.id));
   assert.equal(builtInRule("batch")?.version, 3);
@@ -88,7 +89,9 @@ test("no rule text names an absolute path", () => {
 });
 
 test("every Chinese body is the Owner's final text word for word, and the English bodies of design-authority and silent-reporting equal their fixtures", async () => {
-  for (const rule of BUILT_IN_RULES) {
+  // Preserve all seven historical byte-for-byte fixtures; the new eighth source
+  // is asserted below in this owned test file, without changing old fixtures.
+  for (const rule of BUILT_IN_RULES.filter(rule => rule.id !== "incremental-update")) {
     assert.equal(rule.body.zh, await readFile(join(fixtures, `${rule.id}.zh.md`), "utf8"), rule.id);
   }
   assert.equal(builtInRule("design-authority")?.body.en, await readFile(join(fixtures, "design-authority.en.md"), "utf8"));
@@ -257,4 +260,18 @@ test("541 (MIN-259 D2): unattended-commands v2 is v1 with its heading at v2 and 
       assert.ok(added.includes(fragment), `${language} added sentence: ${fragment}`);
     }
   }
+});
+
+
+test("DOT-R01/R02 B5: incremental-update v1 distinguishes direct sync from necessary dot transport", () => {
+  const rule = builtInRule("incremental-update");
+  assert.equal(rule.version, 1);
+  for (const [body, phrases] of [
+    [rule.body.zh, ["完整有效基线", "一般同步目录宿主直接使用", "不增加无必要的下载或上传", "提交前刷新一次完整基线", "受支持的重放或重应用", "不授予跨设备原子排他", "一个 INIT 全部待办 Story"]],
+    [INCREMENTAL_UPDATE_DOT_BODY.zh, ["dot 仅在环境实际需要时取得完整副本", "核对远端读回", "不按超时擅自接管", "实际行动者", "动态记录"]],
+    [rule.body.en, ["complete, valid baseline", "without unnecessary downloads or uploads", "no atomic exclusion across devices", "all open Stories under one INIT"]],
+    [INCREMENTAL_UPDATE_DOT_BODY.en, ["Only when its environment requires transport", "verify remote readback", "elapsed time never authorizes takeover"]],
+  ]) for (const phrase of phrases) assert.ok(body.includes(phrase), phrase);
+  assert.equal(rule.body.zh.includes("dot 仅在环境"), false);
+  assert.ok(Object.isFrozen(INCREMENTAL_UPDATE_DOT_BODY));
 });

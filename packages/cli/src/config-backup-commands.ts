@@ -23,13 +23,13 @@ export const CONFIG_BACKUP_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[
   { name: "config-backup-list", availability: "cli", mutates: false, flags: [flag("root", false), flag("at", true, "instant")] },
   { name: "config-backup-resume", availability: "cli", mutates: true, flags: [...targetFlags, ...requestFlags, flag("timeout-ms", false, "integer")] },
   { name: "config-backup-retire", availability: "cli", mutates: true, flags: [...targetFlags, ...requestFlags, flag("timeout-ms", false, "integer")] },
-  { name: "config-restore-plan", availability: "cli", mutates: false, flags: [...targetFlags, ...requestFlags, flag("package", true), flag("actor", true), flag("decided-in", false)] },
-  { name: "config-restore-apply", availability: "cli", mutates: true, flags: [...targetFlags, ...requestFlags, flag("timeout-ms", false, "integer"), flag("package", true), flag("actor", true), flag("decided-in", false), flag("approved-plan-digest", true, "string", "Exact reviewed restore plan SHA-256; not permission to bypass existing write barriers")] },
+  { name: "config-restore-plan", availability: "cli", mutates: false, flags: [...targetFlags, ...requestFlags, flag("package", true), flag("actor", true), flag("decided-in", false, "string", "minutes:<id>#D<n>")] },
+  { name: "config-restore-apply", availability: "cli", mutates: true, flags: [...targetFlags, ...requestFlags, flag("timeout-ms", false, "integer"), flag("package", true), flag("actor", true), flag("decided-in", false, "string", "minutes:<id>#D<n>"), flag("approved-plan-digest", true, "string", "Exact reviewed restore plan SHA-256; not permission to bypass existing write barriers")] },
 ]);
 export interface ConfigBackupStoreRequest { readonly reservedRoot: string; readonly binding: ConfigBackupGroupBinding; readonly policy: unknown }
 export interface ConfigBackupCommandContext {
   /** Installed candidate identity from the caller, never from an uploaded package or request. */
-  readonly sourceVersion: ConfigBackupSourceVersion;
+  sourceVersion(): Promise<ConfigBackupSourceVersion>;
   resolveSource(values: Readonly<Record<string, string>>): Promise<ConfigBackupSource>;
   /** Resolve the actual library/project/device/cleaner roots. Do not trust request-provided exclusions. */
   localBindingRoot(source: ConfigBackupSource): Promise<string>;
@@ -80,7 +80,7 @@ export async function runConfigBackupCommand(command: string, values: Readonly<R
   if (command === "config-backup-plan" || command === "config-backup-create") {
     const request = configBackupObject(raw, command === "config-backup-create" ? ["selection", "store", "backupId", "expectedSelectionDigest"] : ["selection", "backupGroupId", "hostname"]);
     const store = command === "config-backup-create" ? await storeFor(request.store, source, values, context) : null;
-    const plan = planConfigBackup({ projectRef: source.projectRef, backupGroupId: configBackupId(store?.binding.backupGroupId ?? request.backupGroupId), hostname: configBackupString(store?.binding.hostname ?? request.hostname), sourceVersion: context.sourceVersion, at, payloads: await collectConfigBackupPayloads(source, selection(request.selection)), ...(command === "config-backup-create" ? { backupId: configBackupId(request.backupId) } : {}) });
+    const plan = planConfigBackup({ projectRef: source.projectRef, backupGroupId: configBackupId(store?.binding.backupGroupId ?? request.backupGroupId), hostname: configBackupString(store?.binding.hostname ?? request.hostname), sourceVersion: await context.sourceVersion(), at, payloads: await collectConfigBackupPayloads(source, selection(request.selection)), ...(command === "config-backup-create" ? { backupId: configBackupId(request.backupId) } : {}) });
     if (command === "config-backup-create") {
       if (plan.manifest.selectionDigest !== request.expectedSelectionDigest || plan.excluded.length) configBackupFail("CONFIG_BACKUP_SELECTION_CHANGED");
       result = await createConfigBackup(store!, plan, at);
@@ -95,7 +95,7 @@ export async function runConfigBackupCommand(command: string, values: Readonly<R
     if (!verified.manifest || verified.integrity !== "verified") configBackupFail("CONFIG_RESTORE_PACKAGE_INVALID");
     const store = await storeFor(request.originalsStore, source, values, context);
     const target = await context.resolveRestoreTarget(source, store, verified.manifest.files.map(file => file.logicalKey), values);
-    if (configBackupCanonical(target.source) !== configBackupCanonical(source) || configBackupCanonical(target.sourceVersion) !== configBackupCanonical(context.sourceVersion)) configBackupFail("CONFIG_RESTORE_TARGET_MISMATCH");
+    if (configBackupCanonical(target.source) !== configBackupCanonical(source) || configBackupCanonical(target.sourceVersion) !== configBackupCanonical(await context.sourceVersion())) configBackupFail("CONFIG_RESTORE_TARGET_MISMATCH");
     result = command === "config-restore-plan" ? await planConfigRestore({ packageRoot, target, at }) : await applyConfigRestore({ packageRoot, target, at, plan: request.plan as ConfigRestorePlan, approvedPlanDigest: values["approved-plan-digest"]! });
   }
   return output(result, values.output);

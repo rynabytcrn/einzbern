@@ -8,7 +8,7 @@ import test from "node:test";
 import { configBackupCanonical, planConfigBackup } from "../dist/build/packages/core/src/config-backup.js";
 import { createConfigBackup, evaluateConfigBackupEnablement, listConfigBackups, resumeConfigBackup, retireConfigBackup, validateConfigBackupRetentionPolicy } from "../dist/build/packages/core/src/config-backup-retention.js";
 const ref = { libraryId: `workspace:${"1".repeat(24)}`, projectId: `project:${"2".repeat(24)}` };
-const version = { engineVersion: "3.1.0", engineCommit: "3".repeat(40), templateVersions: ["rules-v1"] };
+const version = { engineVersion: "3.1.0", engineCommit: null, engineCommitStatus: "unknown", artifactIdentity: { kind: "observed-artifact-identity", schemaVersion: "einzbern.install-tree-digest.v1", sha256: "3".repeat(64) }, templateVersions: ["rules-v1"] };
 const fixturePolicy = { schemaVersion: "einzbern.config-backup-retention.v1", activeLimit: 1, transactionLimit: 1, recoveryLimit: 2, maxPackageBytes: 65536, maxTotalBytes: 262144, retentionDuration: 1000, recoveryDuration: 86400000, noChangePolicy: "skip", atLimitAction: "stop-new-and-report", retirementMethod: "verified-recovery-move", approvalEvidenceRef: "fixture-only:retention-policy" };
 async function fixture(t) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-config-retention-"))); t.after(() => rm(root, { recursive: true, force: true }));

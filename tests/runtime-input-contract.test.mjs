@@ -309,3 +309,15 @@ test("dot setup inputs have explicit independent ownership and no invented sourc
   assert.equal(input.sensitivity, "context-may-contain-private-data");
   assert.match(input.sharing, /no remote or library/u);
 });
+
+test("INIT062 all package flags and backup read startup input are described without invented policy or identity", () => {
+  for (const command of COMMAND_CATALOG.filter(entry => /^(?:config-backup-|config-restore-|execution-native-|shared-submit-)/u.test(entry.name))) {
+    const entries = contract.entries.filter(entry => entry.command === command.name);
+    assert.deepEqual(entries.map(entry => entry.name).sort(), command.flags.map(flag => `--${flag.name}`).sort(), command.name);
+    assert.ok(entries.every(entry => entry.defaultValue === null));
+  }
+  assert.match(byKey.get("portal:config-backup-root").defaultDescription, /not-scanned/u);
+  assert.match(byKey.get("cli:execution-native-record:response").defaultDescription, /pending/u);
+  assert.match(byKey.get("cli:config-backup-create:request").effect, /actual running package artifact/u);
+  assert.match(byKey.get("cli:work-project-context:execution-request").validation, /DotExecutionRequest/u);
+});

@@ -10,12 +10,23 @@ import { prepareDispatch, recordDispatch, writeDispatchArtifact } from "../../co
 import { normalizeDispatchAdmissionEvidence } from "../../core/src/dispatch-evidence.js";
 import { discardRelocationPreparation } from "../../core/src/relocate.js";
 import { planConfigurationProjectionRefresh, refreshConfigurationProjections, diagnoseLegacySharedPaths } from "../../core/src/configuration-projections.js";
+import { CONFIG_BACKUP_COMMAND_CATALOG, runConfigBackupCommand } from "./config-backup-commands.js";
+import type { ConfigBackupCommandContext } from "./config-backup-commands.js";
+import type { ConfigBackupSource, ConfigBackupSourceVersion } from "../../core/src/config-backup.js";
+import { resolveGeneratedArtifactsRoot } from "../../core/src/artifact-store.js";
+import { verifyInstallTree } from "../../core/src/install-tree-digest.js";
+import { readEngineCurrent, engineVersionDirectory } from "../../core/src/engine-home.js";
+import { readDevice } from "../../core/src/device-identity.js";
+import { CONFIG_BACKUP_LOCAL_BINDING_DIRECTORY, validateConfigBackupRetentionPolicy } from "../../core/src/config-backup-retention.js";
+import { NATIVE_TOOL_COMMAND_CATALOG, runNativeToolCommand } from "./native-tool-commands.js";
+import type { DotExecutionRequest } from "../../core/src/dot-execution.js";
+import type { RuntimeCommandCatalogEntry } from "../../core/src/runtime-input-contract.js";
 import type { ExecutionAdmissionRequest } from "../../core/src/execution-admission.js";
 import { readMachineSettings } from "../../core/src/machine-settings.js";
 import { configurationContract, annotateConfigValue } from "../../core/src/configuration-contract.js";
 import { evaluateExecutionQuota, resolveExecutionConcurrency } from "../../core/src/execution-policy.js";
 import { ensureSetupProjectBinding } from "../../core/src/setup-fresh.js";
-import { DOT_INSTALLATION_TARGET, SETUP_EXECUTION_TARGETS } from "../../core/src/dot-agents.js";
+import { DOT_AGENTS_TEMPLATE_VERSION, DOT_INSTALLATION_TARGET, SETUP_EXECUTION_TARGETS } from "../../core/src/dot-agents.js";
 import type { SetupExecutionTarget } from "../../core/src/dot-agents.js";
 import { resolveEngineExecutionPolicy, engineModelPolicyCatalogFromSnapshot } from "../../core/src/engine-model-policy.js";
 import { setConfigRecord, removeConfigRecord } from "../../core/src/config-records.js";
@@ -1648,7 +1659,9 @@ function writeTemplateAdmissionState(
 // written; the writes that take --decided-in show minutes:<id>#D<n> there, so their --help says how to
 // cite an Owner decision. TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): twelve since work-gate-release,
 // project-bindings-set and -remove and work-release took it.
-export const COMMAND_CATALOG = Object.freeze([
+export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.freeze([
+  ...NATIVE_TOOL_COMMAND_CATALOG,
+  ...CONFIG_BACKUP_COMMAND_CATALOG,
   // TCRN-CROSS-STORY-380: the three verbs that make workspace.generatedArtifactsPath a
   // real address. artifact-put mutates the workspace (a blob and a manifest line); the
   // other two only read, which is why neither takes --at.
@@ -1796,7 +1809,8 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "settings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   // TCRN-CROSS-STORY-480 (C7 of INIT-053): the installation wizard in one of six modes. Without
   // --yes true it answers SETUP_PLAN_READY and writes nothing; with it, SETUP_APPLIED, whose
-  // self-check is doctor's eight checks and the hook run once with the project's name as the prompt.
+  // traditional self-check is doctor's eight checks and the hook run once. The dot target returns
+  // only its independent file receipt; it never invokes a legacy hook.
   { name: "setup", availability: "cli", mutates: true, flags: [{ name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "absolute path to JSON dot target options; required for chatgpt-dot" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   // TCRN-CROSS-STORY-479 R1: the skill directory this engine generates for its version, written
   // into a missing or empty --out; it runs only where the skill template sits beside the engine.
@@ -1840,7 +1854,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "work-gate-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-gate-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "reason", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "involved-project", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "execution-request", required: false, valueKind: "string", valueShape: "ExecutionAdmissionRequest JSON: host, category, rejections, requestedAgents, availableCombinations, optional usage/expectedPolicy" }] },
+  { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "execution-request", required: false, valueKind: "string", valueShape: "ExecutionAdmissionRequest JSON or explicit DotExecutionRequest JSON (dot-autonomous/chatgpt-dot); native self-model/quota not-applicable is not admission" }] },
   { name: "work-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R4: work-transition and work-batch take --project, the project the gates of a
@@ -1851,7 +1865,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "workspace-consolidate-clean", availability: "cli", mutates: true, flags: [{ name: "to", required: true, valueKind: "string" }, { name: "copies", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }] },
   { name: "workspace-relocate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "workspace-relocate-discard", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "transaction-id", required: true, valueKind: "string" }] },
-] as const);
+].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
 
 // INC-016: `mutates` and `authorityBearing` name two DIFFERENT authorization
 // categories. The operator bundle that kept their grant lists disjoint is retired
@@ -2039,7 +2053,7 @@ function writeLockOptionsOf(command: string, arguments_: readonly string[]): { r
 // TCRN-CROSS-STORY-470 R1 (MIN-227 D19): the verbs whose library may be left to the registry, with
 // the other flags each requires. init names the library it creates, so it always takes --workspace.
 const REGISTRY_RESOLVED_VERBS: ReadonlyMap<string, readonly string[]> = new Map(COMMAND_CATALOG
-  .filter((entry) => entry.name !== "init" && entry.flags.some((flag: { readonly name: string }) => flag.name === "workspace"))
+  .filter((entry) => entry.name !== "init" && entry.flags.some(flag => flag.name === "workspace" && !flag.required))
   .map((entry) => [entry.name, entry.flags
     .filter((flag: { readonly name: string; readonly required: boolean }) => flag.required && flag.name !== "workspace")
     .map((flag: { readonly name: string }) => flag.name)]));
@@ -2047,7 +2061,7 @@ const REGISTRY_RESOLVED_VERBS: ReadonlyMap<string, readonly string[]> = new Map(
 // The verbs that take --project or --workspace and, given neither, resolve the project from the current
 // directory (rule-list; TCRN-CROSS-STORY-527's rule-propose, proposal-approve and proposal-reject): the
 // registry does not put a --workspace in front of a --project.
-const PROJECT_OR_LIBRARY_VERBS: ReadonlySet<string> = new Set(["proposal-approve", "proposal-reject", "rule-list", "rule-propose"]);
+const PROJECT_OR_LIBRARY_VERBS: ReadonlySet<string> = new Set(["proposal-approve", "proposal-reject", "rule-list", "rule-propose", ...CONFIG_BACKUP_COMMAND_CATALOG.filter(entry => entry.flags.some(flag => flag.name === "project")).map(entry => entry.name)]);
 
 function hasFlag(arguments_: readonly string[], name: string): boolean {
   return arguments_.some((argument) => argument === `--${name}` || argument.startsWith(`--${name}=`));
@@ -2156,6 +2170,118 @@ async function namingSection<T>(operation: () => Promise<T>): Promise<T> {
 
 // TCRN-CROSS-STORY-480 (C7 of INIT-053): the setup flags as planSetup takes them. A relative
 // --artifacts, --restore or --archive is taken from the project; --project from here.
+// Configuration backup operates on one actual registered source, never a caller's
+// fabricated binding or the effective inherited configuration as a local declaration.
+async function configBackupSource(values: Readonly<Record<string, string>>): Promise<ConfigBackupSource> {
+  const project = values.project === undefined && values.workspace !== undefined ? null : await resolveAgentsProject(values.project ?? process.cwd());
+  const libraryRoot = await realpath(resolve(values.workspace ?? project!.libraryPath));
+  if (project !== null && await realpath(project.libraryPath) !== libraryRoot) fail("CONFIG_BACKUP_SOURCE_MISMATCH", "project and workspace name different libraries");
+  const state = await materializeWorkspace(libraryRoot);
+  const projectId = configurationOptions(values, project?.projectId).configurationProjectId;
+  const entries = (await readRegistry()).entries.filter(entry => entry.libraryId === state.metadata.workspaceId && entry.libraryPath === libraryRoot && (project === null || entry.projectPath === project.projectRoot) && (projectId === undefined || entry.projectId === projectId || chainIdentity(state)?.role === "coordination" && entry.projectId === undefined));
+  if (entries.length !== 1) fail("CONFIG_BACKUP_SOURCE_UNBOUND", "one explicit registered project output is required");
+  const bound = entries[0]!;
+  const selectedProjectId = projectId ?? bound.projectId;
+  if (selectedProjectId === undefined || !state.projects.some(record => record.id === selectedProjectId && !record.tombstone)) fail("CONFIG_BACKUP_SOURCE_UNBOUND", "a current explicit project id is required; no identity is inferred or created");
+  return { libraryRoot, projectRoot: await realpath(bound.projectPath), machineSettingsPath: machineSettingsPath(), projectRef: { libraryId: state.metadata.workspaceId, projectId: selectedProjectId }, declarationScope: chainIdentity(state)?.role === "coordination" && bound.projectId === undefined ? "library" : "project" };
+}
+
+async function configBackupProtectedRoots(source: ConfigBackupSource): Promise<readonly string[]> {
+  const entries = (await readRegistry()).entries;
+  const roots = new Set([source.libraryRoot, source.projectRoot, deviceHome(), resolve(await skillSourceDirectory(), "../..")]);
+  for (const entry of entries) { roots.add(entry.libraryPath); roots.add(entry.projectPath); roots.add(join(entry.projectPath, "dist")); }
+  const targets = [{ libraryPath: source.libraryRoot, projectId: source.declarationScope === "project" ? source.projectRef.projectId : undefined }, ...entries];
+  const visited = new Set<string>();
+  for (const target of targets) {
+    const key = `${target.libraryPath}#${target.projectId ?? "library"}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    const state = await materializeWorkspace(target.libraryPath);
+    const effective = await effectiveProjectState(state, target.projectId);
+    const value = effective.settings.find(row => row.key === "workspace.generatedArtifactsPath" && !row.tombstone)?.value ?? SETTINGS_CATALOG.find(row => row.key === "workspace.generatedArtifactsPath")?.defaultValue;
+    if (typeof value !== "string") fail("CONFIG_BACKUP_ROOT_UNAVAILABLE", "an actual registered generated-artifact root is unknown");
+    roots.add(resolveGeneratedArtifactsRoot(target.libraryPath, value));
+  }
+  // Preserve lexical protection for not-yet-created output roots; canonical existing roots
+  // additionally close aliases. The reserve itself rejects links at every component.
+  for (const root of [...roots]) {
+    try { roots.add(await realpath(root)); }
+    catch (error) { if ((error as { code?: string }).code !== "ENOENT") throw error; }
+  }
+  return [...roots];
+}
+
+/** Bind source identity to this executing bundle, never cwd, argv or uploaded JSON. */
+async function configBackupRunningVersion(): Promise<ConfigBackupSourceVersion> {
+  const modulePath = await realpath(fileURLToPath(import.meta.url));
+  if (basename(modulePath) !== "einzbern.mjs" || basename(dirname(modulePath)) !== "scripts") fail("CONFIG_BACKUP_ENGINE_IDENTITY_UNAVAILABLE", "configuration backup requires an actual packaged engine bundle, not source or dist/build");
+  const root = dirname(dirname(modulePath));
+  let version: unknown;
+  try {
+    const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8")) as Record<string, unknown>;
+    if (manifest.schemaVersion !== "einzbern.release-manifest.v1") fail("CONFIG_BACKUP_ENGINE_IDENTITY_UNAVAILABLE", "unrecognized adjacent release manifest");
+    version = manifest.version;
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") throw error;
+    const current = await readEngineCurrent();
+    if (current === null || await realpath(engineVersionDirectory(current.version)) !== root) fail("CONFIG_BACKUP_ENGINE_IDENTITY_UNAVAILABLE", "the running bundle has neither a matching release manifest nor an actual installed-current binding");
+    version = current.version;
+  }
+  if (version !== FRAMEWORK_VERSION) fail("CONFIG_BACKUP_ENGINE_IDENTITY_UNAVAILABLE", "observed package version differs from the running bundle version");
+  const first = await computeInstallTreeDigest(root);
+  if (!first.entries.some(entry => entry.path === "scripts/einzbern.mjs")) fail("CONFIG_BACKUP_ENGINE_IDENTITY_UNAVAILABLE", "running bundle is absent from its content identity");
+  const second = await verifyInstallTree(root, first.sha256);
+  if (!second.ok || await realpath(fileURLToPath(import.meta.url)) !== modulePath) fail("CONFIG_BACKUP_ENGINE_IDENTITY_UNAVAILABLE", "running artifact changed between content readbacks");
+  return { engineVersion: FRAMEWORK_VERSION, engineCommit: null, engineCommitStatus: "unknown", artifactIdentity: { kind: "observed-artifact-identity", schemaVersion: first.schemaVersion, sha256: second.actual }, templateVersions: [DOT_AGENTS_TEMPLATE_VERSION, ...BUILT_IN_RULES.map(rule => `${rule.id}@${rule.version}`)].sort() };
+}
+
+function configBackupContext(): ConfigBackupCommandContext {
+  return {
+    sourceVersion: configBackupRunningVersion,
+    resolveSource: configBackupSource,
+    localBindingRoot: async () => join(await realpath(deviceHome()), CONFIG_BACKUP_LOCAL_BINDING_DIRECTORY),
+    protectedRoots: configBackupProtectedRoots,
+    approvePolicy: async (request, source) => {
+      const validation = validateConfigBackupRetentionPolicy(request.policy);
+      if (validation.status !== "policy-valid") return null;
+      const device = await readDevice();
+      if (device === null || request.binding.executionEnvironmentRef !== `device:${device.deviceId}`) return null;
+      // Reuse the existing Owner-decision authority. The target binds the exact policy
+      // and selected library/project/group/root/writer, not a nonempty evidence string.
+      const scopeDigest = canonicalSha256({ projectRef: source.projectRef, backupGroupId: request.binding.backupGroupId, reservedRoot: request.reservedRoot, writerBindingRef: request.binding.writerBindingRef, executionEnvironmentRef: request.binding.executionEnvironmentRef });
+      const target = `config-backup-policy:${validation.policyDigest}:${scopeDigest}`;
+      try {
+        await verifyWriteAuthorization({ state: await materializeWorkspace(source.libraryRoot), decidedIn: validation.policy.approvalEvidenceRef, target });
+      } catch (error) {
+        if ((error as { reasonCode?: string }).reasonCode === "MODEL_WRITE_AUTHORIZATION_INVALID") return null;
+        throw error;
+      }
+      return { approved: true, policyDigest: validation.policyDigest, approvalEvidenceRef: validation.policy.approvalEvidenceRef };
+    },
+    resolveRestoreTarget: async (source, originalsStore, logicalKeys, values) => {
+      const authorizations: Record<string, WriteAuthorization> = {};
+      const permittedKeys: string[] = [];
+      for (const logicalKey of logicalKeys) {
+        const split = logicalKey.indexOf(":"); const kind = logicalKey.slice(0, split); const name = logicalKey.slice(split + 1);
+        let permit: ModelWritePermit | undefined;
+        try {
+          if (kind === "setting") permit = assertSettingWriteAllowed(name, values["decided-in"]);
+          else if (kind === "rule") permit = assertModelWriteAllowed({ rule: name }, false, process.env, { decidedIn: values["decided-in"] });
+          else if (kind === "variable") permit = assertModelWriteAllowed({ name }, false, process.env, { decidedIn: values["decided-in"] });
+          else if (!["agents-user-fragment", "device-preference", "path-remapping"].includes(kind)) continue;
+          const checked = await writeAuthorization(permit, source.libraryRoot);
+          if (["setting", "rule", "variable"].includes(kind)) authorizations[logicalKey] = checked.authorization ?? { surface: "cli" };
+          permittedKeys.push(logicalKey);
+        } catch (error) {
+          const code = (error as { reasonCode?: string }).reasonCode;
+          if (code !== "MODEL_WRITE_REFUSED" && code !== "MODEL_WRITE_AUTHORIZATION_INVALID") throw error;
+        }
+      }
+      return { source, sourceVersion: await configBackupRunningVersion(), availablePartitions: [...new Set((await readRegistry()).entries.map(entry => entry.libraryId))], permittedKeys, originalsStore, actorId: values.actor!, authorizations };
+    },
+  };
+}
+
 function setupOptions(values: Readonly<Record<string, string>>): SetupOptions {
   const target = values["execution-target"];
   if (target !== undefined && !(SETUP_EXECUTION_TARGETS as readonly string[]).includes(target)) fail("SETUP_TARGET_UNSUPPORTED", "unknown installation target");
@@ -2277,6 +2403,51 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "commands") {
     parseArguments(rest, []);
     io.write(canonicalJson({ reasonCode: "CLI_CATALOG_READY", schemaVersion: "tcrn.cli-catalog.v1", commands: COMMAND_CATALOG }));
+    return;
+  }
+  const backupCommand = CONFIG_BACKUP_COMMAND_CATALOG.find(entry => entry.name === command);
+  if (backupCommand !== undefined) {
+    const values = parseArguments(rest, backupCommand.flags.map(flag => flag.name));
+    required(values, backupCommand.flags.filter(flag => flag.required).map(flag => flag.name));
+    if (values["timeout-ms"] !== undefined) integerValue(values, "timeout-ms", 0);
+    const run = () => runConfigBackupCommand(command, values, configBackupContext());
+    const result = command === "config-restore-apply"
+      ? await withWriteLock((await configBackupSource(values)).libraryRoot, values.at!, run)
+      : await run();
+    if (result === null) fail("CLI_COMMAND_UNKNOWN", command);
+    io.write(canonicalJson(result));
+    return;
+  }
+  const nativeCommand = NATIVE_TOOL_COMMAND_CATALOG.find(entry => entry.name === command);
+  if (nativeCommand !== undefined) {
+    const values = parseArguments(rest, nativeCommand.flags.map(flag => flag.name));
+    required(values, nativeCommand.flags.filter(flag => flag.required).map(flag => flag.name));
+    if (values["work-revision"] !== undefined && !/^[1-9][0-9]*$/u.test(values["work-revision"])) fail("CLI_ARGUMENT_MALFORMED", "work-revision");
+    if (values["work-revision"] !== undefined) integerValue(values, "work-revision", 1);
+    let result: JsonValue | null;
+    try {
+      result = await runNativeToolCommand(command, values, {
+        resolveWorkspace: async selector => {
+          const root = resolve(selector);
+          return { root, state: await materializeWorkspace(root) };
+        },
+        writeLockOptions: writeLockOptionsOf(command, rest),
+        advisoryStorageAuditEvidenceRef: "docs/implementation/native-acceptance.md#reserved-storage-consumer-audit",
+      });
+    } catch (error) {
+      if (error instanceof SyntaxError || ["ENOENT", "EISDIR", "EACCES"].includes(String((error as { code?: unknown }).code))) fail("DISPATCH_EVIDENCE_INPUT_INVALID", "native command input must name readable JSON files");
+      throw error;
+    }
+    if (result === null) fail("CLI_COMMAND_UNKNOWN", command);
+    io.write(canonicalJson(result));
+    const receipt = result as Readonly<Record<string, JsonValue>>;
+    if (command === "execution-native-prepare" && (receipt.targetDispatchAdmitted !== true || receipt.attempt === null)) fail("NATIVE_PREPARATION_REFUSED", "Preparation retained; target is not dispatch-admitted");
+    if (command === "execution-native-record") {
+      const normalized = receipt.normalized as Readonly<Record<string, JsonValue>>;
+      if (normalized.valid !== true) fail("NATIVE_RECORD_INVALID", "Invalid native response retained; see result problems");
+      if (normalized.complete !== true) fail("NATIVE_RECORD_INCOMPLETE", "Native attempt/result retained; execution and independent verification are not complete");
+    }
+    if (command === "execution-native-evidence" && receipt.valid !== true) fail("NATIVE_EVIDENCE_INVALID", "Native evidence association failed; see result problems");
     return;
   }
   if (command === "execution-prepare") {
@@ -3807,7 +3978,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   if (command === "work-project-context") {
     const values = parseArguments(rest, ["workspace", "id", "execution-request"]); required(values, ["workspace", "id"]);
-    const request = values["execution-request"] === undefined ? undefined : argumentJsonValue(values["execution-request"], "execution-request") as ExecutionAdmissionRequest;
+    const request = values["execution-request"] === undefined ? undefined : argumentJsonValue(values["execution-request"], "execution-request") as ExecutionAdmissionRequest | DotExecutionRequest;
     io.write(canonicalJson(await workProjectContexts(await materializeWorkspace(values.workspace!), values.id!, undefined, request))); return;
   }
   if (command === "project-context") {

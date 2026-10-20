@@ -101,3 +101,62 @@ test("in-process recall keeps project-specific corpus settings independent", asy
   assert.notEqual(small.records[0].summary, large.records[0].summary);
   assert.equal((await read(ids[1])).rebuilt, false);
 });
+
+async function integrationFunction(name, globals) {
+  const source = await readFile(new URL("../packages/cli/src/index.ts", import.meta.url), "utf8");
+  const parsed = ts.createSourceFile("index.ts", source, ts.ScriptTarget.Latest, true);
+  const declaration = parsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
+  assert.ok(declaration, `${name} is a module-level function`);
+  const js = ts.transpileModule(declaration.getText().replaceAll("import.meta.url", "moduleUrl"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+  return runInNewContext(`${js}\n${name}`, globals);
+}
+
+test("INIT062 running identity source seam binds actual bundle layout and two stable content reads", async () => {
+  // Source seam fixture, not an actual packaged-CLI or E4 acceptance receipt.
+  const { basename, dirname } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const calls = [];
+  const globals = {
+    moduleUrl: "file:///fixture/package/scripts/einzbern.mjs", fileURLToPath, basename, dirname, join,
+    realpath: async path => path, readFile: async () => JSON.stringify({ schemaVersion: "einzbern.release-manifest.v1", version: "3.1.0" }),
+    FRAMEWORK_VERSION: "3.1.0", DOT_AGENTS_TEMPLATE_VERSION: "dot-template-fixture", BUILT_IN_RULES: [{ id: "fixture", version: 1 }],
+    computeInstallTreeDigest: async root => { calls.push(["hash", root]); return { schemaVersion: "einzbern.install-tree-digest.v1", sha256: "a".repeat(64), entries: [{ path: "scripts/einzbern.mjs" }] }; },
+    verifyInstallTree: async (root, digest) => { calls.push(["readback", root, digest]); return { ok: true, actual: digest }; },
+    readEngineCurrent: async () => ({ version: "3.1.0" }), engineVersionDirectory: () => "/fixture/package",
+    fail: (reasonCode, message) => { throw Object.assign(new Error(message), { reasonCode }); },
+  };
+  const read = await integrationFunction("configBackupRunningVersion", globals);
+  const identity = await read();
+  assert.equal(identity.artifactIdentity.kind, "observed-artifact-identity");
+  assert.equal(identity.engineCommit, null); assert.equal(identity.engineCommitStatus, "unknown");
+  assert.deepEqual(calls, [["hash", "/fixture/package"], ["readback", "/fixture/package", "a".repeat(64)]]);
+  for (const change of [
+    { moduleUrl: "file:///fixture/dist/build/packages/cli/src/index.js" },
+    { readFile: async () => JSON.stringify({ schemaVersion: "einzbern.release-manifest.v1", version: "9.9.9" }) },
+    { verifyInstallTree: async () => ({ ok: false, actual: "b".repeat(64) }) },
+    { readFile: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); }, readEngineCurrent: async () => null },
+  ]) await assert.rejects((await integrationFunction("configBackupRunningVersion", { ...globals, ...change }))(), error => error.reasonCode === "CONFIG_BACKUP_ENGINE_IDENTITY_UNAVAILABLE");
+  const installed = await integrationFunction("configBackupRunningVersion", { ...globals, readFile: async () => { throw Object.assign(new Error("manifest is not installed"), { code: "ENOENT" }); } });
+  assert.equal((await installed()).artifactIdentity.sha256, "a".repeat(64));
+});
+
+test("INIT062 policy approval invokes existing Owner-decision authority with exact policy and actual device scope", async () => {
+  const { canonicalSha256 } = await import("../dist/build/packages/protocol/src/index.js");
+  const source = { libraryRoot: "/fixture/library", projectRef: { libraryId: "fixture-library", projectId: "fixture-project" } };
+  const request = { reservedRoot: "/fixture/reserve", policy: {}, binding: { backupGroupId: "group", writerBindingRef: "writer", executionEnvironmentRef: "device:fixture-device" } };
+  const calls = [];
+  const globals = {
+    configBackupRunningVersion: () => {}, configBackupSource: () => {}, configBackupProtectedRoots: () => {},
+    validateConfigBackupRetentionPolicy: () => ({ status: "policy-valid", policyDigest: "a".repeat(64), policy: { approvalEvidenceRef: "minutes:fixture#D1" } }),
+    readDevice: async () => ({ deviceId: "fixture-device" }), canonicalSha256, materializeWorkspace: async () => ({ fixture: true }),
+    verifyWriteAuthorization: async input => { calls.push(input); return {}; },
+  };
+  const context = (await integrationFunction("configBackupContext", globals))();
+  assert.equal((await context.approvePolicy(request, source, {})).approved, true);
+  const scope = canonicalSha256({ projectRef: source.projectRef, backupGroupId: "group", reservedRoot: "/fixture/reserve", writerBindingRef: "writer", executionEnvironmentRef: "device:fixture-device" });
+  assert.equal(calls[0].target, `config-backup-policy:${"a".repeat(64)}:${scope}`);
+  assert.equal(calls[0].decidedIn, "minutes:fixture#D1");
+  assert.equal(await context.approvePolicy({ ...request, binding: { ...request.binding, executionEnvironmentRef: "device:other" } }, source, {}), null);
+  const denied = (await integrationFunction("configBackupContext", { ...globals, verifyWriteAuthorization: async () => { throw Object.assign(new Error("not Owner-authorized"), { reasonCode: "MODEL_WRITE_AUTHORIZATION_INVALID" }); } }))();
+  assert.equal(await denied.approvePolicy(request, source, {}), null);
+});

@@ -12,7 +12,7 @@ import { planSharedSubmit, readSharedSubmitAdvisory, validateSharedSubmitAdvisor
 import type { SharedSubmitInput } from "../../core/src/shared-submit.js";
 import type { WorkspaceState, WorkspaceWriteLockOptions } from "../../core/src/workspace.js";
 
-const flag = (name: string, required: boolean, valueKind = "path", valueShape?: string): RuntimeCommandFlag => ({ name, required, valueKind, ...(valueShape === undefined ? {} : { valueShape }) });
+const flag = (name: string, required: boolean, valueKind = "path", valueShape?: string): RuntimeCommandFlag => ({ name, required, valueKind: valueKind === "path" ? "string" : valueKind, ...(valueShape === undefined ? {} : { valueShape }) });
 export const NATIVE_TOOL_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.freeze([
   { name: "execution-native-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "DotExecutionRequest JSON including actual-session contextRead"), flag("tool", true, "string"), flag("tool-contract", true, "path", "{ref,sha256} JSON"), flag("arguments", true, "path", "actual tool arguments JSON"), flag("output", true)] },
   { name: "execution-native-record", availability: "cli", mutates: true, flags: [flag("binding", true), flag("response", false, "path", "NativeToolResponseInput JSON; absent keeps pending attempt"), flag("output", true)] },
@@ -20,7 +20,7 @@ export const NATIVE_TOOL_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] 
   { name: "shared-submit-plan", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
   { name: "shared-submit-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
   { name: "shared-submit-advisory-read", availability: "cli", mutates: false, flags: [flag("workspace", true)] },
-  { name: "shared-submit-advisory-write", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("from-file", true), flag("actor", true, "string"), flag("handoff-evidence", true, "string")] },
+  { name: "shared-submit-advisory-write", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("from-file", true), flag("actor", true, "string"), flag("handoff-evidence", true, "string"), flag("timeout-ms", false, "integer")] },
 ]);
 export interface NativeToolCommandContext {
   /** Existing CLI registry/path resolution and real materialization, not an arbitrary evaluator. */
@@ -65,7 +65,10 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
   if (command === "shared-submit-plan" || command === "shared-submit-evidence") return json(planSharedSubmit(await input(values["from-file"]!) as SharedSubmitInput));
   const workspace = await context.resolveWorkspace(values.workspace!);
   if (command === "shared-submit-advisory-read") return json(await readSharedSubmitAdvisory(workspace.root, context.home));
-  if (!context.advisoryStorageAuditEvidenceRef) throw new Error("shared-submit advisory storage has not passed the integration reserved-root audit");
-  const advisory = validateSharedSubmitAdvisory(await input(values["from-file"]!));
-  return json(await writeSharedSubmitAdvisory(workspace.root, advisory, { actor: values.actor!, handoffEvidenceRef: values["handoff-evidence"]!, storageAuditEvidenceRef: context.advisoryStorageAuditEvidenceRef, ...(context.home === undefined ? {} : { home: context.home }), ...(context.writeLockOptions === undefined ? {} : { writeLockOptions: context.writeLockOptions }) }));
+  if (command === "shared-submit-advisory-write") {
+    if (!context.advisoryStorageAuditEvidenceRef) throw new Error("shared-submit advisory storage has not passed the integration reserved-root audit");
+    const advisory = validateSharedSubmitAdvisory(await input(values["from-file"]!));
+    return json(await writeSharedSubmitAdvisory(workspace.root, advisory, { actor: values.actor!, handoffEvidenceRef: values["handoff-evidence"]!, storageAuditEvidenceRef: context.advisoryStorageAuditEvidenceRef, ...(context.home === undefined ? {} : { home: context.home }), ...(context.writeLockOptions === undefined ? {} : { writeLockOptions: context.writeLockOptions }) }));
+  }
+  throw new Error(`cataloged native command has no handler: ${command}`);
 }

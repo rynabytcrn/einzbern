@@ -14,7 +14,7 @@ import { collectConfigBackupPayloads, configBackupCanonical, planConfigBackup, w
 import { validateConfigBackupRetentionPolicy } from "../dist/build/packages/core/src/config-backup-retention.js";
 import { applyConfigRestore, planConfigRestore } from "../dist/build/packages/core/src/config-restore.js";
 const at = "2026-10-20T00:00:00Z";
-const version = { engineVersion: "3.1.0", engineCommit: "3".repeat(40), templateVersions: ["rules-v1"] };
+const version = { engineVersion: "3.1.0", engineCommit: null, engineCommitStatus: "unknown", artifactIdentity: { kind: "observed-artifact-identity", schemaVersion: "einzbern.install-tree-digest.v1", sha256: "3".repeat(64) }, templateVersions: ["rules-v1"] };
 // Explicit synthetic values are never runtime approval or product defaults.
 const fixturePolicy = { schemaVersion: "einzbern.config-backup-retention.v1", activeLimit: 5, transactionLimit: 1, recoveryLimit: 2, maxPackageBytes: 65536, maxTotalBytes: 524288, retentionDuration: 1000, recoveryDuration: 86400000, noChangePolicy: "skip", atLimitAction: "stop-new-and-report", retirementMethod: "verified-recovery-move", approvalEvidenceRef: "fixture-only:restore-originals" };
 async function fixture(t, home, payloads) {
@@ -102,6 +102,8 @@ test("CFG-R03: version mismatch is incompatible; unknown schemas and changed pac
   const f = await fixture(t, home, [{ kind: "device-preference", key: "portal.defaultTheme", value: "dark", source: "device-declaration" }]);
   const target = { ...f.target, sourceVersion: { ...version, engineVersion: "3.2.0" } };
   assert.equal((await planConfigRestore({ packageRoot: f.packageRoot, target, at })).items[0].classification, "incompatible");
+  const changedArtifact = { ...f.target, sourceVersion: { ...version, artifactIdentity: { ...version.artifactIdentity, sha256: "f".repeat(64) } } };
+  assert.equal((await planConfigRestore({ packageRoot: f.packageRoot, target: changedArtifact, at })).items[0].classification, "incompatible");
   await writeFile(join(f.packageRoot, "manifest.json"), configBackupCanonical({ ...f.proposal.manifest, schemaVersion: "legacy-full-home-backup" }));
   await assert.rejects(planConfigRestore({ packageRoot: f.packageRoot, target: f.target, at }), { reasonCode: "CONFIG_RESTORE_PACKAGE_INVALID" });
 }));

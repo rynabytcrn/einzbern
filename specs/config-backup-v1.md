@@ -48,7 +48,8 @@ The operator must still select non-secret inputs.
 
 The immutable manifest uses `einzbern.config-backup.v1`, projectRef, random 128-bit
 backupId and backupGroupId, hostnameLabel (display and safe), actual createdAtUtc,
-engineVersion, engineCommit, templateVersions, selectionDigest, manifestDigest,
+sourceVersion (engineVersion, engineCommit, engineCommitStatus, artifactIdentity,
+templateVersions), selectionDigest, manifestDigest,
 state=verified and files. Each file records its logical key, relative member path,
 category, bytes, SHA-256, permission description, mapping version and source digest.
 
@@ -195,3 +196,46 @@ completedAt separately from scannedAt, integrity and unknown sync. Empty, unread
 missing-index, corrupt and unscanned remain different. There are no restore/upload
 controls or remote-online panel. All five existing locales and existing design-system
 component families are reused.
+
+## Running source identity and policy authorization
+
+The implementation review refines the candidate sourceVersion, not the approved
+backup scope: Owner-approved v2 sections 9–10 require a source version and canonical
+content digests, and explicitly say digests do not authenticate a publisher. A
+mandatory 40-hex commit was a design-freeze engineering assumption, not an Owner
+requirement. This candidate keeps commit when genuinely known; the existing release
+format provides none, so public CLI records engineCommit=null and
+engineCommitStatus=unknown rather than guessing a checkout HEAD.
+
+The public CLI resolves its own import.meta.url, requires the real packaged
+scripts/einzbern.mjs layout, and matches the running FRAMEWORK_VERSION to either
+the adjacent existing release manifest or the device's current installed version
+and its exact canonical tree. The installed tree deliberately has no retained
+release manifest; no new installer metadata is introduced. The existing
+computeInstallTreeDigest and verifyInstallTree perform two actual same-tree reads.
+Only equal digests, including the actual running bundle, yield artifactIdentity
+{kind: observed-artifact-identity, schemaVersion: einzbern.install-tree-digest.v1,
+sha256}. This is local observed content identity and corruption/stability detection,
+not signed release provenance or protection from a malicious runtime. Source and
+dist/build modules, missing identity/version bindings, invalid layout and unstable
+content refuse CONFIG_BACKUP_ENGINE_IDENTITY_UNAVAILABLE or the existing strict
+filesystem/JSON failure. No uploaded request supplies this identity. Restore still
+requires exact sourceVersion equality and preserves incompatible outcomes.
+
+Retention approval reuses the existing valid Owner decision boundary, not a new
+policy database. The policy approvalEvidenceRef is a minutes:<id>#D<n> citation.
+Its current valid decision, decided with owner:governance, must name the exact
+colon-separated target config-backup-policy:<policyDigest>:<scopeDigest>. The
+scopeDigest is canonicalSha256 of {projectRef, backupGroupId, reservedRoot,
+writerBindingRef, executionEnvironmentRef}; policyDigest covers the complete policy,
+including its evidence reference. The executing device must already exist and the
+executionEnvironmentRef must equal device:<deviceId>. No identity is created and
+no request approved boolean is accepted. A missing, obsolete, mismatched or
+non-Owner decision leaves policy-unapproved; this batch approves no production
+retention values. Restore additionally checks each existing setting/rule/variable
+write permission through --decided-in. Preview and the approved plan digest do not
+grant write permission.
+
+Independent acceptance must cover the actual packaged CLI positively and reject
+source/dist, wrong-version, missing-identity and changed-tree cases. Authored source
+or fixture coverage is not evidence of package execution or E4 completion.

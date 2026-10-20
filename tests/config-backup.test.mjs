@@ -12,7 +12,7 @@ import {
 } from "../dist/build/packages/core/src/config-backup.js";
 
 const projectRef = { libraryId: `workspace:${"1".repeat(24)}`, projectId: `project:${"2".repeat(24)}` };
-const sourceVersion = { engineVersion: "3.1.0", engineCommit: "3".repeat(40), templateVersions: ["rules-v1"] };
+const sourceVersion = { engineVersion: "3.1.0", engineCommit: null, engineCommitStatus: "unknown", artifactIdentity: { kind: "observed-artifact-identity", schemaVersion: "einzbern.install-tree-digest.v1", sha256: "3".repeat(64) }, templateVersions: ["rules-v1"] };
 const payload = { kind: "device-preference", key: "portal.defaultTheme", value: "dark", source: "device-declaration" };
 const plan = (payloads = [payload]) => planConfigBackup({ projectRef, backupGroupId: "4".repeat(32), backupId: "5".repeat(32), hostname: "Test computer", at: "2026-10-20T00:00:00Z", sourceVersion, payloads });
 async function temporary(t) { const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-config-backup-"))); t.after(() => rm(root, { recursive: true, force: true })); return root; }
@@ -80,4 +80,13 @@ test("CFG-B05: extra files, unknown schema, duplicate paths and canonical drift 
   await writeFile(join(root, "manifest.json"), JSON.stringify({ ...proposal.manifest, schemaVersion: "old-backup-v0" }));
   assert.equal((await verifyConfigBackup(root)).integrity, "corrupt");
   assert.throws(() => validateConfigBackupManifest({ ...proposal.manifest, files: [...proposal.manifest.files, ...proposal.manifest.files] }));
+});
+
+test("CFG-B01 sourceVersion binds actual artifact identity and explicit commit uncertainty", () => {
+  const make = version => planConfigBackup({ projectRef, backupGroupId: "4".repeat(32), hostname: "fixture", at: "2026-10-20T00:00:00Z", sourceVersion: version, payloads: [payload] });
+  assert.equal(make(sourceVersion).manifest.sourceVersion.engineCommit, null);
+  assert.equal(make({ ...sourceVersion, engineCommit: "a".repeat(40), engineCommitStatus: "known" }).manifest.sourceVersion.engineCommitStatus, "known");
+  for (const invalid of [{ ...sourceVersion, artifactIdentity: undefined }, { ...sourceVersion, engineCommit: "a".repeat(40) }, { ...sourceVersion, engineCommitStatus: "known" }, { ...sourceVersion, artifactIdentity: { ...sourceVersion.artifactIdentity, sha256: "not-a-digest" } }]) assert.throws(() => make(invalid));
+  const changed = make({ ...sourceVersion, artifactIdentity: { ...sourceVersion.artifactIdentity, sha256: "f".repeat(64) } });
+  assert.notEqual(changed.manifest.manifestDigest, make(sourceVersion).manifest.manifestDigest);
 });

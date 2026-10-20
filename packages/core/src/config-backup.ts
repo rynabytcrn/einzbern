@@ -22,7 +22,14 @@ export const CONFIG_BACKUP_SETTING_KEYS = Object.freeze(["agents.generation", "a
 export const CONFIG_BACKUP_RESERVED_ROOTS = Object.freeze(["config-backups", "config-backup-staging", "config-backup-recovery"] as const);
 export type ConfigBackupCategory = "user-content" | "governed-input" | "device-preference" | "regeneration-input";
 export interface ConfigBackupProjectRef { readonly libraryId: string; readonly projectId: string }
-export interface ConfigBackupSourceVersion { readonly engineVersion: string; readonly engineCommit: string; readonly templateVersions: readonly string[] }
+export interface ConfigBackupSourceVersion {
+  readonly engineVersion: string;
+  readonly engineCommit: string | null;
+  readonly engineCommitStatus: "known" | "unknown";
+  /** Observed local running artifact content, not signed release provenance. */
+  readonly artifactIdentity: { readonly kind: "observed-artifact-identity"; readonly schemaVersion: "einzbern.install-tree-digest.v1"; readonly sha256: string };
+  readonly templateVersions: readonly string[];
+}
 export type ConfigBackupPayload =
   | { readonly kind: "agents-user-fragment"; readonly index: number; readonly text: string; readonly ownership: "user" }
   | { readonly kind: "setting"; readonly key: string; readonly value: string | null; readonly source: "project-declaration" | "library-declaration" }
@@ -138,9 +145,11 @@ function category(payload: ConfigBackupPayload): ConfigBackupCategory {
   return payload.kind === "agents-user-fragment" ? "user-content" : payload.kind === "device-preference" ? "device-preference" : payload.kind === "rule" || payload.kind === "path-remapping" ? "regeneration-input" : "governed-input";
 }
 function sourceVersion(value: unknown): ConfigBackupSourceVersion {
-  const v = configBackupObject(value, ["engineVersion", "engineCommit", "templateVersions"]);
+  const v = configBackupObject(value, ["engineVersion", "engineCommit", "engineCommitStatus", "artifactIdentity", "templateVersions"]);
   configBackupString(v.engineVersion);
-  if (!/^[a-f0-9]{40}$/u.test(String(v.engineCommit)) || !Array.isArray(v.templateVersions) || v.templateVersions.some(item => typeof item !== "string" || !item)) configBackupFail("CONFIG_BACKUP_VERSION_INVALID");
+  const artifact = configBackupObject(v.artifactIdentity, ["kind", "schemaVersion", "sha256"]);
+  if (artifact.kind !== "observed-artifact-identity" || artifact.schemaVersion !== "einzbern.install-tree-digest.v1" || !/^[a-f0-9]{64}$/u.test(String(artifact.sha256))) configBackupFail("CONFIG_BACKUP_VERSION_INVALID");
+  if (!(v.engineCommitStatus === "unknown" && v.engineCommit === null || v.engineCommitStatus === "known" && typeof v.engineCommit === "string" && /^[a-f0-9]{40}$/u.test(v.engineCommit)) || !Array.isArray(v.templateVersions) || v.templateVersions.some(item => typeof item !== "string" || !item)) configBackupFail("CONFIG_BACKUP_VERSION_INVALID");
   return v as unknown as ConfigBackupSourceVersion;
 }
 export function configBackupManifestDigest(manifest: Omit<ConfigBackupManifest, "manifestDigest"> | ConfigBackupManifest): string {

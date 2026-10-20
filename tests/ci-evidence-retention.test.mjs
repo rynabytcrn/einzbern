@@ -114,6 +114,59 @@ print(json.dumps(dict(found=found, refused=refused)))
   assert.deepEqual(result.refused, [true, true, true]);
 });
 
+test("a terminal P1_RED on stderr is retained; conflicting stdout/stderr receipts refuse", () => {
+  const result = python(`
+red = b'{"ok":false,"reasonCode":"P1_RED","reds":[{"task":"portal"}]}\\n'
+stream, found = m.final_receipt(b'pnpm header\\n', red)
+ambiguous = False
+try:
+    m.final_receipt(b'{"ok":true,"reasonCode":"P1_VERIFIED"}\\n', red)
+except m.Refusal:
+    ambiguous = True
+print(json.dumps(dict(stream=stream, found=found, ambiguous=ambiguous)))
+`);
+  assert.equal(result.stream, "stderr");
+  assert.equal(result.found.reasonCode, "P1_RED");
+  assert.deepEqual(result.found.reds, [{ task: "portal" }]);
+  assert.equal(result.ambiguous, true);
+});
+
+test("CI aggregation requires exact shard coverage, source SHA, run, attempt and passing prerequisites", () => {
+  const result = python(`
+import copy
+spec = importlib.util.spec_from_file_location("aggregate", pathlib.Path(sys.argv[1]).with_name("aggregate-evidence.py"))
+a = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(a)
+plan = dict(shards=dict(checks=["build"], core=["test"], portal=["portal"]),
+            prerequisites=dict(checks=[], core=[], portal=["build"]), tasks=["build", "test", "portal"])
+def block(tasks):
+    return dict(legs=[dict(task=task, ok=True) for task in tasks], reds=[])
+records = {}
+for shard, tasks in plan["shards"].items():
+    records[shard] = dict(mode="p1-" + shard, input=dict(head="a"*40),
+                         ciIdentity=dict(GITHUB_RUN_ID="10", GITHUB_RUN_ATTEMPT="2"),
+                         finalShardReceipt={**block(tasks), "prerequisites": block(plan["prerequisites"][shard]),
+                                            "extras": block(["test-wiring"] if shard == "checks" else [])})
+def judge(value):
+    return a.judge_shards(value, plan, "a"*40, "10", "2")
+reds = []
+for mutation in ("missing", "sha", "attempt", "run", "leg", "cancelled", "prerequisite", "extra"):
+    value = copy.deepcopy(records)
+    if mutation == "missing": del value["portal"]
+    elif mutation == "sha": value["core"]["input"]["head"] = "b"*40
+    elif mutation == "attempt": value["core"]["ciIdentity"]["GITHUB_RUN_ATTEMPT"] = "1"
+    elif mutation == "run": value["core"]["ciIdentity"]["GITHUB_RUN_ID"] = "11"
+    elif mutation == "leg": value["core"]["finalShardReceipt"]["legs"].append(dict(task="test", ok=True))
+    elif mutation == "cancelled": value["core"]["finalShardReceipt"]["legs"][0]["ok"] = False
+    elif mutation == "extra": value["checks"]["finalShardReceipt"]["extras"]["legs"] = []
+    else: value["portal"]["finalShardReceipt"]["prerequisites"]["legs"] = []
+    reds.append(bool(judge(value)))
+print(json.dumps(dict(green=judge(records), reds=reds)))
+`);
+  assert.deepEqual(result.green, []);
+  assert.deepEqual(result.reds, Array(8).fill(true));
+});
+
 for (const childExit of [0, 7]) {
   test(`harmless fixture retains whole outer/controller bytes after unlink and preserves child exit ${childExit}`, async (context) => {
     const base = await scratch(context);

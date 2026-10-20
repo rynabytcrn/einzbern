@@ -10,8 +10,8 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
+import { selectTestFiles } from "./test-roster.mjs";
 
-export const COVERED_PREFIXES = ["tests/"];
 
 function walkTestFiles(dir, out = [], root = dir) {
   let entries;
@@ -40,11 +40,19 @@ export function judgeTestWiring({ repoRoot, registryPath } = {}) {
   } catch (error) {
     problems.push(`.github/workflows/ci.yml: unreadable (${String(error?.message ?? error)})`);
   }
-  for (const base of ["tests", "packages", "scripts"]) {
+  for (const base of ["tests", "portal", "packages", "scripts"]) {
     scanned.push(...walkTestFiles(join(repoRoot, base), [], join(repoRoot, base))
       .map((path) => `${base}/${path}`));
   }
-  const covered = scanned.filter((path) => COVERED_PREFIXES.some((prefix) => path.startsWith(prefix)));
+  const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+  const covered = [];
+  for (const [suite, script, command] of [
+    ["core", "test", "node scripts/task.mjs test"],
+    ["portal", "portal:test", "node scripts/portal-tests.mjs"],
+  ]) {
+    if (manifest.scripts?.[script] !== command) problems.push(`${script}: runner differs from the audited test roster`);
+    else covered.push(...selectTestFiles(scanned, suite));
+  }
   let registry;
   try {
     registry = JSON.parse(readFileSync(registryPath, "utf8"));

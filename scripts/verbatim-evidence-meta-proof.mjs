@@ -8,6 +8,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { recordVerificationTiming } from "./lib/verification-evidence.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 import { promisify } from "node:util";
@@ -17,8 +18,9 @@ const evidencePath = "docs/reports/init-028-design/evidence/INC-140-ci-portal-tr
 const historicalEvidencePath = "docs/reports/init-028-design/evidence/INC-153-restore-and-docs.md";
 const label = evidencePath;
 
-async function runChecker(file, fileLabel = label) {
-  const env = { ...process.env, npm_config_offline: "true" };
+async function runChecker(phase, file, fileLabel = label) {
+  const started = performance.now();
+  const env = { ...process.env, npm_config_offline: "true", EINZBERN_EVIDENCE_PHASE: phase };
   if (file) {
     env.TCRN_VERBATIM_EVIDENCE_FILE = file;
     env.TCRN_VERBATIM_EVIDENCE_LABEL = fileLabel;
@@ -36,6 +38,8 @@ async function runChecker(file, fileLabel = label) {
     return { exitCode: 0, report: JSON.parse(result.stdout) };
   } catch (error) {
     return { exitCode: typeof error.code === "number" ? error.code : 1, report: JSON.parse(String(error.stdout ?? "{}")) };
+  } finally {
+    await recordVerificationTiming({ kind: "meta-proof-phase", phase }, started);
   }
 }
 
@@ -53,7 +57,7 @@ try {
   if (mutated === source) throw new Error("INC156_NUMBER_MUTATION_NO_CHANGE");
   const mutatedPath = join(directory, "INC-140-mutated.md");
   await writeFile(mutatedPath, mutated, "utf8");
-  const red = await runChecker(mutatedPath);
+  const red = await runChecker("current-mutation", mutatedPath);
 
   const historicalSource = await readFile(join(ROOT, historicalEvidencePath), "utf8");
   const historicalAnchor = historicalSource.match(/"matchCount": (\d+)/u);
@@ -63,10 +67,10 @@ try {
   if (historicalMutation === historicalSource) throw new Error("INC391_HISTORY_MUTATION_NO_CHANGE");
   const historicalMutatedPath = join(directory, "INC-153-mutated.md");
   await writeFile(historicalMutatedPath, historicalMutation, "utf8");
-  const historicalRed = await runChecker(historicalMutatedPath, historicalEvidencePath);
+  const historicalRed = await runChecker("historical-mutation", historicalMutatedPath, historicalEvidencePath);
   const historicalProblem = historicalRed.report.problems?.[0] ?? null;
 
-  const restored = await runChecker();
+  const restored = await runChecker("full-restoration");
   const result = {
     schemaVersion: "tcrn.inc156-verbatim-meta-proof.v1",
     mutation: {

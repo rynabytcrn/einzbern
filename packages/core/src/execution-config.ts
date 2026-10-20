@@ -58,6 +58,8 @@ export const EXECUTION_CONFIG_VERSION = "tcrn.execution-config.v1" as const;
 // TCRN-CROSS-STORY-548 R5 (MIN-268): DSH is a host too; execution configuration accepts it.
 export const EXECUTION_HOSTS = Object.freeze(["claude-code", "codex", "dsh"] as const);
 export type ExecutionHost = typeof EXECUTION_HOSTS[number];
+// Native mode is not a legacy host or host-configuration replay value.
+export { DOT_EXECUTION_MODE, DOT_EXECUTION_TARGET } from "./dot-execution.js";
 
 export const EXECUTION_CONFIG_REASON_CODES = Object.freeze([
   "EXECUTION_BINDING_UNKNOWN",

@@ -102,3 +102,37 @@ export async function writeDispatchArtifact(path: string, value: unknown, forbid
   const file = await open(destination, "wx", 0o600);
   try { await file.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8"); } finally { await file.close(); }
 }
+
+/** Native preparation stays separate from the legacy process preparation and bindings. */
+export async function prepareNativeDispatch(state: WorkspaceState, request: import("./dot-execution.js").DotExecutionRequest, tool: { readonly toolName: string; readonly toolContractObservation: import("./native-tool-evidence.js").NativeToolAttempt["toolContractObservation"]; readonly argumentsValue: unknown }, home?: string): Promise<NativeDispatchPreparation> {
+  const context = await workProjectContexts(state, request.workId, home, request);
+  const contexts = context.contexts as Record<string, unknown>[];
+  const target = contexts.find(item => dotDigest(item.reference) === dotDigest(request.projectRef));
+  const admission = target?.executionAdmission as DotAdmission | undefined;
+  const targetDispatchAdmitted = (context.involvedProjects as { state: string }).state === "selected" && admission?.status === "admitted" && (target?.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true;
+  const attempt = targetDispatchAdmitted && admission?.status === "admitted"
+    ? createNativeToolAttempt(admission, { ...tool, requestedAt: new Date().toISOString() }) : null;
+  const payload = { schemaVersion: "tcrn.native-dispatch-preparation.v1" as const, context, targetDispatchAdmitted, admission: admission ?? null, attempt };
+  return { ...payload, digest: dotDigest(payload) };
+}
+import { dotDigest } from "./dot-execution.js";
+import type { DotAdmission } from "./dot-execution.js";
+import { createNativeToolAttempt, recordNativeToolResponse, normalizeNativeToolEvidence } from "./native-tool-evidence.js";
+import type { NativeToolAttempt, NativeToolResponseInput, NativeToolRecord } from "./native-tool-evidence.js";
+export interface NativeDispatchPreparation {
+  readonly schemaVersion: "tcrn.native-dispatch-preparation.v1";
+  readonly context: Record<string, unknown>;
+  readonly targetDispatchAdmitted: boolean;
+  readonly admission: DotAdmission | null;
+  readonly attempt: NativeToolAttempt | null;
+  readonly digest: string;
+}
+export function recordNativeDispatch(preparation: NativeDispatchPreparation, response?: NativeToolResponseInput): { readonly record: NativeToolRecord | { readonly attempt: NativeToolAttempt; readonly admission: DotAdmission }; readonly normalized: ReturnType<typeof normalizeNativeToolEvidence> } {
+  const { digest, ...payload } = preparation;
+  if (preparation.schemaVersion !== "tcrn.native-dispatch-preparation.v1" || dotDigest(payload) !== digest || preparation.targetDispatchAdmitted !== true || !preparation.attempt || !preparation.admission) throw new DispatchWorkflowError("native preparation must be admitted and intact");
+  const target = (preparation.context.contexts as Record<string, unknown>[]).find(item => dotDigest(item.reference) === dotDigest(preparation.attempt!.projectRef));
+  if (!target || (preparation.context.involvedProjects as { state: string }).state !== "selected" || (target.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready !== true || dotDigest(target.executionAdmission) !== dotDigest(preparation.admission) || preparation.context.workId !== preparation.attempt.workId || preparation.attempt.revisionBinding.kind !== "revision" || preparation.context.workRevision !== preparation.attempt.revisionBinding.workRevision) throw new DispatchWorkflowError("native attempt differs from captured project context");
+  const record = response === undefined ? { attempt: preparation.attempt, admission: preparation.admission }
+    : { attempt: preparation.attempt, admission: preparation.admission, response, evidence: recordNativeToolResponse(preparation.attempt, preparation.admission, response) };
+  return { record, normalized: normalizeNativeToolEvidence(record) };
+}

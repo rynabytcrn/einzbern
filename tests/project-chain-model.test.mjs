@@ -755,3 +755,24 @@ test("552: work targets and common defaults share one captured engine/device vie
   assert.equal(beta.common.deviceSettings, first.deviceSettings, "common defaults cannot reread another device cap");
   assert.equal(beta.common.readiness.model.ready, true);
 });
+
+test("DOT-E02 actual dot readiness consumes B4 session reads without weakening repository or legacy model checks", async t => {
+  const { DOT_REQUIRED_CHECKS } = await import("../dist/build/packages/core/src/dot-execution.js");
+  const f = await fixture(t); const remote = "https://example.test/dot-alpha";
+  await registerLibrary({ projectPath: f.a.repo, libraryPath: f.a.path, projectId: f.a.reference.projectId, registeredAt: at, gitRemote: remote }, f.home);
+  await setWorkspaceSetting(f.a.path, { key: "artifact.language", value: "en", configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await setConfigRecord(f.a.path, { collection: "chain", key: "repositories", projectId: f.a.reference.projectId, value: { bindings: [{ id: "dot-alpha", name: "Alpha", repository: remote, buildService: "test", buildProject: "alpha" }] }, occurredAt: at });
+  const state = await createWork(f.coordination.path, { projectId: f.coordination.reference.projectId, externalKey: "DOT-CONSUMER", kind: "Initiative", parentId: null, involvedProjects: { state: "selected", targets: [f.a.reference] }, occurredAt: at });
+  const work = state.work.find(item => item.externalKey === "DOT-CONSUMER"); const now = new Date().toISOString();
+  const files = ["agents", "mana-orchestrate", "work"].map(logicalKey => ({ logicalKey, sourceVersion: "fixture-v1", sha256: "a".repeat(64), readMethod: "fixture.read", evidenceRef: `fixture:${logicalKey}` }));
+  const record = { schemaVersion: "tcrn.execution-context-read.v1", sessionRef: "fixture:actual-session", readAt: now, workReference: work.id, workRevision: work.revision, scopeDigest: work.scopeDigest, files, effectiveRoots: [f.a.repo] };
+  const request = { mode: "dot-autonomous", executionTarget: "chatgpt-dot", libraryId: f.a.reference.libraryId, projectRef: f.a.reference, workId: work.id, revisionBinding: { kind: "revision", workRevision: work.revision, scopeDigest: work.scopeDigest }, requestedAgents: 1, requiredTools: ["fixture.read"], actualCapabilityEvidenceRefs: ["fixture:tool"], authorizationEvidenceRef: "fixture:authorization", checks: Object.fromEntries(DOT_REQUIRED_CHECKS.map(name => [name, { status: "pass", evidenceRefs: [`fixture:${name}`], reason: "synthetic evidence, not a live native acceptance" }])), occupancyObservation: { status: "observed", activeAgents: 0, includesParent: true, parentActive: false, platformLimit: 4, observedAt: now, evidenceRef: "fixture:occupancy" }, modelObservation: { status: "unavailable", reason: "not exposed" }, contextRead: { record, expected: { sessionRef: record.sessionRef, workReference: work.id, workRevision: work.revision, scopeDigest: work.scopeDigest, notBefore: now, now, files, effectiveRoots: [f.a.repo] }, observations: files.map(file => ({ sessionRef: record.sessionRef, source: "execution-session", logicalKey: file.logicalKey, evidenceRef: file.evidenceRef, toolName: file.readMethod, readAt: now, sha256: file.sha256, association: "associated" })) } };
+  const plain = await workProjectContexts(state, work.id, f.home); assert.equal(plain.dispatchAdmitted, false); assert.equal(plain.contexts[0].readiness.model.ready, false);
+  await writeFile(join(f.home, "engine-model-policy.json"), "{malformed-unrelated-host-policy");
+  const native = await workProjectContexts(state, work.id, f.home, request); assert.equal(native.dispatchAdmitted, true); assert.equal(native.contexts[0].modelApplicability.accountQuota.status, "not-applicable");
+  const parentReads = { ...request, contextRead: { ...request.contextRead, observations: request.contextRead.observations.map(item => ({ ...item, source: "parent-session" })) } };
+  assert.equal((await workProjectContexts(state, work.id, f.home, parentReads)).dispatchAdmitted, false);
+  assert.equal((await workProjectContexts(state, work.id, f.home, { ...request, revisionBinding: { ...request.revisionBinding, workRevision: work.revision + 1 } })).dispatchAdmitted, false);
+  await removeConfigRecord(f.a.path, { collection: "chain", key: "repositories", projectId: f.a.reference.projectId, occurredAt: at });
+  assert.equal((await workProjectContexts(state, work.id, f.home, request)).dispatchAdmitted, false);
+});

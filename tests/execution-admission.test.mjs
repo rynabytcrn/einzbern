@@ -188,3 +188,9 @@ test("pure snapshot admission validates both device inputs rather than trusting 
   }
   await assert.rejects(readExecutionAdmissionSnapshot("relative-device"), { reasonCode: "EXECUTION_POLICY_INVALID" });
 });
+
+test("DOT-E02 legacy admission does not infer native applicability from a dot host string", async context => {
+  const options = await fixture(context); await save(options.home);
+  await assert.rejects(resolveExecutionAdmission(request({ host: "chatgpt-dot" }), options), /independent dot mode/u);
+  await assert.rejects(resolveExecutionAdmission({ ...request(), mode: "dot-autonomous" }, options), /not supported/u);
+});

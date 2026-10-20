@@ -95,3 +95,17 @@ export function evaluateExecutionQuota(policyValue: EngineQuotaPolicy, observati
     || (weekly !== undefined && weekly >= policy.weeklyParallelOffPercent);
   return Object.freeze({ decision: waits ? "wait" : serial ? "serial" : unknownWindows.length > 0 ? "unknown" : "parallel", unknownWindows: Object.freeze(unknownWindows) });
 }
+
+/** Native occupancy is separate from account quota; unknown counts never create free slots. */
+export function resolveNativeExecutionConcurrency(deviceLimit: number, projectLimit: number | undefined, platformLimit: number | null, activeAgents: number | null, includesParent: boolean, parentActive: boolean): {
+  readonly deviceLimit: number; readonly projectLimit: number | null; readonly platformLimit: number | null;
+  readonly effectiveLimit: number | null; readonly occupiedSlots: number | null; readonly availableSlots: number | null; readonly reservation: "none";
+} {
+  const base = resolveExecutionConcurrency(deviceLimit, projectLimit);
+  if (platformLimit !== null && (!Number.isSafeInteger(platformLimit) || platformLimit < 1)) invalid("platformLimit", "must be positive or unknown");
+  if (activeAgents !== null && (!Number.isSafeInteger(activeAgents) || activeAgents < 0)) invalid("activeAgents", "must be nonnegative or unknown");
+  if (activeAgents !== null && includesParent && parentActive && activeAgents < 1) invalid("activeAgents", "cannot omit an included active parent");
+  const effectiveLimit = platformLimit === null ? null : Math.min(base.effectiveLimit, platformLimit);
+  const occupiedSlots = activeAgents === null ? null : activeAgents + (!includesParent && parentActive ? 1 : 0);
+  return { deviceLimit, projectLimit: base.projectLimit, platformLimit, effectiveLimit, occupiedSlots, availableSlots: effectiveLimit === null || occupiedSlots === null ? null : Math.max(0, effectiveLimit - occupiedSlots), reservation: "none" };
+}

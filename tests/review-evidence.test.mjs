@@ -726,3 +726,11 @@ test("INC-384: a governed write under a hook stays in writes and a read with no 
   assert.deepEqual(summary.writes.records.map((row) => row.pid), [511], "the batch still waits for a real write a hook started");
   assert.deepEqual(summary.agents.records.map((row) => [row.pid, row.role]).sort((left, right) => left[0] - right[0]), [[511, "orchestration"], [520, "orchestration"], [521, "orchestration"], [530, "orchestration"], [531, "orchestration"]], "no hook ancestor, a missing parent, or a parent cycle keeps the existing rule");
 });
+
+test("DOT-E01 native review uses the supported native evidence command and fails closed if unavailable", async () => {
+  const { normalizeReviewDispatchEvidence } = await import("../scripts/review-evidence.mjs");
+  const native = { attempt: { schemaVersion: "tcrn.native-tool-attempt.v1" } };
+  const result = normalizeReviewDispatchEvidence(native, { workId: "work:fixture", workRevision: 1 }, join(REPOSITORY_ROOT, "missing-native-engine.mjs"));
+  assert.equal(result.evidenceType, "native-tool"); assert.equal(result.valid, false); assert.equal(result.complete, false);
+  assert.equal(result.problems.some(problem => /unavailable|unsupported/u.test(problem)), true);
+});

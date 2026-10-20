@@ -132,15 +132,15 @@ test("486-R2: the files the generated tree does not hold are listed, and none is
     "package.json": "{\n  \"name\": \"old\"\n}\n",
     [`${SKILL}/SKILL.md`]: "old skill\n",
     [`${SKILL}/references/trust-contract.md`]: "retired reference\n",
-    [`${SKILL}/scripts/create-skill-archive.mjs`]: "export {};\n",
+    [`${SKILL}/scripts/unknown-local-helper.mjs`]: "export {};\n",
     "docs/notes.md": "not generated\n",
   };
-  const kept = { "LICENSE": "license text\n", ".gitignore": "node_modules/\n" };
+  const kept = { "LICENSE": "license text\n", ".gitignore": "node_modules/\n", [`${SKILL}/scripts/create-skill-archive.mjs`]: "export {};\n" };
   const skipped = { ".git": "gitdir: elsewhere\n", "node_modules/some/index.js": "export {};\n" };
   await seed(out, { ...stale, ...kept, ...skipped });
 
   const report = await generated(out, "7.6.5");
-  assert.deepEqual(report.extraFiles, ["docs/notes.md", `${SKILL}/references/trust-contract.md`, `${SKILL}/scripts/create-skill-archive.mjs`]);
+  assert.deepEqual(report.extraFiles, ["docs/notes.md", `${SKILL}/references/trust-contract.md`, `${SKILL}/scripts/unknown-local-helper.mjs`]);
   for (const path of report.extraFiles) {
     assert.equal(await readFile(join(out, ...path.split("/")), "utf8"), stale[path], `${path} is left as it was`);
   }

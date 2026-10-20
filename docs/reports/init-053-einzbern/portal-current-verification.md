@@ -65,58 +65,58 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/portal.test.mjs",
-      "bytes": 32773,
-      "sha256": "cdffb51383e96e9a8cd88f59463774cf17ba02f726c9dcf9b3a244065a03adec"
+      "bytes": 36544,
+      "sha256": "615ff00d69ba607a10089d77f2675c0c31a041120d6ff26444150057ea053351"
     },
     {
       "path": "portal/tests/ui-presence.test.mjs",
-      "bytes": 31119,
-      "sha256": "c1dea99c969440b6a0f2887d80cd60bf3512c17a79c3424d4259be7c291ee871"
+      "bytes": 67751,
+      "sha256": "f80bae47745e68440f6c2449c99ddd3ac2d68bd02a90d6cdeb79a71f9d0a12b8"
     },
     {
       "path": "portal/tests/ui-presence-support.mjs",
-      "bytes": 51409,
-      "sha256": "f2aea4810022cc7cfb61febb8455f55fcba339980fff790edf8915283fbf96cf"
+      "bytes": 51426,
+      "sha256": "51f10cce729cc069052a653b02162e6dfa928fd5e0b9bfa336941cf0be27dd74"
     },
     {
       "path": "portal/tests/portal-support.mjs",
-      "bytes": 20827,
-      "sha256": "5a519a9c4e9fbed0b13b4b03ad4236751a1cf0cc68dca257b587024daf1ea775"
+      "bytes": 20844,
+      "sha256": "8f36caa503a04529147624e2f96262164519789e09b0521433b0f4bd2c44f74b"
     },
     {
       "path": "portal/tests/portal-work.test.mjs",
-      "bytes": 65036,
-      "sha256": "a105997da5ed2779b15df80344d989b95365dcadfdb0b00e483d6f749cd62039"
+      "bytes": 22970,
+      "sha256": "ba5eb70241d34a210e6bc32d13253970710ec6f9022d89f4b6c0cd853eb85763"
     },
     {
       "path": "portal/tests/portal-configuration.test.mjs",
-      "bytes": 24336,
-      "sha256": "c21507a159530e8e3c97f0537d4207ed43a7d035f338d151f1fa4af6b5fbe7c8"
+      "bytes": 54263,
+      "sha256": "50ae9eb96f55c0d186700b68cd3c9998e600fec8dc96bffcb9d25db02613b9a4"
     },
     {
       "path": "portal/tests/portal-library.test.mjs",
-      "bytes": 22934,
-      "sha256": "3eac14bf78606e2858944db28839cb9d06b70e5b11cf3e3ac3011d2f2b02b485"
+      "bytes": 31190,
+      "sha256": "5323ea41413d639daac96b987bfa9b2138906c3c371ba5b529a3a9d48e98d9c1"
     },
     {
       "path": "portal/tests/ui-work.test.mjs",
-      "bytes": 143372,
-      "sha256": "ede1d53f97231f5a8fc02f1531b098cee62e111fb17d19ce337927f60ca9f1fe"
+      "bytes": 41117,
+      "sha256": "68e2957e68ffa9bd9ccc4bc849b5621ab138b140ecf3d4ad562e6b88b1fdfef6"
     },
     {
       "path": "portal/tests/ui-configuration.test.mjs",
-      "bytes": 43205,
-      "sha256": "007f62ca330c91706316f5bb94223532fde71d68bc84233abf6deba8a4172bf7"
+      "bytes": 109376,
+      "sha256": "ac85c416438b47ab58ec2038cdf64ab4c5e9ac60798535ca63aa0f65bb549967"
     },
     {
       "path": "portal/tests/ui-library.test.mjs",
-      "bytes": 38926,
-      "sha256": "d2ceef0abcfbd8a9532aa0b0c9784eb66ead351407c75b6c377e79f37ca79dc4"
+      "bytes": 38415,
+      "sha256": "125d1540d381b12a60cee0e577724033828b14803608dcbfabc955197879ee59"
     },
     {
-      "path": "portal/tests/helpers/register-libraries.mjs",
-      "bytes": 2249,
-      "sha256": "1111e80d78e353ceae85966c2a5c16c62d008394060e712c4f00244033c441e8"
+      "path": "tests/helpers/register-portal-libraries.mjs",
+      "bytes": 2243,
+      "sha256": "9b04d75c13c86894003fc5261e925f66419c5f49cd653a806a00aa56acf4ddcf"
     },
     {
       "path": "scripts/portal-tests.mjs",
@@ -127,6 +127,11 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
       "path": "scripts/lib/test-roster.mjs",
       "bytes": 394,
       "sha256": "a96a4b27b87df05556dcd654bdb6d0a58b8e888bc5fa4cc626b87b4295a9eae1"
+    },
+    {
+      "path": "scripts/lib/verification-evidence.mjs",
+      "bytes": 1515,
+      "sha256": "91a3b99f18e1546a76697613b6a622977ee5e81b853af1a7f330030b675e76b2"
     },
     {
       "path": "portal/tests/disposable-portal-fetch.test.mjs",
@@ -160,8 +165,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "scripts/verbatim-evidence-proof.mjs",
-      "bytes": 28253,
-      "sha256": "c910817c3468519e6b5c7b8e37288516164374790d498c9bec835fc629241788"
+      "bytes": 28296,
+      "sha256": "950d250073836a82a4905fe290f91938bd78146df3d04c9c844e90b651b0e22b"
     }
   ],
   "hostRoleScan": {

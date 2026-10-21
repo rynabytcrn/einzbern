@@ -413,7 +413,7 @@ test("STORY-480: setup writes and takes the wizard's flags; doctor reads and tak
 // work-gate-release and work-release. INIT-056 adds the engine-wide policy writer as the thirteenth.
 test("526 GWT5, 541 GWT1, INIT-056: the closed decided-in roster carries its documented valueShape", () => {
   const optionalWrites = ["config-restore-apply", "config-restore-plan", "gates-config-remove", "gates-config-set", "project-bindings-remove", "project-bindings-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set", "work-gate-release", "work-release"];
-  const writes = ["engine-model-policy-set", ...optionalWrites].sort();
+  const writes = ["engine-model-policy-save", "engine-model-policy-set", ...optionalWrites].sort();
   const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags.filter((flag) => flag.name === "decided-in" && flag.valueShape !== undefined).map((flag) => [entry.name, flag.name]));
   assert.deepEqual(shaped, writes.map((name) => [name, "decided-in"]));
   for (const name of optionalWrites) {

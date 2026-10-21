@@ -91,7 +91,7 @@ test("479-AC1: every verb the navigation table names is a verb of the current co
   // STORY-479 AC1 with EPIC-144 R3: reading the full text before development dispatch includes
   // each involved project's own configuration (work-project-context).
   assert.deepEqual(SKILL_NAVIGATION.map((entry) => [...entry.verbs]), [
-    ["recall"],
+    ["recall", "rule-list"],
     ["work-show", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
     ["execution-host-prepare", "execution-host-record", "execution-host-evidence"],
     ["shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"],
@@ -307,4 +307,11 @@ test("INIT065 generated normal Skill directs each native host to matching versio
   assert.equal(checkHostSkillCompatibility(markdown, catalogNames).compatible, true);
   assert.deepEqual(checkHostSkillCompatibility(markdown, catalogNames.filter(name => name !== "execution-host-record")).missing, ["execution-host-record"]);
   assert.equal(checkHostSkillCompatibility("Historical skill", []).protocol, "legacy");
+});
+
+test("MIN358 installed Skill navigates actual enabled rules without hard-coding optional principle text", () => {
+  const markdown = render();
+  assert.ok(markdown.includes("Read enabled rules, not catalog defaults"));
+  assert.ok(SKILL_NAVIGATION[0].verbs.includes("rule-list"));
+  assert.equal(markdown.includes("Do not establish a prohibition"), false, "optional text comes from scoped rule consumption, not an unconditional Skill duplicate");
 });

@@ -64,8 +64,8 @@ export interface SkillNavigationEntry {
 export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
-    verbs: ["recall"],
-    action: "Run `recall --query \"<task>\"`. New/resumed/delegated sessions read their AGENTS, Skill and current work; parent or patrol reads do not substitute.",
+    verbs: ["recall", "rule-list"],
+    action: "Run `recall --query \"<task>\"`. New/resumed/delegated sessions read their AGENTS, Skill and current work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults.",
   },
   {
     moment: "Need the full text",
@@ -75,7 +75,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Native dispatch (Codex, Claude, dot)",
     verbs: ["execution-host-prepare", "execution-host-record", "execution-host-evidence"],
-    action: "Use authorized native tools and normal prompt reports. No runtime adapter, process fields, exported IDs or optional telemetry prerequisite. Existing class fallback authority applies without reapproval; exact configuration is a preference unless explicitly hard. Parent reads before dispatch, child reads before work. Coordination targets=[] needs no invented binding; source work checks scope/permission. Optional audit: machine-assemble inputs, never hand-fill JSON; retain raw returns/reports via saved `--binding` and `--prior`. Different status tools retain actual names and attempt association. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; saving needs separate authority. See `specs/host-fallback-v1.md`.",
+    action: "Use authorized native tools with normal prompt reports. No runtime adapter, process fields, exported IDs or optional telemetry prerequisite. Existing class fallback authority applies directly; exact configuration is a preference unless explicitly hard. Parent reads before dispatch, child reads before work. Coordination targets=[] needs no invented binding; source work checks scope/permission. Optional audit: machine-assemble inputs, never hand-fill JSON; retain raw returns/reports via saved `--binding` and `--prior`. Status tools retain actual names/attempt association. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; saving needs separate authority. See `specs/host-fallback-v1.md`.",
   },
   {
     moment: "Shared submission",

@@ -809,9 +809,9 @@ test("C04: agents.generation none records rule changes without creating or chang
   await assert.rejects(readFile(join(paths.project, "CLAUDE.md")), { code: "ENOENT" });
 });
 
-test("INIT-062 same-version autonomy and branch supplements update only untouched enabled sections with recovery", async context => {
-  for (const id of ["autonomy", "residue-cleanup"]) for (const [language, suffix] of [["zh-CN", "zh"], ["en", "en"]]) {
-    const previous = await readFile(join(fixtures, `${id}-v1-rev1.${suffix}.md`), "utf8");
+test("INIT-062/MIN358 same-version principle supplements update only untouched enabled sections with recovery", async context => {
+  for (const [id, revision] of [["autonomy", "rev1"], ["autonomy", "rev2"], ["residue-cleanup", "rev1"]]) for (const [language, suffix] of [["zh-CN", "zh"], ["en", "en"]]) {
+    const previous = await readFile(join(fixtures, `${id}-v1-${revision}.${suffix}.md`), "utf8");
     const current = builtInRule(id).body[suffix];
     const catalog = BUILT_IN_RULES.map(rule => rule.id !== id ? rule : { ...rule, body: { ...rule.body, [suffix]: previous } });
     const paths = await scratch(context, language);

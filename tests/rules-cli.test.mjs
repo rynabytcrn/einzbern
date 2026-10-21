@@ -24,7 +24,7 @@ import test from "node:test";
 import { COMMAND_CATALOG, MODEL_WRITE_DECISION_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, runCli } from "../dist/build/packages/cli/src/index.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
-import { BUILT_IN_RULES, builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
+import { AUTONOMY_RESTRICTION_SCOPE_BODY, BUILT_IN_RULES, builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
 import { enableRule } from "../dist/build/packages/core/src/rules.js";
 import { materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/workspace.js";
 
@@ -391,4 +391,19 @@ test("INIT-062 universal autonomy and branch contracts reach ordinary host files
     assert.ok((await readFile(join(project, "CLAUDE.md"), "utf8")).includes("@AGENTS.md"), "Claude consumes the same ordinary-host rules");
     assert.equal(text.startsWith(USER_TEXT), true);
   });
+});
+
+test("MIN358 normal rule controls select the built-in principle and disable without resurrecting its body", async context => {
+  const { project, agents } = await scratch(context, "en");
+  assert.equal((await ruleOf(project, "autonomy")).state, "disabled");
+  assert.equal((await readFile(agents, "utf8")).includes(AUTONOMY_RESTRICTION_SCOPE_BODY.en), false);
+  await enable(project, "autonomy"); await enable(project, "residue-cleanup");
+  assert.equal((await ruleOf(project, "autonomy")).state, "enabled");
+  assert.ok((await readFile(agents, "utf8")).includes(AUTONOMY_RESTRICTION_SCOPE_BODY.en));
+  await cli(["rule-disable", "--project", project, "--id", "autonomy", "--at", at()]); await render(project);
+  assert.equal((await ruleOf(project, "autonomy")).state, "disabled");
+  assert.equal((await readFile(agents, "utf8")).includes(AUTONOMY_RESTRICTION_SCOPE_BODY.en), false);
+  assert.equal((await ruleOf(project, "residue-cleanup")).state, "enabled");
+  const denied = await withSurface(undefined, () => refusal(["rule-enable", "--project", project, "--id", "autonomy", "--at", at()]));
+  assert.equal(denied.reasonCode, "MODEL_WRITE_REFUSED", "a selectable principle does not bypass actual configuration authority");
 });

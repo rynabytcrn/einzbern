@@ -755,3 +755,67 @@ test("552: work targets and common defaults share one captured engine/device vie
   assert.equal(beta.common.deviceSettings, first.deviceSettings, "common defaults cannot reread another device cap");
   assert.equal(beta.common.readiness.model.ready, true);
 });
+
+test("DOT-E02 actual dot readiness consumes B4 session reads without weakening repository or legacy model checks", async t => {
+  const { DOT_REQUIRED_CHECKS } = await import("../dist/build/packages/core/src/dot-execution.js");
+  const f = await fixture(t); const remote = "https://example.test/dot-alpha";
+  await registerLibrary({ projectPath: f.a.repo, libraryPath: f.a.path, projectId: f.a.reference.projectId, registeredAt: at, gitRemote: remote }, f.home);
+  await setWorkspaceSetting(f.a.path, { key: "artifact.language", value: "en", configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await setConfigRecord(f.a.path, { collection: "chain", key: "repositories", projectId: f.a.reference.projectId, value: { bindings: [{ id: "dot-alpha", name: "Alpha", repository: remote, buildService: "test", buildProject: "alpha" }] }, occurredAt: at });
+  const state = await createWork(f.coordination.path, { projectId: f.coordination.reference.projectId, externalKey: "DOT-CONSUMER", kind: "Initiative", parentId: null, involvedProjects: { state: "selected", targets: [f.a.reference] }, occurredAt: at });
+  const work = state.work.find(item => item.externalKey === "DOT-CONSUMER"); const now = new Date().toISOString();
+  const files = ["agents", "mana-orchestrate", "work"].map(logicalKey => ({ logicalKey, sourceVersion: "fixture-v1", sha256: "a".repeat(64), readMethod: "fixture.read", evidenceRef: `fixture:${logicalKey}` }));
+  const record = { schemaVersion: "tcrn.execution-context-read.v1", sessionRef: "fixture:actual-session", readAt: now, workReference: work.id, workRevision: work.revision, scopeDigest: work.scopeDigest, files, effectiveRoots: [f.a.repo] };
+  const request = { mode: "dot-autonomous", executionTarget: "chatgpt-dot", libraryId: f.a.reference.libraryId, projectRef: f.a.reference, workId: work.id, revisionBinding: { kind: "revision", workRevision: work.revision, scopeDigest: work.scopeDigest }, requestedAgents: 1, requiredTools: ["fixture.read"], actualCapabilityEvidenceRefs: ["fixture:tool"], authorizationEvidenceRef: "fixture:authorization", checks: Object.fromEntries(DOT_REQUIRED_CHECKS.map(name => [name, { status: "pass", evidenceRefs: [`fixture:${name}`], reason: "synthetic evidence, not a live native acceptance" }])), occupancyObservation: { status: "observed", activeAgents: 0, includesParent: true, parentActive: false, platformLimit: 4, observedAt: now, evidenceRef: "fixture:occupancy" }, modelObservation: { status: "unavailable", reason: "not exposed" }, contextRead: { record, expected: { sessionRef: record.sessionRef, workReference: work.id, workRevision: work.revision, scopeDigest: work.scopeDigest, notBefore: now, now, files: files.map(({ logicalKey, sourceVersion, sha256 }) => ({ logicalKey, sourceVersion, sha256 })), effectiveRoots: [f.a.repo] }, observations: files.map(file => ({ sessionRef: record.sessionRef, source: "execution-session", logicalKey: file.logicalKey, evidenceRef: file.evidenceRef, toolName: file.readMethod, readAt: now, sha256: file.sha256, association: "associated" })) } };
+  const plain = await workProjectContexts(state, work.id, f.home); assert.equal(plain.dispatchAdmitted, false); assert.equal(plain.contexts[0].readiness.model.ready, false);
+  await writeFile(join(f.home, "engine-model-policy.json"), "{malformed-unrelated-host-policy");
+  const native = await workProjectContexts(state, work.id, f.home, request); assert.equal(native.dispatchAdmitted, true); assert.equal(native.contexts[0].modelApplicability.accountQuota.status, "not-applicable");
+  // Same actual fixture target through public prepare/record/evidence and review.
+  const { runNativeToolCommand } = await import("../dist/build/packages/cli/src/native-tool-commands.js");
+  const { normalizeReviewDispatchEvidence } = await import("../scripts/review-evidence.mjs");
+  const argsPath = join(f.root, "native-arguments.json"), contractPath = join(f.root, "native-contract.json"), requestPath = join(f.root, "native-request.json");
+  await writeFile(argsPath, JSON.stringify({ path: "fixture:task" })); await writeFile(contractPath, JSON.stringify({ ref: "fixture:tool-contract", sha256: "f".repeat(64) })); await writeFile(requestPath, JSON.stringify(request));
+  const commandContext = { home: f.home, resolveWorkspace: async selector => { assert.equal(selector, f.coordination.path); return { root: f.coordination.path, state }; } };
+  const bindingPath = join(f.root, "native-preparation.json");
+  const prepared = await runNativeToolCommand("execution-native-prepare", { workspace: f.coordination.path, request: requestPath, tool: "fixture.read", "tool-contract": contractPath, arguments: argsPath, output: bindingPath }, commandContext);
+  assert.equal(prepared.targetDispatchAdmitted, true);
+  const response = { sourceTool: "fixture.read", rawResponseRef: "fixture:response", rawResponseValue: { status: "done", terminal: true }, observedAt: new Date().toISOString(), executionStatus: "reported-completed", statusPointer: "/status", statusMapping: { done: "reported-completed" }, resultRefs: ["fixture:deliverable"], association: { status: "associated", invocationRef: "fixture:invocation", responseRef: "fixture:response", argumentsDigest: prepared.attempt.argumentsDigest, evidenceRefs: ["fixture:actual-link"], reason: "synthetic sequential invocation return" }, terminalObservation: { jsonPointer: "/terminal", terminalValues: ["true"], contractRef: "fixture:tool-contract", evidenceRef: "fixture:terminal" }, verification: { status: "pass", evidenceRefs: ["fixture:check"], verifiedAt: new Date().toISOString(), verifiedBy: "fixture:reviewer" } };
+  const responsePath = join(f.root, "native-response.json"), recordedPath = join(f.root, "native-record.json"); await writeFile(responsePath, JSON.stringify(response));
+  const saved = await runNativeToolCommand("execution-native-record", { binding: bindingPath, response: responsePath, output: recordedPath }, commandContext);
+  assert.equal(saved.normalized.complete, true); assert.deepEqual(saved.record.preparation.context, prepared.context);
+  assert.equal((await runNativeToolCommand("execution-native-evidence", { "from-file": recordedPath, "work-id": work.id, "work-revision": String(work.revision) }, commandContext)).complete, true);
+  assert.equal(normalizeReviewDispatchEvidence(saved, { workId: work.id, workRevision: work.revision }).complete, true);
+  // Unknown outcome does not become a retry. An actual non-execution query can.
+  const unresolvedBinding = join(f.root, "native-unresolved-preparation.json");
+  const unresolved = await runNativeToolCommand("execution-native-prepare", { workspace: f.coordination.path, request: requestPath, tool: "fixture.read", "tool-contract": contractPath, arguments: argsPath, output: unresolvedBinding }, commandContext);
+  const pendingPath = join(f.root, "native-pending.json"); await runNativeToolCommand("execution-native-record", { binding: unresolvedBinding, output: pendingPath }, commandContext);
+  const retryOutput = join(f.root, "native-retry.json"), reconcilePath = join(f.root, "native-reconciliation.json");
+  const retryFlags = { workspace: f.coordination.path, request: requestPath, tool: "fixture.read", "tool-contract": contractPath, arguments: argsPath, "retry-from": pendingPath, output: retryOutput };
+  await assert.rejects(runNativeToolCommand("execution-native-prepare", retryFlags, commandContext), /together/u);
+  await writeFile(reconcilePath, JSON.stringify({ outcome: "unknown" })); await assert.rejects(runNativeToolCommand("execution-native-prepare", { ...retryFlags, reconciliation: reconcilePath }, commandContext), /query/u);
+  await writeFile(reconcilePath, JSON.stringify({ outcome: "confirmed-not-executed", queryTool: "fixture.query", queryRef: "fixture:query-return", queriedAttemptId: unresolved.attempt.attemptId, responseValue: { status: "not-executed" }, observedAt: new Date().toISOString(), notExecutedPointer: "/status", notExecutedValue: "not-executed", contractRef: "fixture:tool-contract" }));
+  const retry = await runNativeToolCommand("execution-native-prepare", { ...retryFlags, reconciliation: reconcilePath }, commandContext);
+  assert.notEqual(retry.attempt.attemptId, unresolved.attempt.attemptId); assert.equal(retry.retry.previous.record.attempt.attemptId, unresolved.attempt.attemptId);
+  await assert.rejects(runNativeToolCommand("execution-native-prepare", { ...retryFlags, "retry-from": recordedPath, reconciliation: reconcilePath, output: join(f.root, "completed-not-retryable.json") }, commandContext), /completed predecessor/u);
+  const retryPending = await runNativeToolCommand("execution-native-record", { binding: retryOutput, output: join(f.root, "native-retry-pending.json") }, commandContext); assert.equal(retryPending.normalized.valid, true); assert.equal(retryPending.normalized.complete, false);
+  for (const scopeDigest of [undefined, null, "", "not-a-digest"]) {
+    const missingScope = { ...state, work: state.work.map(item => item.id === work.id ? { ...item, scopeDigest } : item) };
+    const refused = await workProjectContexts(missingScope, work.id, f.home, request);
+    const admission = refused.contexts[0].executionAdmission;
+    assert.equal(refused.dispatchAdmitted, false, "the request's valid digest cannot replace an unavailable current observation");
+    assert.equal(admission.status, "refused");
+    assert.equal(admission.checks.work.status, "fail");
+    assert.equal(admission.checks.scope.status, "unknown");
+    assert.equal(admission.checks.context.status, "unknown");
+    assert.match(admission.contextDigest, /^[a-f0-9]{64}$/u, "missing source stays explicit null in the refusal digest rather than causing undefined serialization");
+  }
+  await assert.rejects(workProjectContexts({ ...state, work: [] }, work.id, f.home, request), /work does not exist/u);
+  const differentWork = await workProjectContexts(state, work.id, f.home, { ...request, workId: "work:other" });
+  assert.equal(differentWork.dispatchAdmitted, false);
+  assert.equal(differentWork.contexts[0].executionAdmission.checks.work.status, "fail");
+  const parentReads = { ...request, contextRead: { ...request.contextRead, observations: request.contextRead.observations.map(item => ({ ...item, source: "parent-session" })) } };
+  assert.equal((await workProjectContexts(state, work.id, f.home, parentReads)).dispatchAdmitted, false);
+  assert.equal((await workProjectContexts(state, work.id, f.home, { ...request, revisionBinding: { ...request.revisionBinding, workRevision: work.revision + 1 } })).dispatchAdmitted, false);
+  await removeConfigRecord(f.a.path, { collection: "chain", key: "repositories", projectId: f.a.reference.projectId, occurredAt: at });
+  assert.equal((await workProjectContexts(state, work.id, f.home, request)).dispatchAdmitted, false);
+});

@@ -373,3 +373,22 @@ test("513-AC1 via rule-enable and rule-disable: a model's run is refused with th
   const kept = await asModel(() => cli(["rule-resolve", "--project", project, "--section", "rule:autonomy", "--action", "keep", "--at", at()]));
   assert.deepEqual([kept.reasonCode, kept.result, kept.state], ["MANAGED_SECTION_RESOLVED", "kept", "user-owned"]);
 });
+
+test("INIT-062 universal autonomy and branch contracts reach ordinary host files in Chinese and default English", async context => {
+  for (const language of ["zh-CN", null]) await context.test(language ?? "default-English", async t => {
+    const { project, agents } = await scratch(t, language);
+    const suffix = language === "zh-CN" ? "zh" : "en";
+    for (const id of ["autonomy", "residue-cleanup"]) {
+      assert.equal((await ruleOf(project, id)).state, "disabled");
+      const refused = await withSurface(undefined, () => refusal(["rule-enable", "--project", project, "--id", id, "--at", at()]));
+      assert.equal(refused.reasonCode, "MODEL_WRITE_REFUSED");
+      assert.equal((await ruleOf(project, id)).state, "disabled");
+      assert.equal((await enable(project, id)).reasonCode, "RULE_ENABLED");
+    }
+    await render(project);
+    const text = await readFile(agents, "utf8");
+    for (const id of ["autonomy", "residue-cleanup"]) assert.equal(sectionOf(text, `rule:${id}`).body, await readFile(join(fixtures, `${id}.${suffix}.md`), "utf8"));
+    assert.ok((await readFile(join(project, "CLAUDE.md"), "utf8")).includes("@AGENTS.md"), "Claude consumes the same ordinary-host rules");
+    assert.equal(text.startsWith(USER_TEXT), true);
+  });
+});

@@ -10,7 +10,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, writeFileSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -31,8 +31,28 @@ function text(value) {
 }
 
 // One validator for source review and the installed public CLI.
-import { normalizeDispatchAdmissionEvidence } from "../packages/core/src/dispatch-evidence.ts";
+import { normalizeDispatchAdmissionEvidence, dispatchEvidenceKind } from "../packages/core/src/dispatch-evidence.ts";
 export { DISPATCH_EVIDENCE_VERSION, dispatchAdmissionDigest, normalizeDispatchAdmissionEvidence } from "../packages/core/src/dispatch-evidence.ts";
+
+export function normalizeReviewDispatchEvidence(value, expected, engineCli = DEFAULT_ENGINE) {
+  if (dispatchEvidenceKind(value) !== "native-tool") return normalizeDispatchAdmissionEvidence(value, expected);
+  const directory = mkdtempSync(join(tmpdir(), "einzbern-native-review-"));
+  const file = join(directory, "input.json");
+  try {
+    const fd = openSync(file, "wx", 0o600);
+    try { writeFileSync(fd, JSON.stringify(value)); } finally { closeSync(fd); }
+    const args = [engineCli, "execution-native-evidence", "--from-file", file];
+    if (expected.workId != null) args.push("--work-id", expected.workId);
+    if (expected.workRevision != null) args.push("--work-revision", String(expected.workRevision));
+    const result = spawnSync(process.execPath, args, { encoding: "utf8", maxBuffer: REVIEW_OUTPUT_BYTES, timeout: REVIEW_COMMAND_TIMEOUT_MS, env: childEnvironment() });
+    const output = JSON.parse(result.stdout || "null");
+    if (result.error || output?.evidenceType !== "native-tool" || typeof output.valid !== "boolean" || typeof output.complete !== "boolean" || !Array.isArray(output.problems)) throw new Error("native validator is unavailable or returned an unsupported result");
+    if (result.status !== 0 && output.valid === true) throw new Error("native validator failed despite a successful result claim");
+    return output;
+  } catch (error) {
+    return { requested: true, evidenceType: "native-tool", valid: false, complete: false, status: "invalid", problems: [String(error)], evidence: value };
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}
 
 function childEnvironment() {
   const environment = { ...process.env };
@@ -426,12 +446,12 @@ export function collectReviewEvidence({
   }
   const outOfBounds = diff.changedFiles.filter((path) => !allowed.files.includes(path));
   const binding = readBoundVerify({ workspace, workId, engineCli });
-  const dispatch = normalizeDispatchAdmissionEvidence(dispatchEvidence, { workId, workRevision: binding.workRevision ?? null });
+  const dispatch = normalizeReviewDispatchEvidence(dispatchEvidence, { workId, workRevision: binding.workRevision ?? null }, engineCli);
   if (dispatch.requested) {
     if (!Number.isSafeInteger(binding.workRevision)) problems.push("dispatch association requires an available bound work revision");
     problems.push(...dispatch.problems);
-    if (dispatch.valid && !dispatch.complete) problems.push(`dispatch host evidence unavailable: ${dispatch.unavailable.join(", ")}`);
-    if (dispatch.complete && dispatch.evidence.hostResult.exitCode.value !== 0) problems.push(`dispatch host exited ${dispatch.evidence.hostResult.exitCode.value}`);
+    if (dispatch.valid && !dispatch.complete) problems.push(dispatch.evidenceType === "native-tool" ? "native execution finality, association or independent delivery verification remains incomplete" : `dispatch host evidence unavailable: ${dispatch.unavailable.join(", ")}`);
+    if (dispatch.evidenceType !== "native-tool" && dispatch.complete && dispatch.evidence.hostResult.exitCode.value !== 0) problems.push(`dispatch host exited ${dispatch.evidence.hostResult.exitCode.value}`);
   }
   const verifyRun = binding.status === "available"
     ? runShell(binding.command, root, commandTimeoutMs)

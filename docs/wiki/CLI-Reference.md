@@ -85,6 +85,120 @@
 
 无旗标。
 
+## `config-backup-create`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--request` | 必填 | `string` | `Existing private JSON file; closed per-command configuration-backup envelope` |
+| `--at` | 必填 | `instant` |  |
+| `--output` | 可选 | `string` | `Private create-new JSON result; an existing output is never overwritten` |
+| `--timeout-ms` | 可选 | `integer` |  |
+
+## `config-backup-list`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--root` | 可选 | `string` |
+| `--at` | 必填 | `instant` |
+
+## `config-backup-plan`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--request` | 必填 | `string` | `Existing private JSON file; closed per-command configuration-backup envelope` |
+| `--at` | 必填 | `instant` |  |
+| `--output` | 可选 | `string` | `Private create-new JSON result; an existing output is never overwritten` |
+
+## `config-backup-resume`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--request` | 必填 | `string` | `Existing private JSON file; closed per-command configuration-backup envelope` |
+| `--at` | 必填 | `instant` |  |
+| `--output` | 可选 | `string` | `Private create-new JSON result; an existing output is never overwritten` |
+| `--timeout-ms` | 可选 | `integer` |  |
+
+## `config-backup-retire`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--request` | 必填 | `string` | `Existing private JSON file; closed per-command configuration-backup envelope` |
+| `--at` | 必填 | `instant` |  |
+| `--output` | 可选 | `string` | `Private create-new JSON result; an existing output is never overwritten` |
+| `--timeout-ms` | 可选 | `integer` |  |
+
+## `config-backup-verify`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--package` | 必填 | `string` |
+
+## `config-restore-apply`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--request` | 必填 | `string` | `Existing private JSON file; closed per-command configuration-backup envelope` |
+| `--at` | 必填 | `instant` |  |
+| `--output` | 可选 | `string` | `Private create-new JSON result; an existing output is never overwritten` |
+| `--timeout-ms` | 可选 | `integer` |  |
+| `--package` | 必填 | `string` |  |
+| `--actor` | 必填 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--approved-plan-digest` | 必填 | `string` | `Exact reviewed restore plan SHA-256; not permission to bypass existing write barriers` |
+
+## `config-restore-plan`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--request` | 必填 | `string` | `Existing private JSON file; closed per-command configuration-backup envelope` |
+| `--at` | 必填 | `instant` |  |
+| `--output` | 可选 | `string` | `Private create-new JSON result; an existing output is never overwritten` |
+| `--package` | 必填 | `string` |  |
+| `--actor` | 必填 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+
 ## `configuration-projections-plan`
 
 - 可用范围：`cli`。
@@ -198,6 +312,45 @@
 | 旗标 | 必填 | 取值类型 | 写法 |
 | --- | --- | --- | --- |
 | `--from-file` | 必填 | `string` | `Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input.` |
+
+## `execution-native-evidence`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--from-file` | 必填 | `string` |
+| `--work-id` | 可选 | `string` |
+| `--work-revision` | 可选 | `integer` |
+
+## `execution-native-prepare`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 必填 | `string` |  |
+| `--request` | 必填 | `string` | `DotExecutionRequest JSON including actual-session contextRead` |
+| `--tool` | 必填 | `string` |  |
+| `--tool-contract` | 必填 | `string` | `{ref,sha256} JSON` |
+| `--arguments` | 必填 | `string` | `actual tool arguments JSON` |
+| `--retry-from` | 可选 | `string` | `previous saved native record, required for an explicit retry` |
+| `--reconciliation` | 可选 | `string` | `NativeRetryReconciliation; paired with retry-from` |
+| `--output` | 必填 | `string` |  |
+
+## `execution-native-record`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--binding` | 必填 | `string` |  |
+| `--response` | 可选 | `string` | `NativeToolResponseInput JSON; absent keeps pending attempt` |
+| `--prior` | 可选 | `string` | `previous saved record/history for this same attempt` |
+| `--output` | 必填 | `string` |  |
 
 ## `execution-policy-resolve`
 
@@ -1095,21 +1248,64 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--execution-target` | 可选 | `string` | `traditional | chatgpt-dot` |
+| `--dot-input` | 可选 | `string` | `absolute path to JSON dot target options; required for chatgpt-dot` |
+| `--approved-plan-digest` | 可选 | `string` | `saved preview dot.planDigest; required for dot apply` |
+| `--mode` | 必填 | `string` |  |
+| `--project` | 必填 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--artifacts` | 可选 | `string` |  |
+| `--cloud` | 可选 | `boolean` |  |
+| `--restore` | 可选 | `string` |  |
+| `--language` | 可选 | `string` |  |
+| `--navigation` | 可选 | `boolean` |  |
+| `--archive` | 可选 | `string` |  |
+| `--rollback` | 可选 | `boolean` |  |
+| `--managed-sections` | 可选 | `string` |  |
+| `--mapping` | 可选 | `string` |  |
+| `--yes` | 可选 | `boolean` |  |
+
+## `shared-submit-advisory-read`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
-| `--mode` | 必填 | `string` |
-| `--project` | 必填 | `string` |
-| `--at` | 必填 | `instant` |
-| `--artifacts` | 可选 | `string` |
-| `--cloud` | 可选 | `boolean` |
-| `--restore` | 可选 | `string` |
-| `--language` | 可选 | `string` |
-| `--navigation` | 可选 | `boolean` |
-| `--archive` | 可选 | `string` |
-| `--rollback` | 可选 | `boolean` |
-| `--managed-sections` | 可选 | `string` |
-| `--mapping` | 可选 | `string` |
-| `--yes` | 可选 | `boolean` |
+| `--workspace` | 必填 | `string` |
+
+## `shared-submit-advisory-write`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 必填 | `string` |
+| `--from-file` | 必填 | `string` |
+| `--actor` | 必填 | `string` |
+| `--handoff-evidence` | 必填 | `string` |
+| `--timeout-ms` | 可选 | `integer` |
+
+## `shared-submit-evidence`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--from-file` | 必填 | `string` |
+
+## `shared-submit-plan`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--from-file` | 必填 | `string` |
 
 ## `skill-render`
 
@@ -1436,7 +1632,7 @@
 | --- | --- | --- | --- |
 | `--workspace` | 可选 | `string` |  |
 | `--id` | 必填 | `string` |  |
-| `--execution-request` | 可选 | `string` | `ExecutionAdmissionRequest JSON: host, category, rejections, requestedAgents, availableCombinations, optional usage/expectedPolicy` |
+| `--execution-request` | 可选 | `string` | `ExecutionAdmissionRequest JSON or explicit DotExecutionRequest JSON (dot-autonomous/chatgpt-dot); native self-model/quota not-applicable is not admission` |
 
 ## `work-release`
 

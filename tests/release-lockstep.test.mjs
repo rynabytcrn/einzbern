@@ -53,6 +53,10 @@ const HELPER_READMES = ["README.md", "README.en.md", "README.ja.md", "README.ko.
 const RELEASE_NOTES = "Improve configuration consistency and installation diagnostics.";
 const RELEASE_CLI = fileURLToPath(new URL("../scripts/release.mjs", import.meta.url));
 const REPOSITORY_ROOT = dirname(dirname(RELEASE_CLI));
+const SPECIFICATIONS = Object.freeze([
+  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md",
+  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md",
+]);
 after(() => rm(base, { recursive: true, force: true }));
 
 function git(root, args) {
@@ -94,7 +98,7 @@ async function createRepos(name) {
   for (const directory of ["scripts", "portal", "skill"]) {
     await cp(join(REPOSITORY_ROOT, directory), join(engineRoot, directory), { recursive: true });
   }
-  for (const path of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "packages/core/src/names.ts", "specs/dispatch-admission-evidence-v1.md"]) {
+  for (const path of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "packages/core/src/names.ts", ...SPECIFICATIONS.map(name => `specs/${name}`)]) {
     await writeText(engineRoot, path, await readFile(join(REPOSITORY_ROOT, path), "utf8"));
   }
   await writeText(engineRoot, "packages/core/src/framework-version.ts", await readFile(join(REPOSITORY_ROOT, "packages/core/src/framework-version.ts"), "utf8"));
@@ -264,9 +268,12 @@ test("488-R1/R2/R4, MIN-235 D13: prepare aligns both repositories, keeps schema 
   const notices = readUstar(gunzipSync(archive)).find((entry) => entry.path === `einzbern-${NEXT_VERSION}/THIRD_PARTY_NOTICES.txt`);
   assert.ok(notices, "the prepared archive retains vendored runtime license notices");
   assert.deepEqual(notices.bytes, await readFile(join(REPOSITORY_ROOT, "THIRD_PARTY_NOTICES.txt")), "release preparation preserves the actual license notice bytes");
-  const dispatchFormat = readUstar(gunzipSync(archive)).find((entry) => entry.path === `einzbern-${NEXT_VERSION}/specs/dispatch-admission-evidence-v1.md`);
-  assert.ok(dispatchFormat, "the prepared archive includes the format required by its public dispatch evidence entry");
-  assert.deepEqual(dispatchFormat.bytes, await readFile(join(REPOSITORY_ROOT, "specs/dispatch-admission-evidence-v1.md")), "release preparation preserves the exact dispatch evidence format bytes");
+  const contractEntries = readUstar(gunzipSync(archive));
+  for (const name of SPECIFICATIONS) {
+    const contract = contractEntries.find(entry => entry.path === `einzbern-${NEXT_VERSION}/specs/${name}`);
+    assert.ok(contract, `${name}: release preparation includes the public CLI contract`);
+    assert.deepEqual(contract.bytes, await readFile(join(REPOSITORY_ROOT, "specs", name)), `${name}: release preparation preserves exact contract bytes`);
+  }
   const checksum = await readFile(result.assets.checksum, "utf8");
   assert.equal(checksum, `${result.assets.sha256}  einzbern-${NEXT_VERSION}.tar.gz\n`);
   const p8 = await import(pathToFileURL(join(repos.engineRoot, "scripts/lib/p8-workflow-rc.mjs")).href);

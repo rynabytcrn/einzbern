@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-483 R1 (MIN-228 D3, MIN-229 D6): the four built-in Command Spell rules ship
 // with the engine, each with its id, its version (batch processing at its third) and a Chinese
-// and an English title and body. The Chinese bodies are the Owner's final wording: the fixtures
-// under tests/fixtures/rules/ are copies of the principle texts, and every Chinese body equals
-// its copy byte for byte. So do the English bodies of design-authority and silent-reporting.
+// and an English title and body. The original Chinese bodies retain the Owner's wording.
+// Current fixtures explicitly include later supplements; every Chinese body equals its fixture
+// byte for byte. So do the English bodies of design-authority and silent-reporting.
 // INIT-053 R40: the Owner revised batch v3 (clause 7, "once" counts per round) and
 // silent-reporting v1 (its last sentence, no report between rounds) at the same version. The
 // Chinese fixtures are the Owner's archived revision; the English of the two additions is an
@@ -20,6 +20,9 @@
 // byte, under the catalog's heading.
 // TCRN-CROSS-STORY-541 (MIN-258 D3, MIN-259 D2): unattended-commands rises to v2, one sentence added
 // to the end of clause 1; unattended-commands-v1 keeps the v1 text in both languages.
+// INIT-062: autonomy and residue-cleanup retain their v1 original text in *-v1-rev1
+// fixtures. Their current Chinese and English fixtures also contain agent-authored wording
+// implementing the Owner's universal authorization-count and branch-lifecycle instructions.
 
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -27,7 +30,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { BUILT_IN_RULE_IDS, BUILT_IN_RULES, builtInRule, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
+import { AUTONOMY_AUTHORIZATION_BODY, BRANCH_LIFECYCLE_BODY, BUILT_IN_RULE_IDS, BUILT_IN_RULES, INCREMENTAL_UPDATE_DOT_BODY, builtInRule, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
 
 const fixtures = resolve(import.meta.dirname, "fixtures", "rules");
 const LANGUAGES = ["zh", "en"];
@@ -41,7 +44,7 @@ function absolutePath(text) {
   return ABSOLUTE_PATH.exec(text)?.[0] ?? null;
 }
 
-test("the engine ships seven built-in rules at their versions, batch processing at v3", () => {
+test("the engine ships eight built-in rules at their versions, batch processing at v3", () => {
   assert.deepEqual(BUILT_IN_RULES.map((rule) => [rule.id, rule.version]), [
     ["autonomy", 1],
     ["batch", 3],
@@ -50,6 +53,7 @@ test("the engine ships seven built-in rules at their versions, batch processing 
     ["design-authority", 1],
     ["residue-cleanup", 1],
     ["goal-writing", 1],
+    ["incremental-update", 1],
   ]);
   assert.deepEqual([...BUILT_IN_RULE_IDS], BUILT_IN_RULES.map((rule) => rule.id));
   assert.equal(builtInRule("batch")?.version, 3);
@@ -87,8 +91,10 @@ test("no rule text names an absolute path", () => {
   }
 });
 
-test("every Chinese body is the Owner's final text word for word, and the English bodies of design-authority and silent-reporting equal their fixtures", async () => {
-  for (const rule of BUILT_IN_RULES) {
+test("every current Chinese body and the archived English contracts match their explicit fixtures", async () => {
+  // Historical bodies remain separately archived; current supplements have explicit fixtures.
+  // The eighth source is asserted below without changing its contract.
+  for (const rule of BUILT_IN_RULES.filter(rule => rule.id !== "incremental-update")) {
     assert.equal(rule.body.zh, await readFile(join(fixtures, `${rule.id}.zh.md`), "utf8"), rule.id);
   }
   assert.equal(builtInRule("design-authority")?.body.en, await readFile(join(fixtures, "design-authority.en.md"), "utf8"));
@@ -203,14 +209,14 @@ const INC_225_CLAUSES = Object.freeze([
   "3. On encountering a speech-act condition, the working party explains once, replies minimally thereafter, and names the single exit.",
 ]);
 
-test("540 (MIN-259 D1): residue-cleanup v1 and goal-writing v1 carry the Owner's Chinese and their English, clause for clause", async () => {
-  assert.deepEqual(BUILT_IN_RULE_IDS.slice(-3), ["design-authority", "residue-cleanup", "goal-writing"]);
+test("540 (MIN-259 D1): residue-cleanup v1 preserves its eight historical clauses plus the branch supplement, and goal-writing stays unchanged", async () => {
+  assert.deepEqual(BUILT_IN_RULE_IDS.slice(4, 7), ["design-authority", "residue-cleanup", "goal-writing"]);
   const residue = builtInRule("residue-cleanup");
   const goal = builtInRule("goal-writing");
   assert.deepEqual([residue.version, { ...residue.title }], [1, { zh: "无效残余收尾原则", en: "Residue Cleanup Principle" }]);
   assert.deepEqual([goal.version, { ...goal.title }], [1, { zh: "目标书写契约", en: "Goal Writing Contract" }]);
-  for (const [rule, count] of [[residue, 8], [goal, 3]]) {
-    assert.equal(rule.body.zh, await readFile(join(fixtures, `${rule.id}.zh.md`), "utf8"), `${rule.id}: the Owner's Chinese, byte for byte`);
+  for (const [rule, count] of [[residue, 9], [goal, 3]]) {
+    assert.equal(rule.body.zh, await readFile(join(fixtures, `${rule.id}.zh.md`), "utf8"), `${rule.id}: the current reviewed Chinese fixture, byte for byte`);
     for (const language of LANGUAGES) {
       const parts = rule.body[language].split("\n\n");
       assert.equal(parts.length, 3, `${rule.id} ${language}: the heading, the opening paragraph and the clauses`);
@@ -219,8 +225,8 @@ test("540 (MIN-259 D1): residue-cleanup v1 and goal-writing v1 carry the Owner's
     }
   }
   const leads = {
-    zh: ["创建者负责，主代理接续。", "按用途判定残余。", "结束即收尾，失败也收尾。", "证据与可重建副本分开。", "限定清理边界。", "工作树通过管理入口退出。", "容量与下一轮接续。", "核验实际结果，合并一次汇报。"],
-    en: ["The creator is responsible; the main agent takes over.", "Judge residue by its purpose.", "Clean up when work ends, and when it fails.", "Keep evidence apart from copies that can be rebuilt.", "Bound what is cleaned.", "Retire worktrees through their management entry.", "Capacity and the next round.", "Verify the actual result and report it once."],
+    zh: ["创建者负责，主代理接续。", "按用途判定残余。", "结束即收尾，失败也收尾。", "证据与可重建副本分开。", "限定清理边界。", "工作树通过管理入口退出。", "容量与下一轮接续。", "核验实际结果，合并一次汇报。", "分支生命周期与收尾。"],
+    en: ["The creator is responsible; the main agent takes over.", "Judge residue by its purpose.", "Clean up when work ends, and when it fails.", "Keep evidence apart from copies that can be rebuilt.", "Bound what is cleaned.", "Retire worktrees through their management entry.", "Capacity and the next round.", "Verify the actual result and report it once.", "Branch lifecycle and retirement."],
   };
   for (const language of LANGUAGES) {
     const clauses = residue.body[language].split("\n\n")[2].trimEnd().split("\n");
@@ -257,4 +263,39 @@ test("541 (MIN-259 D2): unattended-commands v2 is v1 with its heading at v2 and 
       assert.ok(added.includes(fragment), `${language} added sentence: ${fragment}`);
     }
   }
+});
+
+
+test("DOT-R01/R02 B5: incremental-update v1 distinguishes direct sync from necessary dot transport", () => {
+  const rule = builtInRule("incremental-update");
+  assert.equal(rule.version, 1);
+  for (const [body, phrases] of [
+    [rule.body.zh, ["完整有效基线", "一般同步目录宿主直接使用", "不增加无必要的下载或上传", "提交前刷新一次完整基线", "受支持的重放或重应用", "不授予跨设备原子排他", "一个 INIT 全部待办 Story"]],
+    [INCREMENTAL_UPDATE_DOT_BODY.zh, ["dot 仅在环境实际需要时取得完整副本", "核对远端读回", "不按超时擅自接管", "实际行动者", "动态记录"]],
+    [rule.body.en, ["complete, valid baseline", "without unnecessary downloads or uploads", "no atomic exclusion across devices", "all open Stories under one INIT"]],
+    [INCREMENTAL_UPDATE_DOT_BODY.en, ["Only when its environment requires transport", "verify remote readback", "elapsed time never authorizes takeover"]],
+  ]) for (const phrase of phrases) assert.ok(body.includes(phrase), phrase);
+  assert.equal(rule.body.zh.includes("dot 仅在环境"), false);
+  assert.ok(Object.isFrozen(INCREMENTAL_UPDATE_DOT_BODY));
+});
+
+test("INIT-062 universal supplements preserve v1 history, explicit user limits and safe branch retirement in both languages", async () => {
+  for (const language of LANGUAGES) {
+    for (const id of ["autonomy", "residue-cleanup"]) {
+      const rule = builtInRule(id);
+      const previous = await readFile(join(fixtures, `${id}-v1-rev1.${language}.md`), "utf8");
+      assert.equal(rule.version, 1);
+      assert.equal(rule.body[language], await readFile(join(fixtures, `${id}.${language}.md`), "utf8"));
+      assert.ok(rule.body[language].startsWith(previous), `${id}: no historical sentence was removed`);
+      assert.notEqual(rule.body[language], previous);
+    }
+    assert.ok(Object.isFrozen(AUTONOMY_AUTHORIZATION_BODY));
+    assert.ok(Object.isFrozen(BRANCH_LIFECYCLE_BODY));
+    assert.ok(builtInRule("autonomy").body[language].includes(AUTONOMY_AUTHORIZATION_BODY[language]));
+    assert.ok(builtInRule("residue-cleanup").body[language].includes(BRANCH_LIFECYCLE_BODY[language]));
+  }
+  for (const text of ["模型自行拟定", "一般同意不等于明确施加", "只有用户在自己的指令中明确要求", "平台要求的逐次确认", "实质新增且相关的证据", "结果不明先读回核实", "无限重试、无限外部执行或发布许可"]) assert.ok(AUTONOMY_AUTHORIZATION_BODY.zh.includes(text), text);
+  for (const text of ["model-authored plan", "General assent", "only when the user explicitly requests", "Platform-required confirmation for each action", "materially new and relevant evidence", "Read back an uncertain outcome", "unlimited retries, unlimited external execution or publication"]) assert.ok(AUTONOMY_AUTHORIZATION_BODY.en.includes(text), text);
+  for (const text of ["每个新批开始、推送前及相关 PR 合并后", "不能把旧检查", "已证实可安全快进", "分支不再含目标中没有的独有提交", "没有活动 PR、运行或待执行 CI、工作树、后续交付或证据引用依赖", "必要历史、备份和失败证据已有可靠保留位置", "读回本地引用及适用的远端头", "squash 合并不单独证明", "默认、受保护、备份或恢复分支", "归属和状态不明", "不得按名称、年龄、ahead 数或通配符批量删分支", "不新增远端写入、合并、发布或永久删除权限"]) assert.ok(BRANCH_LIFECYCLE_BODY.zh.includes(text), text);
+  for (const text of ["At the start of each new batch, before pushing and after a related PR merges", "no unique commits absent from that target", "no active PR, running or pending CI, worktree, later delivery or evidence reference", "backups and failure evidence", "Read back local refs and applicable remote heads", "a squash merge alone does not prove", "Default, protected, backup and recovery branches", "unknown ownership or status", "Do not delete branches in bulk", "no new permission for remote writes, merges, publication or permanent deletion"]) assert.ok(BRANCH_LIFECYCLE_BODY.en.includes(text), text);
 });

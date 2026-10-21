@@ -8,8 +8,8 @@
 //     into their {{version}} slots and nothing else changed;
 //   - skill/<skill id>/: the skill directory exactly as skill-render writes it for that version;
 //   - package.json: the helper's name, the engine's version, and the skill's description A.
-// Then it lists every file of the working tree that the generated tree does not hold, for the
-// release to remove with git rm. It deletes nothing: the files it generates are written over, and
+// Then it lists every file of the working tree that the generated tree does not hold, for explicit
+// review, never as deletion authorization. It deletes nothing: the files it generates are written over, and
 // every other file is left as it was. Build first: skill-render runs from dist/build.
 //
 // Usage: node scripts/render-helper-docs.mjs --out <helper working tree> [--version <version>]

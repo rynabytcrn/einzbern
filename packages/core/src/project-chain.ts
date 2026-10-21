@@ -1,14 +1,17 @@
 import { readConsolidationIndex } from "./consolidation-format.js";
 // SPDX-License-Identifier: Apache-2.0
+import { DOT_EXECUTION_MODE, dotDigest, resolveDotExecutionAdmission, validateDotExecutionRequest } from "./dot-execution.js";
+import { assessExecutionContextRead } from "./dot-agents.js";
+import type { DotExecutionRequest, DotCheck, DotAdmission } from "./dot-execution.js";
 import { readExecutionAdmissionSnapshot, resolveExecutionAdmissionFromSnapshot } from "./execution-admission.js";
 import type { ExecutionAdmissionRequest, ExecutionAdmissionSnapshot } from "./execution-admission.js";
 import { variableExportDecision } from "./variables.js";
 import type { VariableRecordValue } from "./variables.js";
 import { engineModelPolicyCatalogFromSnapshot } from "./engine-model-policy.js";
-import { MACHINE_SETTINGS_FILE_NAME, MACHINE_SETTINGS_CATALOG } from "./machine-settings.js";
+import { MACHINE_SETTINGS_FILE_NAME, MACHINE_SETTINGS_CATALOG, readMachineSettings } from "./machine-settings.js";
 import type { MachineSettingsReadback } from "./machine-settings.js";
 import { resolveExecutionConcurrency } from "./execution-policy.js";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { pathIsInside } from "./path-containment.js";
 import { deviceHome } from "./device-home.js";
 import { realpath } from "node:fs/promises";
@@ -56,12 +59,26 @@ function projectExecutionConfiguration(snapshot: ExecutionAdmissionSnapshot): {
   });
 }
 
+/** Native mode reads the actual device cap, not unrelated host model policy or quota files. */
+async function dotProjectExecutionConfiguration(home: string = deviceHome()) {
+  if (!isAbsolute(home)) throw new ProjectChainError("device home must be absolute");
+  const file = await readMachineSettings(join(home, MACHINE_SETTINGS_FILE_NAME));
+  return {
+    snapshot: { home, machineSettings: file },
+    enginePolicy: { schemaVersion: "tcrn.dot-policy-applicability.v1", applicability: "not-applicable", hosts: {} as Readonly<Record<string, never>>, source: "not-read-for-native-mode" },
+    deviceSettings: {
+      schemaVersion: file.schemaVersion, layerKind: file.layerKind, path: join(home, MACHINE_SETTINGS_FILE_NAME),
+      settings: MACHINE_SETTINGS_CATALOG.map(entry => ({ ...entry, currentValue: Object.hasOwn(file.values, entry.key) ? file.values[entry.key]! : null })), updatedAt: file.updatedAt,
+    },
+  };
+}
+
 /** No caller-supplied path is opened. Repositories sharing one real library are one target. */
 export async function resolveProjectTarget(referenceInput: ProjectReference, home?: string, visited = new Set<string>()): Promise<Record<string, unknown>> {
   return resolveProjectTargetFromSnapshot(referenceInput, home, visited);
 }
 
-async function resolveProjectTargetFromSnapshot(referenceInput: ProjectReference, home: string | undefined, visited: Set<string>, execution?: ReturnType<typeof projectExecutionConfiguration>): Promise<Record<string, unknown>> {
+async function resolveProjectTargetFromSnapshot(referenceInput: ProjectReference, home: string | undefined, visited: Set<string>, execution?: ReturnType<typeof projectExecutionConfiguration> | Awaited<ReturnType<typeof dotProjectExecutionConfiguration>>): Promise<Record<string, unknown>> {
   let reference = projectReference(referenceInput);
   const registry = await readRegistry(home);
   if (!registry.entries.some(entry => entry.libraryId === reference.libraryId)) for (const path of new Set(registry.entries.map(entry => entry.libraryPath))) {
@@ -170,13 +187,14 @@ export function projectTargetHandoff(work: { readonly workId: string; readonly w
   };
 }
 
-export async function workProjectContexts(state: WorkspaceState, workId: string, home?: string, executionRequest?: ExecutionAdmissionRequest): Promise<Record<string, unknown>> {
+export async function workProjectContexts(state: WorkspaceState, workId: string, home?: string, executionRequest?: ExecutionAdmissionRequest | DotExecutionRequest): Promise<Record<string, unknown>> {
   const work = state.work.find(entry => entry.id === workId && !entry.tombstone);
   if (!work) throw new ProjectChainError("work does not exist");
   const involvedProjects = involvedProjectsOf(work);
+  const dotRequest = executionRequest !== undefined && "mode" in executionRequest && executionRequest.mode === DOT_EXECUTION_MODE ? validateDotExecutionRequest(executionRequest) : null;
   // Capture each device file once for this request. All target/common readbacks and admissions
   // share these values; this is not a transaction across the independently stored device files.
-  const execution = projectExecutionConfiguration(await readExecutionAdmissionSnapshot(home));
+  const execution = dotRequest === null ? projectExecutionConfiguration(await readExecutionAdmissionSnapshot(home)) : await dotProjectExecutionConfiguration(home);
   const { enginePolicy, snapshot } = execution;
   const evaluatedAt = new Date().toISOString();
   // Each target resolves on its own: one that fails is a result of its own, never the end of the others.
@@ -189,10 +207,41 @@ export async function workProjectContexts(state: WorkspaceState, workId: string,
     const settings = context.settings as { key: string; value: unknown }[] | undefined;
     const budget = settings?.find(entry => entry.key === "execution.maxConcurrentSubagents")?.value;
     const executionConcurrency = Array.isArray(settings) ? resolveExecutionConcurrency(deviceLimit, budget == null ? undefined : Number(budget)) : null;
-    const executionAdmission = executionRequest === undefined ? { status: "not-requested", reason: "read-only-context-is-not-dispatch-admission" }
+    let executionAdmission: unknown = executionRequest === undefined ? { status: "not-requested", reason: "read-only-context-is-not-dispatch-admission" }
       : !Array.isArray(settings) ? { status: "refused", reasons: ["project-context-unresolved"] }
-      : resolveExecutionAdmissionFromSnapshot(snapshot, executionRequest, { now: evaluatedAt, ...(budget == null ? {} : { projectLimit: Number(budget) }) });
-    const effective = { ...context, enginePolicy, executionConcurrency, executionAdmission };
+      : dotRequest !== null ? null
+      : resolveExecutionAdmissionFromSnapshot(snapshot as ExecutionAdmissionSnapshot, executionRequest as ExecutionAdmissionRequest, { now: evaluatedAt, ...(budget == null ? {} : { projectLimit: Number(budget) }) });
+    let effectiveContext = context;
+    if (dotRequest !== null && Array.isArray(settings)) {
+      const failCheck = (reason: string): DotCheck => ({ status: "fail", evidenceRefs: [], reason });
+      const sameTarget = dotDigest(context.reference) === dotDigest(dotRequest.projectRef);
+      const revision = dotRequest.revisionBinding;
+      // A freeze is never accepted merely because the caller supplied a digest. This consumer
+      // only has an actual revision observation; a supported freeze verifier can be added later.
+      const currentScopeDigest = typeof work.scopeDigest === "string" && /^[a-f0-9]{64}$/u.test(work.scopeDigest) ? work.scopeDigest : null;
+      const sameWork = currentScopeDigest !== null && dotRequest.workId === workId && revision.kind === "revision" && revision.workRevision === work.revision && revision.scopeDigest === currentScopeDigest;
+      // Legacy/missing scope is an unavailable current observation, not a caller-provided
+      // substitute. Only a validated actual digest may enter the context expectation.
+      const contextAssessment = dotRequest.contextRead === undefined || currentScopeDigest === null ? null : assessExecutionContextRead(dotRequest.contextRead.record, { ...dotRequest.contextRead.expected, workReference: workId, workRevision: work.revision, scopeDigest: currentScopeDigest, now: evaluatedAt, effectiveRoots: (context.repositoryContexts as { projectPath: string }[]).map(repository => repository.projectPath) }, dotRequest.contextRead.observations);
+      const checks = { ...dotRequest.checks,
+        context: contextAssessment?.check ?? { status: "unknown" as const, evidenceRefs: [], reason: currentScopeDigest === null ? "current work scope digest is unavailable" : "actual-session AGENTS, Mana and work source observations are required" },
+        ...(currentScopeDigest === null ? { scope: { status: "unknown" as const, evidenceRefs: [], reason: "current work scope digest is unavailable" } } : {}),
+        ...(!sameWork ? { work: failCheck("current work revision/scope differs, or freeze authority is unavailable") } : {}),
+        ...(!sameTarget || involvedProjects.state !== "selected" ? { target: failCheck("explicit selected target binding differs") } : {}),
+        ...(["blocked", "pending-owner-acceptance", "done", "cancelled"].includes(work.status) ? { state: failCheck("current work state does not allow dispatch") } : {}),
+      };
+      const { contextRead, ...requestWithoutContextRead } = dotRequest;
+      executionAdmission = resolveDotExecutionAdmission({ ...requestWithoutContextRead, checks, ...(contextRead === undefined || currentScopeDigest === null ? {} : { contextRead: { ...contextRead, expected: { ...contextRead.expected, workReference: workId, workRevision: work.revision, scopeDigest: currentScopeDigest, now: evaluatedAt, effectiveRoots: (context.repositoryContexts as { projectPath: string }[]).map(repository => repository.projectPath) } } }) }, { deviceLimit, ...(budget == null ? {} : { projectLimit: Number(budget) }), now: evaluatedAt, contextDigest: dotDigest({ workLibraryId: state.metadata.workspaceId, workId, workRevision: work.revision, scopeDigest: currentScopeDigest, context }) });
+      const readiness = context.readiness as Record<string, { ready: boolean; missing: string[] }> | undefined;
+      if (readiness !== undefined) {
+        const dotAdmission = executionAdmission as DotAdmission;
+        const model = { ready: checks.tools.status === "pass", missing: checks.tools.status === "pass" ? [] : ["dot.actual-tool-capability"] };
+        const developmentMissing = ["design", "repository", "output", "language"].flatMap(key => readiness[key]?.missing ?? [`${key}.unknown`]);
+        developmentMissing.push(...model.missing);
+        effectiveContext = { ...context, readiness: { ...readiness, model, development: { ready: developmentMissing.length === 0, missing: developmentMissing } }, modelCapabilityVerification: "dot-native-capability-evidence-not-self-model-policy", modelApplicability: dotAdmission.applicability };
+      }
+    }
+    const effective = { ...effectiveContext, enginePolicy, executionConcurrency, executionAdmission };
     return { ...effective, handoff: projectTargetHandoff({ workId, workRevision: work.revision }, effective) };
   });
   const conflicts: string[] = [];
@@ -200,7 +249,7 @@ export async function workProjectContexts(state: WorkspaceState, workId: string,
     const values = contexts.map(context => (context.settings as { key: string; value: unknown }[] | undefined)?.find(setting => setting.key === key)?.value).filter(value => value !== undefined);
     if (new Set(values.map(value => canonicalJson(value))).size > 1) conflicts.push(key);
   }
-  return { workId, workRevision: work.revision, involvedProjects, enginePolicy, dispatchAdmitted: executionRequest !== undefined && involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.executionAdmission as { status: string }).status === "admitted" && (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), executionPolicyCommand: "execution-policy-resolve --host <host> --category <category> --rejections <count>", contexts, conflicts, developmentReady: involvedProjects.state === "selected" && contexts.every(context => (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), coordinationReady: involvedProjects.state === "coordination-only", writeAuthority: "not-granted", explanation: "Each context applies only to its stable project reference; authorization and writable roots must be checked independently." };
+  return { workId, workRevision: work.revision, involvedProjects, enginePolicy, dispatchAdmitted: executionRequest !== undefined && involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.executionAdmission as { status: string }).status === "admitted" && (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), executionPolicyCommand: "execution-policy-resolve --host <host> --category <category> --rejections <count>", contexts, conflicts, developmentReady: involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), coordinationReady: involvedProjects.state === "coordination-only", writeAuthority: "not-granted", explanation: "Each context applies only to its stable project reference; authorization and writable roots must be checked independently." };
 }
 
 type RegisteredLocation = { readonly libraryId: string; readonly path: string };

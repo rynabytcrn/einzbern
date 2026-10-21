@@ -33,6 +33,7 @@ import {
   resolveSection,
 } from "../dist/build/packages/core/src/agents-sections.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
+import { DOT_AGENTS_MARKER } from "../dist/build/packages/core/src/dot-agents.js";
 import { builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
 import { HOST_HOOK_POINTER_EVENTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { AGENTS_NAVIGATION_SETTING, MACHINE_SETTINGS_CATALOG, applyMachineSettingSet, readAgentsNavigation } from "../dist/build/packages/core/src/machine-settings.js";
@@ -595,4 +596,18 @@ test("540-GWT1: a project root within the library is refused with MANAGED_SECTIO
     await assert.rejects(readFile(join(projectRoot, AGENTS_FILE)), { code: "ENOENT" });
   }
   assert.equal((await materializeWorkspace(root)).headEventHash, before.headEventHash, "a refusal records nothing");
+});
+
+
+test("DOT-I03/R02: generic render/import/section changes refuse independent dot targets", async context => {
+  const f = await scratch(context); const root = await library(f.base);
+  const body = `${DOT_AGENTS_MARKER}\n# Independent user-owned dot rules\n`;
+  await writeFile(join(f.project, "AGENTS.md"), body);
+  for (const operation of [
+    () => renderAgentsSections(root, { projectRoot: f.project, navigation: "written", backupRoot: f.backups, occurredAt: at() }),
+    () => ensureClaudeImport(f.project, { at: at() }),
+    () => resolveSection({ projectRoot: f.project, id: "navigation", action: "keep", records: [], at: at() }),
+  ]) assert.equal((await refusal(operation)).reasonCode, "DOT_INDEPENDENT_TARGET");
+  assert.equal(await readFile(join(f.project, "AGENTS.md"), "utf8"), body);
+  assert.equal((await readdir(f.project)).includes("CLAUDE.md"), false);
 });

@@ -471,3 +471,8 @@ export async function readMachineSettingsCatalog(path: string = machineSettingsP
     updatedAt: file.updatedAt,
   });
 }
+
+/** Shared configuration backup deliberately excludes paths, identity and execution state. */
+export const CONFIG_BACKUP_MACHINE_KEYS = Object.freeze([
+  "portal.defaultLocale", "portal.defaultPartition", "portal.defaultTheme", "portal.port",
+] as const);

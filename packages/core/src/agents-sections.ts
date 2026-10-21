@@ -43,6 +43,7 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { isUtf8 } from "node:buffer";
 import { dirname, join, resolve } from "node:path";
 import { pathIsInside } from "./path-containment.js";
+import { assertNotDotAgentsTarget } from "./dot-agents.js";
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
 import { removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
@@ -182,6 +183,7 @@ function textOutsideSections(text: string, file: string): string {
  * created with the file when there is none and never put back once the user removed it.
  */
 export async function planClaudeImport(projectRoot: string, records: readonly ManagedSectionRecord[] = []): Promise<ManagedWritePlan> {
+  await assertNotDotAgentsTarget(projectRoot);
   const filePath = join(projectRoot, CLAUDE_FILE);
   const probe = await planManagedWrite({ filePath, file: CLAUDE_FILE, desired: [], records });
   if (probe.before !== null && importsAgents(textOutsideSections(probe.before, CLAUDE_FILE))) return probe;
@@ -262,6 +264,7 @@ async function readSectionFile(filePath: string, file: string): Promise<string |
 }
 
 async function locateSection(projectRoot: string, id: string, records: readonly ManagedSectionRecord[]): Promise<SectionInFile> {
+  await assertNotDotAgentsTarget(projectRoot);
   if (!isManagedSectionId(id)) throw new ManagedSectionError("MANAGED_SECTION_INPUT_INVALID", `${String(id)} is not a section id`, { id: String(id) });
   const file = managedSectionFile(id);
   const filePath = join(projectRoot, file);
@@ -842,6 +845,7 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
   readonly navigation: AgentsNavigationChoice | null;
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsRenderResult> {
+  await assertNotDotAgentsTarget(input.projectRoot);
   return appendPlannedWrite(workspaceRoot, input, {
     plan: async (root, nativeState) => {
       await assertManagedOutputRoot(root, input.projectRoot, nativeState);

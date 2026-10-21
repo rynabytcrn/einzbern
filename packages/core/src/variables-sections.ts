@@ -1,3 +1,4 @@
+import { assertNotDotAgentsTarget } from "./dot-agents.js";
 import { effectiveProjectState } from "./project-chain.js";
 import { DESIGN_CONFIGURATION_KEYS, designConfiguration } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
@@ -324,6 +325,7 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
   readonly projectRoot: string;
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<VariablesSectionsResult> {
+  await assertNotDotAgentsTarget(input.projectRoot);
   return appendPlannedWrite<{ plan: ManagedWritePlan | null; recorded: number; withheld: readonly WithheldEntry[] }, VariablesSectionsResult>(workspaceRoot, input, {
     plan: async (root, nativeState) => {
       await assertManagedOutputRoot(root, input.projectRoot, nativeState);

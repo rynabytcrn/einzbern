@@ -53,6 +53,8 @@ import { deviceFilePath, deviceHome as currentDeviceHome } from "./device-home.j
 import type { DoctorCheck } from "./doctor.js";
 import type { DshPluginInspection } from "./dsh-plugin.js";
 import { readEngineCurrent } from "./engine-home.js";
+import { DOT_INSTALLATION_TARGET, SETUP_EXECUTION_TARGETS, assertNotDotAgentsTarget } from "./dot-agents.js";
+import type { DotAgentsApplied, DotAgentsOptions, DotAgentsPlan, SetupExecutionTarget } from "./dot-agents.js";
 import { promptRecallContext } from "./hook-recall.js";
 import { HOST_HOOK_HOSTS } from "./host-hooks.js";
 import { listKnowledgeMetadata } from "./knowledge-core.js";
@@ -82,6 +84,7 @@ import {
   planDevice,
   planEngineSource,
   planFreshSetup,
+  applyDotSetup,
   planWiring,
   readDeviceNavigation,
   readEngineFiles,
@@ -220,6 +223,9 @@ export interface SetupModeOptions {
 // local archive, a rollback, what uninstall does with managed sections, a migration mapping.
 export interface SetupOptions extends SetupModeOptions {
   readonly mode: string;
+  // Omitted is the byte-compatible traditional installation route. Not a host enum.
+  readonly executionTarget?: SetupExecutionTarget;
+  readonly dot?: Omit<DotAgentsOptions, "executionTarget" | "operation" | "at">;
   // The project being set up.
   readonly projectRoot: string;
   // The instant everything this run writes is stamped with; backups are named by its second.
@@ -245,7 +251,8 @@ export type SetupStep =
   | "host-hooks"
   | "writable-roots"
   | "machine-settings"
-  | "managed-sections";
+  | "managed-sections"
+  | "dot-agents";
 
 export interface SetupWrite {
   readonly step: SetupStep;
@@ -382,6 +389,8 @@ export interface SetupPlan {
   readonly schemaVersion: typeof SETUP_PLAN_SCHEMA_VERSION;
   readonly reasonCode: "SETUP_PLAN_READY";
   readonly mode: SetupMode;
+  readonly executionTarget?: SetupExecutionTarget;
+  readonly dot?: DotAgentsPlan;
   readonly at: string;
   // The engine answering the plan.
   readonly engineVersion: string;
@@ -495,8 +504,10 @@ export interface SetupColumns {
 }
 
 export interface SetupApplied {
+  readonly executionTarget?: SetupExecutionTarget;
+  readonly dot?: DotAgentsApplied;
   readonly schemaVersion: typeof SETUP_APPLIED_SCHEMA_VERSION;
-  readonly reasonCode: "SETUP_APPLIED";
+  readonly reasonCode: "SETUP_APPLIED" | "SETUP_DOT_PENDING" | "SETUP_DOT_PARTIAL" | "SETUP_DOT_SKIPPED" | "SETUP_DOT_KEPT";
   readonly mode: SetupMode;
   readonly at: string;
   // The engine that applied the plan.
@@ -549,6 +560,8 @@ export type SetupRecallSmoke =
 
 /** What a mode's planner is given: the context and the checked inputs. */
 export interface SetupModeInput {
+  readonly executionTarget?: SetupExecutionTarget;
+  readonly dot?: Omit<DotAgentsOptions, "executionTarget" | "operation" | "at">;
   readonly mode: SetupMode;
   readonly at: string;
   readonly context: SetupContext;
@@ -557,7 +570,7 @@ export interface SetupModeInput {
 }
 
 /** What a mode's planner answers; planSetup puts it into the plan, with no warnings when the mode names none. */
-export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "migration" | "coordination" | "dshPlugin">
+export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "migration" | "coordination" | "dshPlugin" | "executionTarget" | "dot">
   & { readonly warnings?: readonly SetupWarning[] };
 
 interface SetupModeEntry {
@@ -971,6 +984,18 @@ export async function planSetup(options: SetupOptions): Promise<SetupPlan> {
   for (const [field, value] of [["home", options.home], ["deviceHome", options.deviceHome]] as const) {
     if (value !== undefined && (typeof value !== "string" || !isAbsolute(value))) setupFail("SETUP_INPUT_INVALID", `${field} must be an absolute path`, { field });
   }
+  const executionTarget = options.executionTarget ?? "traditional";
+  if (!(SETUP_EXECUTION_TARGETS as readonly string[]).includes(executionTarget)) setupFail("SETUP_TARGET_UNSUPPORTED", "unknown installation target", { target: String(executionTarget) });
+  if (executionTarget !== DOT_INSTALLATION_TARGET && options.dot !== undefined) setupFail("SETUP_OPTION_NOT_APPLICABLE", "dot paths require executionTarget=chatgpt-dot");
+  if (executionTarget === DOT_INSTALLATION_TARGET) {
+    if (mode === "migrate" || mode === "restore") setupFail("SETUP_TARGET_UNSUPPORTED", "chatgpt-dot does not support legacy migration or library restore through setup", { mode });
+    if (options.dot === undefined || options.dot === null || typeof options.dot !== "object" || typeof options.projectRoot !== "string" || !isAbsolute(options.projectRoot) || resolve(options.projectRoot) !== options.projectRoot || options.dot.binding?.root !== options.projectRoot) setupFail("SETUP_INPUT_INVALID", "dot requires one explicit project root and matching target path binding");
+    if (givenOptions(options).length > 0) setupFail("SETUP_OPTION_NOT_APPLICABLE", "dot uses its explicit source, paths and choices; traditional setup answers/options do not apply");
+    const context = await detectSetupContext({ projectRoot: options.projectRoot, ...(options.home === undefined ? {} : { home: options.home }), ...(options.deviceHome === undefined ? {} : { deviceHome: options.deviceHome }) });
+    const input: SetupModeInput = { mode, at: options.at, context, answers: {}, options: {}, executionTarget, dot: options.dot };
+    const planned = mode === "fresh" ? await planFreshSetup(input) : mode === "update" ? await planUpdateSetup(input) : mode === "repair" ? await planRepairSetup(input) : await planUninstallSetup(input);
+    return { schemaVersion: SETUP_PLAN_SCHEMA_VERSION, reasonCode: "SETUP_PLAN_READY", mode, at: options.at, engineVersion: FRAMEWORK_VERSION, projectRoot: context.projectRoot, home: context.home, deviceHome: context.deviceHome, context, answers: {}, options: {}, ...planned, warnings: planned.warnings ?? [] };
+  }
   const entry = MODE_TABLE[mode];
   for (const option of givenOptions(options)) {
     if (!entry.options.includes(option)) setupFail("SETUP_OPTION_NOT_APPLICABLE", `${option} does not belong to setup --mode ${mode}`, { mode, option });
@@ -1018,6 +1043,11 @@ export async function applySetup(plan: SetupPlan): Promise<SetupApplied> {
       path: first.path,
     });
   }
+  if (plan.executionTarget === DOT_INSTALLATION_TARGET) {
+    if (plan.mode === "migrate" || plan.mode === "restore") setupFail("SETUP_TARGET_UNSUPPORTED", "dot target cannot use a legacy mode");
+    return applyDotSetup(plan);
+  }
+  if (plan.mode !== "update") await assertNotDotAgentsTarget(plan.projectRoot);
   const writing = resolve(currentDeviceHome());
   if (plan.deviceHome !== writing) {
     setupFail("SETUP_DEVICE_HOME_MISMATCH", `the plan is for the device directory ${plan.deviceHome}, but this process writes through ${writing}`, {

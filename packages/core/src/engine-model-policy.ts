@@ -478,7 +478,16 @@ export interface EngineModelPolicySaveFaults {
   readonly afterCommitBeforeReadback?: () => Promise<void>;
   readonly afterReadbackBeforeReturn?: () => Promise<void>;
 }
-export async function readEngineModelPolicyOperation(idValue: string, home?: string) {
+export interface EngineModelPolicyOperationReadback {
+  readonly schemaVersion: string;
+  readonly operationId: string;
+  readonly status: "recorded" | "not-recorded";
+  readonly operation: EngineModelPolicyOperation | null;
+  readonly currentHost: EngineModelPolicyEntry | null;
+  readonly storeRevision: number;
+  readonly readOnly: boolean;
+}
+export async function readEngineModelPolicyOperation(idValue: string, home?: string): Promise<EngineModelPolicyOperationReadback> {
   const id = operationId(idValue), file = await readEngineModelPolicyFile(home);
   const operation = file.operations && Object.hasOwn(file.operations, id) ? file.operations[id]! : null;
   return { schemaVersion: "tcrn.engine-model-policy-operation.v1", operationId: id, status: operation ? "recorded" : "not-recorded", operation, currentHost: operation ? file.hosts[operation.host] ?? null : null, storeRevision: file.revision, readOnly: true };

@@ -186,8 +186,21 @@ export function hostRecoveryAction(kind: "network" | "rate-limit" | "model-unava
 }
 export function hostExecutionDecisionDigest(value: HostExecutionDecision): string { return dotDigest(value); }
 
+export interface HostFallbackRecommendation {
+  readonly schemaVersion: "tcrn.host-fallback-recommendation.v1";
+  readonly evaluatedAt: string;
+  readonly preferred: HostSelection;
+  readonly candidates: readonly { readonly selection: HostSelection; readonly source: string; readonly authorizationDecision: HostExecutionDecision["status"]; readonly reasons: readonly string[]; readonly expectedCost: "unknown"; readonly expectedQuality: "unknown" }[];
+  readonly omittedCount: number;
+  readonly displayBudget: number;
+  readonly budgetMeaning: "presentation-only-not-authorization-count";
+  readonly executionAdmission: boolean;
+  readonly actualSelection: "unknown";
+  readonly persistentConfigWrites: number;
+  readonly limitation: string;
+}
 /** Optional read-only recommendation. Never imported by the normal execution resolver. */
-export function recommendHostFallbacks(requestValue: HostExecutionRequest, policy: EngineModelPolicyFile | null, evaluatedAt = new Date().toISOString()) {
+export function recommendHostFallbacks(requestValue: HostExecutionRequest, policy: EngineModelPolicyFile | null, evaluatedAt = new Date().toISOString()): HostFallbackRecommendation {
   const request = validateHostExecutionRequest(requestValue);
   const baseline = resolveHostExecution(request, policy, "recommendation-only", evaluatedAt);
   const preferred = baseline.configuredIntent ?? request.selection;

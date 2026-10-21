@@ -120,7 +120,7 @@ jobs:
 
       - name: Retain complete P1 evidence even on failure
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ env.VERIFY_MODE }}-evidence-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/einzbern-p1-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.mode }}/evidence/
@@ -209,7 +209,7 @@ jobs:
 
       - name: Retain curated package and isolated install evidence
         if: always() && env.VERIFY_MODE == 'p1-checks'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package-smoke-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/einzbern-release-smoke/evidence/

@@ -47,6 +47,7 @@ import {
   applyMachineSettingSet,
   applyEngineModelPolicySet,
   applyEngineModelPolicySave,
+  readEngineModelPolicyOperation,
   withWriteLockOptions,
   assertLibraryWritable,
   recordAppends,
@@ -1700,7 +1701,8 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // locates that decision and does not make the policy project-scoped.
   { name: "engine-model-policy-catalog", availability: "cli", mutates: false, flags: [{ name: "host", required: false, valueKind: "string" }] },
   { name: "execution-fallback-candidates", availability: "cli", mutates: false, flags: [{ name: "request", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
-  { name: "engine-model-policy-save", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "host", required: true, valueKind: "string" }, { name: "changes", required: true, valueKind: "json" }, { name: "expected-host-revision", required: true, valueKind: "integer" }, { name: "expected-host-digest", required: true, valueKind: "string" }, { name: "operation-id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
+  { name: "engine-model-policy-operation", availability: "cli", mutates: false, flags: [{ name: "id", required: true, valueKind: "string" }] },
+  { name: "engine-model-policy-save", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "host", required: true, valueKind: "string" }, { name: "lock-timeout-ms", required: false, valueKind: "integer" }, { name: "changes", required: true, valueKind: "json" }, { name: "expected-host-revision", required: true, valueKind: "integer" }, { name: "expected-host-digest", required: true, valueKind: "string" }, { name: "operation-id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "engine-model-policy-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: true, valueKind: "string" }, { name: "policy", required: true, valueKind: "json" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "engine-rollback", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }] },
   { name: "engine-update", availability: "cli", mutates: true, flags: [{ name: "from", required: true, valueKind: "string" }, { name: "sha256", required: true, valueKind: "string" }, { name: "version", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
@@ -3180,14 +3182,18 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const policy = request.capabilities.hostKind === "dot" ? null : await readEngineModelPolicyFile();
     io.write(canonicalJson(recommendHostFallbacks(request, policy, values.at!))); return;
   }
+  if (command === "engine-model-policy-operation") {
+    const values = parseArguments(rest, ["id"]); required(values, ["id"]);
+    io.write(canonicalJson(await readEngineModelPolicyOperation(values.id!))); return;
+  }
   if (command === "engine-model-policy-save") {
-    const values = parseArguments(rest, ["workspace", "host", "changes", "expected-host-revision", "expected-host-digest", "operation-id", "at", "actor", "decided-in"]);
+    const values = parseArguments(rest, ["workspace", "host", "lock-timeout-ms", "changes", "expected-host-revision", "expected-host-digest", "operation-id", "at", "actor", "decided-in"]);
     required(values, ["workspace", "host", "changes", "expected-host-revision", "expected-host-digest", "operation-id", "at", "actor", "decided-in"]);
     let changes: unknown;
     try { changes = JSON.parse(values.changes!); } catch { fail("CLI_ARGUMENT_MALFORMED", "changes"); }
     if (!changes || typeof changes !== "object" || Array.isArray(changes) || Object.keys(changes).length !== 1 || !["tiers", "initialPolicy"].includes(Object.keys(changes)[0]!)) fail("CLI_ARGUMENT_MALFORMED", "changes must contain exact tiers or an explicit initialPolicy");
     const authorization = await verifyWriteAuthorization({ state: await materializeWorkspace(values.workspace!), decidedIn: values["decided-in"]!, target: ENGINE_MODEL_POLICY_WRITE_TARGET });
-    const result = await applyEngineModelPolicySave({ host: values.host!, expectedRevision: integerValue(values, "expected-host-revision", 0), expectedDigest: values["expected-host-digest"] === "absent" ? null : values["expected-host-digest"]!, operationId: values["operation-id"]!, ...(changes as { tiers?: readonly { order: number; model: string; effort: string }[]; initialPolicy?: unknown }), occurredAt: values.at!, actor: values.actor!, authorization });
+    const result = await applyEngineModelPolicySave({ host: values.host!, ...(values["lock-timeout-ms"] === undefined ? {} : { lockTimeoutMs: integerValue(values, "lock-timeout-ms", 0) }), expectedRevision: integerValue(values, "expected-host-revision", 0), expectedDigest: values["expected-host-digest"] === "absent" ? null : values["expected-host-digest"]!, operationId: values["operation-id"]!, ...(changes as { tiers?: readonly { order: number; model: string; effort: string }[]; initialPolicy?: unknown }), occurredAt: values.at!, actor: values.actor!, authorization });
     io.write(canonicalJson({ reasonCode: result.status === "replayed" ? "ENGINE_MODEL_POLICY_SAVE_REPLAYED" : "ENGINE_MODEL_POLICY_SAVE_COMMITTED", ...result }));
     return;
   }

@@ -107,6 +107,9 @@ test("INIT-056 SUB-539: engine policy CLI requires a matching Owner decision and
   const saved = await cli(save); assert.equal(saved.reasonCode, "ENGINE_MODEL_POLICY_SAVE_COMMITTED");
   assert.equal(saved.operation.result.tiers[0].model, "fixture-replacement");
   assert.equal((await cli(save)).reasonCode, "ENGINE_MODEL_POLICY_SAVE_REPLAYED");
+  const operation = await cli(["engine-model-policy-operation", "--id", "cli-save-fixture"]);
+  assert.equal(operation.status, "recorded"); assert.equal(operation.readOnly, true); assert.deepEqual(operation.operation, saved.operation); assert.equal(operation.currentHost.revision, saved.operation.result.revision);
+  assert.equal((await cli(["engine-model-policy-operation", "--id", "missing-operation"])).status, "not-recorded");
   const conflict = [...save]; conflict[conflict.indexOf("--operation-id") + 1] = "different-operation";
   assert.equal((await failure(conflict)).reasonCode, "ENGINE_MODEL_POLICY_CAS_CONFLICT");
 

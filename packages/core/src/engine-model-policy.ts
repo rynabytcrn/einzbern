@@ -36,6 +36,8 @@ export const ENGINE_MODEL_POLICY_REASON_CODES = Object.freeze([
   "ENGINE_MODEL_POLICY_UNAVAILABLE",
   "ENGINE_MODEL_POLICY_CAS_CONFLICT",
   "ENGINE_MODEL_POLICY_OPERATION_CONFLICT",
+  "ENGINE_MODEL_POLICY_SAVE_FAILED",
+  "ENGINE_MODEL_POLICY_SAVE_RECONCILIATION_REQUIRED",
 ] as const);
 export type EngineModelPolicyReasonCode = typeof ENGINE_MODEL_POLICY_REASON_CODES[number];
 
@@ -462,14 +464,29 @@ export interface EngineModelPolicySaveInput {
   readonly operationId: string;
   /** Explicit whole policy for a new/unconfigured host; never inferred from a fallback. */
   readonly initialPolicy?: unknown;
+  /** Finite waiting budget only, never an authorization expiry. Default 30 seconds. */
+  readonly lockTimeoutMs?: number;
   readonly tiers?: readonly EngineModelPolicyTierPatch[];
   readonly occurredAt: string;
   readonly actor: string;
   readonly authorization: VerifiedWriteAuthorization;
   readonly home?: string;
 }
-export async function applyEngineModelPolicySave(input: EngineModelPolicySaveInput): Promise<{ readonly status: "committed" | "replayed"; readonly operation: EngineModelPolicyOperation; readonly readback: EngineModelPolicyFile }> {
+/** Deterministic failure seams are not exposed through CLI or persisted configuration. */
+export interface EngineModelPolicySaveFaults {
+  readonly beforeAtomicWrite?: () => Promise<void>;
+  readonly afterCommitBeforeReadback?: () => Promise<void>;
+  readonly afterReadbackBeforeReturn?: () => Promise<void>;
+}
+export async function readEngineModelPolicyOperation(idValue: string, home?: string) {
+  const id = operationId(idValue), file = await readEngineModelPolicyFile(home);
+  const operation = file.operations && Object.hasOwn(file.operations, id) ? file.operations[id]! : null;
+  return { schemaVersion: "tcrn.engine-model-policy-operation.v1", operationId: id, status: operation ? "recorded" : "not-recorded", operation, currentHost: operation ? file.hosts[operation.host] ?? null : null, storeRevision: file.revision, readOnly: true };
+}
+export async function applyEngineModelPolicySave(input: EngineModelPolicySaveInput, faults: EngineModelPolicySaveFaults = {}): Promise<{ readonly status: "committed" | "replayed"; readonly operation: EngineModelPolicyOperation; readonly readback: EngineModelPolicyFile }> {
   const host = hostId(input.host), id = operationId(input.operationId);
+  const timeoutMs = input.lockTimeoutMs ?? 30_000;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) fail("ENGINE_MODEL_POLICY_INVALID", "lockTimeoutMs must be a nonnegative finite integer");
   const expectedRevision = safeRevision(input.expectedRevision, "expectedRevision", 0);
   if ((input.expectedDigest !== null && (typeof input.expectedDigest !== "string" || !/^[a-f0-9]{64}$/u.test(input.expectedDigest))) || (expectedRevision === 0) !== (input.expectedDigest === null)) fail("ENGINE_MODEL_POLICY_INVALID", "expected revision and digest must identify the same host snapshot");
   try { assertActorId(input.actor); assertStrictInstant(input.occurredAt); } catch { fail("ENGINE_MODEL_POLICY_AUTHORIZATION_REQUIRED", "actual actor and valid instant required"); }
@@ -490,12 +507,14 @@ export async function applyEngineModelPolicySave(input: EngineModelPolicySaveInp
   const changeDigest = canonicalSha256({ host, expectedRevision, expectedDigest: input.expectedDigest, actor: input.actor, authorization: a, ...(initial === undefined ? { tiers } : { initialPolicy: initial }) });
   const home = input.home ?? deviceHome(), path = engineModelPolicyPath(home), lock = engineModelPolicyLockPath(home);
   await mkdir(dirname(lock), { recursive: true }); await mkdir(dirname(path), { recursive: true });
-  return withFileLock(lock, async () => {
+  let phase: "not-written" | "prewrite" | "atomic-write" | "committed" | "readback-confirmed" | "existing-commit" = "not-written";
+  try { return await withFileLock(lock, async () => {
     const current = await readEngineModelPolicyFile(home);
     const prior = current.operations && Object.hasOwn(current.operations, id) ? current.operations[id] : undefined;
     if (prior) {
       if (prior.changeDigest !== changeDigest || prior.host !== host) fail("ENGINE_MODEL_POLICY_OPERATION_CONFLICT", "operation id was already used for different authorized changes", { operationId: id });
-      return { status: "replayed", operation: prior, readback: current };
+      phase = "existing-commit";
+      return { status: "replayed" as const, operation: prior, readback: current };
     }
     const held = Object.hasOwn(current.hosts, host) ? current.hosts[host] : undefined;
     if ((held?.revision ?? 0) !== expectedRevision || (held?.digest ?? null) !== input.expectedDigest) fail("ENGINE_MODEL_POLICY_CAS_CONFLICT", "host changed after the approved snapshot; preserve current policy and reconcile", { host, expectedRevision, actualRevision: held?.revision ?? 0, expectedDigest: input.expectedDigest, actualDigest: held?.digest ?? null });
@@ -505,8 +524,19 @@ export async function applyEngineModelPolicySave(input: EngineModelPolicySaveInp
     const result: EngineModelPolicyEntry = { ...config, revision: expectedRevision + 1, digest: policyDigest(host, config), updatedAt: input.occurredAt, actor: input.actor, decidedIn: a.decidedIn, decidedInLibraryId: a.libraryId };
     const operation: EngineModelPolicyOperation = { id, host, changeDigest, expectedRevision, expectedDigest: input.expectedDigest, storeRevision: current.revision + 1, result };
     const next = validateEngineModelPolicyFile({ schemaVersion: ENGINE_MODEL_POLICY_TRANSACTION_VERSION, revision: current.revision + 1, hosts: { ...current.hosts, [host]: result }, operations: { ...current.operations, [id]: operation } });
-    await writeFileAtomic(path, `${canonicalJson(next)}\n`);
+    phase = "prewrite"; await faults.beforeAtomicWrite?.();
+    phase = "atomic-write"; await writeFileAtomic(path, `${canonicalJson(next)}\n`);
+    phase = "committed"; await faults.afterCommitBeforeReadback?.();
     const readback = await readEngineModelPolicyFile(home);
-    return { status: "committed", operation: readback.operations![id]!, readback };
-  });
+    phase = "readback-confirmed"; await faults.afterReadbackBeforeReturn?.();
+    return { status: "committed" as const, operation: readback.operations![id]!, readback };
+  }, { timeoutMs, command: "einzbern engine-model-policy-save" }); }
+  catch (error) {
+    const failurePhase = phase as string; // callback writes are intentionally observed after rejection
+    if (failurePhase === "not-written") throw error;
+    const writeOutcome = failurePhase === "prewrite" ? "not-written" : failurePhase === "atomic-write" ? "unknown" : failurePhase === "existing-commit" ? "previously-committed" : "committed";
+    const rawCause = String((error as { reasonCode?: unknown; code?: unknown }).reasonCode ?? (error as { code?: unknown }).code ?? "UNKNOWN");
+    const causeCode = ["EIO", "ENOSPC", "EACCES", "EPERM", "EROFS", "ENOENT", "EBUSY", "ATOMIC_WRITE_INTERRUPTED", "ATOMIC_WRITE_RENAME_FAILED", "FILE_LOCK_LOST", "FILE_LOCK_TIMEOUT", "ENGINE_MODEL_POLICY_FILE_INVALID"].includes(rawCause) ? rawCause : "UNKNOWN";
+    throw new EngineModelPolicyError(writeOutcome === "not-written" ? "ENGINE_MODEL_POLICY_SAVE_FAILED" : "ENGINE_MODEL_POLICY_SAVE_RECONCILIATION_REQUIRED", "Save did not return a complete receipt; inspect the read-only operation result before retry", { operationId: id, host, phase: failurePhase, writeOutcome, causeCode, readbackConfirmed: failurePhase === "readback-confirmed" || failurePhase === "existing-commit" });
+  }
 }

@@ -4,8 +4,10 @@ import "./helpers/device-home.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { acquireFileLock } from "../dist/build/packages/core/src/file-lock.js";
+import { engineModelPolicyLockPath } from "../dist/build/packages/core/src/device-home.js";
 import { join } from "node:path";
-import { applyEngineModelPolicySave, applyEngineModelPolicySet, readEngineModelPolicyFile, validateEngineModelPolicyFile } from "../dist/build/packages/core/src/engine-model-policy.js";
+import { applyEngineModelPolicySave, applyEngineModelPolicySet, readEngineModelPolicyFile, validateEngineModelPolicyFile, readEngineModelPolicyOperation } from "../dist/build/packages/core/src/engine-model-policy.js";
 import { resolveHostExecution } from "../dist/build/packages/core/src/execution-fallback.js";
 import { nativeFixture, tuple, at } from "./helpers/host-native-fixture.mjs";
 const policy = host => ({ categories: [{ id: "main", name: "Main", order: 10, description: "" }], tiers: [{ ...tuple, runner: host, category: "main", order: 10, note: "retained" }, { ...tuple, runner: host, category: "main", order: 20, note: "unselected" }], escalation: { enabled: true, threshold: 2, ceiling: "main" } });
@@ -60,7 +62,7 @@ test("T18 competing isolated transactions commit exactly one snapshot and retain
   const rejected = results.find(result => result.status === "rejected"); assert.equal(rejected.reason.reasonCode, "ENGINE_MODEL_POLICY_CAS_CONFLICT");
   const current = await readEngineModelPolicyFile(f.home); assert.equal(current.hosts.codex.revision, 2); assert.equal(Object.keys(current.operations).length, 1);
 });
-test("T20 legacy reads do not migrate bytes and transaction receipts reject malformed history", async t => {
+test("S2 storage compatibility: legacy reads do not migrate bytes and transaction receipts reject malformed history", async t => {
   const f = await fixture(t); const before = await readFile(f.path, "utf8");
   assert.equal((await readEngineModelPolicyFile(f.home)).schemaVersion, "tcrn.engine-model-policy.v1"); assert.equal(await readFile(f.path, "utf8"), before);
   const saved = await applyEngineModelPolicySave(f.save);
@@ -68,4 +70,42 @@ test("T20 legacy reads do not migrate bytes and transaction receipts reject malf
     assert.throws(() => validateEngineModelPolicyFile({ ...saved.readback, operations: { [f.save.operationId]: { ...saved.operation, ...patch } } }));
   }
   assert.throws(() => validateEngineModelPolicyFile({ ...saved.readback, schemaVersion: "tcrn.engine-model-policy.v1" }), "old protocol cannot silently interpret transaction metadata");
+});
+
+const injected = code => Object.assign(new Error("deterministic synthetic failure"), { code });
+test("T19 pre-atomic permission and disk-full failures retain bytes and report no write", async t => {
+  for (const code of ["EACCES", "ENOSPC"]) {
+    const f = await fixture(t); const before = await readFile(f.path, "utf8"); let calls = 0;
+    await assert.rejects(applyEngineModelPolicySave(f.save, { beforeAtomicWrite: async () => { calls++; throw injected(code); } }), error => error.reasonCode === "ENGINE_MODEL_POLICY_SAVE_FAILED" && error.details.writeOutcome === "not-written" && error.details.causeCode === code);
+    assert.equal(calls, 1); assert.equal(await readFile(f.path, "utf8"), before);
+    assert.equal((await readEngineModelPolicyOperation(f.save.operationId, f.home)).status, "not-recorded");
+  }
+});
+test("T19 postcommit readback failure and lost return reconcile recorded operation without duplicate write", async t => {
+  for (const seam of ["afterCommitBeforeReadback", "afterReadbackBeforeReturn"]) {
+    const f = await fixture(t); let prewrites = 0, faultCalls = 0;
+    await assert.rejects(applyEngineModelPolicySave(f.save, { beforeAtomicWrite: async () => { prewrites++; }, [seam]: async () => { faultCalls++; throw injected("EIO"); } }), error => error.reasonCode === "ENGINE_MODEL_POLICY_SAVE_RECONCILIATION_REQUIRED" && error.details.writeOutcome === "committed" && error.details.readbackConfirmed === (seam === "afterReadbackBeforeReturn"));
+    const receipt = await readEngineModelPolicyOperation(f.save.operationId, f.home);
+    assert.equal(receipt.status, "recorded"); assert.equal(receipt.operation.result.revision, 2); assert.equal(receipt.currentHost.digest, receipt.operation.result.digest); assert.equal(prewrites, 1); assert.equal(faultCalls, 1);
+    const committed = await readFile(f.path, "utf8");
+    const replay = await applyEngineModelPolicySave(f.save, { beforeAtomicWrite: async () => { prewrites++; } });
+    assert.equal(replay.status, "replayed"); assert.equal(prewrites, 1); assert.equal(await readFile(f.path, "utf8"), committed);
+  }
+});
+test("T19 bounded save lock timeout preserves existing owner's bytes and makes zero commit", async t => {
+  const f = await fixture(t); const lockPath = engineModelPolicyLockPath(f.home); const lock = await acquireFileLock(lockPath);
+  try {
+    const holder = await readFile(lockPath, "utf8"), policy = await readFile(f.path, "utf8"); let writes = 0;
+    await assert.rejects(applyEngineModelPolicySave({ ...f.save, lockTimeoutMs: 0 }, { beforeAtomicWrite: async () => { writes++; } }), { reasonCode: "FILE_LOCK_TIMEOUT" });
+    assert.equal(writes, 0); assert.equal(await readFile(lockPath, "utf8"), holder); assert.equal(await readFile(f.path, "utf8"), policy);
+  } finally { await lock.release(); }
+  assert.equal((await readEngineModelPolicyOperation(f.save.operationId, f.home)).status, "not-recorded");
+  assert.equal((await applyEngineModelPolicySave(f.save)).status, "committed");
+});
+
+test("S2 failure envelopes do not forward arbitrary exception text or codes", async t => {
+  const f = await fixture(t);
+  await assert.rejects(applyEngineModelPolicySave(f.save, { afterCommitBeforeReadback: async () => { throw Object.assign(new Error("PRIVATE_CANARY_MESSAGE"), { code: "PRIVATE_CANARY_CODE" }); } }), error => {
+    assert.equal(error.details.causeCode, "UNKNOWN"); assert.equal(JSON.stringify(error).includes("PRIVATE_CANARY"), false); assert.equal(error.message.includes("PRIVATE_CANARY"), false); return true;
+  });
 });

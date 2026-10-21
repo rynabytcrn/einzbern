@@ -57,7 +57,8 @@ export function createPlan(input, rules, rulesHash) {
   if (!Array.isArray(fullCore) || !fullCore.length || !Array.isArray(fullPortal) || !fullPortal.length || selected.some((path) => !fullCore.includes(path))) reasons.push("incomplete-test-map");
   const coverage = reasons.length ? "full" : "selective";
   const coreTests = coverage === "full" ? fullCore : sorted(selected);
-  const portalSelected = coverage === "full" || categories.includes("portal") || (categories.includes("docs") && rules.documentAudit?.portalTests?.length > 0);
+  const portalConsumer = categories.some((category) => rules.consumers?.[category]?.some((path) => path.startsWith("portal/tests/") && path.endsWith(".test.mjs")));
+  const portalSelected = coverage === "full" || categories.includes("portal") || portalConsumer || (categories.includes("docs") && rules.documentAudit?.portalTests?.length > 0);
   const shards = {
     checks: P1_TASKS.filter((task) => !["test", "portal"].includes(task)),
     core: ["test"],
@@ -108,16 +109,31 @@ export function loadRules(root) {
   const bytes = readFileSync(resolve(root, "scripts/ci/impact-rules.json"));
   return { rules: JSON.parse(bytes), rulesHash: digest(bytes) };
 }
-export function documentReaderClosure(texts, documents = []) {
-  const readers = new Set([...texts].filter(([, text]) => (/README|docs\/wiki|wiki\//u.test(text) || documents.some((document) => text.includes(document) || text.includes(document.split("/").at(-1))))).map(([path]) => path));
+const references = (text, path) => text.includes(path) || text.includes(path.split("/").at(-1));
+function readerClosure(texts, seeds) {
+  const readers = new Set(seeds);
   let changed = true;
   while (changed) {
     changed = false;
     for (const [path, text] of texts) {
-      if (!readers.has(path) && [...readers].some((reader) => text.includes(reader) || text.includes(reader.split("/").at(-1)))) { readers.add(path); changed = true; }
+      if (!readers.has(path) && [...readers].some((reader) => references(text, reader))) { readers.add(path); changed = true; }
     }
   }
   return sorted(readers);
+}
+export function documentReaderClosure(texts, documents = []) {
+  return readerClosure(texts, [...texts].filter(([, text]) => /README|docs\/wiki|wiki\//u.test(text) || documents.some((document) => references(text, document))).map(([path]) => path));
+}
+// Category inputs and their shared rules are seeds, as are directory/basename references.
+// Follow callers across every inspected text language, then require each root
+// Core consumer in the corresponding frozen category test map. This derivation
+// is shared with fixture construction; it never refreshes runtime declarations.
+export function categoryReaderAudit(texts, rules) {
+  return Object.fromEntries(["privacy", "portal"].map((category) => {
+    const paths = rules[`${category}Paths`] ?? [];
+    const readers = readerClosure(texts, [...texts].filter(([path, text]) => path === "scripts/ci/impact-rules.json" || paths.includes(path) || (category === "privacy" ? text.includes("privacy.mjs") : path.startsWith("portal/") || text.includes("portal/")) || paths.some((input) => references(text, input))).map(([path]) => path));
+    return [category, { readers, tests: readers.filter((path) => path.startsWith("tests/") && path.endsWith(".test.mjs")) }];
+  }));
 }
 // Readers are not limited to JavaScript: a test may invoke Python, a shell
 // script, or a configuration-driven tool. Inspect every tracked text input
@@ -139,33 +155,28 @@ export function documentReaderSources(root, ref) {
 // Audit all tracked executable/configuration readers, including staged additions.
 // The same scanner can read immutable Git bytes for an earlier baseline.
 export function checkConsumers(root, rules, ref) {
-  const files = git(root, ...(ref ? ["ls-tree", "-r", "--name-only", "-z", ref] : ["ls-files", "-z"])).toString().split("\0").filter(Boolean);
-  const unresolved = [];
-  const read = (path) => {
-    try { return ref ? git(root, "show", `${ref}:${path}`).toString() : readFileSync(resolve(root, path), "utf8"); }
-    catch { unresolved.push(path); return ""; }
-  };
-  const texts = new Map(files.filter((path) => /\.(?:mjs|js|ts|json|yml)$/u.test(path) && !path.startsWith("scripts/ci/") && !path.startsWith("tests/ci-") && !path.startsWith("tests/fixtures/ci-impact/")).map((path) => [path, read(path)]));
+  const { texts, unresolved } = documentReaderSources(root, ref);
   const unknown = [...unresolved];
-  for (const [path, text] of texts) {
-    for (const [category, needle] of [["privacy", "privacy.mjs"], ["portal", "portal/"]]) {
-      if (text.includes(needle) && !rules.consumers[category].includes(path)) unknown.push(path);
-    }
+  for (const [category, actual] of Object.entries(categoryReaderAudit(texts, rules))) {
+    const declaration = rules.consumers?.[category];
+    if (!Array.isArray(declaration)) { unknown.push(`${category}-consumer-declaration`); continue; }
+    for (const reader of actual.readers) if (!declaration.includes(reader)) unknown.push(reader);
+    for (const reader of declaration) if (!actual.readers.includes(reader)) unknown.push(reader);
+    for (const test of actual.tests) if (!rules[`${category}Tests`]?.includes(test)) unknown.push(test);
   }
-  const { texts: docsTexts, unresolved: documentUnresolved } = documentReaderSources(root, ref);
   const audit = rules.documentConsumers;
-  const readers = documentReaderClosure(docsTexts, Object.keys(rules.docs));
+  const readers = documentReaderClosure(texts, Object.keys(rules.docs));
   for (const document of Object.keys(rules.docs)) {
     const declaration = audit?.[document] === document ? rules.documentAudit : null;
     if (!declaration || !Array.isArray(declaration.readers) || !Array.isArray(declaration.tests)) { unknown.push(document); continue; }
     // README and wiki directory tokens cover direct paths, joins and directory
     // walkers; dependency edges below cover readers imported by other readers.
     for (const reader of readers) if (!declaration.readers.includes(reader)) unknown.push(reader);
-    for (const reader of declaration.readers) if (!docsTexts.has(reader)) unknown.push(reader);
+    for (const reader of declaration.readers) if (!texts.has(reader)) unknown.push(reader);
     for (const reader of readers) if (reader.startsWith("portal/tests/") && reader.endsWith(".test.mjs") && !declaration.portalTests?.includes(reader)) unknown.push(reader);
     for (const reader of readers) if (reader.startsWith("tests/") && reader.endsWith(".test.mjs") && (!declaration.tests.includes(reader) || !rules.docs[document].includes(reader))) unknown.push(reader);
   }
-  return sorted([...unknown, ...unresolved, ...documentUnresolved]);
+  return sorted(unknown);
 }
 export function validatePlan(plan, root, env = process.env) {
   const input = sourceInput(root, env);

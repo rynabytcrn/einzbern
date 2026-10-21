@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { createPlan, sourceInput, loadRules, checkConsumers, documentReaderClosure, documentReaderSources } from "../../scripts/ci/impact-plan.mjs";
+import { createPlan, sourceInput, loadRules, checkConsumers, documentReaderClosure, documentReaderSources, categoryReaderAudit } from "../../scripts/ci/impact-plan.mjs";
 import { privateHeavyEnvironment, heavyLockDirectoryUnder } from "./heavy-slots.mjs";
 
 export const componentSourceRoot = resolve(import.meta.dirname, "../..");
@@ -29,8 +29,14 @@ export async function freezeTinyRules(repo, rules) {
   const portalTests = readers.filter((path) => path.startsWith("portal/tests/") && path.endsWith(".test.mjs"));
   rules.documentAudit = { readers, tests: sorted([...Object.values(rules.docs).flat(), ...tests]), portalTests };
   for (const document of Object.keys(rules.docs)) rules.docs[document] = sorted([...rules.docs[document], ...tests]);
-  for (const [category, needle] of [["privacy", "privacy.mjs"], ["portal", "portal/"]]) {
-    rules.consumers[category] = [...texts].filter(([path, text]) => /\.(?:mjs|js|ts|json|yml)$/u.test(path) && !path.startsWith("scripts/ci/") && !path.startsWith("tests/ci-") && !path.startsWith("tests/fixtures/ci-impact/") && text.includes(needle)).map(([path]) => path).sort();
+  // Freeze documents first: their declaration is itself a tracked configuration
+  // reader. Categories use exactly the production source scanner and closure.
+  await writeFixtureFile(repo, "scripts/ci/impact-rules.json", JSON.stringify(rules));
+  const categorySources = documentReaderSources(repo);
+  assert.deepEqual(categorySources.unresolved, []);
+  for (const [category, audit] of Object.entries(categoryReaderAudit(categorySources.texts, rules))) {
+    rules.consumers[category] = audit.readers;
+    rules[`${category}Tests`] = sorted([...rules[`${category}Tests`], ...audit.tests]);
   }
   await writeFixtureFile(repo, "scripts/ci/impact-rules.json", JSON.stringify(rules));
   git("add", ".");
@@ -50,7 +56,7 @@ test("component ${name}", async () => {
 `;
 }
 
-export async function createCiComponentFixture(context, { production = false, files = {}, runId = "71" } = {}) {
+export async function createCiComponentFixture(context, { production = false, files = {}, runId = "71", rules: ruleOverrides = {} } = {}) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "einzbern-ci-component-")));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const repo = join(directory, "repo");
@@ -83,6 +89,7 @@ export async function createCiComponentFixture(context, { production = false, fi
       version: 1, docs: { "README.md": ["tests/a.test.mjs"] }, ciTests: ["tests/a.test.mjs"],
       privacyPaths: [], privacyTests: [], portalPaths: [], portalTests: [],
       consumers: { privacy: [], portal: [] }, documentConsumers: { "README.md": "README.md" },
+      ...ruleOverrides,
     });
     const before = commit();
     await writeFixtureFile(repo, "README.md", "new\n");

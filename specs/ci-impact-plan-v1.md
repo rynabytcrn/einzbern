@@ -75,17 +75,35 @@ package-script argv, repository/run/output-byte and zero-warning predicates
 remain required. Default task execution and aliased task paths share the same
 unconditional CLI lifetime, including the original heavy-slot terminal release.
 
-The document audit is explicit for each eligible README/Wiki path. It scans
-tracked text inputs across executable and configuration languages, including
-Python readers invoked by Node tests, and follows literal path/basename reverse
-dependencies. Documentation and known opaque image/font assets are excluded from
-reader-source scanning; unknown binary or unreadable inputs remain unresolved.
-The reviewed reader and test declarations are frozen in the rules file. Runtime
-planning never updates them. A new staged/tracked undeclared reader, missing
-declaration or unresolved reader forces full coverage. Current working bytes and
-immutable baseline Git bytes use the same scanner and closure. Audited Core
-consumers join the selected roster; audited Portal consumers retain the complete
-Portal train. Categories still union and any conservative full trigger wins.
+The document audit is explicit for each eligible README/Wiki path. Privacy and
+Portal use the same tracked UTF-8 source inspection and literal path/basename
+reverse-dependency closure, including Python, shell, configuration and previously
+unknown text languages. Category paths, the shared impact rules and Portal source
+paths seed the category closures; references to affected inputs and their callers
+extend them. Documentation and known opaque image/font assets retain their
+reader-source exclusions. Unknown binary or unreadable inputs remain unresolved.
+This is a conservative literal audit, with possible extra consumers, rather than
+a universal language parser.
+
+The reviewed `consumers.privacy` and `consumers.portal` reader declarations are
+frozen separately from the required root Core-test maps in `privacyTests` and
+`portalTests`. Every discovered root consumer must occur in its category's test
+map. A missing reader declaration OR a missing root-test mapping independently
+forces `unaccounted-consumers` and full coverage; absent/stale category declarations
+and unresolved sources do too. Current working bytes, including tracked staged
+additions, and immutable baseline Git bytes use the same scanner and closure.
+Independent plan reconstruction therefore rejects a resealed selective plan that
+omits either audit requirement. Runtime planning never refreshes declarations.
+Fixture construction freezes the same production category contract before edits.
+
+The explicit document reader/test declarations and original subset floors remain.
+Audited category Core consumers join the selected roster. A Portal category or
+audited Portal test consumer, including one dependent on privacy inputs, selects
+the complete recursive Portal roster and six-step train. Genuine audited document,
+privacy, Portal and pin changes can still select. Categories union and any
+conservative full trigger wins. Component regressions exercise existing Python
+readers invoked by root Node consumers, original/restored inputs that pass, and
+changed privacy/Portal inputs that those selected consumers actually reject.
 
 Baseline acquisition is a separate, read-only online CI capability. It requires
 CI and GitHub Actions, the plan or verify job, the matching repository and CI workflow reference, a push

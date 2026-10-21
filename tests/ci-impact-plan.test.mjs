@@ -3,10 +3,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPlan, artifactPinOnly, parseNameStatus, digest, sourceInput, validatePlan, checkConsumers } from "../scripts/ci/impact-plan.mjs";
+import { createPlan, artifactPinOnly, parseNameStatus, digest, sourceInput, validatePlan, checkConsumers, loadRules } from "../scripts/ci/impact-plan.mjs";
 import { createCiComponentFixture, fixturePlan, writeFixtureFile } from "./helpers/ci-component-fixture.mjs";
 const rules = JSON.parse(readFileSync(new URL("../scripts/ci/impact-rules.json", import.meta.url)));
 const core = [...new Set([...rules.ciTests, ...rules.privacyTests, ...rules.portalTests, ...Object.values(rules.docs).flat()])].sort();
@@ -149,3 +149,150 @@ test("configuration and previously unknown text reader languages remain conserva
   absentReader.documentAudit.readers.push("scripts/deleted-reader.py");
   assert.ok(checkConsumers(fixture.repo, absentReader).includes("scripts/deleted-reader.py"));
 });
+
+function categoryFixtureOptions(category) {
+  const inputPath = category === "privacy" ? "scripts/lib/privacy.mjs" : "portal/data.json";
+  const oldInput = category === "privacy" ? 'export const value = "old";\n' : '{"value":"old"}\n';
+  const reader = `scripts/read-${category}.py`;
+  return {
+    inputPath, oldInput, changedInput: oldInput.replace("old", "changed"), reader,
+    options: {
+      rules: { [`${category}Paths`]: [inputPath], [`${category}Tests`]: ["tests/a.test.mjs"] },
+      files: {
+        [inputPath]: oldInput,
+        [reader]: `from pathlib import Path\nassert Path(${JSON.stringify(inputPath)}).read_text() == ${JSON.stringify(oldInput)}\n`,
+        "tests/b.test.mjs": `import test from "node:test"; import { execFileSync } from "node:child_process"; test("${category} Python consumer", () => execFileSync("python3", [${JSON.stringify(reader)}]));\n`,
+        "tests/c.test.mjs": 'import test from "node:test"; import assert from "node:assert/strict"; test("unrelated sentinel", () => assert.fail("unselected sentinel ran"));\n',
+        "portal/tests/nested/all.test.mjs": `import test from "node:test"; import { execFileSync } from "node:child_process"; test("recursive Portal consumer", () => execFileSync("python3", [${JSON.stringify(reader)}]));\n`,
+      },
+    },
+  };
+}
+async function changeCategoryInput(fixture, contract) {
+  fixture.before = fixture.git("rev-parse", "HEAD");
+  await writeFixtureFile(fixture.repo, contract.inputPath, contract.changedInput);
+  fixture.head = fixture.commit();
+  await writeFile(fixture.env.GITHUB_EVENT_PATH, JSON.stringify({ before: fixture.before, after: fixture.head }));
+  assert.deepEqual(sourceInput(fixture.repo, fixture.env).records, [{ status: "M", paths: [contract.inputPath] }]);
+}
+
+for (const category of ["privacy", "portal"]) {
+  test(`${category}-only Python readers select their real root consumers in current and immutable plans`, async (t) => {
+    const contract = categoryFixtureOptions(category);
+    const fixture = await createCiComponentFixture(t, contract.options);
+    const run = (files) => spawnSync(process.execPath, ["--test", ...files], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+    const original = run(["tests/b.test.mjs"]);
+    assert.equal(original.status, 0, original.stdout + original.stderr);
+    await changeCategoryInput(fixture, contract);
+    const selected = fixturePlan(fixture, "selective");
+    assert.equal(selected.coverage, "selective", "complete audited maps retain genuine selective behavior");
+    assert.deepEqual(selected.coreTests, ["tests/a.test.mjs", "tests/b.test.mjs"]);
+    assert.equal(selected.notApplicable.some((row) => row.path === "tests/b.test.mjs"), false);
+    assert.deepEqual(selected.portalTests, ["portal/tests/a.test.mjs", "portal/tests/nested/all.test.mjs"], "Portal and privacy-dependent Portal consumers retain the whole recursive roster");
+    for (const ref of [undefined, fixture.head]) assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), []);
+    assert.deepEqual(validatePlan(selected, fixture.repo, fixture.env), selected);
+    const planPath = join(fixture.directory, `${category}-genuine.json`);
+    await writeFile(planPath, JSON.stringify(selected));
+    const immutable = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/ci/impact-plan.mjs", import.meta.url)), "validate-baseline", planPath], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+    assert.equal(immutable.status, 0, immutable.stderr);
+    for (const files of [["tests/b.test.mjs"], selected.coreTests, selected.portalTests]) {
+      const changed = run(files);
+      assert.equal(changed.status, 1, "the actually selected root consumer detects its changed category input");
+      assert.match(changed.stdout + changed.stderr, /AssertionError/u);
+    }
+    try {
+      await writeFixtureFile(fixture.repo, contract.inputPath, contract.oldInput);
+      const restored = run(["tests/b.test.mjs"]);
+      assert.equal(restored.status, 0, restored.stdout + restored.stderr);
+    } finally { await writeFixtureFile(fixture.repo, contract.inputPath, contract.changedInput); }
+    assert.equal(fixture.git("status", "--porcelain=v1"), "");
+  });
+
+  test(`${category} missing reader and missing root-test maps independently force full and reject resealed selection`, async (t) => {
+    for (const missing of ["reader", "root-test"]) await t.test(missing, async (context) => {
+      const contract = categoryFixtureOptions(category);
+      const fixture = await createCiComponentFixture(context, contract.options);
+      const incomplete = structuredClone(fixture.rules);
+      if (missing === "reader") incomplete.consumers[category] = incomplete.consumers[category].filter((path) => path !== contract.reader);
+      else incomplete[`${category}Tests`] = incomplete[`${category}Tests`].filter((path) => path !== "tests/b.test.mjs");
+      // The incomplete declaration exists before the category-only edit. A
+      // rules-file diff cannot supply a separate reason for the full fallback.
+      fixture.rules = incomplete;
+      await writeFixtureFile(fixture.repo, "scripts/ci/impact-rules.json", JSON.stringify(incomplete));
+      fixture.commit();
+      await changeCategoryInput(fixture, contract);
+      const { rulesHash } = loadRules(fixture.repo);
+      const input = sourceInput(fixture.repo, fixture.env);
+      input.baseline = { ...baseline, sha: fixture.before };
+      const expectedUnknown = [missing === "reader" ? contract.reader : "tests/b.test.mjs"];
+      for (const ref of [undefined, fixture.head]) {
+        input.unaccountedConsumers = checkConsumers(fixture.repo, incomplete, ref);
+        assert.deepEqual(input.unaccountedConsumers, expectedUnknown);
+        const full = createPlan(input, incomplete, rulesHash);
+        assert.equal(full.coverage, "full");
+        assert.deepEqual(full.reasons, ["unaccounted-consumers"]);
+        assert.deepEqual(validatePlan(full, fixture.repo, fixture.env), full);
+      }
+      const forged = createPlan({ ...input, unaccountedConsumers: [] }, incomplete, rulesHash);
+      assert.equal(forged.coverage, "selective", "the forgery is internally sealed but omits the independent audit");
+      assert.throws(() => validatePlan(forged, fixture.repo, fixture.env), /independently derived/u);
+      const planPath = join(fixture.directory, `${category}-${missing}.json`);
+      const immutable = () => spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/ci/impact-plan.mjs", import.meta.url)), "validate-baseline", planPath], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+      await writeFile(planPath, JSON.stringify(fixturePlan(fixture, "selective")));
+      assert.equal(immutable().status, 0, "the genuine conservative full plan remains reconstructible");
+      await writeFile(planPath, JSON.stringify(forged));
+      assert.notEqual(immutable().status, 0, "immutable Git bytes independently refuse the resealed selective forgery");
+      assert.equal(fixture.git("status", "--porcelain=v1"), "");
+    });
+  });
+
+  test(`${category} staged configuration and unknown-language callers, stale and unresolved inputs stay conservative`, async (t) => {
+    const contract = categoryFixtureOptions(category);
+    const fixture = await createCiComponentFixture(t, contract.options);
+    const input = sourceInput(fixture.repo, fixture.env);
+    input.baseline = { ...baseline, sha: fixture.before };
+    for (const [reader, text] of [
+      [`scripts/${category}-config.yaml`, `input: ${contract.inputPath}\n`],
+      [`scripts/${category}-new.unknown`, `read_input(${JSON.stringify(contract.inputPath)})\n`],
+      [`scripts/${category}-new.py`, `open(${JSON.stringify(contract.inputPath)}).read()\n`],
+    ]) {
+      const caller = `tests/${reader.split("/").at(-1)}.test.mjs`;
+      await writeFixtureFile(fixture.repo, reader, text);
+      await writeFixtureFile(fixture.repo, caller, `import test from "node:test"; test("configuration caller", () => {}); const input = ${JSON.stringify(reader)};\n`);
+      fixture.git("add", reader, caller);
+      const unknown = checkConsumers(fixture.repo, fixture.rules);
+      assert.ok(unknown.includes(reader), reader);
+      assert.ok(unknown.includes(caller), caller);
+      assert.equal(createPlan({ ...input, unaccountedConsumers: unknown }, fixture.rules, digest(fixture.rules)).coverage, "full");
+    }
+    assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, fixture.head), [], "staged additions do not alter the immutable source view");
+    const addedHead = fixture.commit();
+    assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), checkConsumers(fixture.repo, fixture.rules, addedHead));
+    const binary = `scripts/${category}-binary.unknown`;
+    await writeFixtureFile(fixture.repo, binary, Buffer.from([0xff, 0]));
+    fixture.git("add", binary);
+    assert.ok(checkConsumers(fixture.repo, fixture.rules).includes(binary));
+    const unreadable = `scripts/${category}-unreadable.unknown`;
+    const retained = join(fixture.directory, `${category}-retained-input`);
+    await writeFixtureFile(fixture.repo, unreadable, "tracked input\n");
+    fixture.git("add", unreadable);
+    await rename(join(fixture.repo, unreadable), retained);
+    try { assert.ok(checkConsumers(fixture.repo, fixture.rules).includes(unreadable)); }
+    finally { await rename(retained, join(fixture.repo, unreadable)); }
+    const unresolvedHead = fixture.commit();
+    for (const ref of [undefined, unresolvedHead]) {
+      const unknown = checkConsumers(fixture.repo, fixture.rules, ref);
+      assert.ok(unknown.includes(binary));
+      assert.equal(createPlan({ ...input, unaccountedConsumers: unknown }, fixture.rules, digest(fixture.rules)).coverage, "full");
+      const stale = structuredClone(fixture.rules);
+      stale.consumers[category].push("scripts/deleted-category-reader.py", unreadable);
+      const staleUnknown = checkConsumers(fixture.repo, stale, ref);
+      assert.ok(staleUnknown.includes("scripts/deleted-category-reader.py"));
+      assert.ok(staleUnknown.includes(unreadable), "a present text file that is no longer a category reader is stale too");
+      const absent = structuredClone(fixture.rules);
+      delete absent.consumers[category];
+      assert.ok(checkConsumers(fixture.repo, absent, ref).includes(`${category}-consumer-declaration`));
+    }
+    assert.equal(fixture.git("status", "--porcelain=v1"), "");
+  });
+}

@@ -199,3 +199,15 @@ test("installer rejects a relative environment root before reading an archive", 
   assert.equal(refusal(explicit).reasonCode, "INSTALL_ARCHIVE_UNREADABLE");
   assert.equal(existsSync(join(base, "explicit-device")), false);
 });
+test("INIT065 normal candidate archive installs matching Skill and discoverable general-native verbs", async () => {
+  const { home, device } = await user("init065-native-pair");
+  const result = install(["--archive", join(release, ARCHIVE)], { home }); assert.equal(result.status, 0, result.stderr);
+  const installed = join(device, "engine", FRAMEWORK_VERSION);
+  const skill = await readFile(join(installed, "skill/mana-orchestrate/SKILL.md"), "utf8");
+  assert.ok(skill.includes("Execution protocol: tcrn.host-execution-request.v1."));
+  const commands = spawnSync(process.execPath, [join(installed, "scripts/einzbern.mjs"), "commands"], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: device } });
+  assert.equal(commands.status, 0, commands.stderr);
+  const names = JSON.parse(commands.stdout).commands.map(c => c.name);
+  for (const name of ["execution-host-prepare", "execution-host-record", "execution-host-evidence"]) assert.ok(names.includes(name));
+  // This verifies the normal installation artifact, not an actual model's new-session reading.
+});

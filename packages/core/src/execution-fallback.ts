@@ -18,6 +18,7 @@ export interface HostExecutionAuthorization {
   readonly workIds: readonly string[] | "all";
   readonly fallback: "none" | "same-host" | "listed-selections";
   readonly selections?: readonly HostSelection[];
+  readonly fallbackBoundaryAssessment?: "covered" | "unresolved" | "outside";
   readonly sourceRef?: string;
   readonly expiresAt?: string;
 }
@@ -41,6 +42,7 @@ export interface HostExecutionRequest {
   readonly previousOutcome?: "not-executed" | "unknown" | "running" | "terminal";
   readonly permissionDenied?: boolean;
   readonly cancellationRequested?: boolean;
+  readonly saveRequirement?: { readonly requiredBeforeExecution: boolean; readonly status: "not-requested" | "pending" | "saved" | "failed" };
 }
 export interface HostExecutionDecision {
   readonly schemaVersion: typeof HOST_EXECUTION_DECISION_VERSION;
@@ -63,15 +65,16 @@ const actions = ["decomposition", "research", "coordination", "implementation"];
 function instant(v: unknown): void { hostText(v, "instant"); if (!v.endsWith("Z")) throw new HostExecutionError("instant must be UTC"); parseStrictInstant(v); }
 function strings(v: unknown, name: string): asserts v is string[] { if (!Array.isArray(v)) throw new HostExecutionError(`${name} must be an array`); v.forEach(s => hostText(s, name)); }
 export function validateHostExecutionRequest(value: unknown): HostExecutionRequest {
-  const r = hostObject(value, "host request", ["schemaVersion", "workId", "workRevision", "action", "phase", "category", "rejections", "requestedAgents", "capabilities", "selection", "fallbackSelection", "authorization", "context", "projectRef", "sourceScope", "hardLimits", "previousOutcome", "permissionDenied", "cancellationRequested"]);
+  const r = hostObject(value, "host request", ["schemaVersion", "workId", "workRevision", "action", "phase", "category", "rejections", "requestedAgents", "capabilities", "selection", "fallbackSelection", "authorization", "context", "projectRef", "sourceScope", "hardLimits", "previousOutcome", "permissionDenied", "cancellationRequested", "saveRequirement"]);
   if (r.schemaVersion !== HOST_EXECUTION_REQUEST_VERSION || !actions.includes(String(r.action)) || !["dispatch", "work"].includes(String(r.phase))) throw new HostExecutionError("unsupported host request version/action/phase");
   hostText(r.workId, "workId"); hostCount(r.workRevision, "workRevision", 1); hostText(r.category, "category"); hostCount(r.rejections, "rejections"); hostCount(r.requestedAgents, "requestedAgents", 1);
   validateHostCapabilities(r.capabilities); validateHostSelection(r.selection); if (r.fallbackSelection !== undefined) validateHostSelection(r.fallbackSelection);
-  const a = hostObject(r.authorization, "authorization", ["status", "basis", "actions", "hosts", "workIds", "fallback", "selections", "sourceRef", "expiresAt"]);
+  const a = hostObject(r.authorization, "authorization", ["status", "basis", "actions", "hosts", "workIds", "fallback", "selections", "fallbackBoundaryAssessment", "sourceRef", "expiresAt"]);
   if (!["covered", "absent", "withdrawn"].includes(String(a.status)) || !["none", "same-host", "listed-selections"].includes(String(a.fallback))) throw new HostExecutionError("invalid authority report");
   hostText(a.basis, "authority basis"); strings(a.actions, "actions"); strings(a.hosts, "hosts"); if (a.workIds !== "all") strings(a.workIds, "workIds");
   if (a.actions.some(action => !actions.includes(action))) throw new HostExecutionError("unknown authorized action");
   if (a.selections !== undefined) { if (!Array.isArray(a.selections)) throw new HostExecutionError("selections must be array"); a.selections.forEach(validateHostSelection); }
+  if (a.fallbackBoundaryAssessment !== undefined && !["covered", "unresolved", "outside"].includes(String(a.fallbackBoundaryAssessment))) throw new HostExecutionError("invalid provider/data/cost coverage assessment");
   if (a.sourceRef !== undefined) hostText(a.sourceRef, "sourceRef"); if (a.expiresAt !== undefined) instant(a.expiresAt);
   const c = hostObject(r.context, "context", ["parent", "child", "report"]);
   if (!["read", "pending", "failed"].includes(String(c.parent)) || !["not-created", "read", "pending", "failed"].includes(String(c.child))) throw new HostExecutionError("invalid two-stage context status");
@@ -100,6 +103,7 @@ export function sameHostSelection(a: HostSelection, b: HostSelection): boolean {
 export function resolveHostExecution(requestValue: HostExecutionRequest, policy: EngineModelPolicyFile | null, contextDigest: string, evaluatedAt = new Date().toISOString()): HostExecutionDecision {
   const request = validateHostExecutionRequest(requestValue); instant(evaluatedAt);
   const { capabilities: c, authorization: a } = request;
+  for (const observation of c.selectionObservations ?? []) { instant(observation.observedAt); if (parseStrictInstant(observation.observedAt) > parseStrictInstant(evaluatedAt)) throw new HostExecutionError("selection observation is in the future"); }
   const intent = c.hostKind === "dot" ? { status: "not-applicable" as const, selection: null } : resolveNativePolicyIntentFromSnapshot(policy!, { host: c.hostKind === "claude" ? "claude-code" : c.hostKind, category: request.category, rejections: request.rejections, ...(c.combinations === undefined ? {} : { availableCombinations: c.combinations }) });
   const configuredIntent: HostSelection | null = intent.selection === null ? null : { kind: "explicit", tuple: { runner: intent.selection.record.runner, model: intent.selection.record.model, effort: intent.selection.record.effort } };
   const preferred = configuredIntent ?? request.selection;
@@ -108,6 +112,7 @@ export function resolveHostExecution(requestValue: HostExecutionRequest, policy:
   const reasons: string[] = [];
   const stop = (reason: string, state: HostExecutionDecision["status"] = "blocked"): void => { reasons.push(reason); const priority = { degraded: 0, allowed: 0, "awaiting-choice": 1, reconcile: 2, blocked: 3 }; if (priority[state] > priority[status]) status = state; };
   if (a.status !== "covered" || !a.actions.includes(request.action) || !a.hosts.includes(c.hostKind) || a.workIds !== "all" && !a.workIds.includes(request.workId) || a.expiresAt !== undefined && parseStrictInstant(a.expiresAt) <= parseStrictInstant(evaluatedAt)) stop("authorization-does-not-cover-action");
+  if (request.saveRequirement?.requiredBeforeExecution && request.saveRequirement.status !== "saved") stop("explicit-save-before-execute-unfulfilled");
   if (request.permissionDenied) stop("actual-permission-denial");
   if (request.cancellationRequested) stop("cancellation-requested-no-new-work");
   if (["unknown", "running"].includes(request.previousOutcome ?? "")) stop("reconcile-existing-invocation", "reconcile");
@@ -140,11 +145,12 @@ export function resolveHostExecution(requestValue: HostExecutionRequest, policy:
       if (quota.unknownWindows.length) reasons.push("optional-quota-windows-unknown-not-zero");
     } else reasons.push("quota-observation-stale-or-policy-unconfigured");
   }
-  if (!hostSelectionSupported(c, preferred)) {
+  if (!hostSelectionSupported(c, preferred, "requested", evaluatedAt)) {
     // Selection is a caller-observed usable alternative, not a guessed vendor roster.
     const alternative = request.fallbackSelection;
     const covered = alternative !== undefined && (a.fallback === "same-host" && (alternative.kind === "host-managed" || preferred.kind === "explicit" && alternative.tuple.runner === preferred.tuple.runner) || a.fallback === "listed-selections" && a.selections?.some(s => sameHostSelection(s, alternative)) === true);
-    if (!alternative || !hostSelectionSupported(c, alternative)) stop("no-supported-selection", "awaiting-choice");
+    if (!alternative || !hostSelectionSupported(c, alternative, "fallback", evaluatedAt)) stop("no-supported-selection", "awaiting-choice");
+    else if (a.fallbackBoundaryAssessment === "unresolved" || a.fallbackBoundaryAssessment === "outside") stop("fallback-provider-data-cost-boundary-not-covered", "awaiting-choice");
     else if (!covered) stop("fallback-outside-existing-authority", "awaiting-choice");
     else { selected = alternative; reasons.push("authorized-host-constraint-fallback"); }
   } else if (!sameHostSelection(preferred, request.selection)) {

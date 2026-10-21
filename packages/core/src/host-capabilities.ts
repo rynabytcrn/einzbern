@@ -14,6 +14,7 @@ export interface HostCapabilities {
   readonly toolAvailable: boolean;
   /** Absent enumeration is not evidence that a documented request is unsupported. */
   readonly combinations?: readonly HostTuple[];
+  readonly selectionObservations?: readonly { readonly selection: HostSelection; readonly support: "supported" | "unsupported" | "unknown"; readonly observedAt: string }[];
   readonly requestedSelectionSupported: "supported" | "unsupported" | "unknown";
   readonly hostManagedSupported: boolean;
   readonly platformCapacity?: { readonly limit: number; readonly active: number; readonly includesParent: boolean; readonly parentActive: boolean };
@@ -46,12 +47,20 @@ export function validateHostSelection(value: unknown): HostSelection {
   return value as HostSelection;
 }
 export function validateHostCapabilities(value: unknown): HostCapabilities {
-  const c = hostObject(value, "capabilities", ["hostKind", "invocationKind", "selectionControl", "toolName", "toolAvailable", "combinations", "requestedSelectionSupported", "hostManagedSupported", "platformCapacity", "usage", "sessionRef", "contractRef"]);
+  const c = hostObject(value, "capabilities", ["hostKind", "invocationKind", "selectionControl", "toolName", "toolAvailable", "combinations", "selectionObservations", "requestedSelectionSupported", "hostManagedSupported", "platformCapacity", "usage", "sessionRef", "contractRef"]);
   if (!["codex", "claude", "dot"].includes(String(c.hostKind)) || c.invocationKind !== "native-tool" || !["explicit", "host-managed", "unknown"].includes(String(c.selectionControl))) throw new HostExecutionError("unsupported host/call/selection dimensions");
   hostText(c.toolName, "toolName");
   if (typeof c.toolAvailable !== "boolean" || typeof c.hostManagedSupported !== "boolean" || !["supported", "unsupported", "unknown"].includes(String(c.requestedSelectionSupported))) throw new HostExecutionError("actual tool contract availability required");
   if (c.hostKind === "dot" && c.selectionControl === "explicit") throw new HostExecutionError("dot self-model selection is host-managed, not explicit");
   if (c.combinations !== undefined) { if (!Array.isArray(c.combinations)) throw new HostExecutionError("combinations must be an array"); c.combinations.forEach(validateHostTuple); }
+  if (c.selectionObservations !== undefined) {
+    if (!Array.isArray(c.selectionObservations)) throw new HostExecutionError("selectionObservations must be array");
+    for (const value of c.selectionObservations) {
+      const o = hostObject(value, "selection observation", ["selection", "support", "observedAt"]);
+      validateHostSelection(o.selection); hostText(o.observedAt, "selection observedAt");
+      if (!["supported", "unsupported", "unknown"].includes(String(o.support))) throw new HostExecutionError("invalid selection support");
+    }
+  }
   if (c.platformCapacity !== undefined) {
     const p = hostObject(c.platformCapacity, "platformCapacity", ["limit", "active", "includesParent", "parentActive"]);
     hostCount(p.limit, "platform limit", 1); hostCount(p.active, "platform active");
@@ -66,11 +75,21 @@ export function validateHostCapabilities(value: unknown): HostCapabilities {
   return value as HostCapabilities;
 }
 export function sameHostTuple(a: HostTuple, b: HostTuple): boolean { return a.runner === b.runner && a.model === b.model && a.effort === b.effort; }
-export function hostSelectionSupported(capabilities: HostCapabilities, selection: HostSelection): boolean {
+export function hostSelectionSupported(capabilities: HostCapabilities, selection: HostSelection, role: "requested" | "fallback" = "requested", now = new Date().toISOString()): boolean {
   if (!capabilities.toolAvailable) return false;
+  const match = (other: HostSelection): boolean => selection.kind === "host-managed" ? other.kind === "host-managed" : other.kind === "explicit" && sameHostTuple(selection.tuple, other.tuple);
+  const observations = (capabilities.selectionObservations ?? []).filter(o => match(o.selection) && Date.parse(o.observedAt) <= Date.parse(now) && Date.parse(now) - Date.parse(o.observedAt) <= 300_000);
+  const latest = observations.sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt));
+  const newest = latest[0];
+  const currentNegative = role === "requested" && capabilities.requestedSelectionSupported === "unsupported";
+  if (currentNegative || newest?.support === "unsupported") return false;
   if (selection.kind === "host-managed") return capabilities.hostManagedSupported;
   if (capabilities.selectionControl !== "explicit") return false;
-  return capabilities.combinations === undefined ? capabilities.requestedSelectionSupported !== "unsupported" : capabilities.combinations.some(tuple => sameHostTuple(tuple, selection.tuple));
+  if (newest?.support === "supported") return true;
+  if (capabilities.combinations !== undefined) return capabilities.combinations.some(tuple => sameHostTuple(tuple, selection.tuple));
+  // Requestability is sufficient for the original call. An alternative needs its own
+  // observed support, never reuses the failed original's global status or a guessed roster.
+  return role === "requested";
 }
 /** Unknown versions/states are uninterpretable, not a host refusal or implicit permission. */
 export function executionDecisionEligibility(value: unknown): "executable" | "not-executable" | "uninterpretable" {

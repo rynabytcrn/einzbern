@@ -54,3 +54,50 @@ test("optional missing usage window allows work; observed configured threshold s
   assert.equal(resolveHostExecution(request, p, "fixture", at).status, "degraded");
   assert.equal(resolveHostExecution({ ...request, capabilities: { ...request.capabilities, usage: { observedAt: at, fiveHourUsedPercent: 95 } } }, p, "fixture", at).status, "blocked");
 });
+test("current unsupported selection overrides stale catalog; separate observed fallback works without enumeration", async t => {
+  const f = await nativeFixture(t); const p = await readEngineModelPolicyFile(f.home);
+  const replacement = { kind: "explicit", tuple: { ...tuple, model: "available-alternative" } };
+  const negative = { ...f.request, capabilities: { ...f.request.capabilities, combinations: [tuple], requestedSelectionSupported: "unsupported" } };
+  assert.equal(resolveHostExecution(negative, p, "fixture", at).status, "awaiting-choice");
+  const fallback = { ...negative, fallbackSelection: replacement, capabilities: { ...f.request.capabilities, requestedSelectionSupported: "unsupported", selectionObservations: [{ selection: replacement, support: "supported", observedAt: at }] } };
+  const d = resolveHostExecution(fallback, p, "fixture", at); assert.equal(d.status, "degraded"); assert.deepEqual(d.requestedSelection, replacement);
+  assert.equal(resolveHostExecution({ ...fallback, capabilities: { ...fallback.capabilities, selectionObservations: [{ selection: replacement, support: "unknown", observedAt: at }] } }, p, "fixture", at).status, "awaiting-choice");
+  for (const fallbackBoundaryAssessment of ["unresolved", "outside"]) assert.equal(resolveHostExecution({ ...fallback, authorization: { ...fallback.authorization, fallbackBoundaryAssessment } }, p, "fixture", at).status, "awaiting-choice");
+  assert.equal(resolveHostExecution({ ...fallback, authorization: { ...fallback.authorization, fallbackBoundaryAssessment: "covered", basis: "Existing grant covers this model's provider, data scope and cost" } }, p, "fixture", at).additionalConfirmationsRequired, false);
+});
+test("T04 valid-schema digest mismatch and unconfigured entry are distinct", async t => {
+  const f = await nativeFixture(t); const p = await configure(f); const path = join(f.home, "engine-model-policy.json");
+  const bad = structuredClone(p); bad.hosts.codex.digest = "0".repeat(64); await writeFile(path, JSON.stringify(bad));
+  await assert.rejects(readEngineModelPolicyFile(f.home), error => error.reasonCode === "ENGINE_MODEL_POLICY_FILE_INVALID" && /digest/u.test(error.message));
+  await writeFile(path, JSON.stringify(p));
+  const emptyTier = structuredClone(p.hosts.codex); const { revision, digest, updatedAt, actor, decidedIn, decidedInLibraryId, ...config } = emptyTier;
+  config.tiers = config.tiers.map(tier => ({ ...tier, model: "", effort: "" }));
+  const unconfigured = await applyEngineModelPolicySet({ home: f.home, host: "codex", occurredAt: at, actor: "agent:fixture", authorization: { target: "models.engine-policy", decidedIn, libraryId: decidedInLibraryId }, policy: config });
+  assert.equal(resolveHostExecution(f.request, unconfigured, "fixture", at).policyStatus, "entry-unconfigured");
+  const claude = { ...f.request, capabilities: { ...f.request.capabilities, hostKind: "claude" } };
+  assert.equal(resolveHostExecution(claude, unconfigured, "fixture", at).policyStatus, "unconfigured");
+});
+test("T05/T06 existing task authority, expiry, explicit deadline and independent saving", async t => {
+  const f = await nativeFixture(t); const p = await readEngineModelPolicyFile(f.home);
+  for (const status of ["absent", "withdrawn"]) assert.equal(resolveHostExecution({ ...f.request, authorization: { ...f.request.authorization, status } }, p, "fixture", at).status, "blocked");
+  assert.equal(resolveHostExecution({ ...f.request, authorization: { ...f.request.authorization, workIds: ["work:other"] } }, p, "fixture", at).status, "blocked");
+  assert.equal(resolveHostExecution({ ...f.request, authorization: { ...f.request.authorization, workIds: "all" } }, p, "fixture", at).status, "degraded");
+  assert.equal(resolveHostExecution({ ...f.request, authorization: { ...f.request.authorization, expiresAt: at } }, p, "fixture", at).status, "blocked");
+  assert.equal(resolveHostExecution({ ...f.request, hardLimits: { deadline: at } }, p, "fixture", at).status, "blocked");
+  for (const status of ["pending", "failed"]) {
+    assert.equal(resolveHostExecution({ ...f.request, saveRequirement: { requiredBeforeExecution: false, status } }, p, "fixture", at).status, "degraded");
+    assert.equal(resolveHostExecution({ ...f.request, saveRequirement: { requiredBeforeExecution: true, status } }, p, "fixture", at).status, "blocked");
+  }
+  assert.equal(resolveHostExecution({ ...f.request, permissionDenied: true }, p, "fixture", at).status, "blocked");
+});
+test("T08/T11 stale telemetry is not current capacity; parent accounting and full snapshots", async t => {
+  const f = await nativeFixture(t); const p = await readEngineModelPolicyFile(f.home);
+  for (const [includesParent, parentActive, active, expected] of [[true, true, 1, "degraded"], [false, true, 0, "degraded"], [false, true, 1, "blocked"], [true, true, 2, "blocked"], [false, false, 1, "degraded"]]) {
+    const capabilities = { ...f.request.capabilities, platformCapacity: { limit: 2, includesParent, parentActive, active } };
+    assert.equal(resolveHostExecution({ ...f.request, capabilities }, p, "fixture", at).status, expected);
+  }
+  const fallbackSelection = { kind: "explicit", tuple: { ...tuple, model: "alternative" } };
+  const stale = { ...f.request, fallbackSelection, capabilities: { ...f.request.capabilities, requestedSelectionSupported: "unsupported", selectionObservations: [{ selection: fallbackSelection, support: "supported", observedAt: "2026-10-20T00:00:00Z" }] } };
+  assert.equal(resolveHostExecution(stale, p, "fixture", at).status, "awaiting-choice");
+  assert.throws(() => resolveHostExecution({ ...stale, capabilities: { ...stale.capabilities, selectionObservations: [{ selection: fallbackSelection, support: "supported", observedAt: "2026-10-22T00:00:00Z" }] } }, p, "fixture", at), /future/u);
+});

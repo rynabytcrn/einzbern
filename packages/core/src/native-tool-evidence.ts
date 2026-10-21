@@ -335,6 +335,7 @@ export interface HostNativeEvent {
   readonly kind: "host-response" | "work-report" | "cancel-requested" | "cancel-accepted" | "review";
   readonly raw?: unknown;
   readonly sourceTool?: string;
+  readonly association?: { readonly localAttemptId: string; readonly basis: string };
   readonly sourceRef?: string;
   /** Only maps a field that actually exists in raw; absent metadata remains unknown. */
   readonly status?: { readonly pointer: string; readonly mapping: Readonly<Record<string, HostNativeStatus>> };
@@ -384,7 +385,7 @@ export function validateHostNativePreparation(value: unknown): HostNativePrepara
 }
 const hostStatuses: readonly HostNativeStatus[] = ["unknown", "accepted", "running", "completed", "failed", "cancelled"];
 function validateHostNativeEvent(value: unknown, p: HostNativePreparation): HostNativeEvent {
-  const e = hostObject(value, "native event", ["id", "at", "kind", "raw", "sourceTool", "sourceRef", "status", "terminal", "actualSelection", "providerId", "report", "review"]);
+  const e = hostObject(value, "native event", ["id", "at", "kind", "raw", "sourceTool", "association", "sourceRef", "status", "terminal", "actualSelection", "providerId", "report", "review"]);
   hostText(e.id, "event id");
   if (dotInstant(e.at, "event at") < dotInstant(p.attempt?.requestedAt, "requestedAt")) throw new HostExecutionError("event predates invocation");
   if (!["host-response", "work-report", "cancel-requested", "cancel-accepted", "review"].includes(String(e.kind))) throw new HostExecutionError("unknown native event kind");
@@ -393,8 +394,13 @@ function validateHostNativeEvent(value: unknown, p: HostNativePreparation): Host
     // Raw is retained even when it is a string and no structured fields are available.
     if (!Object.hasOwn(e, "raw") || e.raw === undefined) throw new HostExecutionError("actual host return required");
     hostText(e.sourceTool, "source tool");
-    if (e.kind === "host-response" && e.sourceTool !== p.attempt?.toolName) throw new HostExecutionError("response tool differs from invocation");
-  } else if (["raw", "sourceTool", "status", "terminal", "actualSelection", "providerId"].some(key => Object.hasOwn(e, key))) throw new HostExecutionError("work report/cancel request/review cannot forge host fields");
+    if (e.association !== undefined) {
+      const association = hostObject(e.association, "invocation association", ["localAttemptId", "basis"]);
+      hostText(association.basis, "association basis");
+      if (association.localAttemptId !== p.attempt?.id) throw new HostExecutionError("response belongs to another local attempt");
+    }
+    if (e.kind === "host-response" && e.sourceTool !== p.attempt?.toolName && e.association === undefined) throw new HostExecutionError("different status tool needs invocation association, not a fabricated launch tool name");
+  } else if (["raw", "sourceTool", "association", "status", "terminal", "actualSelection", "providerId"].some(key => Object.hasOwn(e, key))) throw new HostExecutionError("work report/cancel request/review cannot forge host fields");
   if (e.status !== undefined) {
     const s = hostObject(e.status, "status observation", ["pointer", "mapping"]); hostText(s.pointer, "status pointer");
     if (!s.mapping || typeof s.mapping !== "object" || Array.isArray(s.mapping) || Object.values(s.mapping).some(status => !hostStatuses.includes(status as HostNativeStatus))) throw new HostExecutionError("invalid status mapping");

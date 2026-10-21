@@ -75,3 +75,47 @@ test("Codex, Claude and dot use general path without dot impersonation; dot igno
     assert.ok(p.attempt); assert.equal(p.decision.policyStatus, hostKind === "dot" ? "not-applicable" : "unconfigured");
   }
 });
+test("T12/T13 real status-tool name and local association preserve truthful lifecycle", async t => {
+  const f = await prepared(t); const at = new Date().toISOString();
+  const accepted = { id: "accepted", at, kind: "host-response", sourceTool: "fixture.spawn", raw: { state: "accepted", id: "provider-child" }, status: { pointer: "/state", mapping: { accepted: "accepted" } }, providerId: { pointer: "/id" } };
+  const first = recordHostNativeEvents(f.p, [accepted]);
+  const terminal = { ...response(at), sourceTool: "fixture.wait", association: { localAttemptId: f.p.attempt.id, basis: "Wait queried the task returned by this spawn invocation" } };
+  const done = recordHostNativeEvents(f.p, [terminal], first);
+  assert.equal(done.execution, "completed"); assert.equal(done.events.at(-1).sourceTool, "fixture.wait");
+  assert.throws(() => recordHostNativeEvents(f.p, [{ ...terminal, association: { ...terminal.association, localAttemptId: "local-attempt:other" } }], first), /another local attempt/u);
+  const noProvider = recordHostNativeEvents(f.p, [terminal]); assert.equal(noProvider.executionFinality, "confirmed"); assert.equal(noProvider.providerId.status, "unknown");
+});
+test("T01/T02 full public CLI fixture instruments zero configuration/binding writes and no confirmations", async t => {
+  const { runCli } = await import("../dist/build/packages/cli/src/index.js");
+  const { materializeWorkspace, applyEngineModelPolicySet } = await import("../dist/build/packages/core/src/index.js");
+  const { readdir } = await import("node:fs/promises");
+  const f = await nativeFixture(t); const previous = process.env.EINZBERN_HOME; process.env.EINZBERN_HOME = f.home;
+  t.after(() => { process.env.EINZBERN_HOME = previous; });
+  const invoke = async args => { let output = ""; try { await runCli(args, { write: text => { output += text; } }); return { ok: true, value: JSON.parse(output) }; } catch (error) { return { ok: false, code: error.reasonCode ?? error.code, value: output ? JSON.parse(output) : null }; } };
+  // No confirmation callback exists in this path: any unexpected input mechanism fails this fixture.
+  let prompts = 0; const oldPrompt = globalThis.prompt; globalThis.prompt = () => { prompts++; throw new Error("Unexpected confirmation"); }; t.after(() => { globalThis.prompt = oldPrompt; });
+  const before = await materializeWorkspace(f.workspace);
+  for (const action of ["decomposition", "research", "coordination"]) {
+    const requestPath = join(f.root, `${action}-request.json`), argsPath = join(f.root, `${action}-arguments.json`), binding = join(f.root, `${action}-binding.json`), events = join(f.root, `${action}-events.json`), output = join(f.root, `${action}-record.json`);
+    await writeFile(requestPath, JSON.stringify({ ...f.request, action })); await writeFile(argsPath, JSON.stringify({ selection, argumentsValue: { prompt: "Read context, then provide a normal report" } }));
+    const p = await invoke(["execution-host-prepare", "--workspace", f.workspace, "--request", requestPath, "--arguments", argsPath, "--output", binding]); assert.equal(p.ok, true, JSON.stringify(p));
+    await writeFile(events, JSON.stringify([report(new Date().toISOString())]));
+    const r = await invoke(["execution-host-record", "--binding", binding, "--events", events, "--output", output]); assert.equal(r.ok, true); assert.equal(r.value.executionFinality, "unknown");
+    assert.equal((await invoke(["execution-host-evidence", "--from-file", output])).ok, true);
+  }
+  assert.equal(prompts, 0); assert.deepEqual((await materializeWorkspace(f.workspace)).work, before.work);
+  assert.equal((await readdir(f.home).catch(() => [])).includes("engine-model-policy.json"), false);
+  const configured = await applyEngineModelPolicySet({ home: f.home, host: "codex", occurredAt: new Date().toISOString(), actor: "agent:fixture", authorization: { target: "models.engine-policy", decidedIn: `minutes:${"a".repeat(24)}#D1`, libraryId: f.state.metadata.workspaceId }, policy: { categories: [{ id: "main", name: "Main", order: 10, description: "" }], tiers: [{ ...selection.tuple, model: "unavailable", order: 10, category: "main", note: "" }], escalation: { enabled: true, threshold: 2, ceiling: "main" } } });
+  const policyPath = join(f.home, "engine-model-policy.json"); const policyBytes = await readFile(policyPath, "utf8");
+  const request = { ...f.request, fallbackSelection: selection, capabilities: { ...f.request.capabilities, combinations: [selection.tuple] } };
+  const p = await prepareHostNativeDispatch(f.state, request, { selection, argumentsValue: { prompt: "Fixture fallback task" } }, f.home); assert.equal(p.decision.fallbackApplied, true);
+  const at = new Date().toISOString(); const end = recordHostNativeEvents(p, [report(at), { ...response(at), sourceTool: "fixture.wait", association: { localAttemptId: p.attempt.id, basis: "Fixture task query" } }, { id: "acceptance", at, kind: "review", review: { status: "pass", reviewer: "fixture:independent", evidence: ["fixture:review"] } }]);
+  assert.equal(end.taskOutcome, "accepted-by-review"); assert.equal(await readFile(policyPath, "utf8"), policyBytes); assert.equal(configured.hosts.codex.revision, 1); assert.equal(prompts, 0); assert.deepEqual((await materializeWorkspace(f.workspace)).work, before.work);
+  const deniedPath = join(f.root, "denied.json"), argsPath = join(f.root, "denied-args.json"), resultPath = join(f.root, "denied-result.json");
+  await writeFile(deniedPath, JSON.stringify({ ...request, permissionDenied: true })); await writeFile(argsPath, JSON.stringify({ selection, argumentsValue: { prompt: "must not launch" } }));
+  const denied = await invoke(["execution-host-prepare", "--workspace", f.workspace, "--request", deniedPath, "--arguments", argsPath, "--output", resultPath]); assert.equal(denied.ok, false); assert.equal(denied.code, "HOST_PREPARATION_NOT_EXECUTABLE"); assert.equal(denied.value.attempt, null);
+  await writeFile(deniedPath, JSON.stringify({ ...request, schemaVersion: "tcrn.unknown" }));
+  assert.equal((await invoke(["execution-host-prepare", "--workspace", f.workspace, "--request", deniedPath, "--arguments", argsPath, "--output", join(f.root, "unknown-result.json")])).ok, false);
+  // Fixture artifacts contain no authentication material or fabricated process success fields.
+  assert.doesNotMatch(JSON.stringify(end), /"(?:access_token|refresh_token|password|stdout|stderr|exitCode)"\s*:/u);
+});

@@ -2,6 +2,42 @@
 // Tests in this file run sequentially; Node isolates each file in a process.
 import { CLI, DS_CONTRACT, GHOST_TARGET, MUTATION, assert, assertBehaviorContract, assertDomContract, bridgeExports, cli, closePage, join, keydown, linkBridge, loadExecutedDom, localeTable, nextAt, pageHierarchyFindings, portalRoot, preparePage, projectChainFixture, readFile, receiptAdvanced, receiptText, rm, scratch, test, topbarFindings, vm, waitFor, writeFile, writeScratch } from "./ui-presence-support.mjs";
 
+// INC193-DIAG01: AssertionError can materialize its stack before catch. Send
+// bounded stage facts through Node's separate diagnostic event, never by editing
+// the error's message/stack. Unknown facts stay unknown and cannot hide the error.
+function designAuthorityStageDiagnostic(snapshot, kind, diagnosticStatus) {
+  const choice = (value, values) => values.includes(value) ? value : null;
+  const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const flag = (value) => typeof value === "boolean" ? value : null;
+  return `INC193_STAGE ${JSON.stringify({
+    schemaVersion: "tcrn.inc193-stage.v1",
+    kind: kind === "synthetic-formatting-only" ? kind : "failure",
+    diagnosticStatus,
+    label: choice(snapshot?.label, ["declared contract", "foreign response", "body under another contract"]) ?? "unknown",
+    phase: choice(snapshot?.phase, ["control-ready", "write-refresh-response-consumption", "panel-replaced-and-handler-released"]) ?? "unknown",
+    elapsedMs: count(snapshot?.elapsedMs),
+    requested: count(snapshot?.requested),
+    bodyConsumed: count(snapshot?.bodyConsumed),
+    otherContracts: count(snapshot?.otherContracts),
+    method: choice(snapshot?.method, ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]),
+    receiptAdvanced: flag(snapshot?.receiptAdvanced),
+    panelReplaced: flag(snapshot?.panelReplaced),
+    controlRebuilt: flag(snapshot?.controlRebuilt),
+    controlPresent: flag(snapshot?.controlPresent),
+    disabled: flag(snapshot?.disabled),
+    writeBusy: flag(snapshot?.writeBusy),
+  })}`;
+}
+
+function failWithDesignAuthorityDiagnostic(context, error, readSnapshot, kind = "failure") {
+  let diagnostic;
+  try { diagnostic = designAuthorityStageDiagnostic(readSnapshot(), kind, "available"); }
+  catch { diagnostic = designAuthorityStageDiagnostic(null, kind, "snapshot-unavailable"); }
+  try { context.diagnostic(diagnostic); }
+  catch { /* An unavailable diagnostic channel must not replace the original failure. */ }
+  throw error;
+}
+
 if (MUTATION) {
   test(`INC-148 meta-criterion mutation ${MUTATION} must red`, async () => {
     const page = await preparePage();
@@ -102,7 +138,45 @@ if (!MUTATION) {
 
 if (!MUTATION) {
 
-  test("INC-193 the design authority is declared, and what cannot be checked here is yellow", async () => {
+  test("INC193-DIAG01 stage diagnostics are bounded, observable and preserve the original error", (context) => {
+    const cause = new Error("synthetic cause");
+    const error = new assert.AssertionError({ message: "synthetic formatting-only assertion", actual: 1, expected: 2, operator: "strictEqual" });
+    error.cause = cause;
+    const original = { message: error.message, stack: error.stack, code: error.code, actual: error.actual, expected: error.expected, cause: error.cause };
+    const snapshot = { label: "foreign response", phase: "panel-replaced-and-handler-released", elapsedMs: 12,
+      requested: 1, bodyConsumed: 1, otherContracts: 0, method: "GET", receiptAdvanced: true,
+      panelReplaced: true, controlRebuilt: true, controlPresent: true, disabled: false, writeBusy: false,
+      body: "private-body-sentinel", url: "private-url-sentinel", headers: "private-header-sentinel" };
+    const emitted = [];
+    const capture = { diagnostic: (line) => emitted.push(line) };
+    // Exactly one synthetic record uses the real test-runner diagnostic channel;
+    // the remaining samples have memory-only sinks and perform no UI/network work.
+    assert.throws(() => failWithDesignAuthorityDiagnostic({ diagnostic: (line) => { context.diagnostic(line); emitted.push(line); } }, error, () => snapshot, "synthetic-formatting-only"), actual => actual === error);
+    const read = (line) => {
+      assert.ok(line.startsWith("INC193_STAGE "));
+      assert.ok(Buffer.byteLength(line, "utf8") < 2048);
+      assert.equal(/private-(?:body|url|header)-sentinel/u.test(line), false);
+      return JSON.parse(line.slice("INC193_STAGE ".length));
+    };
+    const expected = { label: "foreign response", phase: "panel-replaced-and-handler-released", elapsedMs: 12,
+      requested: 1, bodyConsumed: 1, otherContracts: 0, method: "GET", receiptAdvanced: true,
+      panelReplaced: true, controlRebuilt: true, controlPresent: true, disabled: false, writeBusy: false };
+    assert.equal(emitted.length, 1);
+    assert.deepEqual(read(emitted[0]), { schemaVersion: "tcrn.inc193-stage.v1", kind: "synthetic-formatting-only", diagnosticStatus: "available", ...expected });
+    assert.throws(() => failWithDesignAuthorityDiagnostic(capture, error, () => ({ label: "private-url-sentinel", elapsedMs: Infinity, requested: -1, disabled: "false", method: "private-header-sentinel" })), actual => actual === error);
+    const unknown = read(emitted[1]);
+    assert.deepEqual([unknown.label, unknown.phase, unknown.elapsedMs, unknown.requested, unknown.bodyConsumed, unknown.method, unknown.disabled, unknown.writeBusy], ["unknown", "unknown", null, null, null, null, null, null]);
+    for (const readSnapshot of [() => { throw new Error("private-body-sentinel"); }, () => ({ get requested() { throw new Error("private-header-sentinel"); } })]) {
+      assert.throws(() => failWithDesignAuthorityDiagnostic(capture, error, readSnapshot), actual => actual === error);
+      const fallback = read(emitted.at(-1));
+      assert.deepEqual([fallback.diagnosticStatus, fallback.phase, fallback.receiptAdvanced, fallback.controlRebuilt], ["snapshot-unavailable", "unknown", null, null]);
+    }
+    assert.throws(() => failWithDesignAuthorityDiagnostic({ diagnostic: () => { throw new Error("synthetic unavailable channel"); } }, error, () => snapshot), actual => actual === error);
+    assert.deepEqual({ message: error.message, stack: error.stack, code: error.code, actual: error.actual, expected: error.expected, cause: error.cause }, original);
+    assert.strictEqual(error.cause, cause);
+  });
+
+  test("INC-193 the design authority is declared, and what cannot be checked here is yellow", async (context) => {
     const page = await preparePage();
     try {
       page.document.querySelector('[data-setting-group="general"]')?.click();
@@ -173,14 +247,15 @@ if (!MUTATION) {
           }, "matching response consumption, panel replacement and editable current control");
           assert.equal(currentInput().value, url, "the rendered setting belongs to this stage");
         } catch (error) {
-          // Bounded, body-free stage facts, not settings/response text or a DOM dump.
-          const control = currentInput();
-          error.message += `; stage=${JSON.stringify({ label, phase, elapsedMs: Date.now() - startedAt,
-            ...observed, receiptAdvanced: Boolean(receiptAdvanced(page.document, beforeReceipt)()),
-            panelReplaced: panelReplaced(), controlRebuilt: Boolean(control && control !== input),
-            controlPresent: Boolean(control), disabled: control?.disabled ?? null,
-            writeBusy: control?.hasAttribute("data-write-busy") ?? null })}`;
-          throw error;
+          failWithDesignAuthorityDiagnostic(context, error, () => {
+            const control = currentInput();
+            return { label, phase, elapsedMs: Date.now() - startedAt,
+              requested: observed.requested, bodyConsumed: observed.bodyConsumed, otherContracts: observed.otherContracts, method: observed.method,
+              receiptAdvanced: page.document.querySelector("#receipt-chip-text") ? Boolean(receiptAdvanced(page.document, beforeReceipt)()) : null,
+              panelReplaced: panelReplaced(), controlRebuilt: control && input ? control !== input : null,
+              controlPresent: Boolean(control), disabled: control?.disabled ?? null,
+              writeBusy: control?.hasAttribute("data-write-busy") ?? null };
+          });
         }
       };
 

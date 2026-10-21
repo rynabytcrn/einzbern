@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test, { after } from "node:test";
 
@@ -200,10 +200,15 @@ test("installer rejects a relative environment root before reading an archive", 
   assert.equal(existsSync(join(base, "explicit-device")), false);
 });
 test("INIT065 normal candidate archive installs matching Skill and discoverable general-native verbs", async () => {
-  const { home, device } = await user("init065-native-pair");
+  // Keep the actual mkdtemp-owned fixture visible: this is the installed engine's own
+  // bundled Skill, not a read from the separately checked-out Helper repository.
+  const fixture = await user("init065-native-pair");
+  const { home, device } = fixture;
   const result = install(["--archive", join(release, ARCHIVE)], { home }); assert.equal(result.status, 0, result.stderr);
-  const installed = join(device, "engine", FRAMEWORK_VERSION);
-  const skill = await readFile(join(installed, "skill/mana-orchestrate/SKILL.md"), "utf8");
+  const installed = join(fixture.device, "engine", FRAMEWORK_VERSION);
+  assert.equal(await realpath(installed), installed, "normal archive installs a real owned version directory");
+  assert.equal(relative(await realpath(fixture.device), await realpath(installed)), join("engine", FRAMEWORK_VERSION));
+  const skill = await readFile(join(fixture.device, "engine", FRAMEWORK_VERSION, "skill/mana-orchestrate/SKILL.md"), "utf8");
   assert.ok(skill.includes("Execution protocol: tcrn.host-execution-request.v1."));
   const contract = await readFile(join(installed, "specs/host-fallback-v1.md"), "utf8");
   assert.ok(contract.includes("execution-host-prepare"));

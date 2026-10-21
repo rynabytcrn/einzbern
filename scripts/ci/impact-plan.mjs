@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash } from "node:crypto";
+import { isUtf8 } from "node:buffer";
 import { readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -118,6 +119,23 @@ export function documentReaderClosure(texts, documents = []) {
   }
   return sorted(readers);
 }
+// Readers are not limited to JavaScript: a test may invoke Python, a shell
+// script, or a configuration-driven tool. Inspect every tracked text input
+// except documentation and known opaque image/font assets. Unknown binary or
+// unreadable inputs remain unresolved, rather than becoming a source exemption.
+export function documentReaderSources(root, ref) {
+  const files = git(root, ...(ref ? ["ls-tree", "-r", "--name-only", "-z", ref] : ["ls-files", "-z"])).toString().split("\0").filter(Boolean);
+  const texts = new Map(), unresolved = [];
+  for (const path of files) {
+    if (/\.(?:md|png|jpe?g|gif|webp|ico|woff2?|ttf|otf)$/iu.test(path)) continue;
+    try {
+      const bytes = ref ? git(root, "show", `${ref}:${path}`) : readFileSync(resolve(root, path));
+      if (!isUtf8(bytes) || bytes.includes(0)) throw new Error("Unknown non-text source");
+      texts.set(path, bytes.toString("utf8"));
+    } catch { unresolved.push(path); }
+  }
+  return { texts, unresolved: sorted(unresolved) };
+}
 // Audit all tracked executable/configuration readers, including staged additions.
 // The same scanner can read immutable Git bytes for an earlier baseline.
 export function checkConsumers(root, rules, ref) {
@@ -134,7 +152,7 @@ export function checkConsumers(root, rules, ref) {
       if (text.includes(needle) && !rules.consumers[category].includes(path)) unknown.push(path);
     }
   }
-  const docsTexts = new Map(files.filter((path) => /\.(?:mjs|js|ts)$/u.test(path)).map((path) => [path, read(path)]));
+  const { texts: docsTexts, unresolved: documentUnresolved } = documentReaderSources(root, ref);
   const audit = rules.documentConsumers;
   const readers = documentReaderClosure(docsTexts, Object.keys(rules.docs));
   for (const document of Object.keys(rules.docs)) {
@@ -147,7 +165,7 @@ export function checkConsumers(root, rules, ref) {
     for (const reader of readers) if (reader.startsWith("portal/tests/") && reader.endsWith(".test.mjs") && !declaration.portalTests?.includes(reader)) unknown.push(reader);
     for (const reader of readers) if (reader.startsWith("tests/") && reader.endsWith(".test.mjs") && (!declaration.tests.includes(reader) || !rules.docs[document].includes(reader))) unknown.push(reader);
   }
-  return sorted([...unknown, ...unresolved]);
+  return sorted([...unknown, ...unresolved, ...documentUnresolved]);
 }
 export function validatePlan(plan, root, env = process.env) {
   const input = sourceInput(root, env);

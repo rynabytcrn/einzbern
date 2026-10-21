@@ -2,7 +2,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createPlan, artifactPinOnly, parseNameStatus, digest } from "../scripts/ci/impact-plan.mjs";
+import { spawnSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createPlan, artifactPinOnly, parseNameStatus, digest, sourceInput, validatePlan, checkConsumers } from "../scripts/ci/impact-plan.mjs";
+import { createCiComponentFixture, fixturePlan, writeFixtureFile } from "./helpers/ci-component-fixture.mjs";
 const rules = JSON.parse(readFileSync(new URL("../scripts/ci/impact-rules.json", import.meta.url)));
 const core = [...new Set([...rules.ciTests, ...rules.privacyTests, ...rules.portalTests, ...Object.values(rules.docs).flat()])].sort();
 const base = "a".repeat(40);
@@ -52,61 +57,42 @@ test("plan digest covers omitted tasks, test roster, N/A reasons and baseline pr
   assert.equal(digest(semantic), planDigest);
   for (const key of ["notApplicable", "coreTests", "tasks", "baseline"]) assert.notEqual(digest({ ...semantic, [key]: [] }), planDigest);
 });
-test("independent Git/event rederivation rejects self-consistent forged selection and N/A", async (t) => {
-  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const { execFileSync } = await import("node:child_process");
-  const { sourceInput, validatePlan } = await import("../scripts/ci/impact-plan.mjs");
-  const root = await mkdtemp(join(tmpdir(), "einzbern-impact-source-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" });
-  git("init", "--quiet");
-  for (const path of ["scripts/ci", "tests", "portal/tests"]) await mkdir(join(root, path), { recursive: true });
-  await writeFile(join(root, "scripts/ci/impact-rules.json"), JSON.stringify(rules));
-  await writeFile(join(root, "tests/a.test.mjs"), "// synthetic source catalog\n");
-  await writeFile(join(root, "portal/tests/a.test.mjs"), "// synthetic Portal catalog\n");
-  await writeFile(join(root, "README.md"), "old\n");
-  git("add", ".");
-  const commit = () => git("-c", "user.name=Fixture", "-c", "user.email=fixture-identity", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture");
-  commit();
-  const before = git("rev-parse", "HEAD").trim();
-  await writeFile(join(root, "README.md"), "new\n");
-  git("add", "."); commit();
-  const head = git("rev-parse", "HEAD").trim();
-  const eventPath = join(root, ".git/event.json");
-  await writeFile(eventPath, JSON.stringify({ before, after: head }));
-  const env = { GITHUB_EVENT_PATH: eventPath, GITHUB_EVENT_NAME: "push", GITHUB_REPOSITORY: "example/project", GITHUB_RUN_ID: "2", GITHUB_RUN_ATTEMPT: "1" };
-  const input = sourceInput(root, env);
-  const genuine = createPlan(input, rules, digest(JSON.stringify(rules)));
-  assert.deepEqual(validatePlan(genuine, root, env), genuine);
-  for (const patch of [{ coreTests: [] }, { notApplicable: [{ task: "core", rule: "skipped" }] }, { tasks: [] }, { tree: "d".repeat(40) }]) {
-    const forged = { ...genuine, ...patch }; delete forged.planDigest; forged.planDigest = digest(forged);
-    assert.throws(() => validatePlan(forged, root, env));
+test("independent Git/event rederivation admits genuine full and selective plans before resealed forgeries", async (t) => {
+  const fixture = await createCiComponentFixture(t);
+  for (const coverage of ["full", "selective"]) {
+    const genuine = fixturePlan(fixture, coverage);
+    assert.equal(genuine.coverage, coverage);
+    assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), []);
+    assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, fixture.head), []);
+    assert.deepEqual(validatePlan(genuine, fixture.repo, fixture.env), genuine);
+    const planPath = join(fixture.directory, `plan-${coverage}.json`);
+    const immutable = () => {
+      return spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/ci/impact-plan.mjs", import.meta.url)), "validate-baseline", planPath], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+    };
+    await writeFile(planPath, JSON.stringify(genuine));
+    const accepted = immutable();
+    assert.equal(accepted.status, 0, accepted.stderr);
+    for (const patch of [
+      { coreTests: [] }, { notApplicable: coverage === "full" ? [{ task: "core", rule: "skipped" }] : [] },
+      { tasks: [] }, { head: "d".repeat(40) }, { tree: "d".repeat(40) },
+      { rulesHash: "d".repeat(64) }, { sourceCoreTests: [] },
+    ]) {
+      const forged = { ...genuine, ...patch };
+      delete forged.planDigest; forged.planDigest = digest(forged);
+      assert.throws(() => validatePlan(forged, fixture.repo, fixture.env), /independently derived/u);
+      await writeFile(planPath, JSON.stringify(forged));
+      assert.notEqual(immutable().status, 0, "immutable baseline reconstruction also refuses the resealed plan");
+    }
+    await writeFile(planPath, JSON.stringify(genuine));
+    assert.equal(immutable().status, 0, "restored genuine plan remains valid");
   }
 });
 
 test("document reader audit includes staged additions and immutable baseline readers", async (t) => {
-  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const { execFileSync } = await import("node:child_process");
-  const { sourceInput, checkConsumers } = await import("../scripts/ci/impact-plan.mjs");
-  const root = await mkdtemp(join(tmpdir(), "einzbern-doc-readers-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" });
-  git("init", "--quiet");
-  for (const path of ["scripts/ci", "tests", "portal/tests"]) await mkdir(join(root, path), { recursive: true });
-  const audited = { ...rules, docs: { "README.md": ["tests/a.test.mjs"] }, ciTests: ["tests/a.test.mjs"], consumers: { privacy: [], portal: [] }, documentConsumers: { "README.md": "README.md" }, documentAudit: { readers: [], tests: ["tests/a.test.mjs"] } };
-  await writeFile(join(root, "scripts/ci/impact-rules.json"), JSON.stringify(audited));
-  for (const file of ["tests/a.test.mjs", "tests/b.test.mjs", "portal/tests/a.test.mjs"]) await writeFile(join(root, file), "// tiny harmless catalog\n");
-  await writeFile(join(root, "README.md"), "old\n");
-  const commit = () => { git("add", "."); git("-c", "user.name=Fixture", "-c", "user.email=fixture-identity", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture"); };
-  commit(); const before = git("rev-parse", "HEAD").trim();
-  await writeFile(join(root, "README.md"), "new\n"); commit();
-  const head = git("rev-parse", "HEAD").trim();
-  const input = sourceInput(root, { GITHUB_EVENT_NAME: "push", GITHUB_REPOSITORY: "example/project", GITHUB_RUN_ID: "2", GITHUB_RUN_ATTEMPT: "1" }, { before, after: head });
-  input.baseline = { ...baseline, sha: before };
+  const fixture = await createCiComponentFixture(t);
+  const { repo: root, git, head, commit, rules: audited } = fixture;
+  const input = sourceInput(root, fixture.env);
+  input.baseline = { ...baseline, sha: fixture.before };
   assert.deepEqual(checkConsumers(root, audited), []);
   assert.equal(createPlan(input, audited, digest(audited)).coverage, "selective");
   await writeFile(join(root, "tests/new-reader.test.mjs"), 'import { readFileSync } from "node:fs"; readFileSync("README.md");\n');
@@ -117,4 +103,49 @@ test("document reader audit includes staged additions and immutable baseline rea
   assert.deepEqual(checkConsumers(root, audited, head), []);
   commit();
   assert.deepEqual(checkConsumers(root, audited, "HEAD"), ["tests/new-reader.test.mjs"]);
+});
+
+test("tracked Python document readers and their Node consumers cannot be marked N/A", async (t) => {
+  const fixture = await createCiComponentFixture(t, { files: {
+    "scripts/read-doc.py": 'from pathlib import Path\nassert Path("README.md").read_text().strip() == "old"\n',
+    "tests/b.test.mjs": 'import test from "node:test"; import { execFileSync } from "node:child_process"; test("Python document contract", () => execFileSync("python3", ["scripts/read-doc.py"]));\n',
+  } });
+  const input = sourceInput(fixture.repo, fixture.env);
+  assert.deepEqual(input.records, [{ status: "M", paths: ["README.md"] }]);
+  assert.equal(input.complete, true);
+  assert.equal(fixture.git("status", "--porcelain=v1"), "");
+  const declared = fixturePlan(fixture, "selective");
+  assert.equal(declared.coverage, "selective");
+  assert.ok(declared.coreTests.includes("tests/b.test.mjs"));
+  assert.equal(declared.notApplicable.some((row) => row.path === "tests/b.test.mjs"), false);
+  const incomplete = structuredClone(fixture.rules);
+  incomplete.documentAudit.readers = incomplete.documentAudit.readers.filter((path) => !["scripts/read-doc.py", "tests/b.test.mjs"].includes(path));
+  incomplete.documentAudit.tests = incomplete.documentAudit.tests.filter((path) => path !== "tests/b.test.mjs");
+  incomplete.docs["README.md"] = ["tests/a.test.mjs"];
+  input.baseline = { ...baseline, sha: fixture.before };
+  for (const ref of [undefined, fixture.head]) {
+    input.unaccountedConsumers = checkConsumers(fixture.repo, incomplete, ref);
+    assert.deepEqual(input.unaccountedConsumers, ["scripts/read-doc.py", "tests/b.test.mjs"]);
+    assert.equal(createPlan(input, incomplete, digest(incomplete)).coverage, "full");
+    assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), []);
+  }
+  const actual = spawnSync(process.execPath, ["--test", "tests/b.test.mjs"], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+  assert.equal(actual.status, 1, "the omitted harmless consumer really detects the changed document");
+  assert.match(actual.stdout + actual.stderr, /AssertionError/u);
+  assert.equal(fixture.git("status", "--porcelain=v1"), "");
+});
+
+test("configuration and previously unknown text reader languages remain conservative", async (t) => {
+  const fixture = await createCiComponentFixture(t);
+  for (const [reader, text] of [["scripts/reader.py", 'open("README.md").read()\n'], ["tool.yaml", "input: README.md\n"], ["scripts/reader.unknown", 'read_document("README.md")\n']]) {
+    await writeFixtureFile(fixture.repo, reader, text);
+    fixture.git("add", reader);
+    assert.ok(checkConsumers(fixture.repo, fixture.rules).includes(reader), reader);
+  }
+  const missing = structuredClone(fixture.rules);
+  delete missing.documentConsumers["README.md"];
+  assert.ok(checkConsumers(fixture.repo, missing).includes("README.md"));
+  const absentReader = structuredClone(fixture.rules);
+  absentReader.documentAudit.readers.push("scripts/deleted-reader.py");
+  assert.ok(checkConsumers(fixture.repo, absentReader).includes("scripts/deleted-reader.py"));
 });

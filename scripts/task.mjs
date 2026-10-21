@@ -6,7 +6,7 @@ import { renameSync, writeFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
-import { pathToFileURL, fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 
 import {
@@ -117,7 +117,7 @@ function terminateTestControllerGroup(processGroup) {
   }
 }
 
-export async function runDetachedTestController(arguments_, extraEnvironment, tests, p8Only = false, root = repositoryRoot) {
+async function runDetachedTestController(arguments_, extraEnvironment, tests, p8Only = false) {
   const progressDirectory = await mkdtemp(join(tmpdir(), "tcrn-test-progress-"));
   const progressPath = join(progressDirectory, "events.ndjson");
   const reaperReadyPath = join(progressDirectory, "reaper.json");
@@ -126,7 +126,7 @@ export async function runDetachedTestController(arguments_, extraEnvironment, te
   try {
     // The runner owns creation; a late reaper must never recreate this file during cleanup.
     await writeFile(progressPath, "", { mode: 0o600, flag: "wx" });
-    const diagnostics = prepareTestDiagnostics(progressDirectory, tests, root, resolve(repositoryRoot, "scripts/test-file-progress-reporter.mjs"));
+    const diagnostics = prepareTestDiagnostics(progressDirectory, tests, repositoryRoot, resolve(repositoryRoot, "scripts/test-file-progress-reporter.mjs"));
     const controllerEnvironment = {
       ...process.env,
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
@@ -135,7 +135,7 @@ export async function runDetachedTestController(arguments_, extraEnvironment, te
       npm_config_fund: "false",
       npm_config_offline: "true",
       ...extraEnvironment,
-      TCRN_TEST_CONTROLLER_LOCK_PATH: resolve(root, ".git/einzbern-output.lock"),
+      TCRN_TEST_CONTROLLER_LOCK_PATH: resolve(repositoryRoot, ".git/einzbern-output.lock"),
       TCRN_TEST_CONTROLLER_OUTER_PID: String(process.pid),
       TCRN_TEST_CONTROLLER_PROGRESS_PATH: progressPath,
       TCRN_TEST_CONTROLLER_REAPER_READY_PATH: reaperReadyPath,
@@ -151,7 +151,7 @@ export async function runDetachedTestController(arguments_, extraEnvironment, te
     if (coverageDirectory) controllerEnvironment.TCRN_TEST_CONTROLLER_COVERAGE_DIRECTORY = coverageDirectory;
     else delete controllerEnvironment.TCRN_TEST_CONTROLLER_COVERAGE_DIRECTORY;
     child = spawn(process.execPath, [testControllerBootstrapPath, ...diagnostics.arguments], {
-      cwd: root,
+      cwd: repositoryRoot,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
       // Keep the coverage directory explicit for the worker. The bootstrap
@@ -1597,7 +1597,6 @@ async function invoke(name) {
 // and the processes a leg starts inherit it, so no leg waits for a slot its own run holds or
 // carries a waiting line on its stderr; the only waiting line is p1's own, before any leg starts.
 const HEAVY_COMMANDS = new Set(["test", "verify-p1"]);
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
 let heavySlot = null;
 try {
   if (HEAVY_COMMANDS.has(command)) heavySlot = await acquireHeavySlot({ command });
@@ -1614,6 +1613,4 @@ try {
   process.exitCode = 1;
 } finally {
   heavySlot?.release();
-}
-
 }

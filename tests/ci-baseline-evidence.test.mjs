@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { verifyBaseline, collectBaseline } from "../scripts/ci/baseline-evidence.mjs";
+import { createCiComponentFixture, fixturePlan, captureFixtureCore, withFixtureEnvironment, createOfflineScannerFixture, runFixtureTask } from "./helpers/ci-component-fixture.mjs";
 const expected = { repository: "example/project", base: "a".repeat(40) };
 const full = { state: "verified", repository: expected.repository, sha: expected.base, runId: "1", attempt: "2", workflow: ".github/workflows/ci.yml", conclusion: "success", coverage: "full", verification: "CI_VERIFIED", evidenceDigest: "b".repeat(64) };
 test("full and sound selective baseline retain honest coverage; green names alone are insufficient", () => {
@@ -61,59 +62,50 @@ test("online acquisition requires CI workflow purpose and repository-scoped read
   assert.equal(calls, 1);
 });
 
+// Always registered, including Core's TCRN_OFFLINE_PROOF=1 environment. The real
+// offline task invokes only its inner runtime proof, whose recursion guard stays.
+for (const [name, options, expectedFinding] of [
+  ["reviewed guarded source", {}, null],
+  ["changed API host", { baselineMutation: { replace: ["https://api.github.com/repos/", "https://example.invalid/repos/"] } }, "NETWORK_API:scripts/ci/baseline-evidence.mjs"],
+  ["changed context guard", { baselineMutation: { replace: ['env.CI !== "true"', 'env.CI === "true"'] } }, "NETWORK_API:scripts/ci/baseline-evidence.mjs"],
+  ["changed endpoint", { baselineMutation: { replace: ["actions\\/workflows", "issues\\/workflows"] } }, "NETWORK_API:scripts/ci/baseline-evidence.mjs"],
+  ["extra request", { baselineMutation: { append: ["void f", 'etch("https://example.invalid");'].join("") } }, "NETWORK_API:scripts/ci/baseline-evidence.mjs"],
+  ["extra network import", { baselineMutation: { append: ['import https from "node:', 'https";'].join("") } }, "NETWORK_MODULE:scripts/ci/baseline-evidence.mjs"],
+  ["unrelated module request", { unexpectedSource: true }, "NETWORK_API:scripts/unexpected-network.mjs"],
+]) {
+  test(`mandatory offline exact-site scanner: ${name}`, async (t) => {
+    const fixture = await createOfflineScannerFixture(t, options);
+    const run = runFixtureTask(fixture, ["offline"]);
+    const stream = expectedFinding ? run.stderr : run.stdout;
+    const report = JSON.parse(stream.trim().split("\n").at(-1));
+    assert.equal(run.status, expectedFinding ? 1 : 0, run.stderr || run.stdout);
+    assert.equal(report.reasonCode, expectedFinding ? "OFFLINE_BOUNDARY_FINDINGS" : "OFFLINE_BOUNDARY_VERIFIED");
+    if (expectedFinding) assert.ok(report.error.includes(expectedFinding), report.error);
+    else assert.equal(run.stderr, "");
+  });
+}
+
 // Real aggregate component fixtures: only network transport is mocked. Every
 // artifact is a real ZIP; raw streams, receipts, Git bytes and plan are reread.
 async function localBundle(t, coverage) {
   const fs = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const { join, dirname, resolve } = await import("node:path");
+  const { join } = await import("node:path");
   const { execFileSync, spawnSync } = await import("node:child_process");
-  const { createPlan, sourceInput, digest, documentReaderClosure } = await import("../scripts/ci/impact-plan.mjs");
   const { createTransport } = await import("../scripts/ci/transport-evidence.mjs");
-  const directory = await fs.realpath(await fs.mkdtemp(join(tmpdir(), "einzbern-baseline-component-")));
-  t.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const repo = join(directory, "repo"), bundle = join(directory, "artifacts");
-  await fs.mkdir(repo); await fs.mkdir(bundle);
-  const source = resolve(import.meta.dirname, "..");
-  const copied = new Set();
-  async function copy(path) {
-    if (copied.has(path)) return;
-    copied.add(path);
-    const text = await fs.readFile(join(source, path), "utf8");
-    await fs.mkdir(dirname(join(repo, path)), { recursive: true });
-    await fs.writeFile(join(repo, path), text);
-    for (const match of text.matchAll(/(?:from\s*|import\s*)["'](\.[^"']+)["']/gu)) {
-      const dependency = resolve(dirname(join(source, path)), match[1]);
-      await copy(dependency.slice(source.length + 1));
-    }
-  }
-  for (const path of ["scripts/ci/impact-plan.mjs", "scripts/ci/transport-evidence.mjs", "scripts/ci/aggregate-evidence.py", "scripts/ci/p1-evidence.py"]) await copy(path);
-  // Python imports its sibling dynamically, already copied above.
-  for (const path of ["tests", "portal/tests"]) await fs.mkdir(join(repo, path), { recursive: true });
-  for (const path of ["tests/a.test.mjs", "tests/b.test.mjs", "portal/tests/a.test.mjs"]) await fs.writeFile(join(repo, path), 'import test from "node:test"; test("harmless", () => {});\n');
-  const rules = { version: 1, docs: { "README.md": ["tests/a.test.mjs"] }, ciTests: ["tests/a.test.mjs"], privacyPaths: [], privacyTests: [], portalPaths: [], portalTests: [], consumers: { privacy: [], portal: [] }, documentConsumers: { "README.md": "README.md" }, documentAudit: { readers: [], tests: ["tests/a.test.mjs"] } };
-  const auditTexts = new Map(await Promise.all([...copied].filter((path) => /\.(?:mjs|js|ts)$/u.test(path)).map(async (path) => [path, await fs.readFile(join(repo, path), "utf8")])));
-  rules.documentAudit.readers = documentReaderClosure(auditTexts, Object.keys(rules.docs));
-  await fs.writeFile(join(repo, "scripts/ci/impact-rules.json"), JSON.stringify(rules));
-  await fs.writeFile(join(repo, "README.md"), "old\n");
-  const git = (...args) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
-  git("init", "--quiet");
-  const commit = () => { git("add", "."); git("-c", "user.name=Fixture", "-c", "user.email=fixture-identity", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "component"); };
-  commit(); const before = git("rev-parse", "HEAD");
-  await fs.writeFile(join(repo, "README.md"), "new\n"); commit();
-  const head = git("rev-parse", "HEAD");
-  const env = { GITHUB_EVENT_NAME: "push", GITHUB_REPOSITORY: "example/project", GITHUB_RUN_ID: "71", GITHUB_RUN_ATTEMPT: "1" };
-  const input = sourceInput(repo, env, { before, after: head });
-  if (coverage === "selective") input.baseline = { ...full, sha: before };
-  const plan = createPlan(input, rules, digest(JSON.stringify(rules)));
+  const fixture = await createCiComponentFixture(t, { production: true });
+  const { directory, repo, head } = fixture;
+  const bundle = join(directory, "artifacts");
+  await fs.mkdir(bundle);
+  const plan = fixturePlan(fixture, coverage);
   assert.equal(plan.coverage, coverage);
   const planDir = join(bundle, `plan-evidence-${head}-1`);
   await fs.mkdir(planDir);
   await fs.writeFile(join(planDir, "impact-plan.json"), JSON.stringify(plan, null, 2) + "\n");
   await createTransport(join(planDir, "transport"), plan);
+  const core = await captureFixtureCore(fixture, plan, join(bundle, `p1-core-evidence-${head}-1`));
   const program = `
 import importlib.util,json,pathlib,sys,hashlib
-root=pathlib.Path(sys.argv[1]); repo=pathlib.Path(sys.argv[2]); plan=json.loads(sys.argv[3])
+root=pathlib.Path(sys.argv[1]); repo=pathlib.Path(sys.argv[2]); plan=json.loads(sys.argv[3]); actual=json.loads(sys.argv[4])
 spec=importlib.util.spec_from_file_location("aggregate",repo/"scripts/ci/aggregate-evidence.py")
 a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a);m=a.evidence_runner
 def write(path,value):
@@ -125,7 +117,20 @@ totals="# tests 1\\n# suites 0\\n# pass 1\\n# fail 0\\n# cancelled 0\\n# skipped
 manifest={"files":a.git_source_files(repo,plan["head"]),"coreTestFiles":plan["sourceCoreTests"],"portalTestFiles":plan["sourcePortalTests"]}
 identity={"head":plan["head"],"tree":plan["tree"],"branch":"fixture","statusPorcelainAll":""}
 for shard,tasks in plan["shards"].items():
- mode="p1-"+shard; d=root/(mode+"-evidence-"+plan["head"]+"-1");d.mkdir()
+ mode="p1-"+shard; d=root/(mode+"-evidence-"+plan["head"]+"-1")
+ if shard=="core":
+  # These are actual task/shard/controller bytes retained by the production
+  # observer, not a printer or synthetic terminal receipt.
+  final=json.loads((d/"shard.json").read_text())
+  meta=dict(actual["capture"],mode=mode,fixtures=actual["fixtures"],input=actual["input"],output=actual["output"],inputManifest=actual["inputManifest"],outputManifest=actual["outputManifest"],impactPlan=plan,coverage=plan["coverage"],planDigest=plan["planDigest"],selectedCoreTests=plan["coreTests"],ciIdentity={"GITHUB_RUN_ID":"71","GITHUB_RUN_ATTEMPT":"1","GITHUB_JOB":"p1"},artifactFiles={},extraArtifacts={},finalShardReceipt=final,finalReceiptStream="stdout",receipt={"ok":actual["capture"]["exitCode"]==0,"scope":"actual Core child; component wrapper metadata"})
+  for name,value in [("fixture-location.json",meta["fixtures"]),("source-before.json",meta["inputManifest"]),("source-after.json",meta["outputManifest"]),("impact-plan.json",plan)]:
+   write(d/name,value);meta["artifactFiles"][name]=m.file_receipt(d/name)
+  for path in [d/"shard.json",*sorted((d/"steps").iterdir())]: seal(d,meta,str(path.relative_to(d)))
+  meta["testTotals"]=m.parse_test_totals((d/(mode+"-controller.stdout")).read_bytes())
+  meta["retainedArtifactsVerified"]=not m.verify_retained_artifacts(d,meta)
+  write(d/"receipt.json",meta["receipt"]);write(d/(mode+".meta.json"),meta)
+  continue
+ d.mkdir()
  block=lambda tasks:dict(legs=[dict(task=x,ok=True) for x in tasks],reds=[])
  final=dict(ok=True,reasonCode="P1_SHARD_VERIFIED",shard=shard,coverage=plan["coverage"],planDigest=plan["planDigest"],prerequisites=block(plan["prerequisites"][shard]),extras=block(["test-wiring"] if shard=="checks" else []),**block(tasks))
  fixtures={"tmp":{"checksPassed":True},"device":{"checksPassed":True}}
@@ -140,17 +145,8 @@ for shard,tasks in plan["shards"].items():
    name="steps/"+prefix+"-"+task
    command=["node","scripts/task.mjs",task]
    output=json.dumps({"ok":True})+"\\n"
-   if task=="test":
-    command+=["--ci-plan","fixture-plan.json"]
-    output=json.dumps(dict(ok=True,reasonCode="TESTS_VERIFIED" if plan["coverage"]=="full" else "TESTS_SELECTED_VERIFIED",tests=plan["coreTests"],argv=["--test"]+plan["coreTests"],planDigest=plan["planDigest"],coverage=plan["coverage"]))+"\\n"
    for suffix,value in [(".json",dict(command=command,exitCode=0,signal=None)),(".stdout",output),(".stderr","")]:
     write(d/(name+suffix),value);seal(d,meta,name+suffix)
- if shard=="core":
-  meta["retainedTestControllerOutput"]={"errors":[],"files":{}}
-  for kind in ["stdout","stderr"]:
-   name=mode+"-controller."+kind;write(d/name,totals if kind=="stdout" else "")
-   meta["retainedTestControllerOutput"]["files"][kind]=m.file_receipt(d/name)
-  meta["testTotals"]=m.parse_test_totals(totals.encode())
  if shard=="portal":
   timings=[dict(id=str(i)) for i in range(1,7)]
   for step in timings:
@@ -170,9 +166,9 @@ for name,reason in [("install.json","INSTALL_ENGINE_READY"),("setup-plan.json","
 write(p/"fixture.tar.gz.sha256",hashlib.sha256((p/"fixture.tar.gz").read_bytes()).hexdigest()+" fixture.tar.gz\\n")
 write(p/"package-seal.json",dict(identity={k:plan[k] for k in ["head","runId","attempt","planDigest"]},files={x.name:dict(bytes=x.stat().st_size,sha256=hashlib.sha256(x.read_bytes()).hexdigest()) for x in p.iterdir()}))
 `;
-  execFileSync("python3", ["-B", "-c", program, bundle, repo, JSON.stringify(plan)]);
+  execFileSync("python3", ["-B", "-c", program, bundle, repo, JSON.stringify(plan), JSON.stringify(core)], { env: fixture.env, maxBuffer: 8 * 1024 * 1024 });
   const aggregate = () => {
-    const run = spawnSync("python3", ["-B", join(repo, "scripts/ci/aggregate-evidence.py"), "--baseline-artifacts", bundle, "--repo", repo, "--sha", head, "--run-id", "71", "--attempt", "1"], { encoding: "utf8" });
+    const run = spawnSync("python3", ["-B", join(repo, "scripts/ci/aggregate-evidence.py"), "--baseline-artifacts", bundle, "--repo", repo, "--sha", head, "--run-id", "71", "--attempt", "1"], { env: fixture.env, encoding: "utf8" });
     assert.ok(run.stdout, run.stderr);
     return JSON.parse(run.stdout);
   };
@@ -180,95 +176,151 @@ write(p/"package-seal.json",dict(identity={k:plan[k] for k in ["head","runId","a
     const result = JSON.parse(execFileSync("python3", ["-B", "-c", 'import pathlib,zipfile,io,base64,json,sys\nr=[]\nfor n,d in enumerate(sorted(pathlib.Path(sys.argv[1]).iterdir()),1):\n b=io.BytesIO()\n with zipfile.ZipFile(b,"w") as z:\n  for p in d.rglob("*"):\n   if p.is_file(): z.write(p,p.relative_to(d))\n r.append(dict(id=n,name=d.name,expired=False,bytes=base64.b64encode(b.getvalue()).decode()))\nprint(json.dumps(r))', bundle], { encoding: "utf8" }));
     return result;
   };
-  return { directory, repo, bundle, plan, head, aggregate, zipRows, fs, join };
+  return { ...fixture, bundle, plan, core, aggregate, zipRows, fs, join };
 }
 
-test("actual full/selective aggregate and ZIP baseline collector admit sound coverage and reject provenance failures", async (t) => {
-  onlineContext(t);
-  const originalTmpdir = process.env.TMPDIR;
-  t.after(() => { if (originalTmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = originalTmpdir; });
-  const original = globalThis.fetch;
-  t.after(() => { globalThis.fetch = original; });
-  for (const coverage of ["full", "selective"]) {
+for (const coverage of ["full", "selective"]) {
+  test(`actual ${coverage} Core evidence completes aggregate and ZIP baseline collection`, async (t) => {
+    onlineContext(t);
+    const originalFetch = globalThis.fetch;
+    t.after(() => { globalThis.fetch = originalFetch; });
     const fixture = await localBundle(t, coverage);
-    // Keep collector temp artifacts inside this owned, canonical test root.
-    process.env.TMPDIR = fixture.directory;
-    const result = fixture.aggregate();
-    assert.equal(result.ok, true);
-    assert.equal(result.reasonCode, coverage === "full" ? "CI_VERIFIED" : "CI_SELECTED_VERIFIED");
-    if (coverage === "selective") {
-      const { assertP8TagPreconditions } = await import("../scripts/lib/release-tag-gate.mjs");
-      assert.throws(() => assertP8TagPreconditions({ p8Result: result, expectedTag: "v0.0.0", tagCommit: fixture.head, p8BasisCommit: fixture.head }));
-    }
-    // Execute the real shard runner and detached controller on this tiny roster.
-    // Other P1 legs remain artifact validator component inputs, never a recursive suite.
-    {
-      const { runShard } = await import("../scripts/ci/p1-shard.mjs");
-      const { fs, join } = fixture;
-      const planPath = join(fixture.directory, "execution-plan.json");
-      const eventPath = join(fixture.repo, ".git", "event.json");
-      const evidence = join(fixture.directory, "execution-evidence");
-      await fs.mkdir(evidence);
-      await fs.writeFile(planPath, JSON.stringify(fixture.plan));
-      await fs.writeFile(eventPath, JSON.stringify({ before: fixture.plan.comparison.before, after: fixture.head }));
-      await fs.writeFile(join(fixture.repo, "scripts/task.mjs"), `
-import { readFile } from "node:fs/promises";
-import { runDetachedTestController } from ${JSON.stringify(new URL("../scripts/task.mjs", import.meta.url).href)};
-import { withExclusiveOutputSession } from ${JSON.stringify(new URL("../scripts/lib/safe-io.mjs", import.meta.url).href)};
-const plan=JSON.parse(await readFile(process.argv[4],"utf8"));
-const result=await withExclusiveOutputSession(process.cwd(), async()=>runDetachedTestController(["--test",...plan.coreTests], { NODE_OPTIONS: ${JSON.stringify("--import=" + new URL("../scripts/no-network.mjs", import.meta.url).href)}, EINZBERN_HOME: ${JSON.stringify(join(fixture.directory, "device"))} }, plan.coreTests, false, process.cwd()));
-process.stdout.write(JSON.stringify({ok:true,reasonCode:plan.coverage==="full"?"TESTS_VERIFIED":"TESTS_SELECTED_VERIFIED",tests:plan.coreTests,argv:["--test",...plan.coreTests],coverage:plan.coverage,planDigest:plan.planDigest,progress:result.progress})+"\\n");
-`);
-      const overrides = { GITHUB_EVENT_PATH: eventPath, GITHUB_RUN_ID: "71", GITHUB_RUN_ATTEMPT: "1", EINZBERN_CI_EVIDENCE_DIR: evidence };
-      const saved = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
-      Object.assign(process.env, overrides);
-      try {
-        const executed = await runShard("core", fixture.repo, planPath);
-        assert.equal(executed.ok, true);
-        assert.equal(executed.coverage, coverage);
-        const step = JSON.parse(await fs.readFile(join(evidence, "steps/leg-test.json"), "utf8"));
-        assert.deepEqual(step.command, ["node", "scripts/task.mjs", "test", "--ci-plan", planPath]);
-        const observed = JSON.parse((await fs.readFile(join(evidence, "steps/leg-test.stdout"), "utf8")).trim());
-        assert.deepEqual(observed.tests, fixture.plan.coreTests);
-        assert.deepEqual(observed.argv, ["--test", ...fixture.plan.coreTests]);
-        assert.equal(observed.progress.status, "completed");
-      } finally {
-        for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-      }
-    }
-    const { fs, join } = fixture;
+    const { fs, join, core } = fixture;
     const coreDirectory = join(fixture.bundle, `p1-core-evidence-${fixture.head}-1`);
     const metaPath = join(coreDirectory, "p1-core.meta.json");
+    let mutation = null, artifacts = await fixture.zipRows();
+    globalThis.fetch = async (url) => {
+      if (mutation === "permission") return { ok: false, status: 403 };
+      const run = { id: 71, run_attempt: 1, head_sha: fixture.head, path: ".github/workflows/ci.yml", conclusion: "success", event: mutation === "H1" ? "workflow_dispatch" : "push" };
+      if (mutation === "wrong-head") run.head_sha = "c".repeat(40);
+      if (mutation === "wrong-attempt") run.run_attempt = 2;
+      if (mutation === "wrong-run") run.id = 72;
+      if (mutation === "wrong-workflow") run.path = "other.yml";
+      if (mutation?.startsWith("run-")) run.conclusion = mutation.slice(4);
+      const names = ["plan", "verify", ...Object.keys(fixture.plan.shards).map((shard) => `p1 (p1-${shard})`)];
+      let value;
+      if (url.endsWith("/zip")) {
+        const id = Number(url.match(/artifacts\/(\d+)/u)[1]);
+        const row = artifacts.find((item) => item.id === id);
+        const bytes = Buffer.from(row.bytes, "base64");
+        return { ok: true, arrayBuffer: async () => bytes };
+      }
+      if (url.includes("/jobs?")) {
+        const jobs = names.map((name) => ({ name, conclusion: "success" }));
+        if (["failure", "cancelled", "timed_out", "skipped"].includes(mutation)) jobs.at(-1).conclusion = mutation;
+        if (mutation === "missing-job") jobs.pop();
+        if (mutation === "partial-job") jobs.at(-1).conclusion = null;
+        if (mutation === "verify-failure") jobs.find((job) => job.name === "verify").conclusion = "failure";
+        value = { total_count: mutation === "partial-jobs" ? 101 : jobs.length, jobs };
+      } else if (url.includes("/artifacts?")) {
+        const rows = artifacts.map(({ bytes, ...row }) => ({ ...row, expired: mutation === "expired" }));
+        if (mutation === "missing-artifact") rows.pop();
+        if (mutation === "mislabeled-artifact") rows[0].name = "wrong";
+        value = { total_count: mutation === "partial-artifacts" ? 101 : rows.length, artifacts: rows };
+      } else value = /\/actions\/runs\/\d+$/u.test(url) ? run : { workflow_runs: [run] };
+      return { ok: true, json: async () => value };
+    };
+    const input = { complete: true, repository: "example/project", comparison: { base: fixture.head } };
+    const collect = (pinnedRun) => withFixtureEnvironment({ TMPDIR: fixture.directory }, () => collectBaseline(input, fixture.repo, pinnedRun));
+
+    // Independent subtests keep a runner assertion from hiding the collector's
+    // own positive and negative verdicts. All use the same real retained Core.
+    await t.test("actual task argv, progress, raw receipts and source before/after", async () => {
+      assert.equal(core.capture.exitCode, 0, JSON.stringify(core.shard));
+      assert.equal(core.shard.ok, true);
+      assert.equal(core.task.reasonCode, coverage === "full" ? "TESTS_VERIFIED" : "TESTS_SELECTED_VERIFIED");
+      assert.deepEqual(core.step.command, ["node", "scripts/task.mjs", "test", "--ci-plan", core.planPath]);
+      assert.deepEqual(core.task.tests, fixture.plan.coreTests);
+      assert.deepEqual(core.task.argv, ["--test", ...fixture.plan.coreTests]);
+      assert.equal(core.task.progress.status, "completed");
+      assert.deepEqual(core.capture.errors, []);
+      assert.deepEqual(core.capture.retainedTestControllerOutput.errors, []);
+      assert.deepEqual(core.input, core.output);
+      assert.deepEqual(core.inputManifest, core.outputManifest);
+      assert.deepEqual(core.inputManifest.coreTestFiles, fixture.plan.sourceCoreTests);
+      assert.match(await fs.readFile(join(coreDirectory, "p1-core-controller.stdout"), "utf8"), /component a/u);
+      assert.equal(await fs.readFile(join(coreDirectory, "p1-core-controller.stderr"), "utf8"), "");
+      const markers = (await fs.readFile(fixture.env.CI_COMPONENT_OBSERVED, "utf8")).trim().split("\n").sort();
+      assert.deepEqual(markers, coverage === "full" ? ["a", "b"] : ["a"]);
+      assert.deepEqual(await fs.readdir(core.temporary), []);
+      await assert.rejects(fs.lstat(join(fixture.repo, ".git/einzbern-output.lock")), { code: "ENOENT" });
+      assert.equal(fixture.git("status", "--porcelain=v1", "--untracked-files=all"), "");
+    });
+    await t.test("genuine aggregate succeeds with honest coverage", () => {
+      const result = fixture.aggregate();
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.reasonCode, coverage === "full" ? "CI_VERIFIED" : "CI_SELECTED_VERIFIED");
+      assert.equal(result.coverage, coverage);
+    });
+    await t.test("genuine real ZIP collector succeeds", async () => {
+      for (const pinned of [undefined, "71"]) {
+        const admitted = await collect(pinned);
+        assert.equal(admitted.state, "verified", JSON.stringify(admitted));
+        assert.equal(admitted.coverage, coverage);
+        assert.equal(admitted.verification, coverage === "full" ? "CI_VERIFIED" : "CI_SELECTED_VERIFIED");
+      }
+    });
+
     const originalMeta = await fs.readFile(metaPath);
-    for (const patch of [
-      (meta) => { meta.ciIdentity.GITHUB_RUN_ID = "999"; },
-      (meta) => { meta.input.tree = "c".repeat(40); },
-      (meta) => { meta.input.head = "c".repeat(40); },
-      (meta) => { meta.inputManifest.files[0].sha256 = "c".repeat(64); meta.outputManifest = meta.inputManifest; },
-      (meta) => { delete meta.artifactFiles["impact-plan.json"]; },
-    ]) {
-      const meta = JSON.parse(originalMeta);
-      patch(meta);
-      await fs.writeFile(metaPath, JSON.stringify(meta));
-      assert.equal(fixture.aggregate().ok, false);
-      await fs.writeFile(metaPath, originalMeta);
-    }
-    const planPath = join(coreDirectory, "impact-plan.json");
-    const originalBytes = await fs.readFile(planPath);
-    await fs.writeFile(planPath, JSON.stringify(JSON.parse(originalBytes)));
-    assert.equal(fixture.aggregate().ok, false, "same JSON with changed retained bytes must fail");
-    await fs.writeFile(planPath, originalBytes);
-    if (coverage === "selective") {
+    const metadataCases = [
+      ["run", (meta) => { meta.ciIdentity.GITHUB_RUN_ID = "999"; }, /run or attempt|run identity/u],
+      ["attempt", (meta) => { meta.ciIdentity.GITHUB_RUN_ATTEMPT = "2"; }, /run or attempt|run identity/u],
+      ["tree", (meta) => { meta.input.tree = "c".repeat(40); }, /identity|tree/u],
+      ["head", (meta) => { meta.input.head = "c".repeat(40); }, /identity|SHA/u],
+      ["source bytes", (meta) => { meta.inputManifest.files[0].sha256 = "c".repeat(64); meta.outputManifest = meta.inputManifest; }, /source|JSON/u],
+      ["missing plan receipt", (meta) => { delete meta.artifactFiles["impact-plan.json"]; }, /impact-plan|plan/u],
+      ["plan digest", (meta) => { meta.planDigest = "c".repeat(64); }, /digest|plan/u],
+      ["coverage relabel", (meta) => { meta.coverage = coverage === "full" ? "selective" : "full"; }, /coverage/u],
+      ["controller receipt missing", (meta) => { delete meta.retainedTestControllerOutput.files.stdout; }, /stream|controller/u],
+    ];
+    for (const [name, patch, reason] of metadataCases) await t.test(`rejects ${name}`, async () => {
+      try {
+        const meta = JSON.parse(originalMeta); patch(meta);
+        await fs.writeFile(metaPath, JSON.stringify(meta));
+        const refused = fixture.aggregate();
+        assert.equal(refused.ok, false, name);
+        assert.match(refused.failures.join("\n"), reason);
+        artifacts = await fixture.zipRows();
+        assert.equal((await collect()).state, "unavailable", name);
+      } finally { await fs.writeFile(metaPath, originalMeta); artifacts = await fixture.zipRows(); }
+    });
+
+    for (const [name, change] of [
+      ["same plan JSON with changed bytes", (bytes) => Buffer.from(JSON.stringify(JSON.parse(bytes)))],
+      ["truncated controller bytes", (bytes) => bytes.subarray(0, Math.floor(bytes.length / 2))],
+    ]) await t.test(`rejects ${name}`, async () => {
+      const path = join(coreDirectory, name.startsWith("same") ? "impact-plan.json" : "p1-core-controller.stdout");
+      const bytes = await fs.readFile(path);
+      try {
+        await fs.writeFile(path, change(bytes));
+        const refused = fixture.aggregate();
+        assert.equal(refused.ok, false);
+        assert.match(refused.failures.join("\n"), /Artifact|totals|receipt/u);
+        artifacts = await fixture.zipRows();
+        assert.equal((await collect()).state, "unavailable");
+      } finally { await fs.writeFile(path, bytes); artifacts = await fixture.zipRows(); }
+    });
+
+    await t.test("fully resealed selection, N/A and source forgeries still fail independent derivation", async () => {
       const { digest } = await import("../scripts/ci/impact-plan.mjs");
       const { createTransport } = await import("../scripts/ci/transport-evidence.mjs");
       const { execFileSync } = await import("node:child_process");
       const saved = new Map();
-      async function save(directory) { for (const entry of await fs.readdir(directory, { withFileTypes: true })) { const path = join(directory, entry.name); if (entry.isDirectory()) await save(path); else saved.set(path, await fs.readFile(path)); } }
+      async function save(directory) {
+        for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+          const path = join(directory, entry.name);
+          if (entry.isDirectory()) await save(path); else saved.set(path, await fs.readFile(path));
+        }
+      }
       await save(fixture.bundle);
-      for (const patch of [{ coreTests: [] }, { notApplicable: [] }]) {
-        const forged = { ...fixture.plan, ...patch };
-        delete forged.planDigest; forged.planDigest = digest(forged);
-        execFileSync("python3", ["-B", "-c", `
+      for (const patch of [
+        { coreTests: [] }, { notApplicable: coverage === "selective" ? [] : [{ task: "core", rule: "skipped" }] },
+        { rulesHash: "d".repeat(64) }, { sourceCoreTests: [] },
+      ]) {
+        try {
+          const forged = { ...fixture.plan, ...patch };
+          delete forged.planDigest; forged.planDigest = digest(forged);
+          execFileSync("python3", ["-B", "-c", `
 import json,pathlib,sys,hashlib
 root=pathlib.Path(sys.argv[1]);p=json.loads(sys.argv[2])
 def write(path,value): path.write_text(json.dumps(value,indent=2)+"\\n")
@@ -287,48 +339,33 @@ for shard in p["shards"]:
  write(mp,m)
 seal=root/("package-smoke-"+p["head"]+"-1")/"package-seal.json";value=json.loads(seal.read_text());value["identity"]["planDigest"]=p["planDigest"];write(seal,value)
 `, fixture.bundle, JSON.stringify(forged)]);
-        const transport = join(fixture.bundle, `plan-evidence-${fixture.head}-1`, "transport");
-        await fs.rm(transport, { recursive: true });
-        await createTransport(transport, forged);
-        const refused = fixture.aggregate();
-        assert.equal(refused.ok, false, "fully resealed forged selection/N-A must fail independent derivation");
-        for (const [path, bytes] of saved) await fs.writeFile(path, bytes);
+          const transport = join(fixture.bundle, `plan-evidence-${fixture.head}-1`, "transport");
+          await fs.rm(transport, { recursive: true });
+          await createTransport(transport, forged);
+          const refused = fixture.aggregate();
+          assert.equal(refused.ok, false, "fully resealed plan must fail independent Git/event/rules derivation");
+          assert.match(refused.failures.join("\n"), /plan|source|validate-baseline|Full coverage/u);
+          artifacts = await fixture.zipRows();
+          assert.equal((await collect()).state, "unavailable");
+        } finally {
+          for (const [path, bytes] of saved) await fs.writeFile(path, bytes);
+          artifacts = await fixture.zipRows();
+        }
       }
+    });
+
+    for (const name of ["permission", "H1", "run-failure", "run-cancelled", "run-timed_out", "run-skipped", "failure", "cancelled", "timed_out", "skipped", "verify-failure", "missing-job", "partial-job", "partial-jobs", "partial-artifacts", "expired", "missing-artifact", "mislabeled-artifact", "wrong-head", "wrong-attempt", "wrong-run", "wrong-workflow"]) {
+      await t.test(`collector rejects ${name}`, async () => {
+        mutation = name;
+        try { assert.equal((await collect()).state, "unavailable", name); }
+        finally { mutation = null; }
+      });
     }
-    assert.equal(fixture.aggregate().ok, true, "restored genuine evidence remains admissible");
-    const artifacts = await fixture.zipRows();
-    let mutation = null;
-    globalThis.fetch = async (url) => {
-      if (mutation === "permission") return { ok: false, status: 403 };
-      const run = { id: 71, run_attempt: 1, head_sha: fixture.head, path: ".github/workflows/ci.yml", conclusion: "success", event: mutation === "H1" ? "workflow_dispatch" : "push" };
-      const names = ["plan", "verify", ...Object.keys(fixture.plan.shards).map((shard) => `p1 (p1-${shard})`)];
-      let value;
-      if (url.endsWith("/zip")) {
-        const id = Number(url.match(/artifacts\/(\d+)/u)[1]);
-        const row = artifacts.find((item) => item.id === id);
-        const bytes = Buffer.from(row.bytes, "base64");
-        return { ok: true, arrayBuffer: async () => bytes };
-      }
-      if (url.includes("/jobs?")) {
-        const jobs = names.map((name) => ({ name, conclusion: "success" }));
-        if (["failure", "cancelled", "timed_out", "skipped"].includes(mutation)) jobs.at(-1).conclusion = mutation;
-        if (mutation === "missing-job") jobs.pop();
-        value = { total_count: mutation === "partial-jobs" ? 101 : jobs.length, jobs };
-      } else if (url.includes("/artifacts?")) {
-        const rows = artifacts.map(({ bytes, ...row }) => ({ ...row, expired: mutation === "expired" }));
-        if (mutation === "missing-artifact") rows.pop();
-        if (mutation === "mislabeled-artifact") rows[0].name = "wrong";
-        value = { total_count: mutation === "partial-artifacts" ? 101 : rows.length, artifacts: rows };
-      } else value = { workflow_runs: [run] };
-      return { ok: true, json: async () => value };
-    };
-    const input = { complete: true, repository: "example/project", comparison: { base: fixture.head } };
-    const admitted = await collectBaseline(input, fixture.repo);
-    assert.equal(admitted.state, "verified", JSON.stringify(admitted));
-    assert.equal(admitted.coverage, coverage);
-    for (mutation of ["permission", "H1", "failure", "cancelled", "timed_out", "skipped", "missing-job", "partial-jobs", "partial-artifacts", "expired", "missing-artifact", "mislabeled-artifact"]) {
-      const refused = await collectBaseline(input, fixture.repo);
-      assert.equal(refused.state, "unavailable", mutation + JSON.stringify(refused));
-    }
-  }
-});
+    await t.test("restoring genuine evidence restores both positive verdicts", async () => {
+      assert.equal(fixture.aggregate().ok, true);
+      assert.equal((await collect()).state, "verified");
+      assert.deepEqual((await fs.readdir(fixture.directory)).filter((name) => name.startsWith("einzbern-ci-baseline-")), []);
+    });
+  });
+}
+

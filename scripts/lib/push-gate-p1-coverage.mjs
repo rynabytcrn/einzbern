@@ -116,6 +116,11 @@ function legReceipt(line, leg) {
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   if (value.ok !== true || typeof value.reasonCode !== "string" || value.reasonCode.length === 0) return null;
+  // This consumer substitutes for a full P1 run. A passing selected Core (even
+  // relabeled with the full reason) cannot cover that leg. Ordinary full Core
+  // predates the coverage field; an explicit field must also declare full.
+  if (leg.task === "test" && (value.reasonCode !== "TESTS_VERIFIED" ||
+    (Object.hasOwn(value, "coverage") && value.coverage !== "full"))) return null;
   return value.command === (leg.dispatchesThroughTask ? leg.task : undefined) ? value : null;
 }
 

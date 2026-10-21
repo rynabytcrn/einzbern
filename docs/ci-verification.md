@@ -102,22 +102,35 @@ out, forged skipped/N/A or mismatched bytes remain red. Full success is
 `selective`. Selective success cannot satisfy full P1 or release consumers.
 
 The same-run plan artifact contains a deterministic binary transport payload and
-manifest bound to SHA, run, attempt and plan digest. Pinned official actions actually
-upload/download these bytes; final verification rereads them. Local fixture tests
-exercise corruption and identity negatives only. This candidate's real remote
+manifest bound to SHA, run, attempt and plan digest. The workflow requests upload/download through pinned official actions; final
+verification rereads the downloaded bytes. Local fixture tests exercise the
+validators, including both accepted coverage types and corruption/identity negatives. This candidate's real remote
 transfer and hosted timing require a separately authorized push/CI run. A 3–5 minute
 workflow remains a goal; measured speedup is unknown.
 
 See [the machine contract](../specs/ci-impact-plan-v1.md) for fields and entry points.
 
-The document audit is explicit for each eligible README/Wiki path. Its shared
-reader declaration covers direct path and directory references plus the reverse
-dependency closure; mapped Core readers are selected and mapped Portal readers
-retain the complete Portal train. A newly tracked or staged undeclared reader,
-a missing declaration or an unresolved declared reader forces full coverage.
-Current and immutable baseline derivation use the same audit. This conservative
-closure can select more tests than a direct text read alone; it is still a
-proper selection rather than an extension-based exemption.
+
+Full-P1 reuse in `push-gate-p1-coverage.mjs` requires Core's actual
+`TESTS_VERIFIED` terminal type. An explicit coverage field must be `full`;
+ordinary older full receipts may omit it. `TESTS_SELECTED_VERIFIED`,
+`CI_SELECTED_VERIFIED` and relabeled full reasons with `coverage=selective` cannot
+cover the Core leg in either `judgeLegOutput` or `assessP1Coverage`. The exact
+package-script argv, repository/run/output-byte and zero-warning predicates
+remain required. Default task execution and aliased task paths share the same
+unconditional CLI lifetime, including the original heavy-slot terminal release.
+
+The document audit is explicit for each eligible README/Wiki path. It scans
+tracked text inputs across executable and configuration languages, including
+Python readers invoked by Node tests, and follows literal path/basename reverse
+dependencies. Documentation and known opaque image/font assets are excluded from
+reader-source scanning; unknown binary or unreadable inputs remain unresolved.
+The reviewed reader and test declarations are frozen in the rules file. Runtime
+planning never updates them. A new staged/tracked undeclared reader, missing
+declaration or unresolved reader forces full coverage. Current working bytes and
+immutable baseline Git bytes use the same scanner and closure. Audited Core
+consumers join the selected roster; audited Portal consumers retain the complete
+Portal train. Categories still union and any conservative full trigger wins.
 
 Baseline acquisition is a separate, read-only online CI capability. It requires
 CI and GitHub Actions, the plan or verify job, the matching repository and CI workflow reference, a push
@@ -138,15 +151,30 @@ parsed-plan equality. Download aggregation repeats this check and independently
 derives the plan from Git/event/rules, including baseline reader completeness.
 Reserializing identical JSON bytes is therefore detectable.
 
-The component tests author tiny real Git/event fixtures, real selected detached
-controller and shard execution, actual full/selective aggregate validation, and
-the real baseline collector with only API transport mocked and actual ZIP
-payloads. They also cover plan-byte drift, identity/tree/source drift, missing
-and failed/cancelled/timed-out/skipped jobs, incomplete or expired artifacts,
-manual H1, and resealed forged selection/N/A. Synthetic package and other-leg
-validator inputs remain explicitly component evidence; they are not hosted P1,
-installed-product or official action-transfer receipts. These tests are executed
-by the parent batch, not by implementation dispatch.
+The component fixtures own canonical clean Git sources with byte-identical
+production task, shard, bootstrap and child-policy scripts, real harmless tests,
+and complete tiny reader declarations. They call the real task CLI and shard;
+no imported controller or receipt-printing substitute is used. Full and selective
+positive plans must satisfy the same strict reasons and digest reconstruction as
+forgeries. Selected tests leave a marker and an unselected failing sentinel stays
+unexecuted. The production read-only FD observer retains actual Core raw output,
+step argv, task/shard receipts and before/after source manifests.
+
+The full and selective aggregate and baseline collector cases use real ZIP bytes;
+only API transport is mocked. Runner, aggregate and collector verdicts have
+separate registered cases/subtests. Negative cases cover retained-plan byte drift,
+head/tree/run/attempt/source drift, missing/failed/cancelled/timed-out/skipped jobs,
+partial/expired/mislabeled artifacts, manual H1 and fully resealed selection/N/A.
+Package and other-leg inputs remain explicitly synthetic validator components.
+These cases do not establish hosted P1, an installed product or official action
+transfer. Implementation authors them without running tests; the parent batch
+records the actual validation results.
+
+The mandatory CI-integrity baseline suite registers the exact-site offline scanner
+positive and host/endpoint/context-guard, extra-request/import and unrelated-module
+mutations under the normal Core `TCRN_OFFLINE_PROOF=1` environment. Only the inner
+runtime-network proof is guarded against recursive scanner execution. No network
+capability, source-file exemption or child-spawn allowance is added.
 
 The current Portal source-proof block is refreshed once by the existing parent
 batch-end step after integration. Historical proof bindings remain unchanged.

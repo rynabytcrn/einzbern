@@ -83,14 +83,19 @@ def verify_retained_artifacts(evidence, meta):
     retained = meta.get("retainedTestControllerOutput", {}).get("files", {})
     label = mode_config(meta.get("mode", "p1"))["label"]
     expected = {f"{label}.{kind}": meta.get(kind) for kind in ("stdout", "stderr")}
-    expected.update({f"{label}-controller.{kind}": retained.get(kind) for kind in ("stdout", "stderr")})
+    if mode_config(meta.get("mode", "p1"))["controller"]:
+        expected.update({f"{label}-controller.{kind}": retained.get(kind) for kind in ("stdout", "stderr")})
     for name in ("fixture-location.json", "source-before.json", "source-after.json"):
         expected[name] = meta.get("artifactFiles", {}).get(name)
+    expected.update(meta.get("extraArtifacts", {}))
     for name, record in expected.items():
         try:
             if not isinstance(record, dict) or record.get("file") != name:
                 raise Refusal("expected receipt is missing or names another file")
-            actual = file_receipt(Path(evidence) / name)
+            path = Path(evidence) / name
+            if Path(name).is_absolute() or ".." in Path(name).parts or any(p.is_symlink() for p in [path, *path.parents]):
+                raise Refusal("unsafe artifact path")
+            actual = {**file_receipt(path), "file": name}
             if any(actual[key] != record.get(key) for key in ("file", "bytes", "sha256")):
                 raise Refusal("retained bytes do not match their recorded SHA-256 and size")
             verified.add(name)
@@ -181,7 +186,8 @@ def source_manifest(repo, node, env):
     if not core_tests:
         raise Refusal("Source walk returned no core test-file roster")
     return {"method": "scripts/lib/files.mjs walkFiles + fileRecord", "files": records,
-            "coreTestFiles": core_tests, "coreTestFileCount": len(core_tests)}
+            "coreTestFiles": core_tests, "coreTestFileCount": len(core_tests),
+            "portalTestFiles": [record["path"] for record in records if record["path"].startswith("portal/tests/") and record["path"].endswith(".test.mjs")]}
 
 
 class ControllerObserver:
@@ -317,21 +323,35 @@ def final_p1_receipt(data):
             continue
         if not text[match.start() + end:].strip() and isinstance(value, dict):
             return value
-    raise Refusal("Outer stdout is missing its final JSON receipt")
+    raise Refusal("Stream is missing its final JSON receipt")
+
+
+def final_receipt(stdout, stderr):
+    found = []
+    for name, data in (("stdout", stdout), ("stderr", stderr)):
+        try:
+            found.append((name, final_p1_receipt(data)))
+        except Refusal:
+            pass
+    if len(found) != 1:
+        raise Refusal("Expected one terminal receipt across stdout/stderr; missing or ambiguous")
+    return found[0]
 
 
 def mode_config(mode):
     if mode == "p1":
-        return dict(label="p1", script="verify:p1", expected="P1_VERIFIED", receiptKey="finalP1Receipt")
+        return dict(label="p1", script="verify:p1", expected="P1_VERIFIED", receiptKey="finalP1Receipt", controller=True)
     if mode == "pf2-h1":
-        return dict(label="h1", script="test", expected="TESTS_VERIFIED", receiptKey="finalH1Receipt")
+        return dict(label="h1", script="test", expected="TESTS_VERIFIED", receiptKey="finalH1Receipt", controller=True)
+    if mode in ("p1-checks", "p1-core", "p1-portal"):
+        return dict(label=mode, script="ci:shard", expected="P1_SHARD_VERIFIED", receiptKey="finalShardReceipt", controller=mode == "p1-core")
     raise Refusal(f"Unsupported verification mode: {mode}")
 
 
 def command(mode, executable, repo):
     config = mode_config(mode)
     return [executable, *([f"pnpm@{PNPM_VERSION}"] if mode == "pf2-h1" else []),
-            "-C", str(repo), "run", config["script"]]
+            "-C", str(repo), "run", config["script"], *([mode.removeprefix("p1-")] if mode.startswith("p1-") else [])]
 
 
 def filter_leftovers(rows, tmpdir):
@@ -367,19 +387,25 @@ def evaluate(meta):
     if meta.get("retainedArtifactsVerified") is not True:
         failures.append("Full retained artifact reread/hash/size verification is missing or failed")
     retained = meta.get("retainedTestControllerOutput", {})
-    if retained.get("errors") != []:
+    if config["controller"] and retained.get("errors") != []:
         failures.append("Controller observation/capture errors are present or unrecorded")
-    for name, item in [(kind, meta.get(kind)) for kind in ("stdout", "stderr")] + [
+    controller_streams = [
         (f"controller.{kind}", retained.get("files", {}).get(kind)) for kind in ("stdout", "stderr")
-    ]:
+    ] if config["controller"] else []
+    for name, item in [(kind, meta.get(kind)) for kind in ("stdout", "stderr")] + controller_streams:
         if not isinstance(item, dict) or not isinstance(item.get("bytes"), int) or item["bytes"] < 0 or not re.fullmatch(r"[0-9a-f]{64}", item.get("sha256", "")):
             failures.append(f"Missing or invalid retained stream/hash/size: {name}")
     totals = meta.get("testTotals")
-    if not totals or totals.get("tests", 0) < 1 or totals.get("fail") != 0 or totals.get("cancelled") != 0:
+    if (config["controller"] or meta.get("mode") == "p1-portal") and (not totals or totals.get("tests", 0) < 1 or totals.get("fail") != 0 or totals.get("cancelled") != 0):
         failures.append("Exact final test totals missing or not passing")
     final = meta.get(config["receiptKey"], {})
     if final.get("ok") is not True or final.get("reasonCode") != config["expected"] or "injected" in final:
-        failures.append(f"Uninjected final {config['expected']} receipt is missing")
+        failures.append(f"Final receipt must report {config['expected']}; observed {final.get('reasonCode', 'missing')}")
+    if meta.get("mode", "").startswith("p1-"):
+        if final.get("shard") != meta["mode"].removeprefix("p1-"):
+            failures.append("Shard receipt names the wrong shard")
+        if not meta.get("extraArtifacts") or "shard.json" not in meta["extraArtifacts"]:
+            failures.append("Shard step evidence is missing")
     if meta.get("mode") == "pf2-h1":
         for key in ("leftoversBefore", "leftoversAfter"):
             if not isinstance(meta.get(key), list) or meta[key]:
@@ -399,7 +425,7 @@ def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ("repo", "evidence", "tmp", "device", "node-bin"):
         parser.add_argument(f"--{key}", required=True, help="absolute path; evidence must not exist")
-    parser.add_argument("--mode", choices=("p1", "pf2-h1"), default="p1")
+    parser.add_argument("--mode", choices=("p1", "pf2-h1", "p1-checks", "p1-core", "p1-portal"), default="p1")
     return parser.parse_args()
 
 
@@ -427,6 +453,14 @@ def main():
                 "TMPDIR": args.tmp, "COREPACK_ENABLE_NETWORK": "0",
                 "EINZBERN_TEST_DEVICE_ROOT": args.device,
                 "EINZBERN_HOME": str(Path(args.device) / "einzbern"), "TCRN_OFFLINE_PROOF": "1"})
+    if args.mode.startswith("p1-"):
+        env.update({"HOME": str(Path(args.device) / "home"),
+                    "EINZBERN_CI_EVIDENCE_DIR": str(evidence),
+                    "EINZBERN_PORTAL_EVIDENCE_DIR": str(evidence / "portal"),
+                    "EINZBERN_PRIVACY_HISTORY_BASE": ""})
+        meta["schemaVersion"] = "einzbern.ci-shard-evidence.v1"
+        meta["ciIdentity"] = {key: os.environ.get(key) for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB")}
+        meta["testTotalsScope"] = "Portal functional tests" if args.mode == "p1-portal" else ("core controller" if config["controller"] else "not applicable")
     meta["environment"] = {key: env[key] for key in ENVIRONMENT_KEYS if key in env}
     repo = Path(args.repo)
     node = Path(args.node_bin) / "node"
@@ -448,6 +482,8 @@ def main():
                 raise Refusal(f"{name} fixture preflight refused; see fixture-location.json")
             if fixture["checks"]["entriesAtRecord"]:
                 raise Refusal(f"{name} fixture must be empty before the single run")
+        if args.mode.startswith("p1-"):
+            Path(env["HOME"]).mkdir()
         git_dir = repo / ".git"
         if git_dir.is_symlink() or not git_dir.is_dir():
             raise Refusal("Repository requires a full .git directory, not a linked worktree")
@@ -505,15 +541,28 @@ def main():
         if attempted:
             try:
                 meta["tmpdirEntriesAfter"] = sorted(os.listdir(args.tmp))
-                meta["testTotals"] = parse_test_totals((evidence / f"{label}-controller.stdout").read_bytes())
+                if config["controller"]:
+                    meta["testTotals"] = parse_test_totals((evidence / f"{label}-controller.stdout").read_bytes())
+                elif args.mode == "p1-portal":
+                    meta["testTotals"] = parse_test_totals((evidence / "portal" / "01.stdout").read_bytes())
             except Exception as error:
                 meta["errors"].append(f"Final controller totals: {error}")
             try:
-                meta[config["receiptKey"]] = final_p1_receipt((evidence / f"{label}.stdout").read_bytes())
+                meta["finalReceiptStream"], meta[config["receiptKey"]] = final_receipt(
+                    (evidence / f"{label}.stdout").read_bytes(), (evidence / f"{label}.stderr").read_bytes())
             except Exception as error:
                 meta["errors"].append(f"Final receipt: {error}")
     meta["outputMatchesInput"] = "input" in meta and meta.get("output") == meta["input"]
     meta["sourceManifestMatchesInput"] = "inputManifest" in meta and meta.get("outputManifest") == meta["inputManifest"]
+    if args.mode.startswith("p1-"):
+        meta["extraArtifacts"] = {}
+        try:
+            for path in sorted(evidence.rglob("*")):
+                name = path.relative_to(evidence).as_posix()
+                if path.is_file() and (name == "shard.json" or name.startswith(("steps/", "portal/"))):
+                    meta["extraArtifacts"][name] = {**file_receipt(path), "file": name}
+        except Exception as error:
+            meta["errors"].append(f"Shard artifacts: {error}")
     artifact_failures = verify_retained_artifacts(evidence, meta)
     meta["retainedArtifactsVerified"] = not artifact_failures
     meta["errors"].extend(artifact_failures)

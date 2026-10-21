@@ -24,11 +24,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  p1:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'pf2-h1' && fromJSON('["pf2-h1"]') || fromJSON('["p1-checks", "p1-core", "p1-portal"]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      VERIFY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'p1' }}
+      VERIFY_MODE: ${{ matrix.mode }}
     steps:
       - name: Checkout full clean history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -92,7 +96,7 @@ jobs:
         env:
           EINZBERN_PRIVACY_HISTORY_BASE: ""
         run: |
-          root="$RUNNER_TEMP/einzbern-p1-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          root="$RUNNER_TEMP/einzbern-p1-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${VERIFY_MODE}"
           mkdir "$root"
           mkdir "$root/tmp" "$root/device"
           git clone --no-hardlinks --no-checkout "$GITHUB_WORKSPACE" "$root/build"
@@ -119,23 +123,14 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ env.VERIFY_MODE }}-evidence-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/einzbern-p1-${{ github.run_id }}-${{ github.run_attempt }}/evidence/
+          path: ${{ runner.temp }}/einzbern-p1-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.mode }}/evidence/
           if-no-files-found: error
           retention-days: 14
           overwrite: false
 
-      # TCRN-CROSS-INIT-020 INC-079 — every test file must have an owner. This is
-      # the machine half of "a test no pipeline runs is a gate whose lifetime
-      # equals the day it was written". Plant an unwired test and this step reds.
-      - name: Every test file is wired to a pipeline
-        if: env.VERIFY_MODE == 'p1'
-        working-directory: ${{ runner.temp }}/einzbern-p1-${{ github.run_id }}-${{ github.run_attempt }}/build
-        run: node scripts/test-wiring-proof.mjs
-
-      # INIT-028 remediation INC-140 — the portal suite, proof legs, and coverage
-      # conservation run as one serial train after the engine suite. That train is
-      # the `portal` leg of `pnpm verify:p1` above (scripts/p1-sequence.mjs), so it
-      # is not run a second time here (TCRN-CROSS-MIN-280 D1).
+      # Core and Portal have independent checkouts, outputs, HOME, device and TMPDIR.
+      # The checks shard owns archive -> full-history privacy, wiring and package smoke.
+      # S6 remains in tests/s6-lessons.test.mjs, executed once by the core roster.
 
       # TCRN-CROSS-STORY-481 (TCRN-CROSS-SUB-331): a device installs the release archive, not this
       # checkout. The archive is packed from a fresh build, checked against its .sha256 and unpacked
@@ -145,8 +140,8 @@ jobs:
       # directory with a temporary HOME and device directory, so no file of the checkout can stand
       # in for one the archive must carry. Last in the job, so it hides none of the steps above.
       - name: Smoke the release archive unpacked without node_modules
-        if: env.VERIFY_MODE == 'p1'
-        working-directory: ${{ runner.temp }}/einzbern-p1-${{ github.run_id }}-${{ github.run_attempt }}/build
+        if: env.VERIFY_MODE == 'p1-checks'
+        working-directory: ${{ runner.temp }}/einzbern-p1-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.mode }}/build
         run: |
           build_root="$PWD"
           version="$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')"
@@ -167,6 +162,8 @@ jobs:
           node "$engine" commands > commands.json
           node "$engine" init --workspace "$smoke/library" --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > init.json
           node "$engine" status --workspace "$smoke/library" > status.json
+          # JavaScript template expressions must reach Node without shell expansion.
+          # shellcheck disable=SC2016
           node --input-type=module -e '
             import assert from "node:assert/strict";
             import { readFileSync } from "node:fs";
@@ -211,7 +208,7 @@ jobs:
           '
 
       - name: Retain curated package and isolated install evidence
-        if: always() && env.VERIFY_MODE == 'p1'
+        if: always() && env.VERIFY_MODE == 'p1-checks'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package-smoke-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
@@ -220,38 +217,35 @@ jobs:
           retention-days: 14
           overwrite: false
 
-  # S6 lesson-marker discrimination (TCRN-CROSS-STORY-147/148, re-shaped under
-  # TCRN-CROSS-INC-034/035).
-  #
-  # ITS OWN JOB, ON PURPOSE. It used to be a step appended to `verify` after
-  # `pnpm verify:p1`, which is fail-fast — so while the format and source-roster
-  # gates were red it could never execute, and 「挂每 push CI，实测 6/6 绿」 was a
-  # local measurement reported as a CI one. A separate job cannot be hidden by an
-  # unrelated failure, and the converse holds too.
-  #
-  # NO DEPENDENCY INSTALL. The gate is plain node:test over a corpus; promptfoo is
-  # deliberately not a dependency of this repository (see scripts/verify-s6.mjs for
-  # why, and what it cost). Model-behaviour evaluation is a different claim with its
-  # own gate, run from a host that carries the tool — the release-eval job that used
-  # to sit here was removed with it: its predicate was a bare `workflow_dispatch`
-  # with no tag, no release and no `needs`, so any manual run of this workflow
-  # counted as a release gate.
-  lessons:
-    if: github.event_name != 'workflow_dispatch' || inputs.mode != 'pf2-h1'
+  # Keep the required check name stable. A missing/cancelled matrix leg cannot green
+  # this job: both the job result and same-SHA retained bytes are required.
+  verify:
+    if: always()
+    needs: [p1]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Checkout full clean history
+      - name: Checkout the same source SHA
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.sha }}
-
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install pinned Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.16.0
-
-      - name: S6 lesson markers discriminate
-        run: node scripts/verify-s6.mjs
+      - name: Download this run's verification evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: '*-evidence-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}'
+          path: ${{ runner.temp }}/verification-evidence
+      - name: Require complete same-SHA passing evidence
+        env:
+          VERIFY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'p1' }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          JOB_RESULT: ${{ needs.p1.result }}
+        run: |
+          python3 scripts/ci/aggregate-evidence.py \
+            --artifacts "$RUNNER_TEMP/verification-evidence" --mode "$VERIFY_MODE" \
+            --sha "$EXPECTED_SHA" --run-id "$GITHUB_RUN_ID" \
+            --attempt "$GITHUB_RUN_ATTEMPT" --job-result "$JOB_RESULT"

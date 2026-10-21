@@ -18,6 +18,7 @@
 
 import { realpathSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,7 +35,7 @@ export const HELPER_README_TEMPLATE_DIRECTORY = `docs/readme/${BRAND.helper.id}`
 // Where the skill directory sits in the helper repository.
 export const HELPER_SKILL_DIRECTORY = `skill/${BRAND.helper.id}`;
 // Files a helper working tree keeps that are not documents: never generated and never listed.
-export const HELPER_KEPT_FILES = Object.freeze(["LICENSE", ".gitignore", `${HELPER_SKILL_DIRECTORY}/scripts/create-skill-archive.mjs`]);
+export const HELPER_KEPT_FILES = Object.freeze(["LICENSE", ".gitignore"]);
 // Git's own entry (a directory, or a file in a linked worktree) and installed packages are not
 // files of the working tree.
 const SKIPPED_ENTRIES = new Set([".git", "node_modules"]);
@@ -142,6 +143,15 @@ export async function renderHelperDocs({ out, version = null, root = REPOSITORY_
   const skill = await renderSkill(resolved);
   for (const [path, bytes] of skill.files) generated.set(`${HELPER_SKILL_DIRECTORY}/${path}`, bytes);
   generated.set("package.json", Buffer.from(helperPackageJson(resolved), "utf8"));
+  // CI and its archiver are release-owned outputs, so release:generate cannot
+  // silently list them as extras and remove the helper's only workflow again.
+  generated.set(".github/workflows/ci.yml", await readFile(join(REPOSITORY_ROOT, "scripts/templates/helper/ci.yml")));
+  generated.set(`${HELPER_SKILL_DIRECTORY}/scripts/create-skill-archive.mjs`, await readFile(join(REPOSITORY_ROOT, "scripts/templates/helper/create-skill-archive.mjs")));
+  // During release generation HEAD is the clean pre-version-bump commit.
+  // --version reproduces the target release with that immutable generator.
+  const commit = execFileSync("git", ["-C", REPOSITORY_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  if (!/^[0-9a-f]{40}$/u.test(commit)) throw new RenderHelperDocsError("HELPER_SOURCE_COMMIT_INVALID");
+  generated.set(".github/engine-source.json", Buffer.from(`${JSON.stringify({ schemaVersion: "einzbern.helper-source.v1", repository: "tpmoonchefryan/einzbern", commit, renderVersion: resolved }, null, 2)}\n`));
 
   for (const [path, bytes] of generated) await writeGenerated(target, path, bytes);
   const extraFiles = (await listFiles(target)).filter((path) => !generated.has(path) && !HELPER_KEPT_FILES.includes(path));

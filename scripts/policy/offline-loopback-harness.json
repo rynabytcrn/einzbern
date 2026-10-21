@@ -1,14 +1,4 @@
 {
-  "portal/tests/ui-presence.test.mjs": {
-    "requiredSource": [
-      "import { disposablePortalFetch } from \"./helpers/disposable-portal-fetch.mjs\";",
-      "const fetch = disposablePortalFetch();"
-    ],
-    "fetchSites": [
-      "const nativeFetch = (input, options) => fetch(input, options).catch((error) => {"
-    ],
-    "moduleImports": []
-  },
   "portal/tests/disposable-portal-fetch.test.mjs": {
     "requiredSource": [
       "import { disposablePortalFetch } from \"./helpers/disposable-portal-fetch.mjs\";",
@@ -28,5 +18,15 @@
         "source": "import { createServer } from \"node:http\";"
       }
     ]
+  },
+  "portal/tests/ui-presence-support.mjs": {
+    "requiredSource": [
+      "import { disposablePortalFetch } from \"./helpers/disposable-portal-fetch.mjs\";",
+      "const fetch = disposablePortalFetch();"
+    ],
+    "fetchSites": [
+      "const nativeFetch = (input, options) => fetch(input, options).catch((error) => {"
+    ],
+    "moduleImports": []
   }
 }

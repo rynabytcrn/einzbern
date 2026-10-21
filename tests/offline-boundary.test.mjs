@@ -155,7 +155,7 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
     await cp(join(repositoryRoot, "package.json"), join(root, "package.json"));
     await cp(join(repositoryRoot, ".npmrc"), join(root, ".npmrc"));
     await mkdir(join(root, "portal", "tests", "helpers"), { recursive: true });
-    for (const name of ["ui-presence.test.mjs", "disposable-portal-fetch.test.mjs", "helpers/disposable-portal-fetch.mjs"]) {
+    for (const name of ["ui-presence-support.mjs", "disposable-portal-fetch.test.mjs", "helpers/disposable-portal-fetch.mjs"]) {
       await cp(join(repositoryRoot, "portal", "tests", name), join(root, "portal", "tests", name));
     }
     if (harnessMutation) {
@@ -225,12 +225,12 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
 
   test("offline harness declarations allow only the recorded loopback sites, not new egress", async () => {
     const mutations = [
-      { file: "ui-presence.test.mjs", append: 'await fetch("https://example.invalid");', finding: "NETWORK_API" },
+      { file: "ui-presence-support.mjs", append: 'await fetch("https://example.invalid");', finding: "NETWORK_API" },
       { file: "disposable-portal-fetch.test.mjs", append: 'await fetch("https://example.invalid");', finding: "NETWORK_API" },
       { file: "disposable-portal-fetch.test.mjs", append: 'import https from "node:https";', finding: "NETWORK_MODULE" },
       { file: "disposable-portal-fetch.test.mjs", replace: ['server.listen(0, "127.0.0.1");', 'server.listen(0, "0.0.0.0");'], finding: "NETWORK_MODULE" },
       { file: "disposable-portal-fetch.test.mjs", replace: ['http://127.0.0.1:${server.address().port}', 'https://example.invalid'], finding: "NETWORK_API" },
-      { file: "ui-presence.test.mjs", replace: ['const fetch = disposablePortalFetch();', 'const fetch = globalThis.fetch;'], finding: "NETWORK_API" },
+      { file: "ui-presence-support.mjs", replace: ['const fetch = disposablePortalFetch();', 'const fetch = globalThis.fetch;'], finding: "NETWORK_API" },
     ];
     for (const mutation of mutations) {
       const fixture = await offlineFixture({ harnessMutation: mutation });

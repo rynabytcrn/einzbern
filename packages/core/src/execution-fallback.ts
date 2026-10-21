@@ -185,3 +185,40 @@ export function hostRecoveryAction(kind: "network" | "rate-limit" | "model-unava
   return kind === "model-unavailable" ? "resolve-authorized-fallback" : "retry-with-backoff";
 }
 export function hostExecutionDecisionDigest(value: HostExecutionDecision): string { return dotDigest(value); }
+
+/** Optional read-only recommendation. Never imported by the normal execution resolver. */
+export function recommendHostFallbacks(requestValue: HostExecutionRequest, policy: EngineModelPolicyFile | null, evaluatedAt = new Date().toISOString()) {
+  const request = validateHostExecutionRequest(requestValue);
+  const baseline = resolveHostExecution(request, policy, "recommendation-only", evaluatedAt);
+  const preferred = baseline.configuredIntent ?? request.selection;
+  const c = request.capabilities;
+  const available: { selection: HostSelection; source: string }[] = [
+    ...(c.combinations ?? []).map(tuple => ({ selection: { kind: "explicit" as const, tuple }, source: "reported-tool-combinations" })),
+    ...(c.selectionObservations ?? []).filter(item => item.support === "supported").map(item => ({ selection: item.selection, source: `reported-selection-observation:${item.observedAt}` })),
+    ...(c.hostManagedSupported ? [{ selection: { kind: "host-managed" as const }, source: "reported-host-managed-contract" }] : []),
+  ];
+  const seen: HostSelection[] = [];
+  const ranked = available.filter(item => {
+    if (seen.some(selection => sameHostSelection(selection, item.selection))) return false;
+    seen.push(item.selection);
+    return c.toolAvailable && (!sameHostSelection(item.selection, preferred) || hostSelectionSupported(c, preferred, "requested", evaluatedAt)) && hostSelectionSupported(c, item.selection, "fallback", evaluatedAt) && (!request.hardLimits?.exactSelection || sameHostSelection(request.hardLimits.exactSelection, item.selection));
+  }).map(item => {
+    const decision = resolveHostExecution({ ...request, fallbackSelection: item.selection }, policy, "recommendation-only", evaluatedAt);
+    const rank = item.selection.kind === "host-managed" ? 2 : preferred.kind === "explicit" && item.selection.tuple.runner === preferred.tuple.runner ? item.selection.tuple.model === preferred.tuple.model ? 0 : 1 : 3;
+    return { ...item, rank, decision };
+  }).filter(item => !["blocked", "reconcile"].includes(item.decision.status) && (sameHostSelection(item.selection, item.decision.requestedSelection) || item.decision.status === "awaiting-choice"))
+    .sort((a, b) => a.rank - b.rank);
+  return {
+    schemaVersion: "tcrn.host-fallback-recommendation.v1" as const,
+    evaluatedAt,
+    preferred,
+    candidates: ranked.slice(0, 3).map(item => ({ selection: item.selection, source: item.source, authorizationDecision: item.decision.status, reasons: item.decision.reasons, expectedCost: "unknown" as const, expectedQuality: "unknown" as const })),
+    omittedCount: Math.max(0, ranked.length - 3),
+    displayBudget: 3,
+    budgetMeaning: "presentation-only-not-authorization-count" as const,
+    executionAdmission: false,
+    actualSelection: "unknown" as const,
+    persistentConfigWrites: 0,
+    limitation: "Reported tool options only. No paid probes, provider effort mapping, execution, or new authority. Normal action-specific preparation still applies.",
+  };
+}

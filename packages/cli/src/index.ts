@@ -1,4 +1,7 @@
 import type { HostExecutionRequest } from "../../core/src/execution-fallback.js";
+
+import { readEngineModelPolicyFile } from "../../core/src/engine-model-policy.js";
+import { recommendHostFallbacks, validateHostExecutionRequest } from "../../core/src/execution-fallback.js";
 import { deviceHome } from "../../core/src/device-home.js";
 import { isSharedLibrary } from "../../core/src/chain-identity.js";
 import { readFile } from "node:fs/promises";
@@ -1696,6 +1699,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // A set always cites and verifies an Owner decision naming models.engine-policy; --workspace only
   // locates that decision and does not make the policy project-scoped.
   { name: "engine-model-policy-catalog", availability: "cli", mutates: false, flags: [{ name: "host", required: false, valueKind: "string" }] },
+  { name: "execution-fallback-candidates", availability: "cli", mutates: false, flags: [{ name: "request", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "engine-model-policy-save", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "host", required: true, valueKind: "string" }, { name: "changes", required: true, valueKind: "json" }, { name: "expected-host-revision", required: true, valueKind: "integer" }, { name: "expected-host-digest", required: true, valueKind: "string" }, { name: "operation-id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "engine-model-policy-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: true, valueKind: "string" }, { name: "policy", required: true, valueKind: "json" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "engine-rollback", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }] },
@@ -3169,6 +3173,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const values = parseArguments(rest, ["host"]);
     io.write(canonicalJson({ reasonCode: "ENGINE_MODEL_POLICY_CATALOG_READY", ...await readEngineModelPolicyCatalog(values.host) }));
     return;
+  }
+  if (command === "execution-fallback-candidates") {
+    const values = parseArguments(rest, ["request", "at"]); required(values, ["request", "at"]);
+    const request = validateHostExecutionRequest(JSON.parse(await readFile(values.request!, "utf8")));
+    const policy = request.capabilities.hostKind === "dot" ? null : await readEngineModelPolicyFile();
+    io.write(canonicalJson(recommendHostFallbacks(request, policy, values.at!))); return;
   }
   if (command === "engine-model-policy-save") {
     const values = parseArguments(rest, ["workspace", "host", "changes", "expected-host-revision", "expected-host-digest", "operation-id", "at", "actor", "decided-in"]);

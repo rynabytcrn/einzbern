@@ -808,3 +808,32 @@ test("C04: agents.generation none records rule changes without creating or chang
   await assert.rejects(readFile(paths.agents), { code: "ENOENT" });
   await assert.rejects(readFile(join(paths.project, "CLAUDE.md")), { code: "ENOENT" });
 });
+
+test("INIT-062 same-version autonomy and branch supplements update only untouched enabled sections with recovery", async context => {
+  for (const id of ["autonomy", "residue-cleanup"]) for (const [language, suffix] of [["zh-CN", "zh"], ["en", "en"]]) {
+    const previous = await readFile(join(fixtures, `${id}-v1-rev1.${suffix}.md`), "utf8");
+    const current = builtInRule(id).body[suffix];
+    const catalog = BUILT_IN_RULES.map(rule => rule.id !== id ? rule : { ...rule, body: { ...rule.body, [suffix]: previous } });
+    const paths = await scratch(context, language);
+    await render(paths);
+    assert.equal(sectionOf(await readFile(paths.agents, "utf8"), `rule:${id}`), null, "disabled is not implicitly enabled");
+    await enable(paths, id, { catalog });
+    const before = await readFile(paths.agents);
+    assert.equal((await ruleOf(paths, id)).state, "enabled", "same rule version needs no re-enable");
+    const updated = await render(paths);
+    assert.equal(updated.sections.find(section => section.id === `rule:${id}`).result, "replace");
+    const section = sectionOf(await readFile(paths.agents, "utf8"), `rule:${id}`);
+    assert.deepEqual([section.body, section.rev], [current, 2]);
+    assert.deepEqual(await ruleRecord(paths, id), { enabled: true, version: 1 });
+    assert.equal(await backedUp(paths, before), true);
+    assert.equal((await render(paths)).sections.find(section => section.id === `rule:${id}`).result, "unchanged");
+    const changed = await scratch(context, language);
+    await render(changed); await enable(changed, id, { catalog });
+    const edited = (await readFile(changed.agents, "utf8")).replace(previous, `${previous}User addition.\n`);
+    await writeFile(changed.agents, edited);
+    const refused = await render(changed);
+    assert.deepEqual(refused.pending, [{ id: `rule:${id}`, file: "AGENTS.md" }]);
+    assert.equal(await readFile(changed.agents, "utf8"), edited);
+    assert.equal((await ruleOf(changed, id)).state, "pending");
+  }
+});

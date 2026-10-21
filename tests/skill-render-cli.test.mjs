@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
+import { renderHelperDocs, HELPER_KEPT_FILES } from "../scripts/render-helper-docs.mjs";
+
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
 import { FRAMEWORK_VERSION } from "../dist/build/packages/core/src/index.js";
 import { computeInstallTreeDigest } from "../dist/build/packages/core/src/install-tree-digest.js";
@@ -123,8 +125,11 @@ test("479-AC1, AC3 through the CLI: every verb the generated table names is list
   const listed = (await invoke(["commands"])).report.commands.map((entry) => entry.name);
   const verbs = tableVerbs(markdown);
   // The full-text moment includes both project context and the packaged evidence entry.
-  assert.equal(verbs.length, 12, "the six moments name twelve verbs");
+  assert.equal(verbs.length, 28, "nine moments include all fifteen native/shared/backup commands and batch capture");
   assert.ok(verbs.includes("execution-evidence"), "the installed workflow names its public evidence entry");
+  assert.match(markdown, /`execution-evidence --from-file <json>` remains read-only validation, not authentication/);
+  assert.match(markdown, /specs\/dispatch-admission-evidence-v1\.md/);
+  assert.ok(Buffer.byteLength(markdown, "utf8") < 6000, "J17 preserves the ordinary Skill quality budget");
   for (const verb of verbs) assert.ok(listed.includes(verb), `${verb} is listed by commands`);
   assert.ok(listed.includes("skill-render"), "skill-render is itself listed by commands");
   assert.ok(Buffer.byteLength(markdown, "utf8") < SKILL_MARKDOWN_BYTE_LIMIT);
@@ -193,4 +198,24 @@ test("479-R1: in a release the verb copies the template beside the bundled engin
   assert.deepEqual(report.files, ["SKILL.md", "agents/openai.yaml", "references/install.md", "scripts/install.mjs"]);
   assert.equal(await readFile(join(out, "references", "install.md"), "utf8"), "# install from the release\n");
   assert.equal(await readFile(join(out, "SKILL.md"), "utf8"), renderSkillMarkdown({ version: FRAMEWORK_VERSION, catalogNames: COMMAND_CATALOG.map((entry) => entry.name) }));
+});
+
+
+test("DOT-R01/R02: generated helper owns the archive helper, preserves unknown files and copies source guidance", async (context) => {
+  const base = await scratch(context);
+  const out = join(base, "helper");
+  const helper = `skill/${BRAND.helper.id}/scripts/create-skill-archive.mjs`;
+  const helperBody = "// stale archive helper fixture\nexport {};\n";
+  await mkdir(join(out, "skill", BRAND.helper.id, "scripts"), { recursive: true });
+  await writeFile(join(out, helper), helperBody);
+  await writeFile(join(out, "retain-unrecognized.txt"), "not deletion authorization\n");
+  const report = await renderHelperDocs({ out });
+  assert.equal(HELPER_KEPT_FILES.includes(helper), false, "the release-owned archive helper is not kept input");
+  assert.equal(report.files.includes(helper), true, "release generation owns the archive helper");
+  assert.deepEqual(report.extraFiles, ["retain-unrecognized.txt"]);
+  assert.deepEqual(await readFile(join(out, helper)), await readFile(join(repositoryRoot, "scripts/templates/helper/create-skill-archive.mjs")), "the stale archive helper is replaced by exact release template bytes");
+  assert.equal(await readFile(join(out, "retain-unrecognized.txt"), "utf8"), "not deletion authorization\n");
+  const installedReference = await readFile(join(out, "skill", BRAND.helper.id, "references", "install.md"));
+  assert.deepEqual(installedReference, await readFile(join(templateDirectory, "references", "install.md")));
+  assert.equal(await readFile(join(out, "skill", BRAND.helper.id, "SKILL.md"), "utf8"), renderSkillMarkdown({ version: FRAMEWORK_VERSION, catalogNames: COMMAND_CATALOG.map(entry => entry.name) }));
 });

@@ -4276,7 +4276,7 @@ button:disabled { cursor: not-allowed; }
             <nav class="tcrn-subnav tcrn-settings-layout__nav" data-settings-layout-nav data-settings-local-nav="true" aria-label="Settings groups" data-i18n-aria-label="settings.groupsLabel" role="tablist"></nav>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@d53f23055ddedc6e0881cd85d54e6ab79cd02f75" data-ds-contract-status="production-published-consumed" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="012b12f5b84052510b84e477781901c52ad352390fbbf37dd49ff3ee49eae649" data-ds-component-css-sha256="f8200e9b9b0cce4b4ac642620030e252dfde7d65a994639d49f12241e135ac4b" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="production-published-consumed" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div></div></div></div></div>
+            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@d53f23055ddedc6e0881cd85d54e6ab79cd02f75" data-ds-contract-status="production-published-consumed" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="012b12f5b84052510b84e477781901c52ad352390fbbf37dd49ff3ee49eae649" data-ds-component-css-sha256="f8200e9b9b0cce4b4ac642620030e252dfde7d65a994639d49f12241e135ac4b" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="production-published-consumed" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div><article id="config-backups" class="tcrn-surface" data-ui="config-backups" aria-labelledby="config-backups-title" hidden><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="config-backups-title" data-i18n="backup.title">Configuration backups on this device</h2><p class="tcrn-text" data-i18n="backup.note">Read-only inventory. Backups do not restore identity or credentials.</p></div></div><div id="config-backup-list" aria-live="polite"></div></article></div></div></div></div>
           </div>
         </div>
       </section>
@@ -4403,7 +4403,7 @@ const BOOT = __PORTAL_BOOT__;
   const systemTheme = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
   let followSystemTheme = storedTheme === null && machineTheme === "system";
   if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme === "system" ? (systemTheme?.matches ? "dark" : "light") : machineTheme;
-  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, modelPolicy: null, modelPolicyHost: "codex", modelPolicyDrafts: new Map(), modelPolicyWrites: new Map(), modelPolicyRead: 0, modelPolicyReadTarget: null, modelPolicyReadPending: false, modelPolicyLibraryId: BOOT.library?.libraryId ?? null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeStatus: "valid", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
+  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, configBackups: null, modelPolicy: null, modelPolicyHost: "codex", modelPolicyDrafts: new Map(), modelPolicyWrites: new Map(), modelPolicyRead: 0, modelPolicyReadTarget: null, modelPolicyReadPending: false, modelPolicyLibraryId: BOOT.library?.libraryId ?? null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeStatus: "valid", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   // DS Tabs is a behavior contract, not a role decoration. Every tablist below
@@ -5023,6 +5023,38 @@ const BOOT = __PORTAL_BOOT__;
       : controlFor(entry);
     return `<div class="tcrn-setting-row ${modified ? "tcrn-setting-row--modified tcrn-highlightable" : ""}" data-setting-row="${esc(entry.key)}" data-setting-shape="scalar" data-modified="${modified ? "true" : "false"}">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control">${control}</div><div class="tcrn-setting-row__tools">${dot}${dictionary}${reset}</div></div>`;
   };
+  const configBackupStatus = (value) => ({
+    "not-scanned": t("backup.status.not-scanned"), empty: t("backup.status.empty"), scanned: t("backup.status.scanned"), unreadable: t("backup.status.unreadable"), partial: t("backup.status.partial"), verified: t("backup.status.verified"), corrupt: t("backup.status.corrupt"), "missing-index": t("backup.status.missing-index"), discovered: t("backup.status.discovered"), unknown: t("backup.status.unknown"),
+  }[value] ?? t("backup.status.unknown"));
+  const configBackupPhase = (value) => ({ staging: t("backup.phase.staging"), verified: t("backup.phase.verified"), committed: t("backup.phase.committed"), "rotation-pending": t("backup.phase.rotation-pending") }[value] ?? t("backup.status.unknown"));
+  const configBackupMarkup = (snapshot) => {
+    const known = snapshot?.schemaVersion === "einzbern.config-backup-list.v1";
+    const status = known ? snapshot.scanStatus : snapshot === null ? "not-scanned" : "unreadable";
+    const value = (item) => item === null || item === undefined ? t("backup.status.unknown") : String(item);
+    const summary = `<p class="tcrn-text" data-backup-scan-status="${esc(status)}">${esc(configBackupStatus(status))}</p><p class="tcrn-text">${esc(t("backup.scannedAt"))}: ${esc(value(known ? snapshot.scannedAt : null))}</p>${known && snapshot.error ? `<p class="tcrn-text" data-backup-error>${esc(t("backup.error"))}: ${esc(snapshot.error)}</p>` : ""}`;
+    const groups = known && Array.isArray(snapshot.groups) ? snapshot.groups : [];
+    return summary + groups.map((group) => `<section class="tcrn-surface" data-backup-group="${esc(group.backupGroupId)}"><h3 class="tcrn-heading">${esc(group.hostname)}</h3><p class="tcrn-text">${esc(group.backupGroupId)}</p><dl class="tcrn-definition-list tcrn-definition-list--dense">${[
+      ["project", t("backup.project"), group.projectRef ? `${group.projectRef.libraryId} / ${group.projectRef.projectId}` : null],
+      ["active", t("backup.active"), group.activeCount], ["transactions", t("backup.transactions"), group.transactionCount], ["recoverable", t("backup.recoverable"), group.recoverableCount], ["bytes", t("backup.bytes"), group.bytes], ["completedAt", t("backup.completedAt"), group.completedAt], ["integrity", t("backup.integrity"), configBackupStatus(group.integrity)], ["sync", t("backup.sync"), configBackupStatus(group.syncStatus)],
+      ["phases", t("backup.phases"), Array.isArray(group.transactionPhases) ? group.transactionPhases.length ? group.transactionPhases.map(configBackupPhase).join(", ") : t("backup.phase.none") : null],
+    ].map(([name, label, entry]) => `<div class="tcrn-definition-list__item" data-backup-field="${esc(name)}"><dt class="tcrn-definition-list__term">${esc(label)}</dt><dd class="tcrn-definition-list__definition">${esc(value(entry))}</dd></div>`).join("")}</dl>${group.error ? `<p class="tcrn-text" data-backup-error>${esc(t("backup.error"))}: ${esc(group.error)}</p>` : ""}</section>`).join("");
+  };
+  const renderConfigBackups = () => {
+    const panel = $("#config-backups");
+    if (!panel) return;
+    panel.hidden = state.settingGroup !== "storage";
+    $("#config-backup-list").innerHTML = configBackupMarkup(state.configBackups);
+  };
+  const loadConfigBackups = async () => {
+    const read = (state.configBackupRead ?? 0) + 1;
+    state.configBackupRead = read;
+    let snapshot;
+    try { snapshot = await api("/api/config-backups", { anyTarget: true }); }
+    catch { snapshot = { schemaVersion: "einzbern.config-backup-list.v1", scanStatus: "unreadable", scannedAt: null, groups: [] }; }
+    if (state.configBackupRead !== read) return;
+    state.configBackups = snapshot;
+    renderConfigBackups();
+  };
   const deviceSettingRow = (entry) => {
     const description = entry.appliesOn === "restart" ? `${settingDescription(entry.key)} ${t("settings.machineRestart")}` : settingDescription(entry.key);
     return `<div class="tcrn-setting-row" data-machine-row="${esc(entry.key)}" data-setting-shape="scalar">${settingRowLabel(entry, description)}<div class="tcrn-setting-row__control">${deviceControlFor(entry)}</div><div class="tcrn-setting-row__tools"></div></div>`;
@@ -5153,6 +5185,7 @@ const BOOT = __PORTAL_BOOT__;
     setText("#settings-count", `${entries.length} ${t("config.keyCount")}`);
     const loading = state.settings === null;
     const unavailable = !loading && !Array.isArray(state.settings?.settings);
+    renderConfigBackups();
     const deviceUnavailable = state.machineSettings !== null && !Array.isArray(state.machineSettings?.settings);
     const phase = loading ? "loading" : unavailable ? "error" : entries.length === 0 ? "empty" : "content";
     const stateText = phase === "loading" ? t("config.loading") : phase === "error" ? t("config.readUnavailable") : t("config.empty");
@@ -6737,6 +6770,7 @@ const BOOT = __PORTAL_BOOT__;
     clearTransientTarget();
     state.promptLanguageDraft = null;
     const epoch = state.libraryEpoch || 0;
+    void loadConfigBackups();
     const read = (state.settingsRead || 0) + 1;
     state.settingsRead = read;
     const policyTarget = beginModelPolicyRead();

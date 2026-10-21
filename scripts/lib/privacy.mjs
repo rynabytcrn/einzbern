@@ -839,6 +839,8 @@ function publicGitMetadataProjections(entry, content, owner) {
   const emailSpans = [];
   const ownerSpans = [];
   let publicCommitter = false;
+  let dependabotAuthor = false;
+  let githubCommitter = false;
   for (const role of roles) {
     const line = lines[cursor];
     const match = /^(author|committer|tagger) ([^<>\r\n]+) <([^<>\r\n]+)> (?:0|[1-9][0-9]*) [+-][0-9]{4}$/u.exec(line ?? "");
@@ -847,7 +849,14 @@ function publicGitMetadataProjections(entry, content, owner) {
     const login = githubUserEmail.exec(email)?.[1];
     const user = login !== undefined && githubLogin.test(login) && !login.includes("--");
     const service = role === "committer" && name === "GitHub" && email === joinParts(["noreply", "github.com"], "@");
-    if (role === "committer") publicCommitter = user || service;
+    if (role === "author") {
+      dependabotAuthor = name === "dependabot[bot]" &&
+        /^[1-9][0-9]*\+dependabot\[bot\]@users\.noreply\.github\.com$/u.test(email);
+    }
+    if (role === "committer") {
+      publicCommitter = user || service;
+      githubCommitter = service;
+    }
     const offset = lines.slice(0, cursor).reduce((sum, value) => sum + value.length + 1, 0);
     if (user || service) {
       const start = offset + role.length + name.length + 3;
@@ -872,6 +881,21 @@ function publicGitMetadataProjections(entry, content, owner) {
     if (merge && merge[2] === owner && githubLogin.test(owner) && !owner.includes("--")) {
       const start = boundary + 2 + merge[1].length;
       ownerSpans.push([start, start + owner.length]);
+    }
+  }
+  // Dependabot's exact final signoff uses a public service address, not a user's
+  // private address. Classify only that email span, bound to the parsed bot author
+  // and GitHub web committer above. This is syntax, not authentication; all other
+  // body text and all secret/private-runtime projections still see original bytes.
+  if (entry.kind === "commit" && dependabotAuthor && githubCommitter) {
+    const email = joinParts(["support", "github.com"], "@");
+    const prefix = "Signed-off-by: dependabot[bot] <";
+    const signoff = `${prefix}${email}>`;
+    const body = content.slice(boundary + 2);
+    const terminalBody = body.endsWith("\n") ? body.slice(0, -1) : body;
+    if (terminalBody.endsWith(`\n\n${signoff}`)) {
+      const start = boundary + 2 + terminalBody.length - signoff.length + prefix.length;
+      emailSpans.push([start, start + email.length]);
     }
   }
   const project = (spans) => {

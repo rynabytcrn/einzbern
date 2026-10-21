@@ -444,6 +444,6 @@ if (!MUTATION) {
       const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), firstDoctor.ok);
       assert.deepEqual(healthReasons(), firstDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
-    } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
+    } finally { await closePage(page, fixture); }
   });
 }

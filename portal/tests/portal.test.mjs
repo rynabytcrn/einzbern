@@ -492,3 +492,16 @@ test("STORY-482 R4: the host probe route is gone while the host-probe verb stays
   const commands = await request(url, "/api/commands", readOptions(boot.token));
   assert.ok(commands.body.commands.some((entry) => entry.name === "host-probe"), "the host-probe verb stays in the catalog");
 });
+
+// CFG-P01: static public-CLI consumer boundary. No new server/lifecycle/security probe.
+test("configuration backup inventory is a read-only public CLI route with an explicit startup root", async () => {
+  const source = await readFile(new URL("../portal.mjs", import.meta.url), "utf8");
+  const start = source.indexOf('    if (request.method === "GET" && pathname === "/api/config-backups")');
+  const end = source.indexOf('    if (request.method === "GET" && pathname === "/api/machine-settings")', start);
+  const route = source.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(route, /argument\("config-backup-root", null\)/u);
+  assert.match(route, /await cli\(\["config-backup-list"/u);
+  assert.doesNotMatch(route, /(?:readFile|readdir|writeFile|restore|upload)\(/u);
+  assert.ok(!source.includes('request.method === "POST" && pathname === "/api/config-backups"'));
+});

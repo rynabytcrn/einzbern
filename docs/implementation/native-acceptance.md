@@ -214,3 +214,121 @@ literal H1 `script=test` command; its implementation or focused test pass is not
 Neither mode replaces PF-3's reuse of its specified PF-2 receipt. Actual upgrade/setup dry-run receipts and final
 package privacy evidence must also be bound to their exact candidate rather than inferred from
 source implementation or an earlier package smoke.
+
+## INIT062 dot native acceptance: separate, not executed
+
+The dot implementation is not a claim about any live device, provider, shared library or
+scheduler. The original DOT-R03 and DOT-E04 remain E4 obligations. Authored source and
+sequential fixtures are not real execution evidence. The implementation-only batch exception
+is not a product admission bypass and never turns a refused admission into an admitted one.
+None of the historical Mac/host receipts above applies to dot by implication.
+
+### Actual-session context scenes (B4 / DOT-R03)
+
+Keep three distinct scene records: a new task, a resumed task, and an independently delegated
+execution. For each scene, select an already authorized narrow task and record the actual
+library, project, work revision and scope digest. The executing session itself must read:
+
+- AGENTS: the independent body and its actual template/rule versions and digest.
+- Mana Orchestrate: the generated skill's actual source version and digest.
+- Work: the current work record through the supported engine read entry.
+
+Use the `tcrn.execution-context-read.v1` structure with one actual `sessionRef`, `readAt`,
+`workReference`, positive `workRevision`, `scopeDigest`, explicit `effectiveRoots`, and exactly
+one of each logical file key `agents`, `mana-orchestrate`, and `work`. Each file needs a source
+version, SHA-256, read method and reference to its actual tool return. Current expected values
+come from real work/source/root readbacks, not a copied parent-session assertion.
+
+`normalizeExecutionContextRead` only validates structure. `assessExecutionContextRead`
+compares those observations and returns a context check compatible with the dot admission;
+its context digest binds that check. Parent-session, patrol, unavailable and unverified
+associations cannot pass this scene. File presence, install receipt S6, a matching hash alone,
+or this checklist cannot establish S7. Source association is not provider authentication.
+
+Scene status at source integration:
+
+- New task: not executed; no actual scene-specific tool-return bundle supplied.
+- Resume: not executed; no actual scene-specific tool-return bundle supplied.
+- Independent delegation: not executed; implementation handoff and local source reads do not
+  establish the native admission/attempt/result/writeback acceptance chain.
+
+### End-to-end evidence (D2 / DOT-E04)
+
+The independent acceptance role must associate the scene's context with the exact candidate,
+formal dot admission, local attempt, actual native tool response, independent deliverable
+verification, supported engine write and subsequent readback. Record missing capability,
+permission or evidence at the stage it blocks. Do not request fabricated JSON or repeated
+approval as a substitute for an unavailable provider observation.
+
+Keep the five stage findings independent: G1 actual-session context reads above;
+G2 current target repository/output/language/design/capability readiness and permissions;
+G3 explicit native admission with actual occupancy including parent and platform cap;
+G4 the pre-call local attempt, actual response and association/finality observations;
+G5 independent deliverable verification, supported write and same-library readback.
+Coordination-only context never invents a repository target. Self model/quota may be
+not-applicable, but that does not waive G2/G3. Retry lineage, conflicts, late results
+and unknown execution responsibility remain preserved. Every stage is not-exercised
+here; the five names are acceptance stages, not new work packages.
+
+A pending local attempt has no fabricated native response. Preserve actual provider fields
+only when the raw response contains them, with their source reference and JSON pointer.
+Keep accepted/running/reported completion, provider-confirmed execution finality and independent
+deliverable verification separate. Verified deliverables do not prove the task stopped or that
+its active-slot responsibility can be released. Native envelopes must not acquire process
+`selectedTuple`, stdout, stderr or exitCode fields. Legacy process evidence retains its own
+strict contract.
+
+For shared publication, an old successful transaction is not permission for a new one. Require
+the current full baseline, a submission-time complete refresh, supported semantic reapply,
+current operation-specific serial handoff, segment-before-manifest publication, actual remote
+byte readbacks and independent replay. Advisory state is not a lock; absence or age never proves
+an available writer slot. Unknown publication or release remains unknown pending observation.
+
+The independent E4 report must name the actual candidate and retain per-scene/per-stage
+passed, failed or not-exercised findings with private source references. No source-integration,
+generation or fixture result closes E4, DOT-S01's live-instance component, real backup enablement
+or real provider terminality.
+
+### Reserved storage consumer audit
+
+This is a source-consumer audit, not a live cleanup or retention acceptance receipt.
+The CLI's fixed advisoryStorageAuditEvidenceRef points here, never to a request flag.
+Runtime path checks remain mandatory on every advisory operation.
+
+- Config backup reserves config-backups, config-backup-staging and
+  config-backup-recovery below one explicit external root. The CLI supplies actual
+  source/registered library and project roots, device root, engine/helper source
+  root and all registered effective generated-artifact roots, including canonical
+  aliases. It uses resolveGeneratedArtifactsRoot, not the mkdir-capable assertion.
+  Unknown registered generated roots refuse rather than disappearing from protection.
+- Group bindings live in the separate device config-backup-bindings directory.
+  device-clean examines only device trash/backups and recognized stale/version/skill
+  entries. It does not recursively clean the device or this binding directory.
+- Shared advisory is the fixed library-relative
+  artifacts/coordination/shared-submit/advisory.json. Its consumer rejects device
+  roots, dist ancestors, registered repository dist roots, links/nonregular files,
+  and uses the actual local library lock plus readback. It is never a CAS/lease.
+  Config backup root disjointness from every library excludes this advisory tree.
+- artifact-store stages/removes only explicit digest blobs and lists top-level .gz
+  entries, not a recursive directory sweep. safeCleanOutputRoot quarantines the
+  explicit repository dist, and task build resets dist/build. These do not consume
+  the external reserved tree or library advisory. Projection refresh writes only
+  declared output files and preserves independent dot ownership as pending.
+- Helper rendering reports extras rather than deleting them. Original G must still
+  retain the handoff's create-skill-archive.mjs exact keep item and verify its own
+  final generated directory; this source audit does not claim G's generation ran.
+
+No generalized cleanup framework was changed. An explicit future cleanup target or
+new consumer overlapping either reserved surface needs a new audit, not reliance
+on this static description. No real reserve, advisory or device cleanup ran here.
+
+### Candidate sourceVersion refinement and remaining E4
+
+The backup candidate now uses the actual packaged bundle's observed install-tree
+identity plus running version; absent commit is explicit unknown, not a developer
+HEAD. See specs/config-backup-v1.md for the approved-v2 basis, two-read binding,
+layout refusals and existing Owner-decision policy target. Independent acceptance
+must inspect and execute this exact candidate rule, including the actual package
+entry, not merely a directly injected core fixture. All such execution remains
+not-exercised at integration. No real backup policy, schedule or persistent grant
+has been approved by this implementation.

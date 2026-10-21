@@ -95,6 +95,7 @@ export async function resolveExecutionAdmission(request: ExecutionAdmissionReque
 export function resolveExecutionAdmissionFromSnapshot(snapshotValue: ExecutionAdmissionSnapshot, request: ExecutionAdmissionRequest, options: Omit<ExecutionAdmissionOptions, "home"> = {}): ExecutionAdmission {
   object(request, "request", ["host", "category", "rejections", "requestedAgents", "availableCombinations", "usage", "expectedPolicy"]);
   text(request.host, "host");
+  if (request.host === "chatgpt-dot" || request.host === "dot-autonomous") invalid("host", "requires the independent dot mode entry, not a process host policy");
   text(request.category, "category");
   integer(request.rejections, "rejections", 0);
   integer(request.requestedAgents, "requestedAgents", 1);
@@ -186,3 +187,7 @@ export function resolveExecutionAdmissionFromSnapshot(snapshotValue: ExecutionAd
   };
   return Object.freeze(result);
 }
+
+/** Explicit native branch. The process request/parser and host policy remain unchanged. */
+export { resolveDotExecutionAdmission, validateDotExecutionRequest } from "./dot-execution.js";
+export type { DotExecutionRequest, DotAdmission } from "./dot-execution.js";

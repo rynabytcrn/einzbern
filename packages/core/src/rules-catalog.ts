@@ -5,7 +5,7 @@
 // carries four, each with an id, a version, and a Chinese and an English title and body. MIN-228
 // D3 fixed the set at four; MIN-229 D6 supplied batch v2, and the INIT-053 Owner supplement adds communication and waiting at v3.
 //
-// The Chinese texts are the Owner's final wording, word for word. tests/fixtures/rules/ holds
+// The historical Chinese texts are the Owner's wording; later supplements identify their source. tests/fixtures/rules/ holds
 // copies of them, and tests/rules-catalog.test.mjs compares each constant here with its copy, so
 // an edit to either side is a red test rather than a quiet drift. The English text of
 // silent-reporting is the Owner's final translation as well, apart from its last sentence (below).
@@ -61,7 +61,7 @@
 // import it.
 
 /** The ids of the built-in rules, in the order they are listed. */
-export const BUILT_IN_RULE_IDS = Object.freeze(["autonomy", "batch", "unattended-commands", "silent-reporting", "design-authority", "residue-cleanup", "goal-writing"] as const);
+export const BUILT_IN_RULE_IDS = Object.freeze(["autonomy", "batch", "unattended-commands", "silent-reporting", "design-authority", "residue-cleanup", "goal-writing", "incremental-update"] as const);
 export type BuiltInRuleId = typeof BUILT_IN_RULE_IDS[number];
 
 /** A rule's text in each language the engine ships it in. */
@@ -77,15 +77,34 @@ export interface BuiltInRule {
   readonly body: RuleText;
 }
 
+// INIT-062 Owner supplements (2026-10-21): same-version clarifications of authorization
+// counts and existing residue/branch responsibilities. The added wording implements the
+// Owner's instructions; it is not a verbatim historical quotation. Keep the previous bodies
+// in *-v1-rev1 fixtures. Enabled records stay enabled; managed render raises the section rev,
+// while user-edited sections remain pending. Dot consumes these same bilingual additions.
+export const AUTONOMY_AUTHORIZATION_BODY: RuleText = Object.freeze({
+  "zh": "不得在模型自行拟定的方案、建议或授权请求中先加上「一次」「本次只做一次」等措辞，再将用户对整个方案的「同意」「继续」「按此执行」等一般答复推定为用户施加的授权次数上限。对原任务范围内的常规完成工作，只有用户在自己的指令中明确要求「临时授权一次」「仅执行一次」或其他等价的次数限制时，才能采用该限制；用户对模型方案的一般同意不等于明确施加其中由模型自行添加的次数限制。不得借这种写法人为耗尽授权，再反复请求同一范围内的继续许可。\n\n本条只校正授权次数的解释，不创造新的授权，也不撤销用户明确规定的对象、用途、时段、次数、预算或停止条件。平台要求的逐次确认、破坏性动作、权限变化，以及实际范围、目标、风险或对外影响的实质变化，仍按适用规则处理。实际拒绝不得通过更换工具、路径或身份绕过；只有出现实质新增且相关的证据、已确认该动作未执行、且现行规则允许时，才按适用的有限重试规则处理。结果不明先读回核实，不盲目重试；不得把本条解释为无限重试、无限外部执行或发布许可。",
+  "en": "Do not add wording such as “once” or “just this one time” to a model-authored plan, proposal or authorization request and then infer from the user's general assent to the whole plan, such as “agreed”, “continue” or “proceed”, that the user imposed a limit on how many times authorization may be used. For ordinary work completing the original task within its scope, apply a count limit only when the user explicitly requests “temporary authorization for one execution”, “execute only once” or an equivalent restriction in the user's own instructions. General assent to a model-authored plan does not explicitly impose a count limit that the model itself inserted. Do not manufacture exhausted authorization this way and repeatedly ask for permission to continue within the same scope.\n\nThis clause corrects the interpretation of authorization counts only. It grants no new authorization and does not remove user-imposed limits on targets, purposes, time periods, counts, budgets or stopping conditions. Platform-required confirmation for each action, destructive actions, permission changes and material changes in actual scope, target, risk or external effect remain governed by the applicable rules. Never bypass an actual denial by changing tools, paths or identities. Only when materially new and relevant evidence exists, the action is known not to have executed and current rules permit it may the applicable bounded-retry rule be used. Read back an uncertain outcome before acting; do not retry blindly. This clause is not permission for unlimited retries, unlimited external execution or publication."
+});
+
+export const BRANCH_LIFECYCLE_BODY: RuleText = Object.freeze({
+  "zh": "每个新批开始、推送前及相关 PR 合并后，刷新并核对实际基线、当前分支、工作树、上游默认分支与贡献目标的当前头及 ahead/behind；采用 fork 时还须核对 fork 默认分支，不能把旧检查或“可快进”判断当作已同步。仅在已有授权和现行权限内，对已证实可安全快进、无独有提交且无活动依赖冲突的同步目标执行同步，并读回实际目标头；有分叉、独有历史、冲突或未知项则保留并报告，不为归零计数而强推、reset、rebase、丢提交或制造同步合并。成功、失败或取消后均核对本批分支；仅当交付已合入已核验的目标、分支不再含目标中没有的独有提交、没有活动 PR、运行或待执行 CI、工作树、后续交付或证据引用依赖，且必要历史、备份和失败证据已有可靠保留位置时，才在对应本地或远端清理已获授权的范围内，通过正常 Git 或宿主管理入口清理逐条核实的退役分支，并读回本地引用及适用的远端头确认结果。内容相同或 squash 合并不单独证明独有历史已保全；工作树退役不等于其分支已删除。默认、受保护、备份或恢复分支不因本条被视为残余；未合并、含独有历史、仍被消费或归属和状态不明的分支继续保留，并记录归属、原因及可清理条件。不得按名称、年龄、ahead 数或通配符批量删分支，不强制删除绕过保护或脏状态，不删除必要证据或改写旧验收；本条不新增远端写入、合并、发布或永久删除权限。",
+  "en": "At the start of each new batch, before pushing and after a related PR merges, refresh and check the actual baseline, current branch, worktree, upstream default branch, current contribution-target heads and ahead/behind state. For fork contributions, also check the fork's default branch. An old check or a finding that fast-forward is possible is not evidence that synchronization occurred. Within existing authorization and current permissions, synchronize only a target verified to permit a safe fast-forward, with no unique commits or conflicting active dependencies, and read back the actual target head. Preserve and report divergence, unique history, conflicts and unknowns; never force-push, reset, rebase, drop commits or manufacture a synchronization merge merely to zero a count. Audit this batch's branches after success, failure or cancellation. Clean an individually verified retired branch through normal Git or host management only when its delivery is merged into a verified target, the branch contains no unique commits absent from that target, no active PR, running or pending CI, worktree, later delivery or evidence reference depends on it, necessary history, backups and failure evidence have a reliable preservation location, and the corresponding local or remote cleanup is within existing authorization. Read back local refs and applicable remote heads to confirm the result. Identical content or a squash merge alone does not prove preservation of unique history; retiring a worktree does not mean its branch was deleted. Default, protected, backup and recovery branches are not residue under this clause. Keep unmerged branches, unique history, active consumers and branches with unknown ownership or status, recording their owner, retention reason and safe cleanup condition. Do not delete branches in bulk by name, age, ahead count or wildcard, force deletion past protection or dirty state, delete needed evidence or rewrite old acceptance results. This clause grants no new permission for remote writes, merges, publication or permanent deletion."
+});
+
 const AUTONOMY_ZH = `## 自主运行原则 v1
 
 你在自主运行。使用者不在实时观看，无法在任务中途回答问题，所以问「要我……吗？」「是否继续？」只会让工作停摆。原始请求已涵盖的可逆动作，直接做。只有破坏性动作与真正的范围变更才停下来交给使用者定。任务做完后提出后续建议可以；动手前先请示不行。
+
+${AUTONOMY_AUTHORIZATION_BODY.zh}
 `;
 
 // Translated when this module was written; awaits the Owner's correction.
 const AUTONOMY_EN = `## Autonomous Operation Principle v1
 
 You are operating autonomously. The user is not watching in real time and cannot answer questions partway through a task, so asking "Do you want me to ...?" or "Should I continue?" only stalls the work. When a reversible action is already covered by the original request, just do it. Stop and leave the decision to the user only for destructive actions and genuine changes of scope. Suggesting follow-up work once the task is done is fine; asking for permission before you act is not.
+
+${AUTONOMY_AUTHORIZATION_BODY.en}
 `;
 
 const BATCH_ZH = `## 批量处理原则 v3
@@ -198,6 +217,7 @@ Owner 于 2026-10-05 要求加入，适用于本工作区所有项目的实施�
 6. **工作树通过管理入口退出。** 删除工作树前确认交付已集成或有可靠保留位置，没有未提交、未跟踪的唯一内容，也没有后续任务或证据引用依赖。宿主管理的工作树使用宿主归档入口，普通工作树使用 Git 工作树管理入口；保留必要提交和忽略文件，不用强制删除绕过脏状态、共享占用或未完成交接。
 7. **容量与下一轮接续。** 大量复制、构建或验收前，按实际需求和已知峰值检查可用容量，先处理已确认的历史残余。容量不足时停止依赖该容量的动作，保留其他可推进工作；不靠删除无关目录腾空间，也不继续复制直到磁盘耗尽。未知峰值如实记录，不编造足够空间的保证。
 8. **核验实际结果，合并一次汇报。** 清理后复核删除范围、保留证据及绑定、Git 状态和进程状态；在现有收尾记录中留下简短的删除清单、保留原因及清理前后目录体积和文件系统可用空间。以 \`df\` 等实际读数报告可用空间变化；共享块、快照和并发写入的影响不明时说明限制，不把 \`du\` 总量或删除文件数等同于实际释放量。只结束进程、关闭代理或归档对话不算文件清理完成；部分保留或清理失败须明确回显，不重写历史验收结果。
+9. **分支生命周期与收尾。** ${BRANCH_LIFECYCLE_BODY.zh}
 `;
 
 // MIN-259 D1: an agent's translation that awaits the Owner's correction.
@@ -213,6 +233,7 @@ Added at the Owner's request on 2026-10-05, this applies to implementation, test
 6. **Retire worktrees through their management entry.** Before deleting a worktree, confirm that its delivery is integrated or kept somewhere reliable, that it holds no uncommitted or untracked unique content, and that no later task or evidence reference depends on it. Use the host's archive entry for worktrees the host manages and Git's worktree commands for ordinary ones; keep the necessary commits and ignored files, and do not force a deletion past a dirty state, a shared use or an unfinished handoff.
 7. **Capacity and the next round.** Before copying, building or accepting in bulk, check available capacity against actual need and the known peak, and deal with confirmed historical residue first. When capacity runs short, stop the actions that depend on it and keep the other work that can proceed; do not free space by deleting unrelated directories, and do not keep copying until the disk is full. Record an unknown peak as unknown; do not invent a guarantee of enough space.
 8. **Verify the actual result and report it once.** After cleaning, recheck what was deleted, the evidence and bindings kept, the Git state and the process state; leave in the existing closing record a short list of what was deleted, why items were kept, and the directory sizes and file-system free space before and after. Report the change in free space from actual readings such as \`df\`; where the effect of shared blocks, snapshots or concurrent writes is unclear, say so, and do not equate a \`du\` total or a count of deleted files with space actually freed. Ending processes, closing agents or archiving a conversation does not complete file cleanup; partial keeps and failed cleanups are stated plainly, and historical acceptance results are not rewritten.
+9. **Branch lifecycle and retirement.** ${BRANCH_LIFECYCLE_BODY.en}
 `;
 
 const GOAL_WRITING_ZH = `## 目标书写契约 v1
@@ -236,6 +257,49 @@ On 2026-10-08 the Owner adopted the three clauses of TCRN-CROSS-INC-225 "FIX, TY
 3. On encountering a speech-act condition, the working party explains once, replies minimally thereafter, and names the single exit.
 `;
 
+// INIT062 B5: one versioned principle, with only the necessary transport paragraph
+// adapted for dot. Catalog presence is not an enabled project rule or a published release.
+const INCREMENTAL_OPEN_ZH = "先取得覆盖实际必需闭包的完整有效基线，再在明确范围内做最少必要读取和增量变更；完整性未知、基线失效或安全判断需要时，仍补必要全量核对，不把增量当作跳过验证的理由。所有工单、纪要、知识卡与受治理配置仍经受支持引擎入口变更，使用实际行动者并读回。";
+const INCREMENTAL_CLOSE_ZH = "保留本机引擎互斥。共享标记仅告知占用、等待和交接，不授予跨设备原子排他；看不到标记不证明没有写入者。提交前核实当前写入者及本次串行交接，未知、占用或双写迹象只暂停受影响提交，不按超时擅自接管或删除标记。身份、基线、操作、发布和读回关联保存在动态记录，不放入本正文。增量原则不改变一个 INIT 全部待办 Story 的批单位、既定步骤、分包与角色。";
+const INCREMENTAL_OPEN_EN = "Obtain a complete, valid baseline covering the necessary closure before making minimal reads and incremental changes within an explicit scope. Unknown completeness, an invalid baseline or a safety decision still requires the necessary full checks; incremental work never skips verification. Change work items, minutes, knowledge cards and governed configuration only through supported engine entries, using the actual actor and reading the receipts back.";
+const INCREMENTAL_CLOSE_EN = "Preserve the local engine mutex. A shared marker only communicates occupancy, waiting and handoff; it grants no atomic exclusion across devices, and an absent marker does not establish that there is no writer. Confirm current writers and this operation's serial handoff before submitting. Unknown occupancy, an active writer or signs of concurrent writing pause only the affected submission; elapsed time never authorizes takeover or marker removal. Keep identity, baseline, operation, publication and readback associations in dynamic records, not in AGENTS. This principle does not change the batch unit of all open Stories under one INIT, its approved steps, packages or roles.";
+const INCREMENTAL_UPDATE_ZH = `## 增量更新与共享提交原则 v1
+
+${INCREMENTAL_OPEN_ZH}
+
+一般同步目录宿主直接使用其已验证的同步工作目录，不增加无必要的下载或上传。在本地经引擎工作，提交前刷新一次完整基线，以受支持的重放或重应用合并本轮差异，再串行提交并核对目的端读回。不能手拼事件流、覆盖他人新事件，或把工作副本回执称为生产完成。
+
+${INCREMENTAL_CLOSE_ZH}
+`;
+const INCREMENTAL_UPDATE_EN = `## Incremental Update and Shared Submission Principle v1
+
+${INCREMENTAL_OPEN_EN}
+
+Ordinary synchronized-directory hosts use their verified synchronized working directory directly, without unnecessary downloads or uploads. Work locally through the engine, refresh the complete baseline once before submission, merge this round's changes with supported replay or reapplication, submit serially and verify destination readback. Never splice event streams, overwrite another writer's new events or call a working-copy receipt production completion.
+
+${INCREMENTAL_CLOSE_EN}
+`;
+
+/** The dot transport adaptation of the same incremental-update v1 source. */
+export const INCREMENTAL_UPDATE_DOT_BODY: RuleText = Object.freeze({
+  zh: `## 增量更新与共享提交原则 · incremental-update
+
+${INCREMENTAL_OPEN_ZH}
+
+一般同步目录宿主直接使用其已验证的同步工作目录；dot 仅在环境实际需要时取得完整副本，在本地经引擎工作，提交前刷新一次完整基线，再以受支持的重放或重应用合并本轮差异，串行提交并核对远端读回。不能手拼事件流、覆盖他人新事件，或把工作副本回执称为生产完成。
+
+${INCREMENTAL_CLOSE_ZH}
+`,
+  en: `## Incremental Update and Shared Submission · incremental-update
+
+${INCREMENTAL_OPEN_EN}
+
+Ordinary synchronized-directory hosts use their verified working directory directly. Only when its environment requires transport does dot obtain a complete copy. Work locally through the engine, refresh the complete baseline once before submission, merge the round's changes with supported replay or reapplication, submit serially and verify remote readback. Never splice events, overwrite another writer's new events or call working-copy receipts production completion.
+
+${INCREMENTAL_CLOSE_EN}
+`,
+});
+
 function builtIn(id: BuiltInRuleId, version: number, title: RuleText, body: RuleText): BuiltInRule {
   return Object.freeze({ id, version, title: Object.freeze({ ...title }), body: Object.freeze({ ...body }) });
 }
@@ -254,6 +318,7 @@ export const BUILT_IN_RULES: readonly BuiltInRule[] = Object.freeze([
   builtIn("design-authority", 1, { zh: "\u8bbe\u8ba1\u6743\u5a01\u4e0e\u4e00\u81f4\u6027\u539f\u5219", en: "Design Authority and Consistency Principle" }, { zh: DESIGN_AUTHORITY_ZH, en: DESIGN_AUTHORITY_EN }),
   builtIn("residue-cleanup", 1, { zh: "无效残余收尾原则", en: "Residue Cleanup Principle" }, { zh: RESIDUE_CLEANUP_ZH, en: RESIDUE_CLEANUP_EN }),
   builtIn("goal-writing", 1, { zh: "目标书写契约", en: "Goal Writing Contract" }, { zh: GOAL_WRITING_ZH, en: GOAL_WRITING_EN }),
+  builtIn("incremental-update", 1, { zh: "增量更新与共享提交原则", en: "Incremental Update and Shared Submission Principle" }, { zh: INCREMENTAL_UPDATE_ZH, en: INCREMENTAL_UPDATE_EN }),
 ]);
 
 /** The built-in rule with this id, or null when the engine ships no rule by that id. */

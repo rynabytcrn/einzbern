@@ -58,10 +58,10 @@ export async function createCiComponentFixture(context, { production = false, fi
     await mkdir(repo);
     if (production) {
       await cp(join(componentSourceRoot, "scripts"), join(repo, "scripts"), { recursive: true });
-      // Only the already installed Ajv dependency is needed by task's imports.
+      // Task's imports need the already installed Ajv and TypeScript dependencies.
       // The actual node_modules directory is excluded by the unchanged walker.
       await mkdir(join(repo, "node_modules"));
-      await symlink(await realpath(join(componentSourceRoot, "node_modules/ajv")), join(repo, "node_modules/ajv"), "dir");
+      for (const dependency of ["ajv", "typescript"]) await symlink(await realpath(join(componentSourceRoot, "node_modules", dependency)), join(repo, "node_modules", dependency), "dir");
     }
     const defaults = {
       "package.json": JSON.stringify({ name: "ci-component", type: "module", private: true }),

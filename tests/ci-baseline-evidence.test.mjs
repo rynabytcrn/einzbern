@@ -285,24 +285,34 @@ for (const coverage of ["full", "selective"]) {
       } finally { await fs.writeFile(metaPath, originalMeta); artifacts = await fixture.zipRows(); }
     });
 
-    for (const [name, change] of [
-      ["same plan JSON with changed bytes", (bytes) => Buffer.from(JSON.stringify(JSON.parse(bytes)))],
-      ["truncated controller bytes", (bytes) => bytes.subarray(0, Math.floor(bytes.length / 2))],
-    ]) await t.test(`rejects ${name}`, async () => {
+    for (const [name, change, reason] of [
+      ["same plan JSON with changed bytes", (bytes) => Buffer.from(JSON.stringify(JSON.parse(bytes))), /Artifact|totals|receipt/u],
+      ["truncated controller bytes", (bytes) => {
+        const output = bytes.toString("utf8");
+        assert.deepEqual(Buffer.from(output), bytes, "real controller output must be valid UTF-8");
+        const duration = /^(?:#|ℹ) duration_ms \d+(?:\.\d+)?\r?$/mu.exec(output);
+        assert.ok(duration, "real controller output must contain its required final duration line");
+        return Buffer.from(output.slice(0, duration.index));
+      }, /^core: Controller final test summary is truncated or unsupported$/mu],
+    ]) await t.test(`rejects ${name}`, async (t) => {
       const path = join(coreDirectory, name.startsWith("same") ? "impact-plan.json" : "p1-core-controller.stdout");
       const bytes = await fs.readFile(path);
       try {
         await fs.writeFile(path, change(bytes));
-        const refused = fixture.aggregate();
-        assert.equal(refused.ok, false);
-        assert.match(refused.failures.join("\n"), /Artifact|totals|receipt/u);
-        artifacts = await fixture.zipRows();
-        assert.equal((await collect()).state, "unavailable");
+        await t.test("aggregate rejects the intended byte mutation", () => {
+          const refused = fixture.aggregate();
+          assert.equal(refused.ok, false);
+          assert.match(refused.failures.join("\n"), reason);
+        });
+        await t.test("real ZIP collector independently rejects the byte mutation", async () => {
+          artifacts = await fixture.zipRows();
+          assert.equal((await collect()).state, "unavailable");
+        });
       } finally { await fs.writeFile(path, bytes); artifacts = await fixture.zipRows(); }
     });
 
-    await t.test("fully resealed selection, N/A and source forgeries still fail independent derivation", async () => {
-      const { digest } = await import("../scripts/ci/impact-plan.mjs");
+    await t.test("fully resealed selection, N/A, reason and source forgeries and invalid digests still fail independent derivation", async (t) => {
+      const { digest, validatePlan } = await import("../scripts/ci/impact-plan.mjs");
       const { createTransport } = await import("../scripts/ci/transport-evidence.mjs");
       const { execFileSync } = await import("node:child_process");
       const saved = new Map();
@@ -313,13 +323,25 @@ for (const coverage of ["full", "selective"]) {
         }
       }
       await save(fixture.bundle);
-      for (const patch of [
-        { coreTests: [] }, { notApplicable: coverage === "selective" ? [] : [{ task: "core", rule: "skipped" }] },
-        { rulesHash: "d".repeat(64) }, { sourceCoreTests: [] },
-      ]) {
+      await t.test("current source derives the genuine plan", () => {
+        assert.deepEqual(validatePlan(fixture.plan, fixture.repo, fixture.env), fixture.plan);
+      });
+      for (const [name, patch, reason] of [
+        ["selection", { coreTests: [] }, /plan|source|validate-baseline|Full coverage/u],
+        ["N/A", { notApplicable: coverage === "selective" ? [] : [{ task: "core", rule: "skipped" }] }, /plan|source|validate-baseline|Full coverage/u],
+        ["rules", { rulesHash: "d".repeat(64) }, /plan|source|validate-baseline|Full coverage/u],
+        ["source", { sourceCoreTests: [] }, /plan|source|validate-baseline|Full coverage/u],
+        ["reason-only", { reasons: [...fixture.plan.reasons, "forged-reason"].sort() }, /validate-baseline/u],
+        ["invalid plan digest", { planDigest: "d".repeat(64) }, /Canonical plan digest mismatch/u],
+      ]) await t.test(`rejects ${name} forgery`, async (t) => {
         try {
           const forged = { ...fixture.plan, ...patch };
-          delete forged.planDigest; forged.planDigest = digest(forged);
+          if (!Object.hasOwn(patch, "planDigest")) {
+            delete forged.planDigest; forged.planDigest = digest(forged);
+          }
+          await t.test("current source rejects independent derivation", () => {
+            assert.throws(() => validatePlan(forged, fixture.repo, fixture.env), /independently derived source\/event\/rules\/rosters/u);
+          });
           execFileSync("python3", ["-B", "-c", `
 import json,pathlib,sys,hashlib
 root=pathlib.Path(sys.argv[1]);p=json.loads(sys.argv[2])
@@ -342,16 +364,20 @@ seal=root/("package-smoke-"+p["head"]+"-1")/"package-seal.json";value=json.loads
           const transport = join(fixture.bundle, `plan-evidence-${fixture.head}-1`, "transport");
           await fs.rm(transport, { recursive: true });
           await createTransport(transport, forged);
-          const refused = fixture.aggregate();
-          assert.equal(refused.ok, false, "fully resealed plan must fail independent Git/event/rules derivation");
-          assert.match(refused.failures.join("\n"), /plan|source|validate-baseline|Full coverage/u);
-          artifacts = await fixture.zipRows();
-          assert.equal((await collect()).state, "unavailable");
+          await t.test("aggregate rejects the forged plan and resealed evidence", () => {
+            const refused = fixture.aggregate();
+            assert.equal(refused.ok, false, "fully resealed plan must fail independent Git/event/rules derivation");
+            assert.match(refused.failures.join("\n"), reason);
+          });
+          await t.test("real ZIP collector independently rejects the resealed forgery", async () => {
+            artifacts = await fixture.zipRows();
+            assert.equal((await collect()).state, "unavailable");
+          });
         } finally {
           for (const [path, bytes] of saved) await fs.writeFile(path, bytes);
           artifacts = await fixture.zipRows();
         }
-      }
+      });
     });
 
     for (const name of ["permission", "H1", "run-failure", "run-cancelled", "run-timed_out", "run-skipped", "failure", "cancelled", "timed_out", "skipped", "verify-failure", "missing-job", "partial-job", "partial-jobs", "partial-artifacts", "expired", "missing-artifact", "mislabeled-artifact", "wrong-head", "wrong-attempt", "wrong-run", "wrong-workflow"]) {
@@ -368,4 +394,3 @@ seal=root/("package-smoke-"+p["head"]+"-1")/"package-seal.json";value=json.loads
     });
   });
 }
-

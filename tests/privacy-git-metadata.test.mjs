@@ -129,3 +129,85 @@ for (const object of ["36f50376cd9862bc5192c1a5c8835c998b626f2a", "a32bbc60551e3
     }
   });
 }
+
+
+const botEmail = mail("49699333+dependabot[bot]");
+const botAuthor = identity("author", "dependabot[bot]", botEmail);
+const supportEmail = joinParts(["support", "github.com"], "@");
+const botSignoff = `Signed-off-by: dependabot[bot] <${supportEmail}>`;
+const botMessage = `Update public dependency\n\n${botSignoff}`;
+const botCommit = (options = {}) => commit({ a: botAuthor, message: botMessage, parents: 1, ...options });
+
+test("exact terminal Dependabot service signoff classifies only its public email", () => {
+  assert.deepEqual(reasons(botCommit()), []);
+  assert.deepEqual(reasons(botCommit().slice(0, -1)), []);
+  assert.deepEqual(reasons(botCommit({ a: identity("author", "dependabot[bot]", mail("123+dependabot[bot]")) })), []);
+  assert.deepEqual(reasons(botCommit({ extra: "gpgsig fixture\n continuation" })), []);
+});
+
+test("Dependabot signoff requires both exact parsed author and web committer", () => {
+  for (const a of [author, identity("author", "Other Bot", botEmail),
+    identity("author", "dependabot[bot]", mail("dependabot[bot]")),
+    identity("author", "dependabot[bot]", mail("0+dependabot[bot]")),
+    identity("author", "dependabot[bot]", mail("01+dependabot[bot]")),
+    identity("author", "dependabot[bot]", mail("123+other[bot]")),
+    identity("author", "dependabot[bot]", mail("123+dependabot[bot]", "users.noreply.github.com.evil")),
+    identity("author", "dependabot[bot]", mail("123+dependabot[BOT]")), " " + botAuthor]) {
+    detects(botCommit({ a }), "EMAIL_IDENTIFIER");
+  }
+  for (const c of [identity("committer", "Not GitHub", webMail),
+    identity("committer", "GitHub", mail("contributor")),
+    identity("committer", "dependabot[bot]", botEmail), committer + " extra"]) {
+    detects(botCommit({ c }), "EMAIL_IDENTIFIER");
+  }
+  detects(botCommit().replace("tree ", "not-tree "), "EMAIL_IDENTIFIER");
+  detects(botCommit().replace("\n\n", "\n"), "EMAIL_IDENTIFIER");
+  detects(botCommit().replace("author ", "author\\x20"), "EMAIL_IDENTIFIER");
+});
+
+test("lookalike, nonterminal, and non-commit bot signoffs stay findings", () => {
+  for (const message of [botSignoff, `Update\n${botSignoff}`, botMessage + "\nextra",
+    botMessage + "\n\n", botMessage + " ", botMessage.replace("Signed-off-by", "signed-off-by"),
+    botMessage.replace("dependabot[bot]", "other[bot]"), botMessage.replace(supportEmail, supportEmail + ".evil"),
+    botMessage.replace(supportEmail, supportEmail.toUpperCase()), botMessage.replace(supportEmail, privateEmail),
+    botMessage.replace(" <", "  <"), botMessage.replace("Signed-off-by", " Signed-off-by"),
+    `${botMessage}\n\n${botSignoff}`, `${botSignoff}\n\n${botMessage}`]) {
+    detects(botCommit({ message }), "EMAIL_IDENTIFIER");
+  }
+  for (const kind of ["source", "blob", "filename", "build", "archive", "release", "remote", "tag"]) {
+    detects(botCommit(), "EMAIL_IDENTIFIER", { kind });
+  }
+  detects(botCommit({ extra: botSignoff }), "EMAIL_IDENTIFIER");
+  detects(botCommit({ extra: `gpgsig fixture\n ${botSignoff}` }), "EMAIL_IDENTIFIER");
+  detects(botCommit({ message: `Update\n\n${supportEmail}\n\n${botSignoff}` }), "EMAIL_IDENTIFIER");
+});
+
+test("bot signoff classification retains body, display-name, secret and runtime scans", () => {
+  for (const [payload, reason] of [[privateEmail, "EMAIL_IDENTIFIER"], [privatePath, "LOCAL_ABSOLUTE_PATH"],
+    [secret, "GITHUB_CLASSIC_TOKEN"], [owner, "OWNER_PRIVATE_IDENTIFIER"]]) {
+    detects(botCommit({ message: `Update ${payload}\n\n${botSignoff}` }), reason);
+    detects(botCommit({ message: `${botMessage} ${payload}` }), reason);
+    detects(botCommit({ extra: `gpgsig fixture\n ${payload}` }), reason);
+    detects(botCommit({ a: identity("author", `dependabot[bot] ${payload}`, botEmail) }), reason);
+  }
+  detects(botCommit(), "PRIVATE_RUNTIME_VALUE", { privateTokens: [supportEmail] });
+  detects(botCommit(), "PRIVATE_RUNTIME_VALUE", { privateTokens: [botEmail] });
+});
+
+for (const object of ["945ac08eaa7237294f6a09ff6d932a1d4f406d0d", "e4b0dca33f1803014d31f6e6560ed8efc634c5d9"]) {
+  test(`retained Dependabot commit ${object} classifies its terminal service signoff`, (context) => {
+    const read = spawnSync("git", ["cat-file", "commit", object], { cwd: new URL("..", import.meta.url), encoding: "utf8" });
+    if (read.status !== 0) {
+      context.skip(`${object} is not in this clone's history`);
+      return;
+    }
+    assert.ok(read.stdout.endsWith(botSignoff), "actual bot object retains its original terminal signoff");
+    assert.deepEqual(reasons(read.stdout), []);
+    for (const [payload, reason] of [[privateEmail, "EMAIL_IDENTIFIER"], [privatePath, "LOCAL_ABSOLUTE_PATH"],
+      [secret, "GITHUB_CLASSIC_TOKEN"], [owner, "OWNER_PRIVATE_IDENTIFIER"]]) {
+      detects(read.stdout.replace(botSignoff, `${payload}\n\n${botSignoff}`), reason);
+    }
+    detects(read.stdout, "PRIVATE_RUNTIME_VALUE", { privateTokens: [supportEmail] });
+    detects(read.stdout + "\nnot terminal", "EMAIL_IDENTIFIER");
+  });
+}

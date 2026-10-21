@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: Apache-2.0
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, writeFile, rm, symlink, rename, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createTransport, verifyTransport } from "../scripts/ci/transport-evidence.mjs";
+const plan = { head: "a".repeat(40), planDigest: "b".repeat(64), runId: "12", attempt: "2" };
+test("local component fixture rehashes real bytes; this does not establish remote action transfer", async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-transport-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "transport");
+  await createTransport(path, plan);
+  assert.equal((await verifyTransport(path, plan)).ok, true);
+  for (const patch of [{ head: "c".repeat(40) }, { runId: "13" }, { attempt: "3" }, { planDigest: "c".repeat(64) }]) await assert.rejects(verifyTransport(path, { ...plan, ...patch }));
+  const payload = await readFile(join(path, "payload.bin"));
+  await writeFile(join(path, "payload.bin"), Buffer.from("changed"));
+  await assert.rejects(verifyTransport(path, plan));
+  await writeFile(join(path, "payload.bin"), payload);
+  const manifest = await readFile(join(path, "manifest.json"));
+  await writeFile(join(path, "manifest.json"), '{}');
+  await assert.rejects(verifyTransport(path, plan));
+  await writeFile(join(path, "manifest.json"), manifest);
+  await writeFile(join(path, "extra"), "unexpected");
+  await assert.rejects(verifyTransport(path, plan));
+  await rename(join(path, "extra"), join(root, "retained-extra"));
+  await rename(join(path, "payload.bin"), join(root, "payload.bin"));
+  await assert.rejects(verifyTransport(path, plan));
+  await symlink(join(root, "payload.bin"), join(path, "payload.bin"));
+  await assert.rejects(verifyTransport(path, plan));
+});

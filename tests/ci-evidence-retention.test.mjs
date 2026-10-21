@@ -387,7 +387,7 @@ repo.mkdir()
 for name in ("tmp", "device", "bin"):
     (base / name).mkdir()
 args = argparse.Namespace(repo=str(repo), tmp=str(base / "tmp"), device=str(base / "device"),
-                          node_bin=str(base / "bin"), evidence=str(base / "evidence"), mode=mode)
+                          node_bin=str(base / "bin"), evidence=str(base / "evidence"), mode=mode, plan=None)
 # Injected component orchestration only: never an actual formal fixture or product test run.
 m.arguments = lambda: args
 m.fixture_location = lambda path: dict(checksPassed=True, checks=dict(entriesAtRecord=[]))
@@ -423,6 +423,13 @@ except FileExistsError:
     refused = True
 wrong = {**meta, config["receiptKey"]: dict(ok=True, reasonCode="TESTS_VERIFIED" if mode == "p1" else "P1_VERIFIED")}
 negatives = [bool(m.evaluate(wrong)), bool(m.evaluate({**meta, "exitCode": 9}))]
+args.plan = str(base / "forbidden-plan.json")
+args.evidence = str(base / "forbidden-plan")
+with contextlib.redirect_stdout(io.StringIO()):
+    forbidden_status = m.main()
+forbidden = json.loads((pathlib.Path(args.evidence) / (config["label"] + ".meta.json")).read_text())
+negatives.append(forbidden_status == 1 and "argv" not in forbidden)
+args.plan = None
 if mode == "pf2-h1":
     for key in ("leftoversBefore", "leftoversAfter"):
         negatives.extend([bool(m.evaluate({**meta, key: None})), bool(m.evaluate({**meta, key: ["123 task.mjs"]}))])
@@ -462,4 +469,57 @@ print(json.dumps(m.filter_leftovers(rows, "/fixture/tmp")))
 `);
   assert.equal(result.length, 4);
   assert.deepEqual(result.map((row) => row.split(" ")[0]), ["1", "2", "3", "4"]);
+});
+
+test("selected aggregation rejects forged plan identity, digest, N/A, duplicates and incomplete full rosters", () => {
+  const modulePath = join(root, "scripts/ci/aggregate-evidence.py");
+  const code = `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("aggregate", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+p = dict(head="a"*40, runId="1", attempt="1", coverage="full", shards={"checks":[],"core":["test"],"portal":["portal"]}, sourceCoreTests=["tests/a.test.mjs"],sourcePortalTests=["portal/tests/a.test.mjs"],coreTests=["tests/a.test.mjs"],portalTests=["portal/tests/a.test.mjs"],notApplicable=[])
+p["planDigest"] = m.canonical_digest(p)
+results = [m.validate_plan_shape(p,"a"*40,"1","1")]
+for patch in [dict(head="b"*40), dict(runId="2"), dict(attempt="2"),dict(planDigest="0"*64),dict(notApplicable=[{"task":"core","rule":"skipped"}]),dict(coreTests=[]),dict(coreTests=["tests/a.test.mjs"]*2),dict(coverage="unknown")]:
+ results.append(m.validate_plan_shape({**p,**patch},"a"*40,"1","1"))
+print(json.dumps(results))
+`;
+  const result = spawnSync("python3", ["-B", "-c", code, modulePath], { encoding: "utf8", env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
+  assert.equal(result.status, 0, result.stderr);
+  const [good, ...negative] = JSON.parse(result.stdout);
+  assert.deepEqual(good, []);
+  for (const errors of negative) assert.ok(errors.length > 0);
+});
+
+test("retained impact plan requires its own bound bytes even when JSON semantics are identical", async (context) => {
+  const base = await scratch(context);
+  const result = python(`
+base = pathlib.Path(sys.argv[2])
+meta = dict(mode="p1-checks", artifactFiles={}, extraArtifacts={}, impactPlan={"coverage": "selective"}, fixtures={}, inputManifest={}, outputManifest={})
+for name, value in (("fixture-location.json", {}), ("source-before.json", {}), ("source-after.json", {}), ("impact-plan.json", meta["impactPlan"])):
+    (base / name).write_text(json.dumps(value, indent=2) + "\\n")
+    meta["artifactFiles"][name] = m.file_receipt(base / name)
+for kind in ("stdout", "stderr"):
+    name = "p1-checks." + kind
+    (base / name).write_text("")
+    meta[kind] = m.file_receipt(base / name)
+positive = m.verify_retained_artifacts(base, meta)
+original = (base / "impact-plan.json").read_bytes()
+(base / "impact-plan.json").write_text(json.dumps(meta["impactPlan"], separators=(",", ":")))
+same_json = json.loads((base / "impact-plan.json").read_text()) == meta["impactPlan"]
+changed_bytes = m.verify_retained_artifacts(base, meta)
+(base / "impact-plan.json").write_bytes(original)
+receipt = meta["artifactFiles"].pop("impact-plan.json")
+missing_receipt = m.verify_retained_artifacts(base, meta)
+meta["artifactFiles"]["impact-plan.json"] = {**receipt, "sha256": "0" * 64}
+wrong_digest = m.verify_retained_artifacts(base, meta)
+meta["artifactFiles"]["impact-plan.json"] = {**receipt, "file": "other.json"}
+wrong_binding = m.verify_retained_artifacts(base, meta)
+meta["artifactFiles"]["impact-plan.json"] = receipt
+(base / "impact-plan.json").unlink()
+missing_file = m.verify_retained_artifacts(base, meta)
+print(json.dumps(dict(positive=positive, sameJson=same_json, negatives=[changed_bytes, missing_receipt, wrong_digest, wrong_binding, missing_file])))
+`, [base]);
+  assert.deepEqual(result.positive, []);
+  assert.equal(result.sameJson, true);
+  for (const failures of result.negatives) assert.ok(failures.some((value) => value.includes("impact-plan.json")));
 });

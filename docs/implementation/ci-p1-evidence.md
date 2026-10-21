@@ -1,6 +1,6 @@
 # Independent P1 CI evidence
 
-The ordinary GitHub verification job executes the existing `verify:p1` train exactly once.
+The ordinary GitHub verification jobs execute the planned partition of the existing P1 roster once.
 It does not append another core or Portal run and does not change gate predicates, retries,
 timeouts or privacy admission. This is independent retained P1 evidence, **not** literal
 PF-2 H1 (`script=test`) or PF-3/U18 completion.
@@ -58,7 +58,7 @@ The generic observer is adapted from supplied read-only method sources with SHA-
 - fixture preflight: `cc7e44ce6f8d97d742867def911709c296c4f504a28679c18c0664848dd15675`
 
 The adaptation removes private fixed paths, uses CI's explicitly acquired pinned pnpm, runs
-`verify:p1` rather than `test`, and explicitly propagates child/retention failures. Unit tests use
+the planned P1 shards rather than H1 `test`, and explicitly propagates child/retention failures. Unit tests use
 harmless fixture processes and negative preflight/retention cases, not product race experiments.
 A utility test pass is not a full P1 run or proof that this environment passes formal preflight.
 
@@ -120,3 +120,83 @@ The always-upload step preserves partial failed smoke evidence too; an artifact 
 successful smoke receipt. Only this curated directory is uploaded, never HOME, device/library
 trees, credentials, or the complete runner filesystem. H1 skips this smoke and its upload.
 These Linux isolated receipts do not establish native/live acceptance or release publication.
+
+## Plan-bound CI shards
+
+The default local wrapper remains `--mode p1` and full `verify:p1`. Only explicit
+`p1-checks`, `p1-core`, `p1-portal` accept `--plan <absolute-file>`. The wrapper validates
+that plan before execution and after source capture; saves `impact-plan.json` as a
+hashed artifact; records `impactPlan`, `coverage`, `planDigest`, `selectedCoreTests`;
+and retains the complete `inputManifest.coreTestFiles` and `portalTestFiles` separately.
+H1 never consumes a plan. Its literal Corepack dispatch and process observations remain.
+
+The shard invokes the same `scripts/task.mjs test --ci-plan <file>` controller.
+Ordinary test, H1 and P8 cannot select files through inherited environment. Selected
+Core reports `TESTS_SELECTED_VERIFIED` with exact `tests`, `argv`, `coverage`, and
+`planDigest`; full Core retains `TESTS_VERIFIED`. Core uses its existing 900000ms cap,
+P8 600000ms. Portal selection always keeps all recursive files and six train steps.
+
+`aggregate-evidence.py` rereads raw step and controller output, checks source/run/tree,
+exact tasks/prerequisites/extras, plan bytes and digest, selected argv and source rosters.
+It invokes `impact-plan.mjs validate-remote` to rederive the current plan independently
+and revalidate eligible baseline provenance. `--baseline-artifacts` is the collector's
+read-only validation route: it rehashes the downloaded previous run, verifies its Git
+tree/rosters and rederives its old plan. Legacy artifacts lacking this contract are
+ineligible and produce full fallback rather than a manufactured success.
+
+The plan artifact carries `transport/payload.bin` and `transport/manifest.json`.
+The manifest binds `head`, `runId`, `attempt`, `planDigest`, byte count and SHA-256.
+The verifier requires exact bytes and file set with bound regular-file reads. Package
+smoke carries `package-seal.json`, binding those same identities to each curated file's
+bytes/hash; aggregate also checks installer/setup/doctor outcomes and archive digest.
+Each selected shard artifact repeats the canonical plan. The artifact directory set
+must equal the plan's selected shards plus plan and package smoke; extra and missing
+artifacts fail. Pinned action transport of this new candidate remains unverified
+until its separately authorized hosted CI run; component fixtures are not that proof.
+
+`CI_SELECTED_VERIFIED` always carries `coverage=selective`. It is not `CI_VERIFIED`
+and does not replace manual complete P1, release, PF-2 H1, PF-3 or native acceptance.
+
+The document audit is explicit for each eligible README/Wiki path. Its shared
+reader declaration covers direct path and directory references plus the reverse
+dependency closure; mapped Core readers are selected and mapped Portal readers
+retain the complete Portal train. A newly tracked or staged undeclared reader,
+a missing declaration or an unresolved declared reader forces full coverage.
+Current and immutable baseline derivation use the same audit. This conservative
+closure can select more tests than a direct text read alone; it is still a
+proper selection rather than an extension-based exemption.
+
+Baseline acquisition is a separate, read-only online CI capability. It requires
+CI and GitHub Actions, the plan or verify job, the matching repository and CI workflow reference, a push
+or pull-request event, and the explicit
+`EINZBERN_CI_BASELINE_ONLINE=read-only` opt-in. Only the plan and final verify
+steps opt in. The single reviewed GET site accepts literal HTTPS GitHub API
+repository-scoped CI run, attempt-job, artifact-list and artifact-ZIP endpoints,
+standard API headers and a 20-second request timeout. GitHub's artifact download
+redirects are handled by the standard fetch redirect policy. Invalid context,
+endpoint, permission, pagination, provenance or evidence falls back to full.
+The exact guarded call-site source is checked by the offline boundary; changed
+hosts, endpoints or guard text and additional requests remain findings. The
+engine and offline event/source planner retain their network guard.
+
+Whenever wrapper metadata contains an impact plan, `impact-plan.json` requires
+its own bound file receipt and is reread for exact size and SHA-256 as well as
+parsed-plan equality. Download aggregation repeats this check and independently
+derives the plan from Git/event/rules, including baseline reader completeness.
+Reserializing identical JSON bytes is therefore detectable.
+
+The component tests author tiny real Git/event fixtures, real selected detached
+controller and shard execution, actual full/selective aggregate validation, and
+the real baseline collector with only API transport mocked and actual ZIP
+payloads. They also cover plan-byte drift, identity/tree/source drift, missing
+and failed/cancelled/timed-out/skipped jobs, incomplete or expired artifacts,
+manual H1, and resealed forged selection/N/A. Synthetic package and other-leg
+validator inputs remain explicitly component evidence; they are not hosted P1,
+installed-product or official action-transfer receipts. These tests are executed
+by the parent batch, not by implementation dispatch.
+
+The current Portal source-proof block is refreshed once by the existing parent
+batch-end step after integration. Historical proof bindings remain unchanged.
+Official action transport and hosted elapsed-time improvement for this candidate
+remain unverified until separately authorized execution; the 3–5 minute target
+has no measured speedup claim.

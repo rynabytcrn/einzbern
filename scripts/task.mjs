@@ -6,7 +6,7 @@ import { renameSync, writeFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
 import {
@@ -19,7 +19,7 @@ import {
   walkFiles,
 } from "./lib/files.mjs";
 import { P1_TASKS, runAllP1Legs } from "./p1-sequence.mjs";
-import { selectTestFiles } from "./lib/test-roster.mjs";
+import { selectTestFiles, validateSelectedTests, coreTestArgv } from "./lib/test-roster.mjs";
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
@@ -117,7 +117,7 @@ function terminateTestControllerGroup(processGroup) {
   }
 }
 
-async function runDetachedTestController(arguments_, extraEnvironment, tests, p8Only = false) {
+export async function runDetachedTestController(arguments_, extraEnvironment, tests, p8Only = false, root = repositoryRoot) {
   const progressDirectory = await mkdtemp(join(tmpdir(), "tcrn-test-progress-"));
   const progressPath = join(progressDirectory, "events.ndjson");
   const reaperReadyPath = join(progressDirectory, "reaper.json");
@@ -126,7 +126,7 @@ async function runDetachedTestController(arguments_, extraEnvironment, tests, p8
   try {
     // The runner owns creation; a late reaper must never recreate this file during cleanup.
     await writeFile(progressPath, "", { mode: 0o600, flag: "wx" });
-    const diagnostics = prepareTestDiagnostics(progressDirectory, tests, repositoryRoot, resolve(repositoryRoot, "scripts/test-file-progress-reporter.mjs"));
+    const diagnostics = prepareTestDiagnostics(progressDirectory, tests, root, resolve(repositoryRoot, "scripts/test-file-progress-reporter.mjs"));
     const controllerEnvironment = {
       ...process.env,
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
@@ -135,7 +135,7 @@ async function runDetachedTestController(arguments_, extraEnvironment, tests, p8
       npm_config_fund: "false",
       npm_config_offline: "true",
       ...extraEnvironment,
-      TCRN_TEST_CONTROLLER_LOCK_PATH: resolve(repositoryRoot, ".git/einzbern-output.lock"),
+      TCRN_TEST_CONTROLLER_LOCK_PATH: resolve(root, ".git/einzbern-output.lock"),
       TCRN_TEST_CONTROLLER_OUTER_PID: String(process.pid),
       TCRN_TEST_CONTROLLER_PROGRESS_PATH: progressPath,
       TCRN_TEST_CONTROLLER_REAPER_READY_PATH: reaperReadyPath,
@@ -151,7 +151,7 @@ async function runDetachedTestController(arguments_, extraEnvironment, tests, p8
     if (coverageDirectory) controllerEnvironment.TCRN_TEST_CONTROLLER_COVERAGE_DIRECTORY = coverageDirectory;
     else delete controllerEnvironment.TCRN_TEST_CONTROLLER_COVERAGE_DIRECTORY;
     child = spawn(process.execPath, [testControllerBootstrapPath, ...diagnostics.arguments], {
-      cwd: repositoryRoot,
+      cwd: root,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
       // Keep the coverage directory explicit for the worker. The bootstrap
@@ -637,18 +637,22 @@ async function build() {
 // each one selected a subset of the same `tests/**/*.test.mjs` set. One survives, with a
 // caller that is not a `verify:*` name: `p8Only` is the release train's dogfood leg. The
 // external-trust leg (`trustOnly`) retired with the trust root (TCRN-CROSS-STORY-467 R2).
-async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
+async function runTests({ p8Only = false, extraEnvironment = {}, ciPlan } = {}) {
   await build();
-  const tests = selectTestFiles((await walkFiles())
+  let tests = selectTestFiles((await walkFiles())
     .map((path) => toPosixPath(relative(repositoryRoot, path))), "core")
     .filter((path) => !p8Only || ["tests/local-command-byte-fidelity.test.mjs", "tests/p8-workflow-rc.test.mjs"].includes(path));
+  if (ciPlan) {
+    if (p8Only) throw new Error("P8 cannot use a selective CI plan");
+    tests = validateSelectedTests(ciPlan.coreTests, tests);
+  }
   // TCRN-CROSS-STORY-469 R3: the suite never reaches the real device directory. Every test
   // process receives its own device home under this owned run root. The fallback
   // also keeps any test without the helper away from the real device directory.
   const deviceDirectory = await mkdtemp(join(tmpdir(), "einzbern-test-device-"));
   let controller;
   try {
-    controller = await runDetachedTestController(["--test", ...tests], {
+    controller = await runDetachedTestController(coreTestArgv(tests), {
       NODE_OPTIONS: `--import=${noNetworkImport}`,
       TCRN_OFFLINE_PROOF: "1",
       EINZBERN_HOME: join(deviceDirectory, "einzbern"),
@@ -659,8 +663,8 @@ async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
     await rm(deviceDirectory, { recursive: true, force: true });
   }
   return success(
-    p8Only ? "P8_WORKFLOW_RC_TESTS_VERIFIED" : "TESTS_VERIFIED",
-    { tests, result: "passed", progress: controller.progress },
+    p8Only ? "P8_WORKFLOW_RC_TESTS_VERIFIED" : ciPlan?.coverage === "selective" ? "TESTS_SELECTED_VERIFIED" : "TESTS_VERIFIED",
+    { tests, result: "passed", progress: controller.progress, ...(ciPlan ? { coverage: ciPlan.coverage, planDigest: ciPlan.planDigest, argv: coreTestArgv(tests) } : {}) },
   );
 }
 
@@ -668,7 +672,12 @@ async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
 // beside it. The coverage registry and the surviving-module coverage read that used to run
 // under NODE_V8_COVERAGE after it are retired with coverage conservation.
 async function verifyTestSuite() {
-  return runTests();
+  const args = process.argv.slice(3);
+  if (!args.length) return runTests();
+  if (args.length !== 2 || args[0] !== "--ci-plan") throw new Error("Invalid explicit test arguments");
+  const { validatePlan } = await import("./ci/impact-plan.mjs");
+  const ciPlan = validatePlan(JSON.parse(await readFile(args[1], "utf8")), repositoryRoot);
+  return runTests({ ciPlan });
 }
 
 async function verifyP8() {
@@ -1342,6 +1351,17 @@ function versionScopedInstallerFetchOffset(label, content) {
 // Declare individual harness call sites, never whole-file exemptions. A declaration
 // only applies while its wrapper binding and loopback fixture setup still match;
 // extra fetch calls, transports and changed destinations remain findings.
+// Exact capability source, not a file exemption: any mutation requires a new
+// review, and extra calls/modules still reach the ordinary offline scanner.
+function baselineFetchOffset(label, content) {
+  if (label !== "scripts/ci/baseline-evidence.mjs") return null;
+  const start = content.indexOf("export async function githubBaselineRequest(");
+  const end = content.indexOf("export async function collectBaseline", start);
+  if (start < 0 || end < start || createHash("sha256").update(content.slice(start, end)).digest("hex") !== "3591d8dc5436b8373f89d325c15a636a2010b881bb37a16e90688511611de12c") return null;
+  const calls = [...content.matchAll(/\bfetch\s*\(/gu)];
+  return calls.length === 1 ? calls[0].index : null;
+}
+
 function loopbackHarnessSites(content, declaration) {
   const result = { fetchOffsets: new Set(), modules: new Set() };
   if (!declaration) return result;
@@ -1386,7 +1406,7 @@ async function verifyOfflineBoundary() {
     const content = await readText(path);
     if (!guardFiles.has(label) && !loopbackServerFiles.has(label)) {
       // Only the version-checked retrieval branch may contain this one fetch call.
-      const permittedFetchOffset = versionScopedInstallerFetchOffset(label, content);
+      const permittedFetchOffset = versionScopedInstallerFetchOffset(label, content) ?? baselineFetchOffset(label, content);
       const harnessSites = loopbackHarnessSites(content, harnessDeclarations[label]);
       for (const moduleName of modules) {
         const localUnixSocketImport = label === localUnixSocketTest && moduleName === modules[2];
@@ -1577,6 +1597,7 @@ async function invoke(name) {
 // and the processes a leg starts inherit it, so no leg waits for a slot its own run holds or
 // carries a waiting line on its stderr; the only waiting line is p1's own, before any leg starts.
 const HEAVY_COMMANDS = new Set(["test", "verify-p1"]);
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
 let heavySlot = null;
 try {
   if (HEAVY_COMMANDS.has(command)) heavySlot = await acquireHeavySlot({ command });
@@ -1593,4 +1614,6 @@ try {
   process.exitCode = 1;
 } finally {
   heavySlot?.release();
+}
+
 }

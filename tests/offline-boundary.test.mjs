@@ -139,7 +139,7 @@ test("ESM named imports resolve to the patched functions", () => {
 if (process.env.TCRN_OFFLINE_PROOF !== "1") {
   const repositoryRoot = resolve(import.meta.dirname, "..");
 
-  async function offlineFixture({ unexpectedSource = false, extraInstallerFetch = false, harnessMutation = null } = {}) {
+  async function offlineFixture({ unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null } = {}) {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "einzbern-offline-scan-"));
     const root = join(temporaryRoot, "engine");
     await mkdir(join(root, ".git"), { recursive: true });
@@ -157,6 +157,11 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
     await mkdir(join(root, "portal", "tests", "helpers"), { recursive: true });
     for (const name of ["ui-presence-support.mjs", "disposable-portal-fetch.test.mjs", "helpers/disposable-portal-fetch.mjs"]) {
       await cp(join(repositoryRoot, "portal", "tests", name), join(root, "portal", "tests", name));
+    }
+    if (baselineMutation) {
+      const target = join(root, "scripts", "ci", "baseline-evidence.mjs");
+      const source = await readFile(target, "utf8");
+      await writeFile(target, baselineMutation.replace ? source.replace(...baselineMutation.replace) : source + "\n" + baselineMutation.append + "\n");
     }
     if (harnessMutation) {
       const target = join(root, "portal", "tests", harnessMutation.file);
@@ -220,6 +225,23 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
       } finally {
         await rm(fixture.temporaryRoot, { recursive: true, force: true });
       }
+    }
+  });
+
+  test("baseline capability exception is one exact guarded request, never a file exemption", async () => {
+    for (const mutation of [
+      { replace: ["https://api.github.com/repos/", "https://example.invalid/repos/"] },
+      { replace: ['env.CI !== "true"', 'env.CI === "true"'] },
+      { replace: ["actions\\/workflows", "issues\\/workflows"] },
+      { append: 'void fetch("https://example.invalid");' },
+      { append: 'import https from "node:https";' },
+    ]) {
+      const fixture = await offlineFixture({ baselineMutation: mutation });
+      try {
+        const run = scanOffline(fixture.root);
+        assert.equal(run.status, 1, run.stdout);
+        assert.match(scanReport(run).error, /NETWORK_(?:API|MODULE):scripts\/ci\/baseline-evidence\.mjs/u);
+      } finally { await rm(fixture.temporaryRoot, { recursive: true, force: true }); }
     }
   });
 

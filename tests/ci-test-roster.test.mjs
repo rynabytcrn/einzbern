@@ -65,3 +65,33 @@ test("verification artifacts retain passing and failing raw output without overw
   assert.ok(timing.durationMs >= 0);
   assert.equal(timing.phase, "full-restoration");
 });
+
+test("selected core rejects duplicate/extra files without changing the authoritative full P1 partition", async () => {
+  const { validateSelectedTests } = await import("../scripts/lib/test-roster.mjs");
+  assert.deepEqual(validateSelectedTests(["tests/a.test.mjs"], ["tests/a.test.mjs", "tests/b.test.mjs"]), ["tests/a.test.mjs"]);
+  assert.throws(() => validateSelectedTests(["tests/a.test.mjs", "tests/a.test.mjs"], ["tests/a.test.mjs"]));
+  assert.deepEqual(Object.values(P1_SHARDS).flat().sort(), [...P1_TASKS].sort());
+});
+
+test("real shard execution keeps a failed tiny child red and retains its raw result", async (t) => {
+  const { runShard } = await import("../scripts/ci/p1-shard.mjs");
+  const root = await mkdtemp(join(tmpdir(), "einzbern-shard-red-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "scripts"));
+  await writeFile(join(root, "scripts/task.mjs"), 'process.stderr.write(JSON.stringify({ok:false,reasonCode:"HARMLESS_FIXTURE_RED"})+"\\n"); process.exitCode=1;\n');
+  const saved = process.env.EINZBERN_CI_EVIDENCE_DIR;
+  process.env.EINZBERN_CI_EVIDENCE_DIR = join(root, "evidence");
+  await mkdir(join(root, "evidence"));
+  try {
+    const result = await runShard("core", root);
+    assert.equal(result.ok, false);
+    assert.equal(result.reasonCode, "P1_SHARD_RED");
+    assert.equal(result.reds[0].task, "test");
+    const step = JSON.parse(await readFile(join(root, "evidence/steps/leg-test.json"), "utf8"));
+    assert.equal(step.exitCode, 1);
+    assert.match(await readFile(join(root, "evidence/steps/leg-test.stderr"), "utf8"), /HARMLESS_FIXTURE_RED/u);
+  } finally {
+    if (saved === undefined) delete process.env.EINZBERN_CI_EVIDENCE_DIR;
+    else process.env.EINZBERN_CI_EVIDENCE_DIR = saved;
+  }
+});

@@ -21,6 +21,7 @@ import { DEFAULT_ENGINE_QUOTA_POLICY, validateEngineQuotaPolicy } from "./execut
 import type { EngineQuotaPolicy } from "./execution-policy.js";
 import type { ModelsTierResolution } from "./models-escalation.js";
 import { writeFileAtomic } from "./atomic-file.js";
+import type { AtomicWriteOptions } from "./atomic-file.js";
 import type { VerifiedWriteAuthorization } from "./write-authorization.js";
 
 export const ENGINE_MODEL_POLICY_SCHEMA_VERSION = "tcrn.engine-model-policy.v1" as const;
@@ -474,6 +475,9 @@ export interface EngineModelPolicySaveInput {
 }
 /** Deterministic failure seams are not exposed through CLI or persisted configuration. */
 export interface EngineModelPolicySaveFaults {
+  readonly atomicWriteOptions?: AtomicWriteOptions;
+  readonly afterAtomicWriteBeforeAcknowledgement?: () => Promise<void>;
+  readonly afterLockReleaseBeforeAcknowledgement?: () => Promise<void>;
   readonly beforeAtomicWrite?: () => Promise<void>;
   readonly afterCommitBeforeReadback?: () => Promise<void>;
   readonly afterReadbackBeforeReturn?: () => Promise<void>;
@@ -517,7 +521,7 @@ export async function applyEngineModelPolicySave(input: EngineModelPolicySaveInp
   const home = input.home ?? deviceHome(), path = engineModelPolicyPath(home), lock = engineModelPolicyLockPath(home);
   await mkdir(dirname(lock), { recursive: true }); await mkdir(dirname(path), { recursive: true });
   let phase: "not-written" | "prewrite" | "atomic-write" | "committed" | "readback-confirmed" | "existing-commit" = "not-written";
-  try { return await withFileLock(lock, async () => {
+  try { const result = await withFileLock(lock, async () => {
     const current = await readEngineModelPolicyFile(home);
     const prior = current.operations && Object.hasOwn(current.operations, id) ? current.operations[id] : undefined;
     if (prior) {
@@ -534,12 +538,16 @@ export async function applyEngineModelPolicySave(input: EngineModelPolicySaveInp
     const operation: EngineModelPolicyOperation = { id, host, changeDigest, expectedRevision, expectedDigest: input.expectedDigest, storeRevision: current.revision + 1, result };
     const next = validateEngineModelPolicyFile({ schemaVersion: ENGINE_MODEL_POLICY_TRANSACTION_VERSION, revision: current.revision + 1, hosts: { ...current.hosts, [host]: result }, operations: { ...current.operations, [id]: operation } });
     phase = "prewrite"; await faults.beforeAtomicWrite?.();
-    phase = "atomic-write"; await writeFileAtomic(path, `${canonicalJson(next)}\n`);
+    phase = "atomic-write"; await writeFileAtomic(path, `${canonicalJson(next)}\n`, faults.atomicWriteOptions);
+    await faults.afterAtomicWriteBeforeAcknowledgement?.();
     phase = "committed"; await faults.afterCommitBeforeReadback?.();
     const readback = await readEngineModelPolicyFile(home);
     phase = "readback-confirmed"; await faults.afterReadbackBeforeReturn?.();
     return { status: "committed" as const, operation: readback.operations![id]!, readback };
-  }, { timeoutMs, command: "einzbern engine-model-policy-save" }); }
+  }, { timeoutMs, command: "einzbern engine-model-policy-save" });
+    await faults.afterLockReleaseBeforeAcknowledgement?.();
+    return result;
+  }
   catch (error) {
     const failurePhase = phase as string; // callback writes are intentionally observed after rejection
     if (failurePhase === "not-written") throw error;

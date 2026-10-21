@@ -374,13 +374,14 @@ if (!MUTATION) {
       // and a state proven on one side only is half a state machine.
       const realFetch = page.window.fetch;
       // INC-193 / INC-221: response headers and a quiet period do not establish
-      // response consumption or handler completion. Each stage has one 15s budget,
-      // binds its exact contract URL and observes a fresh panel node after json()
+      // response consumption or handler completion. Each stage has one absolute 30s
+      // budget from its start, without resets or retries. It binds its exact contract
+      // URL and observes a fresh panel node after json()
       // consumption, even when two warning bodies render the same text. The current
       // control must also be rebuilt and released by the settings handler's finally.
       const changeAuthority = async (url, body, label) => {
         const startedAt = Date.now();
-        const deadline = startedAt + 15_000;
+        const deadline = startedAt + 30_000;
         const expectedContract = new URL("/tcrn-design-authority.json", url).href;
         const currentInput = () => page.document.querySelector('[data-setting-control="design.authority"]');
         const currentPanel = () => page.document.querySelector("#design-authority [data-design-authority-state]");

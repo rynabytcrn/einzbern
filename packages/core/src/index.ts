@@ -913,3 +913,6 @@ export * from "./storage-location.js";
 export * from "./storage-consolidate.js";
 
 export * from "./storage-configure.js";
+
+export * from "./host-capabilities.js";
+export * from "./execution-fallback.js";

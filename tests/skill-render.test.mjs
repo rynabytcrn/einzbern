@@ -293,3 +293,16 @@ test("J01/J02/J03/J04/J09–J13: install guidance consumes reviewed source inter
     "Missing times stay pending", "Never fill phase timestamps with JSON assembly time",
   ]) assert.ok(text.includes(phrase), phrase);
 });
+
+test("INIT065 generated normal Skill directs each native host to matching versioned path", async () => {
+  const { checkHostSkillCompatibility, HOST_SKILL_PROTOCOL_MARKER } = await import("../dist/build/packages/core/src/skill-render.js");
+  const markdown = render();
+  assert.ok(markdown.includes(HOST_SKILL_PROTOCOL_MARKER));
+  assert.ok(markdown.includes("Native dispatch (Codex, Claude, dot)"));
+  assert.ok(markdown.includes("Parent reads before dispatch, child reads before work"));
+  assert.ok(markdown.includes("targets=[]"));
+  assert.ok(!markdown.includes("stop its dispatch"));
+  assert.equal(checkHostSkillCompatibility(markdown, catalogNames).compatible, true);
+  assert.deepEqual(checkHostSkillCompatibility(markdown, catalogNames.filter(name => name !== "execution-host-record")).missing, ["execution-host-record"]);
+  assert.equal(checkHostSkillCompatibility("Historical skill", []).protocol, "legacy");
+});

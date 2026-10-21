@@ -73,4 +73,4 @@ Outputs must be new files in an existing local parent directory outside device a
 | Native process launch or native-tool response conversion | No adapter installed |
 | Scheduler, reservation, reusable dispatch permission | Not provided |
 
-The Skill must not turn absent native support into repeated hand-filled JSON or approval requests. Report an unsupported host mode once and stop affected dispatch. Do not invent native-tool schemas, provenance, successful exits, missing streams, supported tuples or quota values to complete the workflow.
+This matrix describes the historical process protocol only. Normal Codex, Claude and dot native tools use `specs/host-fallback-v1.md`; missing a process conversion adapter does not prohibit an authorized native invocation. Preserve old records under their original protocol, never fabricate stdout/stderr/exitCode or retrofit an allowed decision into a refused v1 record. A real unsupported tool or permission denial stops only its affected action. Do not request repeated manual JSON or approval substitutes for missing optional telemetry.

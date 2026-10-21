@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { HOST_SKILL_PROTOCOL_MARKER, checkHostSkillCompatibility } from "./skill-render.js";
 import { defaultSharedLibraryPath, readStorageLocation, sharedRuntimePath } from "./storage-location.js";
 import { configureStorageLocation } from "./storage-configure.js";
 import { DIRECTORY } from "./names.js";
@@ -377,6 +379,19 @@ export async function engineVersionSource(recorder: SetupRecorder, version: stri
       recorder.block("engine", path, "SETUP_ENGINE_INCOMPLETE", `the engine ${version} holds no ${file} to install from`);
     }
   }
+  if (complete) {
+    const skill = await readFile(join(directory, FRESH_ENGINE_TREE.skill, FRESH_ENGINE_TREE.skillEntry), "utf8");
+    if (skill.includes(HOST_SKILL_PROTOCOL_MARKER)) {
+      const probe = spawnSync(process.execPath, [join(directory, ENGINE_FILES.entry), "commands"], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+      let names: string[] = [];
+      try { const result = JSON.parse(probe.stdout); names = Array.isArray(result.commands) ? result.commands.map((entry: { name: string }) => entry.name) : []; } catch { /* report installation mismatch, not tool incapability */ }
+      const check = checkHostSkillCompatibility(skill, names);
+      if (probe.status !== 0 || !check.compatible) {
+        complete = false;
+        recorder.block("engine", directory, "SETUP_SKILL_ENGINE_MISMATCH", "The generated native Skill and engine command catalog do not match; do not install a mixed pair.");
+      }
+    }
+  }
   return { version, directory: complete ? directory : null };
 }
 
@@ -538,6 +553,11 @@ async function planSkillCopies(recorder: SetupRecorder, digest: string, home: st
   const record = skillCopiesRecordPath(deviceHome);
   const verification = await recorder.attempt("skill-copies", record, () => verifySkillCopies({ home, deviceHome }));
   if (verification === null) return;
+  for (const copy of verification.copies) {
+    if (copy.recorded !== null && copy.actual !== null && copy.actual !== copy.recorded && copy.actual !== digest) {
+      recorder.block("skill-copies", copy.path, "SETUP_SKILL_USER_EDITED", "Installed Skill differs from its recorded bytes; preserve and review user edits before replacement.");
+    }
+  }
   const recorded = verification.reasonCode !== "SKILL_COPIES_NOT_RECORDED" && verification.reasonCode !== "SKILL_COPIES_RECORD_INVALID" &&
     verification.copies.every((copy) => copy.recorded === digest && copy.actual === digest);
   if (!recorded) recorder.write("skill-copies", record, await entryKind(record) === null ? "create" : "update");
@@ -759,6 +779,10 @@ async function applySkillCopies(recorder: SetupRecorder, input: WiringApplyInput
   const { home, deviceHome, at } = input;
   const record = skillCopiesRecordPath(deviceHome);
   const recordAction: SetupWriteAction = await entryKind(record) === null ? "create" : "update";
+  const source = join(input.engineDirectory, ...FRESH_ENGINE_TREE.skill.split("/"));
+  const desired = (await computeInstallTreeDigest(source)).sha256;
+  const verification = await verifySkillCopies({ home, deviceHome });
+  if (verification.copies.some(copy => copy.recorded !== null && copy.actual !== null && copy.actual !== copy.recorded && copy.actual !== desired)) setupFail("SETUP_SKILL_USER_EDITED", "Preserve and review user-modified Skill before replacement");
   const copies = await installSkillCopies({ source: join(input.engineDirectory, ...FRESH_ENGINE_TREE.skill.split("/")), now: at, home, deviceHome });
   for (const copy of copies.copies) {
     if (copy.action === "reused") continue;

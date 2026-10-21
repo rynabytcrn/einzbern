@@ -1,3 +1,4 @@
+import type { HostExecutionRequest } from "../../core/src/execution-fallback.js";
 import { deviceHome } from "../../core/src/device-home.js";
 import { isSharedLibrary } from "../../core/src/chain-identity.js";
 import { readFile } from "node:fs/promises";
@@ -1854,7 +1855,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   { name: "work-gate-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-gate-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "reason", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "involved-project", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "execution-request", required: false, valueKind: "string", valueShape: "ExecutionAdmissionRequest JSON or explicit DotExecutionRequest JSON (dot-autonomous/chatgpt-dot); native self-model/quota not-applicable is not admission" }] },
+  { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "execution-request", required: false, valueKind: "string", valueShape: "Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics" }] },
   { name: "work-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R4: work-transition and work-batch take --project, the project the gates of a
@@ -2441,6 +2442,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     if (result === null) fail("CLI_COMMAND_UNKNOWN", command);
     io.write(canonicalJson(result));
     const receipt = result as Readonly<Record<string, JsonValue>>;
+    if (command === "execution-host-prepare" && receipt.attempt === null) fail("HOST_PREPARATION_NOT_EXECUTABLE", "Only this action is not executable; inspect decision, not a claimed host rejection");
+    if (command === "execution-host-record" && (receipt.validation as Readonly<Record<string, JsonValue>>)?.status !== "valid") fail("HOST_RECORD_INVALID", "Raw invalid material retained; see problems");
+    // New host-record exit 0 means valid recording, NOT execution completion or acceptance.
     if (command === "execution-native-prepare" && (receipt.targetDispatchAdmitted !== true || receipt.attempt === null)) fail("NATIVE_PREPARATION_REFUSED", "Preparation retained; target is not dispatch-admitted");
     if (command === "execution-native-record") {
       const normalized = receipt.normalized as Readonly<Record<string, JsonValue>>;
@@ -3992,7 +3996,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   if (command === "work-project-context") {
     const values = parseArguments(rest, ["workspace", "id", "execution-request"]); required(values, ["workspace", "id"]);
-    const request = values["execution-request"] === undefined ? undefined : argumentJsonValue(values["execution-request"], "execution-request") as ExecutionAdmissionRequest | DotExecutionRequest;
+    const request = values["execution-request"] === undefined ? undefined : argumentJsonValue(values["execution-request"], "execution-request") as ExecutionAdmissionRequest | DotExecutionRequest | HostExecutionRequest;
     io.write(canonicalJson(await workProjectContexts(await materializeWorkspace(values.workspace!), values.id!, undefined, request))); return;
   }
   if (command === "project-context") {

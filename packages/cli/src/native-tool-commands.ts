@@ -1,3 +1,8 @@
+import { validateHostExecutionRequest } from "../../core/src/execution-fallback.js";
+import { prepareHostNativeDispatch } from "../../core/src/dispatch-workflow.js";
+import { recordHostNativeEvents, normalizeHostNativeRecord } from "../../core/src/native-tool-evidence.js";
+import type { HostNativeEvent } from "../../core/src/native-tool-evidence.js";
+import type { HostSelection } from "../../core/src/host-capabilities.js";
 // SPDX-License-Identifier: Apache-2.0
 import { readFile } from "node:fs/promises";
 import { canonicalJson } from "../../protocol/src/index.js";
@@ -14,6 +19,9 @@ import type { WorkspaceState, WorkspaceWriteLockOptions } from "../../core/src/w
 
 const flag = (name: string, required: boolean, valueKind = "path", valueShape?: string): RuntimeCommandFlag => ({ name, required, valueKind: valueKind === "path" ? "string" : valueKind, ...(valueShape === undefined ? {} : { valueShape }) });
 export const NATIVE_TOOL_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.freeze([
+  { name: "execution-host-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "HostExecutionRequest v1 JSON"), flag("arguments", true, "path", "{selection, argumentsValue} actual request JSON"), flag("output", true)] },
+  { name: "execution-host-record", availability: "cli", mutates: true, flags: [flag("binding", true), flag("events", false, "path", "HostNativeEvent array; absent preserves pending"), flag("prior", false), flag("output", true)] },
+  { name: "execution-host-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
   { name: "execution-native-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "DotExecutionRequest JSON including actual-session contextRead"), flag("tool", true, "string"), flag("tool-contract", true, "path", "{ref,sha256} JSON"), flag("arguments", true, "path", "actual tool arguments JSON"), flag("retry-from", false, "path", "previous saved native record, required for an explicit retry"), flag("reconciliation", false, "path", "NativeRetryReconciliation; paired with retry-from"), flag("output", true)] },
   { name: "execution-native-record", availability: "cli", mutates: true, flags: [flag("binding", true), flag("response", false, "path", "NativeToolResponseInput JSON; absent keeps pending attempt"), flag("prior", false, "path", "previous saved record/history for this same attempt"), flag("output", true)] },
   { name: "execution-native-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true), flag("work-id", false, "string"), flag("work-revision", false, "integer")] },
@@ -37,6 +45,26 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
   const catalog = NATIVE_TOOL_COMMAND_CATALOG.find(entry => entry.name === command); if (!catalog) return null;
   for (const key of Object.keys(values)) if (!catalog.flags.some(entry => entry.name === key)) throw new Error(`unsupported --${key}`);
   for (const f of catalog.flags) if (f.required && !values[f.name]?.trim()) throw new Error(`--${f.name} is required`);
+  if (command === "execution-host-prepare") {
+    const workspace = await context.resolveWorkspace(values.workspace!);
+    const request = validateHostExecutionRequest(await input(values.request!));
+    const tool = dotObject(await input(values.arguments!), "tool request", ["selection", "argumentsValue"]);
+    if (!Object.hasOwn(tool, "argumentsValue")) throw new Error("actual tool arguments are required");
+    const result = await prepareHostNativeDispatch(workspace.state, request, tool as { selection: HostSelection; argumentsValue: unknown }, context.home);
+    await writeDispatchArtifact(values.output!, result, [workspace.root], context.home);
+    return json({ reasonCode: result.attempt ? "HOST_PREPARATION_READY" : "HOST_PREPARATION_NOT_EXECUTABLE", ...result });
+  }
+  if (command === "execution-host-record") {
+    const binding = await input(values.binding!);
+    const events = values.events === undefined ? [] : await input(values.events!) as HostNativeEvent[];
+    const prior = values.prior === undefined ? undefined : await input(values.prior);
+    let result: unknown;
+    try { result = recordHostNativeEvents(binding, events, prior); }
+    catch (error) { result = { reasonCode: "HOST_RECORD_INVALID", binding, events, ...(prior === undefined ? {} : { prior }), validation: { status: "invalid" }, problems: [String(error)] }; }
+    await writeDispatchArtifact(values.output!, result, [], context.home);
+    return json(result);
+  }
+  if (command === "execution-host-evidence") return json(normalizeHostNativeRecord(await input(values["from-file"]!)));
   if (command === "execution-native-prepare") {
     const workspace = await context.resolveWorkspace(values.workspace!);
     const request = validateDotExecutionRequest(await input(values.request!));

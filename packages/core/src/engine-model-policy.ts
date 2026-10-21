@@ -393,3 +393,22 @@ export function resolveEngineExecutionPolicyFromSnapshot(
 export async function resolveEngineExecutionPolicy(input: EngineExecutionPolicyInput): Promise<EngineExecutionPolicyResolution> {
   return resolveEngineExecutionPolicyFromSnapshot(await readEngineModelPolicyFile(input.home), input);
 }
+
+/** Native execution reads intent without turning absence/unsupported combinations into a ban.
+ * Corrupt schema/digests and I/O errors deliberately propagate; no catch-all default policy. */
+export function resolveNativePolicyIntentFromSnapshot(snapshot: EngineModelPolicyFile, input: EngineExecutionPolicyInput): {
+  readonly status: "unconfigured" | "entry-unconfigured" | "configured" | "unsupported";
+  readonly selection: EngineExecutionPolicyResolution | null;
+} {
+  const file = validateEngineModelPolicyFile(snapshot);
+  const host = hostId(input.host);
+  const policy = Object.hasOwn(file.hosts, host) ? file.hosts[host] : undefined;
+  if (!policy) return { status: "unconfigured", selection: null };
+  const tier = resolveModelsTier({ ...policy, category: input.category, rejections: input.rejections });
+  if (!tier.record.model.trim() || !tier.record.effort.trim()) return { status: "entry-unconfigured", selection: null };
+  // Keep exact configured intent even when this host cannot request it.
+  const { availableCombinations, ...selectors } = input;
+  const selection = resolveEngineExecutionPolicyFromSnapshot(file, selectors);
+  const supported = availableCombinations === undefined || availableCombinations.some(tuple => tuple.runner === selection.record.runner && tuple.model === selection.record.model && tuple.effort === selection.record.effort);
+  return { status: supported ? "configured" : "unsupported", selection };
+}

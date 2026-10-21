@@ -19,6 +19,7 @@ import {
   walkFiles,
 } from "./lib/files.mjs";
 import { P1_TASKS, runAllP1Legs } from "./p1-sequence.mjs";
+import { selectTestFiles } from "./lib/test-roster.mjs";
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
@@ -626,9 +627,8 @@ async function build() {
 // external-trust leg (`trustOnly`) retired with the trust root (TCRN-CROSS-STORY-467 R2).
 async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
   await build();
-  const tests = (await walkFiles())
-    .map((path) => toPosixPath(relative(repositoryRoot, path)))
-    .filter((path) => path.startsWith("tests/") && path.endsWith(".test.mjs"))
+  const tests = selectTestFiles((await walkFiles())
+    .map((path) => toPosixPath(relative(repositoryRoot, path))), "core")
     .filter((path) => !p8Only || ["tests/local-command-byte-fidelity.test.mjs", "tests/p8-workflow-rc.test.mjs"].includes(path));
   // TCRN-CROSS-STORY-469 R3: the suite never reaches the real device directory. Every test
   // process receives its own device home under this owned run root. The fallback
@@ -1357,7 +1357,7 @@ async function verifyOfflineBoundary() {
   // test drives that server through the same interface a browser would. Listing the pair
   // here states which files are allowed to be servers rather than weakening the predicate
   // for everything — every other file in the repository is still judged the same way.
-  const loopbackServerFiles = new Set(["portal/portal.mjs", "portal/tests/portal.test.mjs"]);
+  const loopbackServerFiles = new Set(["portal/portal.mjs", "portal/tests/portal-support.mjs", "portal/tests/portal.test.mjs", "portal/tests/portal-configuration.test.mjs", "portal/tests/portal-work.test.mjs", "portal/tests/portal-library.test.mjs"]);
   const modules = [
     "node:" + "http",
     "node:" + "https",

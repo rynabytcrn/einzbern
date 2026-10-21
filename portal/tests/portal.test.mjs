@@ -1,154 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Portal integration tests use the real CLI and a real governed scratch tree.
+// Tests in this file run sequentially; Node isolates each file in a process.
+import { CLI, R46_AT, RETIRED_PERSONA_ACTIONS, RETIRED_ROUTES, TEST_ACTOR, appendHistoricalModelSetting, assert, cli, clientTargets, execFileAsync, httpRequest, join, mkdir, mkdtemp, portalRoot, readBoot, readFile, readOptions, realpath, request, rm, scratch, spawn, startPortal, startupRefusal, test, tmpdir, unregisterLibrary, writeFile, writeOptions } from "./portal-support.mjs";
 
-// Every CLI and portal child inherits the test process's device directory, never the real one.
-import "../../tests/helpers/device-home.mjs";
-import { appendHistoricalModelSetting } from "../../tests/helpers/historical-model-settings.mjs";
-import { forgeOwnStream } from "../../tests/helpers/library-forge.mjs";
-// Another process on the device unregistering a library or bringing up the coordination chain is
-// stood in for through the helper, outside the portal tree (TCRN-CROSS-INIT-053 R45 PP-1).
-import { ensureProjectCoordination, unregisterLibrary } from "../../tests/helpers/registry-control.mjs";
-import { appendHistoricalAttestationEnable } from "../../tests/helpers/workspace-fixture.mjs";
-import { execFile, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { request as httpRequest } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import assert from "node:assert/strict";
-import test from "node:test";
 
-const withoutSource = ({ source, declaredHere, ...record }) => record;
-const execFileAsync = promisify(execFile);
-const portalRoot = fileURLToPath(new URL("..", import.meta.url));
-const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
-// TCRN-CROSS-STORY-526 (TCRN-CROSS-SUB-454): Atelier starts only with TCRN_PORTAL_ACTOR set, so every
-// portal and launcher child here writes as this test actor unless a test says otherwise.
-const TEST_ACTOR = "agent:test-portal";
-const RETIRED_PERSONA_ACTIONS = Object.freeze({
-  override: ["persona", "-preset-override"].join(""),
-  restore: ["persona", "-preset-restore"].join(""),
-  set: ["persona", "-set"].join(""),
-  remove: ["persona", "-remove"].join(""),
-});
-// TCRN-CROSS-STORY-482 R4: the routes of the retired pages, spelled in parts so that a search of
-// the portal for the retired names finds only their absence.
-const RETIRED_ROUTES = Object.freeze({
-  evolution: ["", "api", "evolution"].join("/"),
-  sessionAudit: ["", "api", ["session", "audit"].join("-")].join("/"),
-  hostProbe: ["", "api", ["host", "probe"].join("-")].join("/"),
-});
-
-async function cli(args, env = {}) {
-  const { stdout } = await execFileAsync(process.execPath, [CLI, ...args], { encoding: "utf8", maxBuffer: 32e6, env: { ...process.env, ...env } });
-  return JSON.parse(stdout);
-}
-
-// TCRN-CROSS-INC-386: the portal and every CLI it starts read and write machine settings
-// under HOME, so every portal child gets a scratch HOME inside its fixture, removed with it.
-async function scratchHome(base) {
-  const home = join(base, "home");
-  await mkdir(home, { recursive: true });
-  return home;
-}
-
-// TCRN-CROSS-STORY-482 R3: Atelier opens the libraries a device has registered, so a fixture is a
-// device of its own (an EINZBERN_HOME inside it, removed with it; every CLI and portal child of the
-// fixture runs as that device) whose registry holds two libraries: the fixture's library, kept in
-// its project, and a second library kept outside its project. The portal starts on the first.
-async function registeredLibrary(deviceEnv, project, library, externalKey, at) {
-  await mkdir(project, { recursive: true });
-  await cli(["init", "--workspace", library, "--project-name", externalKey, "--at", at], deviceEnv);
-  const created = await cli(["project-create", "--workspace", library, "--external-key", externalKey + "-PROJECT", "--name", externalKey, "--at", at], deviceEnv);
-  const projectId = created.record.id;
-  await cli(["library-register", "--project", project, "--library", library, "--project-id", projectId, "--at", at], deviceEnv);
-  return projectId;
-}
-
-async function scratch(prefix, externalKey) {
-  const base = await realpath(await mkdtemp(join(tmpdir(), prefix)));
-  const home = await scratchHome(base);
-  const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
-  const proseRoot = join(base, "project");
-  const workspace = join(proseRoot, ".ether");
-  const projectId = await registeredLibrary(deviceEnv, proseRoot, workspace, externalKey, "2026-08-11T15:00:00Z");
-  const second = { project: join(base, "second-project"), library: join(base, "second-library") };
-  second.projectId = await registeredLibrary(deviceEnv, second.project, second.library, `${externalKey}-SECOND`, "2026-08-11T15:00:01Z");
-  return { base, workspace, proseRoot, home, deviceEnv, second, projectId };
-}
-
-// `library` names the library to open first; null starts the portal without --library, so it
-// chooses from the registry by its working directory (`cwd`).
-async function startPortal({ workspace, home, deviceEnv = {}, env = {}, library = workspace, cwd }) {
-  assert.ok(home, "every portal child needs a scratch HOME inside its fixture (TCRN-CROSS-INC-386)");
-  const args = [join(portalRoot, "portal.mjs")];
-  if (library !== null) args.push("--library", library);
-  args.push("--port", "0");
-  const child = spawn(process.execPath, args, {
-    env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...deviceEnv, ...env, HOME: home },
-    ...(cwd === undefined ? {} : { cwd }),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const listening = await new Promise((resolve, reject) => {
-    let buffer = "";
-    const timer = setTimeout(() => reject(new Error(`portal did not start: ${buffer}`)), 15000);
-    child.stdout.on("data", (chunk) => {
-      buffer += chunk;
-      const line = buffer.split("\n").find((entry) => entry.includes("PORTAL_LISTENING"));
-      if (line) { clearTimeout(timer); resolve(JSON.parse(line)); }
-    });
-    child.on("exit", (code) => { clearTimeout(timer); reject(new Error(`portal exited ${code}: ${buffer}`)); });
-  });
-  return { child, url: listening.url, listening };
-}
-
-// A portal that refuses to start answers on stderr with one JSON line and exits 2.
-async function startupRefusal(args, env, cwd) {
-  return new Promise((resolveSpawn) => {
-    const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), ...args, "--port", "0"], { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...env }, ...(cwd === undefined ? {} : { cwd }), stdio: ["ignore", "pipe", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("exit", (code) => resolveSpawn({ status: code, report: JSON.parse(stderr.trim().split("\n").at(-1) || "{}"), lines: stderr.trim() === "" ? 0 : stderr.trim().split("\n").length }));
-  });
-}
-
-const clientTargets = new Map();
-const visibleTarget = (library, epoch) => ({ epoch, libraryId: library.libraryId, projectId: Object.hasOwn(library, "configurationProjectId") ? library.configurationProjectId : library.projectId ?? null });
-async function readBoot(url) {
-  const page = await (await fetch(url)).text();
-  assert.ok(!page.includes("__PORTAL_BOOT__"));
-  const boot = JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]);
-  clientTargets.set(boot.token, visibleTarget(boot.library, boot.epoch));
-  return { page, boot };
-}
-
-function request(url, path, options) { return fetch(new URL(path, url), options).then(async (response) => { const body = await response.json(); if (body.ok && body.library && ["/api/library", "/api/configuration-scope"].includes(path)) clientTargets.set(options.headers["x-portal-token"], visibleTarget(body.library, body.epoch)); return { response, body }; }); }
-function writeOptions(token, method, body) { return { method, headers: { "content-type": "application/json", "x-portal-token": token, "x-configuration-target": JSON.stringify(clientTargets.get(token)) }, body: JSON.stringify(body) }; }
-function readOptions(token) { return { headers: { "x-portal-token": token } }; }
-
-// STORY-355 GWT1: `fetch` (undici) never forwards a caller-supplied Host header — it
-// always sends the header that matches the real socket target, which defeats the one
-// thing this needs to prove. `node:http`'s request() has no such guard, so it is the
-// only way to simulate the DNS-rebinding shape: a real loopback TCP connection carrying
-// a forged Host header, exactly what an attacker-controlled page can make a browser send.
-function rawRequest(url, path, { host, headers = {} } = {}) {
-  return new Promise((resolvePromise, reject) => {
-    const target = new URL(path, url);
-    const req = httpRequest(target, { headers: { ...headers, ...(host === undefined ? {} : { host }) } }, (response) => {
-      let data = "";
-      response.on("data", (chunk) => { data += chunk; });
-      response.on("end", () => {
-        let body;
-        try { body = JSON.parse(data); } catch { body = data; }
-        resolvePromise({ status: response.statusCode, body });
-      });
-    });
-    req.on("error", reject);
-    req.end();
-  });
-}
 
 test("portal boots from the live engine and exposes the new read surfaces", async (t) => {
   const fixture = await scratch("tcrn-portal-read-", "TCRN-PORTAL-READ");
@@ -185,355 +39,7 @@ test("portal boots from the live engine and exposes the new read surfaces", asyn
   assert.deepEqual(variables.body.variables, []);
 });
 
-test("INIT-056 SUB-539: Atelier model-policy API reads the engine source and writes only with Owner authorization", async (t) => {
-  const fixture = await scratch("tcrn-portal-model-policy-", "TCRN-PORTAL-MODEL-POLICY");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot, page } = await readBoot(url);
-  assert.match(page, /data-page="engine-model-policy"/u, "Atelier exposes the engine-owned policy as a visible page");
-  assert.match(page, /data-engine-model-policy-host/u, "the visible policy page selects an engine host before reading or writing");
-  assert.match(page, /data-engine-model-policy-save/u, "the visible policy page uses the governed engine-policy write action");
-  const policy = {
-    categories: [
-      { id: "flagship", name: "Flagship", description: "", order: 10 },
-      { id: "main", name: "Main", description: "", order: 20 },
-      { id: "economy", name: "Economy", description: "", order: 30 },
-    ],
-    tiers: [
-      { order: 10, category: "flagship", runner: "codex", model: "gpt-6-luna", effort: "max", note: "" },
-      { order: 20, category: "economy", runner: "codex", model: "gpt-6-luna", effort: "max", note: "" },
-    ],
-    escalation: { enabled: true, threshold: 2, ceiling: "main" },
-  };
-  const initial = await request(url, "/api/model-policy?host=codex", readOptions(boot.token));
-  assert.equal(initial.response.status, 200);
-  assert.equal(initial.body.selectedStatus, "unconfigured");
 
-  const writeScope = { libraryId: boot.library.libraryId, libraryPath: boot.library.libraryPath };
-  const wrong = await request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy, decidedIn: `minutes:${"d".repeat(24)}#D1`, ...writeScope }));
-  assert.equal(wrong.response.status, 409);
-  assert.equal(wrong.body.reasonCode, "MODEL_WRITE_AUTHORIZATION_INVALID");
-
-  const meeting = await cli([
-    "minutes-record", "--workspace", fixture.workspace, "--at", "2026-10-17T03:00:00Z", "--project-id", fixture.projectId,
-    "--external-key", "PORTAL-MODEL-POLICY-OWNER-DECISION", "--title", "Engine model policy",
-    "--summary", "Owner authorizes the engine model policy write.", "--decisions", "Set models.engine-policy for Codex.",
-    "--decided-by", "owner:governance", "--actor", TEST_ACTOR,
-  ], fixture.deviceEnv);
-  const minutesId = meeting.id;
-  const saved = await request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy, decidedIn: `${minutesId}#D1`, ...writeScope }));
-  assert.equal(saved.response.status, 200);
-  assert.equal(saved.body.reasonCode, "ENGINE_MODEL_POLICY_WRITE_COMMITTED");
-  assert.equal(saved.body.readback.selectedHost, "codex");
-  assert.equal(saved.body.readback.selectedPolicy.tiers[0].model, "gpt-6-luna");
-});
-
-test("STORY-379 read views use CLI projections and keep partial data visible", async (t) => {
-  const fixture = await scratch("tcrn-portal-views-", "TCRN-PORTAL-VIEWS");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { page, boot } = await readBoot(url);
-  for (const tab of ["work", "knowledge"]) assert.match(page, new RegExp(`data-workspace-tab="${tab}"`, "u"));
-  // TCRN-CROSS-STORY-485: gate configuration is its own destination, not a workspace tab.
-  // TCRN-CROSS-STORY-482 R4: the evolution panel and the session audit left with their mechanisms.
-  for (const tab of ["gates", "evolution", "audit"]) assert.doesNotMatch(page, new RegExp(`data-workspace-tab="${tab}"`, "u"));
-
-  const work = await request(url, "/api/work", readOptions(boot.token));
-  assert.equal(work.body.reasonCode, "PORTAL_WORK_READY");
-  assert.ok(Array.isArray(work.body.records));
-  const knowledge = await request(url, "/api/knowledge", readOptions(boot.token));
-  assert.match(knowledge.body.reasonCode, /^PORTAL_KNOWLEDGE_/u);
-  assert.ok(Array.isArray(knowledge.body.records));
-  const gates = await request(url, "/api/gates", readOptions(boot.token));
-  assert.equal(gates.response.status, 200);
-  assert.equal(gates.body.reasonCode, "PORTAL_GATES_READY");
-  assert.deepEqual(gates.body.gates, []);
-
-  const untokened = await request(url, "/api/work");
-  assert.equal(untokened.response.status, 403);
-  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
-});
-
-// TCRN-CROSS-SUB-403 (STORY-482 Goal, R3): a library larger than one work-list read. It holds an
-// Initiative, an Epic and LARGE_STORIES Stories of some eleven KB each: more records than the
-// portal's page of 100, and more bytes than one work-list page may carry, so the unpaged read the
-// work view used to make is refused, and so is a page of 100.
-const LARGE_STORIES = 120;
-const LARGE_BATCH = 40;
-
-async function largeLibrary(fixture) {
-  const projectId = (await cli(["project-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:10:00Z", "--external-key", "PORTAL-LARGE-PROJECT", "--name", "Large"], fixture.deviceEnv)).record.id;
-  const common = ["--workspace", fixture.workspace, "--project-id", projectId];
-  const initiative = await cli(["work-create", ...common, "--at", "2026-08-11T15:10:01Z", "--external-key", "PORTAL-LARGE-INIT", "--kind", "Initiative", "--title", "Large library"], fixture.deviceEnv);
-  const epic = await cli(["work-create", ...common, "--at", "2026-08-11T15:10:02Z", "--external-key", "PORTAL-LARGE-EPIC", "--kind", "Epic", "--parent-id", initiative.record.id, "--title", "Large epic"], fixture.deviceEnv);
-  const text = (label, length) => `${label} `.padEnd(length, "large library text ");
-  for (let batch = 0; batch * LARGE_BATCH < LARGE_STORIES; batch += 1) {
-    const members = Array.from({ length: LARGE_BATCH }, (_, index) => {
-      const number = batch * LARGE_BATCH + index;
-      return {
-        verb: "work-create", projectId, externalKey: `PORTAL-LARGE-${String(number).padStart(3, "0")}`, kind: "Story",
-        parentId: epic.record.id, status: "planned", title: `Large story ${number}`,
-        goal: text(`Goal ${number}`, 2100), acceptance: text(`GIVEN story ${number} WHEN listed THEN read whole`, 2100), body: text(`Body ${number}`, 6300),
-      };
-    });
-    const file = join(fixture.base, `large-${batch}.json`);
-    await writeFile(file, `${JSON.stringify({ schemaVersion: "tcrn.work-batch.v1", members })}\n`, "utf8");
-    await cli(["work-batch", "--workspace", fixture.workspace, "--at", `2026-08-11T15:1${batch + 1}:00Z`, "--from-file", file], fixture.deviceEnv);
-  }
-}
-
-async function cliRefusal(args, env = {}) {
-  try { await cli(args, env); } catch (error) { return JSON.parse(String(error.stderr ?? "").trim().split("\n").at(-1) || "{}"); }
-  return assert.fail(`${args[0]} was expected to refuse`);
-}
-
-// The library read page by page straight from the CLI, the reading /api/work must agree with.
-async function pagedWork(fixture, limit) {
-  let first = null;
-  const records = [];
-  for (let offset = 0; first === null || offset < first.total; offset += limit) {
-    const page = await cli(["work-list", "--workspace", fixture.workspace, "--limit", String(limit), "--offset", String(offset)], fixture.deviceEnv);
-    first ??= page;
-    assert.deepEqual([page.version, page.headEventHash, page.total], [first.version, first.headEventHash, first.total]);
-    records.push(...page.records);
-  }
-  return { workspaceId: first.workspaceId, version: first.version, headEventHash: first.headEventHash, total: first.total, ids: records.map((record) => record.id), records };
-}
-
-// Stands in front of the real CLI. It logs every work-list the portal asks for (its limit and
-// offset, and when it began and ended), and by the mode the test writes it passes the page on,
-// makes a real write to the library before a page past the first (once, or on every read), answers
-// every page as over the budget, or (delay) answers a page larger than the cap for its offset as
-// over the budget and holds every other page for the delay given for its offset before passing it
-// on. Since TCRN-CROSS-SUB-416 the pages past the first are read several at once, so the writes
-// take turns under a lock, each at the next instant.
-const WORK_PAGES_WRAPPER = `import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-const argv = process.argv.slice(2);
-const state = process.env.TCRN_TEST_WORK_STATE;
-const began = Date.now();
-const run = (args, env = {}) => spawnSync(process.execPath, [process.env.TCRN_TEST_REAL_CLI, ...args], { encoding: "utf8", maxBuffer: 64e6, env: { ...process.env, ...env } });
-const flag = (name) => { const index = argv.indexOf("--" + name); return index >= 0 ? argv[index + 1] : undefined; };
-const pause = (ms) => { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
-const pass = () => { const actual = run(argv); return { status: actual.status ?? 1, stdout: actual.stdout || "", stderr: actual.stderr || "" }; };
-const oversized = { status: 1, stdout: "", stderr: JSON.stringify({ ok: false, reasonCode: "CLI_WORK_LIST_OVERSIZED", error: "work-list page exceeds the canonical byte budget; lower --limit" }) + "\\n" };
-const inTurn = (work) => {
-  const lock = join(state, "write.lock");
-  for (;;) {
-    try { mkdirSync(lock); break; } catch (error) { if (error.code !== "EEXIST") throw error; pause(10); }
-  }
-  try { return work(); } finally { rmdirSync(lock); }
-};
-const workList = () => {
-  const setting = JSON.parse(readFileSync(join(state, "mode.json"), "utf8"));
-  const offset = flag("offset") ?? "0";
-  if (setting.mode === "oversized") return oversized;
-  if (Number(flag("limit")) > (setting.cap ?? Infinity)) return oversized;
-  if (setting.mode === "delay") {
-    if (Number(flag("limit")) > (setting.caps?.[offset] ?? setting.cap ?? Infinity)) return oversized;
-    pause(setting.delays?.[offset] ?? 0);
-    return pass();
-  }
-  if ((setting.mode === "move-always" || setting.mode === "move-once") && offset !== "0") {
-    const refused = inTurn(() => {
-      if (setting.mode === "move-once" && existsSync(join(state, "moved"))) return null;
-      writeFileSync(join(state, "moved"), "");
-      const writes = existsSync(join(state, "writes")) ? Number(readFileSync(join(state, "writes"), "utf8")) : 0;
-      writeFileSync(join(state, "writes"), String(writes + 1));
-      const at = new Date(Date.parse("2026-08-11T16:00:00Z") + writes * 1000).toISOString().replace(/\\.\\d{3}Z$/u, "Z");
-      const write = run(["settings-set", "--workspace", flag("workspace"), "--at", at, "--actor", "agent:test", "--key", "retrieval.scopeExcerptBytes", "--value", String(600 + writes)], { EINZBERN_SURFACE: "atelier" });
-      return write.status === 0 ? null : { status: write.status ?? 1, stdout: "", stderr: write.stderr || "" };
-    });
-    if (refused !== null) return refused;
-  }
-  return pass();
-};
-const answer = argv[0] === "work-list" ? workList() : pass();
-if (argv[0] === "work-list") appendFileSync(join(state, "calls.log"), JSON.stringify({ limit: flag("limit") ?? null, offset: flag("offset") ?? null, began, ended: Date.now() }) + "\\n");
-process.stdout.write(answer.stdout);
-process.stderr.write(answer.stderr);
-process.exitCode = answer.status;
-`;
-
-// The wrapper's state directory and its two controls: the mode the next work-list calls run
-// under, and the calls logged since the last look (each call is logged as it ends).
-async function workPagesHarness(fixture) {
-  const state = join(fixture.base, "work-pages");
-  await mkdir(state);
-  const wrapper = join(fixture.base, "work-pages-wrapper.mjs");
-  await writeFile(wrapper, WORK_PAGES_WRAPPER, "utf8");
-  const mode = (value) => writeFile(join(state, "mode.json"), JSON.stringify(typeof value === "string" ? { mode: value } : value), "utf8");
-  const calls = async () => {
-    const log = await readFile(join(state, "calls.log"), "utf8").catch(() => "");
-    await writeFile(join(state, "calls.log"), "", "utf8");
-    return log.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line));
-  };
-  await mode("pass");
-  return { mode, calls, env: { TCRN_WORKFLOW_CLI: wrapper, TCRN_TEST_REAL_CLI: CLI, TCRN_TEST_WORK_STATE: state } };
-}
-
-// A call as [limit, offset]. The pages past the first are read several at once, so they are
-// logged in the order they end; `unordered` puts them in offset order (the larger page first).
-const pageOf = ({ limit, offset }) => [limit, offset];
-const unordered = (pages) => [...pages].sort((left, right) => Number(left[1]) - Number(right[1]) || Number(right[0]) - Number(left[0]));
-
-test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-list page whole, and never mixes two versions of it", async (t) => {
-  const fixture = await scratch("tcrn-portal-large-", "TCRN-PORTAL-LARGE");
-  await largeLibrary(fixture);
-  const completeLargePage = await cli(["work-list", "--workspace", fixture.workspace, "--limit", "100"], fixture.deviceEnv);
-  assert.equal(completeLargePage.records.length, 100, "the new source preserves a complete page past the former byte ceiling");
-  const expected = await pagedWork(fixture, 30);
-  assert.equal(expected.total, LARGE_STORIES + 2);
-  assert.equal(expected.ids.length, expected.total);
-
-  const harness = await workPagesHarness(fixture);
-  const { mode, calls } = harness;
-  await mode({ mode: "pass", cap: 50 });
-  const { child, url } = await startPortal({ ...fixture, env: harness.env });
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const readWork = async () => (await request(url, "/api/work", readOptions(boot.token))).body;
-  const idsOf = (body) => body.records.map((record) => record.id);
-  await calls();
-
-  // Read whole: every record, once, in pages of at most 100; the page of 100 the budget refused
-  // was asked for again at 50, and the two pages after it were read at once (TCRN-CROSS-SUB-416).
-  const whole = await readWork();
-  assert.equal(whole.ok, true);
-  assert.equal(whole.reasonCode, "PORTAL_WORK_READY");
-  assert.deepEqual([whole.workspaceId, whole.version, whole.headEventHash, whole.total], [expected.workspaceId, expected.version, expected.headEventHash, expected.total]);
-  assert.equal(new Set(idsOf(whole)).size, whole.records.length, "no record twice");
-  assert.deepEqual([...idsOf(whole)].sort(), [...expected.ids].sort());
-  const wholeCalls = (await calls()).map(pageOf);
-  assert.deepEqual(wholeCalls.slice(0, 2), [["100", "0"], ["50", "0"]]);
-  assert.deepEqual(unordered(wholeCalls.slice(2)), [["50", "50"], ["50", "100"]]);
-
-  // The library moves between two pages: the read starts over and answers for the new version.
-  await mode({ mode: "move-once", cap: 50 });
-  const moved = await readWork();
-  const after = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
-  assert.equal(moved.ok, true);
-  assert.notEqual(after.version, whole.version, "the wrapper wrote to the library between two pages");
-  assert.deepEqual([moved.version, moved.headEventHash, moved.total], [after.version, after.headEventHash, expected.total]);
-  assert.deepEqual([...idsOf(moved)].sort(), [...expected.ids].sort());
-  // Each read begins with the page of 100 at offset 0; the pages of one read all end before the next read begins.
-  const reads = (await calls()).map(pageOf).reduce((runs, page) => {
-    if (page[0] === "100" && page[1] === "0") runs.push([]);
-    runs.at(-1).push(page);
-    return runs;
-  }, []);
-  assert.deepEqual(reads.map((pages) => [...pages.slice(0, 2), ...unordered(pages.slice(2))]), [
-    [["100", "0"], ["50", "0"], ["50", "50"], ["50", "100"]],
-    [["100", "0"], ["50", "0"], ["50", "50"], ["50", "100"]],
-  ], "the moved read was abandoned and read again from the start");
-
-  // It moves on every read: nothing mixed, a refusal.
-  await mode({ mode: "move-always", cap: 50 });
-  const unstable = await readWork();
-  assert.deepEqual([unstable.ok, unstable.reasonCode, unstable.total, unstable.records], [false, "PORTAL_WORK_READ_FAILED", 0, []]);
-  assert.deepEqual([unstable.source.reasonCode, unstable.source.attempts, unstable.source.cause], ["PORTAL_WORK_READ_UNSTABLE", 3, "moved"]);
-  await calls();
-
-  // Every page is over the budget: the page shrinks to one record, and then the read is refused.
-  await mode("oversized");
-  const oversized = await readWork();
-  assert.deepEqual([oversized.ok, oversized.reasonCode, oversized.total, oversized.records], [false, "PORTAL_WORK_READ_FAILED", 0, []]);
-  assert.equal(oversized.source.reasonCode, "CLI_WORK_LIST_OVERSIZED");
-  assert.deepEqual((await calls()).map(({ limit, offset }) => [limit, offset]), [["100", "0"], ["50", "0"], ["25", "0"], ["12", "0"], ["6", "0"], ["3", "0"], ["1", "0"]]);
-
-  // The token gate is unchanged.
-  const untokened = await request(url, "/api/work");
-  assert.equal(untokened.response.status, 403);
-  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
-});
-
-// TCRN-CROSS-SUB-416 (TCRN-CROSS-STORY-510): the pages past the first are read a few at a time,
-// and the wrapper holds each for a delay of its own, so they end out of offset order. /api/work
-// still answers what the library read page by page answers: the same records in the same order,
-// the same total, nothing twice. A page past the first that the budget refuses is halved within
-// its own stretch, and one the budget still refuses at one record is the refusal.
-test("SUB-416 (STORY-510): /api/work reads the pages past the first a few at a time and answers exactly the serial page-by-page read", async (t) => {
-  const bound = Number((await readFile(join(portalRoot, "portal.mjs"), "utf8")).match(/const WORK_PAGE_CONCURRENCY = workReadBudget\("TCRN_PORTAL_WORK_PAGE_CONCURRENCY", (\d+)\);/u)?.[1]);
-  assert.ok(bound > 1, "the portal names a concurrency bound above one");
-  const fixture = await scratch("tcrn-portal-concurrent-", "TCRN-PORTAL-CONCURRENT");
-  await largeLibrary(fixture);
-  const serial = await pagedWork(fixture, 30);
-  assert.equal(serial.total, LARGE_STORIES + 2);
-  const harness = await workPagesHarness(fixture);
-  const { mode, calls } = harness;
-  const { child, url } = await startPortal({ ...fixture, env: harness.env });
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const readWork = async () => (await request(url, "/api/work", readOptions(boot.token))).body;
-  const assertSerial = (body) => {
-    assert.deepEqual([body.ok, body.reasonCode, body.workspaceId, body.version, body.headEventHash, body.total], [true, "PORTAL_WORK_READY", serial.workspaceId, serial.version, serial.headEventHash, serial.total]);
-    assert.deepEqual(body.records, serial.records, "the serial read's records, in its order");
-    assert.equal(new Set(body.records.map((record) => record.id)).size, body.total, "no record twice");
-  };
-  await calls();
-
-  // Pages of 12, since the cap refuses 100, 50 and 25: ten stretches past the first page, each held
-  // so that the last of every four the portal sends out ends first.
-  const delays = {};
-  for (let offset = 12; offset < serial.total; offset += 12) delays[offset] = [900, 600, 300, 0][(offset / 12 - 1) % 4];
-  await mode({ mode: "delay", cap: 12, delays });
-  assertSerial(await readWork());
-  const log = await calls();
-  assert.deepEqual(log.slice(0, 4).map(pageOf), [["100", "0"], ["50", "0"], ["25", "0"], ["12", "0"]], "the first page is read alone, halved as before");
-  const stretches = log.slice(4);
-  assert.deepEqual(unordered(stretches.map(pageOf)), Object.keys(delays).map((offset) => ["12", offset]), "each page past the first once, at the size the first page was read at");
-  const ended = stretches.map(({ offset }) => Number(offset));
-  assert.notDeepEqual(ended, [...ended].sort((left, right) => left - right), "the pages ended out of offset order");
-  const outAtOnce = Math.max(...stretches.map((call) => stretches.filter((other) => other.began <= call.began && call.began < other.ended).length));
-  assert.ok(outAtOnce > 1 && outAtOnce <= bound, `more than one page and at most ${bound} out at once, not ${outAtOnce}`);
-
-  // Pages of 25, and the page at offset 50 is over the budget until it is 12: its stretch [50, 75)
-  // is read as 12, 12 and 1 records, and never reaches into the stretch after it.
-  await mode({ mode: "delay", cap: 25, caps: { 50: 12 }, delays: { 25: 300, 75: 150 } });
-  assertSerial(await readWork());
-  const halved = (await calls()).map(pageOf);
-  assert.deepEqual(halved.slice(0, 3), [["100", "0"], ["50", "0"], ["25", "0"]]);
-  assert.deepEqual(unordered(halved.slice(3)), [["25", "25"], ["25", "50"], ["12", "50"], ["12", "62"], ["1", "74"], ["25", "75"], ["25", "100"]]);
-
-  // The page at offset 50 is over the budget even at one record: that is the refusal, and nothing
-  // mixed is shown.
-  await mode({ mode: "delay", cap: 25, caps: { 50: 0 } });
-  const refused = await readWork();
-  assert.deepEqual([refused.ok, refused.reasonCode, refused.total, refused.records], [false, "PORTAL_WORK_READ_FAILED", 0, []]);
-  assert.equal(refused.source.reasonCode, "CLI_WORK_LIST_OVERSIZED");
-  const refusedCalls = (await calls()).map(pageOf);
-  assert.deepEqual(refusedCalls.filter(([, offset]) => offset === "50"), [["25", "50"], ["12", "50"], ["6", "50"], ["3", "50"], ["1", "50"]], "the page is halved down to one record before it is the refusal");
-  assert.deepEqual(refusedCalls.filter(([, offset]) => offset !== "50" && offset !== "0").filter(([limit, offset]) => limit !== "25" || !["25", "75", "100"].includes(offset)), [], "every other page is a whole page at a stretch's start");
-});
-
-// TCRN-CROSS-STORY-482 R4, AC3: the pages that showed the retired mechanisms went with them, and
-// so did their routes. The old execution and evolution projections, the session audit and the
-// host probe answer as unknown routes, exactly like a path the portal never had; the token check
-// still comes first.
-test("STORY-482 AC3: the retired execution, evolution and session audit routes answer 404", async (t) => {
-  const fixture = await scratch("tcrn-portal-ac3-", "TCRN-PORTAL-AC3");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { page, boot } = await readBoot(url);
-  for (const path of ["/api/execution", RETIRED_ROUTES.evolution, RETIRED_ROUTES.sessionAudit, "/api/no-such-route"]) {
-    const read = await request(url, path, readOptions(boot.token));
-    assert.equal(read.response.status, 404, `GET ${path}`);
-    assert.equal(read.body.reasonCode, "PORTAL_ROUTE_UNKNOWN", `GET ${path}`);
-  }
-  for (const path of ["/api/execution", RETIRED_ROUTES.evolution]) {
-    const write = await request(url, path, writeOptions(boot.token, "POST", {}));
-    assert.equal(write.response.status, 404, `POST ${path}`);
-    assert.equal(write.body.reasonCode, "PORTAL_ROUTE_UNKNOWN", `POST ${path}`);
-  }
-  const untokened = await request(url, RETIRED_ROUTES.evolution);
-  assert.equal(untokened.response.status, 403);
-  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
-  // The page asks for none of them.
-  for (const path of [RETIRED_ROUTES.evolution, RETIRED_ROUTES.sessionAudit, RETIRED_ROUTES.hostProbe, "/api/execution"]) {
-    assert.equal(page.includes(`"${path}"`), false, `the page must not request ${path}`);
-  }
-});
 
 test("portal writes carry the actor under the engine's write lock, then return the engine receipt and readback", async (t) => {
   const fixture = await scratch("tcrn-portal-write-", "TCRN-PORTAL-WRITE");
@@ -593,29 +99,321 @@ test("portal writes carry the actor under the engine's write lock, then return t
   assert.equal(audit.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
 });
 
-// TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5; contract C-R14-1): both settings routes pass every
-// catalog row on with its shape, group and order, as the engine wrote them; the page lays itself out
-// from those three and keeps no grouping of its own.
-test("SUB-409 (STORY-508 R5): the settings routes carry every row's shape, group and order from both catalogs", async (t) => {
-  const fixture = await scratch("tcrn-portal-layout-", "TCRN-PORTAL-LAYOUT");
+
+
+test("the page boots with the shipped locale contract and needs nothing outside the portal", async (t) => {
+  const fixture = await scratch("tcrn-portal-conservation-locale-", "TCRN-PORTAL-CONSERVATION-LOCALE");
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const response = await fetch(url);
+  assert.equal(response.status, 200);
+  const page = await response.text();
+  assert.ok(!page.includes("__PORTAL_BOOT__"));
+  const boot = JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]);
+  const { LOCALE_CONTRACT } = await import("../locale-contract.mjs");
+  assert.deepEqual(boot.supportedLocales, [...LOCALE_CONTRACT.supportedLocales]);
+  assert.equal(boot.fallbackLocale, LOCALE_CONTRACT.fallbackLocale);
+  assert.equal(boot.localeMetadata.length, LOCALE_CONTRACT.localeMetadata.length);
+  assert.ok(boot.localeMetadata.every((entry) => entry.nativeName.length > 0));
+  const locales = await (await fetch(new URL("/locales.js", url))).text();
+  assert.match(locales, /window\.PORTAL_LOCALES/u);
+  for (const locale of LOCALE_CONTRACT.supportedLocales) assert.ok(locales.includes(`"${locale}"`) || locales.includes(`${locale}:`));
+});
+
+
+
+test("i18n proof turns red when the engine drops enum allowedValues", async (t) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-conservation-i18n-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const shim = join(base, "strip-catalog.mjs");
+  await writeFile(shim, `import { execFileSync } from "node:child_process"; const output = execFileSync(process.execPath, [process.env.TCRN_REAL_CLI, ...process.argv.slice(2)], { encoding: "utf8" }); const body = JSON.parse(output); if (process.argv[2] === "settings-catalog") for (const entry of body.settings ?? []) delete entry.allowedValues; process.stdout.write(JSON.stringify(body));\n`, "utf8");
+  let failure;
+  try { await execFileAsync(process.execPath, [join(portalRoot, "scripts", "i18n-proof.mjs")], { encoding: "utf8", env: { ...process.env, TCRN_WORKFLOW_CLI: shim, TCRN_REAL_CLI: CLI } }); } catch (error) { failure = error; }
+  assert.ok(failure);
+  const report = JSON.parse(failure.stdout);
+  assert.equal(report.ok, false);
+  assert.equal(report.reasonCode, "I18N_CONTRACT_VIOLATION");
+  const leg = report.legs.find((entry) => entry.leg === "setting-descriptions");
+  assert.equal(leg.reasonCode, "SETTING_ENUM_VALUES_GAP");
+  // TCRN-CROSS-STORY-484 R3 retired the other enum settings; artifact.language is the one left.
+  assert.ok(leg.enumMissingAllowedValues.includes("artifact.language"));
+});
+
+
+
+test("i18n full-table proof turns red when an existing translation regresses", async (t) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-i18n-full-table-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const sourcePath = join(base, "locales-mutated.js");
+  const source = await readFile(join(portalRoot, "locales.js"), "utf8");
+  const anchor = '"receipt.title": "エンジンの操作記録"';
+  assert.equal(source.split(anchor).length, 2, "the Japanese fixture matches exactly one current translation");
+  await writeFile(sourcePath, source.replace(anchor, '"receipt.title": "Engine operation record"'), "utf8");
+  let failure;
+  try {
+    await execFileAsync(process.execPath, [join(portalRoot, "scripts", "i18n-proof.mjs")], { encoding: "utf8", env: { ...process.env, TCRN_PORTAL_LOCALES_SOURCE: sourcePath } });
+  } catch (error) { failure = error; }
+  assert.ok(failure);
+  const report = JSON.parse(failure.stdout);
+  const leg = report.legs.find((entry) => entry.leg === "translation-full-table");
+  assert.equal(leg.reasonCode, "FULL_LOCALE_TABLE_REALITY_GAP");
+  assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("receipt.title")));
+});
+
+
+
+// R46 I01 (approved contract item 2; EPIC-144 R3; Owner return 2): the name of a library and of a target
+// is its project's canonical name, end to end. A registration that names no project, and a coordination
+// chain registered without one, answer null rather than an English stand-in, in /api/libraries, the
+// boot and /api/library; a project chain's target answers its project's name.
+test("INIT-053 R46 I01: names come from the project records, and a registration without a project answers null", async t => {
+  const fixture = await scratch("portal-r46-names-", "R46-NAMES");
+  const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
+  // A coordination chain registered as its own project path, with no project.
+  const bare = join(fixture.base, "bare-coordination");
+  await cli(["init", "--workspace", bare, "--at", R46_AT], fixture.deviceEnv);
+  const bareId = (await cli(["status", "--workspace", bare], fixture.deviceEnv)).workspaceId;
+  await cli(["chain-declare", "--workspace", bare, "--role", "coordination", "--coordination-library-id", bareId, "--at", R46_AT, "--actor", "agent:test"], atelier);
+  await cli(["library-register", "--project", bare, "--library", bare, "--at", R46_AT], fixture.deviceEnv);
+  // The second library is a project chain of it, and has a second registration that names no project.
+  await cli(["chain-declare", "--workspace", fixture.second.library, "--role", "project", "--coordination-library-id", bareId, "--at", R46_AT, "--actor", "agent:test"], atelier);
+  const unnamed = join(fixture.base, "unnamed-project");
+  await mkdir(unnamed);
+  await cli(["library-register", "--project", unnamed, "--library", fixture.second.library, "--at", R46_AT], fixture.deviceEnv);
+  assert.deepEqual((await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.map(record => [record.id, record.name]), [[fixture.second.projectId, "R46-NAMES-SECOND"]]);
+
+  const { child, url } = await startPortal({ ...fixture, library: bare });
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
-  const layout = (rows) => rows.map(({ key, layer, shape, group, order }) => ({ key, layer, shape, group, order }));
-  const project = await request(url, "/api/settings", readOptions(boot.token));
-  assert.deepEqual(layout(project.body.settings), layout((await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings));
-  assert.deepEqual(project.body.settings.filter((row) => row.shape === "collection").map((row) => row.key).sort(), ["models.category", "models.tiers"]);
-  assert.ok(project.body.settings.every((row) => ["project", "library"].includes(row.layer) && typeof row.group === "string" && Number.isSafeInteger(row.order) && row.order > 0));
-  const device = await request(url, "/api/machine-settings", readOptions(boot.token));
-  assert.deepEqual(layout(device.body.settings), layout((await cli(["machine-settings-catalog"], { ...fixture.deviceEnv, HOME: fixture.home })).settings));
-  assert.ok(device.body.settings.every((row) => row.layer === "device" && row.shape === "scalar"));
-  // An order is unique within its group across both catalogs, so a group has one display order.
-  const rows = [...project.body.settings, ...device.body.settings];
-  for (const group of new Set(rows.map((row) => row.group))) {
-    const orders = rows.filter((row) => row.group === group).map((row) => row.order);
-    assert.equal(new Set(orders).size, orders.length, `${group}: every order is its own`);
+  assert.deepEqual([boot.library.chain.role, boot.library.name, boot.libraryName], ["coordination", null, null], "a coordination chain without a project has no name, and no stand-in");
+  const listed = await request(url, "/api/libraries", readOptions(boot.token));
+  const nameAt = (path) => listed.body.libraries.find(entry => entry.projectPath === path).name;
+  assert.deepEqual([nameAt(fixture.proseRoot), nameAt(fixture.second.project), nameAt(unnamed), nameAt(bare)], ["R46-NAMES", "R46-NAMES-SECOND", null, null]);
+  const secondId = (await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).workspaceId;
+  const targets = await request(url, "/api/project-targets", readOptions(boot.token));
+  assert.deepEqual(targets.body.targets, [{ libraryId: secondId, projectId: fixture.second.projectId, name: "R46-NAMES-SECOND" }]);
+  const toUnnamed = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: unnamed }));
+  assert.deepEqual([toUnnamed.response.status, toUnnamed.body.libraryName, toUnnamed.body.library.name, toUnnamed.body.proseRoot], [200, null, null, null], "a registration without a project is unnamed and has no prose output");
+  const toFirst = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.proseRoot }));
+  assert.deepEqual([toFirst.body.libraryName, toFirst.body.library.name], ["R46-NAMES", "R46-NAMES"]);
+  for (const answer of [boot, listed.body, targets.body, toUnnamed.body, toFirst.body]) {
+    assert.doesNotMatch(JSON.stringify(answer), /Unconfigured project|"Cross Project"/u, "no English stand-in name");
+  }
+  assert.equal((await readFile(join(portalRoot, "portal.mjs"), "utf8")).includes("Unconfigured project"), false);
+});
+
+
+
+// R46 I06 (approved contract items 2, 10; U20 D2): one chain's two repositories are two registrations,
+// and each is bound by its own project path: /api/library, /api/configuration-scope and GET/PUT
+// /api/agents-md name the selected registration's root. A project of the library that several
+// registrations name is ambiguous, and none of them is taken.
+test("INIT-053 R46 I06: a chain's two repositories bind by registration, and a project with several registrations is ambiguous", async t => {
+  const fixture = await scratch("portal-r46-bind-", "R46-BIND");
+  const mana = join(fixture.base, "second-mana");
+  await mkdir(mana);
+  await cli(["library-register", "--project", mana, "--library", fixture.second.library, "--project-id", fixture.second.projectId, "--at", R46_AT], fixture.deviceEnv);
+  const other = (await cli(["project-create", "--workspace", fixture.second.library, "--external-key", "R46-BIND-OTHER", "--name", "Other", "--at", R46_AT], fixture.deviceEnv)).record.id;
+  const otherRoots = [join(fixture.base, "other-a"), join(fixture.base, "other-b")];
+  for (const root of otherRoots) {
+    await mkdir(root);
+    await cli(["library-register", "--project", root, "--library", fixture.second.library, "--project-id", other, "--at", R46_AT], fixture.deviceEnv);
+  }
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const agentsFile = (root) => join(root, "AGENTS.md");
+  for (const [root, sibling] of [[mana, fixture.second.project], [fixture.second.project, mana]]) {
+    const selected = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: root }));
+    assert.deepEqual([selected.response.status, selected.body.proseRoot], [200, root], `${root}: the switch names the selected registration's root`);
+    const scoped = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: fixture.second.projectId }));
+    assert.deepEqual([scoped.body.proseRoot, scoped.body.outputBindingStatus], [root, "bound"]);
+    const read = await request(url, "/api/agents-md", readOptions(boot.token));
+    assert.equal(read.body.path, agentsFile(root));
+    const text = `# AGENTS.md of ${root}\n`;
+    const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { text }));
+    assert.deepEqual([written.response.status, written.body.path], [200, agentsFile(root)], JSON.stringify(written.body));
+    assert.equal(await readFile(agentsFile(root), "utf8"), text);
+    if (root === mana) await assert.rejects(readFile(agentsFile(sibling)), { code: "ENOENT" }, "the other repository's file is untouched");
+    else assert.equal(await readFile(agentsFile(sibling), "utf8"), `# AGENTS.md of ${sibling}\n`, "the other repository's file is untouched");
+  }
+  // The library's other project has two registrations: switching the configuration target to it
+  // takes neither, and names both.
+  const ambiguous = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: other }));
+  assert.equal(ambiguous.response.status, 200, JSON.stringify(ambiguous.body));
+  assert.deepEqual([ambiguous.body.outputBindingStatus, ambiguous.body.proseRoot, [...ambiguous.body.candidates].sort()], ["ambiguous", null, [...otherRoots].sort()]);
+  const read = await request(url, "/api/agents-md", readOptions(boot.token));
+  assert.deepEqual([read.response.status, read.body.reasonCode, read.body.outputBindingStatus, [...read.body.candidates].sort()], [409, "PORTAL_PROJECT_BINDING_AMBIGUOUS", "ambiguous", [...otherRoots].sort()]);
+  const write = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { text: "# not written\n" }));
+  assert.deepEqual([write.response.status, write.body.reasonCode], [409, "PORTAL_PROJECT_BINDING_AMBIGUOUS"]);
+  for (const root of otherRoots) await assert.rejects(readFile(agentsFile(root)), { code: "ENOENT" });
+  const rule = await request(url, "/api/rules/autonomy", writeOptions(boot.token, "POST", { action: "enable" }));
+  assert.deepEqual([rule.body.ok, rule.body.reasonCode, [...rule.body.candidates].sort()], [false, "PORTAL_PROJECT_BINDING_AMBIGUOUS", [...otherRoots].sort()]);
+});
+
+
+
+test("526 GWT4: without TCRN_PORTAL_ACTOR, or with it empty, Atelier and its generated launcher refuse to start with exit code 2 and one JSON line", async (t) => {
+  const fixture = await scratch("tcrn-portal-no-actor-", "TCRN-PORTAL-NO-ACTOR");
+  t.after(() => rm(fixture.base, { recursive: true, force: true }));
+  for (const value of [undefined, "", "   "]) {
+    const refused = await startupRefusal(["--library", fixture.workspace], { ...fixture.deviceEnv, HOME: fixture.home, TCRN_PORTAL_ACTOR: value });
+    assert.deepEqual([refused.status, refused.lines, refused.report.ok, refused.report.reasonCode, refused.report.variable], [2, 1, false, "PORTAL_ACTOR_REQUIRED", "TCRN_PORTAL_ACTOR"], JSON.stringify(value));
+  }
+  // A generated launcher carries no actor: it passes on the one its environment holds, and without one Atelier refuses.
+  const outputDir = join(fixture.base, "launchers");
+  await mkdir(outputDir);
+  const generator = join(portalRoot, "scripts", "generate-launchers.mjs");
+  const report = JSON.parse((await execFileAsync(process.execPath, [generator, "--library", fixture.workspace, "--output-dir", outputDir, "--port", "0"], { encoding: "utf8" })).stdout);
+  for (const file of report.files) assert.doesNotMatch(await readFile(file, "utf8"), /agent:|owner:|profile:/u, `${file} names no actor`);
+  const command = report.files.find((file) => file.endsWith(".command"));
+  const env = { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...fixture.deviceEnv, HOME: fixture.home };
+  delete env.TCRN_PORTAL_ACTOR;
+  const launched = await new Promise((resolveRun) => {
+    const child = spawn(command, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("exit", (code) => resolveRun({ status: code, lines: stderr.trim().split("\n") }));
+  });
+  assert.deepEqual([launched.status, launched.lines.length, JSON.parse(launched.lines[0]).reasonCode], [2, 1, "PORTAL_ACTOR_REQUIRED"]);
+});
+
+
+
+test("BL31 a busy loopback port returns a structured startup failure", async (t) => {
+  const fixture = await scratch("tcrn-portal-port-busy-", "PORTAL-PORT-BUSY");
+  const running = await startPortal(fixture);
+  t.after(async () => { running.child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const port = new URL(running.url).port;
+  await assert.rejects(execFileAsync(process.execPath, [join(portalRoot, "portal.mjs"), "--library", fixture.workspace, "--port", port], {
+    env: { ...process.env, ...fixture.deviceEnv, HOME: fixture.home, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR }, encoding: "utf8",
+  }), (error) => {
+    assert.equal(error.code, 1);
+    const failure = JSON.parse(error.stderr.trim());
+    assert.equal(failure.reasonCode, "PORTAL_PORT_IN_USE");
+    assert.equal(failure.port, Number(port));
+    assert.equal(failure.error, "EADDRINUSE");
+    assert.ok(failure.recovery.includes("--port"));
+    return true;
+  });
+  assert.equal((await fetch(running.url)).status, 200, "the existing listener remains available");
+});
+
+
+
+test("portal serves live catalog, commits a governed write, and refuses an untokened one", async (t) => {
+  const fixture = await scratch("tcrn-portal-conservation-read-", "TCRN-PORTAL-CONSERVATION-READ");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { page, boot } = await readBoot(url);
+  assert.ok(!page.includes("__PORTAL_BOOT__"));
+  assert.ok(boot.token.length >= 32);
+  const catalog = await request(url, "/api/settings", readOptions(boot.token));
+  const engineCatalog = await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv);
+  assert.deepEqual(catalog.body.settings, engineCatalog.settings);
+  assert.ok(!page.includes("gate-close"));
+  assert.match(page, /data-setting-control/u);
+  assert.ok(catalog.body.settings.every((entry) => entry.controlType));
+  const untokened = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "retrieval.tau", value: "3" }) });
+  assert.equal(untokened.response.status, 403);
+  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
+  const committed = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "retrieval.tau", value: "3" }));
+  assert.equal(committed.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
+  assert.equal(committed.body.setting.value, "3");
+  assert.equal(committed.body.readback.currentValue, "3");
+  assert.ok(committed.body.receiptDigest && committed.body.headEventHash);
+  const refused = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "bogus.key", value: "x" }));
+  assert.equal(refused.response.status, 409);
+  assert.equal(refused.body.reasonCode, "SETTINGS_KEY_UNREGISTERED");
+  const status = await request(url, "/api/status", readOptions(boot.token));
+  assert.equal(status.body.checks.length, 8);
+  assert.ok(status.body.checks.every((check) => Object.hasOwn(check, "check") && Object.hasOwn(check, "reasonCode") && Object.hasOwn(check, "detail")));
+  assert.deepEqual(Object.keys(status.body.library).sort(), ["configProjection", "rejectedEventCount", "streams", "versionVector"]);
+  const commands = await request(url, "/api/commands", readOptions(boot.token));
+  assert.ok(commands.body.commands.some((entry) => entry.name === "settings-set" && entry.mutates));
+});
+
+
+
+test("an admitted request whose body is still in flight refuses an unregistered binding", async t => {
+  const fixture = await scratch("portal-inflight-registry-", "INFLIGHT-REGISTRY");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const before = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
+  const body = JSON.stringify({ key: "artifact.language", value: "fr" });
+  let req;
+  const completed = new Promise((resolve, reject) => {
+    req = httpRequest(new URL("/api/settings", url), { method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "x-portal-token": boot.token, "x-configuration-target": JSON.stringify(clientTargets.get(boot.token)) } }, response => {
+      let text = ""; response.on("data", chunk => { text += chunk; }); response.on("end", () => resolve(JSON.parse(text)));
+    });
+    req.on("error", reject); req.flushHeaders(); req.write(body.slice(0, 1));
+  });
+  await unregisterLibrary(fixture.proseRoot, fixture.deviceEnv.EINZBERN_HOME);
+  req.end(body.slice(1));
+  assert.equal((await completed).reasonCode, "PORTAL_CONFIGURATION_TARGET_CHANGED");
+  assert.equal((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).headEventHash, before.headEventHash);
+});
+
+
+
+test("STORY-379 read views use CLI projections and keep partial data visible", async (t) => {
+  const fixture = await scratch("tcrn-portal-views-", "TCRN-PORTAL-VIEWS");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { page, boot } = await readBoot(url);
+  for (const tab of ["work", "knowledge"]) assert.match(page, new RegExp(`data-workspace-tab="${tab}"`, "u"));
+  // TCRN-CROSS-STORY-485: gate configuration is its own destination, not a workspace tab.
+  // TCRN-CROSS-STORY-482 R4: the evolution panel and the session audit left with their mechanisms.
+  for (const tab of ["gates", "evolution", "audit"]) assert.doesNotMatch(page, new RegExp(`data-workspace-tab="${tab}"`, "u"));
+
+  const work = await request(url, "/api/work", readOptions(boot.token));
+  assert.equal(work.body.reasonCode, "PORTAL_WORK_READY");
+  assert.ok(Array.isArray(work.body.records));
+  const knowledge = await request(url, "/api/knowledge", readOptions(boot.token));
+  assert.match(knowledge.body.reasonCode, /^PORTAL_KNOWLEDGE_/u);
+  assert.ok(Array.isArray(knowledge.body.records));
+  const gates = await request(url, "/api/gates", readOptions(boot.token));
+  assert.equal(gates.response.status, 200);
+  assert.equal(gates.body.reasonCode, "PORTAL_GATES_READY");
+  assert.deepEqual(gates.body.gates, []);
+
+  const untokened = await request(url, "/api/work");
+  assert.equal(untokened.response.status, 403);
+  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
+});
+
+
+
+// TCRN-CROSS-STORY-482 R4, AC3: the pages that showed the retired mechanisms went with them, and
+// so did their routes. The old execution and evolution projections, the session audit and the
+// host probe answer as unknown routes, exactly like a path the portal never had; the token check
+// still comes first.
+test("STORY-482 AC3: the retired execution, evolution and session audit routes answer 404", async (t) => {
+  const fixture = await scratch("tcrn-portal-ac3-", "TCRN-PORTAL-AC3");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { page, boot } = await readBoot(url);
+  for (const path of ["/api/execution", RETIRED_ROUTES.evolution, RETIRED_ROUTES.sessionAudit, "/api/no-such-route"]) {
+    const read = await request(url, path, readOptions(boot.token));
+    assert.equal(read.response.status, 404, `GET ${path}`);
+    assert.equal(read.body.reasonCode, "PORTAL_ROUTE_UNKNOWN", `GET ${path}`);
+  }
+  for (const path of ["/api/execution", RETIRED_ROUTES.evolution]) {
+    const write = await request(url, path, writeOptions(boot.token, "POST", {}));
+    assert.equal(write.response.status, 404, `POST ${path}`);
+    assert.equal(write.body.reasonCode, "PORTAL_ROUTE_UNKNOWN", `POST ${path}`);
+  }
+  const untokened = await request(url, RETIRED_ROUTES.evolution);
+  assert.equal(untokened.response.status, 403);
+  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
+  // The page asks for none of them.
+  for (const path of [RETIRED_ROUTES.evolution, RETIRED_ROUTES.sessionAudit, RETIRED_ROUTES.hostProbe, "/api/execution"]) {
+    assert.equal(page.includes(`"${path}"`), false, `the page must not request ${path}`);
   }
 });
+
+
 
 // STORY-508 collection negatives migrate to INIT-056's one governed host-policy writer.
 // Historical project declarations remain readable and cannot configure a host or accept set/reset.
@@ -678,909 +476,7 @@ test("SUB-409 (STORY-508 R6): historical collections remain readable and governe
 
 });
 
-test("STORY-484 variable routes write, read back and render safe values while withholding secrets", async (t) => {
-  const fixture = await scratch("tcrn-portal-variables-", "TCRN-PORTAL-VARIABLES");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
 
-  const created = await request(url, "/api/variables", writeOptions(boot.token, "POST", {
-    name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint", exports: ["agents"],
-  }));
-  assert.equal(created.response.status, 200);
-  assert.equal(created.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
-  assert.equal(created.body.readback.source.projectId, fixture.projectId);
-  assert.deepEqual(withoutSource(created.body.readback), { name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint", exports: ["agents"] });
-  assert.deepEqual(created.body.variables, [created.body.readback]);
-  assert.equal(created.body.render.reasonCode, "AGENTS_RENDERED");
-  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host.*build\.example\.com/u);
-
-  const updated = await request(url, "/api/variables", writeOptions(boot.token, "POST", {
-    name: "deploy.host", type: "string", value: "stage.example.com", description: "Staging endpoint", exports: ["agents"],
-  }));
-  assert.equal(updated.response.status, 200);
-  assert.equal(updated.body.readback.value, "stage.example.com");
-  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host.*stage\.example\.com/u);
-
-  const secret = "sk-proj-0123456789abcdef";
-  const refused = await request(url, "/api/variables", writeOptions(boot.token, "POST", {
-    name: "api.key", type: "string", value: secret,
-  }));
-  assert.equal(refused.response.status, 409);
-  assert.equal(refused.body.reasonCode, "VARIABLE_SECRET_SHAPED");
-  assert.doesNotMatch(JSON.stringify(refused.body), /sk-proj-0123456789abcdef/u, "secret-shaped input must not be echoed in the response");
-  assert.equal((await request(url, "/api/variables", readOptions(boot.token))).body.variables.length, 1);
-
-  const removed = await request(url, "/api/variables", writeOptions(boot.token, "DELETE", { name: "deploy.host" }));
-  assert.equal(removed.response.status, 200);
-  assert.equal(removed.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
-  assert.equal(removed.body.readback, null);
-  assert.deepEqual(removed.body.variables, []);
-  assert.doesNotMatch(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host/u);
-});
-
-// STORY-403 replaces the old STORY-366 manual-writing interaction while retaining
-// the native CLI/data contract tested by this same integration case.
-test("STORY-366: the article endpoint is refused while the native article stays readable through the knowledge index", async (t) => {
-  const fixture = await scratch("tcrn-portal-article-", "TCRN-PORTAL-ARTICLE");
-  await cli(["project-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:01Z", "--external-key", "PORTAL-ARTICLE-PROJECT", "--name", "Articles"], fixture.deviceEnv);
-  await cli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"], fixture.deviceEnv);
-  const native = await cli(["knowledge-article-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:01Z", "--path", "portal-article.md", "--category", "architecture", "--title", "Agent article", "--summary", "Agent article summary", "--content", "Agent article body", "--accountable-owner-id", "owner:portal", "--evidence-ids", "evidence:portal-article"], fixture.deviceEnv);
-  assert.equal(native.reasonCode, "KNOWLEDGE_ARTICLE_CREATED");
-  assert.equal(await readFile(native.path, "utf8").then((text) => text.includes("Agent article body")), true);
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { page, boot } = await readBoot(url);
-  assert.doesNotMatch(page, /data-page="articles"/u);
-  assert.doesNotMatch(page, /article-form|knowledge-article-create/iu);
-  assert.match(page, /data-workspace-tab="knowledge"/u);
-  const knowledge = await request(url, "/api/knowledge", readOptions(boot.token));
-  const article = knowledge.body.records.find((record) => record.subject === "Agent article");
-  assert.ok(article, "the native article must remain in the knowledge index");
-  assert.deepEqual(article.sourceReferences, ["portal-article.md"]);
-  const body = await request(url, `/api/knowledge/body?id=${encodeURIComponent(article.id)}`, readOptions(boot.token));
-  assert.equal(body.response.status, 200);
-  assert.match(body.body.body, /Source: portal-article\.md/u);
-  const refused = await request(url, "/api/knowledge/articles", writeOptions(boot.token, "POST", { title: "Manual article", category: "architecture", content: "must not write" }));
-  assert.equal(refused.response.status, 404);
-  assert.equal(refused.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
-  // TCRN-CROSS-SUB-425 (MIN-239 D6): the knowledge list answers valid cards by default; a removed card
-  // is listed only when a status asks for it, as it is kept, and its body is refused.
-  const removed = await cli(["knowledge-remove", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:02Z", "--id", article.id, "--reason", "invalid",
-    "--basis", "the article moved to the design notes", "--actor", "agent:portal-test"], fixture.deviceEnv);
-  assert.equal(removed.reasonCode, "KNOWLEDGE_UNIT_REMOVED");
-  const valid = await request(url, "/api/knowledge", readOptions(boot.token));
-  assert.deepEqual([valid.body.status, valid.body.records.some((record) => record.id === article.id)], ["valid", false]);
-  const listedRemoved = await request(url, "/api/knowledge?status=removed", readOptions(boot.token));
-  const kept = listedRemoved.body.records.find((record) => record.id === article.id);
-  assert.deepEqual([listedRemoved.body.status, kept?.status, kept?.removal.reason, Object.hasOwn(kept ?? {}, "summary")], ["removed", "removed", "invalid", false]);
-  assert.equal((await request(url, "/api/knowledge?status=all", readOptions(boot.token))).body.records.some((record) => record.id === article.id), true);
-  const removedBody = await request(url, `/api/knowledge/body?id=${encodeURIComponent(article.id)}`, readOptions(boot.token));
-  assert.deepEqual([removedBody.response.status, removedBody.body.reasonCode], [409, "KNOWLEDGE_CARD_REMOVED"]);
-  const badStatus = await request(url, "/api/knowledge?status=obsolete", readOptions(boot.token));
-  assert.deepEqual([badStatus.response.status, badStatus.body.reasonCode], [400, "PORTAL_KNOWLEDGE_STATUS_INVALID"]);
-});
-
-test("STORY-485: Atelier edits gate declarations and reads each library's latest cached gate run", async (t) => {
-  const fixture = await scratch("tcrn-portal-gates-", "TCRN-PORTAL-GATES");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const gatesNow = async () => (await request(url, "/api/gates", readOptions(boot.token))).body;
-  const latestNow = async () => (await request(url, "/api/gates/last-run", readOptions(boot.token))).body;
-  assert.deepEqual((await gatesNow()).gates, []);
-
-  const created = await request(url, "/api/gates", writeOptions(boot.token, "POST", {
-    name: "portal", command: ["pnpm", "verify:links"], root: ".", covers: ["portal/**", "docs/**"],
-    enabled: true, required: true, releaseOnly: false,
-  }));
-  assert.equal(created.response.status, 200);
-  assert.deepEqual(created.body.gate, { name: "portal", command: ["pnpm", "verify:links"], root: ".", covers: ["portal/**", "docs/**"], enabled: true, required: true, releaseOnly: false });
-  assert.deepEqual((await gatesNow()).gates, [created.body.gate]);
-
-  const updated = await request(url, "/api/gates", writeOptions(boot.token, "POST", {
-    name: "portal", command: ["pnpm", "verify:portal"], root: "portal", covers: ["portal/**"],
-    enabled: false, required: false, releaseOnly: true,
-  }));
-  assert.equal(updated.response.status, 200);
-  assert.equal(updated.body.gate.enabled, false);
-  assert.equal(updated.body.gate.required, false);
-  assert.equal(updated.body.gate.releaseOnly, true);
-  assert.deepEqual(updated.body.gate.covers, ["portal/**"]);
-  assert.equal((await latestNow()).run, null);
-
-  const writeRun = async (libraryId, runId, at, gateName, ok) => {
-    const directory = join(fixture.deviceEnv.EINZBERN_HOME, "cache", libraryId.replace(":", "-"), "gate-runs");
-    await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, `${runId}.json`), JSON.stringify({
-      schemaVersion: "einzbern.gate-run.v1", runId, libraryId, projectId: libraryId === boot.library.libraryId ? fixture.projectId : fixture.second.projectId, workIds: [], at, release: false, base: null,
-      treeDigest: `tree-${runId}`, declarationsDigest: `declarations-${runId}`, trees: [],
-      gates: [{ name: gateName, root: ".", required: true, matched: [], matchedWorkIds: [], ok, exitCode: ok ? 0 : 1, signal: null, timedOut: false, outputFile: `${runId}/1-${gateName}.log`, outputBytes: 0, truncated: false }],
-      reds: ok ? [] : [gateName],
-    }));
-  };
-  await writeRun(boot.library.libraryId, "first-run", "2026-08-11T16:00:00Z", "portal", false);
-  await writeRun(boot.library.libraryId, "latest-run", "2026-08-11T17:00:00Z", "portal", true);
-  const latest = await latestNow();
-  assert.equal(latest.reasonCode, "PORTAL_GATE_RUN_READY");
-  assert.equal(latest.run.runId, "latest-run");
-  assert.deepEqual(latest.run.reds, []);
-
-  const second = await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv);
-  await writeRun(second.workspaceId, "second-library-run", "2026-08-11T18:00:00Z", "second", false);
-  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.second.project }));
-  assert.equal(switched.response.status, 200);
-  assert.equal((await latestNow()).run.runId, "second-library-run");
-
-  const back = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.proseRoot }));
-  assert.equal(back.response.status, 200);
-  const removed = await request(url, "/api/gates", writeOptions(boot.token, "DELETE", { name: "portal" }));
-  assert.equal(removed.response.status, 200);
-  assert.deepEqual(removed.body.gates, []);
-  assert.deepEqual((await gatesNow()).gates, []);
-});
-
-// TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R7; contract C-R14-5): the variable, rule and gate routes
-// pass an order to the engine as it was sent, so the engine records it or says what is wrong with it,
-// and each read-back carries it. An empty order is none: variable-set then writes a variable without
-// one, and rule-enable and gates-config-set keep the order the record holds.
-test("SUB-410 (STORY-508 R7): the variable, rule and gate routes write an order through the engine and read it back", async (t) => {
-  const fixture = await scratch("tcrn-portal-orders-", "TCRN-PORTAL-ORDERS");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const post = (path, body) => request(url, path, writeOptions(boot.token, "POST", body));
-
-  const variable = await post("/api/variables", { name: "deploy.host", type: "string", value: "build.example.com", order: "3" });
-  assert.equal(variable.response.status, 200);
-  assert.equal(variable.body.readback.source.projectId, fixture.projectId);
-  assert.deepEqual(withoutSource(variable.body.readback), { name: "deploy.host", type: "string", value: "build.example.com", description: "", exports: [], order: 3 });
-  const unordered = await post("/api/variables", { name: "deploy.host", type: "string", value: "build.example.com", order: "" });
-  assert.equal(Object.hasOwn(unordered.body.readback, "order"), false, "variable-set writes the whole record, so no order is none");
-  const malformed = await post("/api/variables", { name: "deploy.host", type: "string", value: "x", order: "0" });
-  assert.equal(malformed.response.status, 409);
-  assert.equal(malformed.body.reasonCode, "CLI_ARGUMENT_MALFORMED");
-  // The variable write rendered the system variables section too; its heading models.escalation names
-  // the family of the three escalation keys, so the Rules page's check does not count it as a claim.
-  const reconciled = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
-  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /execution-policy-resolve/u, "shared output names the runtime policy resolver instead of freezing a host choice");
-  assert.deepEqual(reconciled.body.findings.filter((row) => row.key.startsWith("models.")), []);
-
-  const rule = await post("/api/rules/batch", { action: "enable", order: 2 });
-  assert.equal(rule.body.reasonCode, "RULE_ENABLED");
-  assert.equal(rule.body.rules.find((entry) => entry.id === "batch").order, 2);
-  const kept = await post("/api/rules/batch", { action: "enable" });
-  assert.equal(kept.body.rules.find((entry) => entry.id === "batch").order, 2, "an enable without an order keeps the recorded one");
-  const disabled = await post("/api/rules/batch", { action: "disable", order: 7 });
-  assert.equal(disabled.body.reasonCode, "RULE_DISABLED");
-  assert.equal(disabled.body.rules.find((entry) => entry.id === "batch").order, 2, "a disable carries no order and keeps the recorded one");
-
-  const gate = { name: "unit", command: ["node", "--version"], root: ".", covers: ["**"], enabled: true, required: true, releaseOnly: false };
-  const declared = await post("/api/gates", { ...gate, order: 4 });
-  assert.equal(declared.response.status, 200);
-  assert.equal(declared.body.gate.order, 4);
-  assert.equal((await post("/api/gates", gate)).body.gate.order, 4, "a redeclaration without an order keeps the recorded one");
-  const refused = await post("/api/gates", { ...gate, order: "0" });
-  assert.equal(refused.response.status, 409);
-  assert.equal(refused.body.reasonCode, "CLI_ARGUMENT_MALFORMED");
-  assert.equal((await post("/api/gates", { ...gate, order: { value: 1 } })).body.reasonCode, "PORTAL_GATE_INPUT_INVALID");
-});
-
-// TCRN-CROSS-SUB-422 (TCRN-CROSS-STORY-513 AC1, AC2; MIN-238 D2): the CLI refuses a model's rule and
-// gate writes, and Atelier's routes, which run them with EINZBERN_SURFACE=atelier, write them. The
-// portal is started from a shell whose surface is not Atelier's, so the surface its writes carry is
-// its own.
-test("SUB-422 (STORY-513 AC2): Atelier switches a rule and saves and deletes a gate that the CLI refuses a model", async (t) => {
-  const fixture = await scratch("tcrn-portal-write-guard-", "TCRN-PORTAL-WRITE-GUARD");
-  const { child, url } = await startPortal({ ...fixture, env: { EINZBERN_SURFACE: "" } });
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const send = (path, method, body) => request(url, path, writeOptions(boot.token, method, body));
-  const libraryVersion = async () => (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version;
-  const before = await libraryVersion();
-  const model = { ...fixture.deviceEnv, EINZBERN_SURFACE: "" };
-  const common = ["--at", "2026-08-11T15:40:00Z", "--actor", "agent:test"];
-  for (const args of [
-    ["rule-enable", "--project", fixture.proseRoot, "--id", "batch", ...common],
-    ["rule-disable", "--project", fixture.proseRoot, "--id", "batch", ...common],
-    ["gates-config-set", "--workspace", fixture.workspace, "--name", "unit", "--command", JSON.stringify(["node", "--version"]), ...common],
-    ["gates-config-remove", "--workspace", fixture.workspace, "--name", "unit", ...common],
-  ]) {
-    const refused = await cliRefusal(args, model);
-    assert.deepEqual([refused.reasonCode, refused.remedy], ["MODEL_WRITE_REFUSED", "change it in Atelier, or cite the Owner's decision with --decided-in minutes:<id>#D<n>"], args[0]);
-  }
-  assert.equal(await libraryVersion(), before, "no refused write appended an event");
-
-  const enabled = await send("/api/rules/batch", "POST", { action: "enable" });
-  assert.deepEqual([enabled.response.status, enabled.body.reasonCode], [200, "RULE_ENABLED"]);
-  const disabled = await send("/api/rules/batch", "POST", { action: "disable" });
-  assert.deepEqual([disabled.response.status, disabled.body.reasonCode], [200, "RULE_DISABLED"]);
-  const gate = { name: "unit", command: ["node", "--version"], root: ".", covers: ["**"], enabled: true, required: true, releaseOnly: false };
-  const saved = await send("/api/gates", "POST", gate);
-  assert.deepEqual([saved.response.status, saved.body.gate], [200, gate]);
-  const deleted = await send("/api/gates", "DELETE", { name: "unit" });
-  assert.deepEqual([deleted.response.status, deleted.body.gates], [200, []]);
-  assert.ok(await libraryVersion() > before, "Atelier's writes are recorded");
-});
-
-test("state surface uses the doctor's eight checks and selected library projection", async (t) => {
-  const fixture = await scratch("tcrn-portal-state-", "TCRN-PORTAL-STATE");
-  const wrapper = join(fixture.base, "status-wrapper.mjs");
-  await writeFile(wrapper, `import { spawnSync } from "node:child_process";
-const actual = spawnSync(process.execPath, [${JSON.stringify(CLI)}, ...process.argv.slice(2)], { encoding: "utf8" });
-if (process.argv[2] === "status" && actual.status === 0) {
-  const body = JSON.parse(actual.stdout);
-  body.engineVersion = "0.11.99";
-  process.stdout.write(JSON.stringify(body));
-} else if (process.argv[2] === "doctor" && actual.status === 0 && process.env.TCRN_TEST_DOCTOR_RED === "registry") {
-  const body = JSON.parse(actual.stdout);
-  body.checks = body.checks.map((check) => check.check === "registry" ? { ...check, ok: false, reasonCode: "PORTAL_TEST_REGISTRY_RED", detail: { causes: ["PORTAL_TEST_REGISTRY_RED"] } } : check);
-  body.ok = false;
-  process.stdout.write(JSON.stringify(body));
-} else {
-  process.stdout.write(actual.stdout || "");
-  process.stderr.write(actual.stderr || "");
-  process.exitCode = actual.status ?? 1;
-}
-`, "utf8");
-  const { child, url } = await startPortal({ ...fixture, env: { TCRN_WORKFLOW_CLI: wrapper } });
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const status = await request(url, "/api/status", readOptions(boot.token));
-  assert.equal(status.body.engineVersion, "0.11.99");
-  const doctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
-  assert.equal(status.body.checks.length, 8);
-  assert.deepEqual(status.body.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), doctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
-  assert.equal(status.body.ok, doctor.ok);
-  assert.equal(status.body.doctorReasonCode, doctor.checks.find((check) => !check.ok)?.reasonCode ?? doctor.reasonCode);
-  const libraryStatus = await cli(["status", "--workspace", fixture.workspace], { ...fixture.deviceEnv, HOME: fixture.home });
-  assert.deepEqual(status.body.library, {
-    versionVector: libraryStatus.versionVector,
-    streams: libraryStatus.streams,
-    rejectedEventCount: libraryStatus.rejectedEventCount,
-    configProjection: libraryStatus.configProjection,
-  });
-
-  child.kill();
-  const redPortal = await startPortal({ ...fixture, env: { TCRN_WORKFLOW_CLI: wrapper, TCRN_TEST_DOCTOR_RED: "registry" } });
-  t.after(() => redPortal.child.kill());
-  const { boot: redBoot } = await readBoot(redPortal.url);
-  const redStatus = await request(redPortal.url, "/api/status", readOptions(redBoot.token));
-  const { stdout: redDoctorOutput } = await execFileAsync(process.execPath, [wrapper, "doctor", "--project", fixture.proseRoot], {
-    encoding: "utf8", env: { ...process.env, ...fixture.deviceEnv, HOME: fixture.home, TCRN_TEST_DOCTOR_RED: "registry" },
-  });
-  const redDoctor = JSON.parse(redDoctorOutput);
-  assert.equal(redStatus.body.ok, false);
-  assert.deepEqual(redStatus.body.checks, redDoctor.checks);
-  assert.equal(redStatus.body.doctorReasonCode, redDoctor.checks.find((check) => !check.ok)?.reasonCode ?? redDoctor.reasonCode);
-  assert.equal(redStatus.body.checks.find((check) => check.check === "registry").reasonCode, "PORTAL_TEST_REGISTRY_RED");
-});
-
-test("AGENTS.md read/write is allow-listed and reconciliation reports line-level findings", async (t) => {
-  const fixture = await scratch("tcrn-portal-agents-", "TCRN-PORTAL-AGENTS");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const text = "# rules\n\nSet retrieval.tau before close.\n";
-  const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text }));
-  assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.equal(written.body.matches, true);
-  assert.equal(written.body.saved, true);
-  // TCRN-CROSS-SUB-338: a save judges and renders nothing.
-  assert.equal(Object.hasOwn(written.body, "render"), false);
-  assert.equal(written.body.text, text);
-  assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), written.body.text);
-  const green = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
-  assert.equal(green.body.ok, true);
-  assert.equal(green.body.findings.length, 0);
-
-  await writeFile(join(fixture.proseRoot, "AGENTS.md"), `${text}\nAlso set retrieval.retiredKey.\n`, "utf8");
-  const red = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
-  assert.equal(red.body.ok, false);
-  assert.equal(red.body.findings[0].kind, "unregistered");
-  assert.equal(red.body.findings[0].line, 5);
-
-  const escapedRead = await request(url, "/api/agents-md?file=" + encodeURIComponent("../AGENTS.md"), readOptions(boot.token));
-  assert.equal(escapedRead.response.status, 404);
-  assert.equal(escapedRead.body.reasonCode, "PORTAL_PATH_ESCAPE");
-  const escapedWrite = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "../AGENTS.md", text: "no" }));
-  assert.equal(escapedWrite.response.status, 404);
-  assert.equal(escapedWrite.body.reasonCode, "PORTAL_PATH_ESCAPE");
-});
-
-// TCRN-CROSS-STORY-482 R3, AC1: the registry's two libraries are listed and can be switched, and
-// each one answers with its own status. The second library carries one event of its own, so the
-// two statuses differ in more than their ids.
-test("STORY-482 AC1: the registry's two libraries can be switched, and each answers with its own status", async (t) => {
-  const fixture = await scratch("tcrn-portal-libraries-", "TCRN-PORTAL-LIBRARIES");
-  await cli(["settings-set", "--workspace", fixture.second.library, "--at", "2026-08-11T15:01:00Z", "--actor", "agent:test", "--key", "artifact.language", "--value", "zh-CN"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
-  const first = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
-  const second = await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv);
-  const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
-  const secondDoctor = await cli(["doctor", "--project", fixture.second.project], { ...fixture.deviceEnv, HOME: fixture.home });
-  const { child, url, listening } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  assert.equal(listening.selectedBy, "argument");
-  const { boot } = await readBoot(url);
-  const listed = await request(url, "/api/libraries", readOptions(boot.token));
-  assert.equal(listed.body.reasonCode, "PORTAL_LIBRARIES_READY");
-  // The registry's name for a library is what project-list says of its project: its canonical name
-  // (TCRN-CROSS-INIT-053 R46 I01; the fixture names each project by its external key).
-  const firstName = (await cli(["project-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find(record => record.id === fixture.projectId).name;
-  const secondName = (await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.find(record => record.id === fixture.second.projectId).name;
-  assert.deepEqual([firstName, secondName], ["TCRN-PORTAL-LIBRARIES", "TCRN-PORTAL-LIBRARIES-SECOND"]);
-  assert.equal(boot.libraryName, firstName);
-  assert.deepEqual(listed.body.libraries, [
-    { projectPath: fixture.proseRoot, projectId: fixture.projectId, configurationProjectId: null, libraryId: first.workspaceId, libraryPath: fixture.workspace, name: firstName, chain: null },
-    { projectPath: fixture.second.project, projectId: fixture.second.projectId, configurationProjectId: null, libraryId: second.workspaceId, libraryPath: fixture.second.library, name: secondName, chain: null },
-  ]);
-  assert.deepEqual(listed.body.selected, { ...listed.body.libraries[0], configurationProjectId: fixture.projectId });
-  assert.deepEqual(boot.libraries, listed.body.libraries);
-
-  const statusNow = async () => (await request(url, "/api/status", readOptions(boot.token))).body;
-  const languageNow = async () => (await request(url, "/api/settings", readOptions(boot.token))).body.settings.find((entry) => entry.key === "artifact.language").currentValue;
-  let status = await statusNow();
-  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, first.version]);
-  assert.equal(status.ok, firstDoctor.ok);
-  assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), firstDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
-  assert.deepEqual(status.library.versionVector, first.versionVector);
-  assert.equal(status.library.rejectedEventCount, first.rejectedEventCount);
-  assert.deepEqual(status.library.configProjection, first.configProjection);
-  assert.equal(await languageNow(), "en");
-
-  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.second.project }));
-  assert.equal(switched.response.status, 200);
-  assert.equal(switched.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
-  assert.deepEqual(switched.body.library, { ...listed.body.libraries[1], configurationProjectId: listed.body.libraries[1].projectId });
-  assert.equal(switched.body.libraryName, secondName);
-  assert.equal(switched.body.workspace, fixture.second.library);
-  assert.equal(switched.body.proseRoot, fixture.second.project);
-  status = await statusNow();
-  assert.deepEqual([status.workspaceId, status.version], [second.workspaceId, second.version]);
-  assert.equal(status.ok, secondDoctor.ok);
-  assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), secondDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
-  assert.deepEqual(status.library.versionVector, second.versionVector);
-  assert.equal(status.library.rejectedEventCount, second.rejectedEventCount);
-  assert.deepEqual(status.library.configProjection, second.configProjection);
-  assert.equal(await languageNow(), "zh-CN");
-  assert.deepEqual((await request(url, "/api/libraries", readOptions(boot.token))).body.selected, { ...listed.body.libraries[1], configurationProjectId: fixture.second.projectId });
-
-  // A library is named by its id too; the switch back reads the first library again.
-  const back = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: first.workspaceId }));
-  assert.equal(back.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
-  status = await statusNow();
-  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, first.version]);
-  assert.equal(status.ok, firstDoctor.ok);
-  assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), firstDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
-  assert.deepEqual(status.library.versionVector, first.versionVector);
-
-  const unknown = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: join(fixture.base, "not-a-library") }));
-  assert.equal(unknown.response.status, 404);
-  assert.equal(unknown.body.reasonCode, "PORTAL_LIBRARY_UNKNOWN");
-  assert.equal((await statusNow()).workspaceId, first.workspaceId, "a refused switch leaves the selection alone");
-  // The partition catalog and its switch are gone with the container.
-  for (const path of ["/api/partitions", "/api/partition"]) {
-    const retired = await request(url, path, readOptions(boot.token));
-    assert.equal(retired.response.status, 404, path);
-    assert.equal(retired.body.reasonCode, "PORTAL_ROUTE_UNKNOWN", path);
-  }
-});
-
-test("portal serves live catalog, commits a governed write, and refuses an untokened one", async (t) => {
-  const fixture = await scratch("tcrn-portal-conservation-read-", "TCRN-PORTAL-CONSERVATION-READ");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { page, boot } = await readBoot(url);
-  assert.ok(!page.includes("__PORTAL_BOOT__"));
-  assert.ok(boot.token.length >= 32);
-  const catalog = await request(url, "/api/settings", readOptions(boot.token));
-  const engineCatalog = await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv);
-  assert.deepEqual(catalog.body.settings, engineCatalog.settings);
-  assert.ok(!page.includes("gate-close"));
-  assert.match(page, /data-setting-control/u);
-  assert.ok(catalog.body.settings.every((entry) => entry.controlType));
-  const untokened = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "retrieval.tau", value: "3" }) });
-  assert.equal(untokened.response.status, 403);
-  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
-  const committed = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "retrieval.tau", value: "3" }));
-  assert.equal(committed.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(committed.body.setting.value, "3");
-  assert.equal(committed.body.readback.currentValue, "3");
-  assert.ok(committed.body.receiptDigest && committed.body.headEventHash);
-  const refused = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "bogus.key", value: "x" }));
-  assert.equal(refused.response.status, 409);
-  assert.equal(refused.body.reasonCode, "SETTINGS_KEY_UNREGISTERED");
-  const status = await request(url, "/api/status", readOptions(boot.token));
-  assert.equal(status.body.checks.length, 8);
-  assert.ok(status.body.checks.every((check) => Object.hasOwn(check, "check") && Object.hasOwn(check, "reasonCode") && Object.hasOwn(check, "detail")));
-  assert.deepEqual(Object.keys(status.body.library).sort(), ["configProjection", "rejectedEventCount", "streams", "versionVector"]);
-  const commands = await request(url, "/api/commands", readOptions(boot.token));
-  assert.ok(commands.body.commands.some((entry) => entry.name === "settings-set" && entry.mutates));
-});
-
-test("reconciliation includes custom variable names as well as registered settings", async (t) => {
-  const fixture = await scratch("tcrn-portal-conservation-reconcile-", "TCRN-PORTAL-CONSERVATION-RECONCILE");
-  await cli(["variable-set", "--workspace", fixture.workspace, "--at", new Date().toISOString(), "--actor", "agent:test", "--name", "deploy.host", "--type", "string", "--value", "build.example.com"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const greenText = "# AGENTS.md\n\nSet retrieval.tau and deploy.host before close.\n";
-  await writeFile(join(fixture.proseRoot, "AGENTS.md"), greenText, "utf8");
-  const green = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
-  assert.equal(green.body.ok, true);
-  assert.equal(green.body.findings.length, 0);
-  assert.ok(green.body.rows.some((row) => row.key === "retrieval.tau" && row.registered));
-  assert.ok(green.body.rows.some((row) => row.key === "deploy.host" && row.registered), "custom variable names participate in reconciliation");
-  await writeFile(join(fixture.proseRoot, "AGENTS.md"), `${greenText}\nAlso set retrieval.retiredKey.\n`, "utf8");
-  const red = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
-  assert.equal(red.body.ok, false);
-  assert.equal(red.body.findings[0].kind, "unregistered");
-  assert.equal(red.body.findings[0].line, 5);
-  await writeFile(join(fixture.proseRoot, "AGENTS.md"), greenText, "utf8");
-  assert.equal((await request(url, "/api/agents-md/reconcile", readOptions(boot.token))).body.ok, true);
-});
-
-// TCRN-CROSS-SUB-338 (STORY-483 R3; MIN-235 D4): a save writes the file and judges it through
-// rule-list; it renders no managed section and writes nothing to the library.
-test("AGENTS.md save writes the file, judges it without rendering, and reads it back", async (t) => {
-  const fixture = await scratch("tcrn-portal-conservation-prose-", "TCRN-PORTAL-CONSERVATION-PROSE");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const text = "# AGENTS.md\n\nOwner actions stay parked.\n";
-  const version = (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version;
-  const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text }));
-  assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.equal(written.body.matches, true);
-  assert.equal(Object.hasOwn(written.body, "render"), false);
-  // Every rule the engine lists, in its order, reads disabled.
-  const engineRules = (await cli(["rule-list", "--project", fixture.proseRoot], fixture.deviceEnv)).rules.map((rule) => rule.id);
-  assert.ok(engineRules.includes("batch"), "the engine lists its built-in rules");
-  assert.deepEqual(written.body.rules.map((rule) => [rule.id, rule.state]), engineRules.map((id) => [id, "disabled"]));
-  assert.deepEqual(written.body.pending, []);
-  assert.equal(written.body.text, text, "no managed section was rendered into the saved text");
-  assert.equal((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version, version, "a save writes nothing to the library");
-  assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), written.body.text);
-  const readback = await request(url, "/api/agents-md", readOptions(boot.token));
-  assert.equal(readback.body.text, written.body.text);
-  assert.equal(readback.body.path, join(fixture.proseRoot, "AGENTS.md"));
-  const escapedRead = await request(url, "/api/agents-md?file=" + encodeURIComponent("../AGENTS.md"), readOptions(boot.token));
-  assert.equal(escapedRead.response.status, 404);
-  assert.equal(escapedRead.body.reasonCode, "PORTAL_PATH_ESCAPE");
-  const escapedWrite = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "../AGENTS.md", text: "no" }));
-  assert.equal(escapedWrite.response.status, 404);
-  assert.equal(escapedWrite.body.reasonCode, "PORTAL_PATH_ESCAPE");
-});
-
-// One managed section as a file holds it, markers included (the format managed-sections.ts
-// documents), or null.
-function managedSection(text, id) {
-  const match = new RegExp(`<!-- einzbern:section id=${id} rev=(\\d+) digest=([a-f0-9]{64}) -->\\n([\\s\\S]*?)<!-- einzbern:section-end id=${id} -->\\n?`, "u").exec(text);
-  return match === null ? null : { raw: match[0], rev: Number(match[1]), digest: match[2], body: match[3] };
-}
-
-// A section body as its digest is taken: LF line ends, no trailing blanks, one final line feed.
-function normalizedSection(text) {
-  const joined = text.replace(/\r\n?/gu, "\n").split("\n").map((line) => line.replace(/[ \t]+$/u, "")).join("\n").replace(/\n+$/u, "");
-  return joined === "" ? "" : `${joined}\n`;
-}
-const sectionDigest = (body) => createHash("sha256").update(normalizedSection(body), "utf8").digest("hex");
-
-// TCRN-CROSS-SUB-338 (STORY-483 AC2; MIN-235 D4, judgment 1.5 (a)): an edit saved through Atelier
-// is judged, not rendered. The batch section changed by one character reads user-modified at
-// once, AGENTS.md is the bytes saved, and nothing goes pending. A section goes pending only when an
-// engine write renders the managed sections (a variable write here); keep then makes it the
-// user's, and the engine writes it no more.
-test("rules routes expose state, enable a rule, judge a saved edit as user-modified, and settle a pending section with keep", async (t) => {
-  const fixture = await scratch("tcrn-portal-rules-", "TCRN-PORTAL-RULES");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const agentsPath = join(fixture.proseRoot, "AGENTS.md");
-  const batchOf = (body) => body.rules.find((rule) => rule.id === "batch");
-  const libraryVersion = async () => (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version;
-  const listed = await request(url, "/api/rules", readOptions(boot.token));
-  assert.equal(listed.body.reasonCode, "RULE_LIST_READY");
-  // The route lists every rule the engine lists, in its order.
-  const engineRules = (await cli(["rule-list", "--project", fixture.proseRoot], fixture.deviceEnv)).rules.map((rule) => rule.id);
-  assert.ok(engineRules.includes("batch"), "the engine lists its built-in rules");
-  assert.deepEqual(listed.body.rules.map((rule) => rule.id), engineRules);
-  assert.ok(listed.body.rules.every((rule) => rule.state === "disabled"));
-
-  const enabled = await request(url, "/api/rules/batch", writeOptions(boot.token, "POST", { action: "enable" }));
-  assert.equal(enabled.body.reasonCode, "RULE_ENABLED");
-  assert.equal(batchOf(enabled.body).state, "enabled");
-  const original = await readFile(agentsPath, "utf8");
-  assert.match(original, /id=rule:batch/u);
-  const edited = original.replace("All open Stories", "All open stories");
-  assert.equal([...edited].filter((character, index) => character !== [...original][index]).length, 1, "one character of the rule's text");
-
-  // AC2: the save is judged: user-modified, the file is the bytes saved, and nothing is pending
-  // or written to the library.
-  const before = await libraryVersion();
-  const saved = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: edited }));
-  assert.equal(saved.response.status, 200);
-  assert.equal(saved.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.equal(batchOf(saved.body).state, "user-modified");
-  assert.deepEqual(saved.body.pending, []);
-  assert.equal(Object.hasOwn(saved.body, "render"), false);
-  assert.equal(saved.body.text, edited);
-  assert.equal(await readFile(agentsPath, "utf8"), edited, "AGENTS.md is the bytes saved; nothing rendered over them");
-  assert.equal(await libraryVersion(), before, "a save writes nothing to the library");
-  const judged = await request(url, "/api/rules", readOptions(boot.token));
-  assert.equal(batchOf(judged.body).state, "user-modified");
-  assert.deepEqual(judged.body.pending, []);
-
-  // An engine write renders the managed sections: the section the user changed is left as it is
-  // and goes pending.
-  const variable = await request(url, "/api/variables", writeOptions(boot.token, "POST", { name: "deploy.host", type: "string", value: "build.example.com", exports: ["agents"] }));
-  assert.equal(variable.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
-  assert.deepEqual(variable.body.render.pending, [{ id: "rule:batch", file: "AGENTS.md" }]);
-  const pending = await request(url, "/api/rules", readOptions(boot.token));
-  assert.equal(batchOf(pending.body).state, "pending");
-  assert.deepEqual(pending.body.pending, [{ id: "rule:batch", file: "AGENTS.md", ruleId: "batch" }]);
-  assert.equal(managedSection(await readFile(agentsPath, "utf8"), "rule:batch").raw, managedSection(edited, "rule:batch").raw);
-
-  // keep makes the section the user's: it reads user-modified, and the engine writes it no more.
-  const kept = await request(url, "/api/rules/resolve", writeOptions(boot.token, "POST", { section: "rule:batch", action: "keep" }));
-  assert.equal(kept.body.reasonCode, "MANAGED_SECTION_RESOLVED");
-  assert.deepEqual(kept.body.pending, []);
-  assert.equal(batchOf(kept.body).state, "user-modified");
-  const again = await request(url, "/api/variables", writeOptions(boot.token, "POST", { name: "deploy.host", type: "string", value: "stage.example.com", exports: ["agents"] }));
-  assert.equal(again.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
-  assert.deepEqual(again.body.render.pending, []);
-  const settled = await readFile(agentsPath, "utf8");
-  assert.match(settled, /stage\.example\.com/u, "the engine still renders the sections it owns");
-  assert.equal(managedSection(settled, "rule:batch").raw, managedSection(edited, "rule:batch").raw, "the kept section is the user's text");
-  assert.equal(batchOf((await request(url, "/api/rules", readOptions(boot.token))).body).state, "user-modified");
-
-  const forcedOff = await request(url, "/api/rules/batch", writeOptions(boot.token, "POST", { action: "disable", force: true }));
-  assert.equal(forcedOff.body.reasonCode, "RULE_DISABLED");
-  assert.equal(forcedOff.body.rules.find((rule) => rule.id === "batch").state, "disabled");
-  assert.doesNotMatch(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /id=rule:batch/u);
-});
-
-// TCRN-CROSS-SUB-338 (STORY-483 AC3): a project that enabled batch processing at v1, read by an
-// engine that ships v3. No verb records a rule at another version than the one this engine
-// ships, so the fixture is left the way an older engine would have left it: this engine enables
-// batch, and then the section in AGENTS.md (its text and digest), the rule's recorded version and
-// the section record's digest are put back to v1, the last two through the test forger. The
-// section's rev is its own revision, the first either way.
-test("SUB-338 (STORY-483 AC3): batch enabled at v1 reads update-available at the route, and neither the read nor a save writes AGENTS.md", async (t) => {
-  const fixture = await scratch("tcrn-portal-rule-v1-", "TCRN-PORTAL-RULE-V1");
-  let portal = null;
-  t.after(async () => { portal?.child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const agentsPath = join(fixture.proseRoot, "AGENTS.md");
-  await cli(["rule-enable", "--project", fixture.proseRoot, "--id", "batch", "--at", "2026-08-11T15:20:00Z", "--actor", "agent:test"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
-  const enabled = await readFile(agentsPath, "utf8");
-  const v3 = managedSection(enabled, "rule:batch");
-  assert.equal(sectionDigest(v3.body), v3.digest, "the digest taken here is the engine's");
-  const v1Body = normalizedSection(await readFile(join(portalRoot, "..", "tests", "fixtures", "rules", "batch-v1.zh.md"), "utf8"));
-  assert.notEqual(v1Body, normalizedSection(v3.body));
-  const v1Digest = sectionDigest(v1Body);
-  await writeFile(agentsPath, enabled.replace(v3.raw, `<!-- einzbern:section id=rule:batch rev=${v3.rev} digest=${v1Digest} -->\n${v1Body}<!-- einzbern:section-end id=rule:batch -->\n`), "utf8");
-  let forged = 0;
-  await forgeOwnStream(fixture.workspace, (events) => events.map((event) => {
-    const record = event.payload?.operation === "config.record.set" ? event.payload.record : null;
-    if (record?.collection === "rule" && record.key === "batch") { record.value.version = 1; forged += 1; }
-    if (record?.collection === "managed-section" && record.key === "AGENTS.md#rule:batch") { record.value.digest = v1Digest; forged += 1; }
-    return { occurredAt: event.occurredAt, payload: event.payload, clock: event.clock };
-  }));
-  assert.equal(forged, 2, "the rule's record and its section's record");
-  const v1File = await readFile(agentsPath, "utf8");
-
-  portal = await startPortal(fixture);
-  const { url } = portal;
-  const { boot } = await readBoot(url);
-  const listed = await request(url, "/api/rules", readOptions(boot.token));
-  assert.equal(listed.response.status, 200);
-  assert.deepEqual(withoutSource(listed.body.rules.find((rule) => rule.id === "batch")), { id: "batch", version: 3, recordedVersion: 1, fileVersion: 1, section: "rule:batch", state: "update-available" });
-  assert.deepEqual(listed.body.pending, []);
-  assert.equal(await readFile(agentsPath, "utf8"), v1File, "GET /api/rules writes nothing");
-
-  // Saving those bytes is judged and renders nothing, so the v1 section stays as it is.
-  const saved = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: v1File }));
-  assert.equal(saved.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.equal(saved.body.rules.find((rule) => rule.id === "batch").state, "update-available");
-  assert.deepEqual(saved.body.pending, []);
-  assert.equal(await readFile(agentsPath, "utf8"), v1File);
-});
-
-test("INIT-053 AC2: batch enabled at v2 reads update-available at the route, and neither the read nor a save writes AGENTS.md", async (t) => {
-  const fixture = await scratch("tcrn-portal-rule-v2-", "TCRN-PORTAL-RULE-V2");
-  let portal = null;
-  t.after(async () => { portal?.child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const agentsPath = join(fixture.proseRoot, "AGENTS.md");
-  await cli(["rule-enable", "--project", fixture.proseRoot, "--id", "batch", "--at", "2026-08-11T15:20:00Z", "--actor", "agent:test"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
-  const enabled = await readFile(agentsPath, "utf8");
-  const v3 = managedSection(enabled, "rule:batch");
-  assert.equal(sectionDigest(v3.body), v3.digest, "the digest taken here is the engine's");
-  const v2Body = normalizedSection(await readFile(join(portalRoot, "..", "tests", "fixtures", "rules", "batch-v2.zh.md"), "utf8"));
-  assert.notEqual(v2Body, normalizedSection(v3.body));
-  const v2Digest = sectionDigest(v2Body);
-  await writeFile(agentsPath, enabled.replace(v3.raw, `<!-- einzbern:section id=rule:batch rev=${v3.rev} digest=${v2Digest} -->\n${v2Body}<!-- einzbern:section-end id=rule:batch -->\n`), "utf8");
-  let forged = 0;
-  await forgeOwnStream(fixture.workspace, (events) => events.map((event) => {
-    const record = event.payload?.operation === "config.record.set" ? event.payload.record : null;
-    if (record?.collection === "rule" && record.key === "batch") { record.value.version = 2; forged += 1; }
-    if (record?.collection === "managed-section" && record.key === "AGENTS.md#rule:batch") { record.value.digest = v2Digest; forged += 1; }
-    return { occurredAt: event.occurredAt, payload: event.payload, clock: event.clock };
-  }));
-  assert.equal(forged, 2, "the rule's record and its section's record");
-  const v2File = await readFile(agentsPath, "utf8");
-
-  portal = await startPortal(fixture);
-  const { url } = portal;
-  const { boot } = await readBoot(url);
-  const listed = await request(url, "/api/rules", readOptions(boot.token));
-  assert.equal(listed.response.status, 200);
-  assert.deepEqual(withoutSource(listed.body.rules.find((rule) => rule.id === "batch")), { id: "batch", version: 3, recordedVersion: 2, fileVersion: 1, section: "rule:batch", state: "update-available" });
-  assert.deepEqual(listed.body.pending, []);
-  assert.equal(await readFile(agentsPath, "utf8"), v2File, "GET /api/rules writes nothing");
-
-  // Saving those bytes is judged and renders nothing, so the v2 section stays as it is.
-  const saved = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: v2File }));
-  assert.equal(saved.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.equal(saved.body.rules.find((rule) => rule.id === "batch").state, "update-available");
-  assert.deepEqual(saved.body.pending, []);
-  assert.equal(await readFile(agentsPath, "utf8"), v2File);
-});
-
-test("the page boots with the shipped locale contract and needs nothing outside the portal", async (t) => {
-  const fixture = await scratch("tcrn-portal-conservation-locale-", "TCRN-PORTAL-CONSERVATION-LOCALE");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const response = await fetch(url);
-  assert.equal(response.status, 200);
-  const page = await response.text();
-  assert.ok(!page.includes("__PORTAL_BOOT__"));
-  const boot = JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]);
-  const { LOCALE_CONTRACT } = await import("../locale-contract.mjs");
-  assert.deepEqual(boot.supportedLocales, [...LOCALE_CONTRACT.supportedLocales]);
-  assert.equal(boot.fallbackLocale, LOCALE_CONTRACT.fallbackLocale);
-  assert.equal(boot.localeMetadata.length, LOCALE_CONTRACT.localeMetadata.length);
-  assert.ok(boot.localeMetadata.every((entry) => entry.nativeName.length > 0));
-  const locales = await (await fetch(new URL("/locales.js", url))).text();
-  assert.match(locales, /window\.PORTAL_LOCALES/u);
-  for (const locale of LOCALE_CONTRACT.supportedLocales) assert.ok(locales.includes(`"${locale}"`) || locales.includes(`${locale}:`));
-});
-
-// TCRN-CROSS-STORY-482 R3: the Rules page belongs to the selected library's registered project,
-// so a switch moves it; and the switcher asks the registry on every read (INC-203), so a library
-// registered after the portal started can be chosen without a restart.
-test("switching the library moves the Rules page to its project, and a library registered later can be chosen", async (t) => {
-  const fixture = await scratch("tcrn-portal-conservation-libraries-", "TCRN-PORTAL-CONSERVATION-LIBRARIES");
-  await writeFile(join(fixture.proseRoot, "AGENTS.md"), "# first project\n", "utf8");
-  await writeFile(join(fixture.second.project, "AGENTS.md"), "# second project\n", "utf8");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  assert.equal(boot.proseRoot, fixture.proseRoot);
-  assert.equal((await request(url, "/api/agents-md", readOptions(boot.token))).body.text, "# first project\n");
-
-  const selected = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.second.library }));
-  assert.equal(selected.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
-  assert.equal(selected.body.proseRoot, fixture.second.project);
-  const prose = await request(url, "/api/agents-md", readOptions(boot.token));
-  assert.equal(prose.body.text, "# second project\n");
-  assert.equal(prose.body.path, join(fixture.second.project, "AGENTS.md"));
-  // TCRN-CROSS-SUB-338: the save lands in the second project and is judged there, against the
-  // second library, and nothing is rendered into it. Batch is enabled in the second library only,
-  // so once the save takes its section out it reads removed-from-file (in the first, disabled).
-  await cli(["rule-enable", "--project", fixture.second.project, "--id", "batch", "--at", "2026-08-11T15:30:00Z", "--actor", "agent:test"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
-  const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: "# second project, edited\n" }));
-  assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.equal(written.body.text, "# second project, edited\n");
-  assert.equal(written.body.rules.find((rule) => rule.id === "batch").state, "removed-from-file");
-  assert.equal(await readFile(join(fixture.second.project, "AGENTS.md"), "utf8"), written.body.text);
-  assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), "# first project\n", "the first project's rules are untouched");
-  const catalog = await request(url, "/api/settings", readOptions(boot.token));
-  assert.deepEqual(catalog.body.settings, (await cli(["settings-catalog", "--workspace", fixture.second.library], fixture.deviceEnv)).settings);
-
-  const third = { project: join(fixture.base, "third-project"), library: join(fixture.base, "third-project", ".ether") };
-  await registeredLibrary(fixture.deviceEnv, third.project, third.library, "TCRN-PORTAL-CONSERVATION-THIRD", "2026-08-11T15:02:00Z");
-  const listed = await request(url, "/api/libraries", readOptions(boot.token));
-  assert.deepEqual(listed.body.libraries.map((library) => library.projectPath), [fixture.proseRoot, fixture.second.project, third.project]);
-  const later = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: third.library }));
-  assert.equal(later.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
-  assert.equal(later.body.proseRoot, third.project);
-});
-
-test("launcher generation emits regular files that carry only --library, starts the macOS launcher, and names a library the device has not registered", async (t) => {
-  const fixture = await scratch("tcrn-portal-conservation-launchers-", "TCRN-PORTAL-LAUNCH");
-  const outputDir = join(fixture.base, "launchers");
-  await mkdir(outputDir);
-  t.after(() => rm(fixture.base, { recursive: true, force: true }));
-  const generator = join(portalRoot, "scripts", "generate-launchers.mjs");
-  const report = JSON.parse((await execFileAsync(process.execPath, [generator, "--library", fixture.workspace, "--output-dir", outputDir, "--port", "0"], { encoding: "utf8" })).stdout);
-  assert.equal(report.reasonCode, "PORTAL_LAUNCHERS_GENERATED");
-  assert.equal(report.library, fixture.workspace);
-  assert.equal(report.symlinks, false);
-  assert.equal(report.files.length, 3);
-  for (const file of report.files) {
-    assert.equal((await lstat(file)).isFile(), true);
-    assert.equal((await lstat(file)).isSymbolicLink(), false);
-    const text = await readFile(file, "utf8");
-    assert.match(text, /--library/u);
-    assert.doesNotMatch(text, /--container|--prose-root|--workspace|--partition/u);
-  }
-  const command = report.files.find((file) => file.endsWith(".command"));
-  assert.match(await readFile(command, "utf8"), /^#!\/bin\/sh/u);
-  const launcher = spawn(command, [], { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...fixture.deviceEnv, HOME: fixture.home }, stdio: ["ignore", "pipe", "pipe"] });
-  t.after(() => launcher.kill());
-  const url = await new Promise((resolve, reject) => { let buffer = ""; const timer = setTimeout(() => reject(new Error(`launcher timeout: ${buffer}`)), 15000); launcher.stdout.on("data", (chunk) => { buffer += chunk; const line = buffer.split("\n").find((entry) => entry.includes("PORTAL_LISTENING")); if (line) { clearTimeout(timer); resolve(JSON.parse(line).url); } }); launcher.on("exit", (code) => { clearTimeout(timer); reject(new Error(`launcher exited ${code}: ${buffer}`)); }); });
-  const { boot: launcherBoot } = await readBoot(url);
-  assert.equal(launcherBoot.library.libraryPath, fixture.workspace);
-  assert.equal((await request(url, "/api/libraries", readOptions(launcherBoot.token))).body.libraries.length, 2);
-
-  // --library is optional: without it the launcher names no library and the portal chooses at start.
-  const plainOutput = join(fixture.base, "plain-launchers");
-  await mkdir(plainOutput);
-  const plain = JSON.parse((await execFileAsync(process.execPath, [generator, "--output-dir", plainOutput, "--port", "0"], { encoding: "utf8" })).stdout);
-  assert.equal(plain.library, null);
-  for (const file of plain.files) assert.doesNotMatch(await readFile(file, "utf8"), /--library/u);
-
-  const vanished = join(fixture.base, "vanished-library");
-  const badOutput = join(fixture.base, "bad-launchers");
-  await mkdir(badOutput);
-  await execFileAsync(process.execPath, [generator, "--library", vanished, "--output-dir", badOutput, "--port", "0"], { encoding: "utf8" });
-  let failure;
-  try { await execFileAsync(join(badOutput, "atelier.sh"), [], { encoding: "utf8", env: { ...process.env, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...fixture.deviceEnv, HOME: fixture.home } }); } catch (error) { failure = error; }
-  assert.ok(failure);
-  assert.match(String(failure.stderr), /PORTAL_LIBRARY_UNKNOWN/u);
-});
-
-test("i18n proof turns red when the engine drops enum allowedValues", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-conservation-i18n-")));
-  t.after(() => rm(base, { recursive: true, force: true }));
-  const shim = join(base, "strip-catalog.mjs");
-  await writeFile(shim, `import { execFileSync } from "node:child_process"; const output = execFileSync(process.execPath, [process.env.TCRN_REAL_CLI, ...process.argv.slice(2)], { encoding: "utf8" }); const body = JSON.parse(output); if (process.argv[2] === "settings-catalog") for (const entry of body.settings ?? []) delete entry.allowedValues; process.stdout.write(JSON.stringify(body));\n`, "utf8");
-  let failure;
-  try { await execFileAsync(process.execPath, [join(portalRoot, "scripts", "i18n-proof.mjs")], { encoding: "utf8", env: { ...process.env, TCRN_WORKFLOW_CLI: shim, TCRN_REAL_CLI: CLI } }); } catch (error) { failure = error; }
-  assert.ok(failure);
-  const report = JSON.parse(failure.stdout);
-  assert.equal(report.ok, false);
-  assert.equal(report.reasonCode, "I18N_CONTRACT_VIOLATION");
-  const leg = report.legs.find((entry) => entry.leg === "setting-descriptions");
-  assert.equal(leg.reasonCode, "SETTING_ENUM_VALUES_GAP");
-  // TCRN-CROSS-STORY-484 R3 retired the other enum settings; artifact.language is the one left.
-  assert.ok(leg.enumMissingAllowedValues.includes("artifact.language"));
-});
-
-test("i18n full-table proof turns red when an existing translation regresses", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-i18n-full-table-")));
-  t.after(() => rm(base, { recursive: true, force: true }));
-  const sourcePath = join(base, "locales-mutated.js");
-  const source = await readFile(join(portalRoot, "locales.js"), "utf8");
-  const anchor = '"receipt.title": "エンジンの操作記録"';
-  assert.equal(source.split(anchor).length, 2, "the Japanese fixture matches exactly one current translation");
-  await writeFile(sourcePath, source.replace(anchor, '"receipt.title": "Engine operation record"'), "utf8");
-  let failure;
-  try {
-    await execFileAsync(process.execPath, [join(portalRoot, "scripts", "i18n-proof.mjs")], { encoding: "utf8", env: { ...process.env, TCRN_PORTAL_LOCALES_SOURCE: sourcePath } });
-  } catch (error) { failure = error; }
-  assert.ok(failure);
-  const report = JSON.parse(failure.stdout);
-  const leg = report.legs.find((entry) => entry.leg === "translation-full-table");
-  assert.equal(leg.reasonCode, "FULL_LOCALE_TABLE_REALITY_GAP");
-  assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("receipt.title")));
-});
-
-test("i18n invariant policy does not waive translated text under the shortcut key", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-i18n-shortcut-")));
-  t.after(() => rm(base, { recursive: true, force: true }));
-  const sourcePath = join(base, "locales-mutated.js");
-  const source = await readFile(join(portalRoot, "locales.js"), "utf8");
-  assert.equal(source.split('"search.command": "⌘K"').length, 6);
-  await writeFile(sourcePath, source.replaceAll('"search.command": "⌘K"', '"search.command": "Keyboard command"'), "utf8");
-  let failure;
-  try { await execFileAsync(process.execPath, [join(portalRoot, "scripts", "i18n-proof.mjs")], { encoding: "utf8", env: { ...process.env, TCRN_PORTAL_LOCALES_SOURCE: sourcePath } }); } catch (error) { failure = error; }
-  assert.ok(failure);
-  const leg = JSON.parse(failure.stdout).legs.find((entry) => entry.leg === "translation-full-table");
-  assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("search.command")));
-});
-
-// TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5): no budget bounds the sum of a crest's card bodies, and
-// knowledge.aggregateBytes, the setting that set one, is retired. Its label, its description and its
-// concept explanation -- the copy TCRN-CROSS-SUB-412 wrote for the live-body count -- leave all five
-// languages, and no text there still names the key.
-test("SUB-310 R17 (MIN-238 D1): the retired knowledge total setting has no copy left, in any language", async () => {
-  const sandbox = {};
-  new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
-  assert.deepEqual(Object.keys(sandbox.PORTAL_LOCALES).sort(), ["en", "fr", "ja", "ko", "zh-CN"]);
-  for (const [locale, table] of Object.entries(sandbox.PORTAL_LOCALES)) {
-    for (const key of ["setting.knowledge.aggregateBytes.label", "setting.knowledge.aggregateBytes.description", "concept.setting.knowledge.aggregateBytes"]) {
-      assert.equal(Object.hasOwn(table, key), false, `${locale} ${key}`);
-    }
-    assert.deepEqual(Object.entries(table).filter(([key, text]) => `${key} ${text}`.includes("knowledge.aggregateBytes")).map(([key]) => key), [], locale);
-  }
-});
-
-// TCRN-CROSS-SUB-423 (STORY-513 R2; MIN-238 D3): the gate page's cover input, its cover column and the
-// column's add and remove buttons say what a cover is, in all five languages: a path glob or a work id,
-// the two forms `gates-config-set --covers` takes (docs/wiki/Gates.md). None says any more that a cover
-// is a path, and the page's own text before a language applies is the English copy.
-test("SUB-423 (STORY-513 R2, MIN-238 D3): the cover input, the cover column and its add and remove buttons say a path glob or a work id, in every language", async () => {
-  const source = await readFile(join(portalRoot, "index.html"), "utf8");
-  assert.match(source, /data-i18n="gates\.coversInput">[^<]*<\/span><textarea [^>]*name="covers"/u, "the cover input is labelled by gates.coversInput");
-  assert.match(source, /data-ui="gate-config-table"[^>]*>[\s\S]*?role="columnheader" data-i18n="gates\.columnCovers"/u, "the cover column is headed by gates.columnCovers");
-  assert.match(source, /data-gate-add-cover>\$\{esc\(t\("gates\.addCover"\)\)\}<\/button>/u, "the add button reads gates.addCover");
-  assert.match(source, /data-gate-remove-cover aria-label="\$\{esc\(t\("gates\.removeCover"\)\)\}"/u, "the remove button is named by gates.removeCover");
-  const sandbox = {};
-  new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
-  for (const key of ["gates.coversInput", "gates.columnCovers"]) {
-    const fallback = source.match(new RegExp(`data-i18n="${key.replace(".", "\\.")}">([^<]*)<`, "u"))?.[1];
-    assert.equal(fallback, sandbox.PORTAL_LOCALES.en[key], `${key}: the page's own text is the English copy`);
-  }
-  const terms = {
-    en: { says: /path glob or (?:a )?work id/u, retired: /covered path|Remove path/iu },
-    "zh-CN": { says: /路径 glob 或 work id/u, retired: /覆盖路径|移除路径/u },
-    ja: { says: /パスの glob または work id/u, retired: /対象パス|パスを削除/u },
-    ko: { says: /경로 glob 또는 work id/u, retired: /대상 경로|경로 제거/u },
-    fr: { says: /glob de chemin ou (?:un )?work id/u, retired: /Chemins couverts|Ajouter un chemin|Retirer le chemin/u },
-  };
-  assert.deepEqual(Object.keys(sandbox.PORTAL_LOCALES).sort(), Object.keys(terms).sort());
-  for (const [locale, { says, retired }] of Object.entries(terms)) {
-    for (const key of ["gates.coversInput", "gates.columnCovers", "gates.addCover", "gates.removeCover"]) {
-      const text = sandbox.PORTAL_LOCALES[locale][key];
-      assert.match(text, says, `${locale} ${key}`);
-      assert.doesNotMatch(text, retired, `${locale} ${key}`);
-    }
-  }
-});
-
-// TCRN-CROSS-STORY-467 R3: the execution route and its page left with the dispatch-* verbs, and the
-// dispatch mode setting with TCRN-CROSS-STORY-484 R3. The owner's concurrency limit is a registered
-// setting, written and read back through settings.
-test("execution settings: the owner scenario writes through settings while the execution route is gone", async (t) => {
-  const fixture = await scratch("tcrn-portal-conservation-execution-", "TCRN-PORTAL-CONSERVATION-EXECUTION");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const refusedWrite = await request(url, "/api/execution", writeOptions(boot.token, "POST", { action: "model-plan-set", host: "claude-code", name: "owner-scenario", defaultModel: "opus-5" }));
-  assert.equal(refusedWrite.response.status, 404);
-  assert.equal(refusedWrite.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
-  const historical = await request(url, "/api/execution", readOptions(boot.token));
-  assert.equal(historical.response.status, 404);
-  const retiredMode = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.dispatchMode", value: "eco" }));
-  assert.equal(retiredMode.body.reasonCode, "SETTINGS_KEY_UNREGISTERED");
-  const active = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.maxConcurrentSubagents", value: "3" }));
-  assert.equal(active.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(active.body.readback.currentValue, "3");
-  // TCRN-CROSS-STORY-482 R4: the execution surface's host projection is gone, so the write is
-  // answered by the engine receipt alone and renders nothing into a host file.
-  assert.equal(Object.hasOwn(active.body, "hostRender"), false);
-  const readback = await request(url, "/api/settings", readOptions(boot.token));
-  assert.equal(readback.body.settings.find((entry) => entry.key === "execution.maxConcurrentSubagents").currentValue, "3");
-  const removed = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.maxConcurrentSubagents", reset: true }));
-  assert.equal(removed.response.status, 200);
-  assert.equal(Object.hasOwn(removed.body, "hostRender"), false);
-  assert.equal(removed.body.version, active.body.version + 1, "the reset is the chain's next event and the only one");
-});
-
-test("STORY-370 the retired identity surface is absent while execution settings remain writable", async (t) => {
-  const fixture = await scratch("tcrn-portal-conservation-cards-", "TCRN-PORTAL-CONSERVATION-CARDS");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { page, boot } = await readBoot(url);
-  // The persona actions went through the execution route, which left with the dispatch-* verbs
-  // (TCRN-CROSS-STORY-467 R3): every one of them now reaches no route at all.
-  const post = async (payload) => request(url, "/api/execution", writeOptions(boot.token, "POST", payload));
-  assert.doesNotMatch(page, /<section[^>]+data-page="entities"/u);
-  const override = await post({ action: RETIRED_PERSONA_ACTIONS.override, name: "Verity", fields: { mission: "temporary portal override", role: "reviewer" } });
-  assert.equal(override.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
-  const restoreAll = await post({ action: RETIRED_PERSONA_ACTIONS.restore, name: "Verity" });
-  assert.equal(restoreAll.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
-  const custom = await post({ action: RETIRED_PERSONA_ACTIONS.set, name: "Portal auditor", role: "reviewer", mission: "Review exact evidence", refusals: "No unsupported claims" });
-  assert.equal(custom.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
-  const refused = await post({ action: RETIRED_PERSONA_ACTIONS.remove, name: "Portal auditor" });
-  assert.equal(refused.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
-  // execution.subagentPolicy retired with TCRN-CROSS-STORY-484 R3; the concurrency limit stays writable.
-  const policy = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.maxConcurrentSubagents", value: "2" }));
-  assert.equal(policy.body.setting.value, "2");
-  const settings = await request(url, "/api/settings", readOptions(boot.token));
-  assert.equal(settings.body.settings.some((entry) => /persona/iu.test(entry.key)), false);
-});
 
 // STORY-373's host probe lost its page control with the dispatch surface (TCRN-CROSS-STORY-467 R3),
 // and TCRN-CROSS-STORY-482 R4 removed the route that was left without a page (problem list #29(2)).
@@ -1595,554 +491,4 @@ test("STORY-482 R4: the host probe route is gone while the host-probe verb stays
   assert.equal(probe.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const commands = await request(url, "/api/commands", readOptions(boot.token));
   assert.ok(commands.body.commands.some((entry) => entry.name === "host-probe"), "the host-probe verb stays in the catalog");
-});
-
-test("STORY-355 GWT1+GWT2: a forged Host header is refused on every route, and the token now guards every GET under /api/", async (t) => {
-  const fixture = await scratch("tcrn-portal-security-", "TCRN-PORTAL-SECURITY");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-
-  // GWT1: a DNS-rebinding-style Host header is rejected before any route runs at all,
-  // including "/" -- the real TCP connection still lands on loopback (rawRequest talks
-  // to the portal's actual address), only the Host header is forged.
-  const rootForged = await rawRequest(url, "/", { host: "attacker.example" });
-  assert.equal(rootForged.status, 403);
-  assert.equal(rootForged.body.reasonCode, "PORTAL_HOST_REJECTED");
-  const prefixForged = await rawRequest(url, "/api/settings", { host: "127.0.0.1.attacker.example" });
-  assert.equal(prefixForged.status, 403);
-  assert.equal(prefixForged.body.reasonCode, "PORTAL_HOST_REJECTED");
-  const badPort = await rawRequest(url, "/api/settings", { host: "127.0.0.1:notaport" });
-  assert.equal(badPort.status, 403);
-  assert.equal(badPort.body.reasonCode, "PORTAL_HOST_REJECTED");
-  const upperLocalhost = await rawRequest(url, "/api/settings", { host: "LOCALHOST", headers: { "x-portal-token": boot.token } });
-  assert.equal(upperLocalhost.status, 200);
-
-  // GWT2: token coverage now spans GET, not just the mutating verbs it used to guard alone.
-  const untokenedGet = await request(url, "/api/settings");
-  assert.equal(untokenedGet.response.status, 403);
-  assert.equal(untokenedGet.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
-  const tokenedGet = await request(url, "/api/settings", readOptions(boot.token));
-  assert.equal(tokenedGet.response.status, 200);
-});
-
-// TCRN-CROSS-STORY-482 R3: without --library the portal chooses from the registry by where it was
-// started: the library of the registered project it runs in (library-resolve), else the machine's
-// default library when that names a registered one, else the first registered library.
-test("STORY-482 R3: without --library the portal opens the working directory's library, then the machine's default library, then the first registered one", async (t) => {
-  const fixture = await scratch("tcrn-portal-default-library-", "TCRN-PORTAL-DEFAULT-LIBRARY");
-  t.after(() => rm(fixture.base, { recursive: true, force: true }));
-  const second = await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv);
-  const open = async (cwd) => {
-    const portal = await startPortal({ ...fixture, library: null, cwd });
-    try {
-      const { boot } = await readBoot(portal.url);
-      return { selectedBy: portal.listening.selectedBy, libraryPath: boot.library.libraryPath, proseRoot: boot.proseRoot };
-    } finally { portal.child.kill(); }
-  };
-  assert.deepEqual(await open(fixture.second.project), { selectedBy: "working-directory", libraryPath: fixture.second.library, proseRoot: fixture.second.project });
-  await cli(["machine-settings-set", "--at", "2026-08-11T15:03:00Z", "--key", "portal.defaultPartition", "--value", second.workspaceId], fixture.deviceEnv);
-  assert.deepEqual(await open(fixture.base), { selectedBy: "machine-default", libraryPath: fixture.second.library, proseRoot: fixture.second.project });
-  // A default that names no registered library (an old partition id, say) is passed over.
-  await cli(["machine-settings-set", "--at", "2026-08-11T15:04:00Z", "--key", "portal.defaultPartition", "--value", "cross-project"], fixture.deviceEnv);
-  assert.deepEqual(await open(fixture.base), { selectedBy: "first-registered", libraryPath: fixture.workspace, proseRoot: fixture.proseRoot });
-});
-
-// STORY-355 carried over to libraries: AGENTS.md is the project's prose and never a file inside a
-// library, which only the engine writes. A project registered inside its own library is refused
-// at boot and on a switch, and the refusal names the path.
-test("STORY-355: a project registered inside its own library is refused at boot and on a switch", async (t) => {
-  const fixture = await scratch("tcrn-portal-prose-unsafe-", "TCRN-PORTAL-PROSE-UNSAFE");
-  const nested = join(fixture.second.library, "nested-project");
-  await mkdir(nested);
-  await cli(["library-register", "--project", nested, "--library", fixture.second.library, "--project-id", fixture.second.projectId, "--at", "2026-08-11T15:05:00Z"], fixture.deviceEnv);
-  const refused = await startupRefusal(["--library", nested], { ...fixture.deviceEnv, HOME: fixture.home });
-  assert.equal(refused.status, 2);
-  assert.equal(refused.report.ok, false);
-  assert.equal(refused.report.reasonCode, "PORTAL_PROSE_ROOT_UNSAFE");
-  assert.equal(refused.report.proseRoot, nested);
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: nested }));
-  assert.equal(switched.response.status, 409);
-  assert.equal(switched.body.reasonCode, "PORTAL_PROSE_ROOT_UNSAFE");
-  assert.equal((await request(url, "/api/libraries", readOptions(boot.token))).body.selected.libraryPath, fixture.workspace, "a refused switch leaves the selection alone");
-});
-
-// TCRN-CROSS-STORY-482 R3: a library outside the registry is not something Atelier opens. With no
-// registered library the portal refuses to start and names the remedy; a --library the device has
-// not registered is named back, with the libraries it has.
-test("STORY-482 R3: the portal refuses to start with no registered library, and names a --library the device has not registered", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-no-library-")));
-  t.after(() => rm(base, { recursive: true, force: true }));
-  const home = await scratchHome(base);
-  const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
-  const empty = await startupRefusal([], { ...deviceEnv, HOME: home }, base);
-  assert.equal(empty.status, 2);
-  assert.equal(empty.report.reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY");
-  assert.equal(empty.report.remedy, "library-register");
-  const project = join(base, "project");
-  await registeredLibrary(deviceEnv, project, join(project, ".ether"), "TCRN-PORTAL-NO-LIBRARY", "2026-08-11T15:00:00Z");
-  const loose = join(base, "unregistered-library");
-  await cli(["init", "--workspace", loose, "--project-name", "TCRN-PORTAL-UNREGISTERED", "--at", "2026-08-11T15:00:01Z"], deviceEnv);
-  const unknown = await startupRefusal(["--library", loose], { ...deviceEnv, HOME: home }, base);
-  assert.equal(unknown.status, 2);
-  assert.equal(unknown.report.reasonCode, "PORTAL_LIBRARY_UNKNOWN");
-  assert.equal(unknown.report.requestedLibrary, loose);
-  assert.deepEqual(unknown.report.libraries, [join(project, ".ether")]);
-});
-
-test("fresh coordination's own registration boots and switches without a prose output", async t => {
-  const fixture = await scratch("portal-fresh-coordination-", "COORDINATION-LIFECYCLE");
-  const coordination = await ensureProjectCoordination(fixture.workspace, "2026-10-08T10:00:00Z", fixture.deviceEnv.EINZBERN_HOME);
-  const { child, url } = await startPortal({ ...fixture, library: coordination.path });
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  assert.equal(boot.proseRoot, null);
-  assert.equal(boot.library.chain.role, "coordination");
-  const prose = await request(url, "/api/agents-md", readOptions(boot.token));
-  assert.equal(prose.body.outputBindingStatus, "unconfigured");
-  const denied = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { text: "must not enter library" }));
-  assert.equal(denied.body.ok, false);
-  await assert.rejects(readFile(join(coordination.path, "AGENTS.md")), { code: "ENOENT" });
-  const project = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.workspace }));
-  assert.equal(project.body.proseRoot, fixture.proseRoot);
-  const back = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: coordination.path }));
-  assert.equal(back.body.ok, true);
-  assert.equal(back.body.proseRoot, null);
-});
-
-test("unregistered selection refuses every configuration and prose mutation without changing either chain", async t => {
-  const fixture = await scratch("portal-stale-registry-", "STALE-REGISTRY");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const before = await Promise.all([fixture.workspace, fixture.second.library].map(workspace => cli(["status", "--workspace", workspace], fixture.deviceEnv)));
-  await unregisterLibrary(fixture.proseRoot, fixture.deviceEnv.EINZBERN_HOME);
-  const routes = [
-    ["/api/settings", "POST", { key: "artifact.language", value: "fr" }],
-    ["/api/project-bindings", "POST", { key: "repositories", value: { bindings: [] } }],
-    ["/api/work/involved-projects", "POST", { id: "work:" + "a".repeat(24), revision: 1, involvedProjects: { state: "undecided", targets: [] } }],
-    ["/api/variables", "POST", { name: "sample", type: "string", value: "value", description: "description" }],
-    ["/api/gates", "DELETE", { name: "sample" }],
-    ["/api/rules/autonomy", "POST", { action: "enable" }],
-    ["/api/rules/resolve", "POST", { section: "variables-system", action: "keep" }],
-    ["/api/agents-md", "PUT", { text: "stale edit" }],
-  ];
-  for (const [route, method, body] of routes) {
-    const result = await request(url, route, writeOptions(boot.token, method, body));
-    assert.equal(result.body.ok, false, route);
-    assert.equal(result.body.reasonCode, "PORTAL_CONFIGURATION_TARGET_CHANGED", route);
-  }
-  const after = await Promise.all([fixture.workspace, fixture.second.library].map(workspace => cli(["status", "--workspace", workspace], fixture.deviceEnv)));
-  assert.deepEqual(after.map(x => x.headEventHash), before.map(x => x.headEventHash));
-});
-
-test("an admitted request whose body is still in flight refuses an unregistered binding", async t => {
-  const fixture = await scratch("portal-inflight-registry-", "INFLIGHT-REGISTRY");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const before = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
-  const body = JSON.stringify({ key: "artifact.language", value: "fr" });
-  let req;
-  const completed = new Promise((resolve, reject) => {
-    req = httpRequest(new URL("/api/settings", url), { method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "x-portal-token": boot.token, "x-configuration-target": JSON.stringify(clientTargets.get(boot.token)) } }, response => {
-      let text = ""; response.on("data", chunk => { text += chunk; }); response.on("end", () => resolve(JSON.parse(text)));
-    });
-    req.on("error", reject); req.flushHeaders(); req.write(body.slice(0, 1));
-  });
-  await unregisterLibrary(fixture.proseRoot, fixture.deviceEnv.EINZBERN_HOME);
-  req.end(body.slice(1));
-  assert.equal((await completed).reasonCode, "PORTAL_CONFIGURATION_TARGET_CHANGED");
-  assert.equal((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).headEventHash, before.headEventHash);
-});
-
-// TCRN-CROSS-INIT-053 R46 helpers: the target an answer names in x-portal-served-target (I05), and a
-// read that names the target it was made for, as the page's requests do.
-const servedBy = (response) => JSON.parse(response.headers.get("x-portal-served-target"));
-const shownTarget = (library, epoch) => ({ epoch, libraryId: library.libraryId, projectPath: library.projectPath, projectId: library.configurationProjectId ?? null, chainRole: library.chain?.role ?? null });
-function namedRead(token, target) { return { headers: { "x-portal-token": token, "x-configuration-target": JSON.stringify(target) } }; }
-const R46_AT = "2026-10-09T09:00:00Z";
-
-// R46 I01 (approved contract item 2; EPIC-144 R3; Owner return 2): the name of a library and of a target
-// is its project's canonical name, end to end. A registration that names no project, and a coordination
-// chain registered without one, answer null rather than an English stand-in, in /api/libraries, the
-// boot and /api/library; a project chain's target answers its project's name.
-test("INIT-053 R46 I01: names come from the project records, and a registration without a project answers null", async t => {
-  const fixture = await scratch("portal-r46-names-", "R46-NAMES");
-  const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
-  // A coordination chain registered as its own project path, with no project.
-  const bare = join(fixture.base, "bare-coordination");
-  await cli(["init", "--workspace", bare, "--at", R46_AT], fixture.deviceEnv);
-  const bareId = (await cli(["status", "--workspace", bare], fixture.deviceEnv)).workspaceId;
-  await cli(["chain-declare", "--workspace", bare, "--role", "coordination", "--coordination-library-id", bareId, "--at", R46_AT, "--actor", "agent:test"], atelier);
-  await cli(["library-register", "--project", bare, "--library", bare, "--at", R46_AT], fixture.deviceEnv);
-  // The second library is a project chain of it, and has a second registration that names no project.
-  await cli(["chain-declare", "--workspace", fixture.second.library, "--role", "project", "--coordination-library-id", bareId, "--at", R46_AT, "--actor", "agent:test"], atelier);
-  const unnamed = join(fixture.base, "unnamed-project");
-  await mkdir(unnamed);
-  await cli(["library-register", "--project", unnamed, "--library", fixture.second.library, "--at", R46_AT], fixture.deviceEnv);
-  assert.deepEqual((await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.map(record => [record.id, record.name]), [[fixture.second.projectId, "R46-NAMES-SECOND"]]);
-
-  const { child, url } = await startPortal({ ...fixture, library: bare });
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  assert.deepEqual([boot.library.chain.role, boot.library.name, boot.libraryName], ["coordination", null, null], "a coordination chain without a project has no name, and no stand-in");
-  const listed = await request(url, "/api/libraries", readOptions(boot.token));
-  const nameAt = (path) => listed.body.libraries.find(entry => entry.projectPath === path).name;
-  assert.deepEqual([nameAt(fixture.proseRoot), nameAt(fixture.second.project), nameAt(unnamed), nameAt(bare)], ["R46-NAMES", "R46-NAMES-SECOND", null, null]);
-  const secondId = (await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).workspaceId;
-  const targets = await request(url, "/api/project-targets", readOptions(boot.token));
-  assert.deepEqual(targets.body.targets, [{ libraryId: secondId, projectId: fixture.second.projectId, name: "R46-NAMES-SECOND" }]);
-  const toUnnamed = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: unnamed }));
-  assert.deepEqual([toUnnamed.response.status, toUnnamed.body.libraryName, toUnnamed.body.library.name, toUnnamed.body.proseRoot], [200, null, null, null], "a registration without a project is unnamed and has no prose output");
-  const toFirst = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.proseRoot }));
-  assert.deepEqual([toFirst.body.libraryName, toFirst.body.library.name], ["R46-NAMES", "R46-NAMES"]);
-  for (const answer of [boot, listed.body, targets.body, toUnnamed.body, toFirst.body]) {
-    assert.doesNotMatch(JSON.stringify(answer), /Unconfigured project|"Cross Project"/u, "no English stand-in name");
-  }
-  assert.equal((await readFile(join(portalRoot, "portal.mjs"), "utf8")).includes("Unconfigured project"), false);
-});
-
-// R46 I03 (PP-2; approved contract items 6, 7): a target whose saved common default does not resolve is
-// still read: /api/settings answers the catalog with commonDefault and the rows that would inherit marked
-// unresolved, the configuration scope can be switched to it, and removing the common default through
-// /api/project-bindings reads it plainly again.
-test("INIT-053 R46 I03: a target with an unresolved common default is read, switched to and repaired", async t => {
-  const fixture = await scratch("portal-r46-common-", "R46-COMMON");
-  await ensureProjectCoordination(fixture.workspace, R46_AT, fixture.deviceEnv.EINZBERN_HOME);
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const unregistered = { libraryId: "library:" + "c".repeat(24), projectId: "project:" + "d".repeat(24) };
-  const saved = await request(url, "/api/project-bindings", writeOptions(boot.token, "POST", { key: "common-default", value: unregistered }));
-  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
-  const settings = await request(url, "/api/settings", readOptions(boot.token));
-  assert.equal(settings.response.status, 200);
-  assert.equal(settings.body.reasonCode, "SETTINGS_CATALOG_READY");
-  assert.deepEqual(settings.body.commonDefault, { reference: unregistered, status: "unresolved", targetStatus: "unregistered", reason: "common-default-unresolved" });
-  const authority = settings.body.settings.find(entry => entry.key === "design.authority");
-  assert.deepEqual([authority.currentValue, authority.source.kind, authority.source.status, authority.source.libraryId], [null, "common", "unresolved", unregistered.libraryId]);
-  // The scope can leave the target and come back to it.
-  const away = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: null }));
-  assert.equal(away.response.status, 200);
-  const back = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: fixture.projectId }));
-  assert.equal(back.response.status, 200, JSON.stringify(back.body));
-  assert.deepEqual([back.body.reasonCode, back.body.settings.commonDefault.status], ["PORTAL_CONFIGURATION_SCOPE_SELECTED", "unresolved"]);
-  // The repair the page offers: take the common default out.
-  const removed = await request(url, "/api/project-bindings", writeOptions(boot.token, "DELETE", { key: "common-default" }));
-  assert.equal(removed.response.status, 200, JSON.stringify(removed.body));
-  const repaired = await request(url, "/api/settings", readOptions(boot.token));
-  assert.equal(Object.hasOwn(repaired.body, "commonDefault"), false);
-  assert.equal(repaired.body.settings.some(entry => entry.source?.status === "unresolved"), false);
-});
-
-// R46 I04 (U20 D5): a new library's knowledge view is an empty inventory that says so; once a store
-// exists the view says present.
-test("INIT-053 R46 I04: /api/knowledge answers a library without a knowledge store as an empty inventory", async t => {
-  const fixture = await scratch("portal-r46-knowledge-", "R46-KNOWLEDGE");
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const empty = await request(url, "/api/knowledge", readOptions(boot.token));
-  assert.equal(empty.response.status, 200);
-  assert.deepEqual([empty.body.ok, empty.body.reasonCode, empty.body.knowledgeStore, empty.body.records, empty.body.total], [true, "PORTAL_KNOWLEDGE_READY", "absent", [], 0]);
-  await cli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"], fixture.deviceEnv);
-  const present = await request(url, "/api/knowledge", readOptions(boot.token));
-  assert.deepEqual([present.body.reasonCode, present.body.knowledgeStore, present.body.total], ["PORTAL_KNOWLEDGE_READY", "present", 0]);
-});
-
-// R46 I05 (approved contract item 11; U20 D13): every answer names the target it was served for, refusals
-// and device-wide routes included; a read that names another target than the one it would be served is
-// refused with the selection as it is, a read that names none is served as before, and each switch's
-// answer names the target it selected. A project path in any script survives the header.
-test("INIT-053 R46 I05: answers name the target they served, and a read naming a stale target is refused", async t => {
-  const fixture = await scratch("portal-r46-served-", "R46-SERVED");
-  const wide = join(fixture.base, "项目-ü-second");
-  await mkdir(wide);
-  await cli(["library-register", "--project", wide, "--library", fixture.second.library, "--project-id", fixture.second.projectId, "--at", R46_AT], fixture.deviceEnv);
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const first = shownTarget(boot.library, boot.epoch);
-  assert.deepEqual(first, { epoch: boot.epoch, libraryId: boot.library.libraryId, projectPath: fixture.proseRoot, projectId: fixture.projectId, chainRole: null });
-  const routes = [
-    ["/api/settings", 200], ["/api/libraries", 200], ["/api/project-targets", 200], ["/api/machine-settings", 200], ["/api/vocabulary", 200], ["/api/commands", 200],
-    ["/api/work", 200], ["/api/knowledge", 200], ["/api/rules", 200], ["/api/variables", 200], ["/api/gates", 200], ["/api/gates/last-run", 200],
-    ["/api/agents-md", 200], ["/api/agents-md/reconcile", 200], ["/api/knowledge?status=bogus", 400], ["/api/execution", 404],
-  ];
-  for (const [path, status] of routes) {
-    const answer = await request(url, path, readOptions(boot.token));
-    assert.equal(answer.response.status, status, path);
-    assert.deepEqual(servedBy(answer.response), first, `${path} names the target it served`);
-  }
-  const refusedWrite = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "bogus.key", value: "x" }));
-  assert.deepEqual([refusedWrite.response.status, servedBy(refusedWrite.response)], [409, first], "a refused write names its target too");
-  const untokened = await fetch(new URL("/api/settings", url));
-  assert.equal(untokened.status, 403);
-  assert.equal(untokened.headers.get("x-portal-served-target"), null, "a request without the token is told nothing about the selection");
-  const forged = await rawRequest(url, "/api/settings", { host: "attacker.example", headers: { "x-portal-token": boot.token } });
-  assert.equal(forged.status, 403);
-
-  // A read naming the target it is served for is answered; one naming another epoch, project path or
-  // project is refused with the selection as it is.
-  const named = await request(url, "/api/settings", namedRead(boot.token, first));
-  assert.deepEqual([named.response.status, servedBy(named.response)], [200, first]);
-  const selection = { epoch: first.epoch, libraryId: first.libraryId, projectPath: first.projectPath, projectId: first.projectId, name: "R46-SERVED", chainRole: null };
-  for (const stale of [{ ...first, epoch: first.epoch + 1 }, { ...first, projectPath: fixture.second.project }, { ...first, projectId: null }, { ...first, libraryId: "library:" + "e".repeat(24) }]) {
-    const refused = await request(url, "/api/settings", namedRead(boot.token, stale));
-    assert.deepEqual([refused.response.status, refused.body.reasonCode, refused.body.target], [409, "PORTAL_CONFIGURATION_TARGET_CHANGED", selection], JSON.stringify(stale));
-  }
-  const malformed = await request(url, "/api/work", { headers: { "x-portal-token": boot.token, "x-configuration-target": "not json" } });
-  assert.equal(malformed.response.status, 409);
-
-  // Another client switches the library: this client's read naming its old target is refused, not answered
-  // with the other library's values, and a read naming none is the new selection's.
-  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: wide }));
-  assert.equal(switched.response.status, 200, JSON.stringify(switched.body));
-  const second = shownTarget(switched.body.library, switched.body.epoch);
-  assert.deepEqual(second, { epoch: switched.body.epoch, libraryId: switched.body.library.libraryId, projectPath: wide, projectId: fixture.second.projectId, chainRole: null }, "a project path in any script survives the header");
-  assert.deepEqual(servedBy(switched.response), second, "the switch's answer names the target it selected");
-  assert.equal(servedBy(switched.response).epoch, switched.body.epoch);
-  const stale = await request(url, "/api/settings", namedRead(boot.token, first));
-  assert.deepEqual([stale.response.status, stale.body.target.libraryId, stale.body.target.projectPath, stale.body.target.epoch, stale.body.settings], [409, second.libraryId, wide, second.epoch, undefined]);
-  const plain = await request(url, "/api/settings", readOptions(boot.token));
-  assert.deepEqual([plain.response.status, servedBy(plain.response)], [200, second]);
-  // The configuration scope's answer names the target it selects.
-  const scoped = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: fixture.second.projectId }));
-  assert.equal(scoped.response.status, 200, JSON.stringify(scoped.body));
-  assert.deepEqual(servedBy(scoped.response), { ...second, epoch: scoped.body.epoch });
-  // A write naming the old target is still refused (F05), now with the selection's six keys.
-  const staleWrite = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json", "x-portal-token": boot.token, "x-configuration-target": JSON.stringify(first) }, body: JSON.stringify({ key: "artifact.language", value: "fr" }) });
-  assert.deepEqual([staleWrite.response.status, staleWrite.body.reasonCode, Object.keys(staleWrite.body.target).sort()], [409, "PORTAL_CONFIGURATION_TARGET_CHANGED", ["chainRole", "epoch", "libraryId", "name", "projectId", "projectPath"]]);
-});
-
-// R46 I06 (approved contract items 2, 10; U20 D2): one chain's two repositories are two registrations,
-// and each is bound by its own project path: /api/library, /api/configuration-scope and GET/PUT
-// /api/agents-md name the selected registration's root. A project of the library that several
-// registrations name is ambiguous, and none of them is taken.
-test("INIT-053 R46 I06: a chain's two repositories bind by registration, and a project with several registrations is ambiguous", async t => {
-  const fixture = await scratch("portal-r46-bind-", "R46-BIND");
-  const mana = join(fixture.base, "second-mana");
-  await mkdir(mana);
-  await cli(["library-register", "--project", mana, "--library", fixture.second.library, "--project-id", fixture.second.projectId, "--at", R46_AT], fixture.deviceEnv);
-  const other = (await cli(["project-create", "--workspace", fixture.second.library, "--external-key", "R46-BIND-OTHER", "--name", "Other", "--at", R46_AT], fixture.deviceEnv)).record.id;
-  const otherRoots = [join(fixture.base, "other-a"), join(fixture.base, "other-b")];
-  for (const root of otherRoots) {
-    await mkdir(root);
-    await cli(["library-register", "--project", root, "--library", fixture.second.library, "--project-id", other, "--at", R46_AT], fixture.deviceEnv);
-  }
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const agentsFile = (root) => join(root, "AGENTS.md");
-  for (const [root, sibling] of [[mana, fixture.second.project], [fixture.second.project, mana]]) {
-    const selected = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: root }));
-    assert.deepEqual([selected.response.status, selected.body.proseRoot], [200, root], `${root}: the switch names the selected registration's root`);
-    const scoped = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: fixture.second.projectId }));
-    assert.deepEqual([scoped.body.proseRoot, scoped.body.outputBindingStatus], [root, "bound"]);
-    const read = await request(url, "/api/agents-md", readOptions(boot.token));
-    assert.equal(read.body.path, agentsFile(root));
-    const text = `# AGENTS.md of ${root}\n`;
-    const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { text }));
-    assert.deepEqual([written.response.status, written.body.path], [200, agentsFile(root)], JSON.stringify(written.body));
-    assert.equal(await readFile(agentsFile(root), "utf8"), text);
-    if (root === mana) await assert.rejects(readFile(agentsFile(sibling)), { code: "ENOENT" }, "the other repository's file is untouched");
-    else assert.equal(await readFile(agentsFile(sibling), "utf8"), `# AGENTS.md of ${sibling}\n`, "the other repository's file is untouched");
-  }
-  // The library's other project has two registrations: switching the configuration target to it
-  // takes neither, and names both.
-  const ambiguous = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: other }));
-  assert.equal(ambiguous.response.status, 200, JSON.stringify(ambiguous.body));
-  assert.deepEqual([ambiguous.body.outputBindingStatus, ambiguous.body.proseRoot, [...ambiguous.body.candidates].sort()], ["ambiguous", null, [...otherRoots].sort()]);
-  const read = await request(url, "/api/agents-md", readOptions(boot.token));
-  assert.deepEqual([read.response.status, read.body.reasonCode, read.body.outputBindingStatus, [...read.body.candidates].sort()], [409, "PORTAL_PROJECT_BINDING_AMBIGUOUS", "ambiguous", [...otherRoots].sort()]);
-  const write = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { text: "# not written\n" }));
-  assert.deepEqual([write.response.status, write.body.reasonCode], [409, "PORTAL_PROJECT_BINDING_AMBIGUOUS"]);
-  for (const root of otherRoots) await assert.rejects(readFile(agentsFile(root)), { code: "ENOENT" });
-  const rule = await request(url, "/api/rules/autonomy", writeOptions(boot.token, "POST", { action: "enable" }));
-  assert.deepEqual([rule.body.ok, rule.body.reasonCode, [...rule.body.candidates].sort()], [false, "PORTAL_PROJECT_BINDING_AMBIGUOUS", [...otherRoots].sort()]);
-});
-
-// TCRN-CROSS-INIT-053 R47 (c1-B; Owner 2026-10-09, round 7): on a coordination chain /api/settings lists its ten
-// runtime settings, each for the whole library, and a write from a selection that names the chain's project is
-// made at the library level, as the catalog's scope says; a model table stays refused by the engine.
-const R47_COORDINATION_KEYS = ["agents.generation", "agents.sharedNavigation", "artifact.language", "engine.requiredVersion", "execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"];
-test("INIT-053 R47 c1-B: a coordination chain's /api/settings lists its runtime settings and writes them for the whole library", async t => {
-  const fixture = await scratch("portal-r47-coordination-", "R47-COORDINATION");
-  const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
-  const libraryId = (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).workspaceId;
-  await cli(["chain-declare", "--workspace", fixture.workspace, "--role", "coordination", "--coordination-library-id", libraryId, "--at", R46_AT, "--actor", "agent:test"], atelier);
-  const tiers = (await cli(["settings-catalog", "--workspace", fixture.second.library, "--project-id", fixture.second.projectId], fixture.deviceEnv)).settings.find((entry) => entry.key === "models.tiers").currentValue;
-  const { child, url } = await startPortal(fixture);
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  assert.deepEqual([boot.library.chain.role, boot.library.configurationProjectId], ["coordination", fixture.projectId]);
-  const settings = await request(url, "/api/settings", readOptions(boot.token));
-  assert.equal(settings.body.reasonCode, "SETTINGS_CATALOG_READY");
-  assert.deepEqual(settings.body.settings.map((entry) => [entry.key, entry.scope, entry.layer]), R47_COORDINATION_KEYS.map((key) => [key, "library", "library"]));
-  const written = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "artifact.language", value: "fr" }));
-  assert.equal(written.response.status, 200);
-  assert.deepEqual([written.body.reasonCode, written.body.readback.currentValue, written.body.readback.declaredValue, written.body.readback.source.kind], ["SETTINGS_WRITE_COMMITTED", "fr", "fr", "library"]);
-  const library = (await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings.find((entry) => entry.key === "artifact.language");
-  assert.deepEqual([library.currentValue, library.declaredValue, library.source.kind], ["fr", "fr", "library"], "the write is the library's, not the project's");
-  const refused = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "models.tiers", value: tiers }));
-  assert.equal(refused.response.status, 409);
-  assert.equal(refused.body.ok, false);
-  assert.equal(refused.body.reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
-  assert.match(refused.body.error, /historical compatibility data/u);
-  const after = await cli(["settings-catalog", "--workspace", fixture.workspace, "--project-id", fixture.projectId], fixture.deviceEnv);
-  assert.deepEqual(after.settings.map((entry) => entry.key), R47_COORDINATION_KEYS, "models.tiers is not listed and was not written");
-});
-
-// TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-459), GWT5's Atelier part: the work read carries each
-// item's lease, and Atelier's forced release frees another actor's running lease, written as
-// TCRN_PORTAL_ACTOR; afterwards work-show shows no lease. The library signs its events, so the
-// release's actor can be read off its event.
-test("528 SUB-459: the work read carries each item's lease, and Atelier releases one by force as TCRN_PORTAL_ACTOR", async t => {
-  const { appendHistoricalAttestationEnable } = await import("../../tests/helpers/workspace-fixture.mjs");
-  const { readOwnStream } = await import("../../tests/helpers/library-forge.mjs");
-  const fixture = await scratch("portal-work-lease-", "WORK-LEASE");
-  const portalActor = "agent:test-portal";
-  const holder = "agent:alpha";
-  const previousHome = process.env.EINZBERN_HOME;
-  process.env.EINZBERN_HOME = fixture.deviceEnv.EINZBERN_HOME;
-  try {
-    await appendHistoricalAttestationEnable(fixture.workspace, { occurredAt: "2026-08-11T15:00:02Z", actorId: holder });
-  } finally {
-    process.env.EINZBERN_HOME = previousHome;
-  }
-  let second = 2;
-  const at = () => `2026-08-11T15:00:${String(second += 1).padStart(2, "0")}Z`;
-  const create = async (externalKey, kind, extra) => (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", at(), "--actor", holder, "--external-key", externalKey, "--kind", kind, ...extra], fixture.deviceEnv)).record;
-  const initiative = await create("WORK-LEASE-INIT", "Initiative", ["--title", "Leased initiative"]);
-  const epic = await create("WORK-LEASE-EPIC", "Epic", ["--parent-id", initiative.id, "--title", "Leased epic"]);
-  const story = await create("WORK-LEASE-STORY", "Story", ["--parent-id", epic.id, "--title", "Leased story", "--goal", "One writer at a time.", "--acceptance", "Given a lease When another actor writes Then it is refused."]);
-  // The read judges whether a lease runs by the clock, so the claim is taken at this moment.
-  const claimedAt = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString().replace(".000Z", "Z");
-  const expiresAt = new Date(Date.parse(claimedAt) + 2 * 3_600_000).toISOString().replace(".000Z", "Z");
-  await cli(["work-claim", "--workspace", fixture.workspace, "--at", claimedAt, "--id", story.id, "--actor", holder], fixture.deviceEnv);
-
-  const { child, url } = await startPortal({ ...fixture, env: { TCRN_PORTAL_ACTOR: portalActor } });
-  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  const work = await request(url, "/api/work", readOptions(boot.token));
-  assert.equal(work.body.ok, true);
-  const leases = Object.fromEntries(work.body.records.map((record) => [record.id, record.lease]));
-  assert.deepEqual(leases, { [initiative.id]: null, [epic.id]: null, [story.id]: { holder, claimedAt, expiresAt, active: true } });
-
-  const released = await request(url, "/api/work/lease-release", writeOptions(boot.token, "POST", { id: story.id }));
-  assert.equal(released.body.ok, true, JSON.stringify(released.body));
-  assert.equal(released.body.lease, null);
-  assert.equal((await cli(["work-show", "--workspace", fixture.workspace, "--id", story.id], fixture.deviceEnv)).lease, null, "after the forced release work-show shows no lease");
-  const last = (await readOwnStream(fixture.workspace)).events.at(-1);
-  assert.deepEqual([last.payload.operation, last.payload.record.collection, last.payload.record.key, last.payload.actor], ["config.record.removed", "lease", story.id, portalActor], "the release's event names TCRN_PORTAL_ACTOR");
-  const reread = await request(url, "/api/work", readOptions(boot.token));
-  assert.equal(reread.body.records.find((record) => record.id === story.id).lease, null);
-
-  const nothing = await request(url, "/api/work/lease-release", writeOptions(boot.token, "POST", { id: story.id }));
-  assert.equal(nothing.body.ok, false);
-  assert.equal(nothing.body.reasonCode, "WORK_LEASE_NOT_FOUND", "an item without a lease has nothing to release");
-});
-
-// TCRN-CROSS-STORY-526 GWT4 (MIN-256; TCRN-CROSS-SUB-454): Atelier writes as the actor it is started
-// with. Started with TCRN_PORTAL_ACTOR, a gate it saves is recorded with surface atelier and, on a
-// library that records its writers, that actor; started without it, or with it empty, it refuses to
-// start with one JSON line and exit code 2, and so does a generated launcher run without it.
-async function asDevice(fixture, operation) {
-  const previous = process.env.EINZBERN_HOME;
-  process.env.EINZBERN_HOME = fixture.deviceEnv.EINZBERN_HOME;
-  try {
-    return await operation();
-  } finally {
-    process.env.EINZBERN_HOME = previous;
-  }
-}
-
-test("526 GWT4: Atelier started with TCRN_PORTAL_ACTOR saves a gate whose event records surface atelier and that actor", async (t) => {
-  const fixture = await scratch("tcrn-portal-actor-", "TCRN-PORTAL-ACTOR");
-  // A library that records its writers (attestation enabled), so the event names the actor.
-  await asDevice(fixture, () => appendHistoricalAttestationEnable(fixture.workspace, { occurredAt: "2026-08-11T15:00:30Z", actorId: "owner:governance" }));
-  const actor = "agent:test-atelier-writer";
-  const { child, url, listening } = await startPortal({ ...fixture, env: { TCRN_PORTAL_ACTOR: actor } });
-  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  assert.equal(listening.actor, actor);
-  const { boot } = await readBoot(url);
-  const saved = await request(url, "/api/gates", writeOptions(boot.token, "POST", { name: "unit", command: ["node", "--version"], root: ".", covers: ["**"], enabled: true, required: true, releaseOnly: false }));
-  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
-  // The last event is read back through the CLI's event page, the route the portal's dependency
-  // audit sanctions, not from an engine package (TCRN-CROSS-SUB-468).
-  const { total } = await cli(["event-list", "--workspace", fixture.workspace, "--limit", "1"], fixture.deviceEnv);
-  const event = (await cli(["event-list", "--workspace", fixture.workspace, "--offset", String(total - 1)], fixture.deviceEnv)).records.at(-1).payload;
-  assert.deepEqual([event.operation, event.record.collection, event.record.key, event.surface, event.actor], ["config.record.set", "gate", "unit", "atelier", actor]);
-  assert.equal(Object.hasOwn(event, "decidedIn"), false, "a run for Atelier cites no decision");
-});
-
-test("526 GWT4: without TCRN_PORTAL_ACTOR, or with it empty, Atelier and its generated launcher refuse to start with exit code 2 and one JSON line", async (t) => {
-  const fixture = await scratch("tcrn-portal-no-actor-", "TCRN-PORTAL-NO-ACTOR");
-  t.after(() => rm(fixture.base, { recursive: true, force: true }));
-  for (const value of [undefined, "", "   "]) {
-    const refused = await startupRefusal(["--library", fixture.workspace], { ...fixture.deviceEnv, HOME: fixture.home, TCRN_PORTAL_ACTOR: value });
-    assert.deepEqual([refused.status, refused.lines, refused.report.ok, refused.report.reasonCode, refused.report.variable], [2, 1, false, "PORTAL_ACTOR_REQUIRED", "TCRN_PORTAL_ACTOR"], JSON.stringify(value));
-  }
-  // A generated launcher carries no actor: it passes on the one its environment holds, and without one Atelier refuses.
-  const outputDir = join(fixture.base, "launchers");
-  await mkdir(outputDir);
-  const generator = join(portalRoot, "scripts", "generate-launchers.mjs");
-  const report = JSON.parse((await execFileAsync(process.execPath, [generator, "--library", fixture.workspace, "--output-dir", outputDir, "--port", "0"], { encoding: "utf8" })).stdout);
-  for (const file of report.files) assert.doesNotMatch(await readFile(file, "utf8"), /agent:|owner:|profile:/u, `${file} names no actor`);
-  const command = report.files.find((file) => file.endsWith(".command"));
-  const env = { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...fixture.deviceEnv, HOME: fixture.home };
-  delete env.TCRN_PORTAL_ACTOR;
-  const launched = await new Promise((resolveRun) => {
-    const child = spawn(command, [], { env, stdio: ["ignore", "pipe", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("exit", (code) => resolveRun({ status: code, lines: stderr.trim().split("\n") }));
-  });
-  assert.deepEqual([launched.status, launched.lines.length, JSON.parse(launched.lines[0]).reasonCode], [2, 1, "PORTAL_ACTOR_REQUIRED"]);
-});
-
-test("BL31 a busy loopback port returns a structured startup failure", async (t) => {
-  const fixture = await scratch("tcrn-portal-port-busy-", "PORTAL-PORT-BUSY");
-  const running = await startPortal(fixture);
-  t.after(async () => { running.child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
-  const port = new URL(running.url).port;
-  await assert.rejects(execFileAsync(process.execPath, [join(portalRoot, "portal.mjs"), "--library", fixture.workspace, "--port", port], {
-    env: { ...process.env, ...fixture.deviceEnv, HOME: fixture.home, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR }, encoding: "utf8",
-  }), (error) => {
-    assert.equal(error.code, 1);
-    const failure = JSON.parse(error.stderr.trim());
-    assert.equal(failure.reasonCode, "PORTAL_PORT_IN_USE");
-    assert.equal(failure.port, Number(port));
-    assert.equal(failure.error, "EADDRINUSE");
-    assert.ok(failure.recovery.includes("--port"));
-    return true;
-  });
-  assert.equal((await fetch(running.url)).status, 200, "the existing listener remains available");
-});
-
-
-test("Portal rejects relative EINZBERN_HOME before library selection in every cwd", async (t) => {
-  const base = await mkdtemp(join(tmpdir(), "portal-relative-device-"));
-  t.after(() => rm(base, { recursive: true, force: true }));
-  const alternate = join(base, "other");
-  await mkdir(alternate);
-  for (const cwd of [base, alternate]) {
-    await assert.rejects(execFileAsync(process.execPath, [join(portalRoot, "portal.mjs"), "--library", join(base, "not-a-library"), "--port", "0"], {
-      cwd, env: { ...process.env, EINZBERN_HOME: "relative-device", HOME: base, TCRN_PORTAL_ACTOR: TEST_ACTOR }, encoding: "utf8",
-    }), (error) => {
-      assert.equal(error.code, 2, error.stderr);
-      assert.equal(error.stdout, "");
-      const lines = error.stderr.trim().split("\n");
-      assert.equal(lines.length, 1, error.stderr);
-      const failure = JSON.parse(lines[0]);
-      assert.deepEqual([failure.ok, failure.reasonCode], [false, "DEVICE_HOME_INVALID"]);
-      assert.match(failure.error, /absolute device directory/u);
-      return true;
-    });
-    await assert.rejects(lstat(join(cwd, "relative-device")), { code: "ENOENT" });
-  }
 });

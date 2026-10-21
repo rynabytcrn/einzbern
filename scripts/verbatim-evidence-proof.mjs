@@ -14,6 +14,7 @@ import { pathToFileURL } from "node:url";
 
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { repositoryRoot, toPosixPath, walkFiles } from "./lib/files.mjs";
+import { recordVerificationTiming } from "./lib/verification-evidence.mjs";
 
 const execFileAsync = (file, args, options) => new Promise((resolveResult, rejectResult) => {
   execFile(file, args, options, (error, stdout, stderr) => {
@@ -74,6 +75,19 @@ const CURRENT_PORTAL_PROOF_FILES = [
   "portal/scripts/proof.mjs",
   "portal/tests/portal.test.mjs",
   "portal/tests/ui-presence.test.mjs",
+  "portal/tests/ui-presence-support.mjs",
+  "portal/tests/portal-support.mjs",
+  "portal/tests/portal-work.test.mjs",
+  "portal/tests/portal-configuration.test.mjs",
+  "portal/tests/portal-library.test.mjs",
+  "portal/tests/ui-work.test.mjs",
+  "portal/tests/ui-configuration.test.mjs",
+  "portal/tests/ui-library.test.mjs",
+  "tests/helpers/register-portal-libraries.mjs",
+  "scripts/portal-tests.mjs",
+  "scripts/lib/test-roster.mjs",
+  "scripts/lib/verification-evidence.mjs",
+
   "portal/tests/disposable-portal-fetch.test.mjs",
   "portal/tests/helpers/disposable-portal-fetch.mjs",
   "packages/core/src/doctor.ts",
@@ -549,7 +563,13 @@ async function verifyBlocks() {
   for (const block of blocks) {
     const history = HISTORICAL_EVIDENCE.get(block.path);
     if (history) {
+      const started = performance.now();
       const replay = await replayHistoricalBlock(block, history);
+      await recordVerificationTiming({
+        kind: "historical-block", path: block.path, commit: history.commit,
+        phase: process.env.EINZBERN_EVIDENCE_PHASE ?? "full-check",
+        ok: replay.ok, reasonCode: replay.reasonCode ?? "EVIDENCE_HISTORY_VERIFIED",
+      }, started);
       results.push({ path: block.path, line: block.line, command: block.command, ...replay });
       continue;
     }

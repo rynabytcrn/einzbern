@@ -67,7 +67,7 @@ test("pull-request CI scans the contributor head, not GitHub's synthetic merge c
 // the tag, which is the supply-chain hole SHA pinning exists to close. Stated over every
 // step so a step added later cannot quietly arrive unpinned.
 test("every CI action is pinned to a commit SHA, never to a movable tag", async () => {
-  const workflow = await readWorkflow();
+  const workflow = [await readWorkflow(), await readFile(resolve(process.cwd(), "scripts/templates/helper/ci.yml"), "utf8")].join("\n");
   const uses = [...workflow.matchAll(/uses:\s*(\S+)/gu)].map((match) => match[1]);
   assert.ok(uses.length > 0, "the workflow must reference at least one action");
   for (const reference of uses) {
@@ -95,7 +95,7 @@ test("release smoke verifies installed setup and doctor, not only unpacked CLI s
   assert.ok(workflow.includes('node "$installed" doctor --project'));
 });
 
-test("CI retains one observed P1 train in an independent clone and always uploads its evidence", async () => {
+test("CI retains each P1 shard in an independent clone and always uploads its evidence", async () => {
   const workflow = await readWorkflow();
   assert.equal((workflow.match(/python3 "\$root\/build\/scripts\/ci\/p1-evidence\.py"/gu) ?? []).length, 1);
   assert.equal((workflow.match(/run: pnpm verify:p1/gu) ?? []).length, 0);
@@ -106,7 +106,7 @@ test("CI retains one observed P1 train in an independent clone and always upload
   assert.match(workflow, /if-no-files-found: error/u);
   assert.match(workflow, /retention-days: 14/u);
   assert.match(workflow, /overwrite: false/u);
-  assert.equal((workflow.match(/working-directory: \$\{\{ runner.temp \}\}\/einzbern-p1-/gu) ?? []).length, 2);
+  assert.equal((workflow.match(/working-directory: \$\{\{ runner.temp \}\}\/einzbern-p1-/gu) ?? []).length, 1);
   assert.match(workflow, /EINZBERN_PRIVACY_HISTORY_BASE: ""/u);
   assert.equal(workflow.includes("github.event.pull_request.base.sha"), false, "PR privacy must not silently narrow the history compared with fork/main");
   assert.ok(workflow.includes('node "$build_root/skill/mana-orchestrate/scripts/install.mjs"'));
@@ -120,9 +120,9 @@ test("manual H1 is bounded, bootstraps official Corepack, and does not append P1
   assert.match(workflow, /corepack@0\.34\.6 --force --ignore-scripts --no-audit --no-fund/u);
   assert.match(workflow, /corepack install --global pnpm@11\.3\.0/u);
   assert.ok(workflow.indexOf('corepack install --global pnpm@11.3.0') < workflow.indexOf('--mode "$VERIFY_MODE"'));
-  assert.equal((workflow.match(/--mode "\$VERIFY_MODE"/gu) ?? []).length, 1);
-  assert.match(workflow, /Smoke the release archive unpacked without node_modules\n        if: env\.VERIFY_MODE == 'p1'/u);
-  assert.match(workflow, /lessons:\n    if: github\.event_name != 'workflow_dispatch' \|\| inputs\.mode != 'pf2-h1'/u);
+  assert.equal((workflow.match(/--mode "\$VERIFY_MODE"/gu) ?? []).length, 2);
+  assert.match(workflow, /Smoke the release archive unpacked without node_modules\n        if: env\.VERIFY_MODE == 'p1-checks'/u);
+  assert.equal(workflow.includes("\n  lessons:"), false, "S6 remains in the core test roster without a duplicate job");
 });
 
 test("ordinary smoke retains curated archive, digest manifest, source SHA and isolated install receipts", async () => {
@@ -131,6 +131,17 @@ test("ordinary smoke retains curated archive, digest manifest, source SHA and is
   assert.ok(workflow.includes('cp "$archive" "$archive.sha256" "$smoke/evidence/"'));
   assert.ok(workflow.includes('cp "$smoke/unpacked/einzbern-$version/manifest.json" "$smoke/evidence/manifest.json"'));
   assert.ok(workflow.includes('cd "$smoke/evidence"'));
-  assert.match(workflow, /Retain curated package and isolated install evidence\n        if: always\(\) && env\.VERIFY_MODE == 'p1'/u);
+  assert.match(workflow, /Retain curated package and isolated install evidence\n        if: always\(\) && env\.VERIFY_MODE == 'p1-checks'/u);
   assert.match(workflow, /path: \$\{\{ runner.temp \}\}\/einzbern-release-smoke\/evidence\//u);
+});
+
+
+test("required verify waits for all shards and refuses incomplete same-SHA evidence", async () => {
+  const workflow = await readWorkflow();
+  assert.match(workflow, /fail-fast: false/u);
+  for (const shard of ["p1-checks", "p1-core", "p1-portal"]) assert.ok(workflow.includes(`"${shard}"`));
+  assert.match(workflow, /  verify:\n    if: always\(\)\n    needs: \[p1\]/u);
+  assert.ok(workflow.includes("JOB_RESULT: ${{ needs.p1.result }}"));
+  assert.ok(workflow.includes("--attempt \"$GITHUB_RUN_ATTEMPT\" --job-result \"$JOB_RESULT\""));
+  assert.ok(workflow.includes("scripts/ci/aggregate-evidence.py"));
 });

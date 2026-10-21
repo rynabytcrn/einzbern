@@ -12,7 +12,7 @@ import {
   dotContentDigest, dotEnabledRuleSources, normalizeExecutionContextRead,
   planDotAgents, renderDotAgents,
 } from "../dist/build/packages/core/src/dot-agents.js";
-import { BUILT_IN_RULES, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
+import { AUTONOMY_AUTHORIZATION_BODY, BRANCH_LIFECYCLE_BODY, BUILT_IN_RULES, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
 
 const at = "2026-10-20T00:00:00Z";
 function source(language = "zh-CN", ids = BUILT_IN_RULES.map(rule => rule.id)) {
@@ -177,4 +177,22 @@ test("DOT-R03: three current actual-session source links produce a structural ch
   assert.equal(assessExecutionContextRead(record, { ...expected, workRevision: 2 }, observations).check.status, "fail");
   assert.throws(() => normalizeExecutionContextRead({ ...record, files: record.files.slice(1) }));
   assert.throws(() => normalizeExecutionContextRead({ ...record, selectedTuple: {} }));
+});
+
+test("INIT-062 universal rule supplements are shared bilingual enabled-only dot consumers, not new permissions", async () => {
+  for (const [language, suffix] of [["zh-CN", "zh"], ["en", "en"]]) {
+    for (const id of ["autonomy", "residue-cleanup"]) {
+      const selected = source(language, [id]);
+      const output = renderDotAgents(selected);
+      assert.equal(output.includes(AUTONOMY_AUTHORIZATION_BODY[suffix]), id === "autonomy");
+      assert.equal(output.includes(BRANCH_LIFECYCLE_BODY[suffix]), id === "residue-cleanup");
+      assert.equal(output.includes(suffix === "zh" ? "### Fork 贡献" : "### Fork contributions"), id === "residue-cleanup");
+      const previous = await readFile(resolve(import.meta.dirname, "fixtures", "rules", `${id}-v1-rev1.${suffix}.md`), "utf8");
+      assert.throws(() => renderDotAgents({ ...selected, enabledRules: [{ ...selected.enabledRules[0], bodyDigest: dotContentDigest(previous) }] }), error => error.reasonCode === "DOT_SOURCE_MISMATCH");
+      assert.equal(renderDotAgents(selected), output, "same input is deterministic");
+    }
+    const empty = renderDotAgents(source(language, []));
+    assert.equal(empty.includes(AUTONOMY_AUTHORIZATION_BODY[suffix]), false);
+    assert.equal(empty.includes(BRANCH_LIFECYCLE_BODY[suffix]), false);
+  }
 });

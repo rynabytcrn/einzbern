@@ -62,6 +62,43 @@ refresh, supported replay/reapplication, serial handoff, destination readback,
 local mutex and advisory-not-lock semantics. Neither changes the INIT batch unit
 or governance. A code change is not release publication or project enablement.
 
+## Universal autonomy and branch-lifecycle clarification (INIT-062)
+
+The later Owner instructions of 2026-10-21 supplement `autonomy` and
+`residue-cleanup` at v1; they do not retroactively change the historical
+incremental-update addition described above. The original bodies remain in
+`autonomy-v1-rev1` and `residue-cleanup-v1-rev1` Chinese/English fixtures. The new
+wording implements those instructions and is not presented as a verbatim quote.
+
+`AUTONOMY_AUTHORIZATION_BODY` and `BRANCH_LIFECYCLE_BODY` are shared Chinese/English
+source text consumed directly by the generic catalog and the independent dot
+adaptations. A model-authored “once” and general user assent do not impose an
+execution-count cap. An explicit user-authored restriction still does. This grants
+no new permission, never overrides required per-action confirmation or material
+scope/risk changes, and preserves denial, uncertain-outcome and bounded-retry
+rules; it does not authorize unlimited external runs or publication.
+
+Branch lifecycle is clause 9 of the existing residue rule and a fork/baseline
+subsection of its dot adaptation, not an unconditional common instruction. New
+batches, pre-push and post-merge checks use actual baseline/ref/worktree facts;
+only an authorized safe fast-forward is synchronized and read back. Retirement
+requires verified merge, no unique history outside the target, no active PR, CI,
+worktree, later-delivery or evidence dependency, preserved history/backup/failure
+evidence and corresponding cleanup authorization. Unknown, unique, protected,
+default and recovery branches remain. Content equality or squash alone is not
+history preservation; retiring a worktree is not deleting its branch. No blanket
+branch deletion, force operation or new remote permission is introduced.
+
+Neither rule is enabled by catalog membership or this revision. Generic render
+updates an unedited same-version managed section with a backup and incremented
+section revision; user edits remain pending. Dot requires the actual current
+source-body digests and explicit update/preview binding, preserving its existing
+ownership, backup, no-op and user-edit behavior. Template/provenance schemas stay
+v1. Ordinary-host AGENTS and its CLAUDE bridge, and an isolated real packaged dot
+entry, are separate distribution checks. They do not prove an installed host or
+actual execution session read and obeyed the rule. No installed configuration,
+real library enablement or platform approval setting is changed by source work.
+
 ## S0–S7 and provenance
 
 - S0: target absent uses the unchanged traditional path; invalid targets refuse.

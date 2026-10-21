@@ -123,37 +123,71 @@ if (!MUTATION) {
       // here because only one of them can be produced against a real address offline,
       // and a state proven on one side only is half a state machine.
       const realFetch = page.window.fetch;
-      // TCRN-CROSS-INC-221. The stub records when it answered, because the panel is the
-      // only other observable and two of the three cases below render byte-identically —
-      // deliberately, since a body under a foreign contract must leak nothing. There is no
-      // change to wait for, so the settle signal is the contract fetch being answered plus
-      // a quiet period for the handler to render it.
-      const traffic = { answered: 0, at: 0 };
-      const answerWith = (body, ok = true) => {
-        page.window.fetch = (input, options) => {
-          const target = String(input);
-          if (!target.includes("tcrn-design-authority.json")) return realFetch(input, options);
-          traffic.answered += 1;
-          traffic.at = Date.now();
-          return Promise.resolve({ ok, status: ok ? 200 : 404, json: async () => body });
+      // INC-193 / INC-221: response headers and a quiet period do not establish
+      // response consumption or handler completion. Each stage has one 15s budget,
+      // binds its exact contract URL and observes a fresh panel node after json()
+      // consumption, even when two warning bodies render the same text. The current
+      // control must also be rebuilt and released by the settings handler's finally.
+      const changeAuthority = async (url, body, label) => {
+        const startedAt = Date.now();
+        const deadline = startedAt + 15_000;
+        const expectedContract = new URL("/tcrn-design-authority.json", url).href;
+        const currentInput = () => page.document.querySelector('[data-setting-control="design.authority"]');
+        const currentPanel = () => page.document.querySelector("#design-authority [data-design-authority-state]");
+        const editable = () => {
+          const control = currentInput();
+          return control && !control.disabled && !control.hasAttribute("data-write-busy") ? control : null;
         };
-      };
-      const rendered = (label) => {
-        const seen = traffic.answered;
-        return async () => {
-          await waitFor(() => traffic.answered > seen && Date.now() - traffic.at >= 120, label);
+        const beforeReceipt = receiptText(page.document);
+        const observed = { requested: 0, bodyConsumed: 0, otherContracts: 0, method: null };
+        let phase = "control-ready";
+        let input = null;
+        let panelAtConsumption = null;
+        const panelReplaced = () => observed.bodyConsumed > 0 && currentPanel() !== null && currentPanel() !== panelAtConsumption;
+        const waitWithinBudget = (predicate, stage) => waitFor(predicate, `${label}: ${stage}`, Math.max(0, deadline - Date.now()));
+        page.window.fetch = (request, options) => {
+          const target = String(request);
+          if (!target.includes("tcrn-design-authority.json")) return realFetch(request, options);
+          if (target !== expectedContract) {
+            observed.otherContracts += 1;
+            return Promise.resolve({ ok: false, status: 404 });
+          }
+          observed.requested += 1;
+          observed.method = options?.method ?? "GET";
+          return Promise.resolve({ ok: true, status: 200, json: async () => {
+            observed.bodyConsumed += 1;
+            panelAtConsumption = currentPanel();
+            return body;
+          } });
         };
+        try {
+          input = await waitWithinBudget(editable, phase);
+          assert.ok(Date.now() < deadline, "the original stage budget remains before dispatch");
+          phase = "write-refresh-response-consumption";
+          input.value = url;
+          input.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+          await waitWithinBudget(() => {
+            if (!observed.bodyConsumed) return false;
+            phase = "panel-replaced-and-handler-released";
+            return panelReplaced() && currentInput() !== input && editable();
+          }, "matching response consumption, panel replacement and editable current control");
+          assert.equal(currentInput().value, url, "the rendered setting belongs to this stage");
+        } catch (error) {
+          // Bounded, body-free stage facts, not settings/response text or a DOM dump.
+          const control = currentInput();
+          error.message += `; stage=${JSON.stringify({ label, phase, elapsedMs: Date.now() - startedAt,
+            ...observed, receiptAdvanced: Boolean(receiptAdvanced(page.document, beforeReceipt)()),
+            panelReplaced: panelReplaced(), controlRebuilt: Boolean(control && control !== input),
+            controlPresent: Boolean(control), disabled: control?.disabled ?? null,
+            writeBusy: control?.hasAttribute("data-write-busy") ?? null })}`;
+          throw error;
+        }
       };
 
       for (const [key, value] of Object.entries({"design.repository":"https://design.example.test/repository","design.pullRequestTarget":"main","design.productionDocs":"https://design.example.test/docs","design.buildService":"Example build","design.buildProject":"Example docs","design.consumedVersion":"9.9.9"})) {
         await writeScratch(page.fixture, "settings-set", ["--key", key, "--value", value]);
       }
-      answerWith({ schemaVersion: "tcrn.design-authority.v1", name: "Example System", version: "9.9.9" });
-      let input = page.document.querySelector('[data-setting-control="design.authority"]');
-      const declaredRendered = rendered("the declared contract to be fetched and rendered");
-      input.value = "https://design.example.test/";
-      input.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await declaredRendered();
+      await changeAuthority("https://design.example.test/", { schemaVersion: "tcrn.design-authority.v1", name: "Example System", version: "9.9.9" }, "declared contract");
       await page.waitForSettled();
       const declared = page.document.querySelector("[data-design-authority-state]");
       assert.equal(declared?.dataset.designAuthorityState, "declared");
@@ -164,12 +198,7 @@ if (!MUTATION) {
       // A response that is not this platform's contract is yellow, not red: the fact is
       // outside this machine, so nothing here can be called false. The message has to
       // say what would turn it green, or a yellow becomes a permanent decoration.
-      answerWith({ hello: "world" });
-      const warnedRendered = rendered("the foreign response to be fetched and rendered");
-      input = page.document.querySelector('[data-setting-control="design.authority"]');
-      input.value = "https://other.example.test/";
-      input.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await warnedRendered();
+      await changeAuthority("https://other.example.test/", { hello: "world" }, "foreign response");
       await page.waitForSettled();
       const warned = page.document.querySelector("[data-design-authority-state]");
       assert.equal(warned?.dataset.designAuthorityState, "warning", "a response that is not this contract is yellow");
@@ -181,12 +210,7 @@ if (!MUTATION) {
       // check. Without this case the schema check could be deleted and nothing would
       // notice, because the earlier sample was also missing its name and version and
       // would keep landing yellow by a different route.
-      answerWith({ schemaVersion: "someone.elses.contract.v1", name: "Example System", version: "9.9.9" });
-      const wrongSchemaRendered = rendered("the body under another contract to be fetched and rendered");
-      input = page.document.querySelector('[data-setting-control="design.authority"]');
-      input.value = "https://third.example.test/";
-      input.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await wrongSchemaRendered();
+      await changeAuthority("https://third.example.test/", { schemaVersion: "someone.elses.contract.v1", name: "Example System", version: "9.9.9" }, "body under another contract");
       await page.waitForSettled();
       const wrongSchema = page.document.querySelector("[data-design-authority-state]");
       assert.equal(wrongSchema?.dataset.designAuthorityState, "warning", "a well-formed body under another contract is still not ours");

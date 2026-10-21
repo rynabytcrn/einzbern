@@ -104,9 +104,10 @@ function run(executable, arguments_, options = {}) {
   return runLocalCommand(executable, arguments_, { cwd: repositoryRoot, ...options });
 }
 
-function controllerTimeoutMs() {
-  const configured = Number(process.env.TCRN_TEST_CONTROLLER_TIMEOUT_MS ?? "600000");
-  assertion(Number.isSafeInteger(configured) && configured > 0 && configured <= 600_000, "TEST_CONTROLLER_TIMEOUT_INVALID", String(configured));
+function controllerTimeoutMs(p8Only = false) {
+  const maximum = p8Only ? 600_000 : 900_000;
+  const configured = Number(process.env.TCRN_TEST_CONTROLLER_TIMEOUT_MS ?? String(maximum));
+  assertion(Number.isSafeInteger(configured) && configured > 0 && configured <= maximum, "TEST_CONTROLLER_TIMEOUT_INVALID", String(configured));
   return configured;
 }
 
@@ -116,7 +117,7 @@ function terminateTestControllerGroup(processGroup) {
   }
 }
 
-async function runDetachedTestController(arguments_, extraEnvironment, tests) {
+async function runDetachedTestController(arguments_, extraEnvironment, tests, p8Only = false) {
   const progressDirectory = await mkdtemp(join(tmpdir(), "tcrn-test-progress-"));
   const progressPath = join(progressDirectory, "events.ndjson");
   const reaperReadyPath = join(progressDirectory, "reaper.json");
@@ -188,7 +189,7 @@ async function runDetachedTestController(arguments_, extraEnvironment, tests) {
     // group. The bootstrap remains a separate process group it can terminate.
     await bindOutputSessionProcessGroup(reaperProcessGroup);
 
-    const timeoutMs = controllerTimeoutMs();
+    const timeoutMs = controllerTimeoutMs(p8Only);
     const startedAt = Date.now();
     const resultOutcome = result.then((value) => ({ kind: "exit", value }), (error) => ({ kind: "error", error }));
     let cursor = 0;
@@ -653,7 +654,7 @@ async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
       EINZBERN_HOME: join(deviceDirectory, "einzbern"),
       EINZBERN_TEST_DEVICE_ROOT: deviceDirectory,
       ...extraEnvironment,
-    }, tests);
+    }, tests, p8Only);
   } finally {
     await rm(deviceDirectory, { recursive: true, force: true });
   }

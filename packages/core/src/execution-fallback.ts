@@ -156,7 +156,9 @@ export function resolveHostExecution(requestValue: HostExecutionRequest, policy:
   if (!c.platformCapacity) reasons.push("platform-capacity-unknown-host-enforced");
   reasons.push("actual-model-unobserved-not-inferred");
   if (!c.usage) reasons.push("optional-quota-unobserved-not-inferred");
-  return { schemaVersion: HOST_EXECUTION_DECISION_VERSION, status, request, evaluatedAt, configuredIntent, requestedSelection: selected, actualSelection: { status: "unknown", reason: "planning does not prove actual host selection" }, fallbackApplied: !sameHostSelection(preferred, selected), reasons, evidenceQuality: "limited", policyStatus: intent.status, authorizationVerification: "reported-context-not-authentication", persistentConfigWrites: 0, additionalConfirmationsRequired: status === "awaiting-choice", contextDigest };
+  // Mutations through stop() are intentional; TypeScript does not narrow closure writes.
+  const finalStatus = status as HostExecutionDecision["status"];
+  return { schemaVersion: HOST_EXECUTION_DECISION_VERSION, status: finalStatus, request, evaluatedAt, configuredIntent, requestedSelection: selected, actualSelection: { status: "unknown", reason: "planning does not prove actual host selection" }, fallbackApplied: !sameHostSelection(preferred, selected), reasons, evidenceQuality: "limited", policyStatus: intent.status, authorizationVerification: "reported-context-not-authentication", persistentConfigWrites: 0, additionalConfirmationsRequired: finalStatus === "awaiting-choice", contextDigest };
 }
 
 /** Technical observations never mutate quality history; duplicate quality events count once. */

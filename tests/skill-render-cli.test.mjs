@@ -125,7 +125,8 @@ test("479-AC1, AC3 through the CLI: every verb the generated table names is list
   const listed = (await invoke(["commands"])).report.commands.map((entry) => entry.name);
   const verbs = tableVerbs(markdown);
   // The full-text moment includes both project context and the packaged evidence entry.
-  assert.equal(verbs.length, 28, "nine moments include all fifteen native/shared/backup commands and batch capture");
+  assert.equal(verbs.length, 29, "nine moments retain native/shared/backup commands and batch capture plus actual enabled-rule lookup");
+  assert.equal(verbs.filter(verb => verb === "rule-list").length, 1, "the normal installed starting-work row names current rule state exactly once");
   assert.ok(verbs.includes("execution-evidence"), "the installed workflow names its public evidence entry");
   assert.match(markdown, /`execution-evidence --from-file <json>` remains read-only validation, not authentication/);
   assert.match(markdown, /specs\/dispatch-admission-evidence-v1\.md/);

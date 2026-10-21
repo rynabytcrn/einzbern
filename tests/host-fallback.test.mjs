@@ -101,3 +101,11 @@ test("T08/T11 stale telemetry is not current capacity; parent accounting and ful
   assert.equal(resolveHostExecution(stale, p, "fixture", at).status, "awaiting-choice");
   assert.throws(() => resolveHostExecution({ ...stale, capabilities: { ...stale.capabilities, selectionObservations: [{ selection: fallbackSelection, support: "supported", observedAt: "2026-10-22T00:00:00Z" }] } }, p, "fixture", at), /future/u);
 });
+
+test("saveRequirement is a closed optional schema, not an implicit execution gate", async t => {
+  const f = await nativeFixture(t); const policy = await readEngineModelPolicyFile(f.home);
+  for (const value of ["saved", {}, { requiredBeforeExecution: "false", status: "saved" }, { requiredBeforeExecution: false, status: "invented" }, { requiredBeforeExecution: false, status: "saved", extra: true }]) {
+    assert.throws(() => resolveHostExecution({ ...f.request, saveRequirement: value }, policy, "fixture", at));
+  }
+  assert.equal(resolveHostExecution({ ...f.request, saveRequirement: { requiredBeforeExecution: false, status: "failed" } }, policy, "fixture", at).status, "degraded");
+});

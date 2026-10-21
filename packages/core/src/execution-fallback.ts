@@ -95,6 +95,10 @@ export function validateHostExecutionRequest(value: unknown): HostExecutionReque
       if (typeof c.includesParent !== "boolean" || typeof c.parentActive !== "boolean" || !["children", "total"].includes(String(c.scope)) || c.active === 0 && c.includesParent && c.parentActive) throw new HostExecutionError("invalid hard concurrency accounting");
     }
   }
+  if (r.saveRequirement !== undefined) {
+    const save = hostObject(r.saveRequirement, "saveRequirement", ["requiredBeforeExecution", "status"]);
+    if (typeof save.requiredBeforeExecution !== "boolean" || !["not-requested", "pending", "saved", "failed"].includes(String(save.status))) throw new HostExecutionError("invalid save requirement");
+  }
   if (r.previousOutcome !== undefined && !["not-executed", "unknown", "running", "terminal"].includes(String(r.previousOutcome))) throw new HostExecutionError("invalid previous outcome");
   for (const key of ["permissionDenied", "cancellationRequested"]) if (r[key] !== undefined && typeof r[key] !== "boolean") throw new HostExecutionError(`${key} must be boolean`);
   return value as HostExecutionRequest;

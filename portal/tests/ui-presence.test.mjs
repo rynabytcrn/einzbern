@@ -2,6 +2,85 @@
 // Tests in this file run sequentially; Node isolates each file in a process.
 import { CLI, DS_CONTRACT, GHOST_TARGET, MUTATION, assert, assertBehaviorContract, assertDomContract, bridgeExports, cli, closePage, join, keydown, linkBridge, loadExecutedDom, localeTable, nextAt, pageHierarchyFindings, portalRoot, preparePage, projectChainFixture, readFile, receiptAdvanced, receiptText, rm, scratch, test, topbarFindings, vm, waitFor, writeFile, writeScratch } from "./ui-presence-support.mjs";
 
+// A fixed-size, stage-owned observer of requests the scenario already makes.
+// Response/value/error identity and json's invocation receiver are preserved, but
+// observed Promises gain reactions and json gains an own wrapper. No body is read
+// until the original caller asks; no URL, payload or error text is retained.
+const designAuthorityTailRoles = ["settingsWrite", "agentsDocument", "agentsReconcile", "rules"];
+function observeDesignAuthorityTail(realFetch, startedAt, now = Date.now) {
+  const tailReads = Object.fromEntries(designAuthorityTailRoles.map(role => [role, {
+    started: 0, headers: 0, jsonStarted: 0, jsonFulfilled: 0, jsonRejected: 0,
+    fetchRejected: 0, firstRequestAtMs: null, lastEventAtMs: null, jsonObservable: null,
+  }]));
+  const unavailable = new Set();
+  const markUnavailable = (role) => {
+    unavailable.add(role);
+    const row = tailReads[role];
+    row.jsonObservable = false;
+    row.jsonStarted = row.jsonFulfilled = row.jsonRejected = null;
+  };
+  const record = (role, event) => {
+    const row = tailReads[role];
+    try {
+      if (row[event] !== null) row[event] = Number.isSafeInteger(row[event] + 1) ? row[event] + 1 : null;
+      const elapsed = now() - startedAt;
+      row.lastEventAtMs = Number.isSafeInteger(elapsed) && elapsed >= 0 ? elapsed : null;
+      if (event === "started" && row.started === 1) row.firstRequestAtMs = row.lastEventAtMs;
+    } catch { markUnavailable(role); }
+  };
+  const observeJson = (response, role) => {
+    try {
+      // Inspect descriptors without calling a getter merely for observation.
+      let owner = response;
+      let descriptor;
+      while (owner && !descriptor) {
+        descriptor = Object.getOwnPropertyDescriptor(owner, "json");
+        owner = Object.getPrototypeOf(owner);
+      }
+      if (typeof descriptor?.value !== "function") { markUnavailable(role); return response; }
+      const originalJson = descriptor.value;
+      const own = Object.getOwnPropertyDescriptor(response, "json");
+      Object.defineProperty(response, "json", { ...(own ?? { configurable: true, enumerable: false, writable: true }), value: function (...args) {
+        record(role, "jsonStarted");
+        let result;
+        try { result = Reflect.apply(originalJson, this, args); }
+        catch (error) { record(role, "jsonRejected"); throw error; }
+        return Promise.resolve(result).then(value => {
+          record(role, "jsonFulfilled");
+          return value;
+        }, error => {
+          record(role, "jsonRejected");
+          throw error;
+        });
+      } });
+      if (!unavailable.has(role)) tailReads[role].jsonObservable = true;
+    } catch { markUnavailable(role); }
+    return response;
+  };
+  return { tailReads, fetch: function (...args) {
+    let role;
+    try {
+      const [request, options] = args;
+      const method = typeof request === "string" ? options?.method ?? "GET" : null;
+      if (request === "/api/settings" && method === "POST") role = "settingsWrite";
+      if (method === "GET") role = ({ "/api/agents-md": "agentsDocument", "/api/agents-md/reconcile": "agentsReconcile", "/api/rules": "rules" })[request];
+    } catch { /* Unknown inputs pass through without observing or changing the call. */ }
+    if (!designAuthorityTailRoles.includes(role)) return Reflect.apply(realFetch, this, args);
+    // Capture this stage's role now. Late callbacks never consult the next stage.
+    record(role, "started");
+    let result;
+    try { result = Reflect.apply(realFetch, this, args); }
+    catch (error) { record(role, "fetchRejected"); throw error; }
+    return Promise.resolve(result).then(response => {
+      record(role, "headers");
+      return observeJson(response, role);
+    }, error => {
+      record(role, "fetchRejected");
+      throw error;
+    });
+  } };
+}
+
 // INC193-DIAG01: AssertionError can materialize its stack before catch. Send
 // bounded stage facts through Node's separate diagnostic event, never by editing
 // the error's message/stack. Unknown facts stay unknown and cannot hide the error.
@@ -9,10 +88,10 @@ function designAuthorityStageDiagnostic(snapshot, kind, diagnosticStatus) {
   const choice = (value, values) => values.includes(value) ? value : null;
   const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
   const flag = (value) => typeof value === "boolean" ? value : null;
-  return `INC193_STAGE ${JSON.stringify({
-    schemaVersion: "tcrn.inc193-stage.v1",
+  const record = {
+    schemaVersion: "tcrn.inc193-stage.v2",
     kind: kind === "synthetic-formatting-only" ? kind : "failure",
-    diagnosticStatus,
+    diagnosticStatus: choice(diagnosticStatus, ["available", "snapshot-unavailable"]) ?? "snapshot-unavailable",
     label: choice(snapshot?.label, ["declared contract", "foreign response", "body under another contract"]) ?? "unknown",
     phase: choice(snapshot?.phase, ["control-ready", "write-refresh-response-consumption", "panel-replaced-and-handler-released"]) ?? "unknown",
     elapsedMs: count(snapshot?.elapsedMs),
@@ -26,7 +105,23 @@ function designAuthorityStageDiagnostic(snapshot, kind, diagnosticStatus) {
     controlPresent: flag(snapshot?.controlPresent),
     disabled: flag(snapshot?.disabled),
     writeBusy: flag(snapshot?.writeBusy),
-  })}`;
+    tailReads: Object.fromEntries(designAuthorityTailRoles.map(role => {
+      const row = snapshot?.tailReads?.[role];
+      const observable = flag(row?.jsonObservable);
+      return [role, {
+        started: count(row?.started), headers: count(row?.headers),
+        jsonStarted: observable === true ? count(row?.jsonStarted) : null,
+        jsonFulfilled: observable === true ? count(row?.jsonFulfilled) : null,
+        jsonRejected: observable === true ? count(row?.jsonRejected) : null,
+        fetchRejected: count(row?.fetchRejected), firstRequestAtMs: count(row?.firstRequestAtMs),
+        lastEventAtMs: count(row?.lastEventAtMs), jsonObservable: observable,
+      }];
+    })),
+  };
+  const line = `INC193_STAGE ${JSON.stringify(record)}`;
+  // Retain all original stage facts even if a future field expansion exceeds the
+  // hard diagnostic budget. Missing tail evidence is explicit, never fake zeroes.
+  return Buffer.byteLength(line, "utf8") <= 2048 ? line : `INC193_STAGE ${JSON.stringify({ ...record, tailReads: null })}`;
 }
 
 function failWithDesignAuthorityDiagnostic(context, error, readSnapshot, kind = "failure") {
@@ -138,7 +233,7 @@ if (!MUTATION) {
 
 if (!MUTATION) {
 
-  test("INC193-DIAG01 stage diagnostics are bounded, observable and preserve the original error", (context) => {
+  test("INC193-DIAG01 stage diagnostics are bounded, observable and preserve the original error", async (context) => {
     const cause = new Error("synthetic cause");
     const error = new assert.AssertionError({ message: "synthetic formatting-only assertion", actual: 1, expected: 2, operator: "strictEqual" });
     error.cause = cause;
@@ -162,7 +257,7 @@ if (!MUTATION) {
       requested: 1, bodyConsumed: 1, otherContracts: 0, method: "GET", receiptAdvanced: true,
       panelReplaced: true, controlRebuilt: true, controlPresent: true, disabled: false, writeBusy: false };
     assert.equal(emitted.length, 1);
-    assert.deepEqual(read(emitted[0]), { schemaVersion: "tcrn.inc193-stage.v1", kind: "synthetic-formatting-only", diagnosticStatus: "available", ...expected });
+    assert.deepEqual(read(emitted[0]), { schemaVersion: "tcrn.inc193-stage.v2", kind: "synthetic-formatting-only", diagnosticStatus: "available", ...expected, tailReads: Object.fromEntries(designAuthorityTailRoles.map(role => [role, { started: null, headers: null, jsonStarted: null, jsonFulfilled: null, jsonRejected: null, fetchRejected: null, firstRequestAtMs: null, lastEventAtMs: null, jsonObservable: null }])) });
     assert.throws(() => failWithDesignAuthorityDiagnostic(capture, error, () => ({ label: "private-url-sentinel", elapsedMs: Infinity, requested: -1, disabled: "false", method: "private-header-sentinel" })), actual => actual === error);
     const unknown = read(emitted[1]);
     assert.deepEqual([unknown.label, unknown.phase, unknown.elapsedMs, unknown.requested, unknown.bodyConsumed, unknown.method, unknown.disabled, unknown.writeBusy], ["unknown", "unknown", null, null, null, null, null, null]);
@@ -174,6 +269,87 @@ if (!MUTATION) {
     assert.throws(() => failWithDesignAuthorityDiagnostic({ diagnostic: () => { throw new Error("synthetic unavailable channel"); } }, error, () => snapshot), actual => actual === error);
     assert.deepEqual({ message: error.message, stack: error.stack, code: error.code, actual: error.actual, expected: error.expected, cause: error.cause }, original);
     assert.strictEqual(error.cause, cause);
+
+    // Pure, predetermined calls only: no server, timer, race, retry or UI probe.
+    const receiver = {};
+    const options = { method: "POST", body: "private-body-sentinel" };
+    const value = { fixture: true };
+    const jsonReceiver = {};
+    const argument = {};
+    const forwarded = [];
+    const consumed = [];
+    const response = { json: function (...args) { consumed.push([this, args]); return Promise.resolve(value); } };
+    const tail = observeDesignAuthorityTail(function (...args) { forwarded.push([this, args]); return Promise.resolve(response); }, 100, () => 112);
+    assert.strictEqual(await tail.fetch.call(receiver, "/api/settings", options), response);
+    assert.deepEqual(forwarded, [[receiver, ["/api/settings", options]]]);
+    assert.equal(consumed.length, 0, "observation does not consume the body");
+    assert.strictEqual(await response.json.call(jsonReceiver, argument), value);
+    assert.deepEqual(consumed, [[jsonReceiver, [argument]]]);
+    assert.deepEqual(tail.tailReads.settingsWrite, { started: 1, headers: 1, jsonStarted: 1, jsonFulfilled: 1, jsonRejected: 0, fetchRejected: 0, firstRequestAtMs: 12, lastEventAtMs: 12, jsonObservable: true });
+    // Existing synthetic emission above proves the real channel; this checks every
+    // tail field's whitelist without emitting a second synthetic channel record.
+    const tailSnapshot = read(designAuthorityStageDiagnostic({ ...snapshot, tailReads: tail.tailReads }, "synthetic-formatting-only", "available"));
+    assert.deepEqual(tailSnapshot.tailReads.settingsWrite, tail.tailReads.settingsWrite);
+    const partialSnapshot = read(designAuthorityStageDiagnostic({ ...snapshot, tailReads: { ...tail.tailReads, settingsWrite: { ...tail.tailReads.settingsWrite, jsonObservable: false, jsonStarted: 99, jsonFulfilled: 98, jsonRejected: 1, body: "private-body-sentinel", url: "private-url-sentinel", headers: "private-header-sentinel" } } }, "synthetic-formatting-only", "available"));
+    assert.deepEqual([partialSnapshot.tailReads.settingsWrite.started, partialSnapshot.tailReads.settingsWrite.headers, partialSnapshot.tailReads.settingsWrite.jsonStarted, partialSnapshot.tailReads.settingsWrite.jsonFulfilled, partialSnapshot.tailReads.settingsWrite.jsonRejected], [1, 1, null, null, null]);
+    const actualResponse = new Response('{"fixture":true}');
+    const nativeTail = observeDesignAuthorityTail(() => Promise.resolve(actualResponse), 100, () => 112);
+    assert.strictEqual(await nativeTail.fetch("/api/rules"), actualResponse);
+    assert.equal(actualResponse.bodyUsed, false);
+    assert.deepEqual(await actualResponse.json(), value);
+
+    const untouched = Promise.resolve(value);
+    const pass = observeDesignAuthorityTail(function (...args) { assert.strictEqual(this, receiver); assert.deepEqual(args, ["/api/status", options]); return untouched; }, 100, () => 112);
+    assert.strictEqual(pass.fetch.call(receiver, "/api/status", options), untouched);
+    assert.ok(Object.values(pass.tailReads).every(row => row.started === 0));
+    for (const synchronous of [true, false]) {
+      const fetchFailure = new Error("private-body-sentinel");
+      const failedFetch = observeDesignAuthorityTail(() => { if (synchronous) throw fetchFailure; return Promise.reject(fetchFailure); }, 100, () => 112);
+      if (synchronous) assert.throws(() => failedFetch.fetch("/api/agents-md"), actual => actual === fetchFailure);
+      else await assert.rejects(failedFetch.fetch("/api/agents-md"), actual => actual === fetchFailure);
+      assert.deepEqual([failedFetch.tailReads.agentsDocument.started, failedFetch.tailReads.agentsDocument.headers, failedFetch.tailReads.agentsDocument.fetchRejected], [1, 0, 1]);
+      const jsonFailure = new Error("private-header-sentinel");
+      const rejectedResponse = { json() { if (synchronous) throw jsonFailure; return Promise.reject(jsonFailure); } };
+      const failedJson = observeDesignAuthorityTail(() => Promise.resolve(rejectedResponse), 100, () => 112);
+      assert.strictEqual(await failedJson.fetch("/api/agents-md/reconcile"), rejectedResponse);
+      if (synchronous) assert.throws(() => rejectedResponse.json(), actual => actual === jsonFailure);
+      else await assert.rejects(rejectedResponse.json(), actual => actual === jsonFailure);
+      assert.deepEqual([failedJson.tailReads.agentsReconcile.jsonStarted, failedJson.tailReads.agentsReconcile.jsonFulfilled, failedJson.tailReads.agentsReconcile.jsonRejected], [1, 0, 1]);
+    }
+
+    const unwrappable = Object.freeze({ json: () => Promise.resolve(value) });
+    const mixed = observeDesignAuthorityTail(() => Promise.resolve(mixed.tailReads.rules.started === 2 ? unwrappable : { json: () => Promise.resolve(value) }), 100, () => 112);
+    await (await mixed.fetch("/api/rules")).json();
+    assert.strictEqual(await mixed.fetch("/api/rules"), unwrappable);
+    assert.strictEqual(await unwrappable.json(), value);
+    assert.deepEqual(mixed.tailReads.rules, { started: 2, headers: 2, jsonStarted: null, jsonFulfilled: null, jsonRejected: null, fetchRejected: 0, firstRequestAtMs: 12, lastEventAtMs: 12, jsonObservable: false });
+    // A later observable response cannot make the partial aggregate complete again.
+    await (await mixed.fetch("/api/rules")).json();
+    assert.deepEqual([mixed.tailReads.rules.jsonStarted, mixed.tailReads.rules.jsonFulfilled, mixed.tailReads.rules.jsonRejected, mixed.tailReads.rules.jsonObservable], [null, null, null, false]);
+    let getterReads = 0;
+    const getterFailure = new Error("private-body-sentinel");
+    const getterResponse = { get json() { getterReads += 1; throw getterFailure; } };
+    const getterTail = observeDesignAuthorityTail(() => Promise.resolve(getterResponse), 100, () => 112);
+    assert.strictEqual(await getterTail.fetch("/api/rules"), getterResponse);
+    assert.equal(getterReads, 0, "observing a response must not invoke an accessor");
+    assert.throws(() => getterResponse.json, actual => actual === getterFailure);
+    assert.deepEqual([getterTail.tailReads.rules.headers, getterTail.tailReads.rules.jsonObservable, getterTail.tailReads.rules.jsonStarted], [1, false, null]);
+    const brokenClock = observeDesignAuthorityTail(() => Promise.resolve({ json: () => Promise.resolve(value) }), 100, () => { throw new Error("private-url-sentinel"); });
+    assert.strictEqual(await (await brokenClock.fetch("/api/rules")).json(), value);
+    assert.deepEqual([brokenClock.tailReads.rules.started, brokenClock.tailReads.rules.headers, brokenClock.tailReads.rules.jsonObservable], [1, 1, false]);
+
+    // Sequential pure calls demonstrate that callbacks keep their creation-stage
+    // record; no UI race, delayed network or lifecycle action is introduced.
+    const oldResponse = { json: () => Promise.resolve(value) };
+    const oldStage = observeDesignAuthorityTail(() => Promise.resolve(oldResponse), 100, () => 112);
+    const oldPending = oldStage.fetch("/api/rules");
+    const newStage = observeDesignAuthorityTail(() => Promise.resolve({ json: () => Promise.resolve(value) }), 200, () => 224);
+    await (await newStage.fetch("/api/rules")).json();
+    await (await oldPending).json();
+    assert.deepEqual([oldStage.tailReads.rules.started, oldStage.tailReads.rules.jsonFulfilled, oldStage.tailReads.rules.lastEventAtMs], [1, 1, 12]);
+    assert.deepEqual([newStage.tailReads.rules.started, newStage.tailReads.rules.jsonFulfilled, newStage.tailReads.rules.lastEventAtMs], [1, 1, 24]);
+    const maximum = Object.fromEntries(designAuthorityTailRoles.map(role => [role, Object.fromEntries(Object.keys(tail.tailReads.settingsWrite).map(key => [key, key === "jsonObservable" ? true : Number.MAX_SAFE_INTEGER]))]));
+    read(designAuthorityStageDiagnostic({ ...snapshot, elapsedMs: Number.MAX_SAFE_INTEGER, requested: Number.MAX_SAFE_INTEGER, bodyConsumed: Number.MAX_SAFE_INTEGER, otherContracts: Number.MAX_SAFE_INTEGER, tailReads: maximum }, "synthetic-formatting-only", "available"));
   });
 
   test("INC-193 the design authority is declared, and what cannot be checked here is yellow", async (context) => {
@@ -214,6 +390,7 @@ if (!MUTATION) {
         };
         const beforeReceipt = receiptText(page.document);
         const observed = { requested: 0, bodyConsumed: 0, otherContracts: 0, method: null };
+        const { fetch: observedFetch, tailReads } = observeDesignAuthorityTail(realFetch, startedAt);
         let phase = "control-ready";
         let input = null;
         let panelAtConsumption = null;
@@ -221,7 +398,7 @@ if (!MUTATION) {
         const waitWithinBudget = (predicate, stage) => waitFor(predicate, `${label}: ${stage}`, Math.max(0, deadline - Date.now()));
         page.window.fetch = (request, options) => {
           const target = String(request);
-          if (!target.includes("tcrn-design-authority.json")) return realFetch(request, options);
+          if (!target.includes("tcrn-design-authority.json")) return observedFetch(request, options);
           if (target !== expectedContract) {
             observed.otherContracts += 1;
             return Promise.resolve({ ok: false, status: 404 });
@@ -254,7 +431,7 @@ if (!MUTATION) {
               receiptAdvanced: page.document.querySelector("#receipt-chip-text") ? Boolean(receiptAdvanced(page.document, beforeReceipt)()) : null,
               panelReplaced: panelReplaced(), controlRebuilt: control && input ? control !== input : null,
               controlPresent: Boolean(control), disabled: control?.disabled ?? null,
-              writeBusy: control?.hasAttribute("data-write-busy") ?? null };
+              writeBusy: control?.hasAttribute("data-write-busy") ?? null, tailReads };
           });
         }
       };

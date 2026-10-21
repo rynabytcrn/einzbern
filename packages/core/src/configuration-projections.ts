@@ -10,6 +10,7 @@ import { scopedWorkspaceState } from "./project-scope.js";
 import { projectReference } from "./involved-projects.js";
 import { chainIdentity } from "./chain-identity.js";
 import { renderAgentsSections } from "./agents-sections.js";
+import { assertNotDotAgentsTarget } from "./dot-agents.js";
 import { readAgentsNavigation } from "./machine-settings.js";
 import { deviceHome } from "./device-home.js";
 
@@ -138,6 +139,7 @@ async function refreshUnderRegistryLock(source: ConfigurationProjectionSource, o
         if (chainIdentity(state)?.role === "coordination" && target.projectId !== undefined) {
           outcomes.push({ targetKey: target.key, outputKey: output.key, status: "refused", reason: "coordination-requires-library-target" }); continue;
         }
+        await assertNotDotAgentsTarget(output.projectPath);
         const rendered = await renderAgentsSections(target.libraryPath, {
           projectRoot: output.projectPath, navigation, occurredAt: options.occurredAt,
           ...(target.projectId === undefined ? {} : { configurationProjectId: target.projectId }),
@@ -149,6 +151,10 @@ async function refreshUnderRegistryLock(source: ConfigurationProjectionSource, o
         outcomes.push({ targetKey: target.key, outputKey: output.key, status: pending || disabled ? "pending" : "refreshed", reason: disabled ? "generation-disabled" : pending ? "user-section-decision-required" : "managed-render-completed", pendingSections: rendered.pending });
       } catch (error) {
         const code = (error as { reasonCode?: unknown }).reasonCode;
+        if (code === "DOT_INDEPENDENT_TARGET") {
+          outcomes.push({ targetKey: target.key, outputKey: output.key, status: "pending", reason: "independent-dot-maintenance-required" });
+          continue;
+        }
         outcomes.push({ targetKey: target.key, outputKey: output.key, status: "refused", reason: typeof code === "string" && /^[A-Z][A-Z0-9_]+$/u.test(code) ? code : "managed-render-refused" });
       }
     }

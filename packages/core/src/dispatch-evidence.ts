@@ -85,3 +85,9 @@ export function normalizeDispatchAdmissionEvidence(value: unknown, { workId = nu
     problems, unavailable, admissionDigest, evidence: value,
   };
 }
+
+/** Discriminator only: never feed a native-tool envelope to the process validator. */
+export function dispatchEvidenceKind(value: unknown): "native-tool" | "process" {
+  if (!recordObject(value)) return "process";
+  return value.evidenceType === "native-tool" || recordObject(value.record) && recordObject(value.record.attempt) && value.record.attempt.schemaVersion === "tcrn.native-tool-attempt.v1" || recordObject(value.attempt) && value.attempt.schemaVersion === "tcrn.native-tool-attempt.v1" ? "native-tool" : "process";
+}

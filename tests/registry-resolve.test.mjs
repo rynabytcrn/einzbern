@@ -128,10 +128,15 @@ test("470-R1: a verb run without --workspace works on the library the current di
   const outside = run(["status"], base);
   assert.equal(outside.status, 1);
   assert.equal(JSON.parse(outside.stderr).reasonCode, "LIBRARY_NOT_REGISTERED");
-  // The catalog declares --workspace optional everywhere but init.
+  // Creation and the native/shared interfaces that bind an explicit workspace require it.
   const catalog = await cli(["commands"]);
   const workspaceFlags = catalog.commands.flatMap((entry) => entry.flags.filter((flag) => flag.name === "workspace").map((flag) => [entry.name, flag.required]));
-  assert.deepEqual(workspaceFlags.filter(([, isRequired]) => isRequired), [["init", true]]);
+  assert.deepEqual(workspaceFlags.filter(([, isRequired]) => isRequired), [
+    ["execution-native-prepare", true],
+    ["init", true],
+    ["shared-submit-advisory-read", true],
+    ["shared-submit-advisory-write", true],
+  ]);
   const registry = JSON.parse(await readFile(join(base, "device", "registry.json"), "utf8"));
   assert.equal(registry.schemaVersion, "einzbern.registry.v1");
 });

@@ -4,7 +4,7 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { cp } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
@@ -21,6 +21,14 @@ import { classifyProcess } from "../scripts/operational-batch-entry.mjs";
 import * as operationalBatchEntry from "../scripts/operational-batch-entry.mjs";
 import { appendProgressEvent, readProgressDelta, summarizeProgress, waitForProgress } from "../scripts/lib/incremental-output.mjs";
 import { copyHistoricalTypeScriptRuntime, historicalTypeScriptDependencyCheck, runHistoricalCommand } from "../scripts/verbatim-evidence-proof.mjs";
+import {
+  DIAGNOSTIC_LIMITS, buildTestDiagnostics, collectTestDiagnostics, createDiagnosticPlan,
+  decodeFileLedger, diagnosticArguments, expectedDiagnosticError, isDiagnosticRoot,
+  openFileObserver, prepareTestDiagnostics, projectTestFileEvent, readPrivateDiagnosticFile,
+  reduceFileRecords, snapshotTestController,
+} from "../scripts/lib/test-run-diagnostics.mjs";
+import testFileProgressReporter from "../scripts/test-file-progress-reporter.mjs";
+import { runAllP1Legs } from "../scripts/p1-sequence.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { LOCAL_DIRECTORY_NAMES, initializeLibrary } from "../dist/build/packages/core/src/index.js";
 
@@ -725,4 +733,273 @@ test("INC-384: a governed write under a hook stays in writes and a read with no 
   const summary = operationalBatchEntry.summarizeProcesses([...hookedSnapshot(), ...hookWrite, mainSessionRead, orphanRead, loopA, loopB], { selfPid: 1, selfPgid: null });
   assert.deepEqual(summary.writes.records.map((row) => row.pid), [511], "the batch still waits for a real write a hook started");
   assert.deepEqual(summary.agents.records.map((row) => [row.pid, row.role]).sort((left, right) => left[0] - right[0]), [[511, "orchestration"], [520, "orchestration"], [521, "orchestration"], [530, "orchestration"], [531, "orchestration"]], "no hook ancestor, a missing parent, or a parent cycle keeps the existing rule");
+});
+
+test("DOT-E01 native review uses the supported native evidence command and fails closed if unavailable", async () => {
+  const { normalizeReviewDispatchEvidence } = await import("../scripts/review-evidence.mjs");
+  const native = { attempt: { schemaVersion: "tcrn.native-tool-attempt.v1" } };
+  const result = normalizeReviewDispatchEvidence(native, { workId: "work:fixture", workRevision: 1 }, join(REPOSITORY_ROOT, "missing-native-engine.mjs"));
+  assert.equal(result.evidenceType, "native-tool"); assert.equal(result.valid, false); assert.equal(result.complete, false);
+  assert.equal(result.problems.some(problem => /unavailable|unsupported/u.test(problem)), true);
+});
+
+// INIT-062: pure event arrays and small private files, no controller or lifecycle probe.
+const diagnosticPlan = () => createDiagnosticPlan(["tests/a.test.mjs", "tests/空 格\".test.mjs"], "/owned/repository", 123);
+const diagnosticCounts = () => ({ tests: 2, suites: 0, passed: 1, failed: 0, cancelled: 1, skipped: 0, todo: 0, topLevel: 2 });
+const diagnosticHeader = (plan) => ({ kind: "header", schemaVersion: plan.schemaVersion, nodeVersion: plan.nodeVersion, planDigest: plan.planDigest, fileCount: plan.files.length });
+const diagnosticLines = (records) => Buffer.from(records.map((record) => `${JSON.stringify(record)}\n`).join(""));
+const diagnosticContext = () => ({ snapshot: { trigger: "deadline", triggerElapsedMs: 600_001, timeoutMs: 600_000, terminalProgressStatus: null, controllerAtTrigger: { cursor: 0, polls: 4, unchangedPolls: 3, bytesRead: 50 }, afterCleanup: { groupJoinsConfirmed: true, controller: null } } });
+function diagnosticEvents(plan) {
+  const common = { file: resolve(plan.cwd, plan.files[0]), name: plan.files[0], nesting: 0, line: 1, column: 1, testId: 9 };
+  return [
+    { type: "test:enqueue", data: common },
+    { type: "test:dequeue", data: common },
+    { type: "test:complete", data: { ...common, details: { passed: true, duration_ms: 4 } } },
+    { type: "test:summary", data: { file: common.file, success: true, counts: diagnosticCounts(), duration_ms: 5 } },
+    { type: "test:summary", data: { success: true, counts: diagnosticCounts(), duration_ms: 8 } },
+  ];
+}
+function diagnosticRecords(plan) {
+  return [diagnosticHeader(plan), ...diagnosticEvents(plan).map((event, index) => projectTestFileEvent(plan, event, index)), { kind: "end", observedElapsedMs: 6 }];
+}
+
+test("INIT-062 diagnostics: argv and root identity retain the original files without inherited worker authority", () => {
+  for (const files of [[], ["tests/a.test.mjs"], diagnosticPlan().files]) {
+    const plan = createDiagnosticPlan(files, "/owned/repository", 123);
+    const argv = diagnosticArguments(files, "/owned/repository/scripts/test-file-progress-reporter.mjs");
+    assert.deepEqual(argv.slice(0, 5), ["--test", "--test-reporter=spec", "--test-reporter-destination=stdout", "--test-reporter=/owned/repository/scripts/test-file-progress-reporter.mjs", "--test-reporter-destination=stdout"]);
+    assert.deepEqual(argv.slice(5), files);
+    const identity = { nodeVersion: "v24.16.0", pid: 125, ppid: 124, outerPid: "123", groupPid: "124" };
+    assert.equal(isDiagnosticRoot(plan, identity), true);
+    for (const change of [{ nodeVersion: "v24.19.0" }, { ppid: 125 }, { outerPid: undefined }, { groupPid: "0124" }, { pid: 124 }]) assert.equal(isDiagnosticRoot(plan, { ...identity, ...change }), false);
+  }
+  for (const file of ["/elsewhere/tests/a.test.mjs", "tests/../a.test.mjs", "tests/secret\n.test.mjs"]) assert.throws(() => createDiagnosticPlan([file], "/owned/repository", 123));
+  assert.throws(() => createDiagnosticPlan(["tests/a.test.mjs", "tests/a.test.mjs"], "/owned/repository", 123));
+  assert.equal(expectedDiagnosticError(new TypeError("unexpected programming error")), null);
+  assert.equal(expectedDiagnosticError(Object.assign(new Error("private path"), { code: "ENOSPC" })), "OBSERVER_IO");
+});
+
+test("INIT-062 diagnostics: wrapper execution, summaries and unknown absence stay separate", () => {
+  const plan = diagnosticPlan();
+  const records = diagnosticRecords(plan);
+  const absent = reduceFileRecords(plan, []);
+  assert.equal(absent.fileStates[0].state, "selected-only");
+  assert.equal(absent.fileStates[0].executionEntryObserved, null);
+  const queued = reduceFileRecords(plan, records.slice(0, 2));
+  assert.equal(queued.fileStates[0].queuedObserved, 0);
+  assert.equal(queued.fileStates[0].executionEntryObserved, null);
+  const entered = reduceFileRecords(plan, records.slice(0, 3));
+  assert.equal(entered.fileStates[0].state, "execution-entry-observed");
+  const returned = reduceFileRecords(plan, records.slice(0, 4));
+  assert.equal(returned.fileStates[0].wrapperTerminal.passed, true);
+  assert.equal(returned.fileStates[0].runSummary, null);
+  for (const ordered of [[records[4], ...records.slice(1, 4)], [...records.slice(1, 4), records[4]]]) {
+    const state = reduceFileRecords(plan, ordered);
+    assert.equal(state.fileStates[0].runSummary.success, true);
+    assert.equal(state.fileStates[0].wrapperTerminal.passed, true);
+    assert.equal(state.fileStates[1].state, "selected-only");
+  }
+  for (const failureType of ["testAborted", "cancelledByParent", "testTimeoutFailure", "testCodeFailure", "unknown"]) {
+    const terminal = { ...records[3], passed: false, failureType };
+    const state = reduceFileRecords(plan, [records[1], records[2], terminal]);
+    assert.equal(state.fileStates[0].state, ["testAborted", "cancelledByParent", "testTimeoutFailure"].includes(failureType) ? "interrupted" : "failed-or-interrupted-unknown");
+  }
+  const cancelledBeforeEntry = reduceFileRecords(plan, [records[1], { ...records[3], passed: false, failureType: "cancelledByParent" }]);
+  assert.equal(cancelledBeforeEntry.fileStates[0].executionEntryObserved, null);
+  assert.equal(cancelledBeforeEntry.fileStates[0].state, "interrupted");
+  for (const conflicting of [{ ...records[3], testId: 99 }, records[1], { kind: "conflict", fileIndex: 0, observedElapsedMs: 5 }]) {
+    const state = reduceFileRecords(plan, [...records.slice(1, 5), conflicting, records[3]]);
+    assert.equal(state.fileStates[0].ambiguous, true);
+    assert.equal(state.fileStates[0].wrapperTerminal, null);
+    assert.equal(state.fileStates[0].runSummary, null);
+  }
+});
+
+test("INIT-062 diagnostics: event allowlist excludes paths, private names, error text and invalid evidence", () => {
+  const plan = diagnosticPlan();
+  const event = diagnosticEvents(plan)[2];
+  const projected = projectTestFileEvent(plan, { ...event, data: { ...event.data, private: "SECRET_INPUT", details: { passed: false, duration_ms: 2, error: { failureType: "testAborted", message: "SECRET_INPUT", stack: "/private/home" } } } }, 2);
+  assert.equal(projected.failureType, "testAborted");
+  assert.equal(JSON.stringify(projected).includes("SECRET_INPUT"), false);
+  assert.equal(JSON.stringify(projected).includes(plan.cwd), false);
+  assert.equal(projectTestFileEvent(plan, { ...event, data: { ...event.data, name: "SECRET_INPUT" } }, 3), null);
+  for (const fields of [{ file: "/elsewhere/tests/a.test.mjs" }, { line: 2 }, { nesting: 1 }, { testId: -1 }]) assert.equal(projectTestFileEvent(plan, { ...event, data: { ...event.data, ...fields } }, 3).kind, "conflict");
+  assert.equal(projectTestFileEvent(plan, { type: "test:stdout", data: { message: "SECRET_INPUT" } }, 4), null);
+  assert.throws(() => projectTestFileEvent(plan, { type: "test:summary", data: { success: true, counts: diagnosticCounts(), duration_ms: Infinity } }, 4));
+  assert.throws(() => projectTestFileEvent(plan, { type: "test:summary", data: { success: true, counts: { ...diagnosticCounts(), passed: -1 }, duration_ms: 1 } }, 4));
+});
+
+test("INIT-062 diagnostics: complete prefixes reject corrupt tails, duplicate slots and invented final totals", () => {
+  const plan = diagnosticPlan();
+  const records = diagnosticRecords(plan);
+  const complete = decodeFileLedger(plan, diagnosticLines(records));
+  const receipt = buildTestDiagnostics(plan, complete, diagnosticContext());
+  assert.equal(receipt.fileEvidence.status, "observed");
+  assert.equal(receipt.fileEvidence.finalTotalsAvailable, true);
+  assert.deepEqual(receipt.fileEvidence.finalSummary.counts, diagnosticCounts());
+  for (const tail of [Buffer.from("{half"), Buffer.from("{broken}\n"), diagnosticLines([{ ...records[3], observedElapsedMs: 7 }])]) {
+    const input = Buffer.concat([diagnosticLines(records.slice(0, 4)), tail, diagnosticLines(records.slice(4))]);
+    const parsed = decodeFileLedger(plan, input);
+    const partial = buildTestDiagnostics(plan, parsed, diagnosticContext());
+    assert.equal(partial.fileEvidence.status, "partial");
+    assert.equal(partial.fileEvidence.finalTotalsAvailable, false);
+    assert.equal(partial.fileEvidence.globalSummaryObserved, null);
+  }
+  const half = decodeFileLedger(plan, Buffer.concat([diagnosticLines(records.slice(0, -1)), Buffer.from('{"kind":')]));
+  assert.ok(half.partialTailBytes > 0);
+  assert.equal(buildTestDiagnostics(plan, half, diagnosticContext()).fileEvidence.finalTotalsAvailable, false);
+  const overlong = decodeFileLedger(plan, Buffer.concat([diagnosticLines([records[0]]), Buffer.from(" ".repeat(DIAGNOSTIC_LIMITS.lineBytes) + "\n"), diagnosticLines(records.slice(1))]));
+  assert.equal(overlong.error, "LEDGER_BUDGET");
+  assert.equal(overlong.records.length, 1);
+  const unsupported = decodeFileLedger(plan, diagnosticLines([{ ...records[0], nodeVersion: "v99.0.0" }, ...records.slice(1)]));
+  assert.equal(buildTestDiagnostics(plan, unsupported, diagnosticContext()).fileEvidence.status, "unavailable");
+  const conflict = decodeFileLedger(plan, diagnosticLines([...records.slice(0, -1), { kind: "conflict", fileIndex: 0, observedElapsedMs: 5 }, records.at(-1)]));
+  const ambiguous = buildTestDiagnostics(plan, conflict, diagnosticContext());
+  assert.equal(ambiguous.fileEvidence.status, "partial");
+  assert.equal(ambiguous.fileEvidence.fileStates[0].wrapperTerminal, null);
+  assert.equal(ambiguous.fileEvidence.finalTotalsAvailable, false);
+});
+
+test("INIT-062 diagnostics: byte budgets retain only recomputable prefixes including summary and end costs", () => {
+  const plan = diagnosticPlan();
+  const decoded = decodeFileLedger(plan, diagnosticLines(diagnosticRecords(plan)));
+  const full = buildTestDiagnostics(plan, decoded, diagnosticContext());
+  const size = Buffer.byteLength(JSON.stringify(full));
+  assert.ok(size > JSON.stringify(full).length, "UTF-8 and escaped roster bytes are counted, not characters");
+  const minimumBudget = Buffer.byteLength(JSON.stringify(buildTestDiagnostics(createDiagnosticPlan([], plan.cwd, 123), null, diagnosticContext()))) + 256;
+  const budgets = [size - 1, size, size + 1];
+  for (let budget = size - 64; budget >= minimumBudget; budget -= 64) budgets.push(budget);
+  let omittedTerminal = false;
+  let omittedGlobal = false;
+  for (const budget of budgets) {
+    const result = buildTestDiagnostics(plan, decoded, diagnosticContext(), budget);
+    assert.ok(Buffer.byteLength(JSON.stringify(result)) <= budget);
+    const file = result.fileEvidence;
+    if (file.retainedFileCount) assert.deepEqual(file.fileStates, reduceFileRecords(plan, file.retainedRecords).fileStates);
+    assert.deepEqual(file.retainedRecords, decoded.records.slice(0, file.retainedRecordCount));
+    assert.equal(file.retainedCursor, diagnosticLines(file.retainedRecords).length);
+    assert.equal(file.omittedBytes, decoded.sourceBytes - file.retainedCursor);
+    if (file.retainedRecordCount < decoded.records.length) assert.equal(file.finalTotalsAvailable, false);
+    if (file.retainedFileCount && file.retainedRecordCount > 0) {
+      omittedTerminal ||= !file.retainedRecords.some((record) => record.kind === "complete");
+      omittedGlobal ||= !file.retainedRecords.some((record) => record.kind === "global-summary");
+    }
+    if (!file.retainedRecords.some((record) => record.kind === "complete")) assert.equal(file.fileStates[0]?.wrapperTerminal ?? null, null);
+    if (!file.retainedRecords.some((record) => record.kind === "global-summary")) assert.equal(file.globalSummaryObserved, null);
+    if (budget >= size) assert.equal(file.retainedRecordCount, decoded.records.length);
+  }
+  assert.equal(omittedTerminal, true);
+  assert.equal(omittedGlobal, true);
+  const many = createDiagnosticPlan(Array.from({ length: 4000 }, (_, index) => `tests/${index}.test.mjs`), plan.cwd, 123);
+  const unavailable = buildTestDiagnostics(many, decodeFileLedger(many, diagnosticLines([diagnosticHeader(many)])), diagnosticContext(), 10_000);
+  assert.equal(unavailable.fileEvidence.error, "MANDATORY_ROSTER_EXCEEDS_BUDGET");
+  assert.equal(unavailable.fileEvidence.retainedFileCount, 0);
+  assert.equal(unavailable.fileEvidence.omittedFileCount, 4000);
+  assert.deepEqual(unavailable.fileEvidence.fileStates, []);
+  assert.equal(unavailable.fileEvidence.finalSummary, null);
+  const errorRows = [diagnosticHeader(plan), { kind: "observer-error", reason: "LEDGER_BUDGET" }];
+  const errorReceipt = buildTestDiagnostics(plan, decodeFileLedger(plan, diagnosticLines(errorRows)), diagnosticContext());
+  assert.equal(errorReceipt.fileEvidence.retainedRecordCount, 2);
+  assert.equal(errorReceipt.fileEvidence.status, "partial");
+  assert.equal(errorReceipt.fileEvidence.error, "LEDGER_BUDGET");
+  assert.equal(DIAGNOSTIC_LIMITS.jsonBytes, 524_288);
+});
+
+test("INIT-062 diagnostics: private small files refuse links and observer IO cannot turn a failed run green", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "einzbern-diagnostic-samples-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const plan = diagnosticPlan();
+  const source = join(root, "source");
+  writeFileSync(source, "sample", { mode: 0o600 });
+  assert.equal(readPrivateDiagnosticFile(source, 2).buffer.length, 3);
+  assert.equal(readPrivateDiagnosticFile(source, 10).buffer.toString(), "sample");
+  const symbolic = join(root, "symbolic");
+  symlinkSync(source, symbolic);
+  assert.throws(() => readPrivateDiagnosticFile(symbolic, 10));
+  const hard = join(root, "hard");
+  linkSync(source, hard);
+  assert.throws(() => readPrivateDiagnosticFile(hard, 10));
+  writeFileSync(join(root, "file-events.ndjson"), "", { mode: 0o600 });
+  const prepared = prepareTestDiagnostics(root, plan.files, plan.cwd, "/owned/reporter.mjs");
+  assert.notEqual(prepared.error, null);
+  assert.deepEqual(prepared.arguments, ["--test", ...plan.files]);
+  assert.deepEqual(prepared.environment, {});
+  const refusedPlan = prepareTestDiagnostics(root, ["/outside.test.mjs"], plan.cwd, "/owned/reporter.mjs");
+  assert.equal(refusedPlan.error, "PLAN_INVALID");
+  assert.deepEqual(refusedPlan.arguments, ["--test", "/outside.test.mjs"]);
+  assert.deepEqual(refusedPlan.environment, {});
+  const snapshot = { ...diagnosticContext().snapshot, controllerAtTrigger: { cursor: 0 } };
+  const unjoined = collectTestDiagnostics({ plan, error: null, ledgerPath: "/never-read" }, snapshot, "/never-read", false);
+  assert.equal(unjoined.fileEvidence.status, "unavailable");
+  assert.equal(unjoined.fileEvidence.error, "GROUP_JOIN_UNCONFIRMED");
+  assert.equal(unjoined.afterCleanup.controller, null);
+  const envelope = { primaryError: "controller timeout", cleanupErrors: [{ reasonCode: "TEST_CONTROLLER_GROUP_JOIN_FAILED", message: "existing failure" }], diagnostics: unjoined };
+  const failure = Object.assign(new Error(JSON.stringify(envelope)), { reasonCode: "TEST_CONTROLLER_TIMEOUT" });
+  const aggregate = await runAllP1Legs(async () => { throw failure; }, ["test"], () => 1);
+  assert.equal(aggregate.reasonCode, "P1_RED");
+  assert.equal(aggregate.reds[0].reasonCode, "TEST_CONTROLLER_TIMEOUT");
+  assert.equal(aggregate.reds[0].message, failure.message);
+});
+
+test("INIT-062 diagnostics: frozen controller counters and later cleanup observations are not retimestamped", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "einzbern-diagnostic-progress-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const path = join(root, "events.ndjson");
+  const first = { schemaVersion: "tcrn.progress-event.v1", type: "controller-started", pid: 77, coverageDirectory: "/private/home", observedAt: "2026-10-20T10:00:00.000Z" };
+  const last = { schemaVersion: "tcrn.progress-event.v1", type: "completed", ok: true, code: 0, signal: null, observedAt: "2026-10-20T10:10:01.000Z" };
+  const prefix = `${JSON.stringify(first)}\n`;
+  writeFileSync(path, `${prefix}${JSON.stringify(last)}\n`, { mode: 0o600 });
+  const counters = { polls: 7, unchangedPolls: 6, bytesRead: Buffer.byteLength(prefix) };
+  const frozen = snapshotTestController([first], Buffer.byteLength(prefix), counters);
+  counters.polls++;
+  assert.equal(frozen.polls, 7);
+  for (const trigger of ["deadline", "terminal-without-close"]) {
+    const result = collectTestDiagnostics({ plan: diagnosticPlan(), error: "OBSERVER_IO", ledgerPath: null }, { ...diagnosticContext().snapshot, trigger, controllerAtTrigger: frozen }, path, true);
+    assert.equal(result.controllerAtTrigger.status, "running");
+    assert.equal(result.controllerAtTrigger.lastProgress.type, "controller-started");
+    assert.equal(result.afterCleanup.controller.events[0].type, "completed");
+    assert.equal(result.controllerAtTrigger.polls, 7);
+    assert.equal(result.observationWindow, "through-cleanup");
+    assert.equal(JSON.stringify(result).includes("/private/home"), false);
+    assert.equal(result.fileEvidence.status, "unavailable");
+  }
+  const source = readFileSync(resolve(REPOSITORY_ROOT, "scripts/task.mjs"), "utf8");
+  assert.ok(source.includes('primaryError: "controller timeout"'));
+  assert.ok(source.includes('primaryError: "controller did not close after " + outcome.value.status'));
+  assert.ok(source.includes('const maximum = p8Only ? 600_000 : 900_000;'));
+  assert.ok(source.includes('configured <= maximum'));
+  assert.ok(source.includes('const timeoutMs = controllerTimeoutMs(p8Only);'));
+});
+
+test("INIT-062 diagnostics: in-memory reporter drains without text and private observer keeps bounded slots", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "einzbern-diagnostic-observer-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const plan = diagnosticPlan();
+  const ledgerPath = join(root, "file-events.ndjson");
+  writeFileSync(ledgerPath, "", { mode: 0o600 });
+  // This is a pure identity sample, not evidence of any actual controller parent.
+  const { lstatSync } = await import("node:fs");
+  const metadata = lstatSync(ledgerPath);
+  plan.ledgerIdentity = { dev: metadata.dev, ino: metadata.ino };
+  const planPath = join(root, "plan.json");
+  writeFileSync(planPath, `${JSON.stringify(plan)}\n`, { mode: 0o600 });
+  const environment = { TCRN_TEST_CONTROLLER_DIAGNOSTIC_PLAN: planPath, TCRN_TEST_CONTROLLER_DIAGNOSTIC_LEDGER: ledgerPath };
+  const identity = { nodeVersion: "v24.16.0", pid: 125, ppid: 124, outerPid: "123", groupPid: "124" };
+  assert.throws(() => openFileObserver(environment, { ...identity, ppid: 125 }));
+  assert.equal(readFileSync(ledgerPath).length, 0);
+  const observer = openFileObserver(environment, identity);
+  for (const [index, event] of diagnosticEvents(plan).entries()) observer.observe(event, index);
+  for (let index = 0; index < 20; index++) observer.observe(diagnosticEvents(plan)[2], 5);
+  observer.finish(6, true);
+  const decoded = decodeFileLedger(plan, readFileSync(ledgerPath));
+  assert.equal(decoded.error, null);
+  assert.ok(decoded.records.length <= 5 * plan.files.length + 4);
+  assert.equal(decoded.records.filter((record) => record.kind === "conflict").length, 1);
+  assert.equal(reduceFileRecords(plan, decoded.records).fileStates[0].wrapperTerminal, null);
+  let consumed = 0;
+  const source = (async function* () { for (const event of diagnosticEvents(plan)) { consumed++; yield event; } })();
+  const output = [];
+  for await (const chunk of testFileProgressReporter(source)) output.push(chunk);
+  assert.equal(consumed, 5);
+  assert.deepEqual(output, []);
 });

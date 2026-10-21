@@ -614,3 +614,23 @@ test("restoring a shared Ether on another device retains its chosen location and
   const next = { ...b, project: join(f.base, "source-c") }; await mkdir(next.project);
   assert.equal((await plan(next)).resolved.artifacts, library);
 });
+
+
+test("DOT-I01/I02: explicit chatgpt-dot skip never installs host hooks, skill copies, device or library", async context => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-dot-setup-")));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  const projectRoot = join(base, "project"); const home = join(base, "home"); const deviceHome = join(base, "device");
+  await mkdir(projectRoot); await mkdir(home);
+  const dot = { binding: { root: projectRoot, agentsPath: join(projectRoot, "AGENTS.md"), provenancePath: join(projectRoot, ".dot", "provenance.json"), backupRoot: join(projectRoot, ".dot", "recovery"), projectReference: "fixture:project", ownerId: "fixture:dot" }, source: null, enginePath: join(base, "unread-engine"), manaSkillPath: join(base, "unread-skill"), preInjection: "skip" };
+  const options = { mode: "fresh", projectRoot, home, deviceHome, at: at(), executionTarget: "chatgpt-dot", dot };
+  const plan = await planSetup(options);
+  assert.equal(plan.executionTarget, "chatgpt-dot"); assert.deepEqual(plan.writes, []); assert.equal(plan.library, null);
+  const receipt = await applySetup(plan); assert.equal(receipt.dot.status, "skipped"); assert.equal(receipt.dot.sessionRead, "not-verified");
+  assert.deepEqual(receipt.selfCheck, [], "traditional doctor checks do not certify dot");
+  assert.deepEqual(await readdir(home), []); assert.deepEqual(await readdir(projectRoot), []);
+  await assert.rejects(lstat(deviceHome), error => error.code === "ENOENT");
+  await assert.rejects(planSetup({ ...options, mode: "migrate" }), error => error.reasonCode === "SETUP_TARGET_UNSUPPORTED");
+  await assert.rejects(planSetup({ ...options, executionTarget: "dot" }), error => error.reasonCode === "SETUP_TARGET_UNSUPPORTED");
+  await assert.rejects(planSetup({ ...options, projectRoot: "." }), error => error.reasonCode === "SETUP_INPUT_INVALID");
+  await assert.rejects(planSetup({ ...options, answers: { navigation: true } }), error => error.reasonCode === "SETUP_OPTION_NOT_APPLICABLE");
+});

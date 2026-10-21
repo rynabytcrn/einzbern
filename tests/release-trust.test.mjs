@@ -296,7 +296,8 @@ function isCommandInvocation(expression, bindings) {
 }
 
 function signingCommandArgument(node) {
-  const argument = node && unwrapExpression(node);
+  if (!node) return null;
+  const argument = unwrapExpression(node);
   const candidate = ts.isArrayLiteralExpression(argument) ? argument.elements[0] : argument;
   if (!candidate || !ts.isStringLiteralLike(candidate)) return null;
   const command = candidate.text.trim().split(/[\s]+/u, 1)[0].split(/[\\/]/u).at(-1).replace(/\.exe$/iu, "");
@@ -361,7 +362,7 @@ test("release execution paths contain no signing mechanism or signature artifact
 
   const harmless = await treeFixture(context, {
     "scripts/release.mjs": "// signature is a field-name word, not release signing code.\nimport './lib/release-publisher.mjs';\nimport './lib/release-types.ts';\n",
-    "scripts/lib/release-publisher.mjs": "export const typeName = 'index signature';\n",
+    "scripts/lib/release-publisher.mjs": "import { spawnSync } from 'node:child_process';\nexport const typeName = 'index signature';\nexport const noArgument = () => spawnSync();\n",
     "scripts/lib/release-types.ts": "export type Json = { readonly [field: string]: unknown };\nexport type SignatureMode = 'none';\n",
   });
   assert.deepEqual(await retiredReleaseTrustCode(harmless), [], "comments and TypeScript index-signature types are not mechanisms");

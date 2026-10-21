@@ -93,9 +93,12 @@ test("479-AC1: every verb the navigation table names is a verb of the current co
   assert.deepEqual(SKILL_NAVIGATION.map((entry) => [...entry.verbs]), [
     ["recall"],
     ["work-show", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
+    ["execution-native-prepare", "execution-native-record", "execution-native-evidence"],
+    ["shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"],
+    ["config-backup-plan", "config-backup-create", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
     ["work-transition", "work-annotate"],
     ["minutes-record"],
-    ["knowledge-create"],
+    ["knowledge-create", "knowledge-capture"],
     ["settings-catalog"],
   ]);
   for (const verb of skillNamedVerbs()) assert.ok(catalogNames.includes(verb), `${verb} is in COMMAND_CATALOG`);
@@ -128,16 +131,15 @@ test("U10: the full-text row passes each target's handoff to the native host dis
   }
 });
 
-// TCRN-CROSS-STORY-532 (MIN-256 D6): several sessions write to one library at once; the engine queues
-// their writes, so none steps aside for another, and only a migration may ask the user to stop the others.
-test("532 (MIN-256 D6): the navigation says the engine queues concurrent writes, so no session steps aside", () => {
+// Local write queues retain their scope: incremental remote publication needs serial handoff.
+test("532 / DOT-R01: local queue guidance does not imply a distributed lock or platform service", () => {
   const markdown = render();
   const lines = markdown.split("\n");
   const navigation = lines.indexOf("## Navigation");
   const table = lines.indexOf("| Moment | Verb | What to do |");
-  const note = lines.findIndex((line) => line.startsWith("Several sessions can work in one library at the same time:"));
-  assert.ok(navigation > 0 && navigation < note && note < table, "the note stands in the Navigation section, before the table");
-  for (const phrase of ["the engine queues their writes", "no session has to stop or step aside for another", "Except for a migration, never ask the user to stop the other sessions."]) {
+  const note = lines.findIndex((line) => line.startsWith("Local sessions share"));
+  assert.ok(navigation > 0 && navigation < note && note < table);
+  for (const phrase of ["queued writes without stepping aside", "not cross-device exclusion", "serial handoff", "No platform-native dot hook, background lifecycle manager or sync service is installed"]) {
     assert.ok(lines[note].includes(phrase), phrase);
   }
   assert.ok(Buffer.byteLength(markdown, "utf8") < 6000, `${Buffer.byteLength(markdown, "utf8")} bytes`);
@@ -227,4 +229,67 @@ test("488-AC2 (MIN-238 D4): the install line and the fetch script name both repo
 test("552: generated dispatch workflow consumes admission rather than treating a catalog as permission", () => {
   const row = tableRows(render()).find(([, verbs]) => verbs.includes("`work-project-context`"));
   for (const phrase of ["--execution-request", "`dispatchAdmitted` is true", "Pass its selected runner/model/effort exactly", "never substitute", "not a reusable permit or a global scheduler", "stdout, stderr and exit code"]) assert.ok(row[2].includes(phrase), phrase);
+  assert.ok(row[2].includes("`execution-evidence --from-file <json>` remains read-only validation, not authentication"),
+    "J17: retain the exact public process-evidence navigation and its non-authentication boundary");
+  assert.ok(row[2].includes("specs/dispatch-admission-evidence-v1.md"));
+});
+
+// Original DOT-R01/R02/R03 generation consumers: authored here, actual sessions remain E4.
+test("DOT-R01/R02: generated navigation separates native evidence, rules, schedules and permission", () => {
+  const markdown = render();
+  const native = tableRows(markdown).find(([, verbs]) => verbs.includes("`execution-native-prepare`"))[2];
+  for (const phrase of ["Machine-assemble private inputs from current tool results", "never ask users to hand-fill JSON", "reapprove authorized dispatch bookkeeping", "Unknown capability is not pass", "not-applicable", "actual model may be unavailable", "targetDispatchAdmitted", "pending attempt", "raw source and attempt association", "unknown retains responsibility", "validates, not authenticates"]) assert.ok(native.includes(phrase), phrase);
+  for (const phrase of ["parent or patrol reads do not substitute", "INIT batch covers all pending Stories", "at most five sourced lessons", "No dynamic progress in AGENTS", "independent dot target", "Installation, policy changes, restoration and publication retain their separate approvals", "20-minute patrol", "00:00 Asia/Shanghai", "unapproved policy forbids daily enablement", "unknown stays unknown"]) assert.ok(markdown.includes(phrase), phrase);
+  for (const phrase of ["saved prepare output as `--binding`", "prior full output as `--prior`", "inspect merged history", "--retry-from", "--reconciliation", "query unknown first"]) assert.ok(native.includes(phrase), phrase);
+  assert.ok(markdown.includes("actual engine bundle root `specs/` (beside `scripts/`), not this Skill"),
+    "J02: closed inputs come from the actual shipped contracts, not only flag help or source TS");
+  const shared = tableRows(markdown).find(([, verbs]) => verbs.includes("`shared-submit-plan`"))[2];
+  for (const phrase of ["Complete baseline", "one complete pre-submit refresh", "engine reapply", "serial handoff", "segments before manifest", "verify remote bytes", "complete destination", "observe release", "Advisory is not a lock", "absence/age grants nothing", "Query unknown publication before retry"]) assert.ok(shared.includes(phrase), phrase);
+});
+
+test("DOT-R02: dot install reference is complete, source-bound and separate from traditional hooks", async () => {
+  const text = await readFile(join(referenceDirectory, "install.md"), "utf8");
+  for (const phrase of ["--execution-target chatgpt-dot", "--dot-input", "DotAgentsOptions", "engineCommit", "unavailable", "Catalog membership is not enablement", "preInjection", "skip performs no target write", "SETUP_DOT_PARTIAL", "sessionRead: \"not-verified\"", "Parent/patrol observations cannot substitute", "00:00 Asia/Shanghai", "Two distinct successful checks at least 20 minutes apart", "pending-resume", "activeLimit", "recoveryDuration", "exact policy digest", "two stable content-tree observations", "not release certification", "SharedSubmitInput", "no acquire, force-expiry or remote CAS flag"]) assert.ok(text.includes(phrase), phrase);
+  const dotSection = text.slice(text.indexOf("## Choose the installation target first"), text.indexOf("## Traditional target workflow"));
+  assert.ok(dotSection.includes("do not ask the\nuser to hand-fill JSON"));
+  assert.ok(dotSection.includes("does not prove that an\nexecution session read them"));
+  assert.ok(dotSection.includes("No retention amounts or cleanup permission"));
+  assert.ok(dotSection.includes("sourceVersion") || dotSection.includes("Source identity is obtained asynchronously"));
+  assert.ok(text.indexOf("## Traditional target workflow") < text.indexOf("## Questions (one screen)"));
+});
+
+test("J01/J02/J03/J04/J09–J13: install guidance consumes reviewed source interfaces without promoting unknown or cached claims", async () => {
+  const text = (await readFile(join(referenceDirectory, "install.md"), "utf8")).replace(/\s+/gu, " ");
+  for (const phrase of [
+    "actual engine bundle root contains `scripts/einzbern.mjs` and its sibling `specs/`",
+    "contracts are not in this Skill's directory",
+    "required/optional/null fields, enums and digest rules",
+    "rule-list --workspace <actual-library> --project-id <actual-project>",
+    'dotRuleSources.status: "available"', "inherited enabled rules are included",
+    "enabledRules: null", "Never substitute catalog entries or `[]`",
+    "--approved-plan-digest <saved-digest>", "previously reviewed `dot.planDigest` unchanged",
+    "same mode, project, at and dot-input", "Do not compute a new digest at apply time",
+    "returns a new preview and refuses before writing",
+    "full `tcrn.native-dispatch-preparation.v1`", "do not pass stdout's outer object",
+    "Omit `--prior` only for the first record", "previous full saved output",
+    "new create-only `--output`", "revalidated merged `history` / `normalized`",
+    "--retry-from <previous-saved-record>", "--reconciliation <private-json>",
+    "Query unknown outcomes first", "confirmed-not-executed", "notExecutedPointer",
+    "Completed, conflicting or unresolved predecessors cannot retry",
+    "Source association and digests are not provider authentication",
+    "Independent dot user fragments and rules are unmappable",
+    "preserves the independent AGENTS and provenance bytes",
+    "projection pending, not rendered",
+    "Ordinary terminal checks do not clear pending resume/pause",
+    "Unknown actual enabled state stays unknown",
+    "fresh matching false readback after the current action boundary",
+    "historical disabled state cannot confirm this request",
+    "Readback must match the original ID, group, selection and fixed schedule",
+    "strictly later than both `lastReadbackAt` and the current boundary's `returnedAt`",
+    "Older/equal reads refuse",
+    "Missing boundaries, including legacy unknown state, stay unknown rather than treating a late read as proof",
+    "merge.observedAt", "writerHandoff.observedAt",
+    "local completion <= fresh refresh <= merge observation <= handoff observation <= advisory observation <= every publication",
+    "Missing times stay pending", "Never fill phase timestamps with JSON assembly time",
+  ]) assert.ok(text.includes(phrase), phrase);
 });

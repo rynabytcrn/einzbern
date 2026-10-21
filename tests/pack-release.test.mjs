@@ -23,6 +23,7 @@ import test, { after } from "node:test";
 
 import { BRAND, FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
 import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
+import { normalizedInstallBytes } from "../dist/build/packages/core/src/install-tree-digest.js";
 import {
   P8_RELEASE_ARTIFACTS,
   P8_RELEASE_ARCHIVE,
@@ -37,6 +38,10 @@ const packScript = join(repositoryRoot, "scripts/pack-release.mjs");
 const RELEASE = `einzbern-${FRAMEWORK_VERSION}`;
 const ARCHIVE = `${RELEASE}.tar.gz`;
 const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
+const SPECIFICATIONS = Object.freeze([
+  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md",
+  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md",
+]);
 
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-pack-release-")));
 after(() => rm(base, { recursive: true, force: true }));
@@ -159,11 +164,21 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
     "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
-    "specs/dispatch-admission-evidence-v1.md",
+    ...SPECIFICATIONS.map(name => `specs/${name}`),
     ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "manifest.json",
   ];
   assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());
   const byPath = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry]));
+  for (const name of SPECIFICATIONS) {
+    const path = `specs/${name}`;
+    assert.deepEqual(byPath.get(path).bytes, await readFile(join(repositoryRoot, path)), `${path}: public contract bytes are preserved, not rendered or rewritten`);
+  }
+  // Installed consumers can obtain the closed input vocabulary without TS sources.
+  for (const [name, fields] of Object.entries({
+    "dot-execution-v1.md": ["actualCapabilityEvidenceRefs", "authorizationEvidenceRef", "occupancyObservation", "revisionBinding", "contextRead", "effectiveRoots", "exactDelegation"],
+    "native-tool-evidence-v1.md": ["rawResponseValue", "statusPointer", "statusMapping", "terminalObservation", "providerPointers", "NativeRetryReconciliation", "--prior", "--retry-from", "--reconciliation"],
+    "shared-submit-v1.md": ["completeInventoryDigest", "engineOutputMembers", "writerHandoff", "observedAt", "contentBase64", "memberSetDigest", "lastError"],
+  })) for (const field of fields) assert.ok(byPath.get(`specs/${name}`).bytes.toString("utf8").includes(field), `${name} documents ${field}`);
   assert.ok(byPath.get("atelier/ds-static-bridges.snapshot.js").bytes.equals(await readFile(join(repositoryRoot, "portal/ds-static-bridges.snapshot.js"))), "the archive retains exact published bridge bytes");
   assert.ok(byPath.get("THIRD_PARTY_NOTICES.txt").bytes.equals(await readFile(join(repositoryRoot, "THIRD_PARTY_NOTICES.txt"))), "the archive retains vendored runtime license notices");
   assert.ok(byPath.get("launchers/einzbern.mjs").bytes.equals(await readFile(join(repositoryRoot, "scripts/einzbern-launcher.mjs"))));
@@ -219,6 +234,11 @@ test("481-R2: the manifest states the install-tree digest of the unpacked direct
   assert.equal(manifest.version, FRAMEWORK_VERSION);
   assert.notEqual(manifest.schemaVersion, manifest.version);
   assert.equal(manifest.nodeFloor, NODE_FLOOR);
+  for (const name of SPECIFICATIONS) {
+    const path = `specs/${name}`; const contract = manifest.files.find(entry => entry.path === path);
+    assert.ok(contract, `${path} participates in the installed content manifest`);
+    assert.equal(contract.sha256, sha256(normalizedInstallBytes(await readFile(join(tree, path)))));
+  }
   const aside = join(base, "manifest-aside");
   await mkdir(aside, { recursive: true });
   await rename(join(tree, "manifest.json"), join(aside, "manifest.json"));
@@ -576,5 +596,65 @@ test("PR24-1: packed knowledge-capture preserves legacy language writes with exp
     assert.ok(host, "archive catalog advertises host on knowledge-capture");
     assert.equal(host.required, false, "host is conditional on language policy, not globally required");
     assert.equal(host.valueKind, "string");
+  }
+});
+
+test("INIT-062 packaged CLI distributes the universal rule revision to ordinary hosts and dot in both languages", async () => {
+  const { tree } = await packedRelease();
+  const entry = join(tree, "scripts/einzbern.mjs");
+  assert.equal(existsSync(join(tree, "dist")), false);
+  assert.equal(existsSync(join(tree, "packages/core/src")), false);
+  for (const language of ["zh-CN", "en"]) {
+    const isolated = await environment(`universal-rules-${language}`);
+    // This is the existing isolated Atelier fixture convention, not a change to
+    // a real host, an authorization claim or a relaxation of the model-write gate.
+    const options = { cwd: isolated.cwd, env: { ...isolated.env, EINZBERN_SURFACE: "atelier" } };
+    const invoke = (args) => {
+      const result = node([entry, ...args], options);
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const at = "2026-10-21T05:00:00Z";
+    const project = join(isolated.root, "project");
+    const library = join(project, ".ether");
+    await mkdir(project);
+    invoke(["init", "--workspace", library, "--project", project, "--at", at]);
+    const created = invoke(["project-create", "--workspace", library, "--external-key", "RULES", "--name", "Packaged rules", "--at", at]);
+    const projectId = created.record.id;
+    invoke(["library-register", "--library", library, "--project", project, "--project-id", projectId, "--at", at]);
+    invoke(["settings-set", "--workspace", library, "--project-id", projectId, "--key", "artifact.language", "--value", language, "--at", at]);
+    for (const id of ["autonomy", "residue-cleanup"]) invoke(["rule-enable", "--project", project, "--id", id, "--at", at]);
+    invoke(["agents-render", "--project", project, "--at", at]);
+    const generic = await readFile(join(project, "AGENTS.md"), "utf8");
+    for (const id of ["autonomy", "residue-cleanup"]) {
+      const expected = await readFile(join(repositoryRoot, "tests/fixtures/rules", `${id}.${language === "zh-CN" ? "zh" : "en"}.md`), "utf8");
+      assert.ok(generic.includes(expected), `${id} ${language} reaches the ordinary-host AGENTS body`);
+    }
+    assert.ok((await readFile(join(project, "CLAUDE.md"), "utf8")).includes("@AGENTS.md"));
+    const listed = invoke(["rule-list", "--project", project]);
+    assert.equal(listed.dotRuleSources.status, "available");
+    assert.deepEqual(listed.dotRuleSources.enabledRules.map(rule => [rule.id, rule.version]), [["autonomy", 1], ["residue-cleanup", 1]]);
+    const dotRoot = join(isolated.root, "dot");
+    await mkdir(dotRoot);
+    const inputPath = join(isolated.root, "dot-input.json");
+    await writeFile(inputPath, JSON.stringify({
+      binding: { root: dotRoot, agentsPath: join(dotRoot, "AGENTS.md"), provenancePath: join(dotRoot, ".dot", "provenance.json"), backupRoot: join(dotRoot, ".dot", "recovery"), projectReference: projectId, ownerId: "fixture:owner" },
+      source: { engineVersion: FRAMEWORK_VERSION, engineCommit: "unavailable", engineSourceRef: "fixture:packaged-engine", language: listed.dotRuleSources.language, enabledRules: listed.dotRuleSources.enabledRules },
+      enginePath: entry, manaSkillPath: join(tree, "skill/mana-orchestrate/SKILL.md"), preInjection: "apply",
+    }));
+    const setup = ["setup", "--mode", "fresh", "--project", dotRoot, "--at", at, "--execution-target", "chatgpt-dot", "--dot-input", inputPath];
+    const preview = invoke(setup);
+    const applied = invoke([...setup, "--yes", "true", "--approved-plan-digest", preview.dot.planDigest]);
+    assert.equal(applied.reasonCode, "SETUP_APPLIED");
+    assert.equal(applied.dot.status, "applied");
+    assert.equal(applied.dot.sessionRead, "not-verified");
+    assert.deepEqual(applied.selfCheck, []);
+    const independent = await readFile(join(dotRoot, "AGENTS.md"), "utf8");
+    const expectedFragments = language === "zh-CN"
+      ? ["模型自行添加的次数限制", "平台要求的逐次确认", "Fork 贡献、基线同步与分支收尾", "分支不再含目标中没有的独有提交", "本条不新增远端写入、合并、发布或永久删除权限"]
+      : ["count limit that the model itself inserted", "Platform-required confirmation for each action", "Fork contributions, baseline synchronization and branch retirement", "no unique commits absent from that target", "no new permission for remote writes, merges, publication or permanent deletion"];
+    for (const fragment of expectedFragments) assert.ok(independent.includes(fragment), `${language}: ${fragment}`);
+    assert.equal(independent.includes("<!-- einzbern:section"), false, "dot remains an independent file, not generic sections");
+    assert.equal(existsSync(join(dotRoot, "CLAUDE.md")), false, "dot does not install another host's bridge");
   }
 });

@@ -298,3 +298,53 @@ test("test seams and unconsumed observability helper are not advertised as worki
   }
   assert.match(byKey.get("host:codex-hook-trust").validation, /does not manufacture user approval/u);
 });
+
+test("dot setup inputs have explicit independent ownership and no invented source defaults", () => {
+  const target = byKey.get("cli:setup:execution-target");
+  assert.deepEqual(target.allowedValues, ["traditional", "chatgpt-dot"]);
+  assert.equal(target.defaultValue, "traditional");
+  const input = byKey.get("cli:setup:dot-input");
+  assert.equal(input.defaultValue, null);
+  assert.equal(input.pathBase, "explicit absolute path");
+  assert.equal(input.sensitivity, "context-may-contain-private-data");
+  assert.match(input.sharing, /no remote or library/u);
+});
+
+test("INIT062 all package flags and backup read startup input are described without invented policy or identity", () => {
+  for (const command of COMMAND_CATALOG.filter(entry => /^(?:config-backup-|config-restore-|execution-native-|shared-submit-)/u.test(entry.name))) {
+    const entries = contract.entries.filter(entry => entry.command === command.name);
+    assert.deepEqual(entries.map(entry => entry.name).sort(), command.flags.map(flag => `--${flag.name}`).sort(), command.name);
+    assert.ok(entries.every(entry => entry.defaultValue === null));
+  }
+  assert.match(byKey.get("portal:config-backup-root").defaultDescription, /not-scanned/u);
+  assert.match(byKey.get("cli:execution-native-record:response").defaultDescription, /pending/u);
+  assert.match(byKey.get("cli:config-backup-create:request").effect, /actual running package artifact/u);
+  assert.match(byKey.get("cli:work-project-context:execution-request").validation, /DotExecutionRequest/u);
+});
+
+test("J01/J10 approval binding and retry/history files remain explicit transient inputs", () => {
+  assert.equal(byKey.get("cli:setup:approved-plan-digest").semanticType, "digest");
+  for (const key of ["cli:execution-native-record:prior", "cli:execution-native-prepare:retry-from", "cli:execution-native-prepare:reconciliation"]) {
+    assert.equal(byKey.get(key).semanticType, "path"); assert.equal(byKey.get(key).defaultValue, null);
+    assert.equal(byKey.get(key).sensitivity, "context-may-contain-private-data");
+  }
+});
+
+test("full-core controller defaults and caps at 900000ms while P8 and explicit smaller budgets remain bounded", async () => {
+  const text = await source("scripts/task.mjs");
+  const body = namedFunction(text, "controllerTimeoutMs");
+  const budget = (value, p8Only = false) => vm.runInNewContext(`${body}\ncontrollerTimeoutMs(p8Only)`, {
+    process: { env: value === undefined ? {} : { TCRN_TEST_CONTROLLER_TIMEOUT_MS: value } }, p8Only,
+    assertion: (condition, reasonCode, detail) => { if (!condition) throw Object.assign(new Error(detail), { reasonCode }); },
+  });
+  assert.equal(budget(undefined), 900_000);
+  assert.equal(budget(undefined, true), 600_000);
+  for (const value of ["1", "100", "3000", "599999", "600000", "600001", "899999", "900000", " 100 ", "1e3", "0x64"]) assert.equal(budget(value), Number(value));
+  for (const value of ["1", "100", "3000", "600000"]) assert.equal(budget(value, true), Number(value));
+  for (const p8Only of [false, true]) for (const value of ["", " ", "0", "-1", "1.5", "900001", "9007199254740992", "Infinity", "-Infinity", "NaN", "abc"]) assert.throws(() => budget(value, p8Only), { reasonCode: "TEST_CONTROLLER_TIMEOUT_INVALID" });
+  for (const value of ["600001", "899999", "900000"]) assert.throws(() => budget(value, true), { reasonCode: "TEST_CONTROLLER_TIMEOUT_INVALID" });
+  assert.ok(text.includes("const timeoutMs = controllerTimeoutMs(p8Only);"));
+  assert.ok(text.includes("}, tests, p8Only);"));
+  assert.ok(text.includes('const dogfood = await runTests({ p8Only: true });'));
+  assert.ok(text.includes('return runTests();'));
+});

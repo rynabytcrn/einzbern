@@ -114,3 +114,10 @@ test('inconsistent admission selection and policy are rejected despite a recompu
   value.hostResult.admissionDigest = dispatchAdmissionDigest(value.handoff.executionAdmission);
   assert.equal(normalize(value).valid, false);
 });
+
+test("DOT-E01 native objects are never converted into legacy process streams or tuple evidence", () => {
+  const native = { evidenceType: "native-tool", attemptId: "fixture:local-attempt", executionStatus: "accepted" };
+  const result = normalizeDispatchAdmissionEvidence(native);
+  assert.equal(result.valid, false); assert.equal(result.complete, false);
+  assert.equal(Object.hasOwn(native, "exitCode"), false);
+});

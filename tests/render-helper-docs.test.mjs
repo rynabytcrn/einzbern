@@ -151,6 +151,7 @@ test("486-R2: the files the generated tree does not hold are listed, and none is
     "package.json": "{\n  \"name\": \"old\"\n}\n",
     [`${SKILL}/SKILL.md`]: "old skill\n",
     [`${SKILL}/references/trust-contract.md`]: "retired reference\n",
+    [`${SKILL}/scripts/unknown-local-helper.mjs`]: "export {};\n",
     [`${SKILL}/scripts/create-skill-archive.mjs`]: "export {};\n",
     "docs/notes.md": "not generated\n",
   };
@@ -159,9 +160,10 @@ test("486-R2: the files the generated tree does not hold are listed, and none is
   await seed(out, { ...stale, ...kept, ...skipped });
 
   const report = await generated(out, "7.6.5");
-  assert.deepEqual(report.extraFiles, ["docs/notes.md", `${SKILL}/references/trust-contract.md`]);
+  assert.deepEqual(report.extraFiles, ["docs/notes.md", `${SKILL}/references/trust-contract.md`, `${SKILL}/scripts/unknown-local-helper.mjs`]);
   assert.ok(report.files.includes(".github/workflows/ci.yml"), "release generation owns the workflow");
   assert.ok(report.files.includes(`${SKILL}/scripts/create-skill-archive.mjs`), "release generation owns the archiver");
+  assert.deepEqual(await readFile(join(out, ...SKILL.split("/"), "scripts/create-skill-archive.mjs")), await readFile(join(repositoryRoot, "scripts/templates/helper/create-skill-archive.mjs")), "the stale archiver is replaced by the release-owned template bytes");
   for (const path of report.extraFiles) {
     assert.equal(await readFile(join(out, ...path.split("/")), "utf8"), stale[path], `${path} is left as it was`);
   }

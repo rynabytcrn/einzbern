@@ -2,7 +2,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -585,4 +585,23 @@ test("STORY-467 R3: the telemetry reads are retired with the store they read", a
     assert.equal(COMMAND_CATALOG.some((entry) => entry.name === verb), false, `${verb} is not in the catalog`);
   }
   assert.equal((await validateWorkspace(fx.workspace)).version, before.version, "refusing appends nothing");
+});
+
+test("INIT062 backup unknown scan and invalid native evidence retain honest read outcomes", async context => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-dot-cli-read-")));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  const listing = await run(["config-backup-list", "--at", instant(1)]);
+  assert.equal(listing.scanStatus, "not-scanned");
+  const bad = join(base, "invalid.json");
+  await writeFile(bad, "{}");
+  let evidence = "";
+  await assert.rejects(runCli(["execution-native-evidence", "--from-file", bad], { write: value => { evidence += value; } }), error => error.reasonCode === "NATIVE_EVIDENCE_INVALID");
+  assert.equal(JSON.parse(evidence).valid, false);
+  assert.equal(JSON.parse(evidence).complete, false);
+  assert.equal(await reasonOf(["execution-native-evidence", "--from-file", bad, "--work-revision", "1.5"]), "CLI_ARGUMENT_MALFORMED");
+  assert.equal(await reasonOf(["execution-native-evidence", "--from-file", join(base, "absent.json")]), "DISPATCH_EVIDENCE_INPUT_INVALID");
+  const output = join(base, "retained.json"); let retained = "";
+  await assert.rejects(runCli(["execution-native-record", "--binding", bad, "--output", output], { write: value => { retained += value; } }), error => error.reasonCode === "NATIVE_RECORD_INVALID");
+  assert.equal(JSON.parse(retained).normalized.complete, false);
+  assert.equal(JSON.parse(await readFile(output, "utf8")).normalized.valid, false);
 });

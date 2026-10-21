@@ -22,6 +22,8 @@ import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materialize
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
 import { MACHINE_SETTINGS_FILE_NAME } from "../dist/build/packages/core/src/machine-settings.js";
+import { BUILT_IN_RULES, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
+import { dotContentDigest } from "../dist/build/packages/core/src/dot-agents.js";
 import { applySetup, planSetup } from "../dist/build/packages/core/src/setup.js";
 import { SKILL_COPY_ROOTS, skillCopyPath } from "../dist/build/packages/core/src/skill-copies.js";
 import { writeUstar } from "../scripts/lib/tar.mjs";
@@ -578,4 +580,28 @@ test("540-GWT4: repair of a coordination library's registered root plans and wri
   const updated = await plan(atContainer, "update", { archive: release.archive });
   assert.deepEqual(updated.blockers, []);
   assert.deepEqual(updated.writes.filter((entry) => entry.step === "managed-sections" || entry.path.startsWith(`${container}/`)), [], "update writes no project file");
+});
+
+
+test("DOT-I01/I03/R02: dot update/repair/uninstall never enter traditional maintenance", async context => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-dot-maintain-")));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  const projectRoot = join(base, "project"); const home = join(base, "home"); const deviceHome = join(base, "device");
+  await mkdir(projectRoot); await mkdir(home);
+  const enginePath = join(base, "fixture-engine.mjs"); const manaSkillPath = join(base, "fixture-skill.md");
+  await writeFile(enginePath, "// fixture engine source\n"); await writeFile(manaSkillPath, "# Fixture Mana source\n");
+  const source = { engineVersion: "fixture", engineCommit: "unavailable", engineSourceRef: "fixture:engine", language: "zh-CN", enabledRules: BUILT_IN_RULES.map(rule => ({ id: rule.id, version: rule.version, bodyDigest: dotContentDigest(ruleBody(rule.id, "zh-CN")), sourceReference: `fixture:read#${rule.id}` })) };
+  const dot = { binding: { root: projectRoot, agentsPath: join(projectRoot, "AGENTS.md"), provenancePath: join(projectRoot, ".dot", "provenance.json"), backupRoot: join(projectRoot, ".dot", "recovery"), projectReference: "fixture:project", ownerId: "fixture:dot" }, source, enginePath, manaSkillPath, preInjection: "apply" };
+  const options = { mode: "fresh", projectRoot, home, deviceHome, at: at(), executionTarget: "chatgpt-dot", dot };
+  const installed = await applySetup(await planSetup(options)); assert.equal(installed.dot.status, "applied");
+  for (const mode of ["repair", "update"]) {
+    const plan = await planSetup({ ...options, mode, at: at() });
+    assert.deepEqual(plan.writes, []); assert.equal((await applySetup(plan)).dot.status, "unchanged");
+  }
+  const keep = await applySetup(await planSetup({ ...options, mode: "uninstall" }));
+  assert.equal(keep.reasonCode, "SETUP_DOT_KEPT");
+  const removed = await applySetup(await planSetup({ ...options, mode: "uninstall", dot: { ...dot, uninstall: "remove" } }));
+  assert.equal(removed.dot.status, "applied"); assert.ok(removed.written.every(write => write.step === "dot-agents"));
+  assert.deepEqual(await readdir(home), []); await assert.rejects(lstat(deviceHome), error => error.code === "ENOENT");
+  assert.equal(await readFile(manaSkillPath, "utf8"), "# Fixture Mana source\n");
 });

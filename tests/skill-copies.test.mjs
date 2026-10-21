@@ -19,6 +19,7 @@ import { computeInstallTreeDigest } from "../dist/build/packages/core/src/instal
 import { BRAND, LEGACY_DEVICE_DIRECTORY, LEGACY_ENGINE_NAME, LEGACY_HELPER_NAME } from "../dist/build/packages/core/src/names.js";
 import {
   SKILL_COPIES_SCHEMA_VERSION,
+  SKILL_COPY_ROOTS,
   SkillCopiesError,
   applyLegacySkillCleanup,
   installSkillCopies,
@@ -384,4 +385,10 @@ test("479-R5: a backup is never overwritten: a taken backup path refuses the cle
     applyLegacySkillCleanup(outside, { backupRoot }),
     (error) => error instanceof SkillCopiesError && error.reasonCode === "LEGACY_SKILL_CLEANUP_PLAN_INVALID",
   );
+});
+
+
+test("DOT-I01: the traditional skill-copy roots do not masquerade as dot installation", () => {
+  assert.deepEqual(SKILL_COPY_ROOTS, [{ host: "claude", root: ".claude/skills" }, { host: "codex", root: ".agents/skills" }]);
+  assert.equal(SKILL_COPY_ROOTS.some(entry => entry.host === "chatgpt-dot"), false);
 });

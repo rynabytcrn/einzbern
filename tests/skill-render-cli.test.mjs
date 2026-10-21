@@ -201,19 +201,19 @@ test("479-R1: in a release the verb copies the template beside the bundled engin
 });
 
 
-test("DOT-R01/R02: generated helper preserves the archive helper and copies dot guidance from its real source", async (context) => {
+test("DOT-R01/R02: generated helper owns the archive helper, preserves unknown files and copies source guidance", async (context) => {
   const base = await scratch(context);
   const out = join(base, "helper");
   const helper = `skill/${BRAND.helper.id}/scripts/create-skill-archive.mjs`;
-  const helperBody = "// retained archive helper fixture\nexport {};\n";
+  const helperBody = "// stale archive helper fixture\nexport {};\n";
   await mkdir(join(out, "skill", BRAND.helper.id, "scripts"), { recursive: true });
   await writeFile(join(out, helper), helperBody);
   await writeFile(join(out, "retain-unrecognized.txt"), "not deletion authorization\n");
   const report = await renderHelperDocs({ out });
-  assert.ok(HELPER_KEPT_FILES.includes(helper));
-  assert.equal(report.files.includes(helper), false, "the archive helper is not a generated replacement");
+  assert.equal(HELPER_KEPT_FILES.includes(helper), false, "the release-owned archive helper is not kept input");
+  assert.equal(report.files.includes(helper), true, "release generation owns the archive helper");
   assert.deepEqual(report.extraFiles, ["retain-unrecognized.txt"]);
-  assert.equal(await readFile(join(out, helper), "utf8"), helperBody);
+  assert.deepEqual(await readFile(join(out, helper)), await readFile(join(repositoryRoot, "scripts/templates/helper/create-skill-archive.mjs")), "the stale archive helper is replaced by exact release template bytes");
   assert.equal(await readFile(join(out, "retain-unrecognized.txt"), "utf8"), "not deletion authorization\n");
   const installedReference = await readFile(join(out, "skill", BRAND.helper.id, "references", "install.md"));
   assert.deepEqual(installedReference, await readFile(join(templateDirectory, "references", "install.md")));

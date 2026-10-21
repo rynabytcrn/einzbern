@@ -290,7 +290,7 @@ if (!MUTATION) {
     // tail field's whitelist without emitting a second synthetic channel record.
     const tailSnapshot = read(designAuthorityStageDiagnostic({ ...snapshot, tailReads: tail.tailReads }, "synthetic-formatting-only", "available"));
     assert.deepEqual(tailSnapshot.tailReads.settingsWrite, tail.tailReads.settingsWrite);
-    const partialSnapshot = read(designAuthorityStageDiagnostic({ ...snapshot, tailReads: { ...tail.tailReads, settingsWrite: { ...tail.tailReads.settingsWrite, jsonObservable: false, jsonStarted: 99, jsonFulfilled: 98, jsonRejected: 1, body: "private-body-sentinel", url: "private-url-sentinel", headers: "private-header-sentinel" } } }, "synthetic-formatting-only", "available"));
+    const partialSnapshot = read(designAuthorityStageDiagnostic({ ...snapshot, tailReads: { ...tail.tailReads, settingsWrite: { ...tail.tailReads.settingsWrite, jsonObservable: false, jsonStarted: 99, jsonFulfilled: 98, jsonRejected: 1, body: "private-body-sentinel", url: "private-url-sentinel", responseHeaders: "private-header-sentinel" } } }, "synthetic-formatting-only", "available"));
     assert.deepEqual([partialSnapshot.tailReads.settingsWrite.started, partialSnapshot.tailReads.settingsWrite.headers, partialSnapshot.tailReads.settingsWrite.jsonStarted, partialSnapshot.tailReads.settingsWrite.jsonFulfilled, partialSnapshot.tailReads.settingsWrite.jsonRejected], [1, 1, null, null, null]);
     const actualResponse = new Response('{"fixture":true}');
     const nativeTail = observeDesignAuthorityTail(() => Promise.resolve(actualResponse), 100, () => 112);

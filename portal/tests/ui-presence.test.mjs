@@ -57,7 +57,7 @@ function observeDesignAuthorityTail(realFetch, startedAt, now = Date.now) {
     } catch { markUnavailable(role); }
     return response;
   };
-  return { tailReads, fetch: function (...args) {
+  return { tailReads, invoke: function (...args) {
     let role;
     try {
       const [request, options] = args;
@@ -280,7 +280,7 @@ if (!MUTATION) {
     const consumed = [];
     const response = { json: function (...args) { consumed.push([this, args]); return Promise.resolve(value); } };
     const tail = observeDesignAuthorityTail(function (...args) { forwarded.push([this, args]); return Promise.resolve(response); }, 100, () => 112);
-    assert.strictEqual(await tail.fetch.call(receiver, "/api/settings", options), response);
+    assert.strictEqual(await tail.invoke.call(receiver, "/api/settings", options), response);
     assert.deepEqual(forwarded, [[receiver, ["/api/settings", options]]]);
     assert.equal(consumed.length, 0, "observation does not consume the body");
     assert.strictEqual(await response.json.call(jsonReceiver, argument), value);
@@ -294,24 +294,24 @@ if (!MUTATION) {
     assert.deepEqual([partialSnapshot.tailReads.settingsWrite.started, partialSnapshot.tailReads.settingsWrite.headers, partialSnapshot.tailReads.settingsWrite.jsonStarted, partialSnapshot.tailReads.settingsWrite.jsonFulfilled, partialSnapshot.tailReads.settingsWrite.jsonRejected], [1, 1, null, null, null]);
     const actualResponse = new Response('{"fixture":true}');
     const nativeTail = observeDesignAuthorityTail(() => Promise.resolve(actualResponse), 100, () => 112);
-    assert.strictEqual(await nativeTail.fetch("/api/rules"), actualResponse);
+    assert.strictEqual(await nativeTail.invoke("/api/rules"), actualResponse);
     assert.equal(actualResponse.bodyUsed, false);
     assert.deepEqual(await actualResponse.json(), value);
 
     const untouched = Promise.resolve(value);
     const pass = observeDesignAuthorityTail(function (...args) { assert.strictEqual(this, receiver); assert.deepEqual(args, ["/api/status", options]); return untouched; }, 100, () => 112);
-    assert.strictEqual(pass.fetch.call(receiver, "/api/status", options), untouched);
+    assert.strictEqual(pass.invoke.call(receiver, "/api/status", options), untouched);
     assert.ok(Object.values(pass.tailReads).every(row => row.started === 0));
     for (const synchronous of [true, false]) {
       const fetchFailure = new Error("private-body-sentinel");
       const failedFetch = observeDesignAuthorityTail(() => { if (synchronous) throw fetchFailure; return Promise.reject(fetchFailure); }, 100, () => 112);
-      if (synchronous) assert.throws(() => failedFetch.fetch("/api/agents-md"), actual => actual === fetchFailure);
-      else await assert.rejects(failedFetch.fetch("/api/agents-md"), actual => actual === fetchFailure);
+      if (synchronous) assert.throws(() => failedFetch.invoke("/api/agents-md"), actual => actual === fetchFailure);
+      else await assert.rejects(failedFetch.invoke("/api/agents-md"), actual => actual === fetchFailure);
       assert.deepEqual([failedFetch.tailReads.agentsDocument.started, failedFetch.tailReads.agentsDocument.headers, failedFetch.tailReads.agentsDocument.fetchRejected], [1, 0, 1]);
       const jsonFailure = new Error("private-header-sentinel");
       const rejectedResponse = { json() { if (synchronous) throw jsonFailure; return Promise.reject(jsonFailure); } };
       const failedJson = observeDesignAuthorityTail(() => Promise.resolve(rejectedResponse), 100, () => 112);
-      assert.strictEqual(await failedJson.fetch("/api/agents-md/reconcile"), rejectedResponse);
+      assert.strictEqual(await failedJson.invoke("/api/agents-md/reconcile"), rejectedResponse);
       if (synchronous) assert.throws(() => rejectedResponse.json(), actual => actual === jsonFailure);
       else await assert.rejects(rejectedResponse.json(), actual => actual === jsonFailure);
       assert.deepEqual([failedJson.tailReads.agentsReconcile.jsonStarted, failedJson.tailReads.agentsReconcile.jsonFulfilled, failedJson.tailReads.agentsReconcile.jsonRejected], [1, 0, 1]);
@@ -319,32 +319,32 @@ if (!MUTATION) {
 
     const unwrappable = Object.freeze({ json: () => Promise.resolve(value) });
     const mixed = observeDesignAuthorityTail(() => Promise.resolve(mixed.tailReads.rules.started === 2 ? unwrappable : { json: () => Promise.resolve(value) }), 100, () => 112);
-    await (await mixed.fetch("/api/rules")).json();
-    assert.strictEqual(await mixed.fetch("/api/rules"), unwrappable);
+    await (await mixed.invoke("/api/rules")).json();
+    assert.strictEqual(await mixed.invoke("/api/rules"), unwrappable);
     assert.strictEqual(await unwrappable.json(), value);
     assert.deepEqual(mixed.tailReads.rules, { started: 2, headers: 2, jsonStarted: null, jsonFulfilled: null, jsonRejected: null, fetchRejected: 0, firstRequestAtMs: 12, lastEventAtMs: 12, jsonObservable: false });
     // A later observable response cannot make the partial aggregate complete again.
-    await (await mixed.fetch("/api/rules")).json();
+    await (await mixed.invoke("/api/rules")).json();
     assert.deepEqual([mixed.tailReads.rules.jsonStarted, mixed.tailReads.rules.jsonFulfilled, mixed.tailReads.rules.jsonRejected, mixed.tailReads.rules.jsonObservable], [null, null, null, false]);
     let getterReads = 0;
     const getterFailure = new Error("private-body-sentinel");
     const getterResponse = { get json() { getterReads += 1; throw getterFailure; } };
     const getterTail = observeDesignAuthorityTail(() => Promise.resolve(getterResponse), 100, () => 112);
-    assert.strictEqual(await getterTail.fetch("/api/rules"), getterResponse);
+    assert.strictEqual(await getterTail.invoke("/api/rules"), getterResponse);
     assert.equal(getterReads, 0, "observing a response must not invoke an accessor");
     assert.throws(() => getterResponse.json, actual => actual === getterFailure);
     assert.deepEqual([getterTail.tailReads.rules.headers, getterTail.tailReads.rules.jsonObservable, getterTail.tailReads.rules.jsonStarted], [1, false, null]);
     const brokenClock = observeDesignAuthorityTail(() => Promise.resolve({ json: () => Promise.resolve(value) }), 100, () => { throw new Error("private-url-sentinel"); });
-    assert.strictEqual(await (await brokenClock.fetch("/api/rules")).json(), value);
+    assert.strictEqual(await (await brokenClock.invoke("/api/rules")).json(), value);
     assert.deepEqual([brokenClock.tailReads.rules.started, brokenClock.tailReads.rules.headers, brokenClock.tailReads.rules.jsonObservable], [1, 1, false]);
 
     // Sequential pure calls demonstrate that callbacks keep their creation-stage
     // record; no UI race, delayed network or lifecycle action is introduced.
     const oldResponse = { json: () => Promise.resolve(value) };
     const oldStage = observeDesignAuthorityTail(() => Promise.resolve(oldResponse), 100, () => 112);
-    const oldPending = oldStage.fetch("/api/rules");
+    const oldPending = oldStage.invoke("/api/rules");
     const newStage = observeDesignAuthorityTail(() => Promise.resolve({ json: () => Promise.resolve(value) }), 200, () => 224);
-    await (await newStage.fetch("/api/rules")).json();
+    await (await newStage.invoke("/api/rules")).json();
     await (await oldPending).json();
     assert.deepEqual([oldStage.tailReads.rules.started, oldStage.tailReads.rules.jsonFulfilled, oldStage.tailReads.rules.lastEventAtMs], [1, 1, 12]);
     assert.deepEqual([newStage.tailReads.rules.started, newStage.tailReads.rules.jsonFulfilled, newStage.tailReads.rules.lastEventAtMs], [1, 1, 24]);
@@ -390,7 +390,7 @@ if (!MUTATION) {
         };
         const beforeReceipt = receiptText(page.document);
         const observed = { requested: 0, bodyConsumed: 0, otherContracts: 0, method: null };
-        const { fetch: observedFetch, tailReads } = observeDesignAuthorityTail(realFetch, startedAt);
+        const { invoke: observedFetch, tailReads } = observeDesignAuthorityTail(realFetch, startedAt);
         let phase = "control-ready";
         let input = null;
         let panelAtConsumption = null;

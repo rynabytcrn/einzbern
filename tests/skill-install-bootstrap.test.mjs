@@ -205,6 +205,9 @@ test("INIT065 normal candidate archive installs matching Skill and discoverable 
   const installed = join(device, "engine", FRAMEWORK_VERSION);
   const skill = await readFile(join(installed, "skill/mana-orchestrate/SKILL.md"), "utf8");
   assert.ok(skill.includes("Execution protocol: tcrn.host-execution-request.v1."));
+  const contract = await readFile(join(installed, "specs/host-fallback-v1.md"), "utf8");
+  assert.ok(contract.includes("execution-host-prepare"));
+  assert.equal(contract, await readFile(join(repositoryRoot, "specs/host-fallback-v1.md"), "utf8"));
   const commands = spawnSync(process.execPath, [join(installed, "scripts/einzbern.mjs"), "commands"], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: device } });
   assert.equal(commands.status, 0, commands.stderr);
   const names = JSON.parse(commands.stdout).commands.map(c => c.name);

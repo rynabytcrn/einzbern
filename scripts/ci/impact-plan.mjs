@@ -156,7 +156,8 @@ function sourceTokens(text, python = false, javascript = false) {
         continue;
       }
       // A slash at an expression boundary is a regexp, not a path or a comment.
-      if (!python && quote === "/" && (!tokens.length || /^(?:[=(\[,:!&|?;{]|return|throw|case|=>)$/u.test(tokens.at(-1).value))) {
+      // Logical boundaries must match the multi-character tokens emitted below.
+      if (!python && quote === "/" && (!tokens.length || /^(?:[=(\[,:!&|?;{]|&&|\|\||\?\?|return|throw|case|=>)$/u.test(tokens.at(-1).value))) {
         let end = 1, bracket = false;
         while (end < rest.length) {
           if (rest[end] === "\\") { end += 2; continue; }

@@ -221,6 +221,41 @@ test("unreviewed dynamic readers cannot inherit a frozen audit or declare their 
   assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, fixture.head), []);
 });
 
+test("portable Windows-drive guards preserve their following quoted and executable template contexts", () => {
+  const guards = new Map([
+    ["packages/core/src/settings.ts", 'if (["workspace.generatedArtifactsPath", "knowledge.articlesPath"].includes(entry.key) && typeof value === "string" && (isAbsolute(value) || win32.isAbsolute(value) || /^[A-Za-z]:/u.test(value))) fail("SETTINGS_VALUE_INVALID", `${entry.key} requires a portable relative path or binding:paths.artifacts / binding:paths.knowledgeArticles; keep absolute locations in machine settings`);\n'],
+    ["skill/mana-orchestrate/scripts/install.mjs", 'function safePath(path) {\n  if (path.length === 0 || path.startsWith("/") || /^[A-Za-z]:/u.test(path) || path.includes("\\\\") || path.includes("\\0") ||\n    path.split("/").some((part) => part === "" || part === "." || part === "..")) {\n    fail("INSTALL_ARCHIVE_INVALID", `the archive holds ${JSON.stringify(path)}, a path that leaves the directory it is unpacked into`, { path });\n  }\n  return path;\n}\n'],
+  ]);
+  const continuation = 'const summary = `sample readFileSync("docs/literal.md") ${readFileSync("docs/in-template.md", "utf8")}`;\nreadFileSync("docs/after-template.md", "utf8");\nconst sample = \'readFileSync("docs/string.md")\';\n';
+  for (const [reader, guard] of guards) {
+    const texts = new Map([[reader, 'import { readFileSync } from "node:fs";\n' + guard + continuation]]);
+    const graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, [], reader);
+    assert.deepEqual([...graph.get(reader)].sort(), ["docs/after-template.md", "docs/in-template.md"], reader);
+    assert.deepEqual(documentReaderClosure(texts, ["docs/in-template.md"], graph), [reader]);
+    assert.deepEqual(documentReaderClosure(texts, ["docs/after-template.md"], graph), [reader]);
+    for (const document of ["docs/literal.md", "docs/string.md"]) assert.deepEqual(documentReaderClosure(texts, [document], graph), [], reader);
+  }
+});
+
+test("logical regexp boundaries keep regex data opaque without swallowing genuine division readers", () => {
+  const reader = "tests/logical-regexp.test.mjs";
+  for (const operator of ["||", "&&", "??"]) {
+    const text = [
+      'import { readFileSync } from "node:fs";',
+      `const pattern = candidate ${operator} /readFileSync\\("docs\\/regex.md"\\)/u;`,
+      'const sample = \'readFileSync("docs/string.md")\';',
+      'const summary = `${candidate ' + operator + ' /^[A-Za-z]:/u.test(candidate) ? readFileSync("docs/guard-yes.md") : readFileSync("docs/guard-no.md")}`;',
+      'const quotient = readFileSync("docs/dividend.md").length / readFileSync("docs/divisor.md").length;',
+      'const fraction = quotient / denominator; const tail = `${readFileSync("docs/after-division.md")}`;',
+    ].join("\n");
+    const texts = new Map([[reader, text]]), graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, [], operator);
+    assert.deepEqual([...graph.get(reader)].sort(), ["docs/after-division.md", "docs/dividend.md", "docs/divisor.md", "docs/guard-no.md", "docs/guard-yes.md"], operator);
+    for (const document of ["docs/regex.md", "docs/string.md"]) assert.deepEqual(documentReaderClosure(texts, [document], graph), [], operator);
+  }
+});
+
 test("template interpolation executes nested inputs while same-root literal and sample text stays opaque", () => {
   const reader = "tests/b.test.mjs";
   const audited = { privacyPaths: [reader], portalPaths: [] };

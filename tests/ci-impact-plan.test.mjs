@@ -2,11 +2,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPlan, artifactPinOnly, parseNameStatus, digest, sourceInput, validatePlan, checkConsumers, loadRules } from "../scripts/ci/impact-plan.mjs";
+import { createPlan, artifactPinOnly, parseNameStatus, digest, sourceInput, validatePlan, checkConsumers, loadRules, sourceDependencyGraph, documentReaderClosure, categoryReaderAudit, documentReaderSources, sourceAuditDigest } from "../scripts/ci/impact-plan.mjs";
 import { createCiComponentFixture, fixturePlan, writeFixtureFile } from "./helpers/ci-component-fixture.mjs";
 const rules = JSON.parse(readFileSync(new URL("../scripts/ci/impact-rules.json", import.meta.url)));
 const core = [...new Set([...rules.ciTests, ...rules.privacyTests, ...rules.portalTests, ...Object.values(rules.docs).flat()])].sort();
@@ -49,7 +49,24 @@ test("pin-only requires whole-file equality except exact official artifact pins 
   const before = `steps:\n  uses: actions/upload-artifact@${"a".repeat(40)} # v1.0.0\n  with: same\n`;
   const after = before.replace("a".repeat(40), "b".repeat(40)).replace("v1.0.0", "v2.0.0");
   assert.equal(artifactPinOnly(before, after), true);
+  assert.equal(sourceAuditDigest(".github/workflows/ci.yml", before), sourceAuditDigest(".github/workflows/ci.yml", after));
   for (const changed of [after.replace("b".repeat(40), "v7"), after.replace("upload-artifact", "setup-node"), after.replace("same", "changed"), after + "  run: echo changed\n", after + "# extra comment\n", after.replace("steps:", "permissions:"), after.replace("steps:", "timeout-minutes: 99"), after.split("\n").reverse().join("\n")]) assert.equal(artifactPinOnly(before, changed), false);
+});
+test("frozen source audit preserves real pin-only current and immutable selections", async (t) => {
+  const before = `steps:\n  uses: actions/upload-artifact@${"a".repeat(40)} # v1.0.0\n`;
+  const fixture = await createCiComponentFixture(t, { files: { ".github/workflows/ci.yml": before } });
+  fixture.before = fixture.head;
+  await writeFixtureFile(fixture.repo, ".github/workflows/ci.yml", before.replace("a".repeat(40), "b".repeat(40)).replace("v1.0.0", "v2.0.0"));
+  fixture.head = fixture.commit();
+  await writeFile(fixture.env.GITHUB_EVENT_PATH, JSON.stringify({ before: fixture.before, after: fixture.head }));
+  for (const ref of [undefined, fixture.head]) assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), []);
+  const selected = fixturePlan(fixture, "selective");
+  assert.equal(selected.coverage, "selective");
+  assert.deepEqual(selected.categories, ["artifact-pin-only"]);
+  assert.deepEqual(selected.reasons, []);
+  assert.deepEqual(selected.coreTests, ["tests/a.test.mjs"]);
+  assert.deepEqual(selected.portalTests, []);
+  assert.deepEqual(validatePlan(selected, fixture.repo, fixture.env), selected);
 });
 test("plan digest covers omitted tasks, test roster, N/A reasons and baseline provenance", () => {
   const value = plan();
@@ -119,8 +136,8 @@ test("tracked Python document readers and their Node consumers cannot be marked 
   assert.ok(declared.coreTests.includes("tests/b.test.mjs"));
   assert.equal(declared.notApplicable.some((row) => row.path === "tests/b.test.mjs"), false);
   const incomplete = structuredClone(fixture.rules);
-  incomplete.documentAudit.readers = incomplete.documentAudit.readers.filter((path) => !["scripts/read-doc.py", "tests/b.test.mjs"].includes(path));
-  incomplete.documentAudit.tests = incomplete.documentAudit.tests.filter((path) => path !== "tests/b.test.mjs");
+  incomplete.documentAudit["README.md"].readers = incomplete.documentAudit["README.md"].readers.filter((path) => !["scripts/read-doc.py", "tests/b.test.mjs"].includes(path));
+  incomplete.documentAudit["README.md"].tests = incomplete.documentAudit["README.md"].tests.filter((path) => path !== "tests/b.test.mjs");
   incomplete.docs["README.md"] = ["tests/a.test.mjs"];
   input.baseline = { ...baseline, sha: fixture.before };
   for (const ref of [undefined, fixture.head]) {
@@ -146,8 +163,129 @@ test("configuration and previously unknown text reader languages remain conserva
   delete missing.documentConsumers["README.md"];
   assert.ok(checkConsumers(fixture.repo, missing).includes("README.md"));
   const absentReader = structuredClone(fixture.rules);
-  absentReader.documentAudit.readers.push("scripts/deleted-reader.py");
+  absentReader.documentAudit["README.md"].readers.push("scripts/deleted-reader.py");
   assert.ok(checkConsumers(fixture.repo, absentReader).includes("scripts/deleted-reader.py"));
+});
+
+test("actual input tokens exclude comments, output paths and arbitrary basename substrings", () => {
+  const texts = new Map([
+    ["scripts/retrieval-eval.mjs", "// README.md documents this tool\nexport const value = 1;\n"],
+    ["portal/portal.mjs", "// scripts/retrieval-eval.mjs is a separate command\nexport const value = 1;\n"],
+    ["portal/tests/portal-work.test.mjs", "// docs/wiki/Gates.md describes the forms\n"],
+    ["portal/scripts/e2e-demo.mjs", 'import { writeFile, mkdtemp } from "node:fs/promises"; import { join } from "node:path"; const base = await mkdtemp("demo-"); await writeFile(join(base, "docs", "decisions", "README.md"), "# output");\n'],
+    ["scripts/write-doc.py", 'from pathlib import Path\nPath("README.md").write_text("output")\nopen("docs/wiki/Gates.md", "w").write("output")\n'],
+    ["scripts/copy-doc.mjs", 'import { copyFileSync } from "node:fs"; copyFileSync("fixture.txt", "README.md");\n'],
+    ["scripts/lib/privacy.mjs", "export const value = 1;\n"],
+    ["packages/core/src/names.ts", "// checked by scripts/verify-staged-privacy.mjs\nexport const value = 1;\n"],
+    ["scripts/log.mjs", "export const value = 1;\n"],
+    ["tests/catalog.test.mjs", 'import { readFileSync } from "node:fs"; readFileSync("strip-catalog.mjs");\n'],
+    ["scripts/real-doc.py", 'from pathlib import Path\nPath("README.md").read_text()\n'],
+    ["tests/actual.test.mjs", 'import { execFileSync } from "node:child_process"; execFileSync("python3", ["scripts/real-doc.py"]);\n'],
+  ]);
+  const graph = sourceDependencyGraph(texts);
+  assert.deepEqual(documentReaderClosure(texts, ["README.md"], graph), ["scripts/real-doc.py", "tests/actual.test.mjs"]);
+  assert.deepEqual(documentReaderClosure(texts, ["docs/wiki/Gates.md"], graph), []);
+  assert.equal(graph.get("tests/catalog.test.mjs").has("scripts/log.mjs"), false);
+  const audit = categoryReaderAudit(texts, { privacyPaths: ["scripts/lib/privacy.mjs"], portalPaths: [] }, graph);
+  assert.deepEqual(audit.privacy.readers, ["scripts/lib/privacy.mjs"]);
+  assert.deepEqual(audit.portal.readers, []);
+});
+
+test("documents retain individual consumers and only a real document Portal reader selects Portal", async (t) => {
+  const fixture = await createCiComponentFixture(t, {
+    rules: { docs: { "README.md": ["tests/a.test.mjs"], "docs/wiki/Gates.md": ["tests/b.test.mjs"] }, documentConsumers: { "README.md": "README.md", "docs/wiki/Gates.md": "docs/wiki/Gates.md" } },
+    files: { "docs/wiki/Gates.md": "old\n", "portal/tests/a.test.mjs": 'import { readFileSync } from "node:fs"; readFileSync("docs/wiki/Gates.md");\n' },
+  });
+  const input = sourceInput(fixture.repo, fixture.env);
+  input.baseline = { ...baseline, sha: fixture.before };
+  input.unaccountedConsumers = checkConsumers(fixture.repo, fixture.rules);
+  assert.deepEqual(input.unaccountedConsumers, []);
+  const readme = createPlan(input, fixture.rules, digest(fixture.rules));
+  assert.deepEqual(readme.coreTests, ["tests/a.test.mjs"]);
+  assert.deepEqual(readme.portalTests, []);
+  const gates = createPlan({ ...input, records: [{ status: "M", paths: ["docs/wiki/Gates.md"] }] }, fixture.rules, digest(fixture.rules));
+  assert.deepEqual(gates.coreTests, ["tests/a.test.mjs", "tests/b.test.mjs"]);
+  assert.deepEqual(gates.portalTests, ["portal/tests/a.test.mjs"]);
+});
+
+test("unreviewed dynamic readers cannot inherit a frozen audit or declare their own exemption", async (t) => {
+  const fixture = await createCiComponentFixture(t);
+  const reader = "tests/b.test.mjs";
+  await writeFixtureFile(fixture.repo, reader, '// ci-ignore: docs\nimport { readFileSync } from "node:fs"; readFileSync(process.env.DOCUMENT_INPUT);\n');
+  fixture.git("add", reader);
+  const unknown = checkConsumers(fixture.repo, fixture.rules);
+  assert.deepEqual(unknown, [reader]);
+  const input = sourceInput(fixture.repo, fixture.env);
+  input.baseline = { ...baseline, sha: fixture.before };
+  assert.equal(createPlan({ ...input, unaccountedConsumers: unknown }, fixture.rules, digest(fixture.rules)).coverage, "full");
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, fixture.head), []);
+});
+
+test("real repository README, every ordinary Wiki and original PR33 retain exact selective rosters without Portal", () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const { rulesHash } = loadRules(root);
+  const head = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const env = { GITHUB_EVENT_NAME: "push", GITHUB_REPOSITORY: "example/project", GITHUB_RUN_ID: "2", GITHUB_RUN_ATTEMPT: "1" };
+  const input = sourceInput(root, env, { before: head, after: head });
+  input.baseline = { ...baseline, sha: head }; // Explicit synthetic eligible input, never a hosted-success claim.
+  input.unaccountedConsumers = checkConsumers(root, rules);
+  assert.deepEqual(input.unaccountedConsumers, []);
+  assert.deepEqual(checkConsumers(root, rules, head), []);
+  const names = (text) => text.trim().split(/\s+/u).map((name) => `tests/${name}.test.mjs`);
+  const sorted = (files) => [...new Set(files)].sort();
+  const integrity = names("ci-artifact-transport ci-baseline-evidence ci-bootstrap ci-evidence-retention ci-impact-plan ci-selective-runner ci-test-roster");
+  const common = names(`bootstrap bundle configuration-contract dependency-materialization dependency-policy
+    dispatch-admission-evidence final-gate-plan final-gate-plan-batch-verify heavy-runs inc263-closeout inc275-mcp-absent
+    native-tool-evidence no-sibling-dependency node-floor offline-boundary operational-audit-boundaries output-session-lifecycle
+    p1-all-legs p1-roster p8-sbom-receipt-boundary p8-workflow-rc pack-release platform-doctor privacy-boundary project-chain-model
+    push-gate-p1-coverage readme-render release-lockstep release-tag-gate release-tooling-audit-boundaries release-trust
+    render-helper-docs review-evidence runtime-input-contract skill-install-bootstrap skill-render skill-render-cli
+    story-346-pg-disabled story-378-incident-replay story-rule-conservation`);
+  const ordinaryWiki = ["Atelier", "CLI-Reference", "Ether-Layout", "FAQ", "Gates", "Glossary", "Home", "Install-Wizard", "Managed-Sections-and-Command-Spell", "Migrating-from-TCRN-Workflow", "Multi-Device-and-Cloud", "Variables", "_Sidebar"].map((name) => `docs/wiki/${name}.md`);
+  assert.deepEqual(Object.keys(rules.docs).sort(), ["README.md", ...ordinaryWiki].sort());
+  const expectedDocuments = Object.fromEntries(ordinaryWiki.map((document) => [document, sorted([...integrity, ...names("push-wiki wiki-pages")])]));
+  expectedDocuments["README.md"] = sorted([...integrity, ...common, ...names("gates-plan inc238-markdown-link-gate")]);
+  expectedDocuments["docs/wiki/CLI-Reference.md"] = sorted([...integrity, ...common, ...names("push-wiki wiki-cli-reference wiki-pages")]);
+  expectedDocuments["docs/wiki/Glossary.md"] = sorted([...expectedDocuments["docs/wiki/Glossary.md"], ...names("names-alias-table")]);
+  expectedDocuments["docs/wiki/Home.md"] = sorted([...expectedDocuments["docs/wiki/Home.md"], ...names("inc238-markdown-link-gate")]);
+  const privacy = names(`bootstrap bundle ci-artifact-transport ci-baseline-evidence ci-bootstrap ci-evidence-retention ci-impact-plan ci-selective-runner ci-test-roster
+    configuration-contract cross-repo-privacy dependency-materialization dependency-policy dispatch-admission-evidence final-gate-plan final-gate-plan-batch-verify
+    heavy-runs inc263-closeout inc275-mcp-absent local-command-byte-fidelity native-tool-evidence no-sibling-dependency node-floor offline-boundary
+    operational-audit-boundaries otel-privacy-guard output-session-lifecycle p1-all-legs p1-roster p8-sbom-receipt-boundary p8-workflow-rc pack-release platform-doctor
+    privacy-boundary privacy-git-metadata privacy-normalization project-chain-model push-gate-p1-coverage readme-render release-lockstep release-tag-gate
+    release-tooling-audit-boundaries release-trust render-helper-docs review-evidence runtime-input-contract skill-install-bootstrap skill-render skill-render-cli
+    staged-privacy-origin-diagnostics staged-privacy-reviewed-paths storage-defensive-maintenance story-346-pg-disabled story-378-incident-replay story-rule-conservation token-attribution`);
+  const pr33 = JSON.parse(readFileSync(new URL("./fixtures/ci-impact/pr-33.json", import.meta.url)));
+  assert.deepEqual(pr33.records.flatMap((record) => record.paths), ["scripts/lib/privacy.mjs", "tests/privacy-git-metadata.test.mjs"]);
+  const cases = [
+    ...Object.entries(expectedDocuments).map(([document, expected]) => ({ records: [{ status: "M", paths: [document] }], expected, category: "docs" })),
+    { records: ordinaryWiki.map((path) => ({ status: "M", paths: [path] })), expected: sorted(ordinaryWiki.flatMap((document) => expectedDocuments[document])), category: "docs" },
+    { records: pr33.records, expected: sorted(privacy), category: "privacy" },
+  ];
+  const tasks = ["format-check", "lint", "typecheck", "build", "test", "archive", "no-sibling-dependency", "offline", "privacy", "links", "retrieval-eval"];
+  for (const { records, expected, category } of cases) {
+    const value = createPlan({ ...input, records }, rules, rulesHash);
+    assert.equal(value.coverage, "selective", JSON.stringify(records));
+    assert.deepEqual(value.reasons, []);
+    assert.deepEqual(value.categories, [category]);
+    assert.deepEqual(value.tasks, tasks);
+    assert.deepEqual(value.shards, { checks: tasks.filter((task) => task !== "test"), core: ["test"] });
+    assert.deepEqual(value.coreTests, expected, JSON.stringify(records));
+    assert.deepEqual(value.portalTests, []);
+    assert.ok(value.notApplicable.some((row) => row.task === "portal" && row.rule === "no-portal-impact"));
+    assert.ok(value.coreTests.length < input.sourceCoreTests.length);
+  }
+  const missing = structuredClone(rules);
+  missing.docs["docs/wiki/CLI-Reference.md"] = missing.docs["docs/wiki/CLI-Reference.md"].filter((path) => path !== "tests/wiki-cli-reference.test.mjs");
+  const unknown = checkConsumers(root, missing);
+  assert.ok(unknown.includes("tests/wiki-cli-reference.test.mjs"), "a missing real-repository document consumer map still forces full");
+  const full = createPlan({ ...input, records: [{ status: "M", paths: ["docs/wiki/CLI-Reference.md"] }], unaccountedConsumers: unknown }, missing, digest(missing));
+  assert.equal(full.coverage, "full");
+  assert.deepEqual(full.reasons, ["unaccounted-consumers"]);
+  const { texts } = documentReaderSources(root);
+  const graph = sourceDependencyGraph(texts);
+  assert.equal(graph.get("packages/core/src/names.ts").has("scripts/lib/privacy.mjs"), false);
+  assert.equal(graph.get("portal/tests/portal.test.mjs").has("scripts/lib/log.mjs"), false);
 });
 
 function categoryFixtureOptions(category) {
@@ -258,7 +396,7 @@ for (const category of ["privacy", "portal"]) {
     ]) {
       const caller = `tests/${reader.split("/").at(-1)}.test.mjs`;
       await writeFixtureFile(fixture.repo, reader, text);
-      await writeFixtureFile(fixture.repo, caller, `import test from "node:test"; test("configuration caller", () => {}); const input = ${JSON.stringify(reader)};\n`);
+      await writeFixtureFile(fixture.repo, caller, `import { readFileSync } from "node:fs"; readFileSync(${JSON.stringify(reader)});\n`);
       fixture.git("add", reader, caller);
       const unknown = checkConsumers(fixture.repo, fixture.rules);
       assert.ok(unknown.includes(reader), reader);

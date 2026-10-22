@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { isUtf8 } from "node:buffer";
 import { readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { P1_TASKS } from "../p1-sequence.mjs";
 import { verifyBaseline, collectBaseline } from "./baseline-evidence.mjs";
@@ -26,10 +26,11 @@ export function parseNameStatus(bytes) {
   }
   return records;
 }
+const maskArtifactPins = (text) => text.replace(/^(\s*uses: actions\/(?:upload|download)-artifact@)[a-f0-9]{40}(?:[ \t]+#[ \t]*v[0-9]+(?:\.[0-9]+)*(?:[ \t]*))?$/gmu, "$1<PIN>");
+export const sourceAuditDigest = (path, text) => digest(path === ".github/workflows/ci.yml" ? maskArtifactPins(text) : text);
 export function artifactPinOnly(before, after) {
   if (typeof before !== "string" || typeof after !== "string" || before === after) return false;
-  const mask = (text) => text.replace(/^(\s*uses: actions\/(?:upload|download)-artifact@)[a-f0-9]{40}(?:[ \t]+#[ \t]*v[0-9]+(?:\.[0-9]+)*(?:[ \t]*))?$/gmu, "$1<PIN>");
-  return mask(before) === mask(after);
+  return maskArtifactPins(before) === maskArtifactPins(after);
 }
 const sorted = (items) => [...new Set(items)].sort();
 export function createPlan(input, rules, rulesHash) {
@@ -57,8 +58,9 @@ export function createPlan(input, rules, rulesHash) {
   if (!Array.isArray(fullCore) || !fullCore.length || !Array.isArray(fullPortal) || !fullPortal.length || selected.some((path) => !fullCore.includes(path))) reasons.push("incomplete-test-map");
   const coverage = reasons.length ? "full" : "selective";
   const coreTests = coverage === "full" ? fullCore : sorted(selected);
+  const changedDocuments = (input.records ?? []).flatMap((record) => record.paths).filter((path) => Object.hasOwn(rules.docs, path));
   const portalConsumer = categories.some((category) => rules.consumers?.[category]?.some((path) => path.startsWith("portal/tests/") && path.endsWith(".test.mjs")));
-  const portalSelected = coverage === "full" || categories.includes("portal") || portalConsumer || (categories.includes("docs") && rules.documentAudit?.portalTests?.length > 0);
+  const portalSelected = coverage === "full" || categories.includes("portal") || portalConsumer || changedDocuments.some((path) => rules.documentAudit?.[path]?.portalTests?.length > 0);
   const shards = {
     checks: P1_TASKS.filter((task) => !["test", "portal"].includes(task)),
     core: ["test"],
@@ -109,29 +111,203 @@ export function loadRules(root) {
   const bytes = readFileSync(resolve(root, "scripts/ci/impact-rules.json"));
   return { rules: JSON.parse(bytes), rulesHash: digest(bytes) };
 }
-const references = (text, path) => text.includes(path) || text.includes(path.split("/").at(-1));
-function readerClosure(texts, seeds) {
+// Finite source audit, deliberately independent of the frozen declarations.
+// Comments, regexes and string *contents* (including embedded fixture programs)
+// are not executable path references. Tokens retain complete string values.
+function sourceTokens(text, python = false) {
+  const tokens = [];
+  let offset = 0;
+  while (offset < text.length) {
+    const rest = text.slice(offset);
+    const skip = rest.match(python ? /^(?:\s+|#[^\n]*)/u : /^(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)/u);
+    if (skip) { offset += skip[0].length; continue; }
+    const quote = rest[0];
+    if (["\"", "'", "`"].includes(quote)) {
+      const triple = python && rest.startsWith(quote.repeat(3));
+      const delimiter = triple ? quote.repeat(3) : quote;
+      let end = delimiter.length, value = "";
+      while (end < rest.length && !rest.startsWith(delimiter, end)) {
+        if (rest[end] === "\\") {
+          const next = rest[++end];
+          value += ({ n: "\n", r: "\r", t: "\t" })[next] ?? next ?? "";
+          end++;
+        } else value += rest[end++];
+      }
+      tokens.push({ kind: quote === "`" && value.includes("${") ? "template" : "string", value });
+      offset += Math.min(rest.length, end + delimiter.length);
+      continue;
+    }
+    // A slash at an expression boundary is a regexp, not a path or a comment.
+    if (!python && quote === "/" && (!tokens.length || /^(?:[=(,:!&|?;{]|return|=>)$/u.test(tokens.at(-1).value))) {
+      let end = 1, bracket = false;
+      while (end < rest.length) {
+        if (rest[end] === "\\") { end += 2; continue; }
+        if (rest[end] === "[") bracket = true;
+        if (rest[end] === "]") bracket = false;
+        if (rest[end++] === "/" && !bracket) break;
+      }
+      while (/[a-z]/iu.test(rest[end] ?? "")) end++;
+      tokens.push({ kind: "regexp", value: rest.slice(0, end) }); offset += end; continue;
+    }
+    const word = rest.match(/^[A-Za-z_$][\w$]*/u)?.[0];
+    const value = word ?? rest.match(/^(?:=>|\.\.\.|\?\.|\?\?|===|!==|&&|\|\|)/u)?.[0] ?? quote;
+    tokens.push({ kind: word ? "identifier" : "punctuation", value }); offset += value.length;
+  }
+  return tokens;
+}
+const outputCalls = /^(?:writeFile(?:Sync|Atomic)?|appendFile(?:Sync)?|write_text|write_bytes|mkdir(?:Sync)?|mkdtemp(?:Sync)?|rm(?:Sync)?|unlink(?:Sync)?|stage|put|writeFixtureFile)$/u;
+const inputCalls = /(?:read|open|access|stat|copyFile|^cp$|exec|spawn|run|import|require|load|inspect|verify|scan)/iu;
+const pureCalls = /^(?:has|includes|startsWith|endsWith|startswith|endswith|test|match|matchAll|replace|replaceAll|split|slice|substring|indexOf|lastIndexOf|set|push|add|delete|sort|filter|map|flatMap|every|some|find|findIndex|isArray|keys|values|entries|fromEntries|stringify|parse|normalize|rooted|safePath|rootValue|digest|canonical)$/u;
+const rooted = (path) => `repo:${posix.normalize(path)}`;
+const rootValue = (value, source, relative = false) => {
+  const repositoryPath = value.startsWith("repo:");
+  if (repositoryPath) value = value.slice(5);
+  if (value.startsWith("fixture:") || /[\n\r\0]|\$\{|^\w+:\/\//u.test(value)) return null;
+  const path = posix.normalize(!repositoryPath && relative ? posix.join(posix.dirname(source), value) : value);
+  return path === ".." || path.startsWith("../") || path.startsWith("/") ? null : path.replace(/^\.\//u, "");
+};
+// Literal imports/calls, constant aliases/arrays and static join/resolve/URL
+// expressions are supported. A nonliteral prefix is never discarded to turn a
+// fixture path into a repository path. Unknown languages/configuration retain
+// exact input tokens conservatively; they cannot declare their own exemption.
+export function sourceDependencyGraph(texts) {
+  const graph = new Map();
+  const known = new Set(texts.keys());
+  const addKnown = (set, value, source, relative = false, directory = false) => {
+    const path = rootValue(value, source, relative);
+    if (path === null) return;
+    const built = (path.startsWith("dist/build/") ? path.slice(11) : path).replace(/^(packages\/.*)\.js$/u, "$1.ts");
+    for (const candidate of known) if (candidate === path || candidate === built || (directory && path && candidate.startsWith(path.replace(/\/$/u, "") + "/"))) set.add(candidate);
+    // Documents are intentionally absent from reader sources, but are graph
+    // inputs. Do not reduce them to basenames or share all documents' readers.
+    if (/\.(?:md)$/iu.test(path) || path === "docs/wiki" || path === "docs/wiki/") set.add(path.replace(/\/$/u, ""));
+  };
+  for (const [source, text] of texts) {
+    const dependencies = new Set(); graph.set(source, dependencies);
+    if (source === "scripts/ci/impact-rules.json") continue; // classification schema, audited separately below
+    const javascript = /\.(?:[cm]?js|[cm]?ts|jsx|tsx)$/iu.test(source), python = /\.py$/iu.test(source);
+    const tokens = sourceTokens(text, python), values = tokens.map((token) => token.value);
+    const pairs = new Map(), stack = [];
+    for (let index = 0; index < tokens.length; index++) {
+      if (tokens[index].kind !== "punctuation") continue;
+      if (["(", "[", "{"].includes(values[index])) stack.push(index);
+      else if ([")", "]", "}"].includes(values[index])) { const start = stack.pop(); if (start !== undefined) pairs.set(start, index); }
+    }
+    const parts = (start, end) => {
+      const result = []; let first = start;
+      for (let index = start; index < end; index++) {
+        if (pairs.has(index)) index = pairs.get(index);
+        else if (values[index] === ",") { result.push([first, index]); first = index + 1; }
+      }
+      result.push([first, end]); return result;
+    };
+    const bindings = new Map();
+    const evaluate = (start, end, depth = 0) => {
+      if (depth > 20 || start >= end) return [];
+      while (["await", "...", "new"].includes(values[start])) start++;
+      if (values[start] === "(" && pairs.get(start) === end - 1) return evaluate(start + 1, end - 1, depth + 1);
+      if (start + 1 === end) return tokens[start].kind === "string" ? [values[start]] : bindings.get(values[start]) ?? [];
+      const expression = values.slice(start, end).join("");
+      if (expression === "import.meta.dirname") return [rooted(posix.dirname(source))];
+      if (expression === "import.meta.url") return [rooted(source)];
+      if (expression === "process.cwd()") return ["repo:."];
+      if (values[start] === "[" && pairs.get(start) === end - 1) return parts(start + 1, end - 1).flatMap(([a, b]) => evaluate(a, b, depth + 1));
+      let opening = start;
+      while (opening < end && values[opening] !== "(") opening++;
+      if (opening === end || !pairs.has(opening)) return [];
+      const closing = pairs.get(opening), name = values[opening - 1];
+      const args = parts(opening + 1, closing).map(([a, b]) => evaluate(a, b, depth + 1));
+      if (["fileURLToPath", "Path", "freeze"].includes(name)) return args[0] ?? [];
+      if (name === "dirname") return (args[0] ?? []).map((path) => path.startsWith("repo:") ? rooted(posix.dirname(path.slice(5))) : path.startsWith("fixture:") ? path : posix.dirname(path));
+      if (["mkdtemp", "mkdtempSync", "tmpdir"].includes(name)) return ["fixture:temporary"];
+      if (name === "URL") {
+        return (args[0] ?? []).flatMap((path) => (args[1] ?? []).filter((base) => base.startsWith("repo:")).map((base) => rooted(posix.join(posix.dirname(base.slice(5)), path))));
+      }
+      if (!["join", "resolve"].includes(name) || args.some((arg) => !arg.length)) return [];
+      let joined = args[0];
+      for (const arg of args.slice(1)) joined = joined.flatMap((base) => arg.map((part) => base.startsWith("fixture:") ? base : base.startsWith("repo:") ? rooted(posix.join(base.slice(5), part)) : posix.join(base, part)));
+      return joined;
+    };
+    // File-local aliases and finite loop sets reach a fixed point. Names in
+    // separate scopes are unioned, conservatively retaining possible inputs.
+    for (let pass = 0; pass < 8; pass++) {
+      let changed = false;
+      for (let index = 0; index < tokens.length - 2; index++) {
+        if (tokens[index].kind !== "identifier" || !["=", "of"].includes(values[index + 1])) continue;
+        let end = index + 2;
+        while (end < tokens.length && ![";", ",", ")", "}"].includes(values[end])) { if (pairs.has(end)) end = pairs.get(end); end++; }
+        const next = sorted([...(bindings.get(values[index]) ?? []), ...evaluate(index + 2, end)]);
+        if (canonical(next) !== canonical(bindings.get(values[index]) ?? [])) { bindings.set(values[index], next); changed = true; }
+      }
+      for (const [opening, closing] of pairs) if (values[opening] === "[" && values[closing + 1] === "of") {
+        let end = closing + 2;
+        while (end < tokens.length && values[end] !== ")") { if (pairs.has(end)) end = pairs.get(end); end++; }
+        const items = evaluate(closing + 2, end);
+        for (let index = opening + 1; index < closing; index++) if (tokens[index].kind === "identifier") {
+          const next = sorted([...(bindings.get(values[index]) ?? []), ...items]);
+          if (canonical(next) !== canonical(bindings.get(values[index]) ?? [])) { bindings.set(values[index], next); changed = true; }
+        }
+      }
+      if (!changed) break;
+    }
+    if (!javascript && !python) {
+      // Configuration and unsupported text syntax are potential inputs, never
+      // presumed non-executable based on their suffix. Exact unquoted path
+      // tokens are also retained (e.g. YAML input: scripts/read-doc.py).
+      for (let index = 0; index < tokens.length; index++) if (tokens[index].kind === "string" && values[index + 1] !== ":") addKnown(dependencies, values[index], source);
+      const uncommented = text.replace(/^\s*#.*$/gmu, "");
+      for (const match of uncommented.matchAll(/(?:^|[\s:"'=])([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:md|mjs|js|ts|py|sh|yaml|json))(?=$|[\s,"'])/gmu)) addKnown(dependencies, match[1], source);
+    }
+    for (let index = 0; index < tokens.length; index++) {
+      if (tokens[index].kind === "string" && (values[index - 1] === "from" || values[index - 1] === "import")) addKnown(dependencies, values[index], source, values[index].startsWith("."));
+      if (tokens[index].kind !== "punctuation" || values[index] !== "(" || !pairs.has(index)) continue;
+      const name = values[index - 1];
+      if (!name || outputCalls.test(name) || pureCalls.test(name) || ["join", "resolve", "dirname", "URL", "fileURLToPath", "test"].includes(name)) continue;
+      if (python && name === "Path") continue; // construction alone neither reads nor calls the file
+      if (values[index - 2] === "." && values[index - 3] === "assert") continue;
+      const args = parts(index + 1, pairs.get(index));
+      if (python && name === "open" && evaluate(...(args[1] ?? [index, index])).some((mode) => /^[wax]/u.test(mode))) continue;
+      if (python && /^(?:read_text|read_bytes|open)$/u.test(name) && values[index - 2] === ".") {
+        let start = index - 3;
+        if (values[start] === ")") for (const [opening, closing] of pairs) if (closing === start) { start = opening - 1; break; }
+        for (const value of evaluate(start, index - 2)) addKnown(dependencies, value, source);
+      }
+      // Reads and execution can flow through wrappers. Exact path-valued args
+      // to unknown calls are conservative edges too, rather than exemptions.
+      const inputArgs = /^(?:cp|copyFile(?:Sync)?)$/u.test(name) ? args.slice(0, 1) : args;
+      for (const [start, end] of inputArgs) {
+        for (const value of evaluate(start, end)) addKnown(dependencies, value, source, ["import", "require"].includes(name) && value.startsWith("."), /(?:readdir|copy|^cp$|walk|treeFiles|filesOf|pagesOf|mirror)/iu.test(name));
+      }
+      if (inputCalls.test(name)) {
+        // A dynamic expression with an exact input token remains conservative.
+        // Embedded source payloads are single string tokens, never rescanned.
+        for (let cursor = index + 1; cursor < pairs.get(index); cursor++) if (tokens[cursor].kind === "template") {
+          const literal = values[cursor].split(/\$\{[^}]*\}/u);
+          for (const part of literal) if (part && !part.includes("\n")) addKnown(dependencies, part, source);
+        }
+      }
+    }
+  }
+  return graph;
+}
+function readerClosure(graph, seeds) {
   const readers = new Set(seeds);
   let changed = true;
   while (changed) {
     changed = false;
-    for (const [path, text] of texts) {
-      if (!readers.has(path) && [...readers].some((reader) => references(text, reader))) { readers.add(path); changed = true; }
+    for (const [path, dependencies] of graph) {
+      if (!readers.has(path) && [...readers].some((reader) => dependencies.has(reader) || dependencies.has("docs/wiki") && reader.startsWith("docs/wiki/"))) { readers.add(path); changed = true; }
     }
   }
   return sorted(readers);
 }
-export function documentReaderClosure(texts, documents = []) {
-  return readerClosure(texts, [...texts].filter(([, text]) => /README|docs\/wiki|wiki\//u.test(text) || documents.some((document) => references(text, document))).map(([path]) => path));
+export function documentReaderClosure(texts, documents = [], graph = sourceDependencyGraph(texts)) {
+  return readerClosure(graph, documents).filter((path) => texts.has(path));
 }
-// Category inputs and their shared rules are seeds, as are directory/basename references.
-// Follow callers across every inspected text language, then require each root
-// Core consumer in the corresponding frozen category test map. This derivation
-// is shared with fixture construction; it never refreshes runtime declarations.
-export function categoryReaderAudit(texts, rules) {
+export function categoryReaderAudit(texts, rules, graph = sourceDependencyGraph(texts)) {
   return Object.fromEntries(["privacy", "portal"].map((category) => {
     const paths = rules[`${category}Paths`] ?? [];
-    const readers = readerClosure(texts, [...texts].filter(([path, text]) => path === "scripts/ci/impact-rules.json" || paths.includes(path) || (category === "privacy" ? text.includes("privacy.mjs") : path.startsWith("portal/") || text.includes("portal/")) || paths.some((input) => references(text, input))).map(([path]) => path));
+    const readers = readerClosure(graph, paths).filter((path) => texts.has(path));
     return [category, { readers, tests: readers.filter((path) => path.startsWith("tests/") && path.endsWith(".test.mjs")) }];
   }));
 }
@@ -157,7 +333,14 @@ export function documentReaderSources(root, ref) {
 export function checkConsumers(root, rules, ref) {
   const { texts, unresolved } = documentReaderSources(root, ref);
   const unknown = [...unresolved];
-  for (const [category, actual] of Object.entries(categoryReaderAudit(texts, rules))) {
+  // A frozen source inventory binds the reviewed finite semantics to real bytes.
+  // Newly tracked or changed noncategory executable/configuration inputs cannot
+  // silently inherit an old audit, including callers with wholly dynamic paths.
+  // It never supplies missing graph edges or replaces either consumer/test map.
+  const categoryInputs = new Set([...rules.privacyPaths, ...rules.portalPaths]);
+  for (const [path, text] of texts) if (path !== "scripts/ci/impact-rules.json" && (!rules.sourceAudit?.[path] || !categoryInputs.has(path) && rules.sourceAudit[path] !== sourceAuditDigest(path, text))) unknown.push(path);
+  const graph = sourceDependencyGraph(texts);
+  for (const [category, actual] of Object.entries(categoryReaderAudit(texts, rules, graph))) {
     const declaration = rules.consumers?.[category];
     if (!Array.isArray(declaration)) { unknown.push(`${category}-consumer-declaration`); continue; }
     for (const reader of actual.readers) if (!declaration.includes(reader)) unknown.push(reader);
@@ -165,14 +348,12 @@ export function checkConsumers(root, rules, ref) {
     for (const test of actual.tests) if (!rules[`${category}Tests`]?.includes(test)) unknown.push(test);
   }
   const audit = rules.documentConsumers;
-  const readers = documentReaderClosure(texts, Object.keys(rules.docs));
   for (const document of Object.keys(rules.docs)) {
-    const declaration = audit?.[document] === document ? rules.documentAudit : null;
+    const readers = documentReaderClosure(texts, [document], graph);
+    const declaration = audit?.[document] === document ? rules.documentAudit?.[document] : null;
     if (!declaration || !Array.isArray(declaration.readers) || !Array.isArray(declaration.tests)) { unknown.push(document); continue; }
-    // README and wiki directory tokens cover direct paths, joins and directory
-    // walkers; dependency edges below cover readers imported by other readers.
     for (const reader of readers) if (!declaration.readers.includes(reader)) unknown.push(reader);
-    for (const reader of declaration.readers) if (!texts.has(reader)) unknown.push(reader);
+    for (const reader of declaration.readers) if (!readers.includes(reader)) unknown.push(reader);
     for (const reader of readers) if (reader.startsWith("portal/tests/") && reader.endsWith(".test.mjs") && !declaration.portalTests?.includes(reader)) unknown.push(reader);
     for (const reader of readers) if (reader.startsWith("tests/") && reader.endsWith(".test.mjs") && (!declaration.tests.includes(reader) || !rules.docs[document].includes(reader))) unknown.push(reader);
   }

@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { createPlan, sourceInput, loadRules, checkConsumers, documentReaderClosure, documentReaderSources, categoryReaderAudit } from "../../scripts/ci/impact-plan.mjs";
+import { createPlan, sourceInput, loadRules, checkConsumers, documentReaderClosure, documentReaderSources, categoryReaderAudit, sourceDependencyGraph, sourceAuditDigest } from "../../scripts/ci/impact-plan.mjs";
 import { privateHeavyEnvironment, heavyLockDirectoryUnder } from "./heavy-slots.mjs";
 
 export const componentSourceRoot = resolve(import.meta.dirname, "../..");
@@ -24,11 +24,16 @@ export async function freezeTinyRules(repo, rules) {
   git("add", ".");
   const { texts, unresolved } = documentReaderSources(repo);
   assert.deepEqual(unresolved, []);
-  const readers = documentReaderClosure(texts, Object.keys(rules.docs));
-  const tests = readers.filter((path) => path.startsWith("tests/") && path.endsWith(".test.mjs"));
-  const portalTests = readers.filter((path) => path.startsWith("portal/tests/") && path.endsWith(".test.mjs"));
-  rules.documentAudit = { readers, tests: sorted([...Object.values(rules.docs).flat(), ...tests]), portalTests };
-  for (const document of Object.keys(rules.docs)) rules.docs[document] = sorted([...rules.docs[document], ...tests]);
+  rules.sourceAudit = Object.fromEntries([...texts].filter(([path]) => path !== "scripts/ci/impact-rules.json").map(([path, text]) => [path, sourceAuditDigest(path, text)]));
+  const graph = sourceDependencyGraph(texts);
+  rules.documentAudit = {};
+  for (const document of Object.keys(rules.docs)) {
+    const readers = documentReaderClosure(texts, [document], graph);
+    const tests = readers.filter((path) => path.startsWith("tests/") && path.endsWith(".test.mjs"));
+    const portalTests = readers.filter((path) => path.startsWith("portal/tests/") && path.endsWith(".test.mjs"));
+    rules.docs[document] = sorted([...rules.docs[document], ...tests]);
+    rules.documentAudit[document] = { readers, tests: rules.docs[document], portalTests };
+  }
   // Freeze documents first: their declaration is itself a tracked configuration
   // reader. Categories use exactly the production source scanner and closure.
   await writeFixtureFile(repo, "scripts/ci/impact-rules.json", JSON.stringify(rules));

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
 import { verifyBaseline, collectBaseline } from "../scripts/ci/baseline-evidence.mjs";
 import { createCiComponentFixture, fixturePlan, captureFixtureCore, withFixtureEnvironment, createOfflineScannerFixture, runFixtureTask } from "./helpers/ci-component-fixture.mjs";
 const expected = { repository: "example/project", base: "a".repeat(40) };
@@ -168,9 +169,16 @@ write(p/"package-seal.json",dict(identity={k:plan[k] for k in ["head","runId","a
 `;
   execFileSync("python3", ["-B", "-c", program, bundle, repo, JSON.stringify(plan), JSON.stringify(core)], { env: fixture.env, maxBuffer: 8 * 1024 * 1024 });
   const aggregate = () => {
-    const run = spawnSync("python3", ["-B", join(repo, "scripts/ci/aggregate-evidence.py"), "--baseline-artifacts", bundle, "--repo", repo, "--sha", head, "--run-id", "71", "--attempt", "1"], { env: fixture.env, encoding: "utf8" });
+    const summaryPath = join(directory, "aggregate-summary.md");
+    writeFileSync(summaryPath, "");
+    const run = spawnSync("python3", ["-B", join(repo, "scripts/ci/aggregate-evidence.py"), "--baseline-artifacts", bundle, "--repo", repo, "--sha", head, "--run-id", "71", "--attempt", "1"], { env: { ...fixture.env, GITHUB_STEP_SUMMARY: summaryPath }, encoding: "utf8" });
     assert.ok(run.stdout, run.stderr);
-    return JSON.parse(run.stdout);
+    const result = JSON.parse(run.stdout);
+    assert.equal(run.status, result.ok ? 0 : 1, "terminal exit still agrees with aggregate verdict");
+    const summary = readFileSync(summaryPath, "utf8");
+    assert.ok(summary.includes(`**${result.reasonCode}**`));
+    assert.ok(summary.includes(`coverage: **${result.coverage}**`));
+    return { ...result, stepSummary: summary };
   };
   const zipRows = async () => {
     const result = JSON.parse(execFileSync("python3", ["-B", "-c", 'import pathlib,zipfile,io,base64,json,sys\nr=[]\nfor n,d in enumerate(sorted(pathlib.Path(sys.argv[1]).iterdir()),1):\n b=io.BytesIO()\n with zipfile.ZipFile(b,"w") as z:\n  for p in d.rglob("*"):\n   if p.is_file(): z.write(p,p.relative_to(d))\n r.append(dict(id=n,name=d.name,expired=False,bytes=base64.b64encode(b.getvalue()).decode()))\nprint(json.dumps(r))', bundle], { encoding: "utf8" }));
@@ -185,7 +193,7 @@ for (const coverage of ["full", "selective"]) {
     const originalFetch = globalThis.fetch;
     t.after(() => { globalThis.fetch = originalFetch; });
     const fixture = await localBundle(t, coverage);
-    const { fs, join, core } = fixture;
+    const { fs, join, core, plan } = fixture;
     const coreDirectory = join(fixture.bundle, `p1-core-evidence-${fixture.head}-1`);
     const metaPath = join(coreDirectory, "p1-core.meta.json");
     let mutation = null, artifacts = await fixture.zipRows();
@@ -251,6 +259,15 @@ for (const coverage of ["full", "selective"]) {
       assert.equal(result.ok, true, JSON.stringify(result));
       assert.equal(result.reasonCode, coverage === "full" ? "CI_VERIFIED" : "CI_SELECTED_VERIFIED");
       assert.equal(result.coverage, coverage);
+      assert.ok(result.stepSummary.includes(`Core files: ${plan.coreTests.length} / ${plan.sourceCoreTests.length}`));
+      assert.ok(result.stepSummary.includes(`Portal files: ${plan.portalTests.length} / ${plan.sourcePortalTests.length}`));
+      assert.match(result.stepSummary, /Execution seconds \| Observed tests/u);
+      assert.match(result.stepSummary, /\| core \| [0-9.]+ \| [12] \| [12] \|/u);
+      assert.match(result.stepSummary, /\| checks \| unknown \| unknown \| n\/a/u);
+      if (coverage === "selective") {
+        assert.match(result.stepSummary, /portal: no-portal-impact/u);
+        assert.match(result.stepSummary, /tests\/b.test.mjs: audited-category-union/u);
+      } else assert.equal(result.stepSummary.includes("Not applicable"), false);
     });
     await t.test("genuine real ZIP collector succeeds", async () => {
       for (const pinned of [undefined, "71"]) {

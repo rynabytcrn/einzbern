@@ -167,6 +167,61 @@ print(json.dumps(dict(green=judge(records), reds=reds)))
   assert.deepEqual(result.reds, Array(8).fill(true));
 });
 
+test("ordinary full/selective P1 and H1 main retain common summary and failure exits", async (context) => {
+  const base = await scratch(context);
+  const result = python(`
+import contextlib, io
+spec = importlib.util.spec_from_file_location("aggregate", pathlib.Path(sys.argv[1]).with_name("aggregate-evidence.py"))
+a = importlib.util.module_from_spec(spec); spec.loader.exec_module(a)
+base = pathlib.Path(sys.argv[2]); rows = []
+# Isolate ordinary main/finalization control flow. Real retained bundle/byte
+# validation runs separately through the actual CLI in ci-baseline-evidence.
+for coverage in ("full", "selective"):
+ for job in ("success", "failure"):
+  summary = base / (coverage + "-" + job + ".md")
+  os.environ["GITHUB_STEP_SUMMARY"] = str(summary)
+  full = coverage == "full"
+  plan = dict(coverage=coverage, shards={"checks": ["build"], "core": ["test"], **({"portal": ["portal"]} if full else {})}, tasks=["build", "test", "portal"] if full else ["build", "test"],
+              coreTests=["tests/a.test.mjs", "tests/b.test.mjs"] if full else ["tests/a.test.mjs"], sourceCoreTests=["tests/a.test.mjs", "tests/b.test.mjs"],
+              portalTests=["portal/tests/a.test.mjs"] if full else [], sourcePortalTests=["portal/tests/a.test.mjs"],
+              notApplicable=[] if coverage == "full" else [dict(task="portal", rule="no-portal-impact", affectedPaths=["README.md"])])
+  records = {"checks": {}, "core": dict(elapsedSeconds=1.25, testTotals=dict(tests=3))}
+  if full: records["portal"] = dict(elapsedSeconds=0.5, testTotals=dict(tests=1))
+  a.validate_bundle = lambda *args, **kwargs: (plan, [], records)
+  sys.argv = ["aggregate-evidence.py", "--artifacts", str(base), "--sha", "a"*40, "--run-id", "1", "--attempt", "1", "--job-result", job, "--plan-result", "success"]
+  output = io.StringIO()
+  with contextlib.redirect_stdout(output): status = a.main()
+  rows.append(dict(coverage=coverage, job=job, status=status, result=json.loads(output.getvalue()), summary=summary.read_text()))
+h1 = base / ("pf2-h1-evidence-" + "a"*40 + "-1"); h1.mkdir()
+summary = base / "h1.md"; os.environ["GITHUB_STEP_SUMMARY"] = str(summary)
+a.validate_directory = lambda *args: (dict(elapsedSeconds=2.5, testTotals=dict(tests=5), inputManifest=dict(coreTestFiles=["tests/a.test.mjs"])), [])
+sys.argv = ["aggregate-evidence.py", "--artifacts", str(base), "--sha", "a"*40, "--run-id", "1", "--attempt", "1", "--job-result", "success", "--mode", "pf2-h1"]
+# The H1 branch independently requires its exact artifact directory set.
+h1root = base / "h1-artifacts"; h1root.mkdir(); h1.rename(h1root / h1.name)
+sys.argv[2] = str(h1root)
+output = io.StringIO()
+with contextlib.redirect_stdout(output): status = a.main()
+print(json.dumps(dict(p1=rows, h1=dict(status=status, result=json.loads(output.getvalue()), summary=summary.read_text()))))
+`, [base]);
+  for (const row of result.p1) {
+    const success = row.job === "success";
+    assert.equal(row.status, success ? 0 : 1);
+    assert.equal(row.result.ok, success);
+    assert.equal(row.result.reasonCode, success ? row.coverage === "full" ? "CI_VERIFIED" : "CI_SELECTED_VERIFIED" : "CI_INCOMPLETE");
+    assert.ok(row.summary.includes(`coverage: **${row.coverage}**`));
+    assert.ok(row.summary.includes(row.coverage === "full" ? "Selected tasks: 3; Core files: 2 / 2; Portal files: 1 / 1" : "Selected tasks: 2; Core files: 1 / 2; Portal files: 0 / 1"));
+    assert.ok(row.summary.includes(`| core | 1.25 | 3 | ${row.coverage === "full" ? 2 : 1} |`));
+    assert.match(row.summary, /\| checks \| unknown \| unknown \| n\/a/u);
+    assert.equal(row.summary.includes("no-portal-impact"), row.coverage === "selective");
+    if (!success) assert.match(row.summary, /Failures:[\s\S]*Plan or selected matrix did not succeed/u);
+  }
+  assert.equal(result.h1.status, 0);
+  assert.equal(result.h1.result.reasonCode, "CI_VERIFIED");
+  assert.equal(result.h1.result.mode, "pf2-h1");
+  assert.match(result.h1.summary, /literal H1 \(not P1\)/u);
+  assert.match(result.h1.summary, /\| pf2-h1 \| 2.5 \| 5 \| 1 \|/u);
+});
+
 for (const childExit of [0, 7]) {
   test(`harmless fixture retains whole outer/controller bytes after unlink and preserves child exit ${childExit}`, async (context) => {
     const base = await scratch(context);

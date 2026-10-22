@@ -75,15 +75,36 @@ package-script argv, repository/run/output-byte and zero-warning predicates
 remain required. Default task execution and aliased task paths share the same
 unconditional CLI lifetime, including the original heavy-slot terminal release.
 
-The document audit is explicit for each eligible README/Wiki path. Privacy and
-Portal use the same tracked UTF-8 source inspection and literal path/basename
-reverse-dependency closure, including Python, shell, configuration and previously
-unknown text languages. Category paths, the shared impact rules and Portal source
-paths seed the category closures; references to affected inputs and their callers
-extend them. Documentation and known opaque image/font assets retain their
-reader-source exclusions. Unknown binary or unreadable inputs remain unresolved.
-This is a conservative literal audit, with possible extra consumers, rather than
-a universal language parser.
+The document audit records separate readers, root tests and Portal consumers in
+`documentAudit[document]` for every allowlisted README/Wiki path. Only the changed
+documents' maps join the selection. Privacy and Portal use the same exact-input
+reverse caller graph. Comments, regex bodies, embedded fixture-program strings,
+known output writes and path predicates do not create executable input edges;
+`strip-catalog.mjs` cannot match `log.mjs`. There is no arbitrary basename match.
+A real document/privacy reader in Portal still selects the complete Portal train.
+
+The finite scanner follows literal imports, whole input tokens, file-local constant
+aliases and arrays, finite loop bindings, and static `join`, `resolve`, `dirname`
+and `URL` paths rooted at the source or repository. Built package `.js` imports
+map back to tracked `.ts` sources. Python `Path`/open inputs and Node subprocess
+arguments preserve real cross-language callers. Exact configuration and unsupported
+text-language input tokens remain conservative candidate edges. Unknown path roots
+are not discarded to turn a disposable fixture into the repository. This is not a
+universal parser or proof for arbitrary dynamically generated programs; alias scopes
+are conservatively unioned and some extra contracts can run.
+
+`sourceAudit` binds the reviewed non-document text inventory to SHA-256 bytes.
+The CI workflow alone uses the classifier's same strict official artifact-pin mask;
+this preserves pin-only eligibility without admitting other workflow changes.
+Newly tracked inputs and changed noncategory readers, including wholly dynamic
+ones, force full. Eligible category inputs retain the complete category regressions
+and independently audited reverse callers. Source comments or embedded declarations
+cannot exempt readers. Unknown binary/unreadable sources, stale declarations, or
+missing reader OR root-test mappings force full. Runtime reconstruction uses current
+tracked/staged bytes or immutable Git bytes; only construction freezes declarations.
+Documentation and known opaque image/font assets retain their source exclusions.
+The classifier's own rules JSON is checked as the classification schema, rather
+than treating its path keys as executable reads of every file it describes.
 
 The reviewed `consumers.privacy` and `consumers.portal` reader declarations are
 frozen separately from the required root Core-test maps in `privacyTests` and
@@ -154,3 +175,18 @@ batch-end step after integration. Historical proof bindings remain unchanged.
 Official action transport and hosted elapsed-time improvement for this candidate
 remain unverified until separately authorized execution; the 3–5 minute target
 has no measured speedup claim.
+
+Full and selective P1 and literal H1 share terminal summary finalization. The Actions
+summary includes the honest coverage/reason, available elapsed times and observed
+test counts, selected task/Core/Portal file counts, and the plan's N/A reasons.
+Unavailable counts and durations say `unknown`; they are not reported as zero.
+Failures remain failures and appear in the summary. Real-bundle full/selective CLI
+regressions and ordinary-main control-flow regressions cover summary output; H1
+retains its literal command and evidence semantics.
+
+The CI integrity roster remains unconditional, including baseline provenance and
+aggregate negatives. The retained R5 baseline suite observation was 147 tests in
+244.504 seconds within a concurrent local full gate. It is not a standalone narrow
+run, hosted timing, or speedup estimate. Same-run transfer/byte validation remains
+every-run work. This package preserves the existing provenance and negative-case
+assertions and timeouts; it introduces no benchmark, new stage, or claimed saving.

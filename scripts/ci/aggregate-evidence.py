@@ -220,6 +220,42 @@ def validate_bundle(root, sha, run_id, attempt, repo, remote=True):
     return plan, failures, records
 
 
+def finalize(result, records, plan=None):
+    """One terminal JSON/summary path for full P1, selective P1 and literal H1."""
+    print(json.dumps(result))
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        def cell(value):
+            return str(value).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
+            coverage = result.get("coverage", "literal H1 (not P1)")
+            stream.write(f"CI evidence: **{result['reasonCode']}** — coverage: **{coverage}**\n\n")
+            if plan is not None:
+                counts = {key: len(plan[key]) if isinstance(plan.get(key), list) else "unknown"
+                          for key in ("tasks", "coreTests", "sourceCoreTests", "portalTests", "sourcePortalTests")}
+                stream.write(f"Selected tasks: {counts['tasks']}; Core files: {counts['coreTests']} / {counts['sourceCoreTests']}; Portal files: {counts['portalTests']} / {counts['sourcePortalTests']}.\n\n")
+            stream.write("| Shard | Execution seconds | Observed tests | Selected test files |\n| --- | ---: | ---: | ---: |\n")
+            for shard, meta in records.items():
+                selected = "n/a (no test-file roster)"
+                if plan is not None and shard in ("core", "portal"):
+                    roster = plan.get("coreTests" if shard == "core" else "portalTests")
+                    selected = len(roster) if isinstance(roster, list) else "unknown"
+                elif shard == "pf2-h1":
+                    roster = meta.get("inputManifest", {}).get("coreTestFiles")
+                    selected = len(roster) if isinstance(roster, list) else "unknown"
+                totals = meta.get("testTotals") or {}
+                stream.write(f"| {cell(shard)} | {cell(meta.get('elapsedSeconds', 'unknown'))} | {cell(totals.get('tests', 'unknown'))} | {cell(selected)} |\n")
+            if plan is not None and plan.get("notApplicable"):
+                stream.write("\nNot applicable (plan reasons):\n\n")
+                for row in plan["notApplicable"]:
+                    stream.write(f"- {cell(row.get('path', row.get('task', 'unknown')))}: {cell(row.get('rule', 'unknown'))}; affected paths: {cell(', '.join(row.get('affectedPaths', [])))}\n")
+            if result.get("failures"):
+                stream.write("\nFailures:\n\n")
+                for failure in result["failures"]:
+                    stream.write(f"- {cell(failure)}\n")
+    return 0 if result["ok"] else 1
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ("sha", "run-id", "attempt"):
@@ -254,11 +290,10 @@ def main():
             coverage = "unknown"
             failures.append(str(error))
         result = {"ok": not failures, "reasonCode": ("CI_VERIFIED" if coverage == "full" else "CI_SELECTED_VERIFIED") if not failures else "CI_INCOMPLETE", "coverage": coverage, "head": args.sha, "shards": list(plan["shards"]) if "plan" in locals() else [], "failures": failures}
-        print(json.dumps(result))
-        return 0 if not failures else 1
+        return finalize(result, records, plan if "plan" in locals() else None)
     if args.job_result != "success":
         failures.append(f"Required verification jobs did not all succeed: {args.job_result}")
-    modes = ["p1-checks", "p1-core", "p1-portal"] if args.mode == "p1" else ["pf2-h1"]
+    modes = ["pf2-h1"]
     expected = {f"{mode}-evidence-{args.sha}-{args.attempt}" for mode in modes}
     if not root.is_dir() or {path.name for path in root.iterdir()} != expected:
         failures.append("Missing or unexpected evidence artifact directories")
@@ -269,17 +304,8 @@ def main():
             records[mode.removeprefix("p1-")] = meta
         except Exception as error:
             failures.append(f"{mode}: {error}")
-    if args.mode == "p1":
-        plan = json.loads(subprocess.check_output(["node", str(Path(__file__).with_name("p1-shard.mjs")), "--plan"], text=True))
-        failures.extend(judge_shards(records, plan, args.sha, args.run_id, args.attempt))
     result = {"ok": not failures, "reasonCode": "CI_VERIFIED" if not failures else "CI_INCOMPLETE", "mode": args.mode, "head": args.sha, "failures": failures}
-    print(json.dumps(result))
-    if os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
-            stream.write(f"CI evidence: **{result['reasonCode']}**\n\n| Shard | Execution seconds | Tests |\n| --- | ---: | ---: |\n")
-            for shard, meta in records.items():
-                stream.write(f"| {shard} | {meta.get('elapsedSeconds', 'unknown')} | {meta.get('testTotals', {}).get('tests', 'n/a')} |\n")
-    return 0 if not failures else 1
+    return finalize(result, records)
 
 
 if __name__ == "__main__":

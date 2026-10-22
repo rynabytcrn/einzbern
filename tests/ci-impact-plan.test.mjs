@@ -6,8 +6,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPlan, artifactPinOnly, parseNameStatus, digest, sourceInput, validatePlan, checkConsumers, loadRules, sourceDependencyGraph, documentReaderClosure, categoryReaderAudit, documentReaderSources, sourceAuditDigest } from "../scripts/ci/impact-plan.mjs";
-import { createCiComponentFixture, fixturePlan, writeFixtureFile } from "./helpers/ci-component-fixture.mjs";
+import { createPlan, artifactPinOnly, parseNameStatus, digest, sourceInput, validatePlan, checkConsumers, loadRules, sourceDependencyGraph, documentReaderClosure, categoryReaderAudit, categoryInputAudit, documentReaderSources, sourceAuditDigest } from "../scripts/ci/impact-plan.mjs";
+import { createCiComponentFixture, environmentDocumentCategoryFixture, fixturePlan, writeFixtureFile } from "./helpers/ci-component-fixture.mjs";
 const rules = JSON.parse(readFileSync(new URL("../scripts/ci/impact-rules.json", import.meta.url)));
 const core = [...new Set([...rules.ciTests, ...rules.privacyTests, ...rules.portalTests, ...Object.values(rules.docs).flat()])].sort();
 const base = "a".repeat(40);
@@ -219,6 +219,107 @@ test("unreviewed dynamic readers cannot inherit a frozen audit or declare their 
   input.baseline = { ...baseline, sha: fixture.before };
   assert.equal(createPlan({ ...input, unaccountedConsumers: unknown }, fixture.rules, digest(fixture.rules)).coverage, "full");
   assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, fixture.head), []);
+});
+
+test("a changed category environment read invalidates frozen current, staged and immutable document selection", async (t) => {
+  const contract = environmentDocumentCategoryFixture();
+  const fixture = await createCiComponentFixture(t, contract.options);
+  const rulesPath = join(fixture.repo, "scripts/ci/impact-rules.json");
+  const frozenRules = readFileSync(rulesPath);
+  const unchangedCaller = readFileSync(join(fixture.repo, "tests/b.test.mjs"));
+  const run = (files) => spawnSync(process.execPath, ["--test", ...files], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+  await writeFixtureFile(fixture.repo, "README.md", "old\n");
+  const reviewed = fixture.commit();
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), []);
+  await writeFixtureFile(fixture.repo, contract.reader, contract.changedHelper);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), [contract.reader]);
+  fixture.git("add", contract.reader);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), [contract.reader], "staging a reviewed category edit cannot inherit its old input audit");
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, reviewed), [], "the reviewed immutable input remains unchanged");
+  const categoryHead = fixture.commit();
+  for (const ref of [undefined, categoryHead]) assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), [contract.reader]);
+  assert.notEqual(fixture.rules.sourceAudit[contract.reader], sourceAuditDigest(contract.reader, contract.changedHelper));
+  const { texts } = documentReaderSources(fixture.repo);
+  assert.notEqual(categoryInputAudit(texts, fixture.rules)[contract.reader], fixture.rules.categoryInputAudit[contract.reader]);
+  assert.deepEqual(documentReaderClosure(texts, ["README.md"]), ["tests/a.test.mjs"], "the environment-mediated actual path is unresolved by the finite graph");
+  const before = run(["tests/b.test.mjs"]);
+  assert.equal(before.status, 0, before.stdout + before.stderr);
+  await writeFixtureFile(fixture.repo, "README.md", "new\n");
+  fixture.before = categoryHead;
+  fixture.head = fixture.commit();
+  await writeFile(fixture.env.GITHUB_EVENT_PATH, JSON.stringify({ before: fixture.before, after: fixture.head }));
+  assert.deepEqual(sourceInput(fixture.repo, fixture.env).records, [{ status: "M", paths: ["README.md"] }]);
+  for (const ref of [undefined, fixture.head]) assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), [contract.reader]);
+  const conservative = fixturePlan(fixture, "selective"); // Explicit synthetic baseline eligibility only.
+  assert.equal(conservative.coverage, "full");
+  assert.deepEqual(conservative.reasons, ["unaccounted-consumers"]);
+  assert.ok(conservative.coreTests.includes("tests/b.test.mjs"));
+  assert.deepEqual(conservative.notApplicable, []);
+  assert.deepEqual(validatePlan(conservative, fixture.repo, fixture.env), conservative);
+  const input = sourceInput(fixture.repo, fixture.env);
+  input.baseline = conservative.baseline;
+  const forged = createPlan({ ...input, unaccountedConsumers: [] }, fixture.rules, loadRules(fixture.repo).rulesHash);
+  assert.equal(forged.coverage, "selective");
+  assert.deepEqual(forged.coreTests, ["tests/a.test.mjs"]);
+  assert.ok(forged.notApplicable.some((row) => row.path === "tests/b.test.mjs"));
+  assert.throws(() => validatePlan(forged, fixture.repo, fixture.env), /independently derived/u);
+  const planPath = join(fixture.directory, "category-environment-plan.json");
+  const immutable = () => spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/ci/impact-plan.mjs", import.meta.url)), "validate-baseline", planPath], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+  await writeFile(planPath, JSON.stringify(conservative));
+  assert.equal(immutable().status, 0, "immutable reconstruction admits the genuine full fallback");
+  await writeFile(planPath, JSON.stringify(forged));
+  assert.notEqual(immutable().status, 0, "immutable reconstruction rejects an internally resealed stale selection");
+  const unaffected = run(["tests/a.test.mjs"]);
+  assert.equal(unaffected.status, 0, unaffected.stdout + unaffected.stderr);
+  for (const files of [["tests/b.test.mjs"], conservative.coreTests]) {
+    const changed = run(files);
+    assert.equal(changed.status, 1, "the actual root detects the document read, independently of the unresolved graph edge");
+    assert.match(changed.stdout + changed.stderr, /AssertionError/u);
+  }
+  try {
+    await writeFixtureFile(fixture.repo, "README.md", "old\n");
+    const restored = run(["tests/b.test.mjs"]);
+    assert.equal(restored.status, 0, restored.stdout + restored.stderr);
+  } finally { await writeFixtureFile(fixture.repo, "README.md", "new\n"); }
+  assert.deepEqual(readFileSync(rulesPath), frozenRules, "neither source/document mutation nor validation refreshes the declaration");
+  assert.deepEqual(readFileSync(join(fixture.repo, "tests/b.test.mjs")), unchangedCaller);
+  assert.equal(fixture.git("status", "--porcelain=v1"), "");
+});
+
+test("known category code changes retain narrow selection when the reviewed input surface is unchanged", async (t) => {
+  const reader = "scripts/privacy-reader.py";
+  const oldHelper = 'from pathlib import Path\ncategory_value = "old"\nassert Path("README.md").read_text().strip() == "new"\n';
+  const fixture = await createCiComponentFixture(t, { rules: { privacyPaths: [reader], privacyTests: ["tests/b.test.mjs"] }, files: {
+    [reader]: oldHelper,
+    "tests/b.test.mjs": 'import test from "node:test"; import { execFileSync } from "node:child_process"; test("known category document read", () => execFileSync("python3", ["scripts/privacy-reader.py"]));\n',
+  } });
+  const frozenRules = readFileSync(join(fixture.repo, "scripts/ci/impact-rules.json"));
+  fixture.before = fixture.head;
+  const changedHelper = oldHelper.replace('category_value = "old"', 'category_value = "changed"');
+  await writeFixtureFile(fixture.repo, reader, changedHelper);
+  fixture.git("add", reader);
+  assert.notEqual(sourceAuditDigest(reader, changedHelper), fixture.rules.sourceAudit[reader]);
+  assert.deepEqual(categoryInputAudit(documentReaderSources(fixture.repo).texts, fixture.rules), fixture.rules.categoryInputAudit);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), []);
+  const missingInputAudit = structuredClone(fixture.rules);
+  delete missingInputAudit.categoryInputAudit[reader];
+  assert.deepEqual(checkConsumers(fixture.repo, missingInputAudit), [reader], "changed category bytes require their own frozen input audit");
+  fixture.head = fixture.commit();
+  await writeFile(fixture.env.GITHUB_EVENT_PATH, JSON.stringify({ before: fixture.before, after: fixture.head }));
+  for (const ref of [undefined, fixture.head]) assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), []);
+  const selected = fixturePlan(fixture, "selective");
+  assert.equal(selected.coverage, "selective");
+  assert.deepEqual(selected.categories, ["privacy"]);
+  assert.deepEqual(selected.reasons, []);
+  assert.deepEqual(selected.coreTests, ["tests/a.test.mjs", "tests/b.test.mjs"]);
+  assert.deepEqual(selected.portalTests, []);
+  assert.deepEqual(validatePlan(selected, fixture.repo, fixture.env), selected);
+  const planPath = join(fixture.directory, "known-category-plan.json");
+  await writeFile(planPath, JSON.stringify(selected));
+  const immutable = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/ci/impact-plan.mjs", import.meta.url)), "validate-baseline", planPath], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+  assert.equal(immutable.status, 0, immutable.stderr);
+  assert.deepEqual(readFileSync(join(fixture.repo, "scripts/ci/impact-rules.json")), frozenRules);
+  assert.equal(fixture.git("status", "--porcelain=v1"), "");
 });
 
 test("real repository README, every ordinary Wiki and original PR33 retain exact selective rosters without Portal", () => {

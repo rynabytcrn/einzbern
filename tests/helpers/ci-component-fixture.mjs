@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { createPlan, sourceInput, loadRules, checkConsumers, documentReaderClosure, documentReaderSources, categoryReaderAudit, sourceDependencyGraph, sourceAuditDigest } from "../../scripts/ci/impact-plan.mjs";
+import { createPlan, sourceInput, loadRules, checkConsumers, documentReaderClosure, documentReaderSources, categoryReaderAudit, categoryInputAudit, sourceDependencyGraph, sourceAuditDigest } from "../../scripts/ci/impact-plan.mjs";
 import { privateHeavyEnvironment, heavyLockDirectoryUnder } from "./heavy-slots.mjs";
 
 export const componentSourceRoot = resolve(import.meta.dirname, "../..");
@@ -25,7 +25,8 @@ export async function freezeTinyRules(repo, rules) {
   const { texts, unresolved } = documentReaderSources(repo);
   assert.deepEqual(unresolved, []);
   rules.sourceAudit = Object.fromEntries([...texts].filter(([path]) => path !== "scripts/ci/impact-rules.json").map(([path, text]) => [path, sourceAuditDigest(path, text)]));
-  const graph = sourceDependencyGraph(texts);
+  const inputs = new Map([...rules.privacyPaths, ...rules.portalPaths].map((path) => [path, null])), graph = sourceDependencyGraph(texts, inputs);
+  rules.categoryInputAudit = categoryInputAudit(texts, rules, inputs);
   rules.documentAudit = {};
   for (const document of Object.keys(rules.docs)) {
     const readers = documentReaderClosure(texts, [document], graph);
@@ -46,6 +47,25 @@ export async function freezeTinyRules(repo, rules) {
   await writeFixtureFile(repo, "scripts/ci/impact-rules.json", JSON.stringify(rules));
   git("add", ".");
   return rules;
+}
+
+// The Node caller is present at review time. Only the category helper gains the
+// environment-mediated input later; declarations stay frozen across both edits.
+export function environmentDocumentCategoryFixture() {
+  const reader = "scripts/privacy-reader.py";
+  return {
+    reader,
+    oldHelper: 'import os\nfrom pathlib import Path\nassert True\n',
+    changedHelper: 'import os\nfrom pathlib import Path\nassert Path(os.environ["DOCUMENT_INPUT"]).read_text().strip() == "old"\n',
+    options: {
+      rules: { privacyPaths: [reader], privacyTests: ["tests/b.test.mjs"] },
+      files: {
+        [reader]: 'import os\nfrom pathlib import Path\nassert True\n',
+        "tests/a.test.mjs": 'import test from "node:test"; import assert from "node:assert/strict"; import { readFileSync } from "node:fs"; test("document remains nonempty", () => assert.ok(readFileSync("README.md", "utf8").length));\n',
+        "tests/b.test.mjs": 'import test from "node:test"; import { execFileSync } from "node:child_process"; test("existing privacy helper root", () => execFileSync("python3", ["scripts/privacy-reader.py"], { env: { ...process.env, DOCUMENT_INPUT: "README.md" } }));\n',
+      },
+    },
+  };
 }
 
 function harmlessTest(name) {

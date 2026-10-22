@@ -170,7 +170,8 @@ const rootValue = (value, source, relative = false) => {
 // expressions are supported. A nonliteral prefix is never discarded to turn a
 // fixture path into a repository path. Unknown languages/configuration retain
 // exact input tokens conservatively; they cannot declare their own exemption.
-export function sourceDependencyGraph(texts) {
+// Optional inputAudit is preseeded with the source paths to fingerprint.
+export function sourceDependencyGraph(texts, inputAudit) {
   const graph = new Map();
   const known = new Set(texts.keys());
   const addKnown = (set, value, source, relative = false, directory = false) => {
@@ -184,6 +185,9 @@ export function sourceDependencyGraph(texts) {
   };
   for (const [source, text] of texts) {
     const dependencies = new Set(); graph.set(source, dependencies);
+    const auditInput = inputAudit?.has(source);
+    const inputForms = [];
+    if (auditInput) inputAudit.set(source, digest(inputForms));
     if (source === "scripts/ci/impact-rules.json") continue; // classification schema, audited separately below
     const javascript = /\.(?:[cm]?js|[cm]?ts|jsx|tsx)$/iu.test(source), python = /\.py$/iu.test(source);
     const tokens = sourceTokens(text, python), values = tokens.map((token) => token.value);
@@ -201,7 +205,7 @@ export function sourceDependencyGraph(texts) {
       }
       result.push([first, end]); return result;
     };
-    const bindings = new Map();
+    const bindings = new Map(), bindingForms = new Map();
     const evaluate = (start, end, depth = 0) => {
       if (depth > 20 || start >= end) return [];
       while (["await", "...", "new"].includes(values[start])) start++;
@@ -228,6 +232,12 @@ export function sourceDependencyGraph(texts) {
       for (const arg of args.slice(1)) joined = joined.flatMap((base) => arg.map((part) => base.startsWith("fixture:") ? base : base.startsWith("repo:") ? rooted(posix.join(base.slice(5), part)) : posix.join(base, part)));
       return joined;
     };
+    const rememberBinding = (name, start, end) => {
+      if (!auditInput) return;
+      const form = tokens.slice(start, end), forms = bindingForms.get(name) ?? new Map();
+      forms.set(digest(form), sorted(form.filter((token) => token.kind === "identifier").map((token) => token.value)));
+      bindingForms.set(name, forms);
+    };
     // File-local aliases and finite loop sets reach a fixed point. Names in
     // separate scopes are unioned, conservatively retaining possible inputs.
     for (let pass = 0; pass < 8; pass++) {
@@ -236,6 +246,7 @@ export function sourceDependencyGraph(texts) {
         if (tokens[index].kind !== "identifier" || !["=", "of"].includes(values[index + 1])) continue;
         let end = index + 2;
         while (end < tokens.length && ![";", ",", ")", "}"].includes(values[end])) { if (pairs.has(end)) end = pairs.get(end); end++; }
+        if (pass === 0) rememberBinding(values[index], index + 2, end);
         const next = sorted([...(bindings.get(values[index]) ?? []), ...evaluate(index + 2, end)]);
         if (canonical(next) !== canonical(bindings.get(values[index]) ?? [])) { bindings.set(values[index], next); changed = true; }
       }
@@ -244,12 +255,27 @@ export function sourceDependencyGraph(texts) {
         while (end < tokens.length && values[end] !== ")") { if (pairs.has(end)) end = pairs.get(end); end++; }
         const items = evaluate(closing + 2, end);
         for (let index = opening + 1; index < closing; index++) if (tokens[index].kind === "identifier") {
+          if (pass === 0) rememberBinding(values[index], closing + 2, end);
           const next = sorted([...(bindings.get(values[index]) ?? []), ...items]);
           if (canonical(next) !== canonical(bindings.get(values[index]) ?? [])) { bindings.set(values[index], next); changed = true; }
         }
       }
       if (!changed) break;
     }
+    // Keep the finite input surface even when its actual path is unresolved.
+    // Referenced aliases retain their defining tokens; changing a dynamic
+    // binding must not inherit the old audit merely because it still evaluates
+    // to no known path. Other value-only edits and comments are not input forms.
+    const inputForm = (start, end) => {
+      const expression = tokens.slice(start, end), aliases = new Map();
+      const pending = new Set(expression.filter((token) => token.kind === "identifier").map((token) => token.value));
+      for (const name of pending) {
+        if (aliases.has(name) || !bindingForms.has(name)) continue;
+        const forms = [...bindingForms.get(name).values()]; aliases.set(name, [...bindingForms.get(name).keys()]);
+        for (const identifier of forms.flat()) pending.add(identifier);
+      }
+      return digest({ expression: digest(expression), aliases: Object.fromEntries(sorted(aliases.keys()).map((name) => [name, sorted(aliases.get(name))])) });
+    };
     if (!javascript && !python) {
       // Configuration and unsupported text syntax are potential inputs, never
       // presumed non-executable based on their suffix. Exact unquoted path
@@ -259,7 +285,10 @@ export function sourceDependencyGraph(texts) {
       for (const match of uncommented.matchAll(/(?:^|[\s:"'=])([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:md|mjs|js|ts|py|sh|yaml|json))(?=$|[\s,"'])/gmu)) addKnown(dependencies, match[1], source);
     }
     for (let index = 0; index < tokens.length; index++) {
-      if (tokens[index].kind === "string" && (values[index - 1] === "from" || values[index - 1] === "import")) addKnown(dependencies, values[index], source, values[index].startsWith("."));
+      if (tokens[index].kind === "string" && (values[index - 1] === "from" || values[index - 1] === "import")) {
+        addKnown(dependencies, values[index], source, values[index].startsWith("."));
+        if (auditInput) inputForms.push(digest({ import: values[index] }));
+      }
       if (tokens[index].kind !== "punctuation" || values[index] !== "(" || !pairs.has(index)) continue;
       const name = values[index - 1];
       if (!name || outputCalls.test(name) || pureCalls.test(name) || ["join", "resolve", "dirname", "URL", "fileURLToPath", "test"].includes(name)) continue;
@@ -267,11 +296,24 @@ export function sourceDependencyGraph(texts) {
       if (values[index - 2] === "." && values[index - 3] === "assert") continue;
       const args = parts(index + 1, pairs.get(index));
       if (python && name === "open" && evaluate(...(args[1] ?? [index, index])).some((mode) => /^[wax]/u.test(mode))) continue;
+      let form = null;
+      if (auditInput) {
+        let callee = index - 1;
+        while ([".", "?."].includes(values[callee - 1])) {
+          let start = callee - 2;
+          if (values[start] === ")") for (const [opening, closing] of pairs) if (closing === start) { start = opening - 1; break; }
+          if (start < 0 || start >= callee) break;
+          callee = start;
+        }
+        form = { call: inputForm(callee, index), args: args.map(([start, end]) => inputForm(start, end)) };
+      }
       if (python && /^(?:read_text|read_bytes|open)$/u.test(name) && values[index - 2] === ".") {
         let start = index - 3;
         if (values[start] === ")") for (const [opening, closing] of pairs) if (closing === start) { start = opening - 1; break; }
+        if (form) form.receiver = inputForm(start, index - 2);
         for (const value of evaluate(start, index - 2)) addKnown(dependencies, value, source);
       }
+      if (form) inputForms.push(digest(form));
       // Reads and execution can flow through wrappers. Exact path-valued args
       // to unknown calls are conservative edges too, rather than exemptions.
       const inputArgs = /^(?:cp|copyFile(?:Sync)?)$/u.test(name) ? args.slice(0, 1) : args;
@@ -287,8 +329,16 @@ export function sourceDependencyGraph(texts) {
         }
       }
     }
+    if (auditInput) inputAudit.set(source, digest(sorted(inputForms)));
   }
   return graph;
+}
+// Construction freezes this independently of sourceAudit and the root maps.
+// It is a finite token audit, not a claim to resolve dynamic environment paths.
+export function categoryInputAudit(texts, rules, inputs) {
+  const paths = sorted([...rules.privacyPaths, ...rules.portalPaths]).filter((path) => texts.has(path));
+  if (!inputs) { inputs = new Map(paths.map((path) => [path, null])); sourceDependencyGraph(texts, inputs); }
+  return Object.fromEntries(paths.map((path) => [path, inputs.get(path)]));
 }
 function readerClosure(graph, seeds) {
   const readers = new Set(seeds);
@@ -334,12 +384,13 @@ export function checkConsumers(root, rules, ref) {
   const { texts, unresolved } = documentReaderSources(root, ref);
   const unknown = [...unresolved];
   // A frozen source inventory binds the reviewed finite semantics to real bytes.
-  // Newly tracked or changed noncategory executable/configuration inputs cannot
-  // silently inherit an old audit, including callers with wholly dynamic paths.
-  // It never supplies missing graph edges or replaces either consumer/test map.
+  // Changed category bytes may retain selection only with the same frozen input
+  // surface. An added/unresolved read or call invalidates that stale audit even
+  // when the finite graph cannot derive the actual document or affected root.
+  // These signatures never supply missing edges or replace either root map.
   const categoryInputs = new Set([...rules.privacyPaths, ...rules.portalPaths]);
-  for (const [path, text] of texts) if (path !== "scripts/ci/impact-rules.json" && (!rules.sourceAudit?.[path] || !categoryInputs.has(path) && rules.sourceAudit[path] !== sourceAuditDigest(path, text))) unknown.push(path);
-  const graph = sourceDependencyGraph(texts);
+  const inputs = new Map([...categoryInputs].map((path) => [path, null])), graph = sourceDependencyGraph(texts, inputs);
+  for (const [path, text] of texts) if (path !== "scripts/ci/impact-rules.json" && (!rules.sourceAudit?.[path] || rules.sourceAudit[path] !== sourceAuditDigest(path, text) && (!categoryInputs.has(path) || rules.categoryInputAudit?.[path] !== inputs.get(path)))) unknown.push(path);
   for (const [category, actual] of Object.entries(categoryReaderAudit(texts, rules, graph))) {
     const declaration = rules.consumers?.[category];
     if (!Array.isArray(declaration)) { unknown.push(`${category}-consumer-declaration`); continue; }

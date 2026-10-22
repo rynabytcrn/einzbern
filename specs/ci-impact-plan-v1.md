@@ -97,11 +97,19 @@ are conservatively unioned and some extra contracts can run.
 The CI workflow alone uses the classifier's same strict official artifact-pin mask;
 this preserves pin-only eligibility without admitting other workflow changes.
 Newly tracked inputs and changed noncategory readers, including wholly dynamic
-ones, force full. Eligible category inputs retain the complete category regressions
-and independently audited reverse callers. Source comments or embedded declarations
-cannot exempt readers. Unknown binary/unreadable sources, stale declarations, or
-missing reader OR root-test mappings force full. Runtime reconstruction uses current
-tracked/staged bytes or immutable Git bytes; only construction freezes declarations.
+ones, force full. A changed category source must also retain its construction-frozen
+`categoryInputAudit` fingerprint: the finite input-call tokens, Python read receivers,
+and referenced file-local binding definitions. An added or changed unresolved
+read/call invalidates the old audit and forces `unaccounted-consumers` with full
+coverage when the actual dependency cannot be derived and mapped. This also applies
+to a later document-only diff; a category edit cannot silently reseal its old maps.
+Known category value changes can remain selective when that input surface and the
+independent reader/root maps are unchanged. This is a conservative finite audit,
+not dynamic path resolution or an exemption for a whole language or extension.
+Source comments or embedded declarations cannot exempt readers. Unknown
+binary/unreadable sources, stale declarations, or missing reader OR root-test
+mappings force full. Runtime reconstruction uses current tracked/staged bytes or
+immutable Git bytes; only construction freezes declarations, once after final source.
 Documentation and known opaque image/font assets retain their source exclusions.
 The classifier's own rules JSON is checked as the classification schema, rather
 than treating its path keys as executable reads of every file it describes.
@@ -125,6 +133,15 @@ privacy, Portal and pin changes can still select. Categories union and any
 conservative full trigger wins. Component regressions exercise existing Python
 readers invoked by root Node consumers, original/restored inputs that pass, and
 changed privacy/Portal inputs that those selected consumers actually reject.
+The ordinary regression also preserves the concrete changed-category counterexample:
+an existing Node root supplies `DOCUMENT_INPUT=README.md`, then its reviewed Python
+helper gains `Path(os.environ["DOCUMENT_INPUT"]).read_text()`. Rules stay byte-identical
+across helper and document edits. The real root passes before the document edit,
+fails with `AssertionError` after it, and passes when restored; the unrelated
+selected document root stays green. Current/staged/immutable audits require the
+conservative fallback, and both independent validators reject a resealed stale
+selective plan. A separate known-input category change retains narrow selection.
+These are authored normal regressions; the implementation role does not run them.
 
 Baseline acquisition is a separate, read-only online CI capability. It requires
 CI and GitHub Actions, the plan or verify job, the matching repository and CI workflow reference, a push
@@ -185,8 +202,10 @@ regressions and ordinary-main control-flow regressions cover summary output; H1
 retains its literal command and evidence semantics.
 
 The CI integrity roster remains unconditional, including baseline provenance and
-aggregate negatives. The retained R5 baseline suite observation was 147 tests in
-244.504 seconds within a concurrent local full gate. It is not a standalone narrow
-run, hosted timing, or speedup estimate. Same-run transfer/byte validation remains
+aggregate negatives. The retained R6 baseline suite observation was 147 tests in
+290.410366 seconds within a concurrent local full gate at `b3411db9`; R5 observed
+147 tests in 244.504 seconds in a different uncontrolled local run. These are prior
+candidate observations, not this package's pass, standalone narrow runs, hosted
+timing, or speedup estimates. Same-run transfer/byte validation remains
 every-run work. This package preserves the existing provenance and negative-case
 assertions and timeouts; it introduces no benchmark, new stage, or claimed saving.

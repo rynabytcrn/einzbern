@@ -112,48 +112,73 @@ export function loadRules(root) {
   return { rules: JSON.parse(bytes), rulesHash: digest(bytes) };
 }
 // Finite source audit, deliberately independent of the frozen declarations.
-// Comments, regexes and string *contents* (including embedded fixture programs)
-// are not executable path references. Tokens retain complete string values.
-function sourceTokens(text, python = false) {
-  const tokens = [];
-  let offset = 0;
-  while (offset < text.length) {
-    const rest = text.slice(offset);
-    const skip = rest.match(python ? /^(?:\s+|#[^\n]*)/u : /^(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)/u);
-    if (skip) { offset += skip[0].length; continue; }
-    const quote = rest[0];
-    if (["\"", "'", "`"].includes(quote)) {
-      const triple = python && rest.startsWith(quote.repeat(3));
-      const delimiter = triple ? quote.repeat(3) : quote;
-      let end = delimiter.length, value = "";
-      while (end < rest.length && !rest.startsWith(delimiter, end)) {
-        if (rest[end] === "\\") {
-          const next = rest[++end];
-          value += ({ n: "\n", r: "\r", t: "\t" })[next] ?? next ?? "";
-          end++;
-        } else value += rest[end++];
+// Comments, regexes and string contents (including embedded fixture programs)
+// are not executable path references. A template's literal portions stay one
+// opaque value; only its real interpolations enter grouped executable regions.
+function sourceTokens(text, python = false, javascript = false) {
+  let offset = 0, unresolved = false;
+  const escaped = () => {
+    const next = text[++offset]; offset++;
+    return ({ n: "\n", r: "\r", t: "\t" })[next] ?? next ?? "";
+  };
+  const scan = (interpolation = false, depth = 0) => {
+    const tokens = [], delimiters = [];
+    if (depth > 100) { unresolved = true; offset = text.length; return tokens; }
+    while (offset < text.length) {
+      const rest = text.slice(offset);
+      const skip = rest.match(python ? /^(?:\s+|#[^\n]*)/u : /^(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)/u);
+      if (skip) { offset += skip[0].length; continue; }
+      const quote = rest[0];
+      if (interpolation && quote === "}" && !delimiters.length) { offset++; return tokens; }
+      if (javascript && quote === "`") {
+        offset++;
+        const literals = [""], expressions = [];
+        while (offset < text.length && text[offset] !== "`") {
+          if (text[offset] === "\\") literals[literals.length - 1] += escaped();
+          else if (text.startsWith("${", offset)) {
+            offset += 2; expressions.push(scan(true, depth + 1)); literals.push("");
+          } else literals[literals.length - 1] += text[offset++];
+        }
+        if (offset >= text.length) unresolved = true;
+        else offset++;
+        tokens.push(expressions.length ? { kind: "template", value: literals.join("${}"), literals } : { kind: "string", value: literals[0] });
+        for (const expression of expressions) tokens.push({ kind: "punctuation", value: "{" }, ...expression, { kind: "punctuation", value: "}" });
+        continue;
       }
-      tokens.push({ kind: quote === "`" && value.includes("${") ? "template" : "string", value });
-      offset += Math.min(rest.length, end + delimiter.length);
-      continue;
-    }
-    // A slash at an expression boundary is a regexp, not a path or a comment.
-    if (!python && quote === "/" && (!tokens.length || /^(?:[=(,:!&|?;{]|return|=>)$/u.test(tokens.at(-1).value))) {
-      let end = 1, bracket = false;
-      while (end < rest.length) {
-        if (rest[end] === "\\") { end += 2; continue; }
-        if (rest[end] === "[") bracket = true;
-        if (rest[end] === "]") bracket = false;
-        if (rest[end++] === "/" && !bracket) break;
+      if (["\"", "'", "`"].includes(quote)) {
+        const delimiter = python && rest.startsWith(quote.repeat(3)) ? quote.repeat(3) : quote;
+        offset += delimiter.length;
+        let value = "";
+        while (offset < text.length && !text.startsWith(delimiter, offset)) value += text[offset] === "\\" ? escaped() : text[offset++];
+        if (interpolation && offset >= text.length) unresolved = true;
+        offset = Math.min(text.length, offset + delimiter.length);
+        tokens.push({ kind: "string", value });
+        continue;
       }
-      while (/[a-z]/iu.test(rest[end] ?? "")) end++;
-      tokens.push({ kind: "regexp", value: rest.slice(0, end) }); offset += end; continue;
+      // A slash at an expression boundary is a regexp, not a path or a comment.
+      if (!python && quote === "/" && (!tokens.length || /^(?:[=(\[,:!&|?;{]|return|throw|case|=>)$/u.test(tokens.at(-1).value))) {
+        let end = 1, bracket = false;
+        while (end < rest.length) {
+          if (rest[end] === "\\") { end += 2; continue; }
+          if (rest[end] === "[") bracket = true;
+          if (rest[end] === "]") bracket = false;
+          if (rest[end++] === "/" && !bracket) break;
+        }
+        while (/[a-z]/iu.test(rest[end] ?? "")) end++;
+        tokens.push({ kind: "regexp", value: rest.slice(0, end) }); offset += end; continue;
+      }
+      const word = rest.match(/^[A-Za-z_$][\w$]*/u)?.[0];
+      const value = word ?? rest.match(/^(?:=>|\.\.\.|\?\.|\?\?|===|!==|&&|\|\|)/u)?.[0] ?? quote;
+      if (interpolation && !word) {
+        if (["(", "[", "{"].includes(value)) delimiters.push(value);
+        else if ([")", "]", "}"].includes(value) && delimiters.pop() !== ({ ")": "(", "]": "[", "}": "{" })[value]) unresolved = true;
+      }
+      tokens.push({ kind: word ? "identifier" : "punctuation", value }); offset += value.length;
     }
-    const word = rest.match(/^[A-Za-z_$][\w$]*/u)?.[0];
-    const value = word ?? rest.match(/^(?:=>|\.\.\.|\?\.|\?\?|===|!==|&&|\|\|)/u)?.[0] ?? quote;
-    tokens.push({ kind: word ? "identifier" : "punctuation", value }); offset += value.length;
-  }
-  return tokens;
+    if (interpolation) unresolved = true;
+    return tokens;
+  };
+  return { tokens: scan(), unresolved };
 }
 const outputCalls = /^(?:writeFile(?:Sync|Atomic)?|appendFile(?:Sync)?|write_text|write_bytes|mkdir(?:Sync)?|mkdtemp(?:Sync)?|rm(?:Sync)?|unlink(?:Sync)?|stage|put|writeFixtureFile)$/u;
 const inputCalls = /(?:read|open|access|stat|copyFile|^cp$|exec|spawn|run|import|require|load|inspect|verify|scan)/iu;
@@ -173,6 +198,7 @@ const rootValue = (value, source, relative = false) => {
 // Optional inputAudit is preseeded with the source paths to fingerprint.
 export function sourceDependencyGraph(texts, inputAudit) {
   const graph = new Map();
+  graph.unresolved = [];
   const known = new Set(texts.keys());
   const addKnown = (set, value, source, relative = false, directory = false) => {
     const path = rootValue(value, source, relative);
@@ -190,7 +216,8 @@ export function sourceDependencyGraph(texts, inputAudit) {
     if (auditInput) inputAudit.set(source, digest(inputForms));
     if (source === "scripts/ci/impact-rules.json") continue; // classification schema, audited separately below
     const javascript = /\.(?:[cm]?js|[cm]?ts|jsx|tsx)$/iu.test(source), python = /\.py$/iu.test(source);
-    const tokens = sourceTokens(text, python), values = tokens.map((token) => token.value);
+    const { tokens, unresolved } = sourceTokens(text, python, javascript), values = tokens.map((token) => token.value);
+    if (unresolved) { graph.unresolved.push(source); if (auditInput) inputForms.push(digest({ unresolved: true })); }
     const pairs = new Map(), stack = [];
     for (let index = 0; index < tokens.length; index++) {
       if (tokens[index].kind !== "punctuation") continue;
@@ -210,6 +237,7 @@ export function sourceDependencyGraph(texts, inputAudit) {
       if (depth > 20 || start >= end) return [];
       while (["await", "...", "new"].includes(values[start])) start++;
       if (values[start] === "(" && pairs.get(start) === end - 1) return evaluate(start + 1, end - 1, depth + 1);
+      if (tokens[start]?.kind === "template") return []; // its interpolations are scanned separately, never as a literal path
       if (start + 1 === end) return tokens[start].kind === "string" ? [values[start]] : bindings.get(values[start]) ?? [];
       const expression = values.slice(start, end).join("");
       if (expression === "import.meta.dirname") return [rooted(posix.dirname(source))];
@@ -324,8 +352,7 @@ export function sourceDependencyGraph(texts, inputAudit) {
         // A dynamic expression with an exact input token remains conservative.
         // Embedded source payloads are single string tokens, never rescanned.
         for (let cursor = index + 1; cursor < pairs.get(index); cursor++) if (tokens[cursor].kind === "template") {
-          const literal = values[cursor].split(/\$\{[^}]*\}/u);
-          for (const part of literal) if (part && !part.includes("\n")) addKnown(dependencies, part, source);
+          for (const part of tokens[cursor].literals) if (part && !part.includes("\n")) addKnown(dependencies, part, source);
         }
       }
     }
@@ -390,6 +417,7 @@ export function checkConsumers(root, rules, ref) {
   // These signatures never supply missing edges or replace either root map.
   const categoryInputs = new Set([...rules.privacyPaths, ...rules.portalPaths]);
   const inputs = new Map([...categoryInputs].map((path) => [path, null])), graph = sourceDependencyGraph(texts, inputs);
+  unknown.push(...graph.unresolved);
   for (const [path, text] of texts) if (path !== "scripts/ci/impact-rules.json" && (!rules.sourceAudit?.[path] || rules.sourceAudit[path] !== sourceAuditDigest(path, text) && (!categoryInputs.has(path) || rules.categoryInputAudit?.[path] !== inputs.get(path)))) unknown.push(path);
   for (const [category, actual] of Object.entries(categoryReaderAudit(texts, rules, graph))) {
     const declaration = rules.consumers?.[category];

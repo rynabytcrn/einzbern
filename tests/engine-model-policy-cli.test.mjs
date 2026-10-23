@@ -101,6 +101,18 @@ test("INIT-056 SUB-539: engine policy CLI requires a matching Owner decision and
   assert.equal(receipt.readback.selectedHost, "codex");
   assert.equal(receipt.readback.selectedStatus, "configured");
 
+  // S1 uses the same actual Owner decision verification, plus snapshot CAS and operation replay.
+  const save = ["engine-model-policy-save", "--workspace", workspace, "--host", "codex", "--changes", JSON.stringify({ tiers: [{ order: 10, model: "fixture-replacement", effort: "high" }] }), "--expected-host-revision", String(receipt.policy.revision), "--expected-host-digest", receipt.policy.digest, "--operation-id", "cli-save-fixture", "--at", at(5), "--actor", "agent:codex", "--decided-in", citedDecision];
+  assert.equal((await failure([...save.slice(0, -1), "minutes:" + "c".repeat(24) + "#D1"])).reasonCode, "MODEL_WRITE_AUTHORIZATION_INVALID");
+  const saved = await cli(save); assert.equal(saved.reasonCode, "ENGINE_MODEL_POLICY_SAVE_COMMITTED");
+  assert.equal(saved.operation.result.tiers[0].model, "fixture-replacement");
+  assert.equal((await cli(save)).reasonCode, "ENGINE_MODEL_POLICY_SAVE_REPLAYED");
+  const operation = await cli(["engine-model-policy-operation", "--id", "cli-save-fixture"]);
+  assert.equal(operation.status, "recorded"); assert.equal(operation.readOnly, true); assert.deepEqual(operation.operation, saved.operation); assert.equal(operation.currentHost.revision, saved.operation.result.revision);
+  assert.equal((await cli(["engine-model-policy-operation", "--id", "missing-operation"])).status, "not-recorded");
+  const conflict = [...save]; conflict[conflict.indexOf("--operation-id") + 1] = "different-operation";
+  assert.equal((await failure(conflict)).reasonCode, "ENGINE_MODEL_POLICY_CAS_CONFLICT");
+
   const catalog = await cli(["settings-catalog", "--workspace", workspace, "--project-id", projectId]);
   assert.equal(catalog.modelPolicy.source.kind, "device-engine");
   assert.equal(catalog.modelPolicy.compatibility.projectOverrideAllowed, false);

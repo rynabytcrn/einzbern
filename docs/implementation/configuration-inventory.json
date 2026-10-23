@@ -2142,7 +2142,7 @@
           "name": "execution-request",
           "required": false,
           "valueKind": "string",
-          "valueShape": "ExecutionAdmissionRequest JSON or explicit DotExecutionRequest JSON (dot-autonomous/chatgpt-dot); native self-model/quota not-applicable is not admission"
+          "valueShape": "Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics"
         }
       },
       {
@@ -6952,6 +6952,76 @@
         ]
       },
       {
+        "name": "engine-model-policy-operation",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "id",
+            "required": true,
+            "valueKind": "string"
+          }
+        ]
+      },
+      {
+        "name": "engine-model-policy-save",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "host",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "lock-timeout-ms",
+            "required": false,
+            "valueKind": "integer"
+          },
+          {
+            "name": "changes",
+            "required": true,
+            "valueKind": "json"
+          },
+          {
+            "name": "expected-host-revision",
+            "required": true,
+            "valueKind": "integer"
+          },
+          {
+            "name": "expected-host-digest",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "operation-id",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          },
+          {
+            "name": "actor",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "decided-in",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "minutes:<id>#D<n>"
+          }
+        ]
+      },
+      {
         "name": "engine-model-policy-set",
         "availability": "cli",
         "mutates": true,
@@ -7060,6 +7130,92 @@
             "required": true,
             "valueKind": "string",
             "valueShape": "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input."
+          }
+        ]
+      },
+      {
+        "name": "execution-fallback-candidates",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "request",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          }
+        ]
+      },
+      {
+        "name": "execution-host-evidence",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "from-file",
+            "required": true,
+            "valueKind": "string"
+          }
+        ]
+      },
+      {
+        "name": "execution-host-prepare",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "request",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "HostExecutionRequest v1 JSON"
+          },
+          {
+            "name": "arguments",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "{selection, argumentsValue} actual request JSON"
+          },
+          {
+            "name": "output",
+            "required": true,
+            "valueKind": "string"
+          }
+        ]
+      },
+      {
+        "name": "execution-host-record",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "binding",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "events",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "HostNativeEvent array; absent preserves pending"
+          },
+          {
+            "name": "prior",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "output",
+            "required": true,
+            "valueKind": "string"
           }
         ]
       },
@@ -10656,7 +10812,7 @@
             "name": "execution-request",
             "required": false,
             "valueKind": "string",
-            "valueShape": "ExecutionAdmissionRequest JSON or explicit DotExecutionRequest JSON (dot-autonomous/chatgpt-dot); native self-model/quota not-applicable is not admission"
+            "valueShape": "Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics"
           }
         ]
       },

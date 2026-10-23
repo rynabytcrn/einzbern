@@ -258,6 +258,33 @@
 | --- | --- | --- |
 | `--host` | 可选 | `string` |
 
+## `engine-model-policy-operation`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--id` | 必填 | `string` |
+
+## `engine-model-policy-save`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 必填 | `string` |  |
+| `--host` | 必填 | `string` |  |
+| `--lock-timeout-ms` | 可选 | `integer` |  |
+| `--changes` | 必填 | `json` |  |
+| `--expected-host-revision` | 必填 | `integer` |  |
+| `--expected-host-digest` | 必填 | `string` |  |
+| `--operation-id` | 必填 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--actor` | 必填 | `string` |  |
+| `--decided-in` | 必填 | `string` | `minutes:<id>#D<n>` |
+
 ## `engine-model-policy-set`
 
 - 可用范围：`cli`。
@@ -312,6 +339,49 @@
 | 旗标 | 必填 | 取值类型 | 写法 |
 | --- | --- | --- | --- |
 | `--from-file` | 必填 | `string` | `Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input.` |
+
+## `execution-fallback-candidates`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--request` | 必填 | `string` |
+| `--at` | 必填 | `instant` |
+
+## `execution-host-evidence`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--from-file` | 必填 | `string` |
+
+## `execution-host-prepare`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 必填 | `string` |  |
+| `--request` | 必填 | `string` | `HostExecutionRequest v1 JSON` |
+| `--arguments` | 必填 | `string` | `{selection, argumentsValue} actual request JSON` |
+| `--output` | 必填 | `string` |  |
+
+## `execution-host-record`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--binding` | 必填 | `string` |  |
+| `--events` | 可选 | `string` | `HostNativeEvent array; absent preserves pending` |
+| `--prior` | 可选 | `string` |  |
+| `--output` | 必填 | `string` |  |
 
 ## `execution-native-evidence`
 
@@ -1632,7 +1702,7 @@
 | --- | --- | --- | --- |
 | `--workspace` | 可选 | `string` |  |
 | `--id` | 必填 | `string` |  |
-| `--execution-request` | 可选 | `string` | `ExecutionAdmissionRequest JSON or explicit DotExecutionRequest JSON (dot-autonomous/chatgpt-dot); native self-model/quota not-applicable is not admission` |
+| `--execution-request` | 可选 | `string` | `Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics` |
 
 ## `work-release`
 

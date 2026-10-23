@@ -54,7 +54,7 @@ const RELEASE_NOTES = "Improve configuration consistency and installation diagno
 const RELEASE_CLI = fileURLToPath(new URL("../scripts/release.mjs", import.meta.url));
 const REPOSITORY_ROOT = dirname(dirname(RELEASE_CLI));
 const SPECIFICATIONS = Object.freeze([
-  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md",
+  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
   "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md",
 ]);
 after(() => rm(base, { recursive: true, force: true }));

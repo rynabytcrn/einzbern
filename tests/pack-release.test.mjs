@@ -39,7 +39,7 @@ const RELEASE = `einzbern-${FRAMEWORK_VERSION}`;
 const ARCHIVE = `${RELEASE}.tar.gz`;
 const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
 const SPECIFICATIONS = Object.freeze([
-  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md",
+  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
   "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md",
 ]);
 
@@ -175,6 +175,8 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
   }
   // Installed consumers can obtain the closed input vocabulary without TS sources.
   for (const [name, fields] of Object.entries({
+    "engine-model-policy-v1.md": ["engine-model-policy-save", "expected-host-revision", "operation-id", "tcrn.engine-model-policy.v2"],
+    "host-fallback-v1.md": ["tcrn.host-execution-request.v1", "execution-host-prepare", "selectionObservations", "fallbackBoundaryAssessment", "saveRequirement", "local correlation", "coordination-only", "targets=[]"],
     "dot-execution-v1.md": ["actualCapabilityEvidenceRefs", "authorizationEvidenceRef", "occupancyObservation", "revisionBinding", "contextRead", "effectiveRoots", "exactDelegation"],
     "native-tool-evidence-v1.md": ["rawResponseValue", "statusPointer", "statusMapping", "terminalObservation", "providerPointers", "NativeRetryReconciliation", "--prior", "--retry-from", "--reconciliation"],
     "shared-submit-v1.md": ["completeInventoryDigest", "engineOutputMembers", "writerHandoff", "observedAt", "contentBase64", "memberSetDigest", "lastError"],

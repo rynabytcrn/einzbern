@@ -413,7 +413,7 @@ test("STORY-480: setup writes and takes the wizard's flags; doctor reads and tak
 // work-gate-release and work-release. INIT-056 adds the engine-wide policy writer as the thirteenth.
 test("526 GWT5, 541 GWT1, INIT-056: the closed decided-in roster carries its documented valueShape", () => {
   const optionalWrites = ["config-restore-apply", "config-restore-plan", "gates-config-remove", "gates-config-set", "project-bindings-remove", "project-bindings-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set", "work-gate-release", "work-release"];
-  const writes = ["engine-model-policy-set", ...optionalWrites].sort();
+  const writes = ["engine-model-policy-save", "engine-model-policy-set", ...optionalWrites].sort();
   const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags.filter((flag) => flag.name === "decided-in" && flag.valueShape !== undefined).map((flag) => [entry.name, flag.name]));
   assert.deepEqual(shaped, writes.map((name) => [name, "decided-in"]));
   for (const name of optionalWrites) {
@@ -426,7 +426,7 @@ test("526 GWT5, 541 GWT1, INIT-056: the closed decided-in roster carries its doc
 });
 
 test("integrated engine: non-decision valueShapes document projection selection, capture host and execution evidence", () => {
-  const shaped = COMMAND_CATALOG.filter(entry => entry.name !== "setup" && !/^(?:config-backup-|config-restore-|execution-native-|shared-submit-)/u.test(entry.name)).flatMap((entry) => entry.flags
+  const shaped = COMMAND_CATALOG.filter(entry => entry.name !== "setup" && !/^(?:config-backup-|config-restore-|execution-native-|execution-host-|shared-submit-)/u.test(entry.name)).flatMap((entry) => entry.flags
     .filter((flag) => flag.name !== "decided-in" && flag.valueShape !== undefined)
     .map((flag) => [entry.name, { ...flag }]));
   assert.deepEqual(shaped, [
@@ -450,7 +450,7 @@ test("integrated engine: non-decision valueShapes document projection selection,
     }],
     ["work-project-context", {
       name: "execution-request", required: false, valueKind: "string",
-      valueShape: "ExecutionAdmissionRequest JSON or explicit DotExecutionRequest JSON (dot-autonomous/chatgpt-dot); native self-model/quota not-applicable is not admission",
+      valueShape: "Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics",
     }],
   ]);
 });
@@ -543,4 +543,16 @@ test("INIT062 new valueShape roster is closed and preserves the existing transpo
   const setup = entries.find(entry => entry.name === "setup");
   assert.deepEqual(setup.flags.filter(flag => flag.valueShape !== undefined).map(flag => flag.valueShape), ["traditional | chatgpt-dot", "absolute path to JSON dot target options; required for chatgpt-dot", "saved preview dot.planDigest; required for dot apply"]);
   for (const entry of entries) for (const flag of entry.flags.filter(flag => flag.valueShape !== undefined)) assert.equal(flag.valueKind, "string");
+});
+
+
+test("INIT065 general-native catalog is separate from legacy closed roster", async () => {
+  const entries = COMMAND_CATALOG.filter(entry => entry.name.startsWith("execution-host-"));
+  assert.deepEqual(entries.map(entry => entry.name), ["execution-host-evidence", "execution-host-prepare", "execution-host-record"]);
+  assert.deepEqual(entries.flatMap(entry => entry.flags.filter(flag => flag.valueShape !== undefined).map(flag => `${entry.name}:${flag.name}`)), ["execution-host-prepare:request", "execution-host-prepare:arguments", "execution-host-record:events"]);
+  for (const entry of entries) {
+    assert.ok(entry.flags.every(flag => flag.valueKind === "string"));
+    assert.equal((await invoke([entry.name, "--help"])).ok, true);
+    assert.equal((await invoke([entry.name, "--injected-admission", "true"])).reasonCode, "CLI_ARGUMENT_UNKNOWN");
+  }
 });

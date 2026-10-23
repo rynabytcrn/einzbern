@@ -137,3 +137,25 @@ export function recordNativeDispatch(preparationValue: NativeDispatchPreparation
   const saved = { record, history: appended.history, appendStatus: appended.status, problems: appended.problems, ...("rejectedRecord" in appended ? { rejectedRecord: appended.rejectedRecord } : {}) };
   return { ...saved, normalized: normalizeNativeToolEvidence(saved) };
 }
+
+import { randomUUID } from "node:crypto";
+import { executionDecisionEligibility, HostExecutionError, validateHostSelection } from "./host-capabilities.js";
+import type { HostSelection } from "./host-capabilities.js";
+import { sameHostSelection, validateHostExecutionRequest } from "./execution-fallback.js";
+import type { HostExecutionRequest, HostExecutionDecision } from "./execution-fallback.js";
+import { HOST_NATIVE_PREPARATION_VERSION, validateHostNativePreparation } from "./native-tool-evidence.js";
+import type { HostNativePreparation } from "./native-tool-evidence.js";
+/** Optional audit preparation; no adapter, save transaction or prior success receipt prerequisite. */
+export async function prepareHostNativeDispatch(state: WorkspaceState, requestValue: HostExecutionRequest, tool: { readonly argumentsValue: unknown; readonly selection: HostSelection }, home?: string): Promise<HostNativePreparation> {
+  const request = validateHostExecutionRequest(requestValue);
+  validateHostSelection(tool.selection);
+  const context = await workProjectContexts(state, request.workId, home, request);
+  const decision = context.executionDecision as HostExecutionDecision;
+  const executable = executionDecisionEligibility(decision) === "executable" && context.dispatchAdmitted === true;
+  if (executable && !sameHostSelection(tool.selection, decision.requestedSelection)) throw new HostExecutionError("tool request selection differs from the resolved selection; construct arguments for the resolved request, not an invented actual model");
+  const payload = {
+    schemaVersion: HOST_NATIVE_PREPARATION_VERSION, context, decision,
+    attempt: executable ? { id: `local-attempt:${randomUUID()}`, identityKind: "local-correlation" as const, toolName: request.capabilities.toolName, argumentsValue: tool.argumentsValue, requestedAt: new Date().toISOString() } : null,
+  };
+  return validateHostNativePreparation({ ...payload, digest: dotDigest(payload) });
+}

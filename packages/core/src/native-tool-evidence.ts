@@ -314,3 +314,178 @@ function validateNativeRetry(previous: NativeToolAttempt, admission: DotAdmissio
   if (admission.request.workId !== previous.workId || admission.request.libraryId !== previous.libraryId || dotDigest(admission.request.projectRef) !== dotDigest(previous.projectRef) || input.toolName !== previous.toolName) fail("retry cannot silently change work or tool");
 
 }
+
+// General native protocol. Legacy v1 dot records above are intentionally unchanged.
+import { HOST_EXECUTION_DECISION_VERSION, executionDecisionEligibility, hostObject, hostText, HostExecutionError } from "./host-capabilities.js";
+import type { HostExecutionDecision } from "./execution-fallback.js";
+import { validateHostExecutionRequest } from "./execution-fallback.js";
+export const HOST_NATIVE_PREPARATION_VERSION = "tcrn.host-native-preparation.v1" as const;
+export const HOST_NATIVE_RECORD_VERSION = "tcrn.host-native-record.v1" as const;
+export interface HostNativePreparation {
+  readonly schemaVersion: typeof HOST_NATIVE_PREPARATION_VERSION;
+  readonly context: Record<string, unknown>;
+  readonly decision: HostExecutionDecision;
+  readonly attempt: null | { readonly id: string; readonly identityKind: "local-correlation"; readonly toolName: string; readonly argumentsValue: unknown; readonly requestedAt: string };
+  readonly digest: string;
+}
+export type HostNativeStatus = "unknown" | "accepted" | "running" | "completed" | "failed" | "cancelled";
+export interface HostNativeEvent {
+  readonly id: string;
+  readonly at: string;
+  readonly kind: "host-response" | "work-report" | "cancel-requested" | "cancel-accepted" | "review";
+  readonly raw?: unknown;
+  readonly sourceTool?: string;
+  readonly association?: { readonly localAttemptId: string; readonly basis: string };
+  readonly sourceRef?: string;
+  /** Only maps a field that actually exists in raw; absent metadata remains unknown. */
+  readonly status?: { readonly pointer: string; readonly mapping: Readonly<Record<string, HostNativeStatus>> };
+  readonly terminal?: { readonly pointer: string; readonly values: readonly string[]; readonly contract: string };
+  readonly actualSelection?: { readonly pointer: string };
+  readonly providerId?: { readonly pointer: string };
+  readonly report?: { readonly summary: string; readonly contextReads: readonly string[]; readonly artifacts: readonly string[]; readonly checks: readonly string[]; readonly limitations: readonly string[] };
+  readonly review?: { readonly status: "pass" | "fail"; readonly reviewer: string; readonly evidence: readonly string[] };
+}
+export interface HostNativeRecord {
+  readonly schemaVersion: typeof HOST_NATIVE_RECORD_VERSION;
+  readonly preparation: HostNativePreparation;
+  readonly events: readonly HostNativeEvent[];
+  readonly validation: { readonly status: "valid"; readonly authentication: "not-performed" };
+  readonly execution: HostNativeStatus;
+  readonly executionFinality: "confirmed" | "unknown";
+  readonly evidenceQuality: "limited" | "complete";
+  readonly verification: "unverified" | "pass" | "fail";
+  readonly taskOutcome: "pending" | "delivered-awaiting-review" | "accepted-by-review" | "rejected-by-review";
+  readonly cancellation: { readonly requested: boolean; readonly accepted: boolean };
+  readonly occupancy: "retained-or-unknown" | "released";
+  readonly followup: "required" | "terminal-confirmed";
+  readonly processFields: "not-applicable";
+  readonly actualSelection: unknown;
+  readonly providerId: unknown;
+  readonly conflicts: readonly string[];
+  readonly digest: string;
+}
+export function validateHostNativePreparation(value: unknown): HostNativePreparation {
+  const p = hostObject(value, "host preparation", ["schemaVersion", "context", "decision", "attempt", "digest"]);
+  if (p.schemaVersion !== HOST_NATIVE_PREPARATION_VERSION) throw new HostExecutionError("unknown native preparation protocol");
+  const { digest, ...payload } = p;
+  if (digest !== dotDigest(payload)) throw new HostExecutionError("native preparation digest mismatch");
+  const decision = p.decision as HostExecutionDecision;
+  if (decision?.schemaVersion !== HOST_EXECUTION_DECISION_VERSION || executionDecisionEligibility(decision) === "uninterpretable") throw new HostExecutionError("uninterpretable execution decision");
+  validateHostExecutionRequest(decision.request);
+  const context = p.context as Record<string, unknown>;
+  if (!context || context.workId !== decision.request.workId || context.workRevision !== decision.request.workRevision || dotDigest(context.executionDecision) !== dotDigest(decision)) throw new HostExecutionError("decision differs from project context");
+  if (p.attempt !== null) {
+    if (executionDecisionEligibility(decision) !== "executable" || context.dispatchAdmitted !== true) throw new HostExecutionError("nonexecutable preparation cannot start an attempt");
+    const a = hostObject(p.attempt, "host attempt", ["id", "identityKind", "toolName", "argumentsValue", "requestedAt"]);
+    hostText(a.id, "local attempt id");
+    if (!String(a.id).startsWith("local-attempt:") || a.identityKind !== "local-correlation" || a.toolName !== decision.request.capabilities.toolName || !Object.hasOwn(a, "argumentsValue")) throw new HostExecutionError("invalid local attempt association");
+    dotInstant(a.requestedAt, "requestedAt");
+  }
+  return value as HostNativePreparation;
+}
+const hostStatuses: readonly HostNativeStatus[] = ["unknown", "accepted", "running", "completed", "failed", "cancelled"];
+function validateHostNativeEvent(value: unknown, p: HostNativePreparation): HostNativeEvent {
+  const e = hostObject(value, "native event", ["id", "at", "kind", "raw", "sourceTool", "association", "sourceRef", "status", "terminal", "actualSelection", "providerId", "report", "review"]);
+  hostText(e.id, "event id");
+  if (dotInstant(e.at, "event at") < dotInstant(p.attempt?.requestedAt, "requestedAt")) throw new HostExecutionError("event predates invocation");
+  if (!["host-response", "work-report", "cancel-requested", "cancel-accepted", "review"].includes(String(e.kind))) throw new HostExecutionError("unknown native event kind");
+  if (e.sourceRef !== undefined) hostText(e.sourceRef, "event sourceRef");
+  if (e.kind === "host-response" || e.kind === "cancel-accepted") {
+    // Raw is retained even when it is a string and no structured fields are available.
+    if (!Object.hasOwn(e, "raw") || e.raw === undefined) throw new HostExecutionError("actual host return required");
+    hostText(e.sourceTool, "source tool");
+    if (e.association !== undefined) {
+      const association = hostObject(e.association, "invocation association", ["localAttemptId", "basis"]);
+      hostText(association.basis, "association basis");
+      if (association.localAttemptId !== p.attempt?.id) throw new HostExecutionError("response belongs to another local attempt");
+    }
+    if (e.kind === "host-response" && e.sourceTool !== p.attempt?.toolName && e.association === undefined) throw new HostExecutionError("different status tool needs invocation association, not a fabricated launch tool name");
+  } else if (["raw", "sourceTool", "association", "status", "terminal", "actualSelection", "providerId"].some(key => Object.hasOwn(e, key))) throw new HostExecutionError("work report/cancel request/review cannot forge host fields");
+  if (e.status !== undefined) {
+    const s = hostObject(e.status, "status observation", ["pointer", "mapping"]); hostText(s.pointer, "status pointer");
+    if (!s.mapping || typeof s.mapping !== "object" || Array.isArray(s.mapping) || Object.values(s.mapping).some(status => !hostStatuses.includes(status as HostNativeStatus))) throw new HostExecutionError("invalid status mapping");
+    const rawStatus = String(pointer(e.raw, s.pointer));
+    if (!Object.hasOwn(s.mapping, rawStatus)) throw new HostExecutionError("actual status has no declared mapping");
+  }
+  if (e.terminal !== undefined) {
+    const t = hostObject(e.terminal, "terminal observation", ["pointer", "values", "contract"]); hostText(t.pointer, "terminal pointer"); hostText(t.contract, "terminal contract"); dotRefs(t.values, "terminal values", true);
+    if (e.kind !== "host-response" || !e.status || !t.values.includes(String(pointer(e.raw, t.pointer)))) throw new HostExecutionError("terminality requires actual terminal host response");
+    const s = e.status as HostNativeEvent["status"];
+    const status = s!.mapping[String(pointer(e.raw, s!.pointer))];
+    if (!["completed", "failed", "cancelled"].includes(String(status))) throw new HostExecutionError("nonterminal host status cannot prove finality");
+  }
+  for (const field of ["actualSelection", "providerId"]) if (e[field] !== undefined) {
+    const observation = hostObject(e[field], field, ["pointer"]); hostText(observation.pointer, `${field} pointer`);
+    const observed = pointer(e.raw, observation.pointer);
+    if (field === "providerId" && observed === p.attempt?.id) throw new HostExecutionError("local correlation is not a provider identity");
+  }
+  if (e.kind === "work-report") {
+    const report = hostObject(e.report, "work report", ["summary", "contextReads", "artifacts", "checks", "limitations"]); hostText(report.summary, "report summary");
+    for (const key of ["contextReads", "artifacts", "checks", "limitations"]) dotRefs(report[key], key);
+  } else if (e.report !== undefined) throw new HostExecutionError("report must use work-report event");
+  if (e.kind === "review") {
+    const review = hostObject(e.review, "review", ["status", "reviewer", "evidence"]);
+    if (!["pass", "fail"].includes(String(review.status))) throw new HostExecutionError("invalid review outcome"); hostText(review.reviewer, "reviewer"); dotRefs(review.evidence, "review evidence", true);
+  } else if (e.review !== undefined) throw new HostExecutionError("review must use independent review event");
+  return value as HostNativeEvent;
+}
+/** Pure recorder, not a launcher or authentication service. No synthetic process fields. */
+export function recordHostNativeEvents(preparationValue: unknown, incoming: readonly HostNativeEvent[], previous?: unknown): HostNativeRecord {
+  const preparation = validateHostNativePreparation(preparationValue);
+  if (!preparation.attempt) throw new HostExecutionError("preparation has no executable attempt");
+  if (!Array.isArray(incoming)) throw new HostExecutionError("events must be an array");
+  let events: HostNativeEvent[] = [];
+  if (previous !== undefined) {
+    const prior = normalizeHostNativeRecord(previous);
+    if (prior.preparation.digest !== preparation.digest) throw new HostExecutionError("prior record belongs to another attempt");
+    events = [...prior.events];
+  }
+  for (const raw of incoming) {
+    const event = validateHostNativeEvent(raw, preparation);
+    if (!events.some(old => dotDigest(old) === dotDigest(event))) events.push(event);
+  }
+  const conflicts: string[] = [];
+  const ids = new Map<string, string>();
+  for (const event of events) { const hash = dotDigest(event); if (ids.has(event.id) && ids.get(event.id) !== hash) conflicts.push(`conflicting-event:${event.id}`); ids.set(event.id, hash); }
+  // Original arrival order remains stored. Evaluation uses observed time; a late accepted event
+  // cannot erase a confirmed terminal. Contradictory terminals require reconciliation.
+  const ordered = [...events].sort((a, b) => Number(dotInstant(a.at, "event at") - dotInstant(b.at, "event at")));
+  let execution: HostNativeStatus = "unknown";
+  const terminals = new Set<HostNativeStatus>();
+  let actualSelection: unknown = { status: "unknown", reason: "not returned by host" };
+  let providerId: unknown = { status: "unknown", reason: "not returned by host" };
+  let verification: HostNativeRecord["verification"] = "unverified";
+  for (const e of ordered) {
+    if (e.kind === "host-response") {
+      if (e.status) { const status = e.status.mapping[String(pointer(e.raw, e.status.pointer))]!; execution = status; if (e.terminal) terminals.add(status); }
+      if (e.actualSelection) actualSelection = { status: "observed", value: pointer(e.raw, e.actualSelection.pointer), eventId: e.id };
+      if (e.providerId) providerId = { status: "observed", value: pointer(e.raw, e.providerId.pointer), eventId: e.id };
+    }
+    if (e.kind === "review") verification = e.review!.status;
+  }
+  if (terminals.size > 1) conflicts.push("conflicting-host-terminals");
+  const confirmed = terminals.size === 1 && conflicts.length === 0;
+  if (confirmed) execution = [...terminals][0]!;
+  if (conflicts.length) execution = "unknown";
+  const delivered = events.some(event => event.kind === "work-report");
+  const payload = {
+    schemaVersion: HOST_NATIVE_RECORD_VERSION, preparation, events,
+    validation: { status: "valid" as const, authentication: "not-performed" as const }, execution,
+    executionFinality: confirmed ? "confirmed" as const : "unknown" as const,
+    evidenceQuality: "limited" as const,
+    verification, taskOutcome: verification === "fail" ? "rejected-by-review" as const : verification === "pass" && delivered ? "accepted-by-review" as const : delivered ? "delivered-awaiting-review" as const : "pending" as const,
+    cancellation: { requested: events.some(e => e.kind === "cancel-requested"), accepted: events.some(e => e.kind === "cancel-accepted") },
+    occupancy: confirmed ? "released" as const : "retained-or-unknown" as const,
+    followup: confirmed ? "terminal-confirmed" as const : "required" as const,
+    processFields: "not-applicable" as const, actualSelection, providerId, conflicts,
+  };
+  return { ...payload, digest: dotDigest(payload) };
+}
+export function normalizeHostNativeRecord(value: unknown): HostNativeRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new HostExecutionError("native record must be object");
+  const record = value as HostNativeRecord;
+  if (record.schemaVersion !== HOST_NATIVE_RECORD_VERSION) throw new HostExecutionError("unknown native record protocol");
+  const calculated = recordHostNativeEvents(record.preparation, record.events);
+  if (dotDigest(calculated) !== dotDigest(record)) throw new HostExecutionError("native record differs from retained events");
+  return calculated;
+}

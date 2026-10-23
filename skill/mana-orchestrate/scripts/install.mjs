@@ -294,6 +294,16 @@ async function install(options) {
   let primary;
   try {
     const tree = await unpack(release, temporary);
+    // Check the archive's own generated Skill against its own engine before switching current.
+    // Legacy releases remain installable as legacy; they do not gain new native guarantees.
+    const skill = release.files.find(file => file.path === `${release.top}/skill/mana-orchestrate/SKILL.md`)?.bytes.toString("utf8") ?? "";
+    if (skill.includes("Execution protocol: tcrn.host-execution-request.v1.")) {
+      const probe = spawnSync(process.execPath, [join(tree, ...ENGINE_ENTRY), "commands"], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+      let commands = [];
+      try { const result = JSON.parse(probe.stdout); commands = Array.isArray(result.commands) ? result.commands : []; } catch { /* mismatch is reported below */ }
+      const missing = ["execution-host-prepare", "execution-host-record", "execution-host-evidence"].filter(name => !commands.some(command => command.name === name));
+      if (probe.status !== 0 || missing.length) fail("INSTALL_SKILL_ENGINE_MISMATCH", "The archive's generated Skill and engine commands do not match", { missing });
+    }
     const updated = engineUpdate(tree, release, options.home, at);
     report = { version: release.version, installed: updated.installed, current: updated.current, launchers: await placeLaunchers(options.home, release.version) };
   } catch (error) {

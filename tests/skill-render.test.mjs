@@ -91,9 +91,9 @@ test("479-AC1: every verb the navigation table names is a verb of the current co
   // STORY-479 AC1 with EPIC-144 R3: reading the full text before development dispatch includes
   // each involved project's own configuration (work-project-context).
   assert.deepEqual(SKILL_NAVIGATION.map((entry) => [...entry.verbs]), [
-    ["recall"],
+    ["recall", "rule-list"],
     ["work-show", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    ["execution-native-prepare", "execution-native-record", "execution-native-evidence"],
+    ["execution-host-prepare", "execution-host-record", "execution-host-evidence"],
     ["shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"],
     ["config-backup-plan", "config-backup-create", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
     ["work-transition", "work-annotate"],
@@ -237,10 +237,12 @@ test("552: generated dispatch workflow consumes admission rather than treating a
 // Original DOT-R01/R02/R03 generation consumers: authored here, actual sessions remain E4.
 test("DOT-R01/R02: generated navigation separates native evidence, rules, schedules and permission", () => {
   const markdown = render();
-  const native = tableRows(markdown).find(([, verbs]) => verbs.includes("`execution-native-prepare`"))[2];
-  for (const phrase of ["Machine-assemble private inputs from current tool results", "never ask users to hand-fill JSON", "reapprove authorized dispatch bookkeeping", "Unknown capability is not pass", "not-applicable", "actual model may be unavailable", "targetDispatchAdmitted", "pending attempt", "raw source and attempt association", "unknown retains responsibility", "validates, not authenticates"]) assert.ok(native.includes(phrase), phrase);
+  // INIT065 intentionally replaces the normal dot-only row with a general versioned path.
+  // Legacy protocol behavior remains covered by native-tool-evidence and dispatch tests.
+  const native = tableRows(markdown).find(([, verbs]) => verbs.includes("`execution-host-prepare`"))[2];
+  for (const phrase of ["normal prompt reports", "No runtime adapter", "optional telemetry prerequisite", "Existing class fallback authority", "Parent reads before dispatch, child reads before work", "targets=[]", "scope/permission", "machine-assemble inputs", "never hand-fill JSON", "raw returns/reports", "attempt association", "Unknown retains responsibility", "Cancel acknowledgement is not termination", "Dot model selection is host-managed", "Validity, finality and review differ"]) assert.ok(native.includes(phrase), phrase);
   for (const phrase of ["parent or patrol reads do not substitute", "INIT batch covers all pending Stories", "at most five sourced lessons", "No dynamic progress in AGENTS", "independent dot target", "Installation, policy changes, restoration and publication retain their separate approvals", "20-minute patrol", "00:00 Asia/Shanghai", "unapproved policy forbids daily enablement", "unknown stays unknown"]) assert.ok(markdown.includes(phrase), phrase);
-  for (const phrase of ["saved prepare output as `--binding`", "prior full output as `--prior`", "inspect merged history", "--retry-from", "--reconciliation", "query unknown first"]) assert.ok(native.includes(phrase), phrase);
+  for (const phrase of ["`--binding`", "`--prior`", "query unknown before retry"]) assert.ok(native.includes(phrase), phrase);
   assert.ok(markdown.includes("actual engine bundle root `specs/` (beside `scripts/`), not this Skill"),
     "J02: closed inputs come from the actual shipped contracts, not only flag help or source TS");
   const shared = tableRows(markdown).find(([, verbs]) => verbs.includes("`shared-submit-plan`"))[2];
@@ -292,4 +294,24 @@ test("J01/J02/J03/J04/J09–J13: install guidance consumes reviewed source inter
     "local completion <= fresh refresh <= merge observation <= handoff observation <= advisory observation <= every publication",
     "Missing times stay pending", "Never fill phase timestamps with JSON assembly time",
   ]) assert.ok(text.includes(phrase), phrase);
+});
+
+test("INIT065 generated normal Skill directs each native host to matching versioned path", async () => {
+  const { checkHostSkillCompatibility, HOST_SKILL_PROTOCOL_MARKER } = await import("../dist/build/packages/core/src/skill-render.js");
+  const markdown = render();
+  assert.ok(markdown.includes(HOST_SKILL_PROTOCOL_MARKER));
+  assert.ok(markdown.includes("Native dispatch (Codex, Claude, dot)"));
+  assert.ok(markdown.includes("Parent reads before dispatch, child reads before work"));
+  assert.ok(markdown.includes("targets=[]"));
+  assert.ok(!markdown.includes("stop its dispatch"));
+  assert.equal(checkHostSkillCompatibility(markdown, catalogNames).compatible, true);
+  assert.deepEqual(checkHostSkillCompatibility(markdown, catalogNames.filter(name => name !== "execution-host-record")).missing, ["execution-host-record"]);
+  assert.equal(checkHostSkillCompatibility("Historical skill", []).protocol, "legacy");
+});
+
+test("MIN358 installed Skill navigates actual enabled rules without hard-coding optional principle text", () => {
+  const markdown = render();
+  assert.ok(markdown.includes("Read enabled rules, not catalog defaults"));
+  assert.ok(SKILL_NAVIGATION[0].verbs.includes("rule-list"));
+  assert.equal(markdown.includes("Do not establish a prohibition"), false, "optional text comes from scoped rule consumption, not an unconditional Skill duplicate");
 });

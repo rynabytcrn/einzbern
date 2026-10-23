@@ -12,7 +12,7 @@ import {
   dotContentDigest, dotEnabledRuleSources, normalizeExecutionContextRead,
   planDotAgents, renderDotAgents,
 } from "../dist/build/packages/core/src/dot-agents.js";
-import { AUTONOMY_AUTHORIZATION_BODY, BRANCH_LIFECYCLE_BODY, BUILT_IN_RULES, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
+import { AUTONOMY_RESTRICTION_SCOPE_BODY, AUTONOMY_AUTHORIZATION_BODY, BRANCH_LIFECYCLE_BODY, BUILT_IN_RULES, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
 
 const at = "2026-10-20T00:00:00Z";
 function source(language = "zh-CN", ids = BUILT_IN_RULES.map(rule => rule.id)) {
@@ -194,5 +194,17 @@ test("INIT-062 universal rule supplements are shared bilingual enabled-only dot 
     const empty = renderDotAgents(source(language, []));
     assert.equal(empty.includes(AUTONOMY_AUTHORIZATION_BODY[suffix]), false);
     assert.equal(empty.includes(BRANCH_LIFECYCLE_BODY[suffix]), false);
+  }
+});
+
+test("MIN358 dot principle is sourced and selectable; disabled autonomy does not remain in common text", () => {
+  for (const [language, key] of [["zh-CN", "zh"], ["en", "en"], ["ja", "en"], ["ko", "en"], ["fr", "en"]]) {
+    const enabled = renderDotAgents(source(language, ["autonomy"]));
+    assert.equal(enabled.split(AUTONOMY_RESTRICTION_SCOPE_BODY[key]).length - 1, 1);
+    const disabled = renderDotAgents(source(language, BUILT_IN_RULES.filter(rule => rule.id !== "autonomy").map(rule => rule.id)));
+    assert.equal(disabled.includes(AUTONOMY_RESTRICTION_SCOPE_BODY[key]), false);
+    assert.equal(disabled.includes(AUTONOMY_AUTHORIZATION_BODY[key]), false);
+    assert.ok(disabled.includes(key === "zh" ? "实际权限、安全要求" : "actual platform permissions"), "platform boundaries are not optional rule content");
+    assert.ok(disabled.includes(BRANCH_LIFECYCLE_BODY[key]), "other selected principles retain independent scope");
   }
 });

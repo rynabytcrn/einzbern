@@ -336,3 +336,10 @@ test("GREENS on mkdtemp-created path (local fixture exemption)", () => {
   );
   assert.deepEqual(findings, [], "mkdtemp-rooted path should not be flagged (local fixture)");
 });
+
+test("INIT065 own normal-install fixture is not a sibling read, while actual sibling lookup remains red", () => {
+  const owned = judgeSource(`const skill = await readFile(join(fixture.device, "engine", version, "skill/${BRAND.helper.id}/SKILL.md"), "utf8");`, [BRAND.helper.id]);
+  assert.deepEqual(owned, [], "the test keeps its actual owned fixture root and literal read visible");
+  const sibling = judgeSource(`const skill = await readFile(join(PLATFORM_ROOT, "${BRAND.helper.id}/skill/${BRAND.helper.id}/SKILL.md"), "utf8");`, [BRAND.helper.id]);
+  assert.equal(sibling.length, 1); assert.equal(sibling[0].sibling, BRAND.helper.id); assert.equal(sibling[0].operation, "filesystem-read");
+});

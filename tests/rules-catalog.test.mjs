@@ -30,7 +30,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { AUTONOMY_AUTHORIZATION_BODY, BRANCH_LIFECYCLE_BODY, BUILT_IN_RULE_IDS, BUILT_IN_RULES, INCREMENTAL_UPDATE_DOT_BODY, builtInRule, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
+import { AUTONOMY_RESTRICTION_SCOPE_BODY, AUTONOMY_AUTHORIZATION_BODY, BRANCH_LIFECYCLE_BODY, BUILT_IN_RULE_IDS, BUILT_IN_RULES, INCREMENTAL_UPDATE_DOT_BODY, builtInRule, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
 
 const fixtures = resolve(import.meta.dirname, "fixtures", "rules");
 const LANGUAGES = ["zh", "en"];
@@ -298,4 +298,16 @@ test("INIT-062 universal supplements preserve v1 history, explicit user limits a
   for (const text of ["model-authored plan", "General assent", "only when the user explicitly requests", "Platform-required confirmation for each action", "materially new and relevant evidence", "Read back an uncertain outcome", "unlimited retries, unlimited external execution or publication"]) assert.ok(AUTONOMY_AUTHORIZATION_BODY.en.includes(text), text);
   for (const text of ["每个新批开始、推送前及相关 PR 合并后", "不能把旧检查", "已证实可安全快进", "分支不再含目标中没有的独有提交", "没有活动 PR、运行或待执行 CI、工作树、后续交付或证据引用依赖", "必要历史、备份和失败证据已有可靠保留位置", "读回本地引用及适用的远端头", "squash 合并不单独证明", "默认、受保护、备份或恢复分支", "归属和状态不明", "不得按名称、年龄、ahead 数或通配符批量删分支", "不新增远端写入、合并、发布或永久删除权限"]) assert.ok(BRANCH_LIFECYCLE_BODY.zh.includes(text), text);
   for (const text of ["At the start of each new batch, before pushing and after a related PR merges", "no unique commits absent from that target", "no active PR, running or pending CI, worktree, later delivery or evidence reference", "backups and failure evidence", "Read back local refs and applicable remote heads", "a squash merge alone does not prove", "Default, protected, backup and recovery branches", "unknown ownership or status", "Do not delete branches in bulk", "no new permission for remote writes, merges, publication or permanent deletion"]) assert.ok(BRANCH_LIFECYCLE_BODY.en.includes(text), text);
+});
+
+test("MIN358 scoped-prohibition and governance persistence clauses extend selectable autonomy without new rules", async () => {
+  assert.equal(BUILT_IN_RULES.length, 8);
+  for (const language of LANGUAGES) {
+    assert.ok(builtInRule("autonomy").body[language].includes(AUTONOMY_RESTRICTION_SCOPE_BODY[language]));
+    const previous = await readFile(join(fixtures, `autonomy-v1-rev2.${language}.md`), "utf8");
+    assert.ok(previous.includes(AUTONOMY_AUTHORIZATION_BODY[language]));
+    assert.equal(previous.includes(AUTONOMY_RESTRICTION_SCOPE_BODY[language]), false);
+    for (const rule of BUILT_IN_RULES.filter(rule => rule.id !== "autonomy")) assert.equal(rule.body[language].includes(AUTONOMY_RESTRICTION_SCOPE_BODY[language]), false);
+  }
+  for (const phrase of ["explicitly approved", "scope, duration and release conditions", "General agreement", "permanent or cross-plan", "observed refusal", "destination is external storage", "Material changes", "cannot disable platform safety"]) assert.ok(AUTONOMY_RESTRICTION_SCOPE_BODY.en.includes(phrase), phrase);
 });

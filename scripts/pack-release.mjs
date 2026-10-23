@@ -77,7 +77,7 @@ const README = /^README(?:\.[A-Za-z-]+)?\.md$/u;
 const DOCUMENTS = Object.freeze(["CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt"]);
 // Only public CLI contracts consumed by the installed helper, not the whole source specs tree.
 const SPECIFICATIONS = Object.freeze([
-  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md",
+  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
   "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md",
 ]);
 

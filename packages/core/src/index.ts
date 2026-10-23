@@ -78,6 +78,8 @@ export type { MachineSettingKey, MachineSettingsCatalogEntry, MachineSettingsFil
 export {
   ENGINE_MODEL_POLICY_WRITE_TARGET,
   applyEngineModelPolicySet,
+  applyEngineModelPolicySave,
+  readEngineModelPolicyOperation,
   readEngineModelPolicyCatalog,
 } from "./engine-model-policy.js";
 // STORY-177: the knowledge/artifact store data-plane backend is part of the public
@@ -913,3 +915,6 @@ export * from "./storage-location.js";
 export * from "./storage-consolidate.js";
 
 export * from "./storage-configure.js";
+
+export * from "./host-capabilities.js";
+export * from "./execution-fallback.js";

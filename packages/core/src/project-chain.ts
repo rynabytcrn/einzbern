@@ -1,3 +1,6 @@
+import { executionDecisionEligibility } from "./host-capabilities.js";
+import { validateHostExecutionRequest, resolveHostExecution } from "./execution-fallback.js";
+import type { HostExecutionRequest, HostExecutionDecision } from "./execution-fallback.js";
 import { readConsolidationIndex } from "./consolidation-format.js";
 // SPDX-License-Identifier: Apache-2.0
 import { DOT_EXECUTION_MODE, dotDigest, resolveDotExecutionAdmission, validateDotExecutionRequest } from "./dot-execution.js";
@@ -187,10 +190,13 @@ export function projectTargetHandoff(work: { readonly workId: string; readonly w
   };
 }
 
-export async function workProjectContexts(state: WorkspaceState, workId: string, home?: string, executionRequest?: ExecutionAdmissionRequest | DotExecutionRequest): Promise<Record<string, unknown>> {
+export async function workProjectContexts(state: WorkspaceState, workId: string, home?: string, executionRequest?: ExecutionAdmissionRequest | DotExecutionRequest | HostExecutionRequest): Promise<Record<string, unknown>> {
   const work = state.work.find(entry => entry.id === workId && !entry.tombstone);
   if (!work) throw new ProjectChainError("work does not exist");
   const involvedProjects = involvedProjectsOf(work);
+  if (executionRequest !== undefined && "schemaVersion" in executionRequest) {
+    return hostWorkProjectContexts(state, workId, validateHostExecutionRequest(executionRequest), home);
+  }
   const dotRequest = executionRequest !== undefined && "mode" in executionRequest && executionRequest.mode === DOT_EXECUTION_MODE ? validateDotExecutionRequest(executionRequest) : null;
   // Capture each device file once for this request. All target/common readbacks and admissions
   // share these values; this is not a transaction across the independently stored device files.
@@ -250,6 +256,58 @@ export async function workProjectContexts(state: WorkspaceState, workId: string,
     if (new Set(values.map(value => canonicalJson(value))).size > 1) conflicts.push(key);
   }
   return { workId, workRevision: work.revision, involvedProjects, enginePolicy, dispatchAdmitted: executionRequest !== undefined && involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.executionAdmission as { status: string }).status === "admitted" && (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), executionPolicyCommand: "execution-policy-resolve --host <host> --category <category> --rejections <count>", contexts, conflicts, developmentReady: involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), coordinationReady: involvedProjects.state === "coordination-only", writeAuthority: "not-granted", explanation: "Each context applies only to its stable project reference; authorization and writable roots must be checked independently." };
+}
+
+/** New native protocol is action-scoped; it never rewrites historical dot/process receipts. */
+async function hostWorkProjectContexts(state: WorkspaceState, workId: string, request: HostExecutionRequest, home?: string): Promise<Record<string, unknown>> {
+  const work = state.work.find(item => item.id === workId && !item.tombstone)!;
+  if (request.workId !== workId || request.workRevision !== work.revision) throw new ProjectChainError("host request work/revision differs from current work");
+  const involvedProjects = involvedProjectsOf(work);
+  // Dot self-selection/quota are inapplicable; do not parse unrelated model policy for dot.
+  // Other hosts preserve policy corruption/I/O errors instead of treating them as absence.
+  const policySnapshot = request.capabilities.hostKind === "dot" ? null : await readExecutionAdmissionSnapshot(home);
+  const execution = policySnapshot === null ? await dotProjectExecutionConfiguration(home) : projectExecutionConfiguration(policySnapshot);
+  const snapshot = execution.snapshot;
+  const contexts = await Promise.all(involvedProjects.targets.map(reference => resolveProjectTargetFromSnapshot(reference, home, new Set(), execution)));
+  const effectiveRequest = request;
+  // Explicit configured caps remain constraints. Default/platform limits are not telemetry gates.
+  const scoped = scopedWorkspaceState(state, work.projectId);
+  const projectCap = scoped.settings.find(setting => setting.key === "execution.maxConcurrentSubagents")?.value;
+  const deviceCap = snapshot.machineSettings.values["execution.maxConcurrentAgents"];
+  const reported = request.hardLimits?.concurrency;
+  const platform = request.capabilities.platformCapacity;
+  const enforceCap = (limit: number, scope: "children" | "total"): void => {
+    const observation = reported ?? (platform ? { ...platform, scope: "total" as const } : null);
+    let active = observation?.active ?? null;
+    if (active !== null && observation) {
+      active = scope === "children" ? active - (observation.includesParent && observation.parentActive ? 1 : 0) : active + (!observation.includesParent && observation.parentActive ? 1 : 0);
+    }
+    if (request.requestedAgents > limit || active !== null && active + request.requestedAgents > limit) constraintReasons.push(`configured-${scope}-concurrency-exceeded`);
+    // An unavailable occupancy observation does not turn an ordinary configured cap into
+    // a new telemetry gate. Explicit user guarantees belong in request.hardLimits.
+  };
+  const constraintReasons: string[] = [];
+  if (typeof deviceCap === "number") enforceCap(deviceCap, "total");
+  if (typeof projectCap === "number") enforceCap(projectCap, "children");
+  if (["blocked", "pending-owner-acceptance", "done", "cancelled"].includes(work.status)) constraintReasons.push("current-work-state-does-not-allow-new-dispatch");
+  // Optional project association is checked if requested. No selected target is fabricated.
+  const target = request.projectRef === undefined ? undefined : contexts.find(context => dotDigest(context.reference) === dotDigest(request.projectRef));
+  if (request.projectRef && !target) constraintReasons.push("requested-project-target-not-in-current-work");
+  if (request.action === "implementation" && target) {
+    const readiness = target.readiness as Record<string, { ready: boolean; missing: string[] }> | undefined;
+    if (!readiness || ["design", "repository", "output", "language"].some(key => readiness[key]?.ready !== true)) constraintReasons.push("implementation-target-readiness-unresolved");
+  }
+  const contextDigest = dotDigest({ libraryId: state.metadata.workspaceId, workId, workRevision: work.revision, involvedProjects, contexts });
+  let decision: HostExecutionDecision = resolveHostExecution(effectiveRequest, policySnapshot?.enginePolicy ?? null, contextDigest);
+  if (constraintReasons.length) decision = { ...decision, status: "blocked", additionalConfirmationsRequired: false, reasons: [...decision.reasons, ...constraintReasons] };
+  const eligible = executionDecisionEligibility(decision) === "executable";
+  return {
+    schemaVersion: "tcrn.host-project-context.v1", workId, workRevision: work.revision, involvedProjects,
+    contexts: contexts.map(context => ({ ...context, executionAdmission: decision, handoff: projectTargetHandoff({ workId, workRevision: work.revision }, { ...context, executionAdmission: decision }) })),
+    executionDecision: decision, dispatchAdmitted: eligible, coordinationReady: involvedProjects.state === "coordination-only",
+    developmentReady: request.action === "implementation" && eligible, conflicts: [], enginePolicy: execution.enginePolicy,
+    writeAuthority: "not-granted", explanation: "Authorization and source permission are reported context, not credentials. Coordination never invents development targets; source scope is checked separately.",
+  };
 }
 
 type RegisteredLocation = { readonly libraryId: string; readonly path: string };

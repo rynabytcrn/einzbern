@@ -132,6 +132,8 @@ export const SETUP_REASON_CODES = Object.freeze([
   "SETUP_ENGINE_INCOMPLETE",
   "SETUP_ENGINE_NOT_INSTALLED",
   "SETUP_INPUT_INVALID",
+  "SETUP_SKILL_ENGINE_MISMATCH",
+  "SETUP_SKILL_USER_EDITED",
   // A library is already at the chosen place, or the project is registered to another one.
   "SETUP_LIBRARY_CONFLICT",
   "SETUP_LIBRARY_EXISTS",

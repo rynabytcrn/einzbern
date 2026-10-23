@@ -1,3 +1,7 @@
+import type { HostExecutionRequest } from "../../core/src/execution-fallback.js";
+
+import { readEngineModelPolicyFile } from "../../core/src/engine-model-policy.js";
+import { recommendHostFallbacks, validateHostExecutionRequest } from "../../core/src/execution-fallback.js";
 import { deviceHome } from "../../core/src/device-home.js";
 import { isSharedLibrary } from "../../core/src/chain-identity.js";
 import { readFile } from "node:fs/promises";
@@ -42,6 +46,8 @@ import {
   applyMachineSettingRemove,
   applyMachineSettingSet,
   applyEngineModelPolicySet,
+  applyEngineModelPolicySave,
+  readEngineModelPolicyOperation,
   withWriteLockOptions,
   assertLibraryWritable,
   recordAppends,
@@ -1694,6 +1700,9 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // A set always cites and verifies an Owner decision naming models.engine-policy; --workspace only
   // locates that decision and does not make the policy project-scoped.
   { name: "engine-model-policy-catalog", availability: "cli", mutates: false, flags: [{ name: "host", required: false, valueKind: "string" }] },
+  { name: "execution-fallback-candidates", availability: "cli", mutates: false, flags: [{ name: "request", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
+  { name: "engine-model-policy-operation", availability: "cli", mutates: false, flags: [{ name: "id", required: true, valueKind: "string" }] },
+  { name: "engine-model-policy-save", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "host", required: true, valueKind: "string" }, { name: "lock-timeout-ms", required: false, valueKind: "integer" }, { name: "changes", required: true, valueKind: "json" }, { name: "expected-host-revision", required: true, valueKind: "integer" }, { name: "expected-host-digest", required: true, valueKind: "string" }, { name: "operation-id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "engine-model-policy-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: true, valueKind: "string" }, { name: "policy", required: true, valueKind: "json" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: true, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }] },
   { name: "engine-rollback", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }] },
   { name: "engine-update", availability: "cli", mutates: true, flags: [{ name: "from", required: true, valueKind: "string" }, { name: "sha256", required: true, valueKind: "string" }, { name: "version", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
@@ -1854,7 +1863,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   { name: "work-gate-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-gate-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "reason", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "involved-project", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "execution-request", required: false, valueKind: "string", valueShape: "ExecutionAdmissionRequest JSON or explicit DotExecutionRequest JSON (dot-autonomous/chatgpt-dot); native self-model/quota not-applicable is not admission" }] },
+  { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "execution-request", required: false, valueKind: "string", valueShape: "Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics" }] },
   { name: "work-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R4: work-transition and work-batch take --project, the project the gates of a
@@ -2441,6 +2450,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     if (result === null) fail("CLI_COMMAND_UNKNOWN", command);
     io.write(canonicalJson(result));
     const receipt = result as Readonly<Record<string, JsonValue>>;
+    if (command === "execution-host-prepare" && receipt.attempt === null) fail("HOST_PREPARATION_NOT_EXECUTABLE", "Only this action is not executable; inspect decision, not a claimed host rejection");
+    if (command === "execution-host-record" && (receipt.validation as Readonly<Record<string, JsonValue>>)?.status !== "valid") fail("HOST_RECORD_INVALID", "Raw invalid material retained; see problems");
+    // New host-record exit 0 means valid recording, NOT execution completion or acceptance.
     if (command === "execution-native-prepare" && (receipt.targetDispatchAdmitted !== true || receipt.attempt === null)) fail("NATIVE_PREPARATION_REFUSED", "Preparation retained; target is not dispatch-admitted");
     if (command === "execution-native-record") {
       const normalized = receipt.normalized as Readonly<Record<string, JsonValue>>;
@@ -3162,6 +3174,27 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "engine-model-policy-catalog") {
     const values = parseArguments(rest, ["host"]);
     io.write(canonicalJson({ reasonCode: "ENGINE_MODEL_POLICY_CATALOG_READY", ...await readEngineModelPolicyCatalog(values.host) }));
+    return;
+  }
+  if (command === "execution-fallback-candidates") {
+    const values = parseArguments(rest, ["request", "at"]); required(values, ["request", "at"]);
+    const request = validateHostExecutionRequest(JSON.parse(await readFile(values.request!, "utf8")));
+    const policy = request.capabilities.hostKind === "dot" ? null : await readEngineModelPolicyFile();
+    io.write(canonicalJson(recommendHostFallbacks(request, policy, values.at!))); return;
+  }
+  if (command === "engine-model-policy-operation") {
+    const values = parseArguments(rest, ["id"]); required(values, ["id"]);
+    io.write(canonicalJson(await readEngineModelPolicyOperation(values.id!))); return;
+  }
+  if (command === "engine-model-policy-save") {
+    const values = parseArguments(rest, ["workspace", "host", "lock-timeout-ms", "changes", "expected-host-revision", "expected-host-digest", "operation-id", "at", "actor", "decided-in"]);
+    required(values, ["workspace", "host", "changes", "expected-host-revision", "expected-host-digest", "operation-id", "at", "actor", "decided-in"]);
+    let changes: unknown;
+    try { changes = JSON.parse(values.changes!); } catch { fail("CLI_ARGUMENT_MALFORMED", "changes"); }
+    if (!changes || typeof changes !== "object" || Array.isArray(changes) || Object.keys(changes).length !== 1 || !["tiers", "initialPolicy"].includes(Object.keys(changes)[0]!)) fail("CLI_ARGUMENT_MALFORMED", "changes must contain exact tiers or an explicit initialPolicy");
+    const authorization = await verifyWriteAuthorization({ state: await materializeWorkspace(values.workspace!), decidedIn: values["decided-in"]!, target: ENGINE_MODEL_POLICY_WRITE_TARGET });
+    const result = await applyEngineModelPolicySave({ host: values.host!, ...(values["lock-timeout-ms"] === undefined ? {} : { lockTimeoutMs: integerValue(values, "lock-timeout-ms", 0) }), expectedRevision: integerValue(values, "expected-host-revision", 0), expectedDigest: values["expected-host-digest"] === "absent" ? null : values["expected-host-digest"]!, operationId: values["operation-id"]!, ...(changes as { tiers?: readonly { order: number; model: string; effort: string }[]; initialPolicy?: unknown }), occurredAt: values.at!, actor: values.actor!, authorization });
+    io.write(canonicalJson({ reasonCode: result.status === "replayed" ? "ENGINE_MODEL_POLICY_SAVE_REPLAYED" : "ENGINE_MODEL_POLICY_SAVE_COMMITTED", ...result }));
     return;
   }
   if (command === "engine-model-policy-set") {
@@ -3992,7 +4025,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   if (command === "work-project-context") {
     const values = parseArguments(rest, ["workspace", "id", "execution-request"]); required(values, ["workspace", "id"]);
-    const request = values["execution-request"] === undefined ? undefined : argumentJsonValue(values["execution-request"], "execution-request") as ExecutionAdmissionRequest | DotExecutionRequest;
+    const request = values["execution-request"] === undefined ? undefined : argumentJsonValue(values["execution-request"], "execution-request") as ExecutionAdmissionRequest | DotExecutionRequest | HostExecutionRequest;
     io.write(canonicalJson(await workProjectContexts(await materializeWorkspace(values.workspace!), values.id!, undefined, request))); return;
   }
   if (command === "project-context") {

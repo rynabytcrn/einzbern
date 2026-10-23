@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -50,6 +50,7 @@
       "tests/story-rule-conservation.test.mjs"
     ],
     "docs/wiki/Atelier.md": [
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
@@ -103,49 +104,60 @@
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/Ether-Layout.md": [
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/FAQ.md": [
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/Gates.md": [
       "tests/ci-impact-plan.test.mjs",
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/Glossary.md": [
       "tests/names-alias-table.test.mjs",
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/Home.md": [
       "tests/inc238-markdown-link-gate.test.mjs",
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/Install-Wizard.md": [
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/Managed-Sections-and-Command-Spell.md": [
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/Migrating-from-TCRN-Workflow.md": [
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/Multi-Device-and-Cloud.md": [
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/Variables.md": [
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ],
     "docs/wiki/_Sidebar.md": [
+      "tests/privacy-boundary.test.mjs",
       "tests/push-wiki.test.mjs",
       "tests/wiki-pages.test.mjs"
     ]
@@ -842,7 +854,7 @@
       "tests/workspace-lock-scope.test.mjs"
     ]
   },
-  "audit": "Construction-only frozen exact input/caller graph, per-document maps and categoryInputAudit input-call fingerprints. Comments, output writes, path predicates and arbitrary basenames do not create edges. Finite semantics are bound to sourceAudit bytes; changed category bytes require the same frozen input-call surface, including unresolved receivers and referenced binding tokens. Newly tracked or changed noncategory text, changed/unreviewed category input forms, unknown binary/unreadable inputs, missing/stale readers or missing root-test maps force unaccounted-consumers/full. Known category value edits may remain selective with unchanged input forms and complete independent maps. Runtime never updates declarations. Real template interpolations are executable input expressions; literal portions, escaped interpolation text and embedded source strings stay opaque. Unresolved interpolation syntax forces full. Declarations are generated once from the final tracked source, never resealed at runtime.",
+  "audit": "Construction-only frozen exact input/caller graph, per-document maps and categoryInputAudit input-call fingerprints. Comments, output writes, path predicates and arbitrary basenames do not create edges. Finite semantics are bound to sourceAudit bytes; changed category bytes require the same frozen input-call surface, including unresolved receivers and referenced binding tokens. Newly tracked or changed noncategory text, changed/unreviewed category input forms, unknown binary/unreadable inputs, missing/stale readers or missing root-test maps force unaccounted-consumers/full. Known category value edits may remain selective with unchanged input forms and complete independent maps. Runtime never updates declarations. Real template interpolations are executable input expressions; literal portions, escaped interpolation text and embedded source strings stay opaque. Unresolved interpolation syntax forces full. Declarations are generated once from the final tracked source, never resealed at runtime. Tagged-template invocation syntax is audited as executable input; unknown consumers fall back to full. Literal data, escaped interpolation and embedded source samples retain their existing distinction. Declarations are generated once from the final tracked source, never resealed at runtime.",
   "documentAudit": {
     "README.md": {
       "readers": [
@@ -989,10 +1001,12 @@
         "docs/verification/init053-owner-return-copy-inventory.json",
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1146,10 +1160,12 @@
         "docs/verification/init053-owner-return-copy-inventory.json",
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1161,10 +1177,12 @@
         "docs/verification/init053-owner-return-copy-inventory.json",
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1177,11 +1195,13 @@
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
         "tests/ci-impact-plan.test.mjs",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
         "tests/ci-impact-plan.test.mjs",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1195,11 +1215,13 @@
         "docs/verification/init053-owner-return-scope-inventory.json",
         "tests/fixtures/ci-impact/pr-29.json",
         "tests/names-alias-table.test.mjs",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
         "tests/names-alias-table.test.mjs",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1212,11 +1234,13 @@
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
         "tests/inc238-markdown-link-gate.test.mjs",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
         "tests/inc238-markdown-link-gate.test.mjs",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1228,10 +1252,12 @@
         "docs/verification/init053-owner-return-copy-inventory.json",
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1244,10 +1270,12 @@
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
         "tests/fixtures/ci-impact/pr-29.json",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1259,10 +1287,12 @@
         "docs/verification/init053-owner-return-copy-inventory.json",
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1274,10 +1304,12 @@
         "docs/verification/init053-owner-return-copy-inventory.json",
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1289,10 +1321,12 @@
         "docs/verification/init053-owner-return-copy-inventory.json",
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1304,10 +1338,12 @@
         "docs/verification/init053-owner-return-copy-inventory.json",
         "docs/verification/init053-owner-return-limit-inventory.json",
         "docs/verification/init053-owner-return-scope-inventory.json",
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
       "tests": [
+        "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
       ],
@@ -1598,7 +1634,7 @@
     "scripts/ceremony-cost.mjs": "1f7d92a300a3b2e50d7809c765a11bc7d507ccf2a36c0649b576b3d2b1a1f5d9",
     "scripts/ci/aggregate-evidence.py": "09c5394c65b7e23ff16ccb38cd16bfeb3b7bce6cd73b2c1307b34b75c1ca9780",
     "scripts/ci/baseline-evidence.mjs": "4b25231f0ca3409ad091d1880d97cb135f0cfabf2680b00b5b72230d6102e0cb",
-    "scripts/ci/impact-plan.mjs": "b3dd8aca14dd0baa94583226d5a660ec792321492ab1c61d9ba706afc37f3297",
+    "scripts/ci/impact-plan.mjs": "7211d202780d3dfcb4215ee38ad729fafe43460efda4f21924c444e50817b0e8",
     "scripts/ci/p1-evidence.py": "b3a2ab1ccd6edec071ca7995771607c94f1b132791e0c85df333fae4f8e96105",
     "scripts/ci/p1-shard.mjs": "109aa9f151064dfbeec5e2eb187981dfda692e4d3cbe27bdedea486cac33ae49",
     "scripts/ci/transport-evidence.mjs": "3622b39377abaf393eea2739943e355ca575e16e16759ca6d9875b395f8c153b",
@@ -1746,7 +1782,7 @@
     "tests/ci-baseline-evidence.test.mjs": "58c0f24a9d71f3224d555905530bd34a5aabcbff2fa5ac40b8115621f694be1c",
     "tests/ci-bootstrap.test.mjs": "8e5a2265928041bdf85283c965342277acde62bb4ba0f6036a3fa76fea1756eb",
     "tests/ci-evidence-retention.test.mjs": "6117785d60af019c3cbbe13269ca295c3492c6c6eb0890b54ebf45d9018834e1",
-    "tests/ci-impact-plan.test.mjs": "0c6b24a91937a58f1d315715b7544b07c8eb3096528e1ec75eab2ffe8a4e61d2",
+    "tests/ci-impact-plan.test.mjs": "00dbc93f41b77a5d12328c57d3b4b523219567fa45ebb7f1f78aa210acbb4b31",
     "tests/ci-selective-runner.test.mjs": "e4e29e120653aa26fcff9989b044dec255ca34e2face2cca9fefa31849b30c87",
     "tests/ci-test-roster.test.mjs": "56ed21b4b1ff023e9aacdc15984fa459e0ea730ddd981c2d46bc2db015dc72cc",
     "tests/cli-audit-boundaries.test.mjs": "6fa1dd0a63dedd161c92fe69898fcec1ae7444a4465082173687b2be26dd8d45",
@@ -2081,58 +2117,58 @@
     "portal/design-baseline.html": "c6bf8ad1e7fd9927ab5f82da195564014511af2bc058e125e5c4c86c6e8f1364",
     "portal/ds-component-css.snapshot.css": "c983f9c07d1d8e592ff9ae6329700b2124f6a89dce32a46fc8a7641c3793a303",
     "portal/ds-consumer-contract.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    "portal/ds-static-bridges.snapshot.js": "38418cc1757e3051d9cb1b6c528cf0e674880255683ca76866adbb9acfe0210d",
+    "portal/ds-static-bridges.snapshot.js": "2954f791999c22ca14bb7b5680022dfb3653cea08df8fee72b22991b1c3b5311",
     "portal/i18n-policy.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "portal/index.html": "51a33cc3477319751f171dd2e6873fbcd35fdebeef74280cb7f9d90d74e7ad0d",
     "portal/locale-contract.mjs": "1151902184c987b13e086f73b89b4fd34c99231d84b5a20438d187da70802173",
     "portal/locales.js": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    "portal/portal.mjs": "decb052618e29fe74e489f3ea136be5712357e1d68c2a2ba379fecbb0ca9de76",
-    "portal/scripts/dependency-audit.mjs": "e0d91bac829db6b4581ff77b72d4b268d0e93367de6a314d716d0274939b3bd4",
-    "portal/scripts/design-proof.mjs": "b10ec001fb6fc9e3d9a8aa172d08a5b4e3dcb5ea79c999f3c2026507967b6ed8",
-    "portal/scripts/e2e-demo.mjs": "8de309e241dca59c480dcd9fdba0b46953bb2d79e31c07394ea1a7dc593ad6f0",
-    "portal/scripts/generate-launchers.mjs": "7be43ed1ec19133766fe54921a60ab891cd925b3558b9e23585e2183a4be4157",
-    "portal/scripts/i18n-proof.mjs": "69d5665b72dbd38cc915e6299ccdbc256768e9a0a7c0dcf7fb033c398bfd9f2c",
-    "portal/scripts/proof.mjs": "c0f4e9b8bb34bcd65786d24d390503db842c27d5d9ca123233c0c683534467ac",
-    "portal/tests/agents-read-errors.test.mjs": "3462dc76c92969cd71b91db787f17ae86162c31b6be13caf8cbd1d6952eda546",
-    "portal/tests/audit-projection-regressions.test.mjs": "0a85a1d8c0661ca734f4ed02819c9d6d97c6620ee22c13f43915f7c0694ef4a6",
-    "portal/tests/configuration-presentation.test.mjs": "2792db01b3e5629a356b25cc5b92cae5e0646d76e0af2bdce30876ac594287cb",
-    "portal/tests/coordination.test.mjs": "7a9d95364c40a495d424d5287c8f94964fa3c23aba5d862f5cb59d17e52b2a02",
-    "portal/tests/design-proof.test.mjs": "2680d6bbee944e7e9d27aa23774c43529e44d8986314d0e55011f2191821a099",
-    "portal/tests/disposable-portal-fetch.test.mjs": "b0c0d7008e5c20f1731e13f6a0fcb9085da29df59c8753670c4ad770cbf9fbbb",
-    "portal/tests/fixture-lifecycle.test.mjs": "4245367800e94bada05b0e347d336f7bf5fd1e2ecdc49bbd5c31a2b716aa0cd2",
+    "portal/portal.mjs": "31c61d48382b51eaa0f757fe4060e18313f679734c651d40bd24f2c743878dc5",
+    "portal/scripts/dependency-audit.mjs": "26d4084e06924beaf01fa831e754bd639698e0849b2dc2659e0a3025a1d814a3",
+    "portal/scripts/design-proof.mjs": "36e075d6498fc3d3044b5d97252f84fb17c1e70a524abc5aa4f188269e2f77ad",
+    "portal/scripts/e2e-demo.mjs": "af4bb015e80bad3ce446012c73f0e17047fe7a85fd2cf04d65f382b04a3df024",
+    "portal/scripts/generate-launchers.mjs": "1176d8e24844c16e2a8ab83bb2c3f9b180af077939f0f1a767c54a8148aba1dd",
+    "portal/scripts/i18n-proof.mjs": "29ef128e603707f991f99a7e755bc9b08a0efd3fab334338754e8e2abd60a4b7",
+    "portal/scripts/proof.mjs": "05e6a0cedc9d9061c745864d4ea949a075837de16faef7b044c22d9340d07422",
+    "portal/tests/agents-read-errors.test.mjs": "51ce7e427fbff22e7e1d3599702680bd282c301c1bc8859525745ca7415482c7",
+    "portal/tests/audit-projection-regressions.test.mjs": "10b7f63aeed6432db927b2c435f5c9c74d92eb476457983ff24d0123bfc39942",
+    "portal/tests/configuration-presentation.test.mjs": "ad48b9d3c196e92854c5af9fb32f02570c7bbfab96bf5916122c07d7b48751ea",
+    "portal/tests/coordination.test.mjs": "71826d24fe97e0c8ca978d25b0370cad6f23571081a2f5a4977fee11dc01a8c5",
+    "portal/tests/design-proof.test.mjs": "ffe86e02def941c642a38b456ad3455038772bf8151e57b0137a3a865b3062e8",
+    "portal/tests/disposable-portal-fetch.test.mjs": "8c1630911148708d35be1528cb6a947ff8dd855d045f13bf6213a506c00f72f9",
+    "portal/tests/fixture-lifecycle.test.mjs": "a2053edfa4f9ffabca7b178ce60d838d24c9d1799cf9ce5ccb6caf4dab478960",
     "portal/tests/helpers/disposable-portal-fetch.mjs": "5059623272eae76bd79f5ac1a53cf71b433efb8e58e4fc123ccc43f879bb7855",
-    "portal/tests/helpers/portal-fixture.mjs": "24e53d9050e1464204dad138179c8dfbec50f21b52930760b4aac7a023eeb3fd",
+    "portal/tests/helpers/portal-fixture.mjs": "48eee638670990df20e678985cebea954bb6b15c6defeeb02815d7e1d3f1fad4",
     "portal/tests/helpers/proposal-renderer-source.mjs": "8d2d87dfad12c51c158c1a43ad83f8caa4dfc932a41e06f17d927bf0cb394f3f",
-    "portal/tests/human-only-panels.test.mjs": "e155a5cf0be56e5276dd2663cf44b4023c2c3f26024967fb866f4a16a78808fa",
-    "portal/tests/portal-configuration.test.mjs": "872dcd89c0ce19248dbce149fed60ff90f2d3ac9b57834b51809e52e33f8c08f",
-    "portal/tests/portal-library.test.mjs": "d594ef678ba9ff8974ecd1e7aebf84b6488cf604e757abe4e21c40e61eb3c2bf",
-    "portal/tests/portal-support.mjs": "22ccbb1f3b97d30fca4656fde27e23d3c7c7e0aa44cd0ea79f16f6ceee464642",
-    "portal/tests/portal-work.test.mjs": "0040a2cd1efc24cb2213792e884e1de57be50acbe3e30cb61f157eb8f4391507",
-    "portal/tests/portal.test.mjs": "06572d78a4ed32106f34e65f38409f0c0924f6fe15bfaa9417968b7309caf6aa",
-    "portal/tests/proposal-renderer-source.test.mjs": "93093e6ecaee05d5526434914d8580640d36e9210e3ac8f6dcb87ac34534cefd",
-    "portal/tests/proposals.test.mjs": "c3bfe95f502452fb0bcd74b13c4c7ef3804cc9f0dae7aa93697b5403c6d45f8d",
-    "portal/tests/theme-preference.test.mjs": "a5dc01a6df389dfe3cd58ae373d25a01aba3897ff3e01b43da0af29f7657f873",
-    "portal/tests/ui-configuration.test.mjs": "0f75fa9952b494451e00f2c4e5ed00e3aa6a8a9a648d4f6c26e6caa469b72ee8",
-    "portal/tests/ui-library.test.mjs": "f91e6fe4c0f069d6d211119ce251ba0fb1c228b007c5d766f287bd4d91dfeca8",
-    "portal/tests/ui-presence-support.mjs": "3dbb019cd272b3af6d62679b45cec965220a2c4a7cb6f8c1dea1e15079c6f928",
-    "portal/tests/ui-presence.test.mjs": "a3bbdd285eec1c6a7527e2ca4d463eca33184e15a9ae138826b19e5dfb09a03c",
-    "portal/tests/ui-work.test.mjs": "3231b1e181a8fe96a27205297f9e550c0fbb743f8024fd51147bd3d2858bdc2b",
+    "portal/tests/human-only-panels.test.mjs": "336c487d7521665295c83db2e61ef8df89ba5cda42eee64881c963640b49c46a",
+    "portal/tests/portal-configuration.test.mjs": "97c0599cb6b2796936e6ff52bcdc4fca3c94fc447f2bcf1e97dd1b230b19ce70",
+    "portal/tests/portal-library.test.mjs": "85c5e0beffc9d3abd66dc4dd0e08bdc11e8a2fec8b675956474aa50757d6b21b",
+    "portal/tests/portal-support.mjs": "074ecd8a8022348703bf6c9d4772bc6c147255a922c9778a1490b5cf91e8bc70",
+    "portal/tests/portal-work.test.mjs": "8c197932e22fbdbf133cabde030093480c643c91ec2cf50a3a75a51709b9642d",
+    "portal/tests/portal.test.mjs": "ad2eb3aa309e731fcb5d0fa9c83f70fee626766770f6c9fc33c4a8cbcd1a8261",
+    "portal/tests/proposal-renderer-source.test.mjs": "49fdb94b7a9284a591d718b20fb537ab5982c8888fc835971680bdd869d19f44",
+    "portal/tests/proposals.test.mjs": "8b0a1ce696f0fd39d07c68bb9dc766c3807076fd4135fe1c7f8a049ebb85e113",
+    "portal/tests/theme-preference.test.mjs": "906cc4ea5be1719889480c0eaaa8f7d0c4fccb89dfe03b03306411f015f58450",
+    "portal/tests/ui-configuration.test.mjs": "69b7472613543862481829e8508d83411c18633fbeeb9c7e2f3fb471f0cb5437",
+    "portal/tests/ui-library.test.mjs": "3dc5cad2520d6ef61efa454a05603798ffef2af1cdefadbe9cb4370a05124905",
+    "portal/tests/ui-presence-support.mjs": "d722fbe5903a9496aa453d0c82395b704faafcbcc7dd9d8c4c99848fec4a57ee",
+    "portal/tests/ui-presence.test.mjs": "d5b0cd4ee17128beb1a4e4f93a3bc361514673125777fa0d844ea8f8651e9275",
+    "portal/tests/ui-work.test.mjs": "649b39e20f5704b1309fa01ee4e03eb6b871469fd7433219a3ca40ce0e4ee2e8",
     "portal/tokens.css": "75415e829eaac6210e29d3ef11f2552b6d617ddf2fadf4b34d33d8fdefdae556",
-    "scripts/lib/privacy.mjs": "0f9abdc5e50c2f3fa7bf1ae25795c056bd0e096e0bbd0909c92dfecd32b07343",
+    "scripts/lib/privacy.mjs": "9a6c918ee9d1fd2b4483a1810764d24139047871d565cdbcff04406f416e6cb4",
     "tests/cross-repo-privacy.test.mjs": "01a1e0f2f94b22e906993bb4e620c1fa2d9f8f91e7aee6a4483bb1794f788307",
-    "tests/local-command-byte-fidelity.test.mjs": "6ee9af22bfa17baa6f88ae640e7d47d91e3bcffab74bd9e8bbf69cbfa70ac36f",
-    "tests/otel-privacy-guard.test.mjs": "74f3b08f5649a51b303cfecfb7a37b34a618e673a2e2019fa9b0d82e46212d06",
-    "tests/p8-workflow-rc.test.mjs": "2c6618a451ae2b0ba000446de38643933bff1bb65c7289a08b6aaf60c2bbb1c1",
-    "tests/pack-release.test.mjs": "074e53cd44b406189b349ad50bd6262d1de1e905c5c6486e44d6ebd3cda6abe4",
-    "tests/privacy-boundary.test.mjs": "15aef64bdc8e0c4b9540654af9a95c8cfd5efb553eaee4360bdc607d98a886fa",
-    "tests/privacy-git-metadata.test.mjs": "a061696e5805b9bbd598053e3738dd4091d6e9be09b217b70e5adeaac933821f",
-    "tests/privacy-normalization.test.mjs": "22efa9fdba3bea6e7a8fad747242f3dc2b10764a9efd0409bc40d0c69d32810e",
+    "tests/local-command-byte-fidelity.test.mjs": "e81ed04179a1932b38a38e83d446a0c7568c5fee812d986e42d4f37e7d193a9c",
+    "tests/otel-privacy-guard.test.mjs": "fe4ecf9888fa7f19f12eff2d7ba3b387e3f05e8b9ef151437cbed4f670801818",
+    "tests/p8-workflow-rc.test.mjs": "ac19e3c29319c7abe2078c04780761a27f941e0ff4ab3ec778c4b6a0e6ad4c0a",
+    "tests/pack-release.test.mjs": "74f447f0a0ca97f5ec3fe2d59d2822c76f69e858cfa3187fd79f0a4057ae0310",
+    "tests/privacy-boundary.test.mjs": "692134d678ff8aceca179f83b9f6d87758ca14d77de73230a01c8e12af1679fb",
+    "tests/privacy-git-metadata.test.mjs": "675a891f6f0066c29ea052a269219994ddf016536b20a74e9b682436c2427197",
+    "tests/privacy-normalization.test.mjs": "8e3fcb3628b539022076d9389667ca45a67ae2e8bd0be05fa956634c16ad6914",
     "tests/readme-render.test.mjs": "2a150e521e2975a0d1008fa815f6f523219a309d6a7daf6bd518c2b7be51fb63",
-    "tests/release-lockstep.test.mjs": "df0ed0163fa5001040e14da4a8208f796930878a440e5a84581f0cb0e1327c05",
-    "tests/release-tooling-audit-boundaries.test.mjs": "6bfca335b3ccfacd5f6205f9102a290465fe259bfdf03c80441eb040db0b1056",
-    "tests/render-helper-docs.test.mjs": "bdda1fabcda4e93241e51a0ad74c7baa81dff5898a721d7c0021067119968227",
+    "tests/release-lockstep.test.mjs": "3ee880809a030acda270cc8e1bc76c8d25d150f6134663eb6648143c09b878bd",
+    "tests/release-tooling-audit-boundaries.test.mjs": "0eee89e49bfe67a6ee463883c1fef6fd0958e57cb065d979eb6be7130de4ce8c",
+    "tests/render-helper-docs.test.mjs": "1f03c46b9a5dcff7d74cd7073538fc6b1c275e6e373022b79058e48ba7126cf4",
     "tests/staged-privacy-origin-diagnostics.test.mjs": "513539430be5d7404d58fc4da3179b786679f728fbeb639fdf9dd8233a5f87cc",
-    "tests/staged-privacy-reviewed-paths.test.mjs": "249ebe86958dce562fcd6bb3939891a263948b4f69bd4331596e1b7510fe0d62",
-    "tests/token-attribution.test.mjs": "6151752ffeff9be504713b60863b93299c9f1cd9a0e79ee7cbf73e1655a04793"
+    "tests/staged-privacy-reviewed-paths.test.mjs": "32e031c52009b7b16a69735090855553e9c4bf6be7065911001012468c8b1f57",
+    "tests/token-attribution.test.mjs": "317c32dfa955bcaccf11417fbb08e4740e85beb41fa11bee0e1cd6240b129385"
   }
 }

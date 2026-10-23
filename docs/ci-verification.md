@@ -92,6 +92,14 @@ whole workflow after masking only official upload/download-artifact full 40-hex
 refs and their same-line version comments. A changed option, command, condition,
 permission, timeout, step order or other text forces full.
 
+Normal release version changes preserve the frozen reader audit without rewriting
+its declarations. Only the top-level stable version in the four canonical engine
+manifests and the single core `FRAMEWORK_VERSION` literal are normalized; every
+other byte remains audited. Version diffs still select full verification. A changed
+script, dependency or reader, even in one of those files, invalidates the old audit.
+After source integration, freeze the final reader and root-test maps together;
+refreshing hashes alone cannot account for a newly merged consumer.
+
 Every run retains all checks tasks, archive before full HEAD-reachable privacy,
 test wiring and isolated package/install/setup/doctor smoke. CI contract tests
 always run. `verify` independently rederives the current plan, validates the exact

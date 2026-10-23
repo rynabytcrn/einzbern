@@ -56,6 +56,9 @@ Versioning after the first accepted release.
 - Include executable template interpolations, tagged calls, referenced bindings
   and indirect intrinsic mutation in frozen consumer auditing. Later document
   changes cannot inherit an unchanged audit after a consumer starts reading them.
+- Keep the consumer audit valid across a normal release version update while
+  preserving every non-version source byte and full release verification. Include
+  the merged native execution and fallback root tests in the Portal consumer map.
 - Independently rederive the final verification plan and bind selected task
   coverage, retained bytes and official artifact transport to the same commit,
   run and attempt. Missing, failed, cancelled or mismatched evidence stays a

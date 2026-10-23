@@ -38,6 +38,7 @@ import { stripTypesWithScopedExperimentalWarning } from "../scripts/lib/scoped-s
 import { readUstar } from "../scripts/lib/tar.mjs";
 import { BRAND, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
 import { privateHeavyEnvironment } from "./helpers/heavy-slots.mjs";
+import { sourceAuditDigest } from "../scripts/ci/impact-plan.mjs";
 
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-release-lockstep-")));
 const OLD_VERSION = FRAMEWORK_VERSION;
@@ -647,6 +648,9 @@ test("SUB-549: generate rebases CHANGELOG file destinations while preserving sou
 
 test("SUB-357 R41 B1: generate writes the release files and a receipt without a commit or a gate; finish checks both commits, moves stale artifacts, gates and packs", async () => {
   const fixture = await createReleaseFixture("two-phase", { ignoredExtra: true });
+  const identityPaths = ["package.json", "packages/cli/package.json", "packages/core/package.json", "packages/protocol/package.json", "packages/core/src/framework-version.ts"];
+  const identityAudit = new Map(await Promise.all(identityPaths.map(async (path) => [path, sourceAuditDigest(path, await readFile(join(fixture.engineRoot, path), "utf8"))])));
+  const rulesBefore = await readFile(join(fixture.engineRoot, "scripts/ci/impact-rules.json"));
   const heads = { engine: git(fixture.engineRoot, ["rev-parse", "HEAD"]), helper: git(fixture.helperRoot, ["rev-parse", "HEAD"]) };
   const calls = [];
   const generated = await generateFixture(fixture, { keepExtra: [CREATE_SKILL_ARCHIVE], calls });
@@ -658,6 +662,9 @@ test("SUB-357 R41 B1: generate writes the release files and a receipt without a 
   const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
   assert.equal(receipt.schemaVersion, "einzbern.release-generate-receipt.v1");
   assert.equal(receipt.version, NEXT_VERSION);
+  for (const path of identityPaths) assert.equal(sourceAuditDigest(path, await readFile(join(fixture.engineRoot, path), "utf8")), identityAudit.get(path), `actual release generation preserves the reader audit for ${path}`);
+  assert.deepEqual(await readFile(join(fixture.engineRoot, "scripts/ci/impact-rules.json")), rulesBefore, "release generation never reseals consumer declarations");
+  assert.equal(receipt.engine.changes.some((change) => change.path === "scripts/ci/impact-rules.json"), false, "the closed release commit shape is unchanged");
   assert.deepEqual([receipt.engine.head, receipt.helper.head], [heads.engine, heads.helper]);
   assert.deepEqual(receipt.helper.extraFiles, { tracked: [RETIRED_REFERENCE, CREATE_SKILL_ARCHIVE], untracked: [IGNORED_EXTRA] });
   assert.deepEqual(receipt.helper.keptExtraFiles, [CREATE_SKILL_ARCHIVE]);

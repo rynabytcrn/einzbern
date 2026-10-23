@@ -68,6 +68,83 @@ test("frozen source audit preserves real pin-only current and immutable selectio
   assert.deepEqual(selected.portalTests, []);
   assert.deepEqual(validatePlan(selected, fixture.repo, fixture.env), selected);
 });
+const releaseIdentityFiles = (version) => ({
+  ...Object.fromEntries([
+    ["package.json", "einzbern"],
+    ["packages/cli/package.json", "@einzbern/cli"],
+    ["packages/core/package.json", "@einzbern/core"],
+    ["packages/protocol/package.json", "@einzbern/protocol"],
+  ].map(([path, name]) => [path, `${JSON.stringify({ name, version, type: "module", private: true }, null, 2)}\n`])),
+  "packages/core/src/framework-version.ts": `// Dependency-free release identity.\nexport const FRAMEWORK_VERSION = "${version}" as const;\n`,
+});
+test("release audit normalization masks only canonical identities and preserves every other byte", () => {
+  const before = releaseIdentityFiles("3.1.0"), after = releaseIdentityFiles("3.2.0");
+  for (const [path, source] of Object.entries(before)) {
+    const frozen = sourceAuditDigest(path, source);
+    assert.equal(sourceAuditDigest(path, after[path]), frozen, path);
+    assert.notEqual(sourceAuditDigest(`unreviewed/${path}`, source), sourceAuditDigest(`unreviewed/${path}`, after[path]));
+    assert.notEqual(sourceAuditDigest(path, after[path] + "\n"), frozen, "non-version bytes remain bound");
+    assert.notEqual(sourceAuditDigest(path, after[path].replace("3.2.0", "3.2.0-rc.1")), frozen, "unrecognized versions fail closed");
+    if (path.endsWith("package.json")) {
+      for (const change of [{ scripts: { test: "node scripts/new-reader.mjs" } }, { dependencies: { reader: "3.2.0" } }, { name: "other" }, { version: { input: "README.md" } }]) {
+        assert.notEqual(sourceAuditDigest(path, `${JSON.stringify({ ...JSON.parse(after[path]), ...change }, null, 2)}\n`), frozen);
+      }
+      assert.notEqual(sourceAuditDigest(path, after[path].replace('  "version":', '  "version": "3.2.0",\n  "version":')), frozen, "duplicate keys are not canonical release metadata");
+      assert.notEqual(sourceAuditDigest(path, after[path].replace('  "version":', '  "nested": { "version": "3.2.0" },\n  "version":')), frozen);
+      assert.notEqual(sourceAuditDigest(path, after[path].replace('{', '{invalid')), frozen);
+    } else {
+      for (const changed of [after[path] + 'readFileSync("README.md");\n', after[path] + 'export const FRAMEWORK_VERSION = "3.2.0" as const;\n', after[path].replace("export const", "export let"), after[path].replace("release identity", "3.2.0 release identity")]) {
+        assert.notEqual(sourceAuditDigest(path, changed), frozen);
+      }
+    }
+  }
+  const source = before["package.json"], changed = after["package.json"];
+  for (const path of ["portal/package.json", "packages/other/package.json", "fixtures/package.json"]) assert.notEqual(sourceAuditDigest(path, source), sourceAuditDigest(path, changed));
+});
+test("one frozen audit survives a release and later document-only selection without hiding changed readers", async (t) => {
+  const fixture = await createCiComponentFixture(t, { files: releaseIdentityFiles("3.1.0") });
+  const frozenRules = readFileSync(join(fixture.repo, "scripts/ci/impact-rules.json"));
+  const assertFrozen = () => assert.deepEqual(readFileSync(join(fixture.repo, "scripts/ci/impact-rules.json")), frozenRules);
+  fixture.before = fixture.head;
+  for (const [path, text] of Object.entries(releaseIdentityFiles("3.2.0"))) await writeFixtureFile(fixture.repo, path, text);
+  fixture.git("add", ".");
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), [], "staged release retains the single construction audit");
+  fixture.head = fixture.commit();
+  await writeFile(fixture.env.GITHUB_EVENT_PATH, JSON.stringify({ before: fixture.before, after: fixture.head }));
+  for (const ref of [undefined, fixture.head]) assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), []);
+  const release = fixturePlan(fixture, "selective");
+  assert.equal(release.coverage, "full", "version changes still run the full train");
+  assert.deepEqual(release.reasons, Object.keys(releaseIdentityFiles("3.2.0")).map((path) => `full-path:${path}`).sort());
+  assert.deepEqual(validatePlan(release, fixture.repo, fixture.env), release);
+  assertFrozen();
+  fixture.before = fixture.head;
+  await writeFixtureFile(fixture.repo, "README.md", "post-release documentation\n");
+  fixture.head = fixture.commit();
+  await writeFile(fixture.env.GITHUB_EVENT_PATH, JSON.stringify({ before: fixture.before, after: fixture.head }));
+  const document = fixturePlan(fixture, "selective");
+  assert.equal(document.coverage, "selective");
+  assert.deepEqual(document.reasons, []);
+  assert.deepEqual(validatePlan(document, fixture.repo, fixture.env), document);
+  assertFrozen();
+  // The document-only diff cannot inherit a valid audit after either executable
+  // input or package configuration changes, even alongside a version bump.
+  for (const [path, changed] of [
+    ["packages/core/src/framework-version.ts", releaseIdentityFiles("3.3.0")["packages/core/src/framework-version.ts"] + 'readFileSync(process.env.DOCUMENT_INPUT);\n'],
+    ["package.json", `${JSON.stringify({ ...JSON.parse(releaseIdentityFiles("3.3.0")["package.json"]), scripts: { read: "node scripts/new-reader.mjs" } }, null, 2)}\n`],
+  ]) {
+    const original = readFileSync(join(fixture.repo, path), "utf8");
+    await writeFixtureFile(fixture.repo, path, changed);
+    fixture.git("add", path);
+    const unknown = checkConsumers(fixture.repo, fixture.rules);
+    assert.ok(unknown.includes(path), path);
+    const rejected = fixturePlan(fixture, "selective");
+    assert.equal(rejected.coverage, "full");
+    assert.ok(rejected.reasons.includes("unaccounted-consumers"));
+    await writeFixtureFile(fixture.repo, path, original);
+    fixture.git("add", path);
+    assertFrozen();
+  }
+});
 test("plan digest covers omitted tasks, test roster, N/A reasons and baseline provenance", () => {
   const value = plan();
   const { planDigest, ...semantic } = value;
@@ -981,6 +1058,23 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   const graph = sourceDependencyGraph(texts);
   assert.equal(graph.get("packages/core/src/names.ts").has("scripts/lib/privacy.mjs"), false);
   assert.equal(graph.get("portal/tests/portal.test.mjs").has("scripts/lib/log.mjs"), false);
+  const mergedPortalConsumers = names("host-fallback-recommendation host-native-dispatch");
+  const portalInput = { ...input, records: [{ status: "M", paths: [rules.portalPaths[0]] }] };
+  const portalPlan = createPlan(portalInput, rules, rulesHash);
+  assert.equal(portalPlan.coverage, "selective");
+  assert.deepEqual(portalPlan.portalTests, input.sourcePortalTests);
+  for (const consumer of mergedPortalConsumers) {
+    assert.ok(rules.consumers.portal.includes(consumer));
+    assert.ok(portalPlan.coreTests.includes(consumer), consumer);
+    for (const field of ["readers", "tests"]) {
+      const incomplete = structuredClone(rules);
+      if (field === "readers") incomplete.consumers.portal = incomplete.consumers.portal.filter((path) => path !== consumer);
+      else incomplete.portalTests = incomplete.portalTests.filter((path) => path !== consumer);
+      const unknown = checkConsumers(root, incomplete);
+      assert.ok(unknown.includes(consumer), `${consumer}: ${field}`);
+      assert.equal(createPlan({ ...portalInput, unaccountedConsumers: unknown }, incomplete, digest(incomplete)).coverage, "full");
+    }
+  }
 });
 
 function categoryFixtureOptions(category) {

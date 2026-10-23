@@ -27,7 +27,31 @@ export function parseNameStatus(bytes) {
   return records;
 }
 const maskArtifactPins = (text) => text.replace(/^(\s*uses: actions\/(?:upload|download)-artifact@)[a-f0-9]{40}(?:[ \t]+#[ \t]*v[0-9]+(?:\.[0-9]+)*(?:[ \t]*))?$/gmu, "$1<PIN>");
-export const sourceAuditDigest = (path, text) => digest(path === ".github/workflows/ci.yml" ? maskArtifactPins(text) : text);
+const releaseManifests = new Map([
+  ["package.json", "einzbern"],
+  ["packages/cli/package.json", "@einzbern/cli"],
+  ["packages/core/package.json", "@einzbern/core"],
+  ["packages/protocol/package.json", "@einzbern/protocol"],
+]);
+// Release generation changes these five identities without changing reader
+// semantics. Mask only the canonical version value, never a whole file, a
+// dependency version, a script or arbitrary package.json. Classification still
+// sends every release/version diff to full; this only keeps the frozen reader
+// inventory valid after that full release, without runtime declaration writes.
+function maskReleaseIdentity(path, text) {
+  if (releaseManifests.has(path)) {
+    let manifest;
+    try { manifest = JSON.parse(text); } catch { return text; }
+    if (manifest?.name !== releaseManifests.get(path) || !/^\d+\.\d+\.\d+$/u.test(manifest.version ?? "") || `${JSON.stringify(manifest, null, 2)}\n` !== text) return text;
+    return text.replace(/^  "version": "\d+\.\d+\.\d+"(?=,?\n)/mu, '  "version": "<RELEASE_VERSION>"');
+  }
+  if (path === "packages/core/src/framework-version.ts") {
+    const matches = [...text.matchAll(/^export const FRAMEWORK_VERSION = "\d+\.\d+\.\d+" as const;$/gmu)];
+    if (matches.length === 1) return text.replace(matches[0][0], 'export const FRAMEWORK_VERSION = "<RELEASE_VERSION>" as const;');
+  }
+  return text;
+}
+export const sourceAuditDigest = (path, text) => digest(path === ".github/workflows/ci.yml" ? maskArtifactPins(text) : maskReleaseIdentity(path, text));
 export function artifactPinOnly(before, after) {
   if (typeof before !== "string" || typeof after !== "string" || before === after) return false;
   return maskArtifactPins(before) === maskArtifactPins(after);

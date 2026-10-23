@@ -94,8 +94,18 @@ universal parser or proof for arbitrary dynamically generated programs; alias sc
 are conservatively unioned and some extra contracts can run.
 
 `sourceAudit` binds the reviewed non-document text inventory to SHA-256 bytes.
-The CI workflow alone uses the classifier's same strict official artifact-pin mask;
+The CI workflow uses the classifier's same strict official artifact-pin mask;
 this preserves pin-only eligibility without admitting other workflow changes.
+The four fixed engine package manifests (`package.json` and the `cli`, `core`,
+`protocol` package manifests) mask only their top-level stable version value in
+canonical JSON with the expected package name. The dependency-free core
+`framework-version.ts` masks only its single exact stable version declaration.
+Every other byte stays bound, including package scripts, dependencies and added
+source reads. Noncanonical or duplicate-key JSON, other package paths and malformed
+or multiple version declarations receive no version mask. These masks preserve a
+construction-frozen reader inventory across normal release generation; version
+diffs and release validation still select full verification. They do not change
+release commit admission or update declarations at runtime.
 Newly tracked inputs and changed noncategory readers, including wholly dynamic
 ones, force full. A changed category source must also retain its construction-frozen
 `categoryInputAudit` fingerprint: the finite input-call tokens, Python read receivers,

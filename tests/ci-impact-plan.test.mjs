@@ -349,6 +349,26 @@ test("readonly global-object references do not turn intrinsic raw data into a re
   assert.notDeepEqual(audit(interpolation), audit(readonly));
 });
 
+test("Git byte-output raw options do not turn intrinsic raw fixture data into a reader", () => {
+  const reader = "tests/fixture-git-options.test.mjs", audited = { privacyPaths: [reader], portalPaths: [] };
+  const fixture = [
+    "function fixtureGit(root, arguments_, { raw = false, tolerateStderr = false } = {}) {",
+    '  const result = spawnSync("git", arguments_, { cwd: root, encoding: raw ? undefined : "utf8" });',
+    "  if (!tolerateStderr) assert.equal(result.stderr?.length ?? 0, 0);",
+    "  return raw ? result.stdout : result.stdout.trim();",
+    "}",
+  ].join("\n");
+  const sample = 'const sample = String.raw`const examples = ["C:\\\\Public\\\\fixtures", "safe"]; readFileSync("README.md", "utf8");`;';
+  for (const options of ["", "const options={raw:true}; const {raw: byteMode}=options;", "const {raw: byteMode}=globalThis.console;"]) {
+    const baselineText = [fixture, options].filter(Boolean).join("\n");
+    const baseline = new Map([[reader, baselineText]]);
+    const texts = new Map([[reader, baselineText + "\n" + sample]]), graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, [], options);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"], graph), [], options);
+    assert.deepEqual(categoryInputAudit(texts, audited), categoryInputAudit(baseline, audited), options);
+  }
+});
+
 test("String bindings, writes and unproven escapes keep raw tags conservative", () => {
   const reader = "tests/unsafe-raw.test.mjs", audited = { privacyPaths: [reader], portalPaths: [] };
   const readonly = 'const value=String(candidate); const point=String.fromCodePoint(65); ';
@@ -406,6 +426,7 @@ test("indirect ambient String mutation, aliases and escapes cancel raw-data trus
     'globalThis[process.env.KEY].raw=readDoc;',
     'let alias=globalThis; alias=maybe();',
     'const host=condition ? globalThis : {}; host.String.raw=readDoc;',
+    'const {raw: tag}=globalThis[process.env.KEY];',
   ]) {
     const text = original + mutation + 'String.raw`README.md`;', texts = new Map([[reader, text]]), graph = sourceDependencyGraph(texts);
     assert.deepEqual(graph.unresolved, [reader], mutation);

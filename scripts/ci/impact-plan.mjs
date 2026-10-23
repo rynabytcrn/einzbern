@@ -426,7 +426,13 @@ export function sourceDependencyGraph(texts, inputAudit) {
         if (values[index] !== "{" || !pairs.has(index) || values[pairs.get(index) + 1] !== "=") continue;
         const closing = pairs.get(index), kind = intrinsicValue(closing + 2, assignmentEnd(closing + 2));
         if (!["global", "string"].includes(kind)) {
-          if (parts(index + 1, closing).some(([first]) => ["String", "raw"].includes(values[first + (values[first] === "[" ? 1 : 0)]))) uncertainDestructure = true;
+          // An arbitrary options object's raw field does not alias the
+          // intrinsic. Keep unknown String bindings and raw fields reached
+          // through an uncertain ambient receiver conservative.
+          if (parts(index + 1, closing).some(([first]) => {
+            const key = values[first + (values[first] === "[" ? 1 : 0)];
+            return key === "String" || key === "raw" && kind === "uncertain";
+          })) uncertainDestructure = true;
           continue;
         }
         for (const [first, last] of parts(index + 1, closing)) {

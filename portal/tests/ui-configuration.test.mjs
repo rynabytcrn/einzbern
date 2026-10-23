@@ -79,10 +79,25 @@ if (!MUTATION) {
       let row = page.document.querySelector('[data-variable-row="deploy.host"]');
       field(row, "value").value = "stage.example.com";
       field(row, "description").value = "Staging endpoint";
+      const editedRow = row;
+      const updateReadback = () => {
+        const current = page.document.querySelector('[data-variable-row="deploy.host"]');
+        return Boolean(current && current !== editedRow && field(current, "value").value === "stage.example.com");
+      };
+      // The edited input already has the desired value before any server read.
+      // Hold the real readback to prove that a draft cannot advance this case to
+      // rename while the previous write's refresh is still pending.
+      page.hold((path) => path === "/api/variables");
       before = receiptText(page.document);
       row.querySelector("[data-variable-save]").click();
+      await waitFor(() => page.held() === 1, "the held variable update");
+      assert.equal(page.release({ where: (_path, options) => options.method === "POST", keepHolding: true }), 1);
       await waitFor(() => receiptAdvanced(page.document, before)(), "the variable update receipt");
-      await waitFor(() => page.document.querySelector('[data-variable-row="deploy.host"] [data-variable-field="value"]')?.value === "stage.example.com", "the variable update readback");
+      await waitFor(() => page.held() === 1, "the held variable update readback");
+      assert.equal(field(editedRow, "value").value, "stage.example.com", "the typed draft is not a readback signal");
+      assert.equal(updateReadback(), false, "the case must wait for a freshly rendered server row");
+      page.release();
+      await waitFor(updateReadback, "the variable update readback");
 
       row = page.document.querySelector('[data-variable-row="deploy.host"]');
       field(row, "name").value = "deploy.target";
@@ -100,7 +115,7 @@ if (!MUTATION) {
       const listed = await cli(["variable-list", "--workspace", page.workspace], page.deviceEnv);
       assert.deepEqual(listed.variables, []);
       assert.doesNotMatch(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u, "deleting a variable removes its managed row");
-    } finally { await page.cleanup(); }
+    } finally { page.release(); await page.cleanup(); }
   });
 }
 

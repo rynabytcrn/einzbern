@@ -113,8 +113,8 @@ export function loadRules(root) {
 }
 // Finite source audit, deliberately independent of the frozen declarations.
 // Comments, regexes and string contents (including embedded fixture programs)
-// are not executable path references. A template's literal portions stay one
-// opaque value; only its real interpolations enter grouped executable regions.
+// are not executable path references. Templates retain their argument identity
+// for executable tags; only real interpolations enter grouped code regions.
 function sourceTokens(text, python = false, javascript = false) {
   let offset = 0, unresolved = false;
   const escaped = () => {
@@ -132,16 +132,21 @@ function sourceTokens(text, python = false, javascript = false) {
       if (interpolation && quote === "}" && !delimiters.length) { offset++; return tokens; }
       if (javascript && quote === "`") {
         offset++;
-        const literals = [""], expressions = [];
+        const literals = [""], rawLiterals = [""], expressions = [];
+        let uncertainEscape = false;
         while (offset < text.length && text[offset] !== "`") {
-          if (text[offset] === "\\") literals[literals.length - 1] += escaped();
+          if (text[offset] === "\\") {
+            const start = offset;
+            if (!/[nrt\\`$]/u.test(text[offset + 1] ?? "")) uncertainEscape = true;
+            literals[literals.length - 1] += escaped(); rawLiterals[rawLiterals.length - 1] += text.slice(start, offset);
+          }
           else if (text.startsWith("${", offset)) {
-            offset += 2; expressions.push(scan(true, depth + 1)); literals.push("");
-          } else literals[literals.length - 1] += text[offset++];
+            offset += 2; expressions.push(scan(true, depth + 1)); literals.push(""); rawLiterals.push("");
+          } else { rawLiterals[rawLiterals.length - 1] += text[offset]; literals[literals.length - 1] += text[offset++]; }
         }
         if (offset >= text.length) unresolved = true;
         else offset++;
-        tokens.push(expressions.length ? { kind: "template", value: literals.join("${}"), literals } : { kind: "string", value: literals[0] });
+        tokens.push({ kind: "template", value: literals.join("${}"), literals, rawLiterals, expressions: expressions.length, uncertainEscape });
         for (const expression of expressions) tokens.push({ kind: "punctuation", value: "{" }, ...expression, { kind: "punctuation", value: "}" });
         continue;
       }
@@ -219,11 +224,20 @@ export function sourceDependencyGraph(texts, inputAudit) {
     const javascript = /\.(?:[cm]?js|[cm]?ts|jsx|tsx)$/iu.test(source), python = /\.py$/iu.test(source);
     const { tokens, unresolved } = sourceTokens(text, python, javascript), values = tokens.map((token) => token.value);
     if (unresolved) { graph.unresolved.push(source); if (auditInput) inputForms.push(digest({ unresolved: true })); }
-    const pairs = new Map(), stack = [];
+    const pairs = new Map(), openings = new Map(), stack = [];
     for (let index = 0; index < tokens.length; index++) {
       if (tokens[index].kind !== "punctuation") continue;
       if (["(", "[", "{"].includes(values[index])) stack.push(index);
-      else if ([")", "]", "}"].includes(values[index])) { const start = stack.pop(); if (start !== undefined) pairs.set(start, index); }
+      else if ([")", "]", "}"].includes(values[index])) { const start = stack.pop(); if (start !== undefined) { pairs.set(start, index); openings.set(index, start); } }
+    }
+    const templates = new Map(), templateEnds = new Map();
+    for (let index = 0; index < tokens.length; index++) if (tokens[index].kind === "template") {
+      const args = []; let end = index + 1;
+      for (let expression = 0; expression < tokens[index].expressions; expression++) {
+        if (!pairs.has(end)) break; // an incomplete interpolation is already unresolved
+        args.push([end + 1, pairs.get(end)]); end = pairs.get(end) + 1;
+      }
+      templates.set(index, { args, end }); templateEnds.set(end, index);
     }
     const parts = (start, end) => {
       const result = []; let first = start;
@@ -233,12 +247,23 @@ export function sourceDependencyGraph(texts, inputAudit) {
       }
       result.push([first, end]); return result;
     };
-    const bindings = new Map(), bindingForms = new Map();
+    const bindings = new Map(), bindingForms = new Map(), tagDefinitions = new Map(), tagAliases = new Map(), tagFunctions = new Set();
+    const templateValues = (index, depth = 0) => {
+      const token = tokens[index], template = templates.get(index);
+      if (depth > 20 || token.uncertainEscape || template.args.length !== token.expressions) return [];
+      let result = [token.literals[0]];
+      for (const [part, [start, end]] of template.args.entries()) {
+        const arguments_ = evaluate(start, end, depth + 1);
+        if (!arguments_.length) return [];
+        result = result.flatMap((prefix) => arguments_.map((value) => prefix + value + token.literals[part + 1]));
+      }
+      return result;
+    };
     const evaluate = (start, end, depth = 0) => {
       if (depth > 20 || start >= end) return [];
       while (["await", "...", "new"].includes(values[start])) start++;
       if (values[start] === "(" && pairs.get(start) === end - 1) return evaluate(start + 1, end - 1, depth + 1);
-      if (tokens[start]?.kind === "template") return []; // its interpolations are scanned separately, never as a literal path
+      if (tokens[start]?.kind === "template") return templates.get(start).end === end ? templateValues(start, depth + 1) : [];
       if (start + 1 === end) return tokens[start].kind === "string" ? [values[start]] : bindings.get(values[start]) ?? [];
       const expression = values.slice(start, end).join("");
       if (expression === "import.meta.dirname") return [rooted(posix.dirname(source))];
@@ -261,12 +286,25 @@ export function sourceDependencyGraph(texts, inputAudit) {
       for (const arg of args.slice(1)) joined = joined.flatMap((base) => arg.map((part) => base.startsWith("fixture:") ? base : base.startsWith("repo:") ? rooted(posix.join(base.slice(5), part)) : posix.join(base, part)));
       return joined;
     };
-    const rememberBinding = (name, start, end) => {
+    const rememberBinding = (name, start, end, definitions = bindingForms) => {
       if (!auditInput) return;
-      const form = tokens.slice(start, end), forms = bindingForms.get(name) ?? new Map();
+      const form = tokens.slice(start, end), forms = definitions.get(name) ?? new Map();
       forms.set(digest(form), sorted(form.filter((token) => token.kind === "identifier").map((token) => token.value)));
-      bindingForms.set(name, forms);
+      definitions.set(name, forms);
     };
+    // Tag callees also depend on their local function/class definitions. Keep
+    // these only for tag fingerprints, without widening ordinary value edits.
+    for (let index = 0; index < tokens.length; index++) {
+      if (!["function", "class"].includes(values[index])) continue;
+      const name = index + (values[index + 1] === "*" ? 2 : 1);
+      if (tokens[name]?.kind !== "identifier") continue;
+      let body = name + 1;
+      while (body < tokens.length && values[body] !== "{" && values[body] !== ";") { if (pairs.has(body)) body = pairs.get(body); body++; }
+      if (pairs.has(body)) {
+        rememberBinding(values[name], index, pairs.get(body) + 1, tagDefinitions);
+        if (values[index] === "function") tagFunctions.add(values[name]);
+      }
+    }
     // File-local aliases and finite loop sets reach a fixed point. Names in
     // separate scopes are unioned, conservatively retaining possible inputs.
     for (let pass = 0; pass < 8; pass++) {
@@ -275,7 +313,13 @@ export function sourceDependencyGraph(texts, inputAudit) {
         if (tokens[index].kind !== "identifier" || !["=", "of"].includes(values[index + 1])) continue;
         let end = index + 2;
         while (end < tokens.length && ![";", ",", ")", "}"].includes(values[end])) { if (pairs.has(end)) end = pairs.get(end); end++; }
-        if (pass === 0) rememberBinding(values[index], index + 2, end);
+        if (pass === 0) {
+          rememberBinding(values[index], index + 2, end);
+          const aliases = tagAliases.get(values[index]) ?? new Set();
+          let start = index + 2, closing = end;
+          while (values[start] === "(" && pairs.get(start) === closing - 1) { start++; closing--; }
+          aliases.add(closing === start + 1 && tokens[start]?.kind === "identifier" ? values[start] : null); tagAliases.set(values[index], aliases);
+        }
         const next = sorted([...(bindings.get(values[index]) ?? []), ...evaluate(index + 2, end)]);
         if (canonical(next) !== canonical(bindings.get(values[index]) ?? [])) { bindings.set(values[index], next); changed = true; }
       }
@@ -295,15 +339,51 @@ export function sourceDependencyGraph(texts, inputAudit) {
     // Referenced aliases retain their defining tokens; changing a dynamic
     // binding must not inherit the old audit merely because it still evaluates
     // to no known path. Other value-only edits and comments are not input forms.
-    const inputForm = (start, end) => {
+    const inputForm = (start, end, tagged = false) => {
       const expression = tokens.slice(start, end), aliases = new Map();
       const pending = new Set(expression.filter((token) => token.kind === "identifier").map((token) => token.value));
       for (const name of pending) {
-        if (aliases.has(name) || !bindingForms.has(name)) continue;
-        const forms = [...bindingForms.get(name).values()]; aliases.set(name, [...bindingForms.get(name).keys()]);
+        const definitions = [bindingForms.get(name), ...(tagged ? [tagDefinitions.get(name)] : [])].filter(Boolean);
+        if (aliases.has(name) || !definitions.length) continue;
+        const forms = definitions.flatMap((definition) => [...definition.values()]); aliases.set(name, definitions.flatMap((definition) => [...definition.keys()]));
         for (const identifier of forms.flat()) pending.add(identifier);
       }
       return digest({ expression: digest(expression), aliases: Object.fromEntries(sorted(aliases.keys()).map((name) => [name, sorted(aliases.get(name))])) });
+    };
+    const nonCallees = /^(?:return|throw|case|yield|await|new|typeof|void|delete|in|of|instanceof|else|do|if|for|while|switch|catch|with|function|class|const|let|var|export|default)$/u;
+    const calleeStart = (end, depth = 0) => {
+      if (depth > 20 || end <= 0) return null;
+      const last = end - 1; let start;
+      if (tokens[last].kind === "identifier" && (!nonCallees.test(values[last]) || [".", "?."].includes(values[last - 1]))) start = last;
+      else if ([")", "]"].includes(values[last]) && openings.has(last)) {
+        start = openings.get(last);
+        if (/^(?:if|for|while|switch|catch|with)$/u.test(values[start - 1] ?? "") && ![".", "?."].includes(values[start - 2])) return null;
+        const receiver = calleeStart(start, depth + 1);
+        if (receiver !== null) start = receiver;
+      } else if (templateEnds.has(end)) {
+        start = templateEnds.get(end);
+        start = calleeStart(start, depth + 1) ?? start;
+      } else if (values[last] === "}" && openings.has(last)) {
+        const parameters = openings.get(openings.get(last) - 1);
+        if (parameters === undefined) return null;
+        let declaration = parameters - 1;
+        if (tokens[declaration]?.kind === "identifier" && values[declaration] !== "function") declaration--;
+        if (values[declaration] === "*") declaration--;
+        if (values[declaration] !== "function") return null;
+        start = values[declaration - 1] === "async" ? declaration - 1 : declaration;
+        if (!["=", "(", "[", ",", ":", "return", "=>", "?", "||", "&&", "??"].includes(values[start - 1])) return null;
+      } else return null;
+      if ([".", "?."].includes(values[start - 1])) return calleeStart(start - 1, depth + 1);
+      return start;
+    };
+    // String.raw is data only while it is the unbound intrinsic. A user tag,
+    // including one named raw/normalize/writeFileSync, has executable inputs.
+    const intrinsicRaw = !tokens.some((token, index) => token.kind === "identifier" && token.value === "String" &&
+      (values[index + 1] !== "." || values[index + 2] !== "raw" || tokens[index + 3]?.kind !== "template" && values[index + 3] !== ")"));
+    const knownTag = (name, seen = new Set()) => {
+      if (name === null || seen.has(name) || seen.size > 20) return false;
+      if (!tagAliases.has(name)) return tagFunctions.has(name);
+      return [...tagAliases.get(name)].every((alias) => knownTag(alias, new Set([...seen, name])));
     };
     if (!javascript && !python) {
       // Configuration and unsupported text syntax are potential inputs, never
@@ -314,6 +394,24 @@ export function sourceDependencyGraph(texts, inputAudit) {
       for (const match of uncommented.matchAll(/(?:^|[\s:"'=])([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:md|mjs|js|ts|py|sh|yaml|json))(?=$|[\s,"'])/gmu)) addKnown(dependencies, match[1], source);
     }
     for (let index = 0; index < tokens.length; index++) {
+      if (javascript && tokens[index].kind === "template") {
+        const start = calleeStart(index), template = templates.get(index);
+        let callee = start, end = index;
+        while (callee !== null && values[callee] === "(" && pairs.get(callee) === end - 1) { callee++; end--; }
+        if (start !== null && !(intrinsicRaw && values.slice(callee, end).join("") === "String.raw")) {
+          if (auditInput) inputForms.push(digest({ tag: inputForm(start, index, true), template: inputForm(index, template.end, true), args: template.args.map(([a, b]) => inputForm(a, b, true)) }));
+          for (const value of [...tokens[index].literals, ...tokens[index].rawLiterals, ...templateValues(index)]) addKnown(dependencies, value, source);
+          let reliable = !tokens[index].uncertainEscape && end === callee + 1 && knownTag(values[callee]);
+          for (const [a, b] of template.args) {
+            const arguments_ = evaluate(a, b);
+            if (!arguments_.length) reliable = false;
+            for (const value of arguments_) addKnown(dependencies, value, source);
+          }
+          // Member/factory/chained or dynamic aliases retain all their tokens
+          // but an unproven callee requires full coverage, even with known args.
+          if (!reliable && !graph.unresolved.includes(source)) graph.unresolved.push(source);
+        }
+      }
       if (tokens[index].kind === "string" && (values[index - 1] === "from" || values[index - 1] === "import")) {
         addKnown(dependencies, values[index], source, values[index].startsWith("."));
         if (auditInput) inputForms.push(digest({ import: values[index] }));

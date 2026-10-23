@@ -285,6 +285,74 @@ test("template interpolation executes nested inputs while same-root literal and 
   assert.deepEqual(sourceDependencyGraph(new Map([[reader, '`${readFileSync("README.md")}\\']])).unresolved, [reader], "a trailing escape cannot conceal an unterminated template");
 });
 
+test("executable tags retain finite callees, template arguments and transitive binding fingerprints", () => {
+  const reader = "tests/b.test.mjs", audited = { privacyPaths: [reader], portalPaths: [] };
+  const prefix = 'import test from "node:test"; import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; function readDoc(parts){return readFileSync(parts[0],"utf8").trim();} function otherDoc(parts){return readFileSync(parts[0],"utf8").trim();} ';
+  const program = (expression, bindings = "") => prefix + bindings + `test("tag contract",()=>{assert.equal(${expression},"old");});\n`;
+  const audit = (text) => categoryInputAudit(new Map([[reader, text]]), audited);
+  const frozenInputs = audit(program('"old"'));
+  for (const [expression, bindings, finite = true] of [
+    ['readDoc`README.md`', ""],
+    ['(readDoc)`README.md`', ""],
+    ['tag`README.md`', 'const first=readDoc; const tag=first; '],
+    ['tag`README.md`', 'const tag=(readDoc); '],
+    ['reader.read`README.md`', 'const reader={read:readDoc}; ', false],
+    ['reader.return`README.md`', 'const reader={return:readDoc}; ', false],
+    ['reader[key]`README.md`', 'const reader={read:readDoc}; const key="read"; ', false],
+    ['readDoc`${document}`', 'const document="README.md"; '],
+    ['readDoc`README.${extension}`', 'const extension="md"; '],
+    ['String.raw`README.md`', 'const String={raw:readDoc}; ', false],
+    ['String.raw`README.md`', 'String.raw ||= readDoc; ', false],
+    ['normalize`README.md`', 'const normalize=readDoc; '],
+    ['writeFileSync`README.md`', 'const writeFileSync=readDoc; '],
+  ]) {
+    const text = program(expression, bindings), texts = new Map([[reader, text]]), graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, finite ? [] : [reader], expression);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"], graph), [reader], expression);
+    assert.notDeepEqual(audit(text), frozenInputs, expression);
+  }
+  const original = program('tag`README.md`', 'const tag=readDoc; '), taggedInputs = audit(original);
+  for (const changed of [
+    program('otherDoc`README.md`', 'const tag=readDoc; '),
+    program('tag`docs/wiki/Gates.md`', 'const tag=readDoc; '),
+    program('tag`README.md`', 'const tag=otherDoc; '),
+    original.replace('readFileSync(parts[0],"utf8").trim();}', 'readFileSync(parts[0],"utf8").trimEnd();}'),
+  ]) assert.notDeepEqual(audit(changed), taggedInputs, "callee, argument, alias and local callee-definition changes cannot inherit the tag audit");
+  const bound = program('readDoc`${document}`', 'const document=process.env.FIRST_DOCUMENT; ');
+  assert.notDeepEqual(audit(bound.replace("FIRST_DOCUMENT", "SECOND_DOCUMENT")), audit(bound), "unresolved template substitutions retain their actual binding input");
+  for (const binding of ['process.env.TAG', 'reader[process.env.TAG]', 'missingAlias']) {
+    const text = program('tag`README.md`', `const tag=${binding}; `);
+    assert.deepEqual(sourceDependencyGraph(new Map([[reader, text]])).unresolved, [reader], binding);
+    assert.notDeepEqual(audit(text), frozenInputs, binding);
+  }
+  for (const expression of [
+    'reader[process.env.TAG]`README.md`',
+    'makeTag()`README.md`',
+    'reader.if()`README.md`',
+    'function(parts){return parts[0];}`README.md`',
+    'readDoc`first``README.md`',
+    'readDoc`${process.env.DOCUMENT_INPUT}`',
+    'readDoc`\\u0052EADME.md`',
+  ]) {
+    const text = program(expression), texts = new Map([[reader, text]]), graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, [reader], expression);
+    assert.notDeepEqual(audit(text), frozenInputs, expression);
+  }
+  for (const expression of [
+    '"readDoc`README.md`"',
+    '`readDoc\\`README.md\\``',
+    'String.raw`README.md`',
+    'String.raw`readDoc\\`README.md\\``',
+    '(() => { return `readDoc("README.md")`; })()',
+  ]) {
+    const text = program(expression), texts = new Map([[reader, text]]), graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, [], expression);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"], graph), [], expression);
+    // The IIFE adds ordinary executable call syntax; its literal stays opaque.
+    if (!expression.startsWith("(()")) assert.deepEqual(audit(text), frozenInputs, expression);
+  }
+});
+
 test("a real category interpolation cannot omit its root after a later document-only commit with rules frozen once", async (t) => {
   const reader = "tests/b.test.mjs";
   const original = 'import test from "node:test"; import assert from "node:assert/strict"; import { readFileSync } from "node:fs"; test("privacy template contract", () => { assert.equal(readFileSync("fixture.txt", "utf8"), "fixture"); assert.equal(`old`, "old"); });\n';
@@ -385,6 +453,110 @@ test("a real category interpolation cannot omit its root after a later document-
     const restored = run(corrected.coreTests);
     assert.equal(restored.status, 0, restored.stdout + restored.stderr);
   } finally { await writeFixtureFile(fixture.repo, "README.md", "new\n"); }
+  assertFrozen();
+  assert.equal(fixture.git("status", "--porcelain=v1"), "");
+});
+
+test("a tagged category call cannot omit its root after a later document-only commit with rules frozen once", async (t) => {
+  const reader = "tests/b.test.mjs";
+  const original = 'import test from "node:test"; import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; function readDoc(parts){return readFileSync(parts[0],"utf8").trim();} test("privacy tagged contract",()=>{assert.equal(readFileSync("fixture.txt","utf8"),"fixture"); assert.equal(`old`,"old");});\n';
+  const changedSource = original.replace('`old`', 'readDoc`README.md`');
+  const fixture = await createCiComponentFixture(t, { rules: { privacyPaths: [reader], privacyTests: [reader] }, files: {
+    "fixture.txt": "fixture", [reader]: original,
+    "tests/a.test.mjs": 'import test from "node:test"; import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; test("document nonempty",()=>assert.ok(readFileSync("README.md","utf8").length));\n',
+  } });
+  const rulesPath = join(fixture.repo, "scripts/ci/impact-rules.json"), frozenRules = readFileSync(rulesPath);
+  const assertFrozen = () => assert.deepEqual(readFileSync(rulesPath), frozenRules, "the sole construction freeze is never refreshed during either commit, validation or execution");
+  const changes = (...args) => parseNameStatus(execFileSync("git", ["-C", fixture.repo, "diff", "--name-status", "-z", ...args]));
+  const run = (files) => spawnSync(process.execPath, ["--test", ...files], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+  await writeFixtureFile(fixture.repo, "README.md", "old\n");
+  const reviewed = fixture.commit(), documentBytes = readFileSync(join(fixture.repo, "README.md"));
+  assert.deepEqual(execFileSync("git", ["-C", fixture.repo, "show", `${fixture.before}:README.md`]), documentBytes, "the one rules freeze already used README=old and the unused preexisting tag reader");
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), []);
+  assert.deepEqual(documentReaderClosure(documentReaderSources(fixture.repo).texts, ["README.md"]), ["tests/a.test.mjs"]);
+  assert.equal(run([reader]).status, 0);
+  assertFrozen();
+
+  await writeFixtureFile(fixture.repo, reader, changedSource);
+  assert.deepEqual(changes(), [{ status: "M", paths: [reader] }]);
+  assert.deepEqual(readFileSync(join(fixture.repo, "README.md")), documentBytes);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), [reader], "the tag invocation changes the current executable input audit");
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, reviewed), []);
+  fixture.git("add", reader);
+  assert.deepEqual(changes("--cached"), [{ status: "M", paths: [reader] }]);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), [reader], "the staged tag invocation cannot retain the frozen input audit");
+  assertFrozen();
+  const categoryHead = fixture.commit();
+  assert.deepEqual(changes(reviewed, categoryHead), [{ status: "M", paths: [reader] }]);
+  assert.deepEqual(execFileSync("git", ["-C", fixture.repo, "show", `${categoryHead}:README.md`]), documentBytes);
+  for (const ref of [undefined, categoryHead]) {
+    const { texts } = documentReaderSources(fixture.repo, ref);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"]), ["tests/a.test.mjs", reader]);
+    assert.notEqual(categoryInputAudit(texts, fixture.rules)[reader], fixture.rules.categoryInputAudit[reader]);
+    assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), [reader]);
+  }
+  assert.notEqual(sourceAuditDigest(reader, changedSource), fixture.rules.sourceAudit[reader]);
+  const before = run([reader]);
+  assert.equal(before.status, 0, before.stdout + before.stderr);
+  assertFrozen();
+
+  await writeFixtureFile(fixture.repo, "README.md", "new\n");
+  assert.deepEqual(changes(), [{ status: "M", paths: ["README.md"] }]);
+  fixture.git("add", "README.md");
+  assert.deepEqual(changes("--cached"), [{ status: "M", paths: ["README.md"] }]);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), [reader]);
+  fixture.before = categoryHead;
+  fixture.head = fixture.commit();
+  assert.deepEqual(changes(categoryHead, fixture.head), [{ status: "M", paths: ["README.md"] }]);
+  const event = { before: fixture.before, after: fixture.head };
+  await writeFile(fixture.env.GITHUB_EVENT_PATH, JSON.stringify(event));
+  const input = sourceInput(fixture.repo, fixture.env), immutableInput = sourceInput(fixture.repo, fixture.env, event, fixture.head);
+  assert.deepEqual(input, immutableInput);
+  assert.deepEqual(input.records, [{ status: "M", paths: ["README.md"] }]);
+  assert.deepEqual(execFileSync("git", ["-C", fixture.repo, "show", `${fixture.head}:scripts/ci/impact-rules.json`]), frozenRules);
+  for (const ref of [undefined, fixture.head]) {
+    const { texts } = documentReaderSources(fixture.repo, ref);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"]), ["tests/a.test.mjs", reader]);
+    assert.notEqual(categoryInputAudit(texts, fixture.rules)[reader], fixture.rules.categoryInputAudit[reader]);
+    assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), [reader]);
+  }
+  const corrected = fixturePlan(fixture, "selective"); // Explicitly synthetic eligibility, never hosted evidence.
+  assert.equal(corrected.coverage, "full");
+  assert.deepEqual(corrected.reasons, ["unaccounted-consumers"]);
+  assert.ok(corrected.coreTests.includes(reader));
+  assert.equal(corrected.notApplicable.some((row) => row.path === reader), false);
+  immutableInput.baseline = corrected.baseline;
+  immutableInput.unaccountedConsumers = checkConsumers(fixture.repo, fixture.rules, fixture.head);
+  const { rulesHash } = loadRules(fixture.repo);
+  assert.deepEqual(createPlan(immutableInput, fixture.rules, rulesHash), corrected);
+  assert.deepEqual(validatePlan(corrected, fixture.repo, fixture.env), corrected);
+  const planPath = join(fixture.directory, "category-tagged-plan.json");
+  const immutable = () => spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/ci/impact-plan.mjs", import.meta.url)), "validate-baseline", planPath], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+  await writeFile(planPath, JSON.stringify(corrected));
+  const accepted = immutable();
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  const forged = createPlan({ ...input, baseline: corrected.baseline, unaccountedConsumers: [] }, fixture.rules, rulesHash);
+  assert.equal(forged.coverage, "selective");
+  assert.deepEqual(forged.coreTests, ["tests/a.test.mjs"]);
+  assert.ok(forged.notApplicable.some((row) => row.path === reader));
+  assert.throws(() => validatePlan(forged, fixture.repo, fixture.env), /independently derived/u);
+  await writeFile(planPath, JSON.stringify(forged));
+  assert.notEqual(immutable().status, 0, "the immutable validator rejects the resealed old a-only omission too");
+  await writeFile(planPath, JSON.stringify(corrected));
+  assertFrozen();
+  const aOnly = run(["tests/a.test.mjs"]);
+  assert.equal(aOnly.status, 0, aOnly.stdout + aOnly.stderr);
+  const selected = run(corrected.coreTests);
+  assert.equal(selected.status, 1, "the genuine selected roster executes b and exposes the changed document");
+  assert.match(selected.stdout + selected.stderr, /privacy tagged contract/u);
+  assert.match(selected.stdout + selected.stderr, /AssertionError/u);
+  assert.match(selected.stdout + selected.stderr, /'new' !== 'old'/u);
+  const committedDocument = execFileSync("git", ["-C", fixture.repo, "show", `${fixture.head}:README.md`]);
+  try {
+    await writeFixtureFile(fixture.repo, "README.md", documentBytes);
+    const restored = run(corrected.coreTests);
+    assert.equal(restored.status, 0, restored.stdout + restored.stderr);
+  } finally { await writeFixtureFile(fixture.repo, "README.md", committedDocument); }
   assertFrozen();
   assert.equal(fixture.git("status", "--porcelain=v1"), "");
 });

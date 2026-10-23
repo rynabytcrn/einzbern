@@ -5,6 +5,81 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Native execution and authorized fallback
+
+- Add versioned native execution paths for coordination, research, decomposition
+  and source work. Each action checks its own prerequisites; coordination does not
+  require an invented development target or a process-only evidence adapter.
+- Keep authorization, host constraints, optional telemetry, work reports, native
+  lifecycle and independent acceptance separate. Existing process evidence keeps
+  its established meaning, and unavailable observations remain unknown.
+- Support host-compatible fallback within existing authorization without another
+  confirmation or an implicit persistent policy change. Preserve explicit hard
+  restrictions, cancellation responsibility and unresolved execution outcomes.
+- Compare host-support observations at nanosecond precision. At the latest equal
+  instant, an explicit unsupported observation takes precedence over positive or
+  catalog evidence; newer positive evidence still supersedes older negatives.
+
+### Model policy and configuration recovery
+
+- Save an approved model-policy choice separately from temporary execution, with
+  per-host compare-and-swap, idempotent operation receipts, bounded lock waiting
+  and read-only outcome reconciliation after an uncertain save result.
+- Offer optional fallback recommendations from supported candidates and available
+  evidence. Missing recommendation or quota telemetry does not establish missing
+  execution capability, and unknown cost or actual model identity stays unknown.
+- Add shared configuration backup, retention and restore contracts with explicit
+  project and device scope, verification evidence and recovery boundaries.
+  Preserve pending backup inventory and restore responsibility when evidence is
+  incomplete.
+
+### dot execution and scheduling
+
+- Add source-bound native execution, shared submission and configuration guidance
+  for dot while preserving existing host paths. Requested work, returned reports,
+  observed terminal outcomes and acceptance remain distinct states.
+- Evaluate context patrol and daily backup state using actual scheduler identity,
+  causal action observations and fresh readbacks. An unknown create, pause or
+  resume result requires reconciliation; duplicate observations do not establish
+  multiple scheduler instances.
+- Scheduling support evaluates state and prerequisites. It does not create an
+  automation or establish real scheduler integration by itself. Fixture results
+  and observed host results remain separate; full real-host fallback and the
+  complete supported-host matrix are not claimed by this release.
+
+### Verification and release integrity
+
+- Derive CI task selection from the complete change set, explicit consumer
+  mappings and a verified comparison baseline. Shared runtime, policy, dependency,
+  unknown or incomplete changes use full verification; manual and release checks
+  remain full.
+- Include executable template interpolations, tagged calls, referenced bindings
+  and indirect intrinsic mutation in frozen consumer auditing. Later document
+  changes cannot inherit an unchanged audit after a consumer starts reading them.
+- Independently rederive the final verification plan and bind selected task
+  coverage, retained bytes and official artifact transport to the same commit,
+  run and attempt. Missing, failed, cancelled or mismatched evidence stays a
+  failure; selective success is distinct from full P1 coverage.
+- Retain bounded controller diagnostics and actual failed-task output across Core
+  and Portal verification. Preserve normal and failure Actions summaries. The
+  artifact upload/download updates are verified through the official transport.
+- Recognize bounded public Dependabot terminal signoff metadata in privacy checks
+  while retaining source, archive and reachable-history verification.
+
+### Skill guidance and compatibility
+
+- Generate Mana Orchestrate from an immutable engine source reference and an
+  explicit render version. Verify the complete generated file set, executable
+  syntax and helper archive; keep its CI and archive entrypoint generator-owned.
+- Navigate to the enabled rules and the normal native execution contract.
+  Selectable autonomy rules keep plan-scoped restrictions within that plan and
+  preserve actual permission, safety and user-imposed boundaries.
+- Einzbern and Mana Orchestrate retain the same release version and the existing
+  format-3 shared-library compatibility. No device installation, library migration
+  or scheduler activation follows merely from publishing this release.
+- Selective CI acceleration remains unmeasured; no timing improvement or universal
+  real-host acceptance is inferred from component fixtures or passing checks.
+
 ## 3.1.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 3.1.0.

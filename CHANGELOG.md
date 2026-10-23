@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 3.2.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 3.2.0.
+
 ### Native execution and authorized fallback
 
 - Add versioned native execution paths for coordination, research, decomposition

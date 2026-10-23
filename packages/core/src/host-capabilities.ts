@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { parseStrictInstant } from "../../protocol/src/index.js";
 /** Tool contracts describe requests, not a claim that a model was actually used. */
 export const HOST_EXECUTION_REQUEST_VERSION = "tcrn.host-execution-request.v1" as const;
 export const HOST_EXECUTION_DECISION_VERSION = "tcrn.host-execution-decision.v1" as const;
@@ -78,14 +79,27 @@ export function sameHostTuple(a: HostTuple, b: HostTuple): boolean { return a.ru
 export function hostSelectionSupported(capabilities: HostCapabilities, selection: HostSelection, role: "requested" | "fallback" = "requested", now = new Date().toISOString()): boolean {
   if (!capabilities.toolAvailable) return false;
   const match = (other: HostSelection): boolean => selection.kind === "host-managed" ? other.kind === "host-managed" : other.kind === "explicit" && sameHostTuple(selection.tuple, other.tuple);
-  const observations = (capabilities.selectionObservations ?? []).filter(o => match(o.selection) && Date.parse(o.observedAt) <= Date.parse(now) && Date.parse(now) - Date.parse(o.observedAt) <= 300_000);
-  const latest = observations.sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt));
-  const newest = latest[0];
+  const evaluatedAt = parseStrictInstant(now);
+  let latestAt: bigint | undefined;
+  let latestSupported = false, latestUnsupported = false;
+  for (const observation of capabilities.selectionObservations ?? []) {
+    if (!match(observation.selection)) continue;
+    const observedAt = parseStrictInstant(observation.observedAt);
+    const age = evaluatedAt - observedAt;
+    if (age < 0n || age > 300_000_000_000n || latestAt !== undefined && observedAt < latestAt) continue;
+    if (latestAt === undefined || observedAt > latestAt) {
+      latestAt = observedAt; latestSupported = false; latestUnsupported = false;
+    }
+    // Equal instants may have different spellings. A latest refusal wins over any
+    // support/catalog; unknown contributes no evidence and input order grants nothing.
+    latestSupported ||= observation.support === "supported";
+    latestUnsupported ||= observation.support === "unsupported";
+  }
   const currentNegative = role === "requested" && capabilities.requestedSelectionSupported === "unsupported";
-  if (currentNegative || newest?.support === "unsupported") return false;
+  if (currentNegative || latestUnsupported) return false;
   if (selection.kind === "host-managed") return capabilities.hostManagedSupported;
   if (capabilities.selectionControl !== "explicit") return false;
-  if (newest?.support === "supported") return true;
+  if (latestSupported) return true;
   if (capabilities.combinations !== undefined) return capabilities.combinations.some(tuple => sameHostTuple(tuple, selection.tuple));
   // Requestability is sufficient for the original call. An alternative needs its own
   // observed support, never reuses the failed original's global status or a guessed roster.

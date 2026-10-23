@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { recommendHostFallbacks, resolveHostExecution } from "../dist/build/packages/core/src/execution-fallback.js";
 import { readEngineModelPolicyFile } from "../dist/build/packages/core/src/engine-model-policy.js";
-import { nativeFixture, tuple, at } from "./helpers/host-native-fixture.mjs";
+import { nativeFixture, requestFor, tuple, at } from "./helpers/host-native-fixture.mjs";
 const explicit = tuple => ({ kind: "explicit", tuple });
 test("T20 recommendation uses observed options, soft ordering and three-display budget, not authorization count", async t => {
   const f = await nativeFixture(t), policy = await readEngineModelPolicyFile(f.home);
@@ -43,4 +43,26 @@ test("recommendation CLI is independently reachable and returns no execution or 
   await writeFile(path, JSON.stringify({ ...f.request, capabilities: { ...f.request.capabilities, requestedSelectionSupported: "unsupported", combinations: [{ ...tuple, effort: "low" }] } }));
   let output = ""; await runCli(["execution-fallback-candidates", "--request", path, "--at", at], { write: value => { output += value; } });
   const result = JSON.parse(output); assert.equal(result.schemaVersion, "tcrn.host-fallback-recommendation.v1"); assert.equal(result.executionAdmission, false); assert.equal(result.persistentConfigWrites, 0); assert.equal(result.candidates.length, 2);
+});
+
+test("recommendations exclude latest negative evidence independently of sub-millisecond ordering and equal-instant spelling", () => {
+  const original = requestFor({ id: "work:fixture", revision: 1 });
+  const policy = { schemaVersion: "tcrn.engine-model-policy.v1", revision: 0, hosts: {} };
+  const candidate = explicit({ ...tuple, model: "fixture-alternative" });
+  for (const [positiveAt, negativeAt] of [
+    ["2026-10-21T00:00:00.000000001Z", "2026-10-21T00:00:00.000000002Z"],
+    ["2026-10-21T00:00:00.1Z", "2026-10-21T00:00:00.100000000Z"],
+  ]) {
+    const positive = { selection: candidate, support: "supported", observedAt: positiveAt };
+    const negative = { ...positive, support: "unsupported", observedAt: negativeAt };
+    for (const selectionObservations of [[positive, negative], [negative, positive]]) {
+      const request = { ...original, capabilities: { ...original.capabilities, requestedSelectionSupported: "unsupported", hostManagedSupported: false, combinations: [candidate.tuple], selectionObservations } };
+      const result = recommendHostFallbacks(request, policy, "2026-10-21T00:00:01Z");
+      assert.deepEqual(result.candidates, []); assert.equal(result.executionAdmission, false); assert.equal(result.persistentConfigWrites, 0);
+    }
+  }
+  const observedAt = "2026-10-21T00:00:00.000000001Z";
+  const request = { ...original, capabilities: { ...original.capabilities, requestedSelectionSupported: "unsupported", hostManagedSupported: false, selectionObservations: [{ selection: candidate, support: "supported", observedAt }] } };
+  assert.equal(recommendHostFallbacks(request, policy, "2026-10-21T00:05:00.000000001Z").candidates.length, 1);
+  assert.deepEqual(recommendHostFallbacks(request, policy, "2026-10-21T00:05:00.000000002Z").candidates, []);
 });

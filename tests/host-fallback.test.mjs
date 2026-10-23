@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { readEngineModelPolicyFile, applyEngineModelPolicySet } from "../dist/build/packages/core/src/engine-model-policy.js";
 import { resolveHostExecution, recordExecutionQualityEvent, hostRecoveryAction } from "../dist/build/packages/core/src/execution-fallback.js";
 import { DEFAULT_ENGINE_QUOTA_POLICY } from "../dist/build/packages/core/src/execution-policy.js";
-import { nativeFixture, selection, tuple, at } from "./helpers/host-native-fixture.mjs";
+import { nativeFixture, requestFor, selection, tuple, at } from "./helpers/host-native-fixture.mjs";
 async function configure(f, extra = {}) {
   return applyEngineModelPolicySet({ home: f.home, host: "codex", occurredAt: at, actor: "agent:fixture", authorization: { target: "models.engine-policy", decidedIn: `minutes:${"a".repeat(24)}#D1`, libraryId: f.state.metadata.workspaceId }, policy: { categories: [{ id: "main", name: "Main", order: 10, description: "" }], tiers: [{ ...tuple, model: "configured-unavailable", category: "main", order: 10, note: "" }], escalation: { enabled: true, threshold: 2, ceiling: "main" }, ...extra } });
 }
@@ -108,4 +108,33 @@ test("saveRequirement is a closed optional schema, not an implicit execution gat
     assert.throws(() => resolveHostExecution({ ...f.request, saveRequirement: value }, policy, "fixture", at));
   }
   assert.equal(resolveHostExecution({ ...f.request, saveRequirement: { requiredBeforeExecution: false, status: "failed" } }, policy, "fixture", at).status, "degraded");
+});
+
+test("fallback admission rejects newer or same-instant negative support in either observation order", () => {
+  const original = requestFor({ id: "work:fixture", revision: 1 });
+  const policy = { schemaVersion: "tcrn.engine-model-policy.v1", revision: 0, hosts: {} };
+  const fallbackSelection = { kind: "explicit", tuple: { ...tuple, model: "fixture-alternative" } };
+  const positive = { selection: fallbackSelection, support: "supported", observedAt: "2026-10-21T00:00:00.000000001Z" };
+  for (const observedAt of ["2026-10-21T00:00:00.000000002Z", positive.observedAt]) {
+    const negative = { ...positive, support: "unsupported", observedAt };
+    for (const selectionObservations of [[positive, negative], [negative, positive]]) {
+      const request = { ...original, fallbackSelection, capabilities: { ...original.capabilities, requestedSelectionSupported: "unsupported", selectionObservations, combinations: [fallbackSelection.tuple] } };
+      const decision = resolveHostExecution(request, policy, "fixture", "2026-10-21T00:00:01Z");
+      assert.equal(decision.status, "awaiting-choice"); assert.equal(decision.fallbackApplied, false);
+      assert.ok(decision.reasons.includes("no-supported-selection"));
+      assert.equal(decision.persistentConfigWrites, 0);
+    }
+  }
+});
+test("fallback admission uses the full-precision freshness boundary and retains strict UTC validation", () => {
+  const original = requestFor({ id: "work:fixture", revision: 1 });
+  const policy = { schemaVersion: "tcrn.engine-model-policy.v1", revision: 0, hosts: {} };
+  const fallbackSelection = { kind: "explicit", tuple: { ...tuple, model: "fixture-alternative" } };
+  const now = "2026-10-21T00:05:00.000000002Z";
+  const request = observedAt => ({ ...original, fallbackSelection, capabilities: { ...original.capabilities, requestedSelectionSupported: "unsupported", hostManagedSupported: false, selectionObservations: [{ selection: fallbackSelection, support: "supported", observedAt }] } });
+  for (const [observedAt, expected] of [["2026-10-21T00:00:00.000000001Z", "awaiting-choice"], ["2026-10-21T00:00:00.000000002Z", "degraded"], ["2026-10-21T00:00:00.000000003Z", "degraded"], [now, "degraded"]]) {
+    assert.equal(resolveHostExecution(request(observedAt), policy, "fixture", now).status, expected);
+  }
+  assert.throws(() => resolveHostExecution(request("2026-10-21T00:05:00.000000003Z"), policy, "fixture", now), /future/u);
+  assert.throws(() => resolveHostExecution(request("2026-10-21T01:05:00.000000002+01:00"), policy, "fixture", now), /UTC/u);
 });

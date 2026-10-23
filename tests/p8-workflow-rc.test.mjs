@@ -370,6 +370,24 @@ function withHeader(tar, edit) {
   return archive;
 }
 
+test("3.2.0 reviewed package labels retain exact decoding and reject adjacent or injected private content", async () => {
+  const names = await readFile(new URL("../dist/build/packages/core/src/names.js", import.meta.url), "utf8");
+  const ownerLine = names.split("\n").find((line) => line.includes(scanOwner) && /\bowner\s*:/u.test(line));
+  assert.equal(createHash("sha256").update(ownerLine).digest("hex"), "3861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56");
+  const members = ["atelier/portal.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern.mjs"];
+  const decode = ({ version = "3.2.0", paths = members, content = ownerLine, suffix = "" } = {}) => p8FormalPackagePrivacyEntries(formalPackage(paths.map((path) => ({
+    path: `${BRAND.engine.id}-${version}/${path}`, bytes: Buffer.from(`${content}\n`),
+  }))), `dist/release/${BRAND.engine.id}-${version}${suffix}.tar.gz`);
+  const valid = decode();
+  assert.deepEqual(releaseScan(valid.entries), []);
+  assert.deepEqual(valid.entries.filter((entry) => entry.releaseArchiveMember === true).map((entry) => entry.sourcePaths), members.map(() => ["dist/build/packages/core/src/names.js"]));
+  for (const change of [{ version: "3.2.1" }, { suffix: ".other" }, { paths: members.map((path) => `adjacent/${path}`) }, { content: `${ownerLine} // changed` }, { content: `${ownerLine}\n${scanOwner}` }]) {
+    assert.ok(releaseScan(decode(change).entries).some((finding) => finding.startsWith("OWNER_PRIVATE_IDENTIFIER:")));
+  }
+  const privatePath = joinParts(["", "Users", "private-person", "notes.txt"], "/");
+  assert.ok(releaseScan(decode({ content: `${ownerLine}\n${privatePath}` }).entries).some((finding) => finding.startsWith("LOCAL_ABSOLUTE_PATH:")));
+});
+
 test("R48-01 (R47-REG-1): P8 scans the formal package by content, so address-shaped compressed bytes are no finding", () => {
   const wholeArchiveText = scanPrivacyEntries([{ label: PACKAGE_LABEL, kind: "release", content: EMAIL_SHAPED_DEFLATE_PACKAGE.toString("utf8") }], { owner: scanOwner });
   assert.deepEqual(wholeArchiveText, [`EMAIL_IDENTIFIER:release:${PACKAGE_LABEL}`], "the stored package reproduces the pre-R48 false finding");

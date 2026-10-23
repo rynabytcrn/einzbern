@@ -1387,13 +1387,13 @@ test("reviewed diagnostic 3.0.0 package owner classification is exact in version
 });
 
 // Keep all historical classifications and their negative checks intact.
-test("reviewed diagnostic 3.1.0 package owner classification is exact in version, member, origin and line", async () => {
+for (const reviewedVersion of ["3.1.0", "3.2.0"]) test(`reviewed diagnostic ${reviewedVersion} package owner classification is exact in version, member, origin and line`, async () => {
   const owner = LEGACY_REPOSITORY_NAMES.owner;
   const buildPath = "dist/build/packages/core/src/names.js";
   const build = await readFile(resolve(import.meta.dirname, "..", buildPath), "utf8");
   const ownerLine = build.split("\n").find((line) => line.includes(owner) && /\bowner\s*:/u.test(line));
   assert.equal(createHash("sha256").update(ownerLine).digest("hex"), "3861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56");
-  const member = (path, version = "3.1.0") => `dist/release/${BRAND.engine.id}-${version}.tar.gz/${BRAND.engine.id}-${version}/${path}`;
+  const member = (path, version = reviewedVersion) => `dist/release/${BRAND.engine.id}-${version}.tar.gz/${BRAND.engine.id}-${version}/${path}`;
   for (const path of ["atelier/portal.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern.mjs"]) {
     const label = member(path);
     const entry = { label, kind: "release", releaseArchiveMember: true, sourcePaths: p8ReleasePrivacySourcePaths(label), content: ownerLine };
@@ -1401,7 +1401,7 @@ test("reviewed diagnostic 3.1.0 package owner classification is exact in version
       .includes(`OWNER_PRIVATE_IDENTIFIER:release:${candidate.label}`);
     assert.deepEqual(entry.sourcePaths, [buildPath]);
     assert.deepEqual(scanPrivacyEntries([entry], { owner }), []);
-    for (const changedLabel of [member(path, "3.1.1"), member(path, "2.2.4"), member(`adjacent/${path}`), label.replace(".tar.gz/", ".other.tar.gz/")]) {
+    for (const changedLabel of [member(path, "3.1.1"), member(path, "3.2.1"), member(path, "2.2.4"), member(`adjacent/${path}`), label.replace(".tar.gz/", ".other.tar.gz/")]) {
       assert.deepEqual(p8ReleasePrivacySourcePaths(changedLabel), []);
       assert.ok(finding({ ...entry, label: changedLabel, sourcePaths: p8ReleasePrivacySourcePaths(changedLabel) }));
     }

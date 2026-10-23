@@ -87,6 +87,8 @@ def verify_retained_artifacts(evidence, meta):
         expected.update({f"{label}-controller.{kind}": retained.get(kind) for kind in ("stdout", "stderr")})
     for name in ("fixture-location.json", "source-before.json", "source-after.json"):
         expected[name] = meta.get("artifactFiles", {}).get(name)
+    if "impactPlan" in meta:
+        expected["impact-plan.json"] = meta.get("artifactFiles", {}).get("impact-plan.json")
     expected.update(meta.get("extraArtifacts", {}))
     for name, record in expected.items():
         try:
@@ -101,7 +103,7 @@ def verify_retained_artifacts(evidence, meta):
             verified.add(name)
         except Exception as error:
             failures.append(f"Artifact {name}: {error}")
-    for name, key in (("fixture-location.json", "fixtures"), ("source-before.json", "inputManifest"), ("source-after.json", "outputManifest")):
+    for name, key in (("fixture-location.json", "fixtures"), ("source-before.json", "inputManifest"), ("source-after.json", "outputManifest"), ("impact-plan.json", "impactPlan")):
         if name not in verified:
             continue
         try:
@@ -348,10 +350,10 @@ def mode_config(mode):
     raise Refusal(f"Unsupported verification mode: {mode}")
 
 
-def command(mode, executable, repo):
+def command(mode, executable, repo, plan=None):
     config = mode_config(mode)
     return [executable, *([f"pnpm@{PNPM_VERSION}"] if mode == "pf2-h1" else []),
-            "-C", str(repo), "run", config["script"], *([mode.removeprefix("p1-")] if mode.startswith("p1-") else [])]
+            "-C", str(repo), "run", config["script"], *([mode.removeprefix("p1-")] if mode.startswith("p1-") else []), *([plan] if plan and mode.startswith("p1-") else [])]
 
 
 def filter_leftovers(rows, tmpdir):
@@ -406,6 +408,14 @@ def evaluate(meta):
             failures.append("Shard receipt names the wrong shard")
         if not meta.get("extraArtifacts") or "shard.json" not in meta["extraArtifacts"]:
             failures.append("Shard step evidence is missing")
+    if "impactPlan" in meta:
+        plan = meta["impactPlan"]
+        if plan.get("head") != (incoming or {}).get("head") or plan.get("tree") != (incoming or {}).get("tree") or plan.get("runId") != meta.get("ciIdentity", {}).get("GITHUB_RUN_ID") or plan.get("attempt") != meta.get("ciIdentity", {}).get("GITHUB_RUN_ATTEMPT"):
+            failures.append("Plan source/run identity mismatch")
+        if plan.get("sourceCoreTests") != meta.get("inputManifest", {}).get("coreTestFiles") or plan.get("sourcePortalTests") != meta.get("inputManifest", {}).get("portalTestFiles"):
+            failures.append("Plan full source rosters differ")
+        if meta.get("coverage") != plan.get("coverage") or meta.get("planDigest") != plan.get("planDigest") or final.get("planDigest") != plan.get("planDigest"):
+            failures.append("Plan digest/coverage missing or changed")
     if meta.get("mode") == "pf2-h1":
         for key in ("leftoversBefore", "leftoversAfter"):
             if not isinstance(meta.get(key), list) or meta[key]:
@@ -426,6 +436,7 @@ def arguments():
     for key in ("repo", "evidence", "tmp", "device", "node-bin"):
         parser.add_argument(f"--{key}", required=True, help="absolute path; evidence must not exist")
     parser.add_argument("--mode", choices=("p1", "pf2-h1", "p1-checks", "p1-core", "p1-portal"), default="p1")
+    parser.add_argument("--plan", help="explicit CI plan path; forbidden for H1/default P1")
     return parser.parse_args()
 
 
@@ -433,7 +444,7 @@ def main():
     args = arguments()
     config = mode_config(args.mode)
     label = config["label"]
-    paths = {key: value for key, value in vars(args).items() if key != "mode"}
+    paths = {key: value for key, value in vars(args).items() if key not in ("mode", "plan")}
     if any(not os.path.isabs(value) or os.path.normpath(value) != value for value in paths.values()):
         raise Refusal("All CLI paths must be absolute and normalized")
     evidence = Path(args.evidence)
@@ -504,7 +515,18 @@ def main():
         if meta["nodeVersion"] != NODE_VERSION or meta["pnpmVersion"] != PNPM_VERSION:
             raise Refusal(f"Pinned versions required: Node {NODE_VERSION}, pnpm {PNPM_VERSION}")
         meta["corepackRealpath" if args.mode == "pf2-h1" else "pnpmRealpath"] = os.path.realpath(pnpm)
-        meta["argv"] = command(args.mode, pnpm, args.repo)
+        if args.plan:
+            if not args.mode.startswith("p1-"):
+                raise Refusal("Only explicit CI shards accept a plan")
+            checked_output([str(node), str(repo / "scripts/ci/impact-plan.mjs"), "validate", args.plan], cwd=repo, env=env)
+            plan = json.loads(Path(args.plan).read_text())
+            meta["impactPlan"] = plan
+            meta["coverage"] = plan["coverage"]
+            meta["planDigest"] = plan["planDigest"]
+            meta["selectedCoreTests"] = plan["coreTests"]
+            write_json(evidence / "impact-plan.json", plan)
+            meta["artifactFiles"]["impact-plan.json"] = file_receipt(evidence / "impact-plan.json")
+        meta["argv"] = command(args.mode, pnpm, args.repo, args.plan)
         if args.mode == "pf2-h1":
             meta["argvLiteral"] = "corepack pnpm@11.3.0 -C <E> run test"
         meta["inputManifest"] = source_manifest(repo, node, env)
@@ -538,6 +560,13 @@ def main():
                 meta["artifactFiles"]["source-after.json"] = file_receipt(evidence / "source-after.json")
             except Exception as error:
                 meta["errors"].append(f"Output manifest: {error}")
+        if args.plan and "impactPlan" in meta:
+            try:
+                checked_output([str(node), str(repo / "scripts/ci/impact-plan.mjs"), "validate", args.plan], cwd=repo, env=env)
+                if json.loads(Path(args.plan).read_text()) != meta["impactPlan"]:
+                    raise Refusal("Plan changed during execution")
+            except Exception as error:
+                meta["errors"].append(f"Plan reread: {error}")
         if attempted:
             try:
                 meta["tmpdirEntriesAfter"] = sorted(os.listdir(args.tmp))
@@ -572,7 +601,7 @@ def main():
     receipt = {"ok": status == 0, "reasonCode": prefix + ("_EVIDENCE_RETAINED" if status == 0 else "_EVIDENCE_REFUSED"),
                "evidence": str(evidence), "childExitCode": meta.get("exitCode"), "wrapperExitCode": status,
                "coreTestFileCount": meta.get("inputManifest", {}).get("coreTestFileCount"),
-               "testTotals": meta.get("testTotals"), "failures": failures,
+               "testTotals": meta.get("testTotals"), "coverage": meta.get("coverage", "full"), "selectedCoreTestFileCount": len(meta.get("selectedCoreTests", [])), "failures": failures,
                "nextAction": None if status == 0 else f"Inspect {label}.meta.json and retained streams; do not treat missing evidence as a pass or retry this directory."}
     meta["receipt"] = receipt
     write_json(evidence / f"{label}.meta.json", meta)

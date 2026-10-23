@@ -36,7 +36,7 @@ const OUTPUTS = `/device/cache/gate-runs/${RUN_ID}`;
 function receiptFor(leg) {
   if (!leg.dispatchesThroughTask) return { ok: true, reasonCode: "PORTAL_VERIFY_TRAIN_GREEN", commands: [], unverified: [], observations: [] };
   const receipt = { ok: true, command: leg.task, reasonCode: `${leg.task.toUpperCase().replaceAll("-", "_")}_VERIFIED` };
-  return leg.task === "test" ? { ...receipt, tests: ["tests/a.test.mjs"], result: "passed", progress: { status: "completed", errors: [] } } : receipt;
+  return leg.task === "test" ? { ...receipt, reasonCode: "TESTS_VERIFIED", tests: ["tests/a.test.mjs"], result: "passed", progress: { status: "completed", errors: [] } } : receipt;
 }
 
 /** A run whose gates carry every leg, the way the engine's library declares them, then engine:release's turn. */
@@ -82,6 +82,34 @@ test("537-GWT1: every leg green, whole and warning-free in this repository is ca
     assert.equal(row.outputFile, run.gates[index].outputFile);
     assert.match(row.sha256, /^[0-9a-f]{64}$/u);
   }
+});
+
+test("actual full-P1 reuse requires full Core terminal type and rejects relabeled selective coverage", () => {
+  const leg = P1_SEQUENCE.find((row) => row.task === "test");
+  const genuine = receiptFor(leg);
+  for (const receipt of [genuine, { ...genuine, coverage: "full" }]) {
+    assert.equal(judgeLegOutput(JSON.stringify(receipt), leg), "P1_LEG_COVERED");
+    const run = fullRun();
+    run.files.set(run.gates[P1_SEQUENCE.indexOf(leg)].outputFile, JSON.stringify(receipt) + "\n");
+    assert.equal(assess(run).reasonCode, "P1_COVERED_BY_GATE_RUN");
+  }
+  for (const patch of [
+    { reasonCode: "TESTS_SELECTED_VERIFIED", coverage: "selective" },
+    { reasonCode: "TESTS_SELECTED_VERIFIED" }, { reasonCode: "CI_SELECTED_VERIFIED" },
+    { reasonCode: "TESTS_VERIFIED", coverage: "selective" },
+    { reasonCode: "TEST_VERIFIED" }, { coverage: "unknown" },
+  ]) {
+    const receipt = { ...genuine, ...patch };
+    assert.equal(judgeLegOutput(JSON.stringify(receipt), leg), "P1_LEG_RECEIPT_MISSING", JSON.stringify(patch));
+    const run = fullRun();
+    run.files.set(run.gates[P1_SEQUENCE.indexOf(leg)].outputFile, JSON.stringify(receipt) + "\n");
+    const coverage = assess(run);
+    assert.equal(coverage.covered, false, JSON.stringify(patch));
+    assert.equal(coverage.reasonCode, "P1_COVERAGE_INCOMPLETE");
+    assert.equal(legRow(coverage, "test").reasonCode, "P1_LEG_RECEIPT_MISSING");
+  }
+  const selectedArgv = change(fullRun(), "test", { command: ["pnpm", "run", "test", "--ci-plan", "plan.json"] });
+  assert.equal(legRow(assess(selectedArgv), "test").reasonCode, "P1_LEG_COMMAND_MISMATCH");
 });
 
 test("537-GWT2: a run short of a leg, or with a red, cut or diagnostic-bearing leg, is not carried; each says which leg and why", () => {

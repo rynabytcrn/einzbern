@@ -167,6 +167,61 @@ print(json.dumps(dict(green=judge(records), reds=reds)))
   assert.deepEqual(result.reds, Array(8).fill(true));
 });
 
+test("ordinary full/selective P1 and H1 main retain common summary and failure exits", async (context) => {
+  const base = await scratch(context);
+  const result = python(`
+import contextlib, io
+spec = importlib.util.spec_from_file_location("aggregate", pathlib.Path(sys.argv[1]).with_name("aggregate-evidence.py"))
+a = importlib.util.module_from_spec(spec); spec.loader.exec_module(a)
+base = pathlib.Path(sys.argv[2]); rows = []
+# Isolate ordinary main/finalization control flow. Real retained bundle/byte
+# validation runs separately through the actual CLI in ci-baseline-evidence.
+for coverage in ("full", "selective"):
+ for job in ("success", "failure"):
+  summary = base / (coverage + "-" + job + ".md")
+  os.environ["GITHUB_STEP_SUMMARY"] = str(summary)
+  full = coverage == "full"
+  plan = dict(coverage=coverage, shards={"checks": ["build"], "core": ["test"], **({"portal": ["portal"]} if full else {})}, tasks=["build", "test", "portal"] if full else ["build", "test"],
+              coreTests=["tests/a.test.mjs", "tests/b.test.mjs"] if full else ["tests/a.test.mjs"], sourceCoreTests=["tests/a.test.mjs", "tests/b.test.mjs"],
+              portalTests=["portal/tests/a.test.mjs"] if full else [], sourcePortalTests=["portal/tests/a.test.mjs"],
+              notApplicable=[] if coverage == "full" else [dict(task="portal", rule="no-portal-impact", affectedPaths=["README.md"])])
+  records = {"checks": {}, "core": dict(elapsedSeconds=1.25, testTotals=dict(tests=3))}
+  if full: records["portal"] = dict(elapsedSeconds=0.5, testTotals=dict(tests=1))
+  a.validate_bundle = lambda *args, **kwargs: (plan, [], records)
+  sys.argv = ["aggregate-evidence.py", "--artifacts", str(base), "--sha", "a"*40, "--run-id", "1", "--attempt", "1", "--job-result", job, "--plan-result", "success"]
+  output = io.StringIO()
+  with contextlib.redirect_stdout(output): status = a.main()
+  rows.append(dict(coverage=coverage, job=job, status=status, result=json.loads(output.getvalue()), summary=summary.read_text()))
+h1 = base / ("pf2-h1-evidence-" + "a"*40 + "-1"); h1.mkdir()
+summary = base / "h1.md"; os.environ["GITHUB_STEP_SUMMARY"] = str(summary)
+a.validate_directory = lambda *args: (dict(elapsedSeconds=2.5, testTotals=dict(tests=5), inputManifest=dict(coreTestFiles=["tests/a.test.mjs"])), [])
+sys.argv = ["aggregate-evidence.py", "--artifacts", str(base), "--sha", "a"*40, "--run-id", "1", "--attempt", "1", "--job-result", "success", "--mode", "pf2-h1"]
+# The H1 branch independently requires its exact artifact directory set.
+h1root = base / "h1-artifacts"; h1root.mkdir(); h1.rename(h1root / h1.name)
+sys.argv[2] = str(h1root)
+output = io.StringIO()
+with contextlib.redirect_stdout(output): status = a.main()
+print(json.dumps(dict(p1=rows, h1=dict(status=status, result=json.loads(output.getvalue()), summary=summary.read_text()))))
+`, [base]);
+  for (const row of result.p1) {
+    const success = row.job === "success";
+    assert.equal(row.status, success ? 0 : 1);
+    assert.equal(row.result.ok, success);
+    assert.equal(row.result.reasonCode, success ? row.coverage === "full" ? "CI_VERIFIED" : "CI_SELECTED_VERIFIED" : "CI_INCOMPLETE");
+    assert.ok(row.summary.includes(`coverage: **${row.coverage}**`));
+    assert.ok(row.summary.includes(row.coverage === "full" ? "Selected tasks: 3; Core files: 2 / 2; Portal files: 1 / 1" : "Selected tasks: 2; Core files: 1 / 2; Portal files: 0 / 1"));
+    assert.ok(row.summary.includes(`| core | 1.25 | 3 | ${row.coverage === "full" ? 2 : 1} |`));
+    assert.match(row.summary, /\| checks \| unknown \| unknown \| n\/a/u);
+    assert.equal(row.summary.includes("no-portal-impact"), row.coverage === "selective");
+    if (!success) assert.match(row.summary, /Failures:[\s\S]*Plan or selected matrix did not succeed/u);
+  }
+  assert.equal(result.h1.status, 0);
+  assert.equal(result.h1.result.reasonCode, "CI_VERIFIED");
+  assert.equal(result.h1.result.mode, "pf2-h1");
+  assert.match(result.h1.summary, /literal H1 \(not P1\)/u);
+  assert.match(result.h1.summary, /\| pf2-h1 \| 2.5 \| 5 \| 1 \|/u);
+});
+
 for (const childExit of [0, 7]) {
   test(`harmless fixture retains whole outer/controller bytes after unlink and preserves child exit ${childExit}`, async (context) => {
     const base = await scratch(context);
@@ -387,7 +442,7 @@ repo.mkdir()
 for name in ("tmp", "device", "bin"):
     (base / name).mkdir()
 args = argparse.Namespace(repo=str(repo), tmp=str(base / "tmp"), device=str(base / "device"),
-                          node_bin=str(base / "bin"), evidence=str(base / "evidence"), mode=mode)
+                          node_bin=str(base / "bin"), evidence=str(base / "evidence"), mode=mode, plan=None)
 # Injected component orchestration only: never an actual formal fixture or product test run.
 m.arguments = lambda: args
 m.fixture_location = lambda path: dict(checksPassed=True, checks=dict(entriesAtRecord=[]))
@@ -423,6 +478,13 @@ except FileExistsError:
     refused = True
 wrong = {**meta, config["receiptKey"]: dict(ok=True, reasonCode="TESTS_VERIFIED" if mode == "p1" else "P1_VERIFIED")}
 negatives = [bool(m.evaluate(wrong)), bool(m.evaluate({**meta, "exitCode": 9}))]
+args.plan = str(base / "forbidden-plan.json")
+args.evidence = str(base / "forbidden-plan")
+with contextlib.redirect_stdout(io.StringIO()):
+    forbidden_status = m.main()
+forbidden = json.loads((pathlib.Path(args.evidence) / (config["label"] + ".meta.json")).read_text())
+negatives.append(forbidden_status == 1 and "argv" not in forbidden)
+args.plan = None
 if mode == "pf2-h1":
     for key in ("leftoversBefore", "leftoversAfter"):
         negatives.extend([bool(m.evaluate({**meta, key: None})), bool(m.evaluate({**meta, key: ["123 task.mjs"]}))])
@@ -462,4 +524,57 @@ print(json.dumps(m.filter_leftovers(rows, "/fixture/tmp")))
 `);
   assert.equal(result.length, 4);
   assert.deepEqual(result.map((row) => row.split(" ")[0]), ["1", "2", "3", "4"]);
+});
+
+test("selected aggregation rejects forged plan identity, digest, N/A, duplicates and incomplete full rosters", () => {
+  const modulePath = join(root, "scripts/ci/aggregate-evidence.py");
+  const code = `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("aggregate", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+p = dict(head="a"*40, runId="1", attempt="1", coverage="full", shards={"checks":[],"core":["test"],"portal":["portal"]}, sourceCoreTests=["tests/a.test.mjs"],sourcePortalTests=["portal/tests/a.test.mjs"],coreTests=["tests/a.test.mjs"],portalTests=["portal/tests/a.test.mjs"],notApplicable=[])
+p["planDigest"] = m.canonical_digest(p)
+results = [m.validate_plan_shape(p,"a"*40,"1","1")]
+for patch in [dict(head="b"*40), dict(runId="2"), dict(attempt="2"),dict(planDigest="0"*64),dict(notApplicable=[{"task":"core","rule":"skipped"}]),dict(coreTests=[]),dict(coreTests=["tests/a.test.mjs"]*2),dict(coverage="unknown")]:
+ results.append(m.validate_plan_shape({**p,**patch},"a"*40,"1","1"))
+print(json.dumps(results))
+`;
+  const result = spawnSync("python3", ["-B", "-c", code, modulePath], { encoding: "utf8", env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
+  assert.equal(result.status, 0, result.stderr);
+  const [good, ...negative] = JSON.parse(result.stdout);
+  assert.deepEqual(good, []);
+  for (const errors of negative) assert.ok(errors.length > 0);
+});
+
+test("retained impact plan requires its own bound bytes even when JSON semantics are identical", async (context) => {
+  const base = await scratch(context);
+  const result = python(`
+base = pathlib.Path(sys.argv[2])
+meta = dict(mode="p1-checks", artifactFiles={}, extraArtifacts={}, impactPlan={"coverage": "selective"}, fixtures={}, inputManifest={}, outputManifest={})
+for name, value in (("fixture-location.json", {}), ("source-before.json", {}), ("source-after.json", {}), ("impact-plan.json", meta["impactPlan"])):
+    (base / name).write_text(json.dumps(value, indent=2) + "\\n")
+    meta["artifactFiles"][name] = m.file_receipt(base / name)
+for kind in ("stdout", "stderr"):
+    name = "p1-checks." + kind
+    (base / name).write_text("")
+    meta[kind] = m.file_receipt(base / name)
+positive = m.verify_retained_artifacts(base, meta)
+original = (base / "impact-plan.json").read_bytes()
+(base / "impact-plan.json").write_text(json.dumps(meta["impactPlan"], separators=(",", ":")))
+same_json = json.loads((base / "impact-plan.json").read_text()) == meta["impactPlan"]
+changed_bytes = m.verify_retained_artifacts(base, meta)
+(base / "impact-plan.json").write_bytes(original)
+receipt = meta["artifactFiles"].pop("impact-plan.json")
+missing_receipt = m.verify_retained_artifacts(base, meta)
+meta["artifactFiles"]["impact-plan.json"] = {**receipt, "sha256": "0" * 64}
+wrong_digest = m.verify_retained_artifacts(base, meta)
+meta["artifactFiles"]["impact-plan.json"] = {**receipt, "file": "other.json"}
+wrong_binding = m.verify_retained_artifacts(base, meta)
+meta["artifactFiles"]["impact-plan.json"] = receipt
+(base / "impact-plan.json").unlink()
+missing_file = m.verify_retained_artifacts(base, meta)
+print(json.dumps(dict(positive=positive, sameJson=same_json, negatives=[changed_bytes, missing_receipt, wrong_digest, wrong_binding, missing_file])))
+`, [base]);
+  assert.deepEqual(result.positive, []);
+  assert.equal(result.sameJson, true);
+  for (const failures of result.negatives) assert.ok(failures.some((value) => value.includes("impact-plan.json")));
 });

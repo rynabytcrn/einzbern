@@ -19,7 +19,7 @@ import {
   walkFiles,
 } from "./lib/files.mjs";
 import { P1_TASKS, runAllP1Legs } from "./p1-sequence.mjs";
-import { selectTestFiles } from "./lib/test-roster.mjs";
+import { selectTestFiles, validateSelectedTests, coreTestArgv } from "./lib/test-roster.mjs";
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
@@ -637,18 +637,22 @@ async function build() {
 // each one selected a subset of the same `tests/**/*.test.mjs` set. One survives, with a
 // caller that is not a `verify:*` name: `p8Only` is the release train's dogfood leg. The
 // external-trust leg (`trustOnly`) retired with the trust root (TCRN-CROSS-STORY-467 R2).
-async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
+async function runTests({ p8Only = false, extraEnvironment = {}, ciPlan } = {}) {
   await build();
-  const tests = selectTestFiles((await walkFiles())
+  let tests = selectTestFiles((await walkFiles())
     .map((path) => toPosixPath(relative(repositoryRoot, path))), "core")
     .filter((path) => !p8Only || ["tests/local-command-byte-fidelity.test.mjs", "tests/p8-workflow-rc.test.mjs"].includes(path));
+  if (ciPlan) {
+    if (p8Only) throw new Error("P8 cannot use a selective CI plan");
+    tests = validateSelectedTests(ciPlan.coreTests, tests);
+  }
   // TCRN-CROSS-STORY-469 R3: the suite never reaches the real device directory. Every test
   // process receives its own device home under this owned run root. The fallback
   // also keeps any test without the helper away from the real device directory.
   const deviceDirectory = await mkdtemp(join(tmpdir(), "einzbern-test-device-"));
   let controller;
   try {
-    controller = await runDetachedTestController(["--test", ...tests], {
+    controller = await runDetachedTestController(coreTestArgv(tests), {
       NODE_OPTIONS: `--import=${noNetworkImport}`,
       TCRN_OFFLINE_PROOF: "1",
       EINZBERN_HOME: join(deviceDirectory, "einzbern"),
@@ -659,8 +663,8 @@ async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
     await rm(deviceDirectory, { recursive: true, force: true });
   }
   return success(
-    p8Only ? "P8_WORKFLOW_RC_TESTS_VERIFIED" : "TESTS_VERIFIED",
-    { tests, result: "passed", progress: controller.progress },
+    p8Only ? "P8_WORKFLOW_RC_TESTS_VERIFIED" : ciPlan?.coverage === "selective" ? "TESTS_SELECTED_VERIFIED" : "TESTS_VERIFIED",
+    { tests, result: "passed", progress: controller.progress, ...(ciPlan ? { coverage: ciPlan.coverage, planDigest: ciPlan.planDigest, argv: coreTestArgv(tests) } : {}) },
   );
 }
 
@@ -668,7 +672,12 @@ async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
 // beside it. The coverage registry and the surviving-module coverage read that used to run
 // under NODE_V8_COVERAGE after it are retired with coverage conservation.
 async function verifyTestSuite() {
-  return runTests();
+  const args = process.argv.slice(3);
+  if (!args.length) return runTests();
+  if (args.length !== 2 || args[0] !== "--ci-plan") throw new Error("Invalid explicit test arguments");
+  const { validatePlan } = await import("./ci/impact-plan.mjs");
+  const ciPlan = validatePlan(JSON.parse(await readFile(args[1], "utf8")), repositoryRoot);
+  return runTests({ ciPlan });
 }
 
 async function verifyP8() {
@@ -1342,6 +1351,17 @@ function versionScopedInstallerFetchOffset(label, content) {
 // Declare individual harness call sites, never whole-file exemptions. A declaration
 // only applies while its wrapper binding and loopback fixture setup still match;
 // extra fetch calls, transports and changed destinations remain findings.
+// Exact capability source, not a file exemption: any mutation requires a new
+// review, and extra calls/modules still reach the ordinary offline scanner.
+function baselineFetchOffset(label, content) {
+  if (label !== "scripts/ci/baseline-evidence.mjs") return null;
+  const start = content.indexOf("export async function githubBaselineRequest(");
+  const end = content.indexOf("export async function collectBaseline", start);
+  if (start < 0 || end < start || createHash("sha256").update(content.slice(start, end)).digest("hex") !== "3591d8dc5436b8373f89d325c15a636a2010b881bb37a16e90688511611de12c") return null;
+  const calls = [...content.matchAll(/\bfetch\s*\(/gu)];
+  return calls.length === 1 ? calls[0].index : null;
+}
+
 function loopbackHarnessSites(content, declaration) {
   const result = { fetchOffsets: new Set(), modules: new Set() };
   if (!declaration) return result;
@@ -1386,7 +1406,7 @@ async function verifyOfflineBoundary() {
     const content = await readText(path);
     if (!guardFiles.has(label) && !loopbackServerFiles.has(label)) {
       // Only the version-checked retrieval branch may contain this one fetch call.
-      const permittedFetchOffset = versionScopedInstallerFetchOffset(label, content);
+      const permittedFetchOffset = versionScopedInstallerFetchOffset(label, content) ?? baselineFetchOffset(label, content);
       const harnessSites = loopbackHarnessSites(content, harnessDeclarations[label]);
       for (const moduleName of modules) {
         const localUnixSocketImport = label === localUnixSocketTest && moduleName === modules[2];

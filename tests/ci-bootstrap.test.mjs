@@ -42,7 +42,7 @@ const P1_STEP = /- name: Verify P1 offline\n        env:\n          EINZBERN_PRI
 // `pnpm verify:p1`; the workflow no longer runs `pnpm verify:portal` as a second step.
 test("CI keeps minimal permissions, refuses pull_request_target, and runs the portal remediation train once, inside P1", async () => {
   const workflow = await readWorkflow();
-  assert.match(workflow, /^permissions:\n  contents: read$/mu);
+  assert.match(workflow, /^permissions:\n  contents: read\n  actions: read$/mu);
   assert.equal(workflow.includes("pull_request_target"), false);
   assert.match(workflow, P1_STEP);
   assert.equal(workflow.includes("run: pnpm verify:portal"), false, "the train is not run a second time");
@@ -108,7 +108,8 @@ test("CI retains each P1 shard in an independent clone and always uploads its ev
   assert.match(workflow, /overwrite: false/u);
   assert.equal((workflow.match(/working-directory: \$\{\{ runner.temp \}\}\/einzbern-p1-/gu) ?? []).length, 1);
   assert.match(workflow, /EINZBERN_PRIVACY_HISTORY_BASE: ""/u);
-  assert.equal(workflow.includes("github.event.pull_request.base.sha"), false, "PR privacy must not silently narrow the history compared with fork/main");
+  assert.match(workflow, /EINZBERN_PRIVACY_HISTORY_BASE: ""/u, "privacy must retain full history");
+  assert.equal(/EINZBERN_PRIVACY_HISTORY_BASE:.*base\.sha/u.test(workflow), false, "impact base must never narrow privacy");
   assert.ok(workflow.includes('node "$build_root/skill/mana-orchestrate/scripts/install.mjs"'));
 });
 
@@ -139,9 +140,31 @@ test("ordinary smoke retains curated archive, digest manifest, source SHA and is
 test("required verify waits for all shards and refuses incomplete same-SHA evidence", async () => {
   const workflow = await readWorkflow();
   assert.match(workflow, /fail-fast: false/u);
-  for (const shard of ["p1-checks", "p1-core", "p1-portal"]) assert.ok(workflow.includes(`"${shard}"`));
-  assert.match(workflow, /  verify:\n    if: always\(\)\n    needs: \[p1\]/u);
+  assert.match(workflow, /fromJSON\(needs.plan.outputs.matrix\)/u, "matrix membership must come from the complete validated plan");
+  assert.match(workflow, /  verify:\n    if: always\(\)\n    needs: \[plan, p1\]/u);
   assert.ok(workflow.includes("JOB_RESULT: ${{ needs.p1.result }}"));
   assert.ok(workflow.includes("--attempt \"$GITHUB_RUN_ATTEMPT\" --job-result \"$JOB_RESULT\""));
   assert.ok(workflow.includes("scripts/ci/aggregate-evidence.py"));
+});
+
+test("impact plan drives one matrix and independently rederived always verify with real pinned transport", async () => {
+  const workflow = await readWorkflow();
+  assert.match(workflow, /mode: \$\{\{ fromJSON\(needs.plan.outputs.matrix\) \}\}/u);
+  assert.match(workflow, /impact-plan\.mjs create/u);
+  assert.match(workflow, /transport-evidence\.mjs create/u);
+  assert.match(workflow, /PLAN_RESULT: \$\{\{ needs.plan.result \}\}/u);
+  assert.match(workflow, /--plan "\$RUNNER_TEMP\/impact\/impact-plan.json"/u);
+  assert.match(workflow, /fetch-depth: 0/u);
+});
+
+test("only plan and final verify opt into the guarded read-only baseline capability", async () => {
+  const workflow = await readWorkflow();
+  assert.equal((workflow.match(/EINZBERN_CI_BASELINE_ONLINE: read-only/gu) ?? []).length, 2);
+  const producer = workflow.indexOf("node scripts/ci/impact-plan.mjs create");
+  const verifier = workflow.indexOf("python3 scripts/ci/aggregate-evidence.py");
+  assert.ok(workflow.lastIndexOf("EINZBERN_CI_BASELINE_ONLINE: read-only", producer) > workflow.lastIndexOf("GH_TOKEN:", producer));
+  assert.ok(workflow.lastIndexOf("EINZBERN_CI_BASELINE_ONLINE: read-only", verifier) > workflow.lastIndexOf("GH_TOKEN:", verifier));
+  const p1Job = workflow.slice(workflow.indexOf("\n  p1:"), workflow.indexOf("\n  verify:"));
+  assert.equal(p1Job.includes("EINZBERN_CI_BASELINE_ONLINE"), false);
+  assert.match(p1Job, /EINZBERN_PRIVACY_HISTORY_BASE: ""/u);
 });

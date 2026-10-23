@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 import { spawnSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validatePlan } from "./impact-plan.mjs";
 import { P1_TASKS, runAllP1Legs } from "../p1-sequence.mjs";
 import { retainVerificationStep } from "../lib/verification-evidence.mjs";
 
@@ -27,14 +28,18 @@ function receipt(stdout, stderr) {
   return candidates[0];
 }
 
-export async function runShard(shard, root = resolve(dirname(fileURLToPath(import.meta.url)), "../..")) {
+export async function runShard(shard, root = resolve(dirname(fileURLToPath(import.meta.url)), "../.."), planPath) {
   if (!Object.hasOwn(P1_SHARDS, shard)) throw new Error(`Unknown P1 shard: ${shard}`);
+  const plan = planPath ? validatePlan(JSON.parse(await readFile(planPath, "utf8")), root) : null;
+  if (plan && !Object.hasOwn(plan.shards, shard)) throw new Error("Shard is not selected");
+  const tasks = plan?.shards[shard] ?? P1_SHARDS[shard];
   const directory = process.env.EINZBERN_CI_EVIDENCE_DIR;
   if (!directory) throw new Error("EINZBERN_CI_EVIDENCE_DIR is required");
   await mkdir(join(directory, "steps"));
   const invoke = async (task, prefix = "leg") => {
     const started = performance.now();
     const args = task === "test-wiring" ? ["scripts/test-wiring-proof.mjs"] : ["scripts/task.mjs", task];
+    if (task === "test" && plan) args.push("--ci-plan", planPath);
     const result = spawnSync(process.execPath, args, { cwd: root, env: process.env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
     const step = { id: `${prefix}-${task}`, command: ["node", ...args], durationMs: Math.round(performance.now() - started), exitCode: result.status, signal: result.signal };
     await retainVerificationStep(join(directory, "steps"), step, result);
@@ -45,10 +50,10 @@ export async function runShard(shard, root = resolve(dirname(fileURLToPath(impor
     return report;
   };
   const prerequisites = await runAllP1Legs((task) => invoke(task, "prerequisite"), PREREQUISITES[shard]);
-  const outcome = await runAllP1Legs(invoke, P1_SHARDS[shard]);
+  const outcome = await runAllP1Legs(invoke, tasks);
   const extras = await runAllP1Legs((task) => invoke(task, "extra"), shard === "checks" ? ["test-wiring"] : []);
   const ok = [prerequisites, outcome, extras].every((result) => result.reds.length === 0);
-  const result = { ...outcome, ok, reasonCode: ok ? "P1_SHARD_VERIFIED" : "P1_SHARD_RED", shard, prerequisites, extras };
+  const result = { ...outcome, ok, reasonCode: ok ? "P1_SHARD_VERIFIED" : "P1_SHARD_RED", shard, prerequisites, extras, ...(plan ? { coverage: plan.coverage, planDigest: plan.planDigest, coreTests: shard === "core" ? plan.coreTests : [] } : {}) };
   await writeFile(join(directory, "shard.json"), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" });
   return result;
 }
@@ -63,7 +68,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === "--plan") {
     process.stdout.write(`${JSON.stringify({ shards: P1_SHARDS, prerequisites: PREREQUISITES, tasks: P1_TASKS })}\n`);
   } else {
-    const result = await runShard(process.argv[2]);
+    const result = await runShard(process.argv[2], undefined, process.argv[3]);
     writeShardReceipt(result);
     if (!result.ok) process.exitCode = 1;
   }

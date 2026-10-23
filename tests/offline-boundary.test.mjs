@@ -15,13 +15,13 @@ import { spawnSync } from "node:child_process";
 import dgram from "node:dgram";
 import dns from "node:dns";
 import dnsPromises from "node:dns/promises";
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
+import { createOfflineScannerFixture } from "./helpers/ci-component-fixture.mjs";
 import http from "node:http";
 import http2 from "node:http2";
 import net, { connect as namedConnect, createConnection as namedCreateConnection } from "node:net";
 import test from "node:test";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 // The privacy gate refuses a literal loopback address in source, so the address the
 // transport tests need is assembled at run time, matching tests/p4-artifact-lifecycle.test.mjs:53.
@@ -137,49 +137,7 @@ test("ESM named imports resolve to the patched functions", () => {
 });
 
 if (process.env.TCRN_OFFLINE_PROOF !== "1") {
-  const repositoryRoot = resolve(import.meta.dirname, "..");
-
-  async function offlineFixture({ unexpectedSource = false, extraInstallerFetch = false, harnessMutation = null } = {}) {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "einzbern-offline-scan-"));
-    const root = join(temporaryRoot, "engine");
-    await mkdir(join(root, ".git"), { recursive: true });
-    await cp(join(repositoryRoot, "scripts"), join(root, "scripts"), { recursive: true });
-    const installerPath = join(root, "skill", "mana-orchestrate", "scripts", "install.mjs");
-    await mkdir(join(root, "skill", "mana-orchestrate", "scripts"), { recursive: true });
-    await cp(
-      join(repositoryRoot, "skill", "mana-orchestrate", "scripts", "install.mjs"),
-      installerPath,
-    );
-    await mkdir(join(root, "tests"), { recursive: true });
-    await cp(import.meta.filename, join(root, "tests", "offline-boundary.test.mjs"));
-    await cp(join(repositoryRoot, "package.json"), join(root, "package.json"));
-    await cp(join(repositoryRoot, ".npmrc"), join(root, ".npmrc"));
-    await mkdir(join(root, "portal", "tests", "helpers"), { recursive: true });
-    for (const name of ["ui-presence-support.mjs", "disposable-portal-fetch.test.mjs", "helpers/disposable-portal-fetch.mjs"]) {
-      await cp(join(repositoryRoot, "portal", "tests", name), join(root, "portal", "tests", name));
-    }
-    if (harnessMutation) {
-      const target = join(root, "portal", "tests", harnessMutation.file);
-      const source = await readFile(target, "utf8");
-      await writeFile(target, harnessMutation.replace
-        ? source.replace(...harnessMutation.replace)
-        : `${source}\n${harnessMutation.append}\n`);
-    }
-    await mkdir(join(root, "node_modules"), { recursive: true });
-    for (const dependency of ["ajv", "typescript"]) {
-      await symlink(await realpath(join(repositoryRoot, "node_modules", dependency)), join(root, "node_modules", dependency), "dir");
-    }
-    if (unexpectedSource) {
-      await writeFile(join(root, "scripts", "unexpected-network.mjs"), 'await fetch("https://example.invalid");\n');
-    }
-    if (extraInstallerFetch) {
-      await writeFile(
-        installerPath,
-        `${await readFile(installerPath, "utf8")}\nvoid fetch("https://example.invalid");\n`,
-      );
-    }
-    return { root, temporaryRoot };
-  }
+  const offlineFixture = (options) => createOfflineScannerFixture(undefined, options);
 
   function scanOffline(root) {
     const env = { ...process.env };
@@ -222,6 +180,9 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
       }
     }
   });
+
+  // Exact baseline-site cases are registered by the mandatory CI-integrity
+  // suite even under TCRN_OFFLINE_PROOF=1. Only this inner proof avoids recursion.
 
   test("offline harness declarations allow only the recorded loopback sites, not new egress", async () => {
     const mutations = [

@@ -1,0 +1,605 @@
+{
+  "number": 29,
+  "base": "549c98f3431344eccf53dbc100f691eee1105881",
+  "head": "175a84e9467122a53d4a5d275114e9e56bc57f2f",
+  "records": [
+    {
+      "status": "M",
+      "paths": [
+        "docs/implementation/configuration-inventory.json"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "docs/implementation/dot-scheduling.md"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "docs/implementation/native-acceptance.md"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "docs/reports/init-053-einzbern/portal-current-verification.md"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "docs/wiki/CLI-Reference.md"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "docs/wiki/Glossary.md"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "docs/wiki/Managed-Sections-and-Command-Spell.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/cli/src/config-backup-commands.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/cli/src/index.ts"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/cli/src/native-tool-commands.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/agents-sections.ts"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/core/src/config-backup-retention.ts"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/core/src/config-backup.ts"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/core/src/config-restore.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/configuration-contract.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/configuration-projections.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/dispatch-evidence.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/dispatch-workflow.ts"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/core/src/dot-agents.ts"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/core/src/dot-execution.ts"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/core/src/dot-schedule-state.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/execution-admission.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/execution-config.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/execution-policy.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/machine-settings.ts"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/core/src/native-tool-evidence.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/project-chain.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/rules-catalog.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/rules.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/runtime-input-contract.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/setup-fresh.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/setup-maintain.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/setup.ts"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "packages/core/src/shared-submit.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/skill-render.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "packages/core/src/variables-sections.ts"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "portal/index.html"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "portal/locales.js"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "portal/portal.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "portal/tests/configuration-presentation.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "portal/tests/portal.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "portal/tests/ui-library.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "portal/tests/ui-presence.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "scripts/lib/test-run-diagnostics.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "scripts/pack-release.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "scripts/policy/core-export-consumers.json"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "scripts/render-helper-docs.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "scripts/review-evidence.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "scripts/task.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "scripts/test-file-progress-reporter.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "skill/mana-orchestrate/references/install.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "specs/config-backup-v1.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "specs/dot-execution-v1.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "specs/dot-rules-v1.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "specs/native-tool-evidence-v1.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "specs/shared-submit-v1.md"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/agents-sections.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/cli-audit-boundaries.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/config-backup-retention.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/config-backup.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/config-restore.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/configuration-contract.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/configuration-projections.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/dispatch-admission-evidence.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/dot-agents.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/dot-execution.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/dot-schedule-state.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/execution-admission.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/fixtures/rules/autonomy-v1-rev1.en.md"
+      ]
+    },
+    {
+      "status": "C100",
+      "paths": [
+        "tests/fixtures/rules/autonomy.zh.md",
+        "tests/fixtures/rules/autonomy-v1-rev1.zh.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/fixtures/rules/autonomy.en.md"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/fixtures/rules/autonomy.zh.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/fixtures/rules/residue-cleanup-v1-rev1.en.md"
+      ]
+    },
+    {
+      "status": "C100",
+      "paths": [
+        "tests/fixtures/rules/residue-cleanup.zh.md",
+        "tests/fixtures/rules/residue-cleanup-v1-rev1.zh.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/fixtures/rules/residue-cleanup.en.md"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/fixtures/rules/residue-cleanup.zh.md"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/helpers/dot-native-fixture.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/host-hooks.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/native-tool-evidence.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/p3-cli-catalog.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/p3-cli-read-surface.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/pack-release.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/project-chain-model.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/registry-resolve.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/release-lockstep.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/release-trust.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/render-helper-docs.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/review-evidence.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/rules-catalog.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/rules-cli.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/rules.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/runtime-input-contract.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/setup-cli.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/setup-fresh.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/setup-maintain.test.mjs"
+      ]
+    },
+    {
+      "status": "A",
+      "paths": [
+        "tests/shared-submit.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/skill-copies.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/skill-render-cli.test.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/skill-render.test.mjs"
+      ]
+    }
+  ],
+  "diffSha256": "9d342bfaee4a9d97854e09818c426c02b4f38f95f595c8d84bbcb69c3a1cb3b0",
+  "provenance": "Actual cumulative Git merge-base/head diff; baseline eligibility injected only by tests"
+}

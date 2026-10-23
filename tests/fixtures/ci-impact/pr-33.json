@@ -1,0 +1,21 @@
+{
+  "number": 33,
+  "base": "1cd3ea0aab0119cdc37a62eb3cd229b277039782",
+  "head": "b83ce4960f079cdc60d064de4576b93ba5859438",
+  "records": [
+    {
+      "status": "M",
+      "paths": [
+        "scripts/lib/privacy.mjs"
+      ]
+    },
+    {
+      "status": "M",
+      "paths": [
+        "tests/privacy-git-metadata.test.mjs"
+      ]
+    }
+  ],
+  "diffSha256": "9dffa514fa39f8db34e22b9fd39e39b5340524621b67c8d2b68cfedafef16135",
+  "provenance": "Actual cumulative Git merge-base/head diff; baseline eligibility injected only by tests"
+}

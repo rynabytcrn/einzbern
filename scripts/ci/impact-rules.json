@@ -1,5 +1,5 @@
 {
-  "version": 8,
+  "version": 9,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -854,7 +854,7 @@
       "tests/workspace-lock-scope.test.mjs"
     ]
   },
-  "audit": "Construction-only frozen exact input/caller graph, per-document maps and categoryInputAudit input-call fingerprints. Comments, output writes, path predicates and arbitrary basenames do not create edges. Finite semantics are bound to sourceAudit bytes; changed category bytes require the same frozen input-call surface, including unresolved receivers and referenced binding tokens. Newly tracked or changed noncategory text, changed/unreviewed category input forms, unknown binary/unreadable inputs, missing/stale readers or missing root-test maps force unaccounted-consumers/full. Known category value edits may remain selective with unchanged input forms and complete independent maps. Runtime never updates declarations. Real template interpolations are executable input expressions; literal portions, escaped interpolation text and embedded source strings stay opaque. Unresolved interpolation syntax forces full. Declarations are generated once from the final tracked source, never resealed at runtime. Tagged-template invocation syntax is audited as executable input; unknown consumers fall back to full. Literal data, escaped interpolation and embedded source samples retain their existing distinction. Declarations are generated once from the final tracked source, never resealed at runtime.",
+  "audit": "Construction-only frozen exact input/caller graph, per-document maps and categoryInputAudit input-call fingerprints. Comments, output writes, path predicates and arbitrary basenames do not create edges. Finite semantics are bound to sourceAudit bytes; changed category bytes require the same frozen input-call surface, including unresolved receivers and referenced binding tokens. Newly tracked or changed noncategory text, changed/unreviewed category input forms, unknown binary/unreadable inputs, missing/stale readers or missing root-test maps force unaccounted-consumers/full. Known category value edits may remain selective with unchanged input forms and complete independent maps. Runtime never updates declarations. Real template interpolations are executable input expressions; literal portions, escaped interpolation text and embedded source strings stay opaque. Unresolved interpolation syntax forces full. Declarations are generated once from the final tracked source, never resealed at runtime. Tagged-template invocation syntax is audited as executable input; unknown consumers fall back to full. Literal data, escaped interpolation and embedded source samples retain their existing distinction. Declarations are generated once from the final tracked source, never resealed at runtime. Intrinsic raw-tag exemptions require conservative treatment of indirect global-object or alias writes; unproven executable calls remain audited or full. Literal data, escaped interpolation and embedded source samples retain their existing distinction. Declarations are generated once from the final tracked source, never resealed at runtime.",
   "documentAudit": {
     "README.md": {
       "readers": [
@@ -1634,7 +1634,7 @@
     "scripts/ceremony-cost.mjs": "1f7d92a300a3b2e50d7809c765a11bc7d507ccf2a36c0649b576b3d2b1a1f5d9",
     "scripts/ci/aggregate-evidence.py": "09c5394c65b7e23ff16ccb38cd16bfeb3b7bce6cd73b2c1307b34b75c1ca9780",
     "scripts/ci/baseline-evidence.mjs": "4b25231f0ca3409ad091d1880d97cb135f0cfabf2680b00b5b72230d6102e0cb",
-    "scripts/ci/impact-plan.mjs": "7211d202780d3dfcb4215ee38ad729fafe43460efda4f21924c444e50817b0e8",
+    "scripts/ci/impact-plan.mjs": "31c93278f5ff9e633c8a951e2821a008688b6f830175a14b75d546ac49d2fcd7",
     "scripts/ci/p1-evidence.py": "b3a2ab1ccd6edec071ca7995771607c94f1b132791e0c85df333fae4f8e96105",
     "scripts/ci/p1-shard.mjs": "109aa9f151064dfbeec5e2eb187981dfda692e4d3cbe27bdedea486cac33ae49",
     "scripts/ci/transport-evidence.mjs": "3622b39377abaf393eea2739943e355ca575e16e16759ca6d9875b395f8c153b",
@@ -1782,7 +1782,7 @@
     "tests/ci-baseline-evidence.test.mjs": "58c0f24a9d71f3224d555905530bd34a5aabcbff2fa5ac40b8115621f694be1c",
     "tests/ci-bootstrap.test.mjs": "8e5a2265928041bdf85283c965342277acde62bb4ba0f6036a3fa76fea1756eb",
     "tests/ci-evidence-retention.test.mjs": "6117785d60af019c3cbbe13269ca295c3492c6c6eb0890b54ebf45d9018834e1",
-    "tests/ci-impact-plan.test.mjs": "00dbc93f41b77a5d12328c57d3b4b523219567fa45ebb7f1f78aa210acbb4b31",
+    "tests/ci-impact-plan.test.mjs": "81e613f9525d1e3d43514beff4faef14fa8e65dcf40e85b6f760a3b8ffb23697",
     "tests/ci-selective-runner.test.mjs": "e4e29e120653aa26fcff9989b044dec255ca34e2face2cca9fefa31849b30c87",
     "tests/ci-test-roster.test.mjs": "56ed21b4b1ff023e9aacdc15984fa459e0ea730ddd981c2d46bc2db015dc72cc",
     "tests/cli-audit-boundaries.test.mjs": "6fa1dd0a63dedd161c92fe69898fcec1ae7444a4465082173687b2be26dd8d45",

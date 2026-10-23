@@ -33,6 +33,8 @@ Missing policy file is absence; malformed JSON/schema, digest mismatch and I/O f
 
 ## Optional information and hard limits
 
+Selection-observation freshness and ordering use the full strict-instant precision. Observations are current from their instant through exactly five minutes later, inclusive. Only the latest current instant contributes support evidence; equal instants are grouped regardless of fractional spelling. An `unsupported` observation at that instant overrides `supported`, catalog entries and the host-managed contract. Otherwise `supported` contributes support and `unknown` contributes no evidence. This reduction is independent of array order and does not change the host request's UTC-only timestamp validation.
+
 | Information | Missing-state effect |
 | --- | --- |
 | Exportable authorization/source reference | Existing current-conversation authorization remains valid; audit reference unknown |

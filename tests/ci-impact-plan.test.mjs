@@ -285,6 +285,71 @@ test("template interpolation executes nested inputs while same-root literal and 
   assert.deepEqual(sourceDependencyGraph(new Map([[reader, '`${readFileSync("README.md")}\\']])).unresolved, [reader], "a trailing escape cannot conceal an unterminated template");
 });
 
+test("readonly String calls preserve intrinsic raw regexes, escapes and embedded source data", () => {
+  const reader = "tests/intrinsic-raw.test.mjs", audited = { privacyPaths: [reader], portalPaths: [] };
+  const readonly = 'import {readFileSync} from "node:fs"; const candidate="fixture", point=65; const value=String(candidate); const codePoint=String.fromCodePoint(point); const character=String.fromCharCode(point); const rawValue=String.raw({raw:["fixture"]});\n';
+  const audit = (text) => categoryInputAudit(new Map([[reader, text]]), audited), frozenInputs = audit(readonly);
+  const samples = new Map([
+    ["host-hooks", 'const pattern=String.raw`(?:^|[\\\\/(])(?:${[LEGACY_CONTAINER_DIRECTORY, LEGACY_DEVICE_DIRECTORY].map(escapeRegExp).join("|")})(?:[\\\\/)*]|$)`;'],
+    ["host-writable-roots", [
+      'const KEY_SEGMENT=String.raw`(?:[A-Za-z0-9_-]+|"(?:[^"\\\\]|\\\\.)*"|\'[^\']*\')`;',
+      'const KEY_PATH=String.raw`${KEY_SEGMENT}(?:\\s*\\.\\s*${KEY_SEGMENT})*`;',
+      'const TABLE_HEADER=new RegExp(String.raw`^\\s*\\[\\s*(${KEY_PATH})\\s*\\]\\s*(?:#.*)?$`, "u");',
+      'const ARRAY_TABLE_HEADER=new RegExp(String.raw`^\\s*\\[\\[\\s*(${KEY_PATH})\\s*\\]\\]\\s*(?:#.*)?$`, "u");',
+      'const KEY_ASSIGNMENT=new RegExp(String.raw`^\\s*(${KEY_PATH})\\s*=`, "u");',
+    ].join("\n")],
+    ["ui-presence-support", 'const identifier=String.raw`[\\p{ID_Start}$_][\\p{ID_Continue}$\\u200c\\u200d]*`;'],
+    ["no-sibling-dependency-proof", [
+      'const quote=String.raw`["\'\\x60]`;',
+      'const directSkillPath=String.raw`${quote}skill/${helper}(?:/[^"\'\\x60]*)?${quote}`;',
+      'const splitSkillPath=String.raw`${quote}skill${quote}\\s*,\\s*${quote}${helper}${quote}`;',
+      'const rootedPath=String.raw`(?:join|resolve)\\s*\\(\\s*(?:repositoryRoot|repoRoot|REPO_ROOT)\\s*,\\s*(?:${directSkillPath}|${splitSkillPath})`;',
+    ].join("\n")],
+    ["operational-batch-entry", 'const pattern=String.raw`(?:einzbern\\.mjs|${LEGACY_ENGINE_NAME}\\.mjs|${LEGACY_ENGINE_NAME}\\/scripts\\/[^\\s]+\\.mjs)`;'],
+    ["output-session-lifecycle", 'const source=String.raw`import assert from "node:assert/strict";\nassert.equal(readFileSync("README.md", "utf8"), "old");\nconst sample=\\`\\${readFileSync("docs/literal.md")}\\`;\n`;'],
+    ["privacy-boundary", 'const content=String.raw`const examples = ["C:\\\\Public\\\\fixtures", "safe"];`;'],
+    ["parenthesized-raw", 'const source=(String.raw)`readFileSync("README.md", "utf8")`;'],
+  ]);
+  for (const [name, sample] of samples) {
+    const text = readonly + sample, texts = new Map([[reader, text]]), graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, [], name);
+    for (const document of ["README.md", "docs/literal.md"]) assert.deepEqual(documentReaderClosure(texts, [document], graph), [], name);
+  }
+  assert.deepEqual(audit(readonly + 'String.raw`readFileSync("README.md", "utf8")`;'), frozenInputs, "raw sample text adds no input fingerprint alongside readonly String calls");
+  const text = readonly + 'const source=(String.raw)`sample readFileSync("docs/literal.md") ${readFileSync("docs/live.md", "utf8")}`;';
+  const texts = new Map([[reader, text]]), graph = sourceDependencyGraph(texts);
+  assert.deepEqual(graph.unresolved, []);
+  assert.deepEqual(documentReaderClosure(texts, ["docs/live.md"], graph), [reader]);
+  assert.deepEqual(documentReaderClosure(texts, ["docs/literal.md"], graph), []);
+  assert.notDeepEqual(audit(text), frozenInputs, "a genuine interpolation remains executable alongside readonly String calls");
+});
+
+test("String bindings, writes and unproven escapes keep raw tags conservative", () => {
+  const reader = "tests/unsafe-raw.test.mjs", audited = { privacyPaths: [reader], portalPaths: [] };
+  const readonly = 'const value=String(candidate); const point=String.fromCodePoint(65); ';
+  const frozenInputs = categoryInputAudit(new Map([[reader, readonly]]), audited);
+  for (const binding of [
+    'let String=readDoc;',
+    'function String(parts){return readDoc(parts);}',
+    'function shadow(String){}',
+    'const {String}=intrinsics;',
+    'const [String]=intrinsics;',
+    'String=readDoc;',
+    'String["raw"]=readDoc;',
+    'String.raw ||= readDoc;',
+    'String.fromCodePoint=readDoc;',
+    'delete String.raw;',
+    'const alias=String;',
+    'const tag=String.raw;',
+    'escape(String.raw);',
+  ]) {
+    const text = readonly + binding + 'String.raw`README.md`;', texts = new Map([[reader, text]]), graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, [reader], binding);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"], graph), [reader], binding);
+    assert.notDeepEqual(categoryInputAudit(texts, audited), frozenInputs, binding);
+  }
+});
+
 test("executable tags retain finite callees, template arguments and transitive binding fingerprints", () => {
   const reader = "tests/b.test.mjs", audited = { privacyPaths: [reader], portalPaths: [] };
   const prefix = 'import test from "node:test"; import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; function readDoc(parts){return readFileSync(parts[0],"utf8").trim();} function otherDoc(parts){return readFileSync(parts[0],"utf8").trim();} ';
@@ -684,7 +749,7 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
     story-346-pg-disabled story-378-incident-replay story-rule-conservation`);
   const ordinaryWiki = ["Atelier", "CLI-Reference", "Ether-Layout", "FAQ", "Gates", "Glossary", "Home", "Install-Wizard", "Managed-Sections-and-Command-Spell", "Migrating-from-TCRN-Workflow", "Multi-Device-and-Cloud", "Variables", "_Sidebar"].map((name) => `docs/wiki/${name}.md`);
   assert.deepEqual(Object.keys(rules.docs).sort(), ["README.md", ...ordinaryWiki].sort());
-  const expectedDocuments = Object.fromEntries(ordinaryWiki.map((document) => [document, sorted([...integrity, ...names("push-wiki wiki-pages")])]));
+  const expectedDocuments = Object.fromEntries(ordinaryWiki.map((document) => [document, sorted([...integrity, ...names("privacy-boundary push-wiki wiki-pages")])]));
   expectedDocuments["README.md"] = sorted([...integrity, ...common, ...names("gates-plan inc238-markdown-link-gate")]);
   expectedDocuments["docs/wiki/CLI-Reference.md"] = sorted([...integrity, ...common, ...names("push-wiki wiki-cli-reference wiki-pages")]);
   expectedDocuments["docs/wiki/Glossary.md"] = sorted([...expectedDocuments["docs/wiki/Glossary.md"], ...names("names-alias-table")]);

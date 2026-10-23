@@ -376,10 +376,29 @@ export function sourceDependencyGraph(texts, inputAudit) {
       if ([".", "?."].includes(values[start - 1])) return calleeStart(start - 1, depth + 1);
       return start;
     };
+    const templateCallee = (index) => {
+      const start = calleeStart(index); let callee = start, end = index;
+      while (callee !== null && values[callee] === "(" && pairs.get(callee) === end - 1) { callee++; end--; }
+      return { start, callee, end };
+    };
+    // String conversions and the intrinsic's finite static calls do not mutate
+    // its raw tag. Every other reference still needs proof: declarations,
+    // parameters, assignments, computed members and escaping aliases are unsafe.
+    const rawTags = new Set([...templates.keys()].flatMap((index) => {
+      const { callee, end } = templateCallee(index);
+      return callee !== null && values.slice(callee, end).join("") === "String.raw" ? [callee] : [];
+    }));
+    const readonlyStringUse = (index) => {
+      if (rawTags.has(index)) return true;
+      if ([".", "?.", "function"].includes(values[index - 1]) || values[index - 1] === "*" && values[index - 2] === "function") return false;
+      const opening = values[index + 1] === "(" ? index + 1 : values[index + 1] === "." &&
+        ["fromCharCode", "fromCodePoint", "raw"].includes(values[index + 2]) && values[index + 3] === "(" ? index + 3 : null;
+      // A named function/method's parameter list is not a conversion call.
+      return opening !== null && pairs.has(opening) && values[pairs.get(opening) + 1] !== "{";
+    };
     // String.raw is data only while it is the unbound intrinsic. A user tag,
     // including one named raw/normalize/writeFileSync, has executable inputs.
-    const intrinsicRaw = !tokens.some((token, index) => token.kind === "identifier" && token.value === "String" &&
-      (values[index + 1] !== "." || values[index + 2] !== "raw" || tokens[index + 3]?.kind !== "template" && values[index + 3] !== ")"));
+    const intrinsicRaw = !tokens.some((token, index) => token.kind === "identifier" && token.value === "String" && !readonlyStringUse(index));
     const knownTag = (name, seen = new Set()) => {
       if (name === null || seen.has(name) || seen.size > 20) return false;
       if (!tagAliases.has(name)) return tagFunctions.has(name);
@@ -395,9 +414,7 @@ export function sourceDependencyGraph(texts, inputAudit) {
     }
     for (let index = 0; index < tokens.length; index++) {
       if (javascript && tokens[index].kind === "template") {
-        const start = calleeStart(index), template = templates.get(index);
-        let callee = start, end = index;
-        while (callee !== null && values[callee] === "(" && pairs.get(callee) === end - 1) { callee++; end--; }
+        const { start, callee, end } = templateCallee(index), template = templates.get(index);
         if (start !== null && !(intrinsicRaw && values.slice(callee, end).join("") === "String.raw")) {
           if (auditInput) inputForms.push(digest({ tag: inputForm(start, index, true), template: inputForm(index, template.end, true), args: template.args.map(([a, b]) => inputForm(a, b, true)) }));
           for (const value of [...tokens[index].literals, ...tokens[index].rawLiterals, ...templateValues(index)]) addKnown(dependencies, value, source);

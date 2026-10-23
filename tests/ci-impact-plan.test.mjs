@@ -324,6 +324,31 @@ test("readonly String calls preserve intrinsic raw regexes, escapes and embedded
   assert.notDeepEqual(audit(text), frozenInputs, "a genuine interpolation remains executable alongside readonly String calls");
 });
 
+test("readonly global-object references do not turn intrinsic raw data into a reader", () => {
+  const reader = "tests/global-raw.test.mjs", audited = { privacyPaths: [reader], portalPaths: [] };
+  const audit = (text) => categoryInputAudit(new Map([[reader, text]]), audited);
+  for (const use of [
+    "globalThis;",
+    "globalThis.console; globalThis[\"Math\"];",
+    "const value=globalThis.String(candidate);",
+    "const value=globalThis[\"String\"].fromCodePoint(65);",
+    "const value=(globalThis.String).fromCharCode(65);",
+    "const value=global.String(candidate);",
+  ]) {
+    const data = use + 'String.raw`readFileSync("README.md", "utf8")`;';
+    const texts = new Map([[reader, data]]), graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, [], use);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"], graph), [], use);
+    assert.deepEqual(audit(data), audit(use), use);
+  }
+  const readonly = 'globalThis["String"].fromCodePoint(65);';
+  const interpolation = readonly + 'String.raw`sample ${readFileSync("docs/live.md", "utf8")}`;';
+  const texts = new Map([[reader, interpolation]]), graph = sourceDependencyGraph(texts);
+  assert.deepEqual(graph.unresolved, []);
+  assert.deepEqual(documentReaderClosure(texts, ["docs/live.md"], graph), [reader]);
+  assert.notDeepEqual(audit(interpolation), audit(readonly));
+});
+
 test("String bindings, writes and unproven escapes keep raw tags conservative", () => {
   const reader = "tests/unsafe-raw.test.mjs", audited = { privacyPaths: [reader], portalPaths: [] };
   const readonly = 'const value=String(candidate); const point=String.fromCodePoint(65); ';
@@ -347,6 +372,45 @@ test("String bindings, writes and unproven escapes keep raw tags conservative", 
     assert.deepEqual(graph.unresolved, [reader], binding);
     assert.deepEqual(documentReaderClosure(texts, ["README.md"], graph), [reader], binding);
     assert.notDeepEqual(categoryInputAudit(texts, audited), frozenInputs, binding);
+  }
+});
+
+test("indirect ambient String mutation, aliases and escapes cancel raw-data trust", () => {
+  const reader = "tests/unsafe-global-raw.test.mjs", audited = { privacyPaths: [reader], portalPaths: [] };
+  const original = 'const value=String(candidate); String.raw`fixture`;';
+  const frozenInputs = categoryInputAudit(new Map([[reader, original]]), audited);
+  for (const mutation of [
+    'globalThis["String"].raw=readDoc;',
+    'globalThis.String.raw=readDoc;',
+    '(globalThis)["String"]["raw"]=readDoc;',
+    'global["String"].raw=readDoc;',
+    'globalThis.String=intrinsics;',
+    'delete globalThis["String"].raw;',
+    'globalThis["String"].raw ||= readDoc;',
+    'globalThis.String.raw++;',
+    'const host=globalThis; host.String.raw=readDoc;',
+    'const host=globalThis; const next=host; next["String"].raw=readDoc;',
+    'const host=globalThis.globalThis; host["String"].raw=readDoc;',
+    'const {globalThis: host}=globalThis; host["String"].raw=readDoc;',
+    'const constructor=globalThis["String"]; constructor.raw=readDoc;',
+    'const {String: constructor}=globalThis; constructor.raw=readDoc;',
+    'const {raw: tag}=globalThis["String"]; tag`README.md`;',
+    'const constructor=maybeGlobal["String"]; constructor.raw=readDoc;',
+    'const {"String": constructor}=maybeGlobal; constructor.raw=readDoc;',
+    'Object.assign(globalThis.String,{raw:readDoc});',
+    'Object.defineProperty(globalThis["String"],"raw",{value:readDoc});',
+    'Reflect.set(globalThis.String,"raw",readDoc);',
+    'escape(globalThis);',
+    'escape(globalThis["String"]);',
+    'escape(globalThis["String"].raw);',
+    'globalThis[process.env.KEY].raw=readDoc;',
+    'let alias=globalThis; alias=maybe();',
+    'const host=condition ? globalThis : {}; host.String.raw=readDoc;',
+  ]) {
+    const text = original + mutation + 'String.raw`README.md`;', texts = new Map([[reader, text]]), graph = sourceDependencyGraph(texts);
+    assert.deepEqual(graph.unresolved, [reader], mutation);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"], graph), [reader], mutation);
+    assert.notDeepEqual(categoryInputAudit(texts, audited), frozenInputs, mutation);
   }
 });
 
@@ -614,6 +678,110 @@ test("a tagged category call cannot omit its root after a later document-only co
   const selected = run(corrected.coreTests);
   assert.equal(selected.status, 1, "the genuine selected roster executes b and exposes the changed document");
   assert.match(selected.stdout + selected.stderr, /privacy tagged contract/u);
+  assert.match(selected.stdout + selected.stderr, /AssertionError/u);
+  assert.match(selected.stdout + selected.stderr, /'new' !== 'old'/u);
+  const committedDocument = execFileSync("git", ["-C", fixture.repo, "show", `${fixture.head}:README.md`]);
+  try {
+    await writeFixtureFile(fixture.repo, "README.md", documentBytes);
+    const restored = run(corrected.coreTests);
+    assert.equal(restored.status, 0, restored.stdout + restored.stderr);
+  } finally { await writeFixtureFile(fixture.repo, "README.md", committedDocument); }
+  assertFrozen();
+  assert.equal(fixture.git("status", "--porcelain=v1"), "");
+});
+
+test("indirect replacement of intrinsic raw cannot hide a later document-only selected failure", async (t) => {
+  const reader = "tests/b.test.mjs";
+  const original = 'import test from "node:test"; import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; function readDoc(parts){return readFileSync(parts[0],"utf8").trim();} test("privacy indirect raw contract",()=>{assert.equal(readFileSync("fixture.txt","utf8"),"fixture"); const originalRaw=globalThis["String"].raw; try {globalThis["String"].raw=readDoc; assert.equal("old","old");} finally {globalThis["String"].raw=originalRaw;}});\n';
+  const changedSource = original.replace('assert.equal("old","old")', 'assert.equal(String.raw`README.md`,"old")');
+  const fixture = await createCiComponentFixture(t, { rules: { privacyPaths: [reader], privacyTests: [reader] }, files: {
+    "fixture.txt": "fixture", [reader]: original,
+    "tests/a.test.mjs": 'import test from "node:test"; import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; test("document nonempty",()=>assert.ok(readFileSync("README.md","utf8").length));\n',
+  } });
+  const rulesPath = join(fixture.repo, "scripts/ci/impact-rules.json"), frozenRules = readFileSync(rulesPath);
+  const assertFrozen = () => assert.deepEqual(readFileSync(rulesPath), frozenRules, "the sole old-document rules freeze is never regenerated");
+  const changes = (...args) => parseNameStatus(execFileSync("git", ["-C", fixture.repo, "diff", "--name-status", "-z", ...args]));
+  const run = (files) => spawnSync(process.execPath, ["--test", ...files], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+  await writeFixtureFile(fixture.repo, "README.md", "old\n");
+  const reviewed = fixture.commit(), documentBytes = readFileSync(join(fixture.repo, "README.md"));
+  assert.deepEqual(execFileSync("git", ["-C", fixture.repo, "show", `${fixture.before}:README.md`]), documentBytes);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), []);
+  assert.deepEqual(documentReaderClosure(documentReaderSources(fixture.repo).texts, ["README.md"]), ["tests/a.test.mjs"]);
+  assert.equal(run([reader]).status, 0, "the preexisting replacement and child finally pass with the ordinary old literal");
+  assertFrozen();
+
+  await writeFixtureFile(fixture.repo, reader, changedSource);
+  assert.deepEqual(changes(), [{ status: "M", paths: [reader] }]);
+  assert.deepEqual(readFileSync(join(fixture.repo, "README.md")), documentBytes);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), [reader]);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, reviewed), []);
+  fixture.git("add", reader);
+  assert.deepEqual(changes("--cached"), [{ status: "M", paths: [reader] }]);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), [reader]);
+  assertFrozen();
+  const categoryHead = fixture.commit();
+  assert.deepEqual(changes(reviewed, categoryHead), [{ status: "M", paths: [reader] }]);
+  assert.deepEqual(execFileSync("git", ["-C", fixture.repo, "show", `${categoryHead}:README.md`]), documentBytes);
+  for (const ref of [undefined, categoryHead]) {
+    const { texts } = documentReaderSources(fixture.repo, ref);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"]), ["tests/a.test.mjs", reader]);
+    assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), [reader]);
+    assert.notEqual(categoryInputAudit(texts, fixture.rules)[reader], fixture.rules.categoryInputAudit[reader]);
+  }
+  assert.notEqual(sourceAuditDigest(reader, changedSource), fixture.rules.sourceAudit[reader]);
+  const before = run([reader]);
+  assert.equal(before.status, 0, before.stdout + before.stderr);
+  assertFrozen();
+
+  await writeFixtureFile(fixture.repo, "README.md", "new\n");
+  assert.deepEqual(changes(), [{ status: "M", paths: ["README.md"] }]);
+  fixture.git("add", "README.md");
+  assert.deepEqual(changes("--cached"), [{ status: "M", paths: ["README.md"] }]);
+  assert.deepEqual(checkConsumers(fixture.repo, fixture.rules), [reader]);
+  fixture.before = categoryHead;
+  fixture.head = fixture.commit();
+  assert.deepEqual(changes(categoryHead, fixture.head), [{ status: "M", paths: ["README.md"] }]);
+  const event = { before: fixture.before, after: fixture.head };
+  await writeFile(fixture.env.GITHUB_EVENT_PATH, JSON.stringify(event));
+  const input = sourceInput(fixture.repo, fixture.env), immutableInput = sourceInput(fixture.repo, fixture.env, event, fixture.head);
+  assert.deepEqual(input, immutableInput);
+  assert.deepEqual(input.records, [{ status: "M", paths: ["README.md"] }]);
+  assert.deepEqual(execFileSync("git", ["-C", fixture.repo, "show", `${fixture.head}:scripts/ci/impact-rules.json`]), frozenRules);
+  for (const ref of [undefined, fixture.head]) {
+    const { texts } = documentReaderSources(fixture.repo, ref);
+    assert.deepEqual(checkConsumers(fixture.repo, fixture.rules, ref), [reader]);
+    assert.deepEqual(documentReaderClosure(texts, ["README.md"]), ["tests/a.test.mjs", reader]);
+    assert.notEqual(categoryInputAudit(texts, fixture.rules)[reader], fixture.rules.categoryInputAudit[reader]);
+  }
+  const corrected = fixturePlan(fixture, "selective"); // Synthetic component eligibility, never hosted evidence.
+  assert.equal(corrected.coverage, "full");
+  assert.deepEqual(corrected.reasons, ["unaccounted-consumers"]);
+  assert.deepEqual(corrected.coreTests, ["tests/a.test.mjs", reader]);
+  assert.equal(corrected.notApplicable.some((row) => row.path === reader), false);
+  immutableInput.baseline = corrected.baseline;
+  immutableInput.unaccountedConsumers = checkConsumers(fixture.repo, fixture.rules, fixture.head);
+  const { rulesHash } = loadRules(fixture.repo);
+  assert.deepEqual(createPlan(immutableInput, fixture.rules, rulesHash), corrected);
+  assert.deepEqual(validatePlan(corrected, fixture.repo, fixture.env), corrected);
+  const planPath = join(fixture.directory, "indirect-raw-plan.json");
+  const immutable = () => spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/ci/impact-plan.mjs", import.meta.url)), "validate-baseline", planPath], { cwd: fixture.repo, env: fixture.env, encoding: "utf8" });
+  await writeFile(planPath, JSON.stringify(corrected));
+  const accepted = immutable();
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  const forged = createPlan({ ...input, baseline: corrected.baseline, unaccountedConsumers: [] }, fixture.rules, rulesHash);
+  assert.equal(forged.coverage, "selective");
+  assert.deepEqual(forged.coreTests, ["tests/a.test.mjs"]);
+  assert.ok(forged.notApplicable.some((row) => row.path === reader));
+  assert.throws(() => validatePlan(forged, fixture.repo, fixture.env), /independently derived/u);
+  await writeFile(planPath, JSON.stringify(forged));
+  assert.notEqual(immutable().status, 0, "immutable Git reconstruction rejects the resealed a-only omission");
+  await writeFile(planPath, JSON.stringify(corrected));
+  assertFrozen();
+  const aOnly = run(["tests/a.test.mjs"]);
+  assert.equal(aOnly.status, 0, aOnly.stdout + aOnly.stderr);
+  const selected = run(corrected.coreTests);
+  assert.equal(selected.status, 1, "the selected roster executes b and exposes README=new");
+  assert.match(selected.stdout + selected.stderr, /privacy indirect raw contract/u);
   assert.match(selected.stdout + selected.stderr, /AssertionError/u);
   assert.match(selected.stdout + selected.stderr, /'new' !== 'old'/u);
   const committedDocument = execFileSync("git", ["-C", fixture.repo, "show", `${fixture.head}:README.md`]);

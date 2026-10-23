@@ -381,6 +381,102 @@ export function sourceDependencyGraph(texts, inputAudit) {
       while (callee !== null && values[callee] === "(" && pairs.get(callee) === end - 1) { callee++; end--; }
       return { start, callee, end };
     };
+    // Track only finite references to the ambient object, its String
+    // constructor and raw tag. An unknown property of either relevant receiver
+    // cannot prove that a later String.raw invocation still uses the intrinsic.
+    const intrinsicAliases = new Map();
+    const intrinsicValue = (start, end, depth = 0) => {
+      if (depth > 20 || start >= end) return null;
+      let cursor = start, value;
+      if (values[cursor] === "(" && pairs.has(cursor) && pairs.get(cursor) < end) {
+        value = intrinsicValue(cursor + 1, pairs.get(cursor), depth + 1);
+        cursor = pairs.get(cursor) + 1;
+      } else if (tokens[cursor]?.kind === "identifier") {
+        value = ["globalThis", "global"].includes(values[cursor]) ? "global" : values[cursor] === "String" ? "string" : intrinsicAliases.get(values[cursor]);
+        cursor++;
+      } else return null;
+      if (!value) return null;
+      while (cursor < end) {
+        let key;
+        if ([".", "?."].includes(values[cursor]) && tokens[cursor + 1]?.kind === "identifier") {
+          key = values[cursor + 1]; cursor += 2;
+        } else if (values[cursor] === "[" && pairs.has(cursor) && pairs.get(cursor) < end) {
+          key = pairs.get(cursor) === cursor + 2 && tokens[cursor + 1]?.kind === "string" ? values[cursor + 1] : null;
+          cursor = pairs.get(cursor) + 1;
+        } else return null;
+        if (value === "global") value = key === "String" ? "string" : ["globalThis", "global"].includes(key) ? "global" : key === null || key === "constructor" ? "uncertain" : "unrelated";
+        else if (value === "string") value = key === "raw" ? "raw" : ["fromCharCode", "fromCodePoint"].includes(key) ? "static" : "uncertain";
+        else if (value !== "unrelated") value = "uncertain";
+      }
+      return value;
+    };
+    const assignmentEnd = (start) => {
+      let end = start;
+      while (end < tokens.length && ![";", ",", ")", "}"].includes(values[end])) { if (pairs.has(end)) end = pairs.get(end); end++; }
+      return end;
+    };
+    let uncertainDestructure = false;
+    for (let pass = 0; pass < 8; pass++) {
+      let changed = false;
+      for (let index = 1; index < tokens.length - 2; index++) {
+        if (tokens[index].kind === "identifier" && values[index + 1] === "=" && ["const", "let", "var"].includes(values[index - 1])) {
+          const kind = intrinsicValue(index + 2, assignmentEnd(index + 2));
+          if (["global", "string", "raw"].includes(kind) && intrinsicAliases.get(values[index]) !== kind) { intrinsicAliases.set(values[index], kind); changed = true; }
+        }
+        if (values[index] !== "{" || !pairs.has(index) || values[pairs.get(index) + 1] !== "=") continue;
+        const closing = pairs.get(index), kind = intrinsicValue(closing + 2, assignmentEnd(closing + 2));
+        if (!["global", "string"].includes(kind)) {
+          if (parts(index + 1, closing).some(([first]) => ["String", "raw"].includes(values[first + (values[first] === "[" ? 1 : 0)]))) uncertainDestructure = true;
+          continue;
+        }
+        for (const [first, last] of parts(index + 1, closing)) {
+          if (first === last) continue;
+          const key = values[first] === "[" && pairs.get(first) === first + 2 && tokens[first + 1]?.kind === "string" ? [values[first + 1]] : values[first] === "[" ? [] : [values[first]];
+          const name = values[first + 1] === ":" ? first + 2 : first;
+          if (key.length !== 1 || tokens[name]?.kind !== "identifier" || name >= last) { uncertainDestructure = true; continue; }
+          const next = kind === "global" && key[0] === "String" ? "string" : kind === "global" && ["globalThis", "global"].includes(key[0]) ? "global" : kind === "string" && key[0] === "raw" ? "raw" : null;
+          if (next && intrinsicAliases.get(values[name]) !== next) { intrinsicAliases.set(values[name], next); changed = true; }
+        }
+      }
+      if (!changed) break;
+    }
+    const readonlyGlobalStrings = new Set();
+    const reference = (index) => {
+      let start = index, end = index + 1;
+      while (end < tokens.length) {
+        if (values[end] === ")" && openings.get(end) === start - 1) { start--; end++; continue; }
+        if ([".", "?."].includes(values[end]) && tokens[end + 1]?.kind === "identifier") { end += 2; continue; }
+        if (values[end] === "[" && pairs.has(end)) { end = pairs.get(end) + 1; continue; }
+        break;
+      }
+      return { start, end, kind: intrinsicValue(start, end) };
+    };
+    let ambientUnsafe = uncertainDestructure || [...intrinsicAliases.values()].includes("raw");
+    for (let index = 0; index < tokens.length; index++) {
+      // A computed String key on an unknown receiver could be the same
+      // constructor. Literal arrays have no member receiver and are ignored.
+      const computedString = values[index] === "[" && pairs.get(index) === index + 2 && values[index + 1] === "String" &&
+        ([")", "]"].includes(values[index - 1]) || tokens[index - 1]?.kind === "identifier");
+      if (computedString) {
+        const receiver = calleeStart(index);
+        if (receiver === null || intrinsicValue(receiver, index) === null) ambientUnsafe = true;
+      }
+      const name = values[index];
+      if (tokens[index].kind !== "identifier" || !(["globalThis", "global"].includes(name) || intrinsicAliases.has(name)) || [".", "?."].includes(values[index - 1])) continue;
+      // A binding name is not a read of its ambient value.
+      if (["const", "let", "var"].includes(values[index - 1]) && values[index + 1] === "=") continue;
+      const { start, end, kind } = reference(index), next = values[end];
+      if (!kind || kind === "unrelated") continue;
+      const readonlyCall = ["string", "static", "raw"].includes(kind) && next === "(" && pairs.has(end) && values[pairs.get(end) + 1] !== "{";
+      const rawTag = kind === "raw" && tokens[end]?.kind === "template";
+      const aliasName = values[start - 2], aliasKind = intrinsicAliases.get(aliasName);
+      const localAlias = values[start - 1] === "=" && tokens[start - 2]?.kind === "identifier" && aliasKind === kind;
+      const destructuredAlias = values[start - 1] === "=" && values[start - 2] === "}" && openings.has(start - 2);
+      const bareMention = kind === "global" && next === ";" && (start === 0 || [";", "{", "}"].includes(values[start - 1]));
+      const safe = readonlyCall || rawTag || localAlias && kind !== "raw" || destructuredAlias && kind !== "raw" || bareMention;
+      if (!safe) ambientUnsafe = true;
+      if (safe && ["string", "static", "raw"].includes(kind)) for (let member = start + 1; member < end; member++) if (values[member] === "String" && [".", "?."].includes(values[member - 1])) readonlyGlobalStrings.add(member);
+    }
     // String conversions and the intrinsic's finite static calls do not mutate
     // its raw tag. Every other reference still needs proof: declarations,
     // parameters, assignments, computed members and escaping aliases are unsafe.
@@ -389,6 +485,7 @@ export function sourceDependencyGraph(texts, inputAudit) {
       return callee !== null && values.slice(callee, end).join("") === "String.raw" ? [callee] : [];
     }));
     const readonlyStringUse = (index) => {
+      if (readonlyGlobalStrings.has(index)) return true;
       if (rawTags.has(index)) return true;
       if ([".", "?.", "function"].includes(values[index - 1]) || values[index - 1] === "*" && values[index - 2] === "function") return false;
       const opening = values[index + 1] === "(" ? index + 1 : values[index + 1] === "." &&
@@ -398,7 +495,7 @@ export function sourceDependencyGraph(texts, inputAudit) {
     };
     // String.raw is data only while it is the unbound intrinsic. A user tag,
     // including one named raw/normalize/writeFileSync, has executable inputs.
-    const intrinsicRaw = !tokens.some((token, index) => token.kind === "identifier" && token.value === "String" && !readonlyStringUse(index));
+    const intrinsicRaw = !ambientUnsafe && !tokens.some((token, index) => token.kind === "identifier" && token.value === "String" && !readonlyStringUse(index));
     const knownTag = (name, seen = new Set()) => {
       if (name === null || seen.has(name) || seen.size > 20) return false;
       if (!tagAliases.has(name)) return tagFunctions.has(name);
@@ -415,7 +512,7 @@ export function sourceDependencyGraph(texts, inputAudit) {
     for (let index = 0; index < tokens.length; index++) {
       if (javascript && tokens[index].kind === "template") {
         const { start, callee, end } = templateCallee(index), template = templates.get(index);
-        if (start !== null && !(intrinsicRaw && values.slice(callee, end).join("") === "String.raw")) {
+        if (start !== null && !(intrinsicRaw && intrinsicValue(callee, end) === "raw")) {
           if (auditInput) inputForms.push(digest({ tag: inputForm(start, index, true), template: inputForm(index, template.end, true), args: template.args.map(([a, b]) => inputForm(a, b, true)) }));
           for (const value of [...tokens[index].literals, ...tokens[index].rawLiterals, ...templateValues(index)]) addKnown(dependencies, value, source);
           let reliable = !tokens[index].uncertainEscape && end === callee + 1 && knownTag(values[callee]);

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "synthetic.work-content-example.v1",
+  "fixtureOnly": true,
+  "source": {
+    "id": "fabricated-label-request",
+    "kind": "user-request",
+    "locator": "synthetic-only:label-example",
+    "version": "fixture-1",
+    "extraction": "complete",
+    "text": "Invented test data: a label formatter trims surrounding whitespace and preserves letter case. No real request or external source is represented."
+  },
+  "requirements": [
+    {
+      "id": "TRIM",
+      "version": 1,
+      "text": "Remove whitespace before and after a label.",
+      "sourceIds": [
+        "fabricated-label-request"
+      ],
+      "shared": true,
+      "disposition": "required"
+    },
+    {
+      "id": "CASE",
+      "version": 1,
+      "text": "Keep each letter's case unchanged.",
+      "sourceIds": [
+        "fabricated-label-request"
+      ],
+      "shared": true,
+      "disposition": "required"
+    }
+  ]
+}

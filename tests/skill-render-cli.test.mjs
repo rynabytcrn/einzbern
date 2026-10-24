@@ -21,7 +21,7 @@ import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js
 import { FRAMEWORK_VERSION } from "../dist/build/packages/core/src/index.js";
 import { computeInstallTreeDigest } from "../dist/build/packages/core/src/install-tree-digest.js";
 import { BRAND } from "../dist/build/packages/core/src/names.js";
-import { SKILL_MARKDOWN_BYTE_LIMIT, renderSkillMarkdown } from "../dist/build/packages/core/src/skill-render.js";
+import { SKILL_MARKDOWN_BYTE_LIMIT, SKILL_NAVIGATION, renderSkillMarkdown } from "../dist/build/packages/core/src/skill-render.js";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const templateDirectory = join(repositoryRoot, "skill", BRAND.helper.id);
@@ -125,7 +125,9 @@ test("479-AC1, AC3 through the CLI: every verb the generated table names is list
   const listed = (await invoke(["commands"])).report.commands.map((entry) => entry.name);
   const verbs = tableVerbs(markdown);
   // The full-text moment includes both project context and the packaged evidence entry.
-  assert.equal(verbs.length, 29, "nine moments retain native/shared/backup commands and batch capture plus actual enabled-rule lookup");
+  assert.deepEqual(verbs, SKILL_NAVIGATION.flatMap(entry => [...entry.verbs]), "CLI output preserves the complete current navigation contract");
+  assert.equal(verbs.length, 31, "ten moments include typed drafting and complete content alongside existing commands");
+  for (const verb of ["work-draft", "work-content-context"]) assert.ok(verbs.includes(verb), `${verb} remains in installed navigation`);
   assert.equal(verbs.filter(verb => verb === "rule-list").length, 1, "the normal installed starting-work row names current rule state exactly once");
   assert.ok(verbs.includes("execution-evidence"), "the installed workflow names its public evidence entry");
   assert.match(markdown, /`execution-evidence --from-file <json>` remains read-only validation, not authentication/);
@@ -219,4 +221,17 @@ test("DOT-R01/R02: generated helper owns the archive helper, preserves unknown f
   const installedReference = await readFile(join(out, "skill", BRAND.helper.id, "references", "install.md"));
   assert.deepEqual(installedReference, await readFile(join(templateDirectory, "references", "install.md")));
   assert.equal(await readFile(join(out, "skill", BRAND.helper.id, "SKILL.md"), "utf8"), renderSkillMarkdown({ version: FRAMEWORK_VERSION, catalogNames: COMMAND_CATALOG.map(entry => entry.name) }));
+});
+
+test("INIT068 R13/R14: actual skill-render output navigates the frozen content CLI without claiming installation", async context => {
+  const base = await scratch(context); const out = join(base, "typed-skill");
+  const result = await invoke(["skill-render", "--out", out]);
+  assert.equal(result.ok, true);
+  const body = await readFile(join(out, "SKILL.md"), "utf8");
+  for (const verb of ["work-draft", "work-content-context"]) {
+    assert.ok(COMMAND_CATALOG.some(entry => entry.name === verb));
+    assert.ok(body.includes(verb));
+  }
+  assert.ok(body.includes("unavailable remains unverified"));
+  assert.ok(body.includes("original source, behavior and assertions"));
 });

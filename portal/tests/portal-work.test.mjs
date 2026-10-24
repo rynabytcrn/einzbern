@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+import { canonicalDocumentBytes } from "../../scripts/lib/canonical-json.mjs";
 // Tests in this file run sequentially; Node isolates each file in a process.
-import { LARGE_STORIES, appendHistoricalAttestationEnable, assert, cli, join, largeLibrary, pageOf, pagedWork, portalRoot, readBoot, readFile, readOptions, request, rm, scratch, startPortal, test, unordered, workPagesHarness, writeOptions } from "./portal-support.mjs";
+import { LARGE_STORIES, appendHistoricalAttestationEnable, assert, cli, join, largeLibrary, pageOf, pagedWork, portalRoot, readBoot, readFile, readOptions, request, rm, scratch, startPortal, test, unordered, workPagesHarness, writeFile, writeOptions } from "./portal-support.mjs";
 
 
 
@@ -299,4 +300,78 @@ test("528 SUB-459: the work read carries each item's lease, and Atelier releases
   const nothing = await request(url, "/api/work/lease-release", writeOptions(boot.token, "POST", { id: story.id }));
   assert.equal(nothing.body.ok, false);
   assert.equal(nothing.body.reasonCode, "WORK_LEASE_NOT_FOUND", "an item without a lease has nothing to release");
+});
+
+// INIT068 SUB636: adapters return the engine's canonical draft/context, not UI-owned acceptance.
+test("INIT068: typed drafts share CLI data, preserve empty completion, and reject a non-Story defect", async t => {
+  const fixture = await scratch("portal-init068-draft-", "INIT068-DRAFT");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  for (const [kind, variant] of [["Initiative", "standard"], ["Epic", "standard"], ["Story", "standard"], ["Subtask", "standard"], ["Story", "defect"]]) {
+    const expected = await cli(["work-draft", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--kind", kind, "--variant", variant], fixture.deviceEnv);
+    const result = await request(url, `/api/work/draft?projectId=${fixture.projectId}&kind=${kind}&variant=${variant}`, readOptions(boot.token));
+    assert.equal(result.body.ok, true);
+    for (const field of ["content", "missing", "contentTemplate", "contentPolicy", "contentRolloutReadiness", "inheritedContext"]) assert.deepEqual(result.body[field], expected[field]);
+    assert.equal(Object.hasOwn(result.body.content, "completion"), false);
+    assert.ok(result.body.missing.includes("sources"));
+    assert.ok(result.body.missing.includes("acceptance"));
+  }
+  const invalid = await request(url, `/api/work/draft?projectId=${fixture.projectId}&kind=Epic&variant=defect`, readOptions(boot.token));
+  assert.equal(invalid.body.ok, false);
+});
+
+test("INIT068: long legacy context is segmented without loss; ancestry changes invalidate continuation", async t => {
+  const fixture = await scratch("portal-init068-segment-", "INIT068-SEGMENT");
+  const parent = (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", "2026-08-11T15:01:00Z", "--external-key", "INIT068-SEGMENT-INIT", "--kind", "Initiative", "--title", "Legacy source", "--body", "Critical constraint 🧭\n".repeat(600)], fixture.deviceEnv)).record;
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const expected = await cli(["work-show", "--workspace", fixture.workspace, "--id", parent.id], fixture.deviceEnv);
+  const childDraft = (await request(url, `/api/work/draft?projectId=${fixture.projectId}&kind=Epic&parentId=${parent.id}`, readOptions(boot.token))).body;
+  assert.deepEqual(childDraft.inheritedContext, expected.workContent, "parent sources and constraints are read from the same context");
+  let offset = 0, digest, text = "";
+  do {
+    const segment = (await request(url, `/api/work/content-context?id=${parent.id}&offset=${offset}&limit=1024${digest ? "&digest=" + digest : ""}`, readOptions(boot.token))).body;
+    assert.equal(segment.ok, true);
+    assert.equal(segment.offset, offset);
+    assert.equal(segment.offsetUnit, "unicode-code-point");
+    if (digest) assert.equal(segment.digest, digest);
+    digest = segment.digest; text += segment.text; offset = segment.nextOffset;
+  } while (offset !== null);
+  assert.deepEqual(JSON.parse(text), expected.workContent);
+  const shown = (await request(url, `/api/work/content?id=${parent.id}`, readOptions(boot.token))).body;
+  assert.deepEqual(shown.content, expected.content);
+  assert.deepEqual(shown.fields, expected.fields);
+  await cli(["work-annotate", "--workspace", fixture.workspace, "--at", "2026-08-11T15:02:00Z", "--id", parent.id, "--expected-revision", String(parent.revision), "--body", "Changed source"], fixture.deviceEnv);
+  const changed = (await request(url, `/api/work/content-context?id=${parent.id}&offset=1024&limit=1024&digest=${digest}`, readOptions(boot.token))).body;
+  assert.equal(changed.ok, false);
+  assert.equal(changed.reasonCode, "WORK_CONTENT_CONTEXT_CHANGED");
+});
+
+test("INIT068: native content saves with admitted binding, reads back canonically, and rejects stale revision without changing content", async t => {
+  const fixture = await scratch("portal-init068-write-", "INIT068-WRITE");
+  const draft = await cli(["work-draft", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--kind", "Initiative"], fixture.deviceEnv);
+  const templatePath = join(fixture.base, "minimum-initiative.json");
+  await writeFile(templatePath, canonicalDocumentBytes(draft.contentTemplate));
+  const admitted = await cli(["template-admit", "--workspace", fixture.workspace, "--at", "2026-08-11T15:01:00Z", "--template", templatePath, "--owner", "owner:fixture"], fixture.deviceEnv);
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const create = { projectId: fixture.projectId, kind: "Initiative", externalKey: "INIT068-WRITE-INIT", title: "Canonical content", content: draft.content };
+  const refused = (await request(url, "/api/work/content", writeOptions(boot.token, "POST", create))).body;
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reasonCode, "WORK_CONTENT_TEMPLATE_REQUIRED", "a suggested template is not admission or opt-in");
+  const saved = (await request(url, "/api/work/content", writeOptions(boot.token, "POST", { ...create, templateReceipt: admitted.receipt }))).body;
+  assert.equal(saved.ok, true);
+  const shown = (await request(url, `/api/work/content?id=${saved.record.id}`, readOptions(boot.token))).body;
+  assert.deepEqual(shown.content, draft.content);
+  assert.equal(shown.content.completion, undefined);
+  assert.ok(shown.workContent.records[0].missing.includes("goal"), "planned drafts keep visible missing content");
+  const content = { ...draft.content, body: "自由正文 — no imposed headings" };
+  const updated = (await request(url, "/api/work/content", writeOptions(boot.token, "POST", { id: saved.record.id, revision: saved.record.revision, content }))).body;
+  assert.equal(updated.ok, true);
+  const stale = (await request(url, "/api/work/content", writeOptions(boot.token, "POST", { id: saved.record.id, revision: saved.record.revision, content: { ...content, body: "stale replacement" } }))).body;
+  assert.equal(stale.ok, false);
+  assert.deepEqual((await cli(["work-show", "--workspace", fixture.workspace, "--id", saved.record.id], fixture.deviceEnv)).content, content);
 });

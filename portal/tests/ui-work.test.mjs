@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+import { canonicalDocumentBytes } from "../../scripts/lib/canonical-json.mjs";
 // Tests in this file run sequentially; Node isolates each file in a process.
-import { CLI, MUTATION, assert, cli, closePage, join, loadExecutedDom, localeTable, nextAt, openWorkEditor, portalRoot, preparePage, projectChainFixture, readFile, receiptAdvanced, receiptText, rm, scopedWorkFixture, scratch, test, waitFor, writeFile } from "./ui-presence-support.mjs";
+import { CLI, MUTATION, assert, cli, closePage, join, loadExecutedDom, localeTable, nextAt, openWorkContentEditor, openWorkEditor, portalRoot, preparePage, projectChainFixture, readFile, receiptAdvanced, receiptText, rm, scopedWorkFixture, scratch, test, waitFor, writeFile } from "./ui-presence-support.mjs";
 
 
 
@@ -547,4 +548,132 @@ if (!MUTATION) test("528 SUB-459: the work tree shows a lease with its holder an
     assert.equal((await cli(["work-show", "--workspace", fixture.workspace, "--id", story.id], fixture.deviceEnv)).lease, null, "work-show reads no lease after the forced release");
     assert.equal(document.querySelector(`#work-tree-content [data-work-id="${epic.id}"] > summary [data-work-lease]`)?.textContent, held, "the Epic keeps its own lease");
   } finally { await closePage(page, fixture); }
+});
+
+if (!MUTATION) test("INIT068: typed drafts keep free body edits across type changes, repeated requests, disclosure close and navigation", async () => {
+  const page = await preparePage();
+  try {
+    const { document, window } = page;
+    await openWorkContentEditor(page);
+    const control = name => document.querySelector(`#work-content-editor [data-content-${name}]`);
+    const change = (node, value, event = "change") => { node.value = value; node.dispatchEvent(new window.Event(event, { bubbles: true })); };
+    control("draft").click();
+    await waitFor(() => document.querySelector('[data-content-field="body"]'), "typed draft body");
+    const body = () => document.querySelector('[data-content-field="body"]');
+    change(body(), "Free body without imposed headings 🧭 \"quoted\" &quot; </textarea><b>literal</b>", "input");
+    assert.deepEqual([...document.querySelectorAll("#work-content-editor [data-content-group]")].map(node => node.dataset.contentGroup), ["goal", "sources", "scope", "requirements", "completion"]);
+    assert.equal(document.querySelector('[data-content-field="completion"]').value, "");
+    control("draft").click();
+    assert.equal(body().value, "Free body without imposed headings 🧭 \"quoted\" &quot; </textarea><b>literal</b>", "repeated draft cannot reset edits");
+    change(control("kind"), "Epic"); control("draft").click();
+    await waitFor(() => document.querySelector('[data-content-field="details"]')?.value.includes("childResponsibilities"), "Epic responsibilities");
+    change(control("kind"), "Story"); control("draft").click();
+    assert.equal(body().value, "Free body without imposed headings 🧭 \"quoted\" &quot; </textarea><b>literal</b>");
+    const disclosure = document.querySelector("#work-content-editor details"); disclosure.open = false;
+    document.querySelector('[data-page-target="settings"]').click();
+    document.querySelector('[data-page-target="dashboard"]').click();
+    assert.equal(body().value, "Free body without imposed headings 🧭 \"quoted\" &quot; </textarea><b>literal</b>");
+    change(document.querySelector('[data-content-field="sources"]'), "{\"unfinished\": \"&quot;", "input");
+    control("save").click();
+    await waitFor(() => control("error"), "parse error is visible");
+    assert.equal(document.querySelector('[data-content-field="sources"]').value, "{\"unfinished\": \"&quot;", "failed save retains invalid input for repair");
+    assert.equal(body().value, "Free body without imposed headings 🧭 \"quoted\" &quot; </textarea><b>literal</b>");
+    control("undo").click();
+    assert.equal(body().value, "");
+    change(control("variant"), "defect"); control("draft").click();
+    await waitFor(() => document.querySelector('[data-content-field="details"]')?.value.includes("reproduction"), "defect responsibilities");
+    for (const field of ["expected", "actual", "reproduction", "affectedVersion", "fixBoundary", "regression"]) assert.ok(JSON.parse(document.querySelector('[data-content-field="details"]').value)[field] === "");
+  } finally { await page.cleanup(); }
+});
+
+if (!MUTATION) test("INIT068: segmented mixed legacy scope and explicit fields survive direct and inherited DOM delivery", async () => {
+  const fixture = await scratch("init068-mixed-scope-ui-");
+  let page;
+  try {
+    const create = async (key, kind, extra) => (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", key, "--kind", kind, "--title", key, ...extra], fixture.deviceEnv)).record;
+    const scope = "Preserve independently inherited constraints. 🧭\n".repeat(400) + "KEEP-RESERVED-BACKUP";
+    const parent = await create("MIXED-SCOPE-INIT", "Initiative", ["--goal", "Explicit goal", "--acceptance", "Explicit acceptance", "--body", "Explicit body", "--scope", scope]);
+    const child = await create("MIXED-SCOPE-EPIC", "Epic", ["--parent-id", parent.id, "--goal", "Child goal", "--body", "Child body"]);
+    page = await loadExecutedDom(fixture);
+    await openWorkContentEditor(page);
+    for (const record of [child, parent]) {
+      const expected = (await cli(["work-show", "--workspace", fixture.workspace, "--id", record.id], fixture.deviceEnv)).workContent;
+      const select = page.document.querySelector("[data-content-work]");
+      select.value = record.id; select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(() => page.document.querySelector("[data-content-more]"), "explicit partial content state");
+      assert.equal(page.document.querySelector("[data-content-legacy]"), null, "a partial JSON document is not presented as complete legacy content");
+      while (page.document.querySelector("[data-content-more]")) {
+        const before = page.document.querySelector("[data-content-delivery]").textContent;
+        page.document.querySelector("[data-content-more]").click();
+        await page.waitForSettled();
+        assert.equal(page.document.querySelector("[data-content-error]"), null);
+        assert.notEqual(page.document.querySelector("[data-content-delivery]").textContent, before, "each segment advances delivery");
+      }
+      await waitFor(() => page.document.querySelector("[data-content-legacy]"), "complete mixed legacy content");
+      for (const row of expected.records) {
+        const rendered = page.document.querySelector(`[data-content-source="${row.workId}"] pre`);
+        assert.ok(rendered, row.externalKey);
+        assert.deepEqual(JSON.parse(rendered.textContent), row, "the complete canonical row, including scope, reaches the DOM");
+      }
+      assert.ok(page.document.querySelector("#work-content-editor").textContent.includes("KEEP-RESERVED-BACKUP"));
+      assert.equal(expected.records.find(row => row.workId === parent.id).scope, scope);
+    }
+  } finally { if (page) await closePage(page, fixture); else await rm(fixture.base, { recursive: true, force: true }); }
+});
+
+// MIN376 R15/R16 v2: this requires a genuinely delivered, distinguishable capable V,
+// verified writer/barrier evidence and supported v2 enablement. The current same-version
+// candidate cannot establish it. Keep the real default/no-manual-receipt scenario pending,
+// rather than relabeling a synthetic policy or explicit receipt as enabled-default proof.
+if (!MUTATION) test.todo("INIT068: real capable-V project enablement saves its admitted default without receipt JSON (pending actual V/build, writer inventory, barrier and accepted-boundary evidence)");
+
+if (!MUTATION) test("INIT068: unenabled draft shows canonical not-ready evidence; explicit admitted receipt save, undo and stale-save remain independent", async () => {
+  const fixture = await scratch("init068-explicit-save-ui-");
+  let page;
+  try {
+    const draft = await cli(["work-draft", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--kind", "Initiative"], fixture.deviceEnv);
+    const templatePath = join(fixture.base, "Initiative.json");
+    await writeFile(templatePath, canonicalDocumentBytes(draft.contentTemplate));
+    const admitted = await cli(["template-admit", "--workspace", fixture.workspace, "--at", nextAt(), "--template", templatePath, "--owner", "owner:fixture"], fixture.deviceEnv);
+    page = await loadExecutedDom(fixture);
+    await openWorkContentEditor(page);
+    const control = name => page.document.querySelector(`[data-content-${name}]`);
+    const field = name => page.document.querySelector(`[data-content-field="${name}"]`);
+    const change = (node, value, event = "input") => { node.value = value; node.dispatchEvent(new page.window.Event(event, { bubbles: true })); };
+    change(control("kind"), "Initiative", "change"); control("draft").click();
+    await waitFor(() => field("body"), "new unenabled draft");
+    assert.equal(control("advanced-receipt").hasAttribute("open"), false, "the existing receipt escape hatch is not the ordinary authoring flow");
+    assert.equal(page.document.querySelector('[data-content-meta="templateReceipt"]').value, "");
+    change(page.document.querySelector('[data-content-meta="externalKey"]'), "INIT068-UI-SAVED");
+    change(page.document.querySelector('[data-content-meta="title"]'), "Explicit-admission UI draft");
+    change(field("body"), "Saved free body");
+    const readinessView = JSON.parse(page.document.querySelector("#work-content-editor [data-content-missing]").textContent).contentRolloutReadiness;
+    const currentDraft = await cli(["work-draft", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--kind", "Initiative"], fixture.deviceEnv);
+    assert.deepEqual(readinessView, currentDraft.contentRolloutReadiness);
+    assert.equal(readinessView.ready, false);
+    assert.ok(readinessView.problems.includes("CAPABLE_DELIVERY_UNVERIFIED"));
+    control("save").click();
+    await waitFor(() => control("error"), "no implicit enablement or unbound typed write");
+    assert.ok(control("error").textContent.includes("WORK_CONTENT_TEMPLATE_REQUIRED"));
+    assert.equal(field("body").value, "Saved free body", "refusal keeps the authoring draft");
+    control("advanced-receipt").open = true;
+    change(page.document.querySelector('[data-content-meta="templateReceipt"]'), JSON.stringify(admitted.receipt));
+    control("save").click();
+    await waitFor(() => control("reload") && field("body"), "explicit-admission canonical readback (not policy enablement)");
+    assert.equal(control("error"), null);
+    const shown = await cli(["work-show", "--workspace", fixture.workspace, "--external-key", "INIT068-UI-SAVED"], fixture.deviceEnv);
+    assert.equal(shown.content.body, "Saved free body");
+    assert.equal(field("body").value, shown.content.body);
+    change(field("body"), "Unsaved local edit"); control("undo").click();
+    assert.equal(field("body").value, shown.content.body);
+    const remote = { ...shown.content, body: "Concurrent canonical edit" };
+    await cli(["work-annotate", "--workspace", fixture.workspace, "--at", nextAt(), "--id", shown.record.id, "--expected-revision", String(shown.record.revision), "--content", JSON.stringify(remote)], fixture.deviceEnv);
+    change(field("body"), "Keep this rejected local edit"); control("save").click();
+    await waitFor(() => control("error"), "visible stale revision refusal");
+    assert.ok(control("error").textContent.includes("work revision changed"));
+    assert.equal(field("body").value, "Keep this rejected local edit");
+    assert.deepEqual((await cli(["work-show", "--workspace", fixture.workspace, "--id", shown.record.id], fixture.deviceEnv)).content, remote);
+    control("reload").click();
+    await waitFor(() => field("body")?.value === remote.body, "explicit reload of concurrent canonical content");
+  } finally { if (page) await closePage(page, fixture); else await rm(fixture.base, { recursive: true, force: true }); }
 });

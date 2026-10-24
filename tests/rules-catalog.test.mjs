@@ -44,7 +44,7 @@ function absolutePath(text) {
   return ABSOLUTE_PATH.exec(text)?.[0] ?? null;
 }
 
-test("the engine ships eight built-in rules at their versions, batch processing at v3", () => {
+test("the engine ships nine built-in rules at their versions, batch processing at v3", () => {
   assert.deepEqual(BUILT_IN_RULES.map((rule) => [rule.id, rule.version]), [
     ["autonomy", 1],
     ["batch", 3],
@@ -54,6 +54,7 @@ test("the engine ships eight built-in rules at their versions, batch processing 
     ["residue-cleanup", 1],
     ["goal-writing", 1],
     ["incremental-update", 1],
+    ["privacy-publication", 1],
   ]);
   assert.deepEqual([...BUILT_IN_RULE_IDS], BUILT_IN_RULES.map((rule) => rule.id));
   assert.equal(builtInRule("batch")?.version, 3);
@@ -94,7 +95,7 @@ test("no rule text names an absolute path", () => {
 test("every current Chinese body and the archived English contracts match their explicit fixtures", async () => {
   // Historical bodies remain separately archived; current supplements have explicit fixtures.
   // The eighth source is asserted below without changing its contract.
-  for (const rule of BUILT_IN_RULES.filter(rule => rule.id !== "incremental-update")) {
+  for (const rule of BUILT_IN_RULES.filter(rule => !["incremental-update", "privacy-publication"].includes(rule.id))) {
     assert.equal(rule.body.zh, await readFile(join(fixtures, `${rule.id}.zh.md`), "utf8"), rule.id);
   }
   assert.equal(builtInRule("design-authority")?.body.en, await readFile(join(fixtures, "design-authority.en.md"), "utf8"));
@@ -301,7 +302,7 @@ test("INIT-062 universal supplements preserve v1 history, explicit user limits a
 });
 
 test("MIN358 scoped-prohibition and governance persistence clauses extend selectable autonomy without new rules", async () => {
-  assert.equal(BUILT_IN_RULES.length, 8);
+  assert.equal(BUILT_IN_RULES.filter(rule => rule.id !== "privacy-publication").length, 8); // INIT068 adds only its separately approved principle.
   for (const language of LANGUAGES) {
     assert.ok(builtInRule("autonomy").body[language].includes(AUTONOMY_RESTRICTION_SCOPE_BODY[language]));
     const previous = await readFile(join(fixtures, `autonomy-v1-rev2.${language}.md`), "utf8");
@@ -310,4 +311,12 @@ test("MIN358 scoped-prohibition and governance persistence clauses extend select
     for (const rule of BUILT_IN_RULES.filter(rule => rule.id !== "autonomy")) assert.equal(rule.body[language].includes(AUTONOMY_RESTRICTION_SCOPE_BODY[language]), false);
   }
   for (const phrase of ["explicitly approved", "scope, duration and release conditions", "General agreement", "permanent or cross-plan", "observed refusal", "destination is external storage", "Material changes", "cannot disable platform safety"]) assert.ok(AUTONOMY_RESTRICTION_SCOPE_BODY.en.includes(phrase), phrase);
+});
+
+test("INIT068 R21: common privacy principle covers authorized identity/minimization and preserves failure/permission boundaries", () => {
+  const rule = builtInRule("privacy-publication");
+  assert.equal(rule.version, 1);
+  for (const clause of ["actual contributor", "noreply", "Git metadata", "candidate version", "preserve the original branch", "Never weaken gates", "without authorization", "grants no commit, push, PR, identity-rewrite", "not universal automatic approval"]) assert.ok(rule.body.en.includes(clause), clause);
+  for (const clause of ["不得未经授权切换为 owner 或其他身份", "数据最小化", "Git 元数据", "保留原分支、提交及失败证据", "不弱化门", "不擅改远端历史", "不授予提交、推送、PR、身份重写"]) assert.ok(rule.body.zh.includes(clause), clause);
+  assert.equal(/fixture-contributor|fixture-owner|users\.noreply\.github\.com/u.test(rule.body.en + rule.body.zh), false);
 });

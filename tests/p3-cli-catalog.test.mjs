@@ -412,7 +412,7 @@ test("STORY-480: setup writes and takes the wizard's flags; doctor reads and tak
 // TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): twelve, with project-bindings-set and -remove,
 // work-gate-release and work-release. INIT-056 adds the engine-wide policy writer as the thirteenth.
 test("526 GWT5, 541 GWT1, INIT-056: the closed decided-in roster carries its documented valueShape", () => {
-  const optionalWrites = ["config-restore-apply", "config-restore-plan", "gates-config-remove", "gates-config-set", "project-bindings-remove", "project-bindings-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set", "work-gate-release", "work-release"];
+  const optionalWrites = ["dot-extension-source-set", "config-restore-apply", "config-restore-plan", "gates-config-remove", "gates-config-set", "project-bindings-remove", "project-bindings-set", "rule-disable", "rule-enable", "settings-remove", "settings-set", "variable-remove", "variable-set", "work-gate-release", "work-release"];
   const writes = ["engine-model-policy-save", "engine-model-policy-set", ...optionalWrites].sort();
   const shaped = COMMAND_CATALOG.flatMap((entry) => entry.flags.filter((flag) => flag.name === "decided-in" && flag.valueShape !== undefined).map((flag) => [entry.name, flag.name]));
   assert.deepEqual(shaped, writes.map((name) => [name, "decided-in"]));
@@ -434,10 +434,13 @@ test("integrated engine: non-decision valueShapes document projection selection,
       name: "output-keys", required: false, valueKind: "string",
       valueShape: "JSON array of stable registered output keys; omitted selects all known outputs, [] selects none",
     }],
+    ["dot-extension-source-set", { name: "source", required: true, valueKind: "json", valueShape: "Private dot extension source JSON; data only, not publication approval" }],
+    ["dot-extension-source-set", { name: "verification", required: true, valueKind: "json", valueShape: "Ephemeral local Git bindings {gitExecutable,scratchRoot,repositories:[{key,root}]}; authorized absolute roots only, never persisted" }],
     ["execution-evidence", {
       name: "from-file", required: true, valueKind: "string",
       valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input.",
     }],
+    ["execution-prepare", { name: "action", required: false, valueKind: "string", valueShape: "implementation, research or coordination; required to disambiguate legacy content-incomplete dispatch; does not grant authority" }],
     ["execution-prepare", { name: "observations", required: true, valueKind: "string", valueShape: "Machine JSON file: explicit availableCombinations, optional timestamped usage/expectedPolicy; never inferred from policy." }],
     ["execution-prepare", { name: "output", required: true, valueKind: "string", valueShape: "Create-new private local preparation file outside device/library roots; refused preparations are retained. No dispatch." }],
     ["execution-record", { name: "binding", required: true, valueKind: "string", valueShape: "Saved execution-prepare file." }],
@@ -448,6 +451,14 @@ test("integrated engine: non-decision valueShapes document projection selection,
       name: "host", required: false, valueKind: "string",
       valueShape: "Explicit host for configured artifact-language model policy; required by that policy, not inferred.",
     }],
+    ["settings-catalog", { name: "work-content-observation", required: false, valueKind: "json", valueShape: "Optional machine-assembled rollout observation JSON; read-only unauthenticated preview, never persisted or approval" }],
+    ["work-annotate", { name: "content", required: false, valueKind: "json", valueShape: "tcrn.work-content.v1; cannot be combined with legacy scope/goal/acceptance/body" }],
+    ["work-content-context", { name: "offset", required: false, valueKind: "integer", valueShape: "Nonnegative Unicode code-point offset within the document; default 0; nonzero requires digest" }],
+    ["work-content-context", { name: "limit", required: false, valueKind: "integer", valueShape: "Positive Unicode code-point window length; omitted returns the full document subject to output capacity" }],
+    ["work-content-context", { name: "digest", required: false, valueKind: "string", valueShape: "Exact SHA-256 from the first segment; pins direct and ancestor/source versions" }],
+    ["work-create", { name: "content", required: false, valueKind: "json", valueShape: "tcrn.work-content.v1; cannot be combined with legacy scope/goal/acceptance/body" }],
+    ["work-draft", { name: "parent-id", required: false, valueKind: "string", valueShape: "Live parent work id in the selected project; supplies complete inherited context" }],
+    ["work-draft", { name: "variant", required: false, valueKind: "string", valueShape: "standard or defect (Story only)" }],
     ["work-project-context", {
       name: "execution-request", required: false, valueKind: "string",
       valueShape: "Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics",
@@ -483,7 +494,7 @@ test("527 Q6: the proposal verbs are cataloged with their required flags, and no
 });
 
 test("529 GWT2 (TCRN-CROSS-SUB-480): every write that takes the library write lock takes an optional integer --timeout-ms", () => {
-  const lockWrites = ["config-backup-create", "config-backup-resume", "config-backup-retire", "config-restore-apply", "shared-submit-advisory-write", "agents-render", "artifact-put", "chain-declare", "gates-config-propose", "gates-config-remove", "gates-config-set",
+  const lockWrites = ["dot-extension-source-set", "config-backup-create", "config-backup-resume", "config-backup-retire", "config-restore-apply", "shared-submit-advisory-write", "agents-render", "artifact-put", "chain-declare", "gates-config-propose", "gates-config-remove", "gates-config-set",
     "knowledge-article-create", "knowledge-article-refresh", "knowledge-batch", "knowledge-bodies-migrate", "knowledge-capture",
     "knowledge-create", "knowledge-init", "knowledge-rebase", "knowledge-recover", "knowledge-remove", "knowledge-reverify",
     "minutes-record", "project-bindings-remove", "project-bindings-set", "project-create", "project-delete", "project-update",
@@ -513,7 +524,7 @@ test("machine dispatch catalog declares persistence and its complete supported f
   const get = name => COMMAND_CATALOG.find(entry => entry.name === name);
   assert.equal(get("execution-evidence").mutates, false);
   for (const name of ["execution-prepare", "execution-record"]) assert.equal(get(name).mutates, true);
-  assert.deepEqual(get("execution-prepare").flags.map(flag => flag.name), ["workspace", "id", "host", "category", "rejections", "requested-agents", "observations", "output"]);
+  assert.deepEqual(get("execution-prepare").flags.map(flag => flag.name), ["action", "workspace", "id", "host", "category", "rejections", "requested-agents", "observations", "output"]);
   assert.deepEqual(get("execution-record").flags.map(flag => flag.name), ["binding", "target", "process-return", "output"]);
 });
 

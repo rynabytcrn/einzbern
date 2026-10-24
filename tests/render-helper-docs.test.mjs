@@ -211,3 +211,10 @@ test("486-R2: a refusal writes nothing", async (context) => {
   assert.equal(generate(["--write", out]).output.reasonCode, "HELPER_DOCS_ARGUMENT_UNKNOWN");
   assert.deepEqual(await readdir(out), []);
 });
+
+test("INIT068 R13: helper distribution consumes the same typed navigation source", async context => {
+  const out = await scratch(context);
+  await generated(out, "7.6.5");
+  const body = await readFile(join(out, ...SKILL.split("/"), "SKILL.md"), "utf8");
+  for (const clause of ["work-draft", "work-content-context", "inherited constraints", "not a second acceptance copy", "privacy-publication", "unavailable remains unverified"]) assert.ok(body.includes(clause), clause);
+});

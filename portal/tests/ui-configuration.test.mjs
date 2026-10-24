@@ -59,8 +59,75 @@ test("PR24 U3: failed write after Undo recovers a replacement draft without anot
 
 if (!MUTATION) {
 
-  test("TCRN-CROSS-SUB-342 variables page creates, updates, renames, and deletes with an AGENTS.md readback", async () => {
+  test("TCRN-CROSS-SUB-342 variables page creates, updates, renames, and deletes with an AGENTS.md readback", async (t) => {
     const page = await preparePage();
+    // Failure-only, bounded observations for this exact lifecycle. Never retain
+    // request bodies/headers, response payloads, raw DOM, paths outside this allowlist,
+    // variable values or error messages. Observing json() does not read/clone it early.
+    const started = Date.now();
+    const elapsed = () => Date.now() - started;
+    const trace = { requests: [], snapshots: [], droppedRequests: 0 };
+    let phase = "create";
+    let renamePost = null;
+    let originalFailure = null;
+    const semantic = (body) => ({
+      reasonCode: typeof body?.reasonCode === "string" && /^[A-Z][A-Z0-9_]{0,95}$/u.test(body.reasonCode) ? body.reasonCode : null,
+      version: Number.isSafeInteger(body?.version) ? body.version : null,
+      ok: typeof body?.ok === "boolean" ? body.ok : null,
+      persistence: body?.persistence === "committed" ? "committed" : null,
+      outcome: ["unknown", "failed", "succeeded"].includes(body?.outcome) ? body.outcome : null,
+      retrySafe: typeof body?.retrySafe === "boolean" ? body.retrySafe : null,
+    });
+    const snapshot = label => {
+      const chip = receiptText(page.document);
+      let receipt = null;
+      try { receipt = JSON.parse(page.document.querySelector("#receipt-raw")?.textContent ?? "null"); } catch { /* only report the parse state, never raw text */ }
+      const rowState = name => {
+        const row = page.document.querySelector(`[data-variable-row="${name}"]`);
+        const input = row?.querySelector('[data-variable-field="name"]');
+        return { present: Boolean(row), saveDisabled: row?.querySelector("[data-variable-save]")?.disabled ?? null,
+          nameIsHost: input?.value === "deploy.host", nameIsTarget: input?.value === "deploy.target" };
+      };
+      if (trace.snapshots.length === 8) trace.snapshots.shift();
+      trace.snapshots.push({ label, phase, atMs: elapsed(), heldRequests: page.held(),
+        receiptChip: /^(?:✓v[0-9]+|idle)$/u.test(chip) ? chip : "other",
+        receiptParsed: receipt !== null, receipt: semantic(receipt), mutation: semantic(receipt?.mutation),
+        renamePartial: receipt?.rename?.partialCommit === true,
+        hostRow: rowState("deploy.host"), targetRow: rowState("deploy.target") });
+    };
+    const originalFetch = page.window.fetch;
+    const observedPaths = new Set(["/api/variables", "/api/agents-md", "/api/agents-md/reconcile", "/api/rules"]);
+    page.window.fetch = async (path, options = {}) => {
+      if (!observedPaths.has(String(path))) return originalFetch(path, options);
+      const entry = { path: String(path), method: ["GET", "POST", "DELETE"].includes(options.method ?? "GET") ? options.method ?? "GET" : "other", phase, startMs: elapsed() };
+      if (trace.requests.length === 64) { trace.requests.shift(); trace.droppedRequests += 1; }
+      trace.requests.push(entry);
+      if (phase === "rename" && entry.path === "/api/variables" && entry.method === "POST") {
+        // Bind the terminal observation to this phase's exact synthetic rename target.
+        try { entry.requestIsRenameTarget = JSON.parse(options.body).name === "deploy.target"; }
+        catch { entry.requestIsRenameTarget = false; }
+        if (renamePost === null) renamePost = entry;
+      }
+      try {
+        const response = await originalFetch(path, options);
+        entry.endMs = elapsed(); entry.status = response.status;
+        const originalJson = response.json.bind(response);
+        response.json = async () => {
+          entry.bodyStartMs = elapsed();
+          try {
+            const body = await originalJson();
+            entry.bodyEndMs = elapsed(); entry.semantic = semantic(body);
+            entry.mutation = semantic(body?.mutation); entry.render = semantic(body?.render);
+            if (entry === renamePost) entry.renameReceipt = {
+              variableWriteReceipt: body?.schemaVersion === "einzbern.variable-write-receipt.v1",
+              recordIsTarget: body?.recordId === "deploy.target", variableIsTarget: body?.variable?.name === "deploy.target",
+            };
+            return body;
+          } catch (error) { entry.bodyEndMs = elapsed(); entry.bodyFailed = true; throw error; }
+        };
+        return response;
+      } catch (error) { entry.endMs = elapsed(); entry.fetchFailed = true; throw error; }
+    };
     try {
       page.document.querySelector('[data-page-target="variables"]')?.click();
       const create = page.document.querySelector("[data-variable-create-row]");
@@ -76,6 +143,7 @@ if (!MUTATION) {
       await waitFor(() => Boolean(page.document.querySelector('[data-variable-row="deploy.host"]')), "the variable create readback");
       assert.match(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host/u, "the successful write renders the variables section");
 
+      phase = "update";
       let row = page.document.querySelector('[data-variable-row="deploy.host"]');
       field(row, "value").value = "stage.example.com";
       field(row, "description").value = "Staging endpoint";
@@ -99,15 +167,36 @@ if (!MUTATION) {
       page.release();
       await waitFor(updateReadback, "the variable update readback");
 
+      phase = "rename";
+      snapshot("before-rename");
       row = page.document.querySelector('[data-variable-row="deploy.host"]');
       field(row, "name").value = "deploy.target";
       before = receiptText(page.document);
       row.querySelector("[data-variable-save]").click();
+      snapshot("after-rename-click");
+      // Two bounded observations, not a latency SLA or a retry: POST body terminal
+      // <=15s, then the existing final receipt <=15s. Combined rename observation
+      // may now take ~30s rather than the old combined 15s; this is not faster product
+      // behavior. No progress resets either deadline; a refusal is terminal, not polled.
+      await waitFor(() => renamePost && (renamePost.bodyEndMs !== undefined || renamePost.fetchFailed === true), "the rename POST terminal body", 15_000);
+      assert.equal(renamePost.phase, "rename");
+      assert.equal(renamePost.requestIsRenameTarget, true);
+      assert.equal(trace.requests.filter(entry => entry.phase === "rename" && entry.path === "/api/variables" && entry.method === "POST").length, 1, "one rename POST, no retry");
+      assert.equal(renamePost.fetchFailed, undefined);
+      assert.equal(renamePost.bodyFailed, undefined);
+      assert.equal(renamePost.status, 200);
+      assert.deepEqual(renamePost.renameReceipt, { variableWriteReceipt: true, recordIsTarget: true, variableIsTarget: true });
+      assert.equal(renamePost.semantic.ok, true);
+      assert.equal(renamePost.semantic.reasonCode, "VARIABLE_WRITE_COMMITTED");
+      assert.equal(renamePost.semantic.persistence, "committed");
+      assert.ok(Number.isSafeInteger(renamePost.semantic.version) && renamePost.semantic.version >= 0);
       await waitFor(() => receiptAdvanced(page.document, before)(), "the variable rename receipt");
+      snapshot("after-rename-receipt");
       await waitFor(() => Boolean(page.document.querySelector('[data-variable-row="deploy.target"]')), "the variable rename readback");
       assert.equal(page.document.querySelector('[data-variable-row="deploy.host"]'), null);
       assert.match(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u);
 
+      phase = "delete";
       before = receiptText(page.document);
       page.document.querySelector('[data-variable-row="deploy.target"] [data-variable-delete]').click();
       await waitFor(() => receiptAdvanced(page.document, before)(), "the variable delete receipt");
@@ -115,7 +204,32 @@ if (!MUTATION) {
       const listed = await cli(["variable-list", "--workspace", page.workspace], page.deviceEnv);
       assert.deepEqual(listed.variables, []);
       assert.doesNotMatch(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u, "deleting a variable removes its managed row");
-    } finally { page.release(); await page.cleanup(); }
+    } catch (error) {
+      originalFailure = error;
+      try { snapshot("failure-before-cleanup"); t.diagnostic("SUB342_VARIABLE_LIFECYCLE " + JSON.stringify(trace)); }
+      catch { t.diagnostic("SUB342_VARIABLE_LIFECYCLE observation unavailable; original assertion retained"); }
+      throw error;
+    } finally {
+      // Keep observation attached through the existing bounded settlement/cleanup,
+      // without adding another wait or inferring state from a removed fixture.
+      let cleanupFailure = null;
+      try { page.release(); await page.cleanup(); }
+      catch (error) { cleanupFailure = error; }
+      finally {
+        page.window.fetch = originalFetch;
+        if (originalFailure !== null || cleanupFailure !== null) {
+          trace.cleanup = { atMs: elapsed(), completed: cleanupFailure === null,
+            childExitCode: page.child.exitCode, childSignal: page.child.signalCode,
+            fixtureState: "not-inspected-after-cleanup" };
+          try { t.diagnostic("SUB342_VARIABLE_LIFECYCLE_AFTER_CLEANUP " + JSON.stringify(trace)); }
+          catch { t.diagnostic("SUB342_VARIABLE_LIFECYCLE post-cleanup observation unavailable"); }
+        }
+      }
+      if (cleanupFailure !== null) {
+        if (originalFailure === null) throw cleanupFailure;
+        t.diagnostic("SUB342_VARIABLE_LIFECYCLE cleanup also failed; original assertion retained");
+      }
+    }
   });
 }
 

@@ -135,3 +135,16 @@ consumer without independent supported freeze authority.
 - Save the returned preparation verbatim in private create-new storage. A digest
   is content association, not authentication. This command does not call a native
   tool, reserve capacity, complete work, or provide G5/E4 evidence.
+
+## Optional legacy action discriminator
+
+DotExecutionRequest accepts optional `action` with exact values `implementation`,
+`research`, or `coordination`. No other key or value becomes accepted. It is
+retained in the request/digest, not a grant of tools or source authority. Existing
+saved requests without it remain readable. Current work-context admission with
+content start problems rejects missing action as ambiguous even for planned
+work, rejects implementation, and permits research/coordination only subject to
+all preexisting checks. Unenabled legacy work without content problems keeps
+its historical behavior. New callers may use HostExecutionRequest's existing
+explicit action instead. Older engines reject the unfamiliar optional field;
+that rejection is not permission to strip action and retry implementation.

@@ -174,6 +174,7 @@ export {
   setHostDefaultInWorkspace,
   setPersonaBindingInWorkspace,
   setWorkspaceSetting,
+  setDotExtensionSource,
   removeWorkspaceSetting,
   transitionWork,
   transitionWorkDelta,
@@ -918,3 +919,12 @@ export * from "./storage-configure.js";
 
 export * from "./host-capabilities.js";
 export * from "./execution-fallback.js";
+
+// INIT-068 single-source work content and structural lifecycle contract.
+export * from "./work-content.js";
+export * from "./work-content-templates.js";
+export * from "./work-requirements.js";
+export { workContentContext, workContentContextSegment } from "./work-content-context.js";
+export { readDotExtensionSource } from "./dot-agents.js";
+
+export { readWorkContentRolloutReadiness } from "./workspace.js";

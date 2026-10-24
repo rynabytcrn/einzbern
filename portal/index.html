@@ -4248,7 +4248,7 @@ button:disabled { cursor: not-allowed; }
             <article class="tcrn-surface"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.libraryTitle">Selected library</h2><p class="tcrn-text" data-i18n="dashboard.libraryNote">Read from the selected library's status.</p></div></div><dl class="tcrn-definition-list" id="library-state"></dl></article>
           </div>
         </div>
-        <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-text" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div class="tcrn-state-surface" id="work-loading" role="status" data-i18n="dashboard.workLoading" hidden>Reading work records through the engine…</div><div id="work-tree-content"></div><div id="work-target-editor" class="tcrn-surface"></div></div></div>
+        <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-text" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div class="tcrn-state-surface" id="work-loading" role="status" data-i18n="dashboard.workLoading" hidden>Reading work records through the engine…</div><div id="work-tree-content"></div><div id="work-target-editor" class="tcrn-surface"></div><div id="work-content-editor" class="tcrn-surface"></div></div></div>
         <div data-workspace-panel="knowledge" hidden><div class="tcrn-surface" data-ui="knowledge-view"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.knowledgeTitle">Knowledge inventory</h2><p class="tcrn-text" data-i18n="dashboard.knowledgeNote">Cards and article indexes, metadata only.</p></div><span class="tcrn-badge" id="knowledge-count">—</span></div><div id="knowledge-view-content"></div></div></div>
         <div data-workspace-panel="library" hidden>
           <article class="tcrn-surface" data-ui="chain-identity" aria-labelledby="chain-identity-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="chain-identity-title" data-i18n="chainIdentity.title">Chain identity</h2><p class="tcrn-text" data-i18n="chainIdentity.note">The library's role and the coordination library it belongs to.</p></div><span class="tcrn-badge" id="chain-identity-current" data-ui="chain-identity-current">—</span></div>
@@ -6083,7 +6083,193 @@ const BOOT = __PORTAL_BOOT__;
     if (records.some(record => record.id === state.workTargetRecord)) workSelect.value = state.workTargetRecord;
     workSelect.onchange = () => { state.workTargetRecord = workSelect.value; render(); }; render();
   };
+  // INIT068: drafts are per library/type/parent or record; navigation never overwrites edits.
+  const workContentDrafts = new Map();
+  let workContentSelection = "";
+  let workContentRequest = 0;
+  const contentPretty = value => JSON.stringify(value, null, 2);
+  const workContentState = () => {
+    const library = BOOT.library?.libraryId ?? "";
+    if (state.contentLibrary !== library) { state.contentLibrary = library; workContentSelection = ""; workContentRequest += 1; }
+    return { library, key: library + ":" + workContentSelection, draft: workContentDrafts.get(library + ":" + workContentSelection) };
+  };
+  const contentContextView = context => {
+    if (!context) return "";
+    const metadata = { ...context }; delete metadata.records;
+    const rows = (context.records ?? []).map(row => `<details class="tcrn-disclosure-panel" open data-content-source="${esc(row.workId)}"><summary class="tcrn-disclosure-panel__title">${esc(row.externalKey)} · ${esc(row.relation)} · r${esc(row.workRevision)} · ${esc(row.sourceStatus)}</summary><pre class="tcrn-text">${esc(contentPretty(row))}</pre></details>`).join("");
+    return `<section data-content-context><h4>${esc(t("workContent.inherited"))}</h4><p class="tcrn-text">${esc(context.note ?? "")}</p><pre data-content-missing>${esc(contentPretty(metadata))}</pre>${rows}</section>`;
+  };
+  const contentEditorDraft = (content, extra = {}) => ({ content, raw: Object.fromEntries(Object.entries(content).map(([key, value]) => [key, typeof value === "string" ? value : contentPretty(value)])), ...extra, dirty: false, pending: false, error: null });
+  const readWorkContentSegment = async (record, draft, key) => {
+    if (draft.pending) return;
+    const request = ++workContentRequest;
+    const library = BOOT.library?.libraryId;
+    draft.pending = true; draft.error = null; renderWorkContentEditor();
+    const offset = draft.segment?.nextOffset ?? 0;
+    let result;
+    try { result = await api(`/api/work/content-context?id=${encodeURIComponent(record.id)}&offset=${offset}&limit=8192${offset ? "&digest=" + encodeURIComponent(draft.segment.digest) : ""}`); }
+    catch (error) { result = { ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error) }; }
+    draft.pending = false;
+    if (request !== workContentRequest || library !== BOOT.library?.libraryId || key !== workContentState().key || unkept(result)) {
+      if (workContentState().draft === draft) renderWorkContentEditor();
+      return;
+    }
+    if (!result.ok) draft.error = result;
+    else if (result.offset !== offset || (offset && (result.digest !== draft.segment.digest || result.workRevision !== draft.segment.workRevision))) draft.error = { reasonCode: "WORK_CONTENT_CONTEXT_CHANGED" };
+    else {
+      draft.text = (offset ? draft.text : "") + result.text; draft.segment = result;
+      if (result.nextOffset === null) {
+        try {
+          const context = JSON.parse(draft.text);
+          const direct = context.records.find(row => row.workId === record.id);
+          if (!direct) throw new Error("Missing direct work record");
+          Object.assign(draft, direct.content ? contentEditorDraft(direct.content, { record: { ...record, revision: context.workRevision }, context }) : { context, legacy: direct.fields });
+        } catch (error) { draft.error = { reasonCode: "PORTAL_WORK_CONTENT_INVALID", error: String(error) }; }
+      }
+    }
+    renderWorkContentEditor();
+  };
+  const renderWorkContentEditor = () => {
+    const root = $("#work-content-editor");
+    const bookmark = rememberFocus(root);
+    const { key, draft } = workContentState();
+    if (!state.work?.ok) { root.innerHTML = ""; return; }
+    const records = state.work.records ?? [];
+    // Resolve the finite editor vocabulary on each render so locale changes apply.
+    const contentLabels = {
+      goal: t("workContent.goal"),
+      sources: t("workContent.sources"),
+      scope: t("workContent.scope"),
+      constraints: t("workContent.constraints"),
+      requirements: t("workContent.requirements"),
+      allocations: t("workContent.allocations"),
+      acceptance: t("workContent.acceptance"),
+      evidence: t("workContent.evidence"),
+      completion: t("workContent.completion"),
+      details: t("workContent.details"),
+      body: t("workContent.body"),
+      changeDecision: t("workContent.changeDecision"),
+    };
+    const field = (key, value, json = false) => `<label class="tcrn-field"><span class="tcrn-field__label">${esc(contentLabels[key])}${json ? " (JSON)" : ""}</span><textarea class="tcrn-textarea" rows="4" data-content-field="${esc(key)}" ${json ? 'data-content-json="true"' : ""}>${esc(value ?? "")}</textarea></label>`;
+    const group = (name, body) => `<fieldset data-content-group="${name}"><legend>${esc(contentLabels[name])}</legend>${body}</fieldset>`;
+    root.innerHTML = `<h3>${esc(t("workContent.title"))}</h3><p class="tcrn-text">${esc(t("workContent.note"))}</p><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.work"))}</span><select class="tcrn-select" data-content-work><option value="">${esc(t("workContent.new"))}</option>${records.map(row => `<option value="${esc(row.id)}">${esc(row.externalKey)} · ${esc(row.title)}</option>`).join("")}</select></label>
+      <details class="tcrn-disclosure-panel" ${!workContentSelection || workContentSelection.startsWith("draft:") ? "open" : ""}><summary class="tcrn-disclosure-panel__title">${esc(t("workContent.new"))}</summary><label class="tcrn-field"><span>${esc(t("workContent.kind"))}</span><select class="tcrn-select" data-content-kind>${["Initiative", "Epic", "Story", "Subtask"].map(kind => `<option value="${esc(kind)}">${esc(kind)}</option>`).join("")}</select></label><label class="tcrn-field"><span>${esc(t("workContent.variant"))}</span><select class="tcrn-select" data-content-variant><option value="standard">${esc(t("workContent.standard"))}</option><option value="defect">${esc(t("workContent.defect"))}</option></select></label><label class="tcrn-field"><span>${esc(t("workContent.parent"))}</span><select class="tcrn-select" data-content-parent><option value="">—</option>${records.map(row => `<option value="${esc(row.id)}">${esc(row.externalKey)}</option>`).join("")}</select></label><button class="tcrn-button tcrn-button--secondary tcrn-button--md" type="button" data-content-draft>${esc(t("workContent.draft"))}</button></details><div data-content-form></div>`;
+    root.querySelector("[data-content-work]").value = workContentSelection.startsWith("work:") ? workContentSelection : "";
+    for (const name of ["kind", "variant", "parent"]) root.querySelector(`[data-content-${name}]`).value = state["content" + name] ?? (name === "kind" ? "Story" : name === "variant" ? "standard" : "");
+    const variant = root.querySelector("[data-content-variant]");
+    variant.disabled = root.querySelector("[data-content-kind]").value !== "Story";
+    for (const name of ["kind", "variant", "parent"]) root.querySelector(`[data-content-${name}]`).onchange = event => {
+      state["content" + name] = event.currentTarget.value;
+      if (name === "kind" && event.currentTarget.value !== "Story") state.contentvariant = "standard";
+      renderWorkContentEditor();
+    };
+    root.querySelector("[data-content-work]").onchange = event => {
+      workContentRequest += 1; workContentSelection = event.currentTarget.value;
+      const next = workContentState();
+      const record = records.find(row => row.id === workContentSelection);
+      if (record && !next.draft) { const reading = { record, text: "", pending: false }; workContentDrafts.set(next.key, reading); void readWorkContentSegment(record, reading, next.key); }
+      else renderWorkContentEditor();
+    };
+    root.querySelector("[data-content-draft]").onclick = async () => {
+      const kind = root.querySelector("[data-content-kind]").value;
+      const variant = kind === "Story" ? root.querySelector("[data-content-variant]").value : "standard";
+      const parentId = root.querySelector("[data-content-parent]").value;
+      const projectId = records.find(row => row.id === parentId)?.projectId ?? BOOT.library?.projectId;
+      workContentSelection = `draft:${projectId}:${kind}:${variant}:${parentId}`;
+      const next = workContentState();
+      if (next.draft) { renderWorkContentEditor(); return; }
+      const request = ++workContentRequest;
+      const pending = { pending: true }; workContentDrafts.set(next.key, pending); renderWorkContentEditor();
+      let result;
+      try { result = await api(`/api/work/draft?projectId=${encodeURIComponent(projectId ?? "")}&kind=${kind}&variant=${variant}${parentId ? "&parentId=" + encodeURIComponent(parentId) : ""}`); }
+      catch (error) { result = { ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error) }; }
+      pending.pending = false;
+      if (request !== workContentRequest || next.key !== workContentState().key || unkept(result)) { if (workContentDrafts.get(next.key) === pending) workContentDrafts.delete(next.key); return; }
+      if (!result.ok) pending.error = result;
+      else workContentDrafts.set(next.key, contentEditorDraft(result.content, { context: result.inheritedContext, missing: result.missing, projectId, parentId, kind, externalKey: "", title: "", templateReceipt: "", template: result.contentTemplate, policy: result.contentPolicy, readiness: result.contentRolloutReadiness }));
+      renderWorkContentEditor();
+    };
+    if (!draft) { restoreFocus(root, bookmark); return; }
+    const form = root.querySelector("[data-content-form]");
+    form.setAttribute("aria-busy", String(draft.pending));
+    let html = draft.error ? `<div class="tcrn-inline-alert tcrn-inline-alert--danger" role="alert" data-content-error><code>${esc(draft.error.reasonCode ?? "")}</code><span>${esc(draft.error.error ?? "")}</span></div>` : "";
+    if (draft.pending) html += `<p role="status">${esc(t("dashboard.workLoading"))}</p>`;
+    if (draft.segment) html += `<p data-content-delivery>${esc(draft.segment.nextOffset === null ? t("workContent.delivered") : t("workContent.partial"))} ${esc(draft.segment.end)}/${esc(draft.segment.total)} · <code>${esc(draft.segment.digest)}</code></p>`;
+    if (draft.segment?.nextOffset != null) html += `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-content-more ${draft.pending ? "disabled" : ""}>${esc(t("workContent.more"))}</button>`;
+    if (draft.record && !draft.pending) html += `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-content-reload>${esc(t("workContent.reload"))}</button>`;
+    if (draft.legacy) html += `<pre data-content-legacy>${esc(contentPretty(draft.legacy))}</pre>`;
+    if (draft.content) {
+      const raw = draft.raw;
+      if (!draft.record) html += `<label class="tcrn-field"><span>${esc(t("workContent.externalKey"))}</span><input class="tcrn-input" data-content-meta="externalKey" value="${esc(draft.externalKey)}"></label><label class="tcrn-field"><span>${esc(t("workContent.workTitle"))}</span><input class="tcrn-input" data-content-meta="title" value="${esc(draft.title)}"></label>`;
+      if (!draft.record) html += `<details class="tcrn-disclosure-panel" data-content-advanced-receipt><summary class="tcrn-disclosure-panel__title">${esc(t("workContent.templateReceipt"))}</summary><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("workContent.templateReceipt"))}</span><textarea class="tcrn-textarea" rows="3" data-content-meta="templateReceipt">${esc(draft.templateReceipt ?? "")}</textarea></label></details>`;
+      html += `<pre data-content-missing>${esc(contentPretty({ missing: draft.missing ?? draft.context?.records?.[0]?.missing ?? [], template: draft.template ?? null, policy: draft.policy ?? null, contentRolloutReadiness: draft.readiness ?? null }))}</pre>`;
+      html += group("goal", field("goal", raw.goal)) + group("sources", field("sources", raw.sources, true)) + group("scope", field("scope", raw.scope) + field("constraints", raw.constraints, true)) + group("requirements", ["requirements", "allocations", "acceptance", "evidence"].map(key => field(key, raw[key], true)).join("")) + group("completion", `<p class="tcrn-text">${esc(t("workContent.completionNote"))}</p>` + field("completion", raw.completion ?? "", true));
+      html += field("details", raw.details, true) + field("body", raw.body) + field("changeDecision", raw.changeDecision ?? "");
+      html += `<div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-content-save ${draft.pending || draft.error?.retrySafe === false ? "disabled" : ""}>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-content-undo ${draft.pending ? "disabled" : ""}>${esc(t("config.undo"))}</button></div>`;
+    }
+    html += contentContextView(draft.context);
+    form.innerHTML = html;
+    // Form values come from the exact editing cache, not from parsing escaped HTML.
+    // Assigning .value preserves literal entities, quotes and unfinished JSON across
+    // renders without regenerating the engine draft or discarding user edits.
+    for (const input of form.querySelectorAll("[data-content-field]")) input.value = draft.raw[input.dataset.contentField] ?? "";
+    for (const input of form.querySelectorAll("[data-content-meta]")) input.value = draft[input.dataset.contentMeta] ?? "";
+    if (draft.pending) for (const control of form.querySelectorAll("input, textarea, button")) control.disabled = true;
+    form.querySelector("[data-content-reload]")?.addEventListener("click", () => {
+      // Explicit reload is the only action that discards this record's local edits.
+      const reading = { record: draft.record, text: "", pending: false };
+      workContentDrafts.set(key, reading); void readWorkContentSegment(draft.record, reading, key);
+    });
+    form.querySelector("[data-content-more]")?.addEventListener("click", () => readWorkContentSegment(draft.record, draft, key));
+    for (const input of form.querySelectorAll("[data-content-field]")) input.oninput = () => { draft.raw[input.dataset.contentField] = input.value; draft.dirty = true; };
+    for (const input of form.querySelectorAll("[data-content-meta]")) input.oninput = () => { draft[input.dataset.contentMeta] = input.value; draft.dirty = true; };
+    form.querySelector("[data-content-undo]")?.addEventListener("click", () => {
+      if (draft.pending || workContentState().draft !== draft) return;
+      const unknown = draft.error?.retrySafe === false ? draft.error : null;
+      Object.assign(draft, contentEditorDraft(draft.content)); draft.error = unknown;
+      if (!draft.record) Object.assign(draft, { externalKey: "", title: "", templateReceipt: "" });
+      renderWorkContentEditor();
+    });
+    form.querySelector("[data-content-save]")?.addEventListener("click", async () => {
+      if (draft.pending || draft.error?.retrySafe === false || workContentState().draft !== draft || state.librarySwitching) return;
+      let content, templateReceipt;
+      try {
+        templateReceipt = draft.templateReceipt?.trim() ? JSON.parse(draft.templateReceipt) : undefined;
+        content = { ...draft.content };
+        for (const [name, raw] of Object.entries(draft.raw)) {
+          if (["sources", "constraints", "requirements", "allocations", "acceptance", "evidence", "details", "completion", "approved"].includes(name)) {
+            if (name === "completion" && !raw.trim()) delete content.completion;
+            else content[name] = JSON.parse(raw);
+          } else if (name === "changeDecision" && !raw.trim()) delete content.changeDecision;
+          else content[name] = raw;
+        }
+      } catch (error) { draft.error = { reasonCode: "WORK_CONTENT_INVALID", error: String(error) }; renderWorkContentEditor(); return; }
+      draft.pending = true; draft.error = null; renderWorkContentEditor();
+      let result;
+      try { result = await api("/api/work/content", { method: "POST", body: JSON.stringify(draft.record ? { id: draft.record.id, revision: draft.record.revision, content } : { projectId: draft.projectId, parentId: draft.parentId, kind: draft.kind, externalKey: draft.externalKey, title: draft.title, templateReceipt, content }) }); }
+      catch (error) { result = { ok: false, reasonCode: "PORTAL_WRITE_FAILED", error: String(error) }; }
+      draft.pending = false;
+      if (unkept(result)) return;
+      if (key !== workContentState().key) {
+        // A completed write belongs to its original library/selection, never the newly selected one.
+        if (result.ok) workContentDrafts.delete(key); else draft.error = result;
+        return;
+      }
+      showReceipt(result);
+      if (result.ok) {
+        // Re-read persisted canonical content, never present an optimistic draft as saved data.
+        const record = result.record ?? draft.record;
+        workContentDrafts.delete(key);
+        if (record?.id) { workContentSelection = record.id; const next = workContentState(); const reading = { record, text: "", pending: false }; workContentDrafts.set(next.key, reading); void readWorkContentSegment(record, reading, next.key); }
+        await refreshWork();
+      } else { draft.error = result; if (result.retrySafe === false) await refreshWork(); }
+      renderWorkContentEditor();
+    });
+    restoreFocus(root, bookmark);
+  };
+
   const renderWorkView = () => {
+    renderWorkContentEditor();
     const data = state.work;
     if (data?.ok) void renderWorkTargetEditor();
     const content = $("#work-tree-content");

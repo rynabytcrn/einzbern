@@ -18,7 +18,7 @@ For source-repository reviews only, `scripts/review-evidence.mjs --request <file
 - `schemaVersion: "tcrn.host-dispatch-evidence.v1"`
 - `source: "native-host-return"`
 - `workId`, `workRevision`, `projectReference: {libraryId, projectId}` matching the handoff exactly.
-- `request` matching the admission's normalized `{host, category, rejections, requestedAgents}`.
+- `request` matching the admission's normalized `{host, category, rejections, requestedAgents, action?}` (optional `action` is exactly `implementation`, `research`, or `coordination`, retained when supplied; it is not authority).
 - `selectedTuple: {runner, model, effort}` matching `executionAdmission.selection.record`'s corresponding fields.
 - `policyRevision`, `policyDigest` matching `executionAdmission.policy`. The admission's selected policy origin must also match this identity, and selection host/category/rejections must match its request.
 - `admissionDigest`: lowercase SHA-256 of the entire `executionAdmission` receipt's canonical JSON. Object keys are sorted recursively; array order is retained; no whitespace is added. Exported `dispatchAdmissionDigest` computes this value. Non-JSON values are invalid.
@@ -74,3 +74,14 @@ Outputs must be new files in an existing local parent directory outside device a
 | Scheduler, reservation, reusable dispatch permission | Not provided |
 
 This matrix describes the historical process protocol only. Normal Codex, Claude and dot native tools use `specs/host-fallback-v1.md`; missing a process conversion adapter does not prohibit an authorized native invocation. Preserve old records under their original protocol, never fabricate stdout/stderr/exitCode or retrofit an allowed decision into a refused v1 record. A real unsupported tool or permission denial stops only its affected action. Do not request repeated manual JSON or approval substitutes for missing optional telemetry.
+
+## Legacy content-phase discrimination
+
+The additive optional `action` on ExecutionAdmissionRequest is accepted by the
+closed v1 runtime validator and retained in normalized admission request and
+preparation selectors. `execution-prepare --action` supplies it; observations
+remain observation-only. Omitted action preserves old receipts and unenabled
+legacy work. When current work has applicable content start problems, omission
+is ambiguous and refuses; explicit research/coordination can continue through
+all otherwise applicable checks. Explicit implementation cannot bypass content
+checks by keeping the work planned. See `context-v1.md` for the common policy.

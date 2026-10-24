@@ -1,0 +1,361 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tcrn.dev/schemas/work-content-v1.schema.json",
+  "title": "TCRN canonical work content (draft shape; lifecycle checks are separate)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "variant",
+    "goal",
+    "sources",
+    "scope",
+    "constraints",
+    "requirements",
+    "allocations",
+    "acceptance",
+    "evidence",
+    "body",
+    "details"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "tcrn.work-content.v1"
+    },
+    "kind": {
+      "enum": [
+        "Initiative",
+        "Epic",
+        "Story",
+        "Subtask"
+      ]
+    },
+    "variant": {
+      "enum": [
+        "standard",
+        "defect"
+      ]
+    },
+    "goal": {
+      "type": "string"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "locator",
+          "version",
+          "extraction",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "approved-draft",
+              "decision",
+              "parent-work",
+              "user-request"
+            ]
+          },
+          "locator": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "extraction": {
+            "enum": [
+              "complete",
+              "partial",
+              "unavailable"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "string"
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "text",
+          "sourceIds",
+          "shared",
+          "disposition"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "text": {
+            "type": "string"
+          },
+          "sourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "shared": {
+            "type": "boolean"
+          },
+          "disposition": {
+            "enum": [
+              "required",
+              "deferred",
+              "removed"
+            ]
+          },
+          "decision": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "allocations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workId",
+          "requirementId",
+          "version",
+          "childId",
+          "responsibility"
+        ],
+        "properties": {
+          "workId": {
+            "type": "string"
+          },
+          "requirementId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "childId": {
+            "type": "string"
+          },
+          "responsibility": {
+            "enum": [
+              "implementation",
+              "verification"
+            ]
+          }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "requirement",
+          "scenario",
+          "expected",
+          "method"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "requirement": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "workId",
+              "requirementId",
+              "version"
+            ],
+            "properties": {
+              "workId": {
+                "type": "string"
+              },
+              "requirementId": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "scenario": {
+            "type": "string"
+          },
+          "expected": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "acceptanceId",
+          "acceptanceVersion",
+          "requirement",
+          "codeVersion",
+          "locator",
+          "actual",
+          "outcome",
+          "kind"
+        ],
+        "properties": {
+          "acceptanceId": {
+            "type": "string"
+          },
+          "acceptanceVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "requirement": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "workId",
+              "requirementId",
+              "version"
+            ],
+            "properties": {
+              "workId": {
+                "type": "string"
+              },
+              "requirementId": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "codeVersion": {
+            "type": "string"
+          },
+          "locator": {
+            "type": "string"
+          },
+          "actual": {
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "satisfied",
+              "failed",
+              "unverified"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "machine",
+              "source-behavior-review",
+              "owner-visual"
+            ]
+          },
+          "meaningDigest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "body": {
+      "type": "string"
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result",
+        "codeVersion"
+      ],
+      "properties": {
+        "result": {
+          "type": "string"
+        },
+        "codeVersion": {
+          "type": "string"
+        }
+      }
+    },
+    "changeDecision": {
+      "type": "string"
+    },
+    "approved": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "variant": {
+            "const": "defect"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "Story"
+          }
+        }
+      }
+    }
+  ]
+}

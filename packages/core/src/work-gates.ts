@@ -1,3 +1,7 @@
+import { workContent, workContentMissing, contentFail } from "./work-content.js";
+import { readWorkContentPolicy, workContentPolicyApplies } from "./work-content-templates.js";
+import { workRequirementProblems, effectiveWorkRequirements } from "./work-requirements.js";
+import { workAcceptanceProblems } from "./work-acceptance.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -109,4 +113,28 @@ export function workSubjectKeys(work: readonly Pick<WorkRecord, "id" | "external
     }
   }
   return [...keys].sort(compareCanonicalText);
+}
+
+// INIT-068: structural content admission. Not semantic verification or a new gate record.
+export function workContentAdmissionProblems(state: Pick<WorkspaceState, "work" | "settings">, record: WorkRecord, phase: "draft" | "write" | "start" | "done"): readonly string[] {
+  const content = workContent(record);
+  const policy = readWorkContentPolicy(state, record.projectId);
+  if (!content) return workContentPolicyApplies(policy, record, state.work) ? ["content:required"] : [];
+  if (phase === "draft") return [];
+  const work = [...state.work.filter(w => w.id !== record.id), record];
+  const problems = [...workContentMissing(content, phase), ...workRequirementProblems(work, record), ...workAcceptanceProblems(work, record, { done: phase === "done" })];
+  if (phase === "start" || phase === "done") {
+    for (const ancestorId of workAncestorIds(work, record.id)) {
+      const ancestor = work.find(w => w.id === ancestorId);
+      if (ancestor && workContent(ancestor)) for (const problem of workRequirementProblems(work, ancestor)) problems.push(`ancestor:${ancestorId}:${problem}`);
+    }
+    for (const effective of effectiveWorkRequirements(work, record.id)) {
+      if (!effective.requirement.text.trim() || !effective.sources.length || effective.sources.some(s => s.extraction !== "complete" || !s.text.trim())) problems.push(`inherited:${effective.ref.workId}/${effective.ref.requirementId}:source:unverified`);
+    }
+  }
+  return problems;
+}
+export function assertWorkContentAdmission(state: Pick<WorkspaceState, "work" | "settings">, record: WorkRecord, phase: "draft" | "write" | "start" | "done"): void {
+  const problems = workContentAdmissionProblems(state, record, phase);
+  if (problems.length) contentFail("WORK_CONTENT_INCOMPLETE", `${record.id}: ${problems.join("; ")}`);
 }

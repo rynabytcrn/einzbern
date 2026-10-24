@@ -61,7 +61,7 @@
 // import it.
 
 /** The ids of the built-in rules, in the order they are listed. */
-export const BUILT_IN_RULE_IDS = Object.freeze(["autonomy", "batch", "unattended-commands", "silent-reporting", "design-authority", "residue-cleanup", "goal-writing", "incremental-update"] as const);
+export const BUILT_IN_RULE_IDS = Object.freeze(["autonomy", "batch", "unattended-commands", "silent-reporting", "design-authority", "residue-cleanup", "goal-writing", "incremental-update", "privacy-publication"] as const);
 export type BuiltInRuleId = typeof BUILT_IN_RULE_IDS[number];
 
 /** A rule's text in each language the engine ships it in. */
@@ -310,6 +310,27 @@ ${INCREMENTAL_CLOSE_EN}
 `,
 });
 
+/** INIT068 R21: one optional principle for both ordinary and independent dot consumers.
+ * Wording implements the approved requirement, not a claim of verbatim historical text. */
+export const PRIVACY_PUBLICATION_BODY = Object.freeze({
+  zh: `## 隐私与发布身份原则 v1
+
+1. 提交或发布前核验实际贡献者、获准使用的账号和作者/提交者身份；不得未经授权切换为 owner 或其他身份。需要隐私保护时使用已核验贡献者的 noreply 地址，不编造身份，不把某次任务指定账号固化为全局规则。
+2. 按数据最小化审查将发布的源码、文档、生成物、附件及 Git 元数据；检查秘密、凭据和个人信息，不因内容来自工具或历史提交而豁免。仅保留任务必要且获准发布的数据。
+3. 发布前运行实际适用的隐私检查，保存实际调用、结果和对应候选版本；检查通过、机器结构验证、原稿语义验收与发布授权互不替代。未执行、不可用或未知保持未验证，不以 passed 标签代替证据。
+4. 检查失败时保留原分支、提交及失败证据，沿实际授权流程处理；不弱化门、不隐匿失败、不换身份绕过拒绝，不擅改远端历史。获准的本地身份元数据纠正须保留原件、源码树与提交顺序，随后重新核验相关检查。
+5. 本原则不授予提交、推送、PR、身份重写、外部发布或额外工具权限。用户对一次任务的身份与操作授权不成为通用自动批准；真实拒绝和不明结果按现行权限与核实规则处理。
+`,
+  en: `## Privacy and Publication Identity Principle v1
+
+1. Before committing or publishing, verify the actual contributor, the account authorized for publication, and author/committer identity. Never substitute the owner or another identity without authorization. When privacy requires it, use the verified contributor's noreply address; do not invent an identity or turn a task-specific account choice into a global rule.
+2. Minimize and inspect the source, documents, generated outputs, attachments and Git metadata intended for publication for secrets, credentials and personal information. Tool output and historical commits are not exempt. Retain only necessary data authorized for that destination.
+3. Before publication run the actually applicable privacy checks and retain their real invocation, result and candidate version. Passing checks, structural validation, source-semantic acceptance and publication authorization are separate. Not run, unavailable or unknown remains unverified; a passed label is not evidence.
+4. On failure preserve the original branch, commits and failure evidence and follow the authorized repair process. Never weaken gates, hide failures, substitute identities to bypass a refusal or rewrite remote history without authorization. Authorized local identity-metadata correction preserves originals, source trees and commit order, then rechecks the affected checks.
+5. This principle grants no commit, push, PR, identity-rewrite, external-publication or additional tool permission. Task-specific identity and action authorization is not universal automatic approval. Respect actual refusals and verify uncertain outcomes under the applicable permissions.
+`,
+});
+
 function builtIn(id: BuiltInRuleId, version: number, title: RuleText, body: RuleText): BuiltInRule {
   return Object.freeze({ id, version, title: Object.freeze({ ...title }), body: Object.freeze({ ...body }) });
 }
@@ -329,6 +350,7 @@ export const BUILT_IN_RULES: readonly BuiltInRule[] = Object.freeze([
   builtIn("residue-cleanup", 1, { zh: "无效残余收尾原则", en: "Residue Cleanup Principle" }, { zh: RESIDUE_CLEANUP_ZH, en: RESIDUE_CLEANUP_EN }),
   builtIn("goal-writing", 1, { zh: "目标书写契约", en: "Goal Writing Contract" }, { zh: GOAL_WRITING_ZH, en: GOAL_WRITING_EN }),
   builtIn("incremental-update", 1, { zh: "增量更新与共享提交原则", en: "Incremental Update and Shared Submission Principle" }, { zh: INCREMENTAL_UPDATE_ZH, en: INCREMENTAL_UPDATE_EN }),
+  builtIn("privacy-publication", 1, { zh: "隐私与发布身份原则", en: "Privacy and Publication Identity Principle" }, PRIVACY_PUBLICATION_BODY),
 ]);
 
 /** The built-in rule with this id, or null when the engine ships no rule by that id. */

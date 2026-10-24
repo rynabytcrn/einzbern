@@ -211,3 +211,171 @@ the user is not asked to hand-edit JSON or invent source hashes.
 An unsupported enabled rule version makes only dotRuleSources unavailable with
 reason DOT_SOURCE_MISMATCH and enabledRules null; the existing rule list remains
 readable. Never substitute an empty array or catalog entries for that refusal.
+
+## INIT068 R19: private versioned extension sources
+
+The existing governed `variable` collection is the sole persistence authority.
+`dot.extensions.source` is a string containing `tcrn.dot-extension-source.v1`
+JSON, with explicit `exports: []`. Save and read it through the existing
+`variable-set` / `variable-list` entry points for ordinary safe sources; typed
+Git-reference sources use the dedicated verified setter below. Both retain
+their actual authorization requirements, not
+by editing the projection or generated AGENTS. `rule-list.dotExtensionSource`
+reports missing, saved-source or unavailable; saved-source does not mean synced.
+The unchanged variable backup allowlist and restore setters can carry ordinary
+safe explicitly selected declarations. Typed Git-reference sources are visibly
+unsupported by generic backup/restore until equivalent current verification is
+available. No backup policy or recurring job is enabled.
+
+The closed manifest contains:
+
+- `schemaVersion`, positive integer content `version`, `sourceReference`, and
+  `executionTarget: "chatgpt-dot"`;
+- `rules`: `{id, body, sourceReference}` entries, never overriding built-ins;
+- `files`: `{path, kind, body, sourceReference}`, where kind is checker or entry
+  and path is a portable relative file under `dot-extensions/`;
+- `entries`: exact paths to declared entry files, not external commands;
+- optional `technicalReferences`: the narrow verified Git-commit declarations
+  described below, never supplied verification results.
+
+Bodies are exact non-generated source text. Unknown fields, duplicate IDs/paths,
+missing entry bodies, traversal, overlaps, generated AGENTS markers and inputs
+rejected by decoded privacy validation are refused. Generic variable privacy
+validation remains unchanged. Credential prefixes are always checked before
+narrow technical-reference classification; no general opaque-token/hash
+allowlist is introduced. Output hashes are derived during planning; a locator
+is not authenticated provenance.
+Existing runtime capacities bound the variable, not a new arbitrary policy cap.
+Do not encode secrets to evade validation or claim a rejected source was saved.
+
+Read an ordinary project-scoped declaration with `readDotExtensionSource` and
+pass that same object as `DotRulesSource.extensions` to the existing explicit
+dot setup plan. Absence returns null; malformed or publicly exported declarations
+throw. A structurally saved typed-reference source reports verification-required,
+not trusted content. Typed reconstruction requires the explicit operation-local
+bindings below.
+The source declaration and per-item source references remain in provenance;
+AGENTS contains only rule text and portable entry locators, not private storage
+paths or an entire prior generated document. Caller-provided source inputs are
+observations, not authority to run instructions or scripts.
+
+The existing planner and apply path restore inert regular files, mode 0600 for
+new files, without execution, chmod, hooks, account changes or network access.
+Each file is part of the plan digest, current-state recheck, recovery and actual
+byte readback. Prior source ownership must match before replacement. User edits
+or unowned files remain pending; same-version changed meaning, downgrade or a
+missing prior source refuses silent replacement. Unchanged reconstruction is a
+no-op. Removed declarations do not authorize deletion of old file bytes;
+retired extension files remain for separately authorized cleanup, including on
+uninstall. Multi-file writes can be partial and retain their existing per-file
+result contract; a verified reconstruction is not an installed-host read.
+
+Keep four distinct facts: local bytes exist; a supported source declaration is
+saved; exact source has verified synchronized destination evidence; a target
+has actual reconstructed readback. Neither local Git nor a saved variable proves
+off-device durability. Missing original rule/entry text remains unrecovered;
+never reconstruct it from a summary.
+
+## INIT068 R20/R21: enablement and privacy consumption
+
+`incremental-update` retains its existing v1 source and meaning. Catalog presence,
+project enabled flag, recorded version, rendered output and actual readback are
+separate observations. Missing/disabled records render no principle; an enabled
+unsupported version refuses rather than upgrading silently. Existing rule
+setters/listing remain authoritative; the added tests do not activate live rules.
+
+`privacy-publication` v1 is a new optional, default-off built-in. Generic managed
+sections and dot rendering consume the same Chinese/English source body. It
+covers actual contributor and authorized account verification, verified noreply
+where needed, minimal publication contents and Git metadata, actual applicable
+privacy checks bound to the candidate, and preservation of original branches,
+commits and failure evidence. Unauthorized identity substitution, weakening
+checks, hidden failures and unauthorized remote-history rewrite are prohibited.
+It grants no commit/push/PR/identity-rewrite/publication permission and contains
+no task-specific account prohibition. A task's identity restriction remains in
+that task's actual authorization, never hard-coded globally.
+
+
+## R19 typed technical-reference verification
+
+The optional source field is a nonempty array with closed entries:
+
+```
+{ kind: "git-commit", objectFormat: "sha1", objectId: "<full object ID>",
+  repositoryKey: "<logical-name>",
+  occurrences: [{ target: "file:dot-extensions/example.txt", startByte: 0, endByte: 40 }] }
+```
+
+`target` selects an exact declared file body or `rule:<id>`. Each occurrence must
+cover one entire opaque token and match the declared full ID byte-for-byte at
+valid UTF-8 boundaries. Overlapping, duplicate, partial, mismatched or missing
+occurrences fail. Every occurrence needs its own declaration; one does not bless
+other appearances. Reference metadata has no `verified`, approval or trust bit.
+SHA-256 Git repositories, annotated tags, arbitrary digests and external URLs
+are not supported technical-reference kinds in this bounded implementation.
+
+All body text is scanned **after JSON decoding**, including JSON source files,
+so escaping does not change its classification. Credential-prefix/private-key/
+JWT checks apply to untouched bodies before classified opaque-token handling.
+Only exactly declared commit-ID tokens can receive technical classification;
+remaining text, paths, identifiers and source references retain ordinary checks.
+Source content and saved/reconstructed bytes are never encoded or transformed to
+pass the scanner. Structural classification is not actual object verification.
+
+`parseDotExtensionSource` provides closed structural and decoded-content
+validation, never proof. `verifyDotExtensionSource` requires the current actual
+Git objects. The supported `dot-extension-source-set --source <JSON>
+--verification <JSON>` CLI calls the native `setDotExtensionSource` guarded by
+existing Atelier/verified Owner-decision authorization, project scoping and
+append-only configuration mutation. Caller surface fields are not authorization.
+The existing variable collection still holds the sole private declaration with
+`exports=[]`; generic variable-set/checkVariableInput is not relaxed. Existing
+record replay remains shape-only: reading unrelated work never invokes Git.
+A saved declaration does not become a reusable verified permit.
+
+Verification input is closed and operation-local:
+
+```
+{ gitExecutable: "<trusted installed Git absolute path>",
+  scratchRoot: "<authorized canonical scratch directory>",
+  repositories: [{ key: "<logical-name>", root: "<authorized canonical checkout>" }] }
+```
+
+These bindings describe actual authorized inputs; they grant no filesystem or
+execution permission. They are not saved in the private source record or output
+provenance. Another authorized checkout can supply the same physical objects
+under a new root. Missing bindings/objects remain scoped verification gaps.
+The existing setup `--dot-input` accepts `extensionVerification` carrying these
+same bindings. Typed pure rendering is refused. The planner freshly verifies;
+apply recalculates the plan and freshly verifies again. An unchanged output
+still requires current object verification, not yesterday's successful receipt.
+
+The verifier uses bounded fixed-argument installed Git plumbing (Git 2.30+),
+never a shell, stored script, filter, hook, textconv or network operation. It
+constructs and removes an owned temporary bare plumbing view containing no
+remote, source configuration or replacement refs. Only the explicitly bound
+physical object directory is read. Inherited Git/config/worktree/alternate
+variables are not passed. Replacement objects and lazy fetching are disabled
+as defense in depth; local-only behavior does **not** depend on a newer Git
+honoring a lazy-fetch environment variable. Source config/remotes are absent
+from the view, and symlinked layouts, alternates, promisor pack markers and
+linked-worktree Git-directory indirection are explicitly unsupported. Missing
+objects therefore cannot fall back to a configured remote helper.
+
+It reads the actual type, bounded declared size and raw commit bytes, recomputes
+the SHA-1 Git object identity over the exact binary header/content, validates
+ordered commit headers and the tree object's type. Commit evidence is limited
+to 1 MiB; larger commits are explicitly unsupported, not truncated. Author and
+message bytes are transient, not persisted or logged. No branch/revision
+expression, source-controlled executable or successful exit label substitutes
+for the physical object. This remains a non-atomic local observation, not a
+cross-process filesystem lock or proof of authorship/publication authorization.
+
+Generic configuration backup marks typed sources
+`dot-technical-references-unsupported` with
+`CONFIG_BACKUP_DOT_TECHNICAL_REFERENCES_UNSUPPORTED`; it cannot report these
+members as backed up/restorable via ordinary variable setters. No silent loss,
+new backup policy or generic privacy exception is introduced. Supported library
+replay/synchronization may preserve the declared bytes, but actual reconstruction
+still requires fresh binding verification. Source preservation, reconstruction
+and actual host consumption require separate verification.

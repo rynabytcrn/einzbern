@@ -1,3 +1,8 @@
+import { readWorkContentPolicy, workContentRolloutReadiness } from "./work-content-templates.js";
+import { FRAMEWORK_VERSION } from "./framework-version.js";
+import { workContentContext } from "./work-content-context.js";
+import type { WorkContentContext } from "./work-content-context.js";
+import { workContentAdmissionProblems } from "./work-gates.js";
 import { executionDecisionEligibility } from "./host-capabilities.js";
 import { validateHostExecutionRequest, resolveHostExecution } from "./execution-fallback.js";
 import type { HostExecutionRequest, HostExecutionDecision } from "./execution-fallback.js";
@@ -172,14 +177,14 @@ async function resolveProjectTargetFromSnapshot(referenceInput: ProjectReference
  * output places, enabled rules and variables. Never write authority. A target that does not resolve
  * to a project chain on this device (unregistered, unavailable, invalid, unclassified) has none.
  */
-export function projectTargetHandoff(work: { readonly workId: string; readonly workRevision: number }, context: Readonly<Record<string, unknown>>): Record<string, unknown> | null {
+export function projectTargetHandoff(work: { readonly workId: string; readonly workRevision: number; readonly workContent?: WorkContentContext }, context: Readonly<Record<string, unknown>>): Record<string, unknown> | null {
   if (typeof context.libraryPath !== "string" || !Array.isArray(context.settings)) return null;
   const settings = context.settings as readonly { readonly key: string; readonly value: unknown }[];
   const value = (key: string): unknown => settings.find(entry => entry.key === key)?.value ?? null;
   const records = (Array.isArray(context.configRecords) ? context.configRecords : []) as readonly { readonly collection: string; readonly key: string; readonly value: Readonly<Record<string, unknown>> }[];
   const variables = records.filter(record => record.collection === "variable").map(record => ({ record, reason: variableExportDecision(record.value as unknown as VariableRecordValue, "handoff") }));
   return {
-    workId: work.workId, workRevision: work.workRevision, reference: context.reference, version: context.version, libraryPath: context.libraryPath,
+    workId: work.workId, workRevision: work.workRevision, ...(work.workContent === undefined ? {} : { workContent: work.workContent }), reference: context.reference, version: context.version, libraryPath: context.libraryPath,
     executionAdmission: context.executionAdmission ?? { status: "not-requested", reason: "read-only-context-is-not-dispatch-admission" },
     enginePolicy: context.enginePolicy ?? null, executionConcurrency: context.executionConcurrency ?? null, repositories: context.repositoryContexts, settings: settings.filter(entry => !entry.key.startsWith("models.") && !entry.key.startsWith("quota.")), design: context.design, repositoryBindings: context.repositoryBindings, readiness: context.readiness,
     output: { language: value("artifact.language"), knowledgeArticlesPath: value("knowledge.articlesPath"), generatedArtifactsPath: value("workspace.generatedArtifactsPath") },
@@ -193,10 +198,14 @@ export function projectTargetHandoff(work: { readonly workId: string; readonly w
 export async function workProjectContexts(state: WorkspaceState, workId: string, home?: string, executionRequest?: ExecutionAdmissionRequest | DotExecutionRequest | HostExecutionRequest): Promise<Record<string, unknown>> {
   const work = state.work.find(entry => entry.id === workId && !entry.tombstone);
   if (!work) throw new ProjectChainError("work does not exist");
+  const workContent = workContentContext(state, workId);
+  const contentAdmissionProblems = workContentAdmissionProblems(state, work, "start");
+  const contentRolloutReadiness = workContentRolloutReadiness(state, readWorkContentPolicy(state, work.projectId)?.rollout ?? null, { engineVersion: FRAMEWORK_VERSION, manifestMinEngineVersion: state.library?.minEngineVersion ?? null, requireCurrentBoundary: false });
   const involvedProjects = involvedProjectsOf(work);
   if (executionRequest !== undefined && "schemaVersion" in executionRequest) {
     return hostWorkProjectContexts(state, workId, validateHostExecutionRequest(executionRequest), home);
   }
+  if (executionRequest?.action !== undefined && !["implementation", "research", "coordination"].includes(executionRequest.action)) throw new ProjectChainError("legacy action must be implementation, research or coordination");
   const dotRequest = executionRequest !== undefined && "mode" in executionRequest && executionRequest.mode === DOT_EXECUTION_MODE ? validateDotExecutionRequest(executionRequest) : null;
   // Capture each device file once for this request. All target/common readbacks and admissions
   // share these values; this is not a transaction across the independently stored device files.
@@ -247,21 +256,28 @@ export async function workProjectContexts(state: WorkspaceState, workId: string,
         effectiveContext = { ...context, readiness: { ...readiness, model, development: { ready: developmentMissing.length === 0, missing: developmentMissing } }, modelCapabilityVerification: "dot-native-capability-evidence-not-self-model-policy", modelApplicability: dotAdmission.applicability };
       }
     }
+    if (executionRequest !== undefined && executionRequest.action !== "research" && executionRequest.action !== "coordination" && contentAdmissionProblems.length > 0) {
+      const contentReason = executionRequest.action === undefined ? "work-content-action-required" : "work-content-incomplete";
+      executionAdmission = { ...(executionAdmission as Record<string, unknown>), status: "refused", contentAdmissionProblems, contentReason };
+    }
     const effective = { ...effectiveContext, enginePolicy, executionConcurrency, executionAdmission };
-    return { ...effective, handoff: projectTargetHandoff({ workId, workRevision: work.revision }, effective) };
+    return { ...effective, handoff: projectTargetHandoff({ workId, workRevision: work.revision, workContent }, effective) };
   });
   const conflicts: string[] = [];
   for (const key of ["design.authority", "design.buildProject", "artifact.language"]) {
     const values = contexts.map(context => (context.settings as { key: string; value: unknown }[] | undefined)?.find(setting => setting.key === key)?.value).filter(value => value !== undefined);
     if (new Set(values.map(value => canonicalJson(value))).size > 1) conflicts.push(key);
   }
-  return { workId, workRevision: work.revision, involvedProjects, enginePolicy, dispatchAdmitted: executionRequest !== undefined && involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.executionAdmission as { status: string }).status === "admitted" && (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), executionPolicyCommand: "execution-policy-resolve --host <host> --category <category> --rejections <count>", contexts, conflicts, developmentReady: involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), coordinationReady: involvedProjects.state === "coordination-only", writeAuthority: "not-granted", explanation: "Each context applies only to its stable project reference; authorization and writable roots must be checked independently." };
+  return { workId, workRevision: work.revision, workContent, contentAdmissionProblems, contentRolloutReadiness, involvedProjects, enginePolicy, dispatchAdmitted: executionRequest !== undefined && involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.executionAdmission as { status: string }).status === "admitted" && (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), executionPolicyCommand: "execution-policy-resolve --host <host> --category <category> --rejections <count>", contexts, conflicts, developmentReady: involvedProjects.state === "selected" && contexts.length > 0 && contexts.every(context => (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), coordinationReady: involvedProjects.state === "coordination-only", writeAuthority: "not-granted", explanation: "Each context applies only to its stable project reference; authorization and writable roots must be checked independently." };
 }
 
 /** New native protocol is action-scoped; it never rewrites historical dot/process receipts. */
 async function hostWorkProjectContexts(state: WorkspaceState, workId: string, request: HostExecutionRequest, home?: string): Promise<Record<string, unknown>> {
   const work = state.work.find(item => item.id === workId && !item.tombstone)!;
   if (request.workId !== workId || request.workRevision !== work.revision) throw new ProjectChainError("host request work/revision differs from current work");
+  const workContent = workContentContext(state, workId);
+  const contentAdmissionProblems = workContentAdmissionProblems(state, work, "start");
+  const contentRolloutReadiness = workContentRolloutReadiness(state, readWorkContentPolicy(state, work.projectId)?.rollout ?? null, { engineVersion: FRAMEWORK_VERSION, manifestMinEngineVersion: state.library?.minEngineVersion ?? null, requireCurrentBoundary: false });
   const involvedProjects = involvedProjectsOf(work);
   // Dot self-selection/quota are inapplicable; do not parse unrelated model policy for dot.
   // Other hosts preserve policy corruption/I/O errors instead of treating them as absence.
@@ -286,7 +302,7 @@ async function hostWorkProjectContexts(state: WorkspaceState, workId: string, re
     // An unavailable occupancy observation does not turn an ordinary configured cap into
     // a new telemetry gate. Explicit user guarantees belong in request.hardLimits.
   };
-  const constraintReasons: string[] = [];
+  const constraintReasons: string[] = request.action === "implementation" ? contentAdmissionProblems.map(problem => `work-content:${problem}`) : [];
   if (typeof deviceCap === "number") enforceCap(deviceCap, "total");
   if (typeof projectCap === "number") enforceCap(projectCap, "children");
   if (["blocked", "pending-owner-acceptance", "done", "cancelled"].includes(work.status)) constraintReasons.push("current-work-state-does-not-allow-new-dispatch");
@@ -297,13 +313,13 @@ async function hostWorkProjectContexts(state: WorkspaceState, workId: string, re
     const readiness = target.readiness as Record<string, { ready: boolean; missing: string[] }> | undefined;
     if (!readiness || ["design", "repository", "output", "language"].some(key => readiness[key]?.ready !== true)) constraintReasons.push("implementation-target-readiness-unresolved");
   }
-  const contextDigest = dotDigest({ libraryId: state.metadata.workspaceId, workId, workRevision: work.revision, involvedProjects, contexts });
+  const contextDigest = dotDigest({ libraryId: state.metadata.workspaceId, workId, workRevision: work.revision, workContent, involvedProjects, contexts });
   let decision: HostExecutionDecision = resolveHostExecution(effectiveRequest, policySnapshot?.enginePolicy ?? null, contextDigest);
   if (constraintReasons.length) decision = { ...decision, status: "blocked", additionalConfirmationsRequired: false, reasons: [...decision.reasons, ...constraintReasons] };
   const eligible = executionDecisionEligibility(decision) === "executable";
   return {
-    schemaVersion: "tcrn.host-project-context.v1", workId, workRevision: work.revision, involvedProjects,
-    contexts: contexts.map(context => ({ ...context, executionAdmission: decision, handoff: projectTargetHandoff({ workId, workRevision: work.revision }, { ...context, executionAdmission: decision }) })),
+    schemaVersion: "tcrn.host-project-context.v1", workId, workRevision: work.revision, workContent, contentAdmissionProblems, contentRolloutReadiness, involvedProjects,
+    contexts: contexts.map(context => ({ ...context, executionAdmission: decision, handoff: projectTargetHandoff({ workId, workRevision: work.revision, workContent }, { ...context, executionAdmission: decision }) })),
     executionDecision: decision, dispatchAdmitted: eligible, coordinationReady: involvedProjects.state === "coordination-only",
     developmentReady: request.action === "implementation" && eligible, conflicts: [], enginePolicy: execution.enginePolicy,
     writeAuthority: "not-granted", explanation: "Authorization and source permission are reported context, not credentials. Coordination never invents development targets; source scope is checked separately.",

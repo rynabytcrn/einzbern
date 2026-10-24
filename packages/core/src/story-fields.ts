@@ -1,3 +1,4 @@
+import { workContent, workContentFields } from "./work-content.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-473 R2 (MIN-227 D8): the engine asks two things of a Story, its goal and its
@@ -70,6 +71,8 @@ function fieldValue(record: Pick<WorkRecord, "extensions">, key: string): string
  * read this way gives the goal recall indexes (TCRN-CROSS-STORY-474 R1).
  */
 export function storyFields(record: Pick<WorkRecord, "extensions">): StoryFields {
+  const content = workContent(record);
+  if (content !== null) return { ...workContentFields(content), source: "fields" };
   const goal = fieldValue(record, STORY_GOAL_KEY);
   const acceptance = fieldValue(record, STORY_ACCEPTANCE_KEY);
   const body = fieldValue(record, STORY_BODY_KEY);

@@ -45,6 +45,7 @@ export interface ConfigurationContractEntry {
 
 /** Consumer names are code entry points, not assertions that live hosts have been tested. */
 const CONSUMERS = Object.freeze({
+  "work.contentPolicy": "workspace.ts typed content lifecycle and default template binding",
   "agents.generation": "variables-sections.ts agentsFileSections and renderAgentsSections",
   "agents.sharedNavigation": "variables-sections.ts shared AGENTS navigation rendering",
   "artifact.language": "knowledge-card and managed-output language selection",
@@ -112,7 +113,7 @@ function settingContracts(): readonly ConfigurationContractEntry[] {
       schemaOwner: "installed-engine",
       source: host ? "device engine-model-policy.json hosts[host]" : "library events bound to stable target identity",
       storageSource: "library settings.updated events (historical string transport)",
-      inheritance: host ? "explicit host only; no project fallback" : ["agents.generation", "agents.sharedNavigation"].includes(entry.key) ? "project target or coordination library owns declaration; no implicit coordination inheritance" : entry.scope === "library" ? "target library only" : "explicit project parent chain and permitted public defaults; no implicit coordination-library inheritance",
+      inheritance: entry.key === "work.contentPolicy" ? "explicit project declaration only; no parent or library fallback" : host ? "explicit host only; no project fallback" : ["agents.generation", "agents.sharedNavigation"].includes(entry.key) ? "project target or coordination library owns declaration; no implicit coordination inheritance" : entry.scope === "library" ? "target library only" : "explicit project parent chain and permitted public defaults; no implicit coordination-library inheritance",
       sharing: host ? "historical declaration syncs with library; effective device policy does not sync" : "portable declarations sync with library",
       export: host ? "runtime policy reference and handoff only; do not freeze device choices into shared AGENTS" : entry.key.startsWith("design.") ? "managed AGENTS whitelist and project context" : "consumer-specific whitelist; library config projection is not an authority",
       consumer: CONSUMERS[entry.key],

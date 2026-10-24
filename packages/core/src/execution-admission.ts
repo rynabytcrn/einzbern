@@ -11,6 +11,7 @@ import type { MachineSettingsFile } from "./machine-settings.js";
 /** Admission is a point-in-time handoff decision, not a scheduler or a reservation. */
 const EXECUTION_ADMISSION_MAX_USAGE_AGE_MS = 300_000;
 export interface ExecutionAdmissionRequest {
+  readonly action?: "implementation" | "research" | "coordination";
   readonly host: string;
   readonly category: string;
   readonly rejections: number;
@@ -34,7 +35,7 @@ export interface ExecutionAdmission {
   readonly schemaVersion: "tcrn.execution-admission.v1";
   readonly status: "admitted" | "refused";
   readonly reasons: readonly string[];
-  readonly request: Pick<ExecutionAdmissionRequest, "host" | "category" | "rejections" | "requestedAgents">;
+  readonly request: Pick<ExecutionAdmissionRequest, "host" | "category" | "rejections" | "requestedAgents" | "action">;
   readonly selection: EngineExecutionPolicyResolution | null;
   readonly policy: { readonly host: string; readonly revision: number; readonly storeRevision: number; readonly digest: string } | null;
   readonly capabilities: { readonly status: "missing" | "unsupported" | "caller-reported-match"; readonly verification: "caller-reported-not-native-verified" };
@@ -93,7 +94,8 @@ export async function resolveExecutionAdmission(request: ExecutionAdmissionReque
 
 /** Pure admission from captured, validated inputs; never rereads policy or device settings. */
 export function resolveExecutionAdmissionFromSnapshot(snapshotValue: ExecutionAdmissionSnapshot, request: ExecutionAdmissionRequest, options: Omit<ExecutionAdmissionOptions, "home"> = {}): ExecutionAdmission {
-  object(request, "request", ["host", "category", "rejections", "requestedAgents", "availableCombinations", "usage", "expectedPolicy"]);
+  object(request, "request", ["host", "category", "rejections", "requestedAgents", "availableCombinations", "usage", "expectedPolicy", "action"]);
+  if (request.action !== undefined && !["implementation", "research", "coordination"].includes(request.action)) invalid("action", "must be implementation, research or coordination");
   text(request.host, "host");
   if (request.host === "chatgpt-dot" || request.host === "dot-autonomous") invalid("host", "requires the independent dot mode entry, not a process host policy");
   text(request.category, "category");
@@ -178,7 +180,7 @@ export function resolveExecutionAdmissionFromSnapshot(snapshotValue: ExecutionAd
   if (request.requestedAgents > admissionLimit) reasons.push("EXECUTION_CONCURRENCY_EXCEEDED");
   const result: ExecutionAdmission = {
     schemaVersion: "tcrn.execution-admission.v1", status: reasons.length === 0 ? "admitted" : "refused", reasons: Object.freeze(reasons),
-    request: { host: request.host, category: request.category, rejections: request.rejections, requestedAgents: request.requestedAgents },
+    request: { ...(request.action === undefined ? {} : { action: request.action }), host: request.host, category: request.category, rejections: request.rejections, requestedAgents: request.requestedAgents },
     selection, policy, capabilities: { status: capabilityStatus, verification: "caller-reported-not-native-verified" },
     quota: { status: quotaStatus, decision, observedAt: request.usage?.observedAt ?? null, source: request.usage?.source ?? null, ageMs,
       fiveHourUsedPercent: request.usage?.fiveHourUsedPercent ?? null, weeklyUsedPercent: request.usage?.weeklyUsedPercent ?? null,

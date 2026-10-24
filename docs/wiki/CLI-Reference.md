@@ -242,6 +242,22 @@
 | --- | --- | --- |
 | `--project` | 可选 | `string` |
 
+## `dot-extension-source-set`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--source` | 必填 | `json` | `Private dot extension source JSON; data only, not publication approval` |
+| `--verification` | 必填 | `json` | `Ephemeral local Git bindings {gitExecutable,scratchRoot,repositories:[{key,root}]}; authorized absolute roots only, never persisted` |
+| `--actor` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--decided-in` | 可选 | `string` | `minutes:<id>#D<n>` |
+| `--timeout-ms` | 可选 | `integer` |  |
+
 ## `engine-list`
 
 - 可用范围：`cli`。
@@ -442,6 +458,7 @@
 
 | 旗标 | 必填 | 取值类型 | 写法 |
 | --- | --- | --- | --- |
+| `--action` | 可选 | `string` | `implementation, research or coordination; required to disambiguate legacy content-incomplete dispatch; does not grant authority` |
 | `--workspace` | 可选 | `string` |  |
 | `--id` | 必填 | `string` |  |
 | `--host` | 必填 | `string` |  |
@@ -1277,10 +1294,11 @@
 - 可用范围：`cli`。
 - 是否写入：否。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--work-content-observation` | 可选 | `json` | `Optional machine-assembled rollout observation JSON; read-only unauthenticated preview, never persisted or approval` |
+| `--workspace` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
 
 ## `settings-remove`
 
@@ -1533,32 +1551,33 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--expected-revision` | 可选 | `integer` |
-| `--involved-projects` | 可选 | `json` |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--id` | 必填 | `string` |
-| `--scope` | 可选 | `string` |
-| `--goal` | 可选 | `string` |
-| `--acceptance` | 可选 | `string` |
-| `--body` | 可选 | `string` |
-| `--gates` | 可选 | `list` |
-| `--decided-by` | 可选 | `list` |
-| `--blocked-by` | 可选 | `list` |
-| `--implements` | 可选 | `list` |
-| `--supersedes` | 可选 | `list` |
-| `--fixes` | 可选 | `list` |
-| `--decided-in` | 可选 | `list` |
-| `--verify` | 可选 | `string` |
-| `--result` | 可选 | `json` |
-| `--sprint` | 可选 | `string` |
-| `--title` | 可选 | `string` |
-| `--summary` | 可选 | `string` |
-| `--labels` | 可选 | `list` |
-| `--actor` | 可选 | `string` |
-| `--timeout-ms` | 可选 | `integer` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--content` | 可选 | `json` | `tcrn.work-content.v1; cannot be combined with legacy scope/goal/acceptance/body` |
+| `--expected-revision` | 可选 | `integer` |  |
+| `--involved-projects` | 可选 | `json` |  |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--id` | 必填 | `string` |  |
+| `--scope` | 可选 | `string` |  |
+| `--goal` | 可选 | `string` |  |
+| `--acceptance` | 可选 | `string` |  |
+| `--body` | 可选 | `string` |  |
+| `--gates` | 可选 | `list` |  |
+| `--decided-by` | 可选 | `list` |  |
+| `--blocked-by` | 可选 | `list` |  |
+| `--implements` | 可选 | `list` |  |
+| `--supersedes` | 可选 | `list` |  |
+| `--fixes` | 可选 | `list` |  |
+| `--decided-in` | 可选 | `list` |  |
+| `--verify` | 可选 | `string` |  |
+| `--result` | 可选 | `json` |  |
+| `--sprint` | 可选 | `string` |  |
+| `--title` | 可选 | `string` |  |
+| `--summary` | 可选 | `string` |  |
+| `--labels` | 可选 | `list` |  |
+| `--actor` | 可选 | `string` |  |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `work-batch`
 
@@ -1588,38 +1607,52 @@
 | `--ttl` | 可选 | `string` |
 | `--timeout-ms` | 可选 | `integer` |
 
+## `work-content-context`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--id` | 必填 | `string` |  |
+| `--offset` | 可选 | `integer` | `Nonnegative Unicode code-point offset within the document; default 0; nonzero requires digest` |
+| `--limit` | 可选 | `integer` | `Positive Unicode code-point window length; omitted returns the full document subject to output capacity` |
+| `--digest` | 可选 | `string` | `Exact SHA-256 from the first segment; pins direct and ancestor/source versions` |
+
 ## `work-create`
 
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--involved-projects` | 可选 | `json` |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--project-id` | 必填 | `string` |
-| `--external-key` | 必填 | `string` |
-| `--kind` | 必填 | `string` |
-| `--parent-id` | 可选 | `string` |
-| `--status` | 可选 | `string` |
-| `--scope` | 可选 | `string` |
-| `--goal` | 可选 | `string` |
-| `--acceptance` | 可选 | `string` |
-| `--body` | 可选 | `string` |
-| `--gates` | 可选 | `list` |
-| `--decided-by` | 可选 | `list` |
-| `--blocked-by` | 可选 | `list` |
-| `--implements` | 可选 | `list` |
-| `--supersedes` | 可选 | `list` |
-| `--fixes` | 可选 | `list` |
-| `--decided-in` | 可选 | `list` |
-| `--title` | 必填 | `string` |
-| `--summary` | 可选 | `string` |
-| `--labels` | 可选 | `list` |
-| `--template-receipt` | 可选 | `json` |
-| `--actor` | 可选 | `string` |
-| `--timeout-ms` | 可选 | `integer` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--content` | 可选 | `json` | `tcrn.work-content.v1; cannot be combined with legacy scope/goal/acceptance/body` |
+| `--involved-projects` | 可选 | `json` |  |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--project-id` | 必填 | `string` |  |
+| `--external-key` | 必填 | `string` |  |
+| `--kind` | 必填 | `string` |  |
+| `--parent-id` | 可选 | `string` |  |
+| `--status` | 可选 | `string` |  |
+| `--scope` | 可选 | `string` |  |
+| `--goal` | 可选 | `string` |  |
+| `--acceptance` | 可选 | `string` |  |
+| `--body` | 可选 | `string` |  |
+| `--gates` | 可选 | `list` |  |
+| `--decided-by` | 可选 | `list` |  |
+| `--blocked-by` | 可选 | `list` |  |
+| `--implements` | 可选 | `list` |  |
+| `--supersedes` | 可选 | `list` |  |
+| `--fixes` | 可选 | `list` |  |
+| `--decided-in` | 可选 | `list` |  |
+| `--title` | 必填 | `string` |  |
+| `--summary` | 可选 | `string` |  |
+| `--labels` | 可选 | `list` |  |
+| `--template-receipt` | 可选 | `json` |  |
+| `--actor` | 可选 | `string` |  |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `work-delete`
 
@@ -1639,11 +1672,13 @@
 - 可用范围：`cli`。
 - 是否写入：否。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--kind` | 必填 | `string` |
-| `--project-id` | 必填 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--parent-id` | 可选 | `string` | `Live parent work id in the selected project; supplies complete inherited context` |
+| `--variant` | 可选 | `string` | `standard or defect (Story only)` |
+| `--workspace` | 可选 | `string` |  |
+| `--kind` | 必填 | `string` |  |
+| `--project-id` | 必填 | `string` |  |
 
 ## `work-gate-list`
 

@@ -1,5 +1,16 @@
+import { WORK_CONTENT_KEY, workContent, validateWorkContent, contentFail } from "./work-content.js";
+import type { ContentWorkKind } from "./work-content.js";
+import { WORK_CONTENT_POLICY_KEY, readWorkContentPolicy, validateWorkContentPolicy, workContentPolicyApplies, workContentRolloutReadiness } from "./work-content-templates.js";
+import type { WorkContentRolloutReadiness, WorkContentPolicy } from "./work-content-templates.js";
+import { assertWorkContentAdmission } from "./work-gates.js";
+import { assertWorkContentChange, workContentChangeImpact, workContentMeaningDigest, WORK_CONTENT_IMPACT_KEY, readWorkContentImpact } from "./work-requirements.js";
+import { bindWorkContentEvidence } from "./work-acceptance.js";
+import { DOT_EXTENSION_SOURCE_VARIABLE, parseDotExtensionSource } from "./dot-agents.js";
+import { verifyDotExtensionSource } from "./dot-extension-source.js";
+import type { DotSourceVerificationBindings } from "./dot-extension-source.js";
+import { verifyWriteAuthorization } from "./write-authorization.js";
 import { consolidateStates } from "./consolidation-state.js";
-import { FormatVersionError } from "./format-version.js";
+import { FormatVersionError, isEngineVersion, compareSemver } from "./format-version.js";
 import type { InvolvedProjects } from "../../protocol/src/index.js";
 import { normalizeInvolvedProjects, involvedProjectsOf, assertStoredInvolvedProjects, assertInvolvedProjectScope, storedInvolvedProjects } from "./involved-projects.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
@@ -13,6 +24,7 @@ import { isAbsolute, join } from "node:path";
 
 import {
   PROTOCOL_LIMITS,
+  parseStrictInstant,
   ProtocolError,
   WORK_SUMMARY_MAX_BYTES,
   assertCanonicalJson,
@@ -89,6 +101,7 @@ import {
   assertDeclarationsResolve,
   assertNoDecisionTopicConflict,
   decisionLookup,
+  decisionLedger,
   declarationsFromInput,
   nextMinutesExternalKey,
   standBeside,
@@ -170,7 +183,7 @@ import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relatio
 // work-gates.ts reaches this module again through gates-config.js and config-records.js.
 import { WORK_GATES_KINDS, normalizedWorkGates, workGatesShapeProblem } from "./work-gates.js";
 import { projectLineage, workspaceSettingIdentity, assertScopedSettingWriteConsistent } from "./project-scope.js";
-import { ConfigRecordError, configRecordId, configRecordIdentity, isConfigRecordCollection, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
+import { ConfigRecordError, checkConfigRecordValue, configRecordId, configRecordIdentity, isConfigRecordCollection, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
 import { activeLease, assertProjectLeasesAdmitDelete, assertWorkLeaseAdmits, leaseRemovalDelta, staleProjectLeaseRemovalDeltas, workLease } from "./work-lease.js";
 import type { WorkLease } from "./work-lease.js";
 import type { ConfigRecord } from "./config-records.js";
@@ -185,6 +198,7 @@ export const WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES = 4_194_304 as const;
 // The old-layout control directory, named by the names module (read-only from EPIC-141 on).
 export const WORKSPACE_CONTROL_DIRECTORY = LEGACY_CONTROL_DIRECTORY;
 export const WORKSPACE_REASON_CODES = Object.freeze([
+  "MODEL_WRITE_REFUSED",
   // TCRN-CROSS-STORY-469: a path that names neither a library nor an old-layout workspace, and a
   // write aimed at an old-layout workspace, which opens read-only.
   // TCRN-CROSS-STORY-489 R4: a write aimed at an old-layout workspace this device migrated names
@@ -423,6 +437,7 @@ export interface LibraryStreamHead {
 }
 
 export interface LibraryReplay {
+  readonly minEngineVersion?: string;
   readonly importedStreams?: readonly LibraryStreamHead[];
   readonly consolidation?: import("./consolidation-format.js").ConsolidationIndex;
   readonly libraryRoot: string;
@@ -1298,6 +1313,8 @@ const ADVISORY_BODY_KEY = "advisory:body";
 // repeated rather than imported, for the reason given for advisory:relations above.
 const ADVISORY_GATES_KEY = "advisory:gates";
 const ADVISORY_KEYS: readonly string[] = [
+  WORK_CONTENT_KEY,
+  WORK_CONTENT_IMPACT_KEY,
   ADVISORY_SCOPE_KEY,
   ADVISORY_DECIDED_BY_KEY,
   ADVISORY_VERIFY_KEY,
@@ -1340,6 +1357,7 @@ type WorkAdvisoryInput = {
   readonly goal?: string;
   readonly acceptance?: string;
   readonly body?: string;
+  readonly content?: unknown;
   // TCRN-CROSS-STORY-525: gate names, stored deduplicated and sorted as advisory:gates; [] removes them.
   readonly gates?: readonly string[];
 };
@@ -1374,7 +1392,7 @@ function isSprintReference(value: unknown): value is SprintReference {
   return true;
 }
 
-const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY, relations: ADVISORY_RELATIONS_KEY, goal: ADVISORY_GOAL_KEY, acceptance: ADVISORY_ACCEPTANCE_KEY, body: ADVISORY_BODY_KEY, gates: ADVISORY_GATES_KEY });
+const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY, relations: ADVISORY_RELATIONS_KEY, goal: ADVISORY_GOAL_KEY, acceptance: ADVISORY_ACCEPTANCE_KEY, body: ADVISORY_BODY_KEY, content: WORK_CONTENT_KEY, gates: ADVISORY_GATES_KEY });
 
 // `relations` is the validated form of advisory.relations (validateRelationsInput), never the raw
 // input: each stored list it names replaces that list of advisory:relations whole (an empty one
@@ -1389,6 +1407,10 @@ function workAdvisoryExtensions(base: Readonly<Record<string, unknown>>, advisor
     if (value === undefined) continue;
     const copied = field === "decidedBy" ? [...(value as readonly string[])] : field === "sprint" ? { workspaceId: (value as SprintReference).workspaceId, workId: (value as SprintReference).workId } : value;
     next[ADVISORY_FIELD_KEYS[field]] = { required: false, value: copied };
+  }
+  if (advisory.content !== undefined) {
+    next[WORK_CONTENT_KEY] = { required: false, value: validateWorkContent(advisory.content) };
+    for (const key of [ADVISORY_GOAL_KEY, ADVISORY_ACCEPTANCE_KEY, ADVISORY_BODY_KEY, ADVISORY_SCOPE_KEY]) delete next[key];
   }
   if (advisory.gates !== undefined) {
     // TCRN-CROSS-STORY-525: validateWorkAdvisoryInput has already refused a list that is not gate names.
@@ -1593,6 +1615,10 @@ function isStoryFieldText(value: unknown): boolean {
 }
 
 function validateWorkAdvisoryInput(input: WorkAdvisoryInput, id: string, reasonCode: WorkspaceReasonCode): void {
+  if (input.content !== undefined) {
+    validateWorkContent(input.content);
+    if ([input.goal, input.acceptance, input.body, input.scope].some(v => v !== undefined)) contentFail("WORK_CONTENT_SINGLE_SOURCE", "content cannot be written with goal/acceptance/body/scope mirrors");
+  }
   const checks: ReadonlyArray<readonly [keyof WorkAdvisoryInput, (value: unknown) => boolean, string]> = [
     ["scope", (value) => typeof value === "string" && value.length > 0, "advisory scope must be a non-empty string"],
     ["decidedBy", (value) => Array.isArray(value) && value.length > 0 && value.every((item) => isMinutesId(item)), "advisory decided-by must be a non-empty list of minutes ids"],
@@ -1630,6 +1656,14 @@ function assertAdvisoryEntryShape(key: string, entry: unknown, id: string, reaso
     fail(reasonCode, `work ${id} advisory ${key} is malformed`);
   }
   const value = (entry as Readonly<Record<string, unknown>>).value;
+  if (key === WORK_CONTENT_IMPACT_KEY) {
+    try { readWorkContentImpact({ extensions: { [WORK_CONTENT_IMPACT_KEY]: entry } } as unknown as Pick<WorkRecord, "extensions">); } catch (error) { fail(reasonCode, String(error)); }
+    return;
+  }
+  if (key === WORK_CONTENT_KEY) {
+    try { validateWorkContent(value); } catch (error) { fail(reasonCode, String(error)); }
+    return;
+  }
   if (key === ADVISORY_SCOPE_KEY) {
     if (typeof value !== "string" || value.length === 0) {
       fail(reasonCode, `work ${id} advisory scope must be a non-empty string`);
@@ -1843,6 +1877,7 @@ function assertWorkAnnotation(
     const before = canonicalJson((current.extensions[key] ?? null) as JsonValue);
     const after = canonicalJson((next.extensions[key] ?? null) as JsonValue);
     if (!advisory.has(key)) {
+      if (key.startsWith("template:") && current.extensions[WORK_CONTENT_KEY] === undefined && next.extensions[WORK_CONTENT_KEY] !== undefined) { if (before !== after) changed = true; continue; }
       if (before !== after) {
         fail(reasonCode, `work ${id} annotation changed non-advisory extension ${key}`);
       }
@@ -3324,7 +3359,7 @@ function replayLibrary(library: Library, read: LibraryReadShape, cached?: Librar
     const streams = read.streams.flatMap(stream => stream.manifest === null ? [] : [streamHead(stream.manifest)]);
     const importedStreams = inputs.flatMap(entry => entry.state.library?.streams ?? []);
     const headEventHash = canonicalSha256({ schemaVersion: "einzbern.shared-head.v1", provenance: library.manifest.consolidation!.sha256, head: libraryHeadDigest(streams) });
-    return { state: { ...replayed, headEventHash, library: { libraryRoot: library.root, versionVector: read.versionVector, streams, importedStreams, consolidation: index, rejectedEvents: merge.rejected, aliases: merge.aliases } }, replayExecutionConfig: replayed.executionConfig, merge };
+    return { state: checkedWorkContentBoundary({ ...replayed, headEventHash, library: { minEngineVersion: library.manifest.minEngineVersion, libraryRoot: library.root, versionVector: read.versionVector, streams, importedStreams, consolidation: index, rejectedEvents: merge.rejected, aliases: merge.aliases } }), replayExecutionConfig: replayed.executionConfig, merge };
   }
   const tail = cached === undefined ? read.events : read.events.slice(cached.seed.version);
   const origins = new Map<EventRecord, ReplayOrigin>(tail.map((entry) => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
@@ -3333,17 +3368,18 @@ function replayLibrary(library: Library, read: LibraryReadShape, cached?: Librar
   const state = projectModelPlanWorkspaceState(replayed);
   const streams = read.streams.flatMap((stream) => (stream.manifest === null ? [] : [streamHead(stream.manifest)]));
   return {
-    state: {
+    state: checkedWorkContentBoundary({
       ...state,
       headEventHash: libraryHeadDigest(streams),
       library: {
+        minEngineVersion: library.manifest.minEngineVersion,
         libraryRoot: library.root,
         versionVector: read.versionVector,
         streams,
         rejectedEvents: merge.rejected,
         aliases: merge.aliases,
       },
-    },
+    }),
     replayExecutionConfig: replayed.executionConfig,
     merge,
   };
@@ -4149,6 +4185,31 @@ export async function deleteProject(workspaceRoot: string, input: {
   }, input);
 }
 
+/** A reference to a recorded Owner decision; its actual meaning remains independent review. */
+function assertContentDecision(state: WorkspaceState, locator: string, projectId: string, requireCurrent = true): void {
+  const match = /^(minutes:[a-f0-9]{24})#D([1-9][0-9]*)$/u.exec(locator);
+  const minutes = match && state.minutes.find(m => m.id === match[1] && !m.tombstone && m.projectId === projectId);
+  if (!minutes || !minutes.decidedBy.some(actor => actor.startsWith("owner:")) || !minutes.decisions[Number(match?.[2]) - 1]) contentFail("WORK_CONTENT_DECISION_REQUIRED", `unresolved Owner decision: ${locator}`);
+  if (requireCurrent && decisionLedger(state).decisions.get(locator)?.status !== "valid") contentFail("WORK_CONTENT_DECISION_REQUIRED", `obsolete Owner decision: ${locator}`);
+}
+function assertContentDecisions(state: WorkspaceState, record: WorkRecord, previous?: WorkRecord): void {
+  const content = workContent(record); if (!content) return;
+  const priorContent = previous ? workContent(previous) : null;
+  if (content.changeDecision !== undefined) {
+    const retained = previous && priorContent?.changeDecision === content.changeDecision && !workContentChangeImpact(state.work, previous, content).requiresDecision;
+    assertContentDecision(state, content.changeDecision, record.projectId, !retained);
+  }
+  for (const requirement of content.requirements.filter(r => r.disposition !== "required" && r.decision !== undefined)) {
+    const retained = priorContent?.requirements.some(old => canonicalJson(old) === canonicalJson(requirement));
+    assertContentDecision(state, requirement.decision!, record.projectId, !retained);
+  }
+  if (content.approved && !content.sources.some(s => s.kind === "decision" && s.extraction === "complete")) contentFail("WORK_CONTENT_DECISION_REQUIRED", "approved content requires a decision source");
+  for (const source of content.sources) if (source.kind === "decision" && source.extraction === "complete") {
+    const retained = previous && workContent(previous)?.sources.some(old => canonicalJson(old) === canonicalJson(source));
+    assertContentDecision(state, source.locator, record.projectId, !retained);
+  }
+}
+
 // STORY-300 slice 3: createWork's delta, exposed so a batch can compose it. createWork
 // already did all its validation inside the closure, so unlike transitionWork nothing
 // moves -- this only gives the batch a handle on what the single verb already ran.
@@ -4164,6 +4225,7 @@ export function createWorkDelta(input: {
   readonly goal?: string;
   readonly acceptance?: string;
   readonly body?: string;
+  readonly content?: unknown;
   readonly gates?: readonly string[];
   readonly title?: string | null;
   readonly summary?: string | null;
@@ -4187,6 +4249,7 @@ export async function createWork(workspaceRoot: string, input: {
   readonly goal?: string;
   readonly acceptance?: string;
   readonly body?: string;
+  readonly content?: unknown;
   readonly gates?: readonly string[];
   readonly title?: string | null;
   readonly summary?: string | null;
@@ -4209,6 +4272,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
   readonly goal?: string;
   readonly acceptance?: string;
   readonly body?: string;
+  readonly content?: unknown;
   readonly gates?: readonly string[];
   readonly title?: string | null;
   readonly summary?: string | null;
@@ -4261,11 +4325,15 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
     // where the author already wrote the one-line answer. A record with neither carries
     // summary: null rather than no field, so every record born after this change has one shape.
     const summary = input.summary === undefined
-      ? summarizeGoal(input.goal ?? deriveStoryFieldsFromScope(input.scope).goal, WORK_SUMMARY_MAX_BYTES)
+      ? summarizeGoal(input.content === undefined ? input.goal ?? deriveStoryFieldsFromScope(input.scope).goal : validateWorkContent(input.content).goal || null, WORK_SUMMARY_MAX_BYTES)
       : normalizeWorkSummary(input.summary);
-    const templateReceipt = input.templateAdmission === undefined
-      ? undefined
-      : validateTemplateAdmissionReceipt(input.templateAdmission);
+    const policy = readWorkContentPolicy(state, input.projectId);
+    const policyApplies = workContentPolicyApplies(policy, { id, parentId: input.parentId, createdAt: input.occurredAt, status: input.status ?? "planned" }, state.work, true);
+    if (policyApplies && input.content === undefined) contentFail("WORK_CONTENT_REQUIRED", "enabled new work requires typed content; omitting binding does not bypass policy");
+    const defaultTemplate = policyApplies ? policy?.defaults[input.kind as ContentWorkKind] : undefined;
+    const automaticTemplate = defaultTemplate === undefined ? undefined : state.templates.find(t => t.template.id === defaultTemplate.templateId && t.template.version === defaultTemplate.templateVersion);
+    const templateReceipt = input.templateAdmission === undefined ? automaticTemplate?.receipt : validateTemplateAdmissionReceipt(input.templateAdmission);
+    if ((policyApplies || input.content !== undefined) && templateReceipt === undefined) contentFail("WORK_CONTENT_TEMPLATE_REQUIRED", "typed content needs an admitted v2 template (explicit receipt or scoped default)");
     const templateRecord = templateReceipt === undefined
       ? undefined
       : templateRecordForBinding(state.templates, templateBindingFromReceipt(templateReceipt));
@@ -4275,6 +4343,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
     if (templateRecord !== undefined && !templateRecord.template.appliesTo.includes(input.kind)) {
       throw new TemplateAdmissionError("TEMPLATE_NOT_APPLICABLE", `${templateRecord.template.id}:${input.kind}`);
     }
+    if (input.content !== undefined && templateRecord?.template.schemaVersion !== "tcrn.template.v2") contentFail("WORK_CONTENT_TEMPLATE_REQUIRED", "typed content requires template v2");
     const extensions: Record<string, unknown> = workAdvisoryExtensions({}, input, relations);
     // INIT-053 U06 (a): an undecided relation is stored as absence, which reads as undecided
     // (approved contract item 4); a format-1 library therefore still takes new work, and a record
@@ -4283,7 +4352,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
     if (templateReceipt !== undefined && templateRecord !== undefined) {
       extensions[templateRecord.registrationId] = { required: true, value: templateBindingFromReceipt(templateReceipt) };
     }
-    const record: WorkRecord = {
+    let record: WorkRecord = {
       schemaVersion: "tcrn.work.v1",
       id,
       externalKey,
@@ -4302,10 +4371,16 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
       summary,
       ...(involvedProjects === undefined ? {} : { involvedProjects }),
     };
+    if (input.content !== undefined) {
+      extensions[WORK_CONTENT_KEY] = { required: false, value: bindWorkContentEvidence(state.work, record) };
+      record = { ...record, extensions: extensions as WorkRecord["extensions"], scopeDigest: workExtensionsDigest(extensions) };
+    }
     // TCRN-CROSS-STORY-473 R1, R2: a Story is checked for its goal and its acceptance and
     // nothing else, bound to a template or not; the ten-block contract is gone.
     assertInvolvedProjectScope(state.work, record);
-    assertStoryFields(record);
+    if (input.content === undefined) assertStoryFields(record);
+    assertContentDecisions(state, record);
+    assertWorkContentAdmission(state, record, record.status === "planned" ? "draft" : record.status === "done" ? "done" : "start");
     validateBoundTemplateWork(record, state.templates);
     assertStoryCompletionAdmission(record, record.status);
     const work = validateWorkGraph([...state.work, record], templateRegistry(state.templates));
@@ -4355,6 +4430,7 @@ function assertTransitionAdmission(state: WorkspaceState, input: { readonly id: 
   // fields, or the blocks of its scope); a record bound to a template is checked against it.
   if (["ready", "active", "done"].includes(input.status)) {
     const current = workById(state, input.id);
+    assertWorkContentAdmission(state, current, input.status === "done" ? "done" : "start");
     validateBoundTemplateWork(current, state.templates);
     assertStoryFields(current);
     assertStoryCompletionAdmission(current, input.status);
@@ -4517,7 +4593,7 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   if (current.tombstone) {
     fail("WORKSPACE_INPUT_INVALID", `work ${input.id} is deleted`);
   }
-  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.goal === undefined && input.acceptance === undefined && input.body === undefined && input.gates === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined && input.involvedProjects === undefined) {
+  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.goal === undefined && input.acceptance === undefined && input.body === undefined && input.gates === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined && input.involvedProjects === undefined && input.content === undefined) {
     fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, relations, goal, acceptance, body, gates, title, summary, or labels");
   }
   validateWorkAdvisoryInput(input, input.id, "WORKSPACE_INPUT_INVALID");
@@ -4532,7 +4608,29 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   // who wrote it and when, not by a replay-time default.
   const summary = input.summary === undefined ? current.summary : normalizeWorkSummary(input.summary);
   const involvedProjects = input.involvedProjects === undefined ? involvedProjectsOf(current) : normalizeInvolvedProjects(input.involvedProjects);
-  const extensions = workAdvisoryExtensions(current.extensions, input, relations);
+  if (workContent(current) === null && input.content === undefined && [input.goal, input.acceptance, input.body, input.scope].some(v => v !== undefined) && workContentPolicyApplies(readWorkContentPolicy(state, current.projectId), current, state.work)) contentFail("WORK_CONTENT_REQUIRED", "related in-flight content changes require typed content adoption");
+  if (workContent(current) !== null && [input.goal, input.acceptance, input.body, input.scope].some(v => v !== undefined)) contentFail("WORK_CONTENT_SINGLE_SOURCE", "edit canonical content, not projected fields");
+  if (input.content !== undefined) assertWorkContentChange(state.work, current, validateWorkContent(input.content));
+  const extensions: Record<string, unknown> = { ...workAdvisoryExtensions(current.extensions, input, relations) };
+  if (input.content !== undefined && workContent(current) === null) {
+    if (current.status === "done" || current.status === "cancelled") contentFail("WORK_CONTENT_TERMINAL", "historical terminal work is not migrated");
+    const policy = readWorkContentPolicy(state, current.projectId);
+    const d = policy?.defaults[current.kind as ContentWorkKind];
+    const admission = d && state.templates.find(t => t.template.id === d.templateId && t.template.version === d.templateVersion && t.template.schemaVersion === "tcrn.template.v2");
+    if (!admission) contentFail("WORK_CONTENT_TEMPLATE_REQUIRED", "adopting typed content requires an admitted project default");
+    for (const key of Object.keys(extensions)) if (key.startsWith("template:")) delete extensions[key];
+    extensions[admission.registrationId] = { required: true, value: templateBindingFromReceipt(admission.receipt) };
+  }
+  if (input.content !== undefined) {
+    const provisional: WorkRecord = { ...current, extensions: extensions as WorkRecord["extensions"], revision: current.revision + 1 };
+    extensions[WORK_CONTENT_KEY] = { required: false, value: bindWorkContentEvidence(state.work, provisional, current) };
+    const bound: WorkRecord = { ...provisional, extensions: extensions as WorkRecord["extensions"] };
+    if (canonicalJson(workContent(current)) !== canonicalJson(workContent(bound))) extensions[WORK_CONTENT_IMPACT_KEY] = { required: false, value: {
+      schemaVersion: "tcrn.work-content-impact.v1", previousRevision: current.revision, currentRevision: bound.revision,
+      previousMeaningDigest: workContentMeaningDigest(state.work, current), currentMeaningDigest: workContentMeaningDigest(state.work, bound),
+      impact: workContentChangeImpact(state.work, current, workContent(bound)!),
+    } };
+  }
   // TCRN-CROSS-INC-269: the reducer's own predicate, run before the event exists.
   // title, labels and summary are top-level work fields rather than extensions, so an
   // annotation that moved only them once satisfied a separate no-op check here and
@@ -4565,6 +4663,10 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   if (input.goal !== undefined || input.acceptance !== undefined || input.scope !== undefined) {
     assertInvolvedProjectScope(state.work, record);
     assertStoryFields(record);
+  }
+  if (input.content !== undefined) {
+    assertContentDecisions(state, record, current);
+    assertWorkContentAdmission(state, record, record.status === "planned" ? "draft" : record.status === "done" ? "done" : record.status === "active" ? "start" : "write");
   }
   validateBoundTemplateWork(record, state.templates);
   const work = validateWorkGraph(state.work.map((entry) => entry.id === record.id ? record : entry), templateRegistry(state.templates));
@@ -4953,6 +5055,60 @@ export async function projectConfiguration(root: string, state: WorkspaceState):
   }
 }
 
+/** Dedicated private source admission. Technical references are verified afresh;
+ * their persisted shape is not authority, a credential exemption, or a Git proof. */
+export async function setDotExtensionSource(workspaceRoot: string, input: {
+  readonly source: unknown;
+  readonly verification: DotSourceVerificationBindings;
+} & WorkspaceMutationOptions): Promise<WorkspaceState> {
+  const { source: rawSource, verification, ...mutationOptions } = input;
+  const decidedIn = input.authorization?.decidedIn;
+  const authorize = async (state: WorkspaceState): Promise<WriteAuthorization> => {
+    const surface = process.env.EINZBERN_SURFACE === "atelier" ? "atelier" : "cli";
+    if (decidedIn !== undefined) {
+      const verified = await verifyWriteAuthorization({ state, decidedIn, target: DOT_EXTENSION_SOURCE_VARIABLE });
+      return { surface, decidedIn: verified.decidedIn, decidedInLibraryId: verified.libraryId };
+    }
+    if (surface !== "atelier") throw new WorkspaceError("MODEL_WRITE_REFUSED", "dot.extensions.source requires Atelier or a verified Owner decision naming the variable");
+    return { surface };
+  };
+  // Fail before Git IO, but do not retain this early check as an append permit.
+  await authorize(await materializeWorkspace(workspaceRoot));
+  const source = parseDotExtensionSource(rawSource);
+  await verifyDotExtensionSource(source, verification);
+  const record: ConfigRecord = {
+    ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }),
+    collection: "variable", key: DOT_EXTENSION_SOURCE_VARIABLE,
+    value: checkConfigRecordValue("variable", DOT_EXTENSION_SOURCE_VARIABLE, { type: "string", value: JSON.stringify(source), description: "Private dot extension regeneration source", exports: [] }),
+  };
+  // This closure is created only after verification of this exact parsed source;
+  // no public generic writer accepts a reusable or serialized admission permit.
+  return appendPlannedWrite(workspaceRoot, mutationOptions, {
+    plan: async () => {
+      const plan: { authorization?: WriteAuthorization } = {};
+      return { plan, deltas: [(state: WorkspaceState): MutationDelta => {
+        if (plan.authorization === undefined) throw new WorkspaceError("MODEL_WRITE_REFUSED", "dot extension source append lacks a current authorization check");
+        projectLineage(state, record.projectId);
+        return {
+          payload: buildEventPayload("config.record.set", { collection: record.collection, key: record.key, value: record.value, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) }, undefined, writeAuthorizationExtras(plan.authorization)),
+          projects: state.projects, work: state.work,
+          configRecords: sortConfigRecords([...state.configRecords.filter(entry => configRecordIdentity(entry.collection, entry.key, entry.projectId) !== configRecordIdentity(record.collection, record.key, record.projectId)), record]),
+        };
+      }] };
+    },
+    unchanged: async () => true,
+    write: async (root, state, plan, append) => {
+      // The existing append protocol holds the write lock and has checked the
+      // library streams against this state. A withdrawn/superseded decision now
+      // refuses before any source event; the receipt is rebuilt from this check.
+      plan.authorization = await authorize(state);
+      const committed = await append();
+      await projectConfiguration(root, committed);
+      return committed;
+    },
+  });
+}
+
 // INIT-022 S213: settings are a bounded workspace_configuration overlay, not an
 // ungoverned JSON sidecar. Each write is an append-only event and the replay arm
 // above enforces the same key, layer, revision, and value contract. They are the
@@ -4961,6 +5117,59 @@ export async function projectConfiguration(root: string, state: WorkspaceState):
 // models.tiers is also checked against the other table as it stands (assertSettingWriteConsistent);
 // R3: so is a write of models.escalation.ceiling, which may only name a category models.category
 // holds. A settings-remove runs the same check on the default it puts back.
+/** Native refresh; runtime version and manifest are read by the engine, not supplied observations. */
+export async function readWorkContentRolloutReadiness(workspaceRoot: string, observation: unknown, options: { readonly requireCurrentBoundary?: boolean } = {}): Promise<WorkContentRolloutReadiness> {
+  const layout = await resolveLayout(workspaceRoot);
+  const state = await materializeLayout(layout);
+  // Materialization validates the actual layout. Legacy read-only workspaces have no
+  // library manifest; do not mistake that absence for a corrupt library or invent a floor.
+  // Runtime JavaScript callers may supply extra options: none may override native facts.
+  return workContentRolloutReadiness(state, observation, {
+    engineVersion: FRAMEWORK_VERSION,
+    manifestMinEngineVersion: layout.kind === "library" ? layout.library.manifest.minEngineVersion : null,
+    ...(typeof options.requireCurrentBoundary === "boolean" ? { requireCurrentBoundary: options.requireCurrentBoundary } : {}),
+  });
+}
+function recordedContentPolicies(state: WorkspaceState): readonly { readonly projectId: string; readonly policy: WorkContentPolicy }[] {
+  const policies: { projectId: string; policy: WorkContentPolicy }[] = [];
+  for (const event of state.events) {
+    if (state.library?.rejectedEvents.some(r => r.eventId === event.id)) continue;
+    const p = event.payload;
+    if (!isJsonObject(p) || p.operation !== "settings.updated" || !isJsonObject(p.record) || p.record.key !== WORK_CONTENT_POLICY_KEY || typeof p.record.projectId !== "string" || typeof p.record.value !== "string") continue;
+    const policy = validateWorkContentPolicy(JSON.parse(p.record.value));
+    if (policy.schemaVersion === "tcrn.work-content-policy.v2") policies.push({ projectId: p.record.projectId, policy });
+  }
+  return policies;
+}
+function assertContentFloorRetained(state: WorkspaceState, next: string | null): void {
+  const versions = recordedContentPolicies(state).map(p => p.policy.rollout?.capableRelease.version).filter((v): v is string => isEngineVersion(v));
+  if (versions.some(v => next === null || compareSemver(next, v) < 0)) contentFail("WORK_CONTENT_FLOOR_DOWNGRADE_UNVERIFIED", "project disablement does not lower the library floor; downgrade readability/writability needs separate verified authorization and mechanism");
+}
+function checkedWorkContentBoundary(state: WorkspaceState): WorkspaceState {
+  const policies = recordedContentPolicies(state);
+  for (const { projectId, policy } of policies) {
+    const rollout = policy.rollout!;
+    const capable = rollout.capableRelease.version;
+    if (!isEngineVersion(capable)) contentFail("WORK_CONTENT_BOUNDARY_CONFLICT", "recorded capable version is unavailable; raw originals preserved");
+    for (const event of state.events) {
+      if (state.library?.rejectedEvents.some(r => r.eventId === event.id)) continue;
+      if (typeof event.deviceId !== "string" || event.deviceId.length === 0) contentFail("WORK_CONTENT_BOUNDARY_CONFLICT", "event device identity is unavailable for accepted-boundary verification; raw originals preserved; refresh and semantically reapply on a clean accepted baseline before submission");
+      if (event.sequence <= (rollout.boundary.versionVector[event.deviceId] ?? 0)) continue;
+      const stream = [...(state.library?.streams ?? []), ...(state.library?.importedStreams ?? [])].find(s => s.deviceId === event.deviceId);
+      if (!stream || !isEngineVersion(stream.engineVersion) || compareSemver(stream.engineVersion, capable) < 0) contentFail("WORK_CONTENT_BOUNDARY_CONFLICT", `post-boundary stream ${event.deviceId} is unknown or below capable version; raw originals preserved; refresh and semantically reapply on a clean accepted baseline before submission`);
+      const p = event.payload;
+      if (!isJsonObject(p) || p.operation !== "work.created" || !isJsonObject(p.record) || p.record.projectId !== projectId || typeof p.record.id !== "string") continue;
+      const currentPolicy = readWorkContentPolicy(state, projectId);
+      if (currentPolicy?.schemaVersion !== "tcrn.work-content-policy.v2") continue; // Content rules may be disabled, not the retained writer floor above.
+      const recordId = p.record.id;
+      const record = state.work.find(w => w.id === recordId);
+      if (!record || !workContentPolicyApplies(policy, { ...record, status: "planned" }, state.work, true, policy.enabledAt)) continue;
+      if (workContent(record) === null) contentFail("WORK_CONTENT_BOUNDARY_CONFLICT", `post-boundary work ${record.id} cannot claim timestamp-based historical exemption; raw originals preserved; refresh and semantically reapply on a clean accepted baseline`);
+    }
+  }
+  return state;
+}
+
 export async function setWorkspaceSetting(workspaceRoot: string, input: {
   readonly key: string;
   readonly value: string;
@@ -4979,6 +5188,18 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
         input.configurationProjectId,
       );
       assertScopedSettingWriteConsistent(state, record.key, record.value, input.configurationProjectId);
+      if (record.key === "engine.requiredVersion") assertContentFloorRetained(state, record.value);
+      if (record.key === WORK_CONTENT_POLICY_KEY) {
+        if (!input.configurationProjectId) contentFail("WORK_CONTENT_POLICY_INVALID", "policy requires an explicit project scope");
+        const policy = validateWorkContentPolicy(JSON.parse(record.value));
+        if (policy.schemaVersion !== "tcrn.work-content-policy.v2") contentFail("WORK_CONTENT_ROLLOUT_NOT_READY", "new enablement requires policy v2; legacy v1 remains readable history only");
+        const readiness = workContentRolloutReadiness(state, policy.rollout, { engineVersion: FRAMEWORK_VERSION, manifestMinEngineVersion: state.library?.minEngineVersion ?? null });
+        if (!readiness.ready) contentFail("WORK_CONTENT_ROLLOUT_NOT_READY", readiness.problems.join("; "));
+        if (parseStrictInstant(policy.enabledAt) > parseStrictInstant(new Date().toISOString())) contentFail("WORK_CONTENT_ROLLOUT_NOT_READY", "future v2 activation requires a fresh accepted boundary at activation time");
+        assertContentDecision(state, policy.decision, input.configurationProjectId);
+        for (const [kind, d] of Object.entries(policy.defaults)) if (!state.templates.some(t => t.template.id === d.templateId && t.template.version === d.templateVersion && t.template.schemaVersion === "tcrn.template.v2" && t.template.appliesTo.includes(kind as WorkKind))) contentFail("WORK_CONTENT_POLICY_INVALID", `unadmitted type default: ${kind}`);
+        for (const id of [...policy.scopeWorkIds, ...policy.inFlightWorkIds]) if (!state.work.some(w => w.id === id && w.projectId === input.configurationProjectId && !w.tombstone)) contentFail("WORK_CONTENT_POLICY_INVALID", `work scope is unavailable: ${id}`);
+      }
       return {
         payload: buildEventPayload("settings.updated", record as unknown as JsonValue, undefined, writeAuthorizationExtras(input.authorization)),
         projects: state.projects,
@@ -4999,6 +5220,7 @@ export async function removeWorkspaceSetting(workspaceRoot: string, input: {
       const current = state.settings.find((record) => record.key === input.key && record.projectId === input.configurationProjectId);
       if (current === undefined) fail("WORKSPACE_INPUT_INVALID", `setting ${input.key} is not set`);
       assertScopedSettingWriteConsistent(state, input.key, null, input.configurationProjectId);
+      if (input.key === "engine.requiredVersion") assertContentFloorRetained(state, null);
       return {
         payload: buildEventPayload("settings.removed", { key: input.key, updatedAt: input.occurredAt, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }) } as unknown as JsonValue, undefined, writeAuthorizationExtras(input.authorization)),
         projects: state.projects,

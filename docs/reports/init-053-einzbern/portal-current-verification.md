@@ -40,18 +40,18 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "currentSources": [
     {
       "path": "portal/index.html",
-      "bytes": 482056,
-      "sha256": "510035651336f37efb8c0294e5ebdf15241a4425e1dc0e877b0d312a0e2a488d"
+      "bytes": 499564,
+      "sha256": "84ef3a23ec8a5cf6410809ef8434e53e7555eb6ad8b2b59aaa93524109d41129"
     },
     {
       "path": "portal/locales.js",
-      "bytes": 274429,
-      "sha256": "532c852ed5d48286800cae59cc628cc5fbe93a05db90a84bb6a15d320f3091db"
+      "bytes": 284983,
+      "sha256": "140a5a2bf331b0bc8a48cfcaff9be59782c3e7ccc6a4470470bff2176c602bc7"
     },
     {
       "path": "portal/portal.mjs",
-      "bytes": 90078,
-      "sha256": "fff3525e588e8a17acb237377cdb8e28fbd86f2d6af45d0c24940b690ad13ab5"
+      "bytes": 92463,
+      "sha256": "10055c821e9d37df682b0ac2938045d9581e612d49155519cccb0cf7a138fcb8"
     },
     {
       "path": "portal/scripts/i18n-proof.mjs",
@@ -216,9 +216,9 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
         "leg": "key-coverage",
         "ok": true,
         "reasonCode": "EVERY_KEY_TRANSLATED",
-        "keyCount": 652,
+        "keyCount": 684,
         "localeCount": 5,
-        "expectedStrings": 3260,
+        "expectedStrings": 3420,
         "gaps": []
       },
       {

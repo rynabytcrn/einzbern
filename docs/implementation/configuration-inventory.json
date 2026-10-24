@@ -780,6 +780,25 @@
       "min": 1
     },
     {
+      "key": "work.contentPolicy",
+      "semanticType": "string",
+      "storageType": "string",
+      "controlType": "text",
+      "registeredScope": "project",
+      "scope": "project",
+      "owner": "governed-owner",
+      "schemaOwner": "installed-engine",
+      "source": "library events bound to stable target identity",
+      "storageSource": "library settings.updated events (historical string transport)",
+      "inheritance": "explicit project declaration only; no parent or library fallback",
+      "sharing": "portable declarations sync with library",
+      "export": "consumer-specific whitelist; library config projection is not an authority",
+      "consumer": "workspace.ts typed content lifecycle and default template binding",
+      "effect": "next consumer read; managed outputs require explicit render",
+      "compatibility": "historical string events preserved; typed readback does not rewrite events",
+      "defaultValue": null
+    },
+    {
       "key": "workspace.generatedArtifactsPath",
       "semanticType": "path",
       "storageType": "string",
@@ -1230,7 +1249,7 @@
           "packages/core/src/gates-run.ts child environment",
           "declared gate subprocesses (external consumers)"
         ],
-        "effect": "Carries resolved project handoff to gate processes; registry never reads or echoes its value."
+        "effect": "Carries resolved project handoff including the same complete, versioned workContent projection used by native hosts. It is not a second requirements source or proof of host consumption; registry never reads or echoes its value."
       },
       {
         "classification": "internal-transient",
@@ -6934,6 +6953,56 @@
         ]
       },
       {
+        "name": "dot-extension-source-set",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          },
+          {
+            "name": "source",
+            "required": true,
+            "valueKind": "json",
+            "valueShape": "Private dot extension source JSON; data only, not publication approval"
+          },
+          {
+            "name": "verification",
+            "required": true,
+            "valueKind": "json",
+            "valueShape": "Ephemeral local Git bindings {gitExecutable,scratchRoot,repositories:[{key,root}]}; authorized absolute roots only, never persisted"
+          },
+          {
+            "name": "actor",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "project-id",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "decided-in",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "minutes:<id>#D<n>"
+          },
+          {
+            "name": "timeout-ms",
+            "required": false,
+            "valueKind": "integer"
+          }
+        ]
+      },
+      {
         "name": "engine-list",
         "availability": "cli",
         "mutates": false,
@@ -7359,6 +7428,12 @@
         "availability": "cli",
         "mutates": true,
         "flags": [
+          {
+            "name": "action",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "implementation, research or coordination; required to disambiguate legacy content-incomplete dispatch; does not grant authority"
+          },
           {
             "name": "workspace",
             "required": false,
@@ -9668,6 +9743,12 @@
         "mutates": false,
         "flags": [
           {
+            "name": "work-content-observation",
+            "required": false,
+            "valueKind": "json",
+            "valueShape": "Optional machine-assembled rollout observation JSON; read-only unauthenticated preview, never persisted or approval"
+          },
+          {
             "name": "workspace",
             "required": false,
             "valueKind": "string"
@@ -10266,6 +10347,12 @@
         "mutates": true,
         "flags": [
           {
+            "name": "content",
+            "required": false,
+            "valueKind": "json",
+            "valueShape": "tcrn.work-content.v1; cannot be combined with legacy scope/goal/acceptance/body"
+          },
+          {
             "name": "expected-revision",
             "required": false,
             "valueKind": "integer"
@@ -10462,10 +10549,51 @@
         ]
       },
       {
+        "name": "work-content-context",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "id",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "valueKind": "integer",
+            "valueShape": "Nonnegative Unicode code-point offset within the document; default 0; nonzero requires digest"
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "valueKind": "integer",
+            "valueShape": "Positive Unicode code-point window length; omitted returns the full document subject to output capacity"
+          },
+          {
+            "name": "digest",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "Exact SHA-256 from the first segment; pins direct and ancestor/source versions"
+          }
+        ]
+      },
+      {
         "name": "work-create",
         "availability": "cli",
         "mutates": true,
         "flags": [
+          {
+            "name": "content",
+            "required": false,
+            "valueKind": "json",
+            "valueShape": "tcrn.work-content.v1; cannot be combined with legacy scope/goal/acceptance/body"
+          },
           {
             "name": "involved-projects",
             "required": false,
@@ -10634,6 +10762,18 @@
         "availability": "cli",
         "mutates": false,
         "flags": [
+          {
+            "name": "parent-id",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "Live parent work id in the selected project; supplies complete inherited context"
+          },
+          {
+            "name": "variant",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "standard or defect (Story only)"
+          },
           {
             "name": "workspace",
             "required": false,

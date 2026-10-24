@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
+import { dotEnabledRuleSources, renderDotAgents } from "../dist/build/packages/core/src/dot-agents.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { createProject, initializeLibrary, materializeWorkspace, scopedWorkspaceState } from "../dist/build/packages/core/src/index.js";
 import { renderAgentsSections, resolveAgentsSection } from "../dist/build/packages/core/src/agents-sections.js";
@@ -836,4 +837,29 @@ test("INIT-062/MIN358 same-version principle supplements update only untouched e
     assert.equal(await readFile(changed.agents, "utf8"), edited);
     assert.equal((await ruleOf(changed, id)).state, "pending");
   }
+});
+
+test("INIT068 R20/R21: supported scoped enable/disable/readback feeds both consumers without default activation", async context => {
+  const paths = await scratch(context, "en");
+  for (const id of ["incremental-update", "privacy-publication"]) {
+    assert.equal((await ruleOf(paths, id)).state, "disabled");
+    assert.equal((await ruleOf(paths, id)).recordedVersion, null);
+    await enable(paths, id);
+    assert.deepEqual(await ruleRecord(paths, id), { enabled: true, version: 1 });
+    const after = await ruleOf(paths, id);
+    assert.equal(after.state, "enabled"); assert.equal(after.recordedVersion, 1);
+    assert.equal(sectionOf(await readFile(paths.agents, "utf8"), `rule:${id}`).body, builtInRule(id).body.en);
+    const again = await enable(paths, id);
+    assert.equal(again.written, false);
+  }
+  const scoped = scopedWorkspaceState(await materializeWorkspace(paths.library), paths.projectId);
+  const enabledRules = dotEnabledRuleSources(scoped, "en", "fixture:supported-rule-readback");
+  assert.deepEqual(enabledRules.map(rule => rule.id), ["incremental-update", "privacy-publication"]);
+  const dot = renderDotAgents({ engineVersion: "fixture", engineCommit: "unavailable", engineSourceRef: "fixture:source", language: "en", enabledRules });
+  assert.ok(dot.includes(builtInRule("privacy-publication").body.en));
+  await disable(paths, "incremental-update");
+  assert.deepEqual(await ruleRecord(paths, "incremental-update"), { enabled: false, version: 1 });
+  assert.equal((await ruleOf(paths, "incremental-update")).state, "disabled");
+  assert.equal((await ruleOf(paths, "privacy-publication")).state, "enabled");
+  assert.ok((await readFile(paths.agents, "utf8")).startsWith(USER_TEXT));
 });

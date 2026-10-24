@@ -238,6 +238,7 @@ test("484-R3: an old-layout workspace reads its execution.dispatchTiers as model
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-models-tiers-legacy-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const { root } = await restoreLegacyFixture(base);
+  const before = await materializeWorkspace(root);
   const catalog = await cli(["settings-catalog", "--workspace", root]);
   assert.deepEqual(JSON.parse(catalog.settings.find((setting) => setting.key === "models.tiers").currentValue), [
     record(10, "economy", "claude-code", "claude-fixture-model", "max"),
@@ -245,6 +246,19 @@ test("484-R3: an old-layout workspace reads its execution.dispatchTiers as model
   for (const key of ["execution.dispatchTiers", "execution.dispatchClasses", "execution.dispatchModes"]) {
     assert.equal(catalog.settings.some((setting) => setting.key === key), false, key);
   }
+  // INIT068 regression: optional rollout reporting must not require a library
+  // manifest from this validated historical layout or conceal unknown floors.
+  assert.equal(catalog.contentRollout.persisted.readiness.ready, false);
+  assert.equal(catalog.contentRollout.persisted.readiness.manifestFloor, null);
+  assert.ok(catalog.contentRollout.persisted.readiness.problems.includes("MANIFEST_FLOOR_UNOBSERVED"));
+  const preview = await cli(["settings-catalog", "--workspace", root, "--work-content-observation", "{}"]);
+  assert.deepEqual(preview.settings, catalog.settings, "readiness does not alter the old settings projection");
+  assert.equal(preview.contentRollout.preview.readiness.ready, false);
+  assert.ok(preview.contentRollout.preview.readiness.problems.includes("ROLLOUT_OBSERVATION_MISSING_OR_INVALID"));
+  const after = await materializeWorkspace(root);
+  assert.equal(after.version, before.version);
+  assert.equal(after.headEventHash, before.headEventHash);
+
 });
 
 test("Historical validator/replay 508-R2: a models.tiers value TCRN-CROSS-STORY-484 recorded, one table per host, reads as records in every read, and its event keeps its bytes", async (context) => {

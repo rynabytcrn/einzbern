@@ -281,3 +281,57 @@ test("configuration contract: CLI variable exports default closed and replace ex
   assert.equal(retiredAuthority.reasonCode, "SETTINGS_KEY_DEVICE_LEVEL");
   assert.equal(await versionOf(fx.workspace), before);
 });
+
+// R19: the dedicated typed source route is the same private variable authority,
+// not a model-write bypass. Git/object verification cases live in the core tests.
+test("R19 typed source CLI retains variable authorization and exact closed flags", async (context) => {
+  const entry = COMMAND_CATALOG.find((item) => item.name === "dot-extension-source-set");
+  assert.equal(entry.mutates, true);
+  assert.deepEqual(entry.flags.map((flag) => flag.name), [
+    "workspace", "at", "source", "verification", "actor", "project-id", "decided-in", "timeout-ms",
+  ]);
+  const fx = await library(context);
+  const before = await materializeWorkspace(fx.workspace);
+  const args = ["dot-extension-source-set", "--workspace", fx.workspace, "--at", at(), "--source", "{}", "--verification", "{}"];
+  const denied = await asModel(() => refusal(args));
+  assert.equal(denied.reasonCode, "MODEL_WRITE_REFUSED");
+  const unknown = await asAtelier(() => refusal([...args, "--exports", "agents"]));
+  assert.equal(unknown.reasonCode, "CLI_ARGUMENT_UNKNOWN");
+  const malformed = await asAtelier(() => refusal(args.map((value, index) => index === args.indexOf("--source") + 1 ? "{" : value)));
+  assert.equal(malformed.reasonCode, "CLI_ARGUMENT_MALFORMED");
+  const after = await materializeWorkspace(fx.workspace);
+  assert.equal(after.version, before.version);
+  assert.equal(after.headEventHash, before.headEventHash);
+});
+
+test("R19 dedicated source CLI saves the same private variable without ephemeral bindings", async (context) => {
+  const fx = await library(context);
+  const source = {
+    schemaVersion: "tcrn.dot-extension-source.v1", version: 1,
+    sourceReference: "fixture:approved-source", executionTarget: "chatgpt-dot",
+    rules: [{ id: "local-review", body: "Preserve original evidence.", sourceReference: "fixture:rule" }],
+    files: [{ path: "dot-extensions/checker.mjs", kind: "checker", body: "export const checked = false;\n", sourceReference: "fixture:checker" }],
+    entries: [],
+  };
+  // No technical reference is declared: no executable is invoked or Git proof claimed.
+  const verification = { gitExecutable: join(fx.base, "unused-git"), scratchRoot: fx.base, repositories: [] };
+  const receipt = await asAtelier(() => cli([
+    "dot-extension-source-set", "--workspace", fx.workspace, "--at", at(),
+    "--source", JSON.stringify(source), "--verification", JSON.stringify(verification),
+  ]));
+  assert.equal(receipt.reasonCode, "VARIABLE_WRITE_COMMITTED");
+  assert.equal(receipt.variable.name, "dot.extensions.source");
+  assert.deepEqual(receipt.variable.exports, []);
+  assert.deepEqual(JSON.parse(receipt.variable.value), source);
+  assert.equal(JSON.stringify(receipt).includes(verification.gitExecutable), false);
+  const listed = await cli(["variable-list", "--workspace", fx.workspace]);
+  const { source: origin, declaredHere, ...listedVariable } = listed.variables.find((item) => item.name === "dot.extensions.source");
+  assert.deepEqual(listedVariable, receipt.variable);
+  assert.equal(declaredHere, true);
+  assert.equal(origin.kind, "library");
+  const state = await materializeWorkspace(fx.workspace);
+  const saved = state.configRecords.find((item) => item.collection === "variable" && item.key === "dot.extensions.source");
+  assert.equal(JSON.stringify(saved).includes(verification.gitExecutable), false);
+  assert.equal(JSON.stringify(saved).includes('"verification"'), false);
+  assert.deepEqual(JSON.parse(saved.value.value), source);
+});

@@ -106,6 +106,7 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `general` | `design.consumedVersion` | project | scalar | 9 |
 | `general` | `agents.generation` | project | scalar | 20 |
 | `general` | `agents.sharedNavigation` | project | scalar | 21 |
+| `general` | `work.contentPolicy` | project | scalar | 22 |
 | `models` | `models.category` | project | collection | 1 |
 | `models` | `models.tiers` | project | collection | 2 |
 | `models` | `models.escalation.enabled` | project | scalar | 3 |
@@ -680,3 +681,7 @@ current or inherited value, while the target's own, ancestral and library
 declarations read as they are and applying configuration still refuses the
 target until `project-bindings-set` or `project-bindings-remove` with
 `--key common-default` repairs it.
+
+## Typed work content policy (INIT-068)
+
+`work.contentPolicy` is one JSON policy object, a scalar in general/order22, not a table collection. It defaults to null and is not model-writable. It requires an explicit project, admitted type defaults and a valid Owner decision. See [work-content-v1](work-content-v1.md). Its source is the existing project settings event; generated views are not independent authority.

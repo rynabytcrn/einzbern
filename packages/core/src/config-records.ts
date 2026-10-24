@@ -245,6 +245,15 @@ export function setConfigRecordDelta(input: ConfigRecordSetInput): (state: Works
   // Admission only: historical chain records retain their original replay validator.
   if (input.collection === "chain" && input.key === "identity" && typeof (input.value as Record<string, unknown> | null)?.role !== "string") fail("CONFIG_RECORD_VALUE_INVALID", "chain identity role must be a string");
   const record: ConfigRecord = { collection: input.collection, key: input.key, ...(input.projectId === undefined ? {} : { projectId: input.projectId }), value: checkConfigRecordValue(input.collection, input.key, input.value) };
+  // Admission only, never replay: typed technical references require fresh Git
+  // verification and native authorization in setDotExtensionSource. No serialized
+  // flag can exempt a generic writer; ordinary variables and plain v1 sources retain
+  // their existing contract.
+  if (record.collection === "variable" && record.key === "dot.extensions.source" && typeof record.value.value === "string") {
+    let source: unknown;
+    try { source = JSON.parse(record.value.value); } catch { source = null; }
+    if (source !== null && typeof source === "object" && Object.hasOwn(source, "technicalReferences")) fail("CONFIG_RECORD_VALUE_INVALID", "typed dot extension source requires setDotExtensionSource with fresh verification", { key: record.key, reason: "dedicated-source-admission-required" });
+  }
   return (state) => {
     projectLineage(state, input.projectId);
     if (input.collection === "chain" && input.key === "identity" && "value" in input && typeof (input.value as Record<string, unknown>)?.primaryProjectId === "string") projectLineage(state, (input.value as Record<string, unknown>).primaryProjectId as string);

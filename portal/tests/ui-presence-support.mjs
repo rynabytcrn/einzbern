@@ -720,6 +720,16 @@ async function projectChainFixture(prefix) {
 const GHOST_TARGET = Object.freeze({ libraryId: `library:${"f".repeat(24)}`, projectId: `project:${"e".repeat(24)}` });
 const COMPLETE_ID = /(?:library|project):[0-9a-f]{24}/u;
 
+// Content drafting also works in an empty library: it must not wait for the
+// unrelated target editor's Save button, which requires an existing work record.
+async function openWorkContentEditor(page) {
+  const { document } = page;
+  document.querySelector('[data-page-target="dashboard"]')?.click();
+  document.querySelector('[data-workspace-tab="work"]')?.click();
+  await waitFor(() => document.querySelector("#work-content-editor [data-content-draft]"), "the work content editor");
+  return document.querySelector("#work-content-editor");
+}
+
 async function openWorkEditor(page) {
   const { document } = page;
   document.querySelector('[data-page-target="dashboard"]')?.click();
@@ -796,4 +806,4 @@ function policySwitchControls(page, selector) {
   };
   return { view, control, change, recovered };
 }
-export { CLI, COMPLETE_ID, DS_CONTRACT, GHOST_TARGET, MUTATION, appendHistoricalGateCreate, asFixtureDevice, assert, assertBehaviorContract, assertDomContract, bridgeExports, cli, closePage, coordinationContainerFixture, expectedTargetLabels, fixtureProjectIds, join, keydown, linkBridge, loadExecutedDom, localeTable, mkdir, nextAt, openWorkEditor, pageHierarchyFindings, policySwitchControls, policySwitchViews, portalRoot, preparePage, projectChainFixture, readFile, receiptAdvanced, receiptText, rm, scopedWorkFixture, scratch, seed, test, topbarFindings, vm, waitFor, writeFile, writeScratch };
+export { CLI, COMPLETE_ID, DS_CONTRACT, GHOST_TARGET, MUTATION, appendHistoricalGateCreate, asFixtureDevice, assert, assertBehaviorContract, assertDomContract, bridgeExports, cli, closePage, coordinationContainerFixture, expectedTargetLabels, fixtureProjectIds, join, keydown, linkBridge, loadExecutedDom, localeTable, mkdir, nextAt, openWorkContentEditor, openWorkEditor, pageHierarchyFindings, policySwitchControls, policySwitchViews, portalRoot, preparePage, projectChainFixture, readFile, receiptAdvanced, receiptText, rm, scopedWorkFixture, scratch, seed, test, topbarFindings, vm, waitFor, writeFile, writeScratch };

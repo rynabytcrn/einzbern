@@ -19,7 +19,7 @@ export class DispatchWorkflowError extends Error {
 }
 export interface DispatchPreparation {
   schemaVersion: typeof DISPATCH_PREPARATION_VERSION;
-  selectors: Pick<ExecutionAdmissionRequest, "host" | "category" | "rejections" | "requestedAgents">;
+  selectors: Pick<ExecutionAdmissionRequest, "host" | "category" | "rejections" | "requestedAgents" | "action">;
   observations: unknown;
   context: Record<string, unknown>;
   bindings: { target: number; handoff: unknown; digest: string }[];
@@ -27,7 +27,7 @@ export interface DispatchPreparation {
 }
 
 /** Capture fresh admission, never synthesize observations from the selected policy. */
-export async function prepareDispatch(state: WorkspaceState, workId: string, selectors: Pick<ExecutionAdmissionRequest, "host" | "category" | "rejections" | "requestedAgents">, observations: unknown, home?: string): Promise<DispatchPreparation> {
+export async function prepareDispatch(state: WorkspaceState, workId: string, selectors: Pick<ExecutionAdmissionRequest, "host" | "category" | "rejections" | "requestedAgents" | "action">, observations: unknown, home?: string): Promise<DispatchPreparation> {
   const input = object(observations);
   if (observations === null || typeof observations !== "object" || Array.isArray(observations) || Object.keys(input).some(key => !["availableCombinations", "usage", "expectedPolicy"].includes(key))) throw new DispatchWorkflowError("observations must contain only availableCombinations, usage and expectedPolicy");
   const context = await workProjectContexts(state, workId, home, { ...selectors, ...input } as ExecutionAdmissionRequest);

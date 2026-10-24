@@ -92,7 +92,8 @@ test("479-AC1: every verb the navigation table names is a verb of the current co
   // each involved project's own configuration (work-project-context).
   assert.deepEqual(SKILL_NAVIGATION.map((entry) => [...entry.verbs]), [
     ["recall", "rule-list"],
-    ["work-show", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
+    ["work-draft"],
+    ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
     ["execution-host-prepare", "execution-host-record", "execution-host-evidence"],
     ["shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"],
     ["config-backup-plan", "config-backup-create", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
@@ -314,4 +315,10 @@ test("MIN358 installed Skill navigates actual enabled rules without hard-coding 
   assert.ok(markdown.includes("Read enabled rules, not catalog defaults"));
   assert.ok(SKILL_NAVIGATION[0].verbs.includes("rule-list"));
   assert.equal(markdown.includes("Do not establish a prohibition"), false, "optional text comes from scoped rule consumption, not an unconditional Skill duplicate");
+});
+
+test("INIT068 R05/R08/R12–14: generated navigation uses typed native content and version-bound segmented reads", () => {
+  const body = render();
+  for (const clause of ["work-draft", "work-content-context", "specs/work-content-v1.md", "specs/context-v1.md", "inherited constraints", "not a second acceptance copy", "Dot/local consumption separately", "unavailable remains unverified", "original source, behavior and assertions", "structure is not semantic acceptance", "privacy-publication", "specs/dot-rules-v1.md"]) assert.ok(body.includes(clause), clause);
+  for (const name of ["work-draft", "work-content-context"]) assert.throws(() => render({ catalogNames: catalogNames.filter(entry => entry !== name) }), refusal("SKILL_NAVIGATION_VERB_UNKNOWN"));
 });

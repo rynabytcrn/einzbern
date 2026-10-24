@@ -65,42 +65,47 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall", "rule-list"],
-    action: "Run `recall --query \"<task>\"`. New/resumed/delegated sessions read their AGENTS, Skill and current work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults.",
+    action: "Run `recall --query \"<task>\"` for discovery. Each new/resumed/delegated session reads AGENTS, Skill and work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults. privacy-publication: `specs/dot-rules-v1.md`.",
+  },
+  {
+    moment: "Draft by work type",
+    verbs: ["work-draft"],
+    action: "Types/defects, inherited constraints, sources/missing fields: `specs/work-content-v1.md`. One native content, not a second acceptance copy.",
   },
   {
     moment: "Need the full text",
-    verbs: ["work-show", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Read whole work/minutes and each target's `handoff`; a native host dispatch passes that object for that target, gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. Legacy process path: `--execution-request`, `dispatchAdmitted` is true; Pass its selected runner/model/effort exactly, never substitute. Retain real stdout, stderr and exit code. Evidence is not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. Native tools use the host path below. See `specs/dispatch-admission-evidence-v1.md`.",
+    verbs: ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
+    action: "Read whole work/minutes and each target's `handoff`; a native host dispatch passes that object for that target, gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. Segments/digests: `specs/context-v1.md`; never omit critical clauses. Legacy `--execution-request`: `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute; retain stdout, stderr and exit code. Evidence is not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. See `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
     moment: "Native dispatch (Codex, Claude, dot)",
     verbs: ["execution-host-prepare", "execution-host-record", "execution-host-evidence"],
-    action: "Use authorized native tools with normal prompt reports. No runtime adapter, process fields, exported IDs or optional telemetry prerequisite. Existing class fallback authority applies directly; exact configuration is a preference unless explicitly hard. Parent reads before dispatch, child reads before work. Coordination targets=[] needs no invented binding; source work checks scope/permission. Optional audit: machine-assemble inputs, never hand-fill JSON; retain raw returns/reports via saved `--binding` and `--prior`. Status tools retain actual names/attempt association. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; saving needs separate authority. See `specs/host-fallback-v1.md`.",
+    action: "Authorized tools, normal prompt reports. No runtime adapter or optional telemetry prerequisite. Existing class fallback authority applies unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[] needs no binding; check scope/permission. Audit: machine-assemble inputs, never hand-fill JSON; raw returns/reports via `--binding`/`--prior`, actual status names/attempt association. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; saving needs authority. `specs/host-fallback-v1.md`.",
   },
   {
     moment: "Shared submission",
     verbs: ["shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"],
-    action: "Complete baseline, engine semantic changes, one complete pre-submit refresh and engine reapply precede serial handoff. Publish segments before manifest, verify remote bytes, replay a complete destination and observe release. Advisory is not a lock: absence/age grants nothing. Query unknown publication before retry. Synced folders omit transfer, not verification. See `specs/shared-submit-v1.md`.",
+    action: "Complete baseline and engine changes; one complete pre-submit refresh and engine reapply; serial handoff; segments before manifest; verify remote bytes and complete destination replay; observe release. Advisory is not a lock; absence/age grants nothing. Query unknown publication before retry. `specs/shared-submit-v1.md`.",
   },
   {
     moment: "Configuration backup or restore",
     verbs: ["config-backup-plan", "config-backup-create", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
-    action: "Allowlisted inputs only; no secrets, identity, runtime state or generated projections. Preview, preserve originals, restore via supported setters and read each item back. Unapproved policy blocks creation/daily enablement; missing capability blocks dependent work. See `specs/config-backup-v1.md`.",
+    action: "Allowlist only: no secrets, identity, runtime or generated projections. Preserve originals; supported setters/readback. Unapproved policy blocks creation/daily enablement. `specs/config-backup-v1.md`.",
   },
   {
     moment: "Work is done",
     verbs: ["work-transition", "work-annotate"],
-    action: "Use the engine and actual actor; read back results. Partial/pending is not complete.",
+    action: "Use actual actor and readback. Pending is not complete. Compare original source, behavior and assertions: structure is not semantic acceptance. Dot/local consumption separately; unavailable remains unverified.",
   },
   {
     moment: "A decision is made",
     verbs: ["minutes-record"],
-    action: "As soon as you judge something a decision, record D1 to Dn; end the reply with `已记 <minutes key> Dn` (`Recorded <minutes key> Dn` outside Chinese). Use `--supersedes`, `--withdraws` or `--coexists` for existing decisions.",
+    action: "As soon as you judge a decision, record D1–Dn; end with `已记 <minutes key> Dn` (`Recorded <minutes key> Dn` in English). Prior decisions: `--supersedes`/`--withdraws`/`--coexists`.",
   },
   {
     moment: "A lesson is learned",
     verbs: ["knowledge-create", "knowledge-capture"],
-    action: "Keep lessons as cards. An INIT batch covers all pending Stories with its approved roles and batch stages; capture at most five sourced lessons via `knowledge-capture` and read each back. No dynamic progress in AGENTS.",
+    action: "An INIT batch covers all pending Stories; preserve approved roles/stages. Capture at most five sourced lessons via `knowledge-capture`; read back. No dynamic progress in AGENTS.",
   },
   {
     moment: "UI design",

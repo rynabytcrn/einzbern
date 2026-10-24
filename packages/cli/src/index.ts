@@ -1,3 +1,9 @@
+import { readWorkContentImpact } from "../../core/src/work-requirements.js";
+import { workContent, workContentDraft, workContentMissing } from "../../core/src/work-content.js";
+import type { ContentWorkKind } from "../../core/src/work-content.js";
+import { workContentContext, workContentContextSegment } from "../../core/src/work-content-context.js";
+import { readWorkContentPolicy, defaultWorkContentTemplate, workContentRolloutReadiness } from "../../core/src/work-content-templates.js";
+import { readDotExtensionSource } from "../../core/src/dot-agents.js";
 import type { HostExecutionRequest } from "../../core/src/execution-fallback.js";
 
 import { readEngineModelPolicyFile } from "../../core/src/engine-model-policy.js";
@@ -101,6 +107,7 @@ import {
   putArtifact,
   verifyArtifacts,
   readSettingsCatalog,
+  readWorkContentRolloutReadiness,
   readInstallManifest,
   readMachineSettingsCatalog,
   readEngineModelPolicyCatalog,
@@ -207,6 +214,7 @@ import {
   removeVariable,
   renderCustomVariablesSection,
   setVariable,
+  setDotExtensionSource,
   writeVariablesSections,
   disableRule,
   enableRule,
@@ -427,10 +435,11 @@ function relationArgument(value: string): { readonly name: string; readonly id: 
 // work-create and work-annotate. A Story is created only with a goal and an acceptance -- these
 // flags, or the Goal and Acceptance Criteria blocks of a --scope, which is still taken -- and the
 // engine refuses one without either with WORK_STORY_FIELD_REQUIRED naming the field.
-const STORY_FIELD_FLAGS = ["goal", "acceptance", "body"] as const;
+const STORY_FIELD_FLAGS = ["goal", "acceptance", "body", "content"] as const;
 
-function storyFieldsInput(values: Readonly<Record<string, string>>): { readonly goal?: string; readonly acceptance?: string; readonly body?: string } {
+function storyFieldsInput(values: Readonly<Record<string, string>>): { readonly goal?: string; readonly acceptance?: string; readonly body?: string; readonly content?: unknown } {
   return {
+    ...(values.content === undefined ? {} : { content: argumentJsonValue(values.content, "content") }),
     ...(values.goal === undefined ? {} : { goal: values.goal }),
     ...(values.acceptance === undefined ? {} : { acceptance: values.acceptance }),
     ...(values.body === undefined ? {} : { body: values.body }),
@@ -735,8 +744,18 @@ function workDraft(
   state: Awaited<ReturnType<typeof validateWorkspace>>,
   kind: string,
   projectId: string,
+  parentId?: string,
+  variant?: "standard" | "defect",
 ): Readonly<Record<string, unknown>> {
-  const headings = kind === "Story" ? [...STORY_SCOPE_HEADINGS] : [];
+  const content = workContentDraft(kind as ContentWorkKind, variant === undefined ? {} : { variant });
+  const policy = readWorkContentPolicy(state, projectId);
+  const configuredTemplate = policy?.defaults[kind as ContentWorkKind];
+  const contentTemplate = configuredTemplate === undefined ? defaultWorkContentTemplate(kind as ContentWorkKind)
+    : state.templates.find(entry => entry.template.id === configuredTemplate.templateId && entry.template.version === configuredTemplate.templateVersion)?.template ?? null;
+  const parent = parentId === undefined ? null : state.work.find(record => record.id === parentId && !record.tombstone);
+  if (parentId !== undefined && (!parent || parent.projectId !== projectId)) fail("WORKSPACE_INPUT_INVALID", "draft parent must be a live work item in the selected project");
+  const inheritedContext = parentId === undefined ? null : workContentContext(state, parentId);
+  const headings = policy === null ? (kind === "Story" ? [...STORY_SCOPE_HEADINGS] : []) : ["Goal", "Basis", "Scope and constraints", "Requirements and acceptance", "Completion result (at done only)"];
   const scopeTemplate = headings.map((heading) => `【${heading}】\n<填写 ${heading}>`).join("\n\n");
   // The latest three records written either way, so a library whose Stories now carry fields does
   // not keep offering its older ten-block scopes as the model to follow.
@@ -758,10 +777,21 @@ function workDraft(
     skeleton: scopeTemplate,
     template: scopeTemplate,
     optional: true,
-    note: WORK_DRAFT_NOTE,
-    requiredFields: kind === "Story" ? [...STORY_REQUIRED_FIELDS] : [],
+    content, missing: [...workContentMissing(content, "write"), ...(contentTemplate === null ? ["configured-template-unavailable"] : [])], inheritedContext,
+    contentPolicy: policy, contentTemplate,
+    contentRolloutReadiness: workContentRolloutReadiness(state, policy?.rollout ?? null, { engineVersion: FRAMEWORK_VERSION, manifestMinEngineVersion: state.library?.minEngineVersion ?? null, requireCurrentBoundary: false }),
+    note: policy === null ? WORK_DRAFT_NOTE : "Typed content uses the applicable project template; drafts may be incomplete. Completion is required only at done.",
+    requiredFields: policy === null ? (kind === "Story" ? [...STORY_REQUIRED_FIELDS] : []) : [...workContentMissing(content, "write")],
     examples,
   };
+}
+
+function workContextJson(value: unknown, workId: string): string {
+  try { return canonicalJson(value as Parameters<typeof canonicalJson>[0]); }
+  catch (error) {
+    if ((error as { reasonCode?: string }).reasonCode === "INPUT_OVERSIZED") fail("WORK_CONTENT_CONTEXT_OVERSIZED", `incomplete: no content delivered; use work-content-context --id ${workId} --offset 0 --limit 8192, then continue with the returned --digest and nextOffset`);
+    throw error;
+  }
 }
 
 function workAdvisory(record: WorkRecord): Readonly<Record<string, unknown>> | null {
@@ -1710,6 +1740,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   { name: "execution-evidence", availability: "cli", mutates: false, flags: [{ name: "from-file", required: true, valueKind: "string", valueShape: "Path to JSON {handoff, hostResult}; see specs/dispatch-admission-evidence-v1.md in the engine archive. Association only, not host authentication. Exit 0: complete association; exit 1: invalid, unavailable, or unreadable input." }] },
   { name: "execution-policy-resolve", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "category", required: true, valueKind: "string" }, { name: "rejections", required: true, valueKind: "integer" }, { name: "project-budget", required: false, valueKind: "integer" }, { name: "usage", required: false, valueKind: "json" }] },
   { name: "execution-prepare", availability: "cli", mutates: true, flags: [
+    { name: "action", required: false, valueKind: "string", valueShape: "implementation, research or coordination; required to disambiguate legacy content-incomplete dispatch; does not grant authority" },
     { name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" },
     { name: "host", required: true, valueKind: "string" }, { name: "category", required: true, valueKind: "string" },
     { name: "rejections", required: true, valueKind: "integer" }, { name: "requested-agents", required: true, valueKind: "integer" },
@@ -1813,7 +1844,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // TCRN-CROSS-STORY-478 R3 (STORY-483 R2 reuses it): settle a managed section the user changed:
   // overwrite, keep or unmanage; --force overwrites a section the user kept.
   { name: "rule-resolve", availability: "cli", mutates: true, flags: [{ name: "section", required: true, valueKind: "string" }, { name: "action", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "settings-catalog", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "settings-catalog", availability: "cli", mutates: false, flags: [{ name: "work-content-observation", required: false, valueKind: "json", valueShape: "Optional machine-assembled rollout observation JSON; read-only unauthenticated preview, never persisted or approval" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "settings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "settings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   // TCRN-CROSS-STORY-480 (C7 of INIT-053): the installation wizard in one of six modes. Without
@@ -1840,11 +1871,12 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // that is not modelWritable, are refused with MODEL_WRITE_REFUSED unless they run for Atelier.
   { name: "variable-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "variable-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
+  { name: "dot-extension-source-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "source", required: true, valueKind: "json", valueShape: "Private dot extension source JSON; data only, not publication approval" }, { name: "verification", required: true, valueKind: "json", valueShape: "Ephemeral local Git bindings {gitExecutable,scratchRoot,repositories:[{key,root}]}; authorized absolute roots only, never persisted" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "variable-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "type", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "description", required: false, valueKind: "string" }, { name: "order", required: false, valueKind: "integer" }, { name: "exports", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "vocabulary", availability: "cli", mutates: false, flags: [] },
   // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
   // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
-  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "expected-revision", required: false, valueKind: "integer" }, { name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
+  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "content", required: false, valueKind: "json", valueShape: "tcrn.work-content.v1; cannot be combined with legacy scope/goal/acceptance/body" }, { name: "expected-revision", required: false, valueKind: "integer" }, { name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   // TCRN-CROSS-STORY-528 (MIN-256): work leases. work-claim claims a work item for --actor from --at
   // for --ttl (<n>m or <n>h, 2h when left out) or renews the claim; work-release releases it, and
@@ -1852,9 +1884,9 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // TCRN-CROSS-STORY-541 (TCRN-CROSS-SUB-510): or with --force true and --decided-in citing an Owner
   // decision that names the work item.
   { name: "work-claim", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "ttl", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
+  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "content", required: false, valueKind: "json", valueShape: "tcrn.work-content.v1; cannot be combined with legacy scope/goal/acceptance/body" }, { name: "involved-projects", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "gates", required: false, valueKind: "list" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
+  { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "parent-id", required: false, valueKind: "string", valueShape: "Live parent work id in the selected project; supplies complete inherited context" }, { name: "variant", required: false, valueKind: "string", valueShape: "standard or defect (Story only)" }, { name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
   // TCRN-CROSS-STORY-489 (MIN-235 D17, D11, MIN-238 D4): the gates a migration carried over. work-gate-list
   // reads them, by default the ones that still hold a work item back from done; work-gate-release
   // releases one, recording who, when and why, and runs for Atelier only (MODEL_WRITE_REFUSED otherwise).
@@ -1863,6 +1895,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   { name: "work-gate-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-gate-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "reason", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "involved-project", required: false, valueKind: "json" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
+  { name: "work-content-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "offset", required: false, valueKind: "integer", valueShape: "Nonnegative Unicode code-point offset within the document; default 0; nonzero requires digest" }, { name: "limit", required: false, valueKind: "integer", valueShape: "Positive Unicode code-point window length; omitted returns the full document subject to output capacity" }, { name: "digest", required: false, valueKind: "string", valueShape: "Exact SHA-256 from the first segment; pins direct and ancestor/source versions" }] },
   { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "execution-request", required: false, valueKind: "string", valueShape: "Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics" }] },
   { name: "work-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
@@ -2463,12 +2496,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "execution-prepare") {
-    const values = parseArguments(rest, ["workspace", "id", "host", "category", "rejections", "requested-agents", "observations", "output"]);
+    const values = parseArguments(rest, ["workspace", "id", "host", "category", "rejections", "requested-agents", "observations", "output", "action"]);
     required(values, ["workspace", "id", "host", "category", "rejections", "requested-agents", "observations", "output"]);
     let observations: unknown;
     try { observations = JSON.parse(readFileSync(values.observations!, "utf8")); }
     catch { fail("DISPATCH_EVIDENCE_INPUT_INVALID", "--observations must name a readable machine observations JSON file"); }
+    if (values.action !== undefined && !["implementation", "research", "coordination"].includes(values.action)) fail("CLI_ARGUMENT_MALFORMED", "action");
     const result = await prepareDispatch(await materializeWorkspace(values.workspace!), values.id!, {
+      ...(values.action === undefined ? {} : { action: values.action as "implementation" | "research" | "coordination" }),
       host: values.host!, category: values.category!, rejections: integerValue(values, "rejections"), requestedAgents: integerValue(values, "requested-agents"),
     }, observations);
     await writeDispatchArtifact(values.output!, result, [values.workspace!]);
@@ -2751,8 +2786,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       try { return { status: "available", language: ruleLanguage, enabledRules: dotEnabledRuleSources(state, ruleLanguage, `rule-list:${state.metadata.workspaceId}:${projectId ?? "common"}`) }; }
       catch (error) { if ((error as { reasonCode?: string }).reasonCode !== "DOT_SOURCE_MISMATCH") throw error; return { status: "unavailable", reason: "DOT_SOURCE_MISMATCH", enabledRules: null }; }
     })();
+    const dotExtensionSource = (() => {
+      try { const source = readDotExtensionSource(state); return { status: source === null ? "missing" : "saved-source", source, synchronization: "unverified", reconstruction: "unverified" }; }
+      catch (error) { const reason = (error as { reasonCode?: string }).reasonCode; if (reason === undefined) throw error; return { status: "unavailable", reason, source: null }; }
+    })();
     io.write(canonicalJson({ reasonCode: "RULE_LIST_READY", schemaVersion: "einzbern.rule-list.v1", projectPath: projectRoot ?? null, projectId: projectId ?? null, libraryPath: libraryRoot,
-      outputBindingStatus: projectRoot === undefined ? "unconfigured" : "bound", dotRuleSources,
+      outputBindingStatus: projectRoot === undefined ? "unconfigured" : "bound", dotRuleSources, dotExtensionSource,
       catalog: BUILT_IN_RULES.map((rule) => ({ id: rule.id, version: rule.version, title: rule.title })),
       rules: rules.map((rule) => ({ ...ruleStatusJson(rule) as Readonly<Record<string, JsonValue>>, source: state.configSources[JSON.stringify(["rule", rule.id])] ?? null })) }));
     return;
@@ -3238,7 +3277,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson({ reasonCode: applying ? "CONFIGURATION_PROJECTIONS_REFRESH_FINISHED" : "CONFIGURATION_PROJECTIONS_PLAN_READY", ...result })); return;
   }
   if (command === "settings-catalog") {
-    const values = parseArguments(rest, ["project-id", "workspace"]);
+    const values = parseArguments(rest, ["project-id", "workspace", "work-content-observation"]);
     required(values, ["workspace"]);
     // TCRN-CROSS-INIT-053 R46 (I03): a common default that does not resolve is read, not refused;
     // commonDefault says what the catalog found, and the rows that would inherit from it read null.
@@ -3264,6 +3303,16 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         resolution: "configured-device-host-policy-is-authoritative-if-present; legacy-settings-remain-readable" as const,
       },
     };
+    const policy = values["project-id"] === undefined ? null : readWorkContentPolicy(declarationState, values["project-id"]);
+    const persistedObservation = policy?.rollout ?? null;
+    const previewObservation = values["work-content-observation"] === undefined ? undefined : argumentJsonValue(values["work-content-observation"], "work-content-observation");
+    const contentRollout = {
+      projectId: values["project-id"] ?? null,
+      persisted: { policy, observation: persistedObservation, readiness: await readWorkContentRolloutReadiness(values.workspace!, persistedObservation, { requireCurrentBoundary: false }) },
+      preview: previewObservation === undefined ? null : { source: "caller-provided-machine-observations", persisted: false, observation: previewObservation, readiness: await readWorkContentRolloutReadiness(values.workspace!, previewObservation) },
+      authority: "read-only; observations are not authenticated, permission, or proof that unseen writers are absent",
+      effect: "No floor, client, project policy, or accepted boundary is changed. Actual capable release and writer evidence remain required.",
+    };
     const presentedSettings = chain?.role === "coordination" ? coordinationCatalogRows(state, catalog.settings) : markUnresolvedCommonDefault(catalog.settings, reading);
     io.write(canonicalJson({ ...catalog, reasonCode: "SETTINGS_CATALOG_READY", chain, projectId: state.configurationProjectId,
       ...(reading.commonDefault === null ? {} : { commonDefault: reading.commonDefault as unknown as JsonValue }),
@@ -3272,6 +3321,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       modelPolicy,
       configurationContract: configurationContract(COMMAND_CATALOG),
       migrationDiagnostics: diagnoseLegacySharedPaths(declarationState),
+      contentRollout,
       typedValues: presentedSettings.map(entry => ({ ...annotateConfigValue(entry.key, entry.currentValue), effectiveScope: entry.scope, effectiveSource: entry.source ?? null })),
       projectBindings: state.configRecords.filter(record => record.collection === "chain" && record.key !== "identity"),
       // TCRN-CROSS-INIT-053 R47 (c1-B): a coordination chain lists its own runtime settings, each for the whole library.
@@ -3360,6 +3410,29 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       withheld,
       pendingSections,
     }));
+    return;
+  }
+  if (command === "dot-extension-source-set") {
+    const values = parseArguments(rest, ["project-id", ...shared, "source", "verification", "actor", "decided-in"]);
+    required(values, [...requiredShared, "source", "verification"]);
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const name = "dot.extensions.source";
+    // Same governed variable authority; typed references are verified by the native setter,
+    // never by a caller-provided hash allowlist or a persisted success bit.
+    const permit = assertModelWriteAllowed({ name }, false, process.env, { decidedIn: values["decided-in"] });
+    const source = argumentJsonValue(values.source ?? "", "source");
+    const verification = argumentJsonValue(values.verification ?? "", "verification") as Parameters<typeof setDotExtensionSource>[1]["verification"];
+    const projectRoot = await registeredProjectRootForWorkspace(workspace, values["project-id"]);
+    const state = await withWriteLock(workspace, at, async () => {
+      await setDotExtensionSource(workspace, {
+        occurredAt: at, ...configurationOptions(values), source, verification,
+        ...(values.actor ? { actorId: values.actor } : {}),
+        ...await writeAuthorization(permit, workspace),
+      });
+      return renderVariableSectionsAfterWrite(workspace, projectRoot, at, values.actor, values["project-id"]);
+    });
+    await writeVariableState(io, state, name, values["project-id"]);
     return;
   }
   if (command === "variable-set") {
@@ -4023,10 +4096,19 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const state = await withWriteLock(values.workspace!, values.at!, async () => declareChainIdentity(values.workspace!, { role: values.role as "coordination" | "project", coordinationLibraryId: values["coordination-library-id"]!, ...(values["project-id"] === undefined ? {} : { primaryProjectId: values["project-id"] }) }, { occurredAt: values.at!, ...(values.actor ? { actorId: values.actor } : {}) }));
     writeState(io, state); return;
   }
+  if (command === "work-content-context") {
+    const values = parseArguments(rest, ["workspace", "id", "offset", "limit", "digest"]); required(values, ["workspace", "id"]);
+    const context = workContentContext(await materializeWorkspace(values.workspace!), values.id!);
+    io.write(workContextJson(workContentContextSegment(context, {
+      ...(values.offset === undefined ? {} : { offset: integerValue(values, "offset") }),
+      ...(values.limit === undefined ? {} : { limit: integerValue(values, "limit") }),
+      ...(values.digest === undefined ? {} : { digest: values.digest }),
+    }), values.id!)); return;
+  }
   if (command === "work-project-context") {
     const values = parseArguments(rest, ["workspace", "id", "execution-request"]); required(values, ["workspace", "id"]);
     const request = values["execution-request"] === undefined ? undefined : argumentJsonValue(values["execution-request"], "execution-request") as ExecutionAdmissionRequest | DotExecutionRequest | HostExecutionRequest;
-    io.write(canonicalJson(await workProjectContexts(await materializeWorkspace(values.workspace!), values.id!, undefined, request))); return;
+    io.write(workContextJson(await workProjectContexts(await materializeWorkspace(values.workspace!), values.id!, undefined, request), values.id!)); return;
   }
   if (command === "project-context") {
     const values = parseArguments(rest, ["reference"]); required(values, ["reference"]);
@@ -4207,7 +4289,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values.labels !== undefined ? { labels: listValue(values.labels) } : {}),
       ...(values.actor ? { actorId: values.actor } : {}),
     }));
-    writeState(io, state, workSummary(state.work.find((entry) => entry.id === (values.id ?? ""))!));
+    const updated = state.work.find((entry) => entry.id === (values.id ?? ""))!;
+    writeState(io, state, workSummary(updated), undefined, { contentImpact: readWorkContentImpact(updated) });
     return;
   }
   if (command === "work-delete") {
@@ -4326,14 +4409,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "work-draft") {
-    const values = parseArguments(rest, ["workspace", "kind", "project-id"]);
+    const values = parseArguments(rest, ["workspace", "kind", "project-id", "parent-id", "variant"]);
     required(values, ["workspace", "kind", "project-id"]);
     assertCreatableKind(values.kind);
     const state = await validateWorkspace(values.workspace ?? "");
     if (!state.projects.some((project) => !project.tombstone && project.id === values["project-id"])) {
       fail("WORKSPACE_PROJECT_NOT_FOUND", `project ${values["project-id"] ?? ""} does not exist in this workspace`);
     }
-    io.write(canonicalJson(workDraft(state, values.kind ?? "", values["project-id"] ?? "")));
+    io.write(canonicalJson(workDraft(state, values.kind ?? "", values["project-id"] ?? "", values["parent-id"], values.variant as "standard" | "defect" | undefined)));
     return;
   }
   // TCRN-CROSS-STORY-468 R5, AC2, AC3: a record is found by id or by external key. It carries
@@ -4363,14 +4446,19 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-528 (SUB-458): the record's own lease, null when it holds none; active is judged
     // by this machine's clock as it reads, for reading only (MIN-256 R1 Q6).
     const lease = workLeaseView(state, record.id, new Date().toISOString());
-    io.write(canonicalJson({
+    const projectContexts = await workProjectContexts(state, record.id);
+    io.write(workContextJson({
       reasonCode: "WORKSPACE_RECORD_READY",
       workspaceId: state.metadata.workspaceId,
       version: state.version,
       headEventHash: state.headEventHash,
       kind: "work",
       record: workSummary(record),
-      projectContexts: await workProjectContexts(state, record.id),
+      projectContexts,
+      contentRolloutReadiness: projectContexts.contentRolloutReadiness,
+      content: workContent(record),
+      contentImpact: readWorkContentImpact(record),
+      workContent: workContentContext(state, record.id),
       // TCRN-CROSS-STORY-473 R2, AC3: the goal, acceptance and body whole, with where they come
       // from -- the record's own fields, or the blocks of an old scope mapped on this read.
       // TCRN-CROSS-STORY-525 (TCRN-CROSS-SUB-446): with the gate names the record carries, when it
@@ -4384,7 +4472,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(aliases.aliases.length === 0 ? {} : { aliases: aliases.aliases.map((entry) => ({ externalKey: entry.externalKey, id: entry.id, deviceId: entry.deviceId })) }),
       ...(aliases.aliasedBy.length === 0 ? {} : { aliasedBy: aliases.aliasedBy.map((entry) => ({ externalKey: entry.aliasExternalKey, id: entry.aliasId, deviceId: entry.deviceId })) }),
       ...(rejectedEvents.length === 0 ? {} : { rejectedEvents }),
-    }));
+    }, record.id));
     return;
   }
   // TCRN-CROSS-STORY-489 (MIN-235 D17, MIN-238 D4; TCRN-CROSS-SUB-365): the read face of the gates a

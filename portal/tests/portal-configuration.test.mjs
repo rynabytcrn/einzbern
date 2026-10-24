@@ -460,6 +460,8 @@ test("SUB-409 (STORY-508 R5): the settings routes carry every row's shape, group
   const project = await request(url, "/api/settings", readOptions(boot.token));
   assert.deepEqual(layout(project.body.settings), layout((await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings));
   assert.deepEqual(project.body.settings.filter((row) => row.shape === "collection").map((row) => row.key).sort(), ["models.category", "models.tiers"]);
+  const policy = project.body.settings.find(row => row.key === "work.contentPolicy");
+  assert.deepEqual([policy?.shape, policy?.group, policy?.order], ["scalar", "general", 22], "one policy object is not a collection table");
   assert.ok(project.body.settings.every((row) => ["project", "library"].includes(row.layer) && typeof row.group === "string" && Number.isSafeInteger(row.order) && row.order > 0));
   const device = await request(url, "/api/machine-settings", readOptions(boot.token));
   assert.deepEqual(layout(device.body.settings), layout((await cli(["machine-settings-catalog"], { ...fixture.deviceEnv, HOME: fixture.home })).settings));

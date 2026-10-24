@@ -14,6 +14,9 @@ const response = (at, state = "completed") => ({ id: `host-${state}`, at, kind: 
 async function prepared(t, extra = {}) { const f = await nativeFixture(t); const p = await prepareHostNativeDispatch(f.state, { ...f.request, ...extra }, { selection, argumentsValue: { prompt: "Read required context, then deliver decomposition report." } }, f.home); return { ...f, p }; }
 test("T01 fixture retains INIT-064 coordination-only targets=[] through prepare/report/review", async t => {
   const f = await prepared(t); assert.ok(f.p.attempt); assert.deepEqual(f.p.context.involvedProjects, { state: "coordination-only", targets: [] });
+  assert.equal(f.p.context.workContent.workId, f.request.workId);
+  assert.equal(f.p.context.workContent.records[0].workRevision, f.request.workRevision);
+  assert.equal(f.p.context.workContent.semanticVerification, "not-performed");
   assert.equal(f.p.context.dispatchAdmitted, true); assert.equal(f.p.context.developmentReady, false); assert.equal(f.p.decision.additionalConfirmationsRequired, false); assert.equal(f.p.decision.persistentConfigWrites, 0);
   const at = new Date().toISOString();
   const pending = recordHostNativeEvents(f.p, [report(at)]);
@@ -118,4 +121,20 @@ test("T01/T02 full public CLI fixture instruments zero configuration/binding wri
   assert.equal((await invoke(["execution-host-prepare", "--workspace", f.workspace, "--request", deniedPath, "--arguments", argsPath, "--output", join(f.root, "unknown-result.json")])).ok, false);
   // Fixture artifacts contain no authentication material or fabricated process success fields.
   assert.doesNotMatch(JSON.stringify(end), /"(?:access_token|refresh_token|password|stdout|stderr|exitCode)"\s*:/u);
+});
+
+// INIT-068: this is synthetic admission evidence, not actual host consumption.
+test("INIT068 native implementation blocks missing typed content while research remains executable", async t => {
+  const f = await nativeFixture(t);
+  const { workContentDraft } = await import("../dist/build/packages/core/src/index.js");
+  const work = { ...f.work, extensions: { ...f.work.extensions, "advisory:work-content": { required: false, value: workContentDraft("Initiative") } } };
+  const state = { ...f.state, work: f.state.work.map(item => item.id === work.id ? work : item) };
+  const tool = { selection, argumentsValue: { prompt: "Read the same source context." } };
+  const research = await prepareHostNativeDispatch(state, { ...f.request, action: "research" }, tool, f.home);
+  assert.ok(research.attempt);
+  const implementation = await prepareHostNativeDispatch(state, { ...f.request, action: "implementation", phase: "work", context: { parent: "read", child: "read" }, sourceScope: { repository: "fixture:repository", writableRoots: [f.root], permission: "granted" } }, tool, f.home);
+  assert.equal(implementation.attempt, null);
+  assert.ok(implementation.context.contentAdmissionProblems.length > 0);
+  assert.deepEqual(implementation.context.workContent, research.context.workContent);
+  assert.deepEqual(implementation.context.involvedProjects.targets, []);
 });

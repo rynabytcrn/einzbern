@@ -15,6 +15,7 @@ export interface DotCheck { readonly status: "pass" | "fail" | "unknown"; readon
 export const DOT_REQUIRED_CHECKS = ["work", "scope", "target", "permission", "tools", "state", "context", "output", "verification"] as const;
 export type DotCheckName = typeof DOT_REQUIRED_CHECKS[number];
 export interface DotExecutionRequest {
+  readonly action?: "implementation" | "research" | "coordination";
   readonly mode: typeof DOT_EXECUTION_MODE;
   readonly executionTarget: typeof DOT_EXECUTION_TARGET;
   readonly libraryId: string;
@@ -68,7 +69,8 @@ export function validateRevisionBinding(value: unknown): RevisionBinding {
   return value as RevisionBinding;
 }
 export function validateDotExecutionRequest(value: unknown): DotExecutionRequest {
-  const r = dotObject(value, "request", ["mode", "executionTarget", "libraryId", "projectRef", "workId", "revisionBinding", "requestedAgents", "requiredTools", "actualCapabilityEvidenceRefs", "authorizationEvidenceRef", "checks", "occupancyObservation", "modelObservation", "contextRead", "exactDelegation"]);
+  const r = dotObject(value, "request", ["mode", "executionTarget", "libraryId", "projectRef", "workId", "revisionBinding", "requestedAgents", "requiredTools", "actualCapabilityEvidenceRefs", "authorizationEvidenceRef", "checks", "occupancyObservation", "modelObservation", "contextRead", "exactDelegation", "action"]);
+  if (r.action !== undefined && (typeof r.action !== "string" || !["implementation", "research", "coordination"].includes(r.action))) throw new DotExecutionError("action must be implementation, research or coordination");
   if (r.mode !== DOT_EXECUTION_MODE || r.executionTarget !== DOT_EXECUTION_TARGET) throw new DotExecutionError("explicit dot mode and target required");
   const p = dotObject(r.projectRef, "projectRef", ["libraryId", "projectId"]);
   if (!/^(library|workspace):[a-f0-9]{24}$/u.test(String(r.libraryId)) || p.libraryId !== r.libraryId || !/^project:[a-f0-9]{24}$/u.test(String(p.projectId)) || !/^work:[a-z0-9][a-z0-9._-]{0,127}$/u.test(String(r.workId))) throw new DotExecutionError("stable library/project/work binding required");

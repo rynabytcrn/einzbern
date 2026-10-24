@@ -57,3 +57,13 @@ scope/template mismatches, and plaintext reference values fail closed with a
 `TEMPLATE_*` reason code. Admission is append-only and uses the workspace CAS and
 actor-attestation rules; publication, remote creation, and release operations
 are outside this contract.
+
+## Current minimum-content contract (INIT-068)
+
+The historical four-anchor floor and ten-heading contract described above are not
+current global admission requirements (STORY-473 retired them). V1 remains a legacy
+reader/admission format; Story goal/acceptance compatibility is preserved. The new
+`tcrn.template.v2` declares `contentSchema: tcrn.work-content.v1`, uses the existing
+registry/receipt/binding and permits empty headings. Its lifecycle contract is
+[work-content-v1](work-content-v1.md), not a mandatory body layout. A bound v2 record
+must carry matching typed content even when it is an incomplete planned draft.

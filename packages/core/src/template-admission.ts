@@ -1,3 +1,4 @@
+import { workContent } from "./work-content.js";
 // SPDX-License-Identifier: Apache-2.0
 
 import { readFile } from "node:fs/promises";
@@ -135,7 +136,8 @@ function validateOwnerId(value: unknown): string {
 }
 
 export interface TemplateDefinition extends ScopeTemplateDefinition {
-  readonly schemaVersion: typeof TEMPLATE_DEFINITION_VERSION;
+  readonly schemaVersion: typeof TEMPLATE_DEFINITION_VERSION | "tcrn.template.v2";
+  readonly contentSchema?: "tcrn.work-content.v1";
   readonly id: string;
   readonly version: number;
   readonly appliesTo: readonly WorkKind[];
@@ -175,7 +177,8 @@ const ALL_WORK_KINDS: readonly WorkKind[] = Object.freeze([
 ]);
 function templateBasis(template: TemplateDefinition): Readonly<Record<string, JsonValue>> {
   return {
-    schemaVersion: TEMPLATE_DEFINITION_VERSION,
+    schemaVersion: template.schemaVersion,
+    ...(template.contentSchema === undefined ? {} : { contentSchema: template.contentSchema }),
     id: template.id,
     version: template.version,
     appliesTo: template.appliesTo,
@@ -194,8 +197,8 @@ export function templateRegistrationId(templateIdValue: unknown, templateVersion
 
 export function validateTemplateDefinition(value: unknown): TemplateDefinition {
   const document = asRecord(value, "template");
-  exactFields(document, ["acceptanceHeadings", "appliesTo", "couplings", "headings", "id", "referenceHeadings", "schemaVersion", "version"], "template");
-  if (document.schemaVersion !== TEMPLATE_DEFINITION_VERSION) {
+  exactFields(document, ["acceptanceHeadings", "appliesTo", "couplings", "headings", "id", "referenceHeadings", "schemaVersion", "version", ...(document.schemaVersion === "tcrn.template.v2" ? ["contentSchema"] : [])], "template");
+  if (document.schemaVersion !== TEMPLATE_DEFINITION_VERSION && document.schemaVersion !== "tcrn.template.v2") {
     fail("TEMPLATE_ADMISSION_INVALID", "template schemaVersion");
   }
   const id = templateId(document.id);
@@ -204,7 +207,9 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
   if (appliesTo.some((kind) => !(ALL_WORK_KINDS as readonly string[]).includes(kind))) {
     fail("TEMPLATE_ADMISSION_INVALID", "template.appliesTo contains an unknown work kind");
   }
-  const headings = orderedUniqueStrings(document.headings, "template.headings", 64);
+  if (document.schemaVersion === "tcrn.template.v2" && document.contentSchema !== "tcrn.work-content.v1") fail("TEMPLATE_ADMISSION_INVALID", "unsupported content schema");
+  if (document.schemaVersion === "tcrn.template.v2" && appliesTo.some(kind => !["Initiative", "Epic", "Story", "Subtask"].includes(kind))) fail("TEMPLATE_ADMISSION_INVALID", "minimum content supports the four active work kinds");
+  const headings = document.schemaVersion === "tcrn.template.v2" && Array.isArray(document.headings) && document.headings.length === 0 ? [] : orderedUniqueStrings(document.headings, "template.headings", 64);
   const originalHeadings = document.headings as readonly unknown[];
   // Headings are an ordered template contract, so unlike set-valued metadata they
   // must retain author order. The duplicate check above remains useful, but the
@@ -223,7 +228,8 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
     fail("TEMPLATE_ADMISSION_INVALID", "template declares an unknown coupling");
   }
   return {
-    schemaVersion: TEMPLATE_DEFINITION_VERSION,
+    schemaVersion: document.schemaVersion as TemplateDefinition["schemaVersion"],
+    ...(document.schemaVersion === "tcrn.template.v2" ? { contentSchema: "tcrn.work-content.v1" as const } : {}),
     id,
     version: templateVersion,
     appliesTo,
@@ -368,11 +374,20 @@ export function validateBoundTemplateWork(
   admissions: readonly TemplateAdmissionRecord[],
 ): void {
   const bound = templateBindingFromWorkRecord(record);
-  if (bound === null) return;
+  if (bound === null) {
+    if (workContent(record) !== null) fail("TEMPLATE_BINDING_INVALID", "typed content requires an admitted v2 binding");
+    return;
+  }
   const admission = templateRecordForBinding(admissions, bound.binding);
   if (admission === undefined || bound.registrationId !== admission.registrationId) fail("TEMPLATE_UNKNOWN", `${bound.binding.templateId}@${bound.binding.templateVersion}`);
   if (!templateRecordMatchesBinding(admission, bound.binding)) fail("TEMPLATE_BINDING_INVALID", "template binding digests do not match the admission");
   if (!admission.template.appliesTo.includes(record.kind)) fail("TEMPLATE_NOT_APPLICABLE", `${admission.template.id}:${record.kind}`);
+  if (admission.template.schemaVersion === "tcrn.template.v2") {
+    const content = workContent(record);
+    if (content === null || content.kind !== record.kind) fail("TEMPLATE_SCOPE_INVALID", "typed content matching the bound kind is required");
+    return; // Completeness is checked on live lifecycle writes, never historical replay.
+  }
+  if (workContent(record) !== null) fail("TEMPLATE_BINDING_INVALID", "typed content cannot use a legacy template");
   // TCRN-CROSS-STORY-473 R1 (problems-decompose #2): a Story is checked for its goal and its
   // acceptance only. Its binding is still recorded and must still name an admitted template that
   // applies to Stories, but the template's headings no longer judge its prose.

@@ -129,6 +129,13 @@ export function validateConfigBackupPayload(value: unknown): ConfigBackupPayload
     else {
       const d = configBackupObject(raw.declaration, ["type", "value", "description", "exports", "order"]);
       if (typeof d.description !== "string" || !Array.isArray(d.exports)) configBackupFail("CONFIG_BACKUP_INPUT_INVALID");
+      if (name === "dot.extensions.source" && typeof d.value === "string") {
+        let source: unknown;
+        try { source = JSON.parse(d.value); } catch { source = null; }
+        // The generic backup/restore path cannot reproduce fresh approved Git
+        // verification bindings. Refuse visibly, never downgrade to generic variable admission.
+        if (source !== null && typeof source === "object" && Object.hasOwn(source, "technicalReferences")) configBackupFail("CONFIG_BACKUP_DOT_TECHNICAL_REFERENCES_UNSUPPORTED");
+      }
       const checked = checkVariableInput({ name, ...d } as Parameters<typeof checkVariableInput>[0]);
       safeText(`${checked.value}\n${checked.description}`);
     }
@@ -188,7 +195,10 @@ export function planConfigBackup(input: { readonly projectRef: ConfigBackupProje
   const members: { descriptor: ConfigBackupMember; payload: ConfigBackupPayload }[] = [];
   for (const raw of input.payloads) {
     let payload: ConfigBackupPayload;
-    try { payload = validateConfigBackupPayload(raw); } catch { excluded.push({ logicalKey: `selection:${excluded.length + members.length}`, reason: "not-in-safe-allowlist" }); continue; }
+    try { payload = validateConfigBackupPayload(raw); } catch (error) {
+      const reason = error instanceof ConfigBackupError && error.reasonCode === "CONFIG_BACKUP_DOT_TECHNICAL_REFERENCES_UNSUPPORTED" ? "dot-technical-references-unsupported" : "not-in-safe-allowlist";
+      excluded.push({ logicalKey: `selection:${excluded.length + members.length}`, reason }); continue;
+    }
     const logicalKey = configBackupPayloadKey(payload); if (seen.has(logicalKey)) configBackupFail("CONFIG_BACKUP_MEMBER_DUPLICATE"); seen.add(logicalKey);
     const text = configBackupCanonical(payload); const sha256 = configBackupDigest(text); const memberCategory = category(payload);
     members.push({ payload, descriptor: { logicalKey, memberPath: `members/${configBackupDigest(logicalKey)}.json`, category: memberCategory, bytes: Buffer.byteLength(text), sha256, requiredPermissionDescription: `Restore selected ${memberCategory} through its supported authority`, restoreStrategy: CONFIG_BACKUP_MAPPING_VERSION, sourceDigest: sha256 } });

@@ -769,6 +769,12 @@ test("DOT-E02 actual dot readiness consumes B4 session reads without weakening r
   const request = { mode: "dot-autonomous", executionTarget: "chatgpt-dot", libraryId: f.a.reference.libraryId, projectRef: f.a.reference, workId: work.id, revisionBinding: { kind: "revision", workRevision: work.revision, scopeDigest: work.scopeDigest }, requestedAgents: 1, requiredTools: ["fixture.read"], actualCapabilityEvidenceRefs: ["fixture:tool"], authorizationEvidenceRef: "fixture:authorization", checks: Object.fromEntries(DOT_REQUIRED_CHECKS.map(name => [name, { status: "pass", evidenceRefs: [`fixture:${name}`], reason: "synthetic evidence, not a live native acceptance" }])), occupancyObservation: { status: "observed", activeAgents: 0, includesParent: true, parentActive: false, platformLimit: 4, observedAt: now, evidenceRef: "fixture:occupancy" }, modelObservation: { status: "unavailable", reason: "not exposed" }, contextRead: { record, expected: { sessionRef: record.sessionRef, workReference: work.id, workRevision: work.revision, scopeDigest: work.scopeDigest, notBefore: now, now, files: files.map(({ logicalKey, sourceVersion, sha256 }) => ({ logicalKey, sourceVersion, sha256 })), effectiveRoots: [f.a.repo] }, observations: files.map(file => ({ sessionRef: record.sessionRef, source: "execution-session", logicalKey: file.logicalKey, evidenceRef: file.evidenceRef, toolName: file.readMethod, readAt: now, sha256: file.sha256, association: "associated" })) } };
   const plain = await workProjectContexts(state, work.id, f.home); assert.equal(plain.dispatchAdmitted, false); assert.equal(plain.contexts[0].readiness.model.ready, false);
   await writeFile(join(f.home, "engine-model-policy.json"), "{malformed-unrelated-host-policy");
+  const { workContentDraft } = await import("../dist/build/packages/core/src/index.js");
+  // Pure in-memory content-admission fixture; no policy setter, floor change, or native enablement is exercised.
+  const typedState = { ...state, work: state.work.map(item => item.id !== work.id ? item : { ...item, extensions: { ...item.extensions, "advisory:work-content": { required: false, value: workContentDraft("Initiative") } } }) };
+  assert.equal((await workProjectContexts(typedState, work.id, f.home, request)).contexts[0].executionAdmission.contentReason, "work-content-action-required");
+  assert.equal((await workProjectContexts(typedState, work.id, f.home, { ...request, action: "implementation" })).dispatchAdmitted, false);
+  assert.equal((await workProjectContexts(typedState, work.id, f.home, { ...request, action: "research" })).dispatchAdmitted, true);
   const native = await workProjectContexts(state, work.id, f.home, request); assert.equal(native.dispatchAdmitted, true); assert.equal(native.contexts[0].modelApplicability.accountQuota.status, "not-applicable");
   // Same actual fixture target through public prepare/record/evidence and review.
   const { runNativeToolCommand } = await import("../dist/build/packages/cli/src/native-tool-commands.js");
@@ -818,4 +824,26 @@ test("DOT-E02 actual dot readiness consumes B4 session reads without weakening r
   assert.equal((await workProjectContexts(state, work.id, f.home, { ...request, revisionBinding: { ...request.revisionBinding, workRevision: work.revision + 1 } })).dispatchAdmitted, false);
   await removeConfigRecord(f.a.path, { collection: "chain", key: "repositories", projectId: f.a.reference.projectId, occurredAt: at });
   assert.equal((await workProjectContexts(state, work.id, f.home, request)).dispatchAdmitted, false);
+});
+
+test("INIT068 legacy planned content dispatch requires action, preserves research and unenabled legacy", async t => {
+  const { workContentDraft } = await import("../dist/build/packages/core/src/index.js");
+  const f = await fixture(t); await configureDevicePolicy(f);
+  const state = await createWork(f.coordination.path, { projectId: f.coordination.reference.projectId, externalKey: "CONTENT-ACTION", kind: "Initiative", parentId: null, involvedProjects: { state: "selected", targets: [f.a.reference] }, occurredAt: at });
+  const work = state.work.find(item => item.externalKey === "CONTENT-ACTION");
+  const request = { host: "codex", category: "main", rejections: 0, requestedAgents: 1, availableCombinations: [{ runner: "codex", model: "fixture-device-main", effort: "max" }] };
+  assert.equal((await workProjectContexts(state, work.id, f.home, request)).contexts[0].executionAdmission.status, "admitted");
+  // Pure in-memory content-admission fixture, not evidence that actual capable V or policy enablement exists.
+  const typed = { ...state, work: state.work.map(item => item.id !== work.id ? item : { ...item, extensions: { ...item.extensions, "advisory:work-content": { required: false, value: workContentDraft("Initiative") } } }) };
+  const ambiguous = await workProjectContexts(typed, work.id, f.home, request);
+  assert.equal(ambiguous.contexts[0].executionAdmission.contentReason, "work-content-action-required");
+  for (const action of ["research", "coordination"]) {
+    const read = await workProjectContexts(typed, work.id, f.home, { ...request, action });
+    assert.equal(read.contexts[0].executionAdmission.status, "admitted");
+    assert.equal(read.contexts[0].executionAdmission.request.action, action);
+  }
+  const implementation = await workProjectContexts(typed, work.id, f.home, { ...request, action: "implementation" });
+  assert.equal(implementation.contexts[0].executionAdmission.status, "refused");
+  assert.equal(implementation.contexts[0].executionAdmission.contentReason, "work-content-incomplete");
+  await assert.rejects(workProjectContexts(typed, work.id, f.home, { ...request, action: "pretend-research" }));
 });

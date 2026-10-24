@@ -1,3 +1,4 @@
+import { normalizeWorkContentPolicy } from "./work-content-templates.js";
 import { pathIsInside } from "./path-containment.js";
 import { isPortablePathBinding, resolvePortablePath } from "./portable-path.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
@@ -158,6 +159,7 @@ export type SettingKey =
   | "retrieval.tau"
   | "storage.segmentBytes"
   | "storage.snapshotEveryEvents"
+  | "work.contentPolicy"
   | "workspace.generatedArtifactsPath";
 
 // TCRN-CROSS-STORY-484 R3: a retired key whose value lives on under a new name. New writes use the
@@ -638,6 +640,7 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "scope" | "
     group: "storage",
     order: 3,
   },
+  { key: "work.contentPolicy", type: "string", controlType: "text", layerKind: SETTINGS_LAYER_KIND, defaultValue: null, group: "general", order: 22 },
   {
     key: "workspace.generatedArtifactsPath",
     type: "path",
@@ -855,6 +858,9 @@ const collectionValueNormalizers: Readonly<Record<string, (value: string) => str
 export function validateSettingValue(key: unknown, value: unknown, workspaceRoot?: string): string {
   const entry = settingsCatalogEntry(key);
   assertCanonicalString(value, String(key), entry.shape === "collection" ? COLLECTION_VALUE_MAX_LENGTH : SCALAR_VALUE_MAX_LENGTH);
+  if (entry.key === "work.contentPolicy") {
+    try { return normalizeWorkContentPolicy(value); } catch (error) { fail("SETTINGS_VALUE_INVALID", String(error)); }
+  }
   const normalize = Object.hasOwn(collectionValueNormalizers, entry.key) ? collectionValueNormalizers[entry.key] : undefined;
   if (normalize !== undefined) {
     return withSettingsErrors(() => normalize(value));

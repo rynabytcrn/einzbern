@@ -1124,6 +1124,34 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       const targets = [...new Map(entries.filter(entry => entry.projectId && entry.chain?.role === "project").map(entry => [JSON.stringify([entry.libraryId, entry.projectId]), { libraryId: entry.libraryId, projectId: entry.projectId, name: entry.name ?? null }])).values()];
       send(response, 200, { targets }); return;
     }
+    // INIT068: these are transport adapters, not a second content/template authority.
+    if (request.method === "GET" && pathname === "/api/work/draft") {
+      const result = await cliResult(["work-draft", "--workspace", currentLibrary().libraryPath,
+        "--project-id", url.searchParams.get("projectId") ?? "", "--kind", url.searchParams.get("kind") ?? "Story",
+        ...["parentId", "variant"].flatMap(key => url.searchParams.get(key) ? [key === "parentId" ? "--parent-id" : "--variant", url.searchParams.get(key)] : [])]);
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok }); return;
+    }
+    if (request.method === "GET" && ["/api/work/content", "/api/work/content-context"].includes(pathname)) {
+      const segmented = pathname.endsWith("content-context");
+      const result = await cliResult([segmented ? "work-content-context" : "work-show", "--workspace", currentLibrary().libraryPath,
+        "--id", url.searchParams.get("id") ?? "",
+        ...(segmented ? ["offset", "limit", "digest"].flatMap(key => url.searchParams.has(key) ? ["--" + key, url.searchParams.get(key)] : []) : [])]);
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok }); return;
+    }
+    if (request.method === "POST" && pathname === "/api/work/content") {
+      const selected = currentLibrary();
+      const body = await readJsonBody(request);
+      if (body.content === null || typeof body.content !== "object" || Array.isArray(body.content)) {
+        send(response, 400, { ok: false, reasonCode: "WORK_CONTENT_INVALID" }); return;
+      }
+      const result = await governedWrite(common => body.id
+        ? ["work-annotate", ...common, "--id", String(body.id), "--expected-revision", String(body.revision), "--content", JSON.stringify(body.content)]
+        : ["work-create", ...common, "--project-id", String(body.projectId ?? ""), "--kind", String(body.kind ?? ""),
+          "--external-key", String(body.externalKey ?? ""), "--title", String(body.title ?? ""),
+          ...(body.parentId ? ["--parent-id", String(body.parentId)] : []), ...(body.templateReceipt ? ["--template-receipt", JSON.stringify(body.templateReceipt)] : []), "--content", JSON.stringify(body.content)],
+        {}, { ...selected, configurationProjectId: null });
+      send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok }); return;
+    }
     if (request.method === "GET" && pathname === "/api/work/project-context") {
       const result = await cliResult(["work-project-context", "--workspace", currentLibrary().libraryPath, "--id", url.searchParams.get("id") ?? ""]);
       send(response, result.ok ? 200 : 409, result.body); return;

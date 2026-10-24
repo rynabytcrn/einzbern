@@ -153,7 +153,7 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
       // TCRN-CROSS-STORY-473 R2: a Story needs a goal and an acceptance, as fields or from a
       // scope. The engine judges the mapping at the reducer; a Story member naming neither is
       // refused here, so the whole batch is reported at once rather than one member per round trip.
-      if (member.kind === "Story" && member.scope === undefined && (member.goal === undefined || member.acceptance === undefined)) {
+      if (member.kind === "Story" && member.content === undefined && member.scope === undefined && (member.goal === undefined || member.acceptance === undefined)) {
         problems.push({ index, verb, rule: "story-fields-required", detail: "a new Story carries goal and acceptance, or a scope they map from" });
       }
       return;
@@ -168,7 +168,7 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
       return;
     }
     if (member.involvedProjects === undefined && member.scope === undefined && member.decidedBy === undefined && member.sprint === undefined && member.summary === undefined && member.relations === undefined &&
-      member.goal === undefined && member.acceptance === undefined && member.body === undefined && member.gates === undefined) {
+      member.goal === undefined && member.acceptance === undefined && member.body === undefined && member.gates === undefined && member.content === undefined) {
       problems.push({ index, verb, rule: "advisory-required", detail: "an annotation carries at least one of scope, decidedBy, sprint, summary, relations, goal, acceptance, body, gates" });
     }
     if (member.relations !== undefined) {
@@ -193,11 +193,12 @@ function gatesOf(member: Readonly<Record<string, unknown>>): { readonly gates?: 
 }
 
 // TCRN-CROSS-STORY-473 R2: a member's Story fields, passed through for the engine to judge.
-function storyFieldsOf(member: Readonly<Record<string, unknown>>): { readonly goal?: string; readonly acceptance?: string; readonly body?: string } {
+function storyFieldsOf(member: Readonly<Record<string, unknown>>): { readonly goal?: string; readonly acceptance?: string; readonly body?: string; readonly content?: unknown } {
   return {
     ...(member.goal === undefined ? {} : { goal: member.goal as string }),
     ...(member.acceptance === undefined ? {} : { acceptance: member.acceptance as string }),
     ...(member.body === undefined ? {} : { body: member.body as string }),
+    ...(member.content === undefined ? {} : { content: member.content }),
   };
 }
 
@@ -218,6 +219,7 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string,
       ...(member.involvedProjects === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(member.involvedProjects) }),
       ...storyFieldsOf(member),
       ...gatesOf(member),
+      ...(member.templateAdmission === undefined ? {} : { templateAdmission: member.templateAdmission }),
       title: member.title as string,
       ...(member.summary === undefined ? {} : { summary: member.summary as string }),
       occurredAt,

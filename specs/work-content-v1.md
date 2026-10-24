@@ -96,7 +96,16 @@ completion requires the exact per-acceptance structural content-version digest.
 It covers the acceptance, its effective requirement/source and direct/inherited
 binding goal, scope, constraints and type details. Unrelated requirements, title,
 summary, progress and free body are excluded. This is a deterministic version link,
-not a semantic verification hash. The engine computes an absent digest for newly submitted observations. An explicitly
+not a semantic verification hash. Digest generation retains its existing format and
+allocation-derived responsibility order. Completion also accepts the uniquely
+reversed role order only when the current acceptance has exactly one effective
+requirement reference with precisely implementation and verification responsibilities.
+Both digests are recomputed from the same current payload with every other field
+unchanged; zero or one responsibility has no alternate digest. The same matching
+rule applies to satisfied, failed and unverified evidence, so unresolved results
+still block completion. Requirement/acceptance versions and the code candidate
+must still match; this equivalence never rewrites stored evidence.
+The engine computes an absent digest for newly submitted observations. An explicitly
 supplied digest is never overwritten, including when stale or attached to changed
 reference/candidate labels. Retained observations without a supplied digest retain
 their stored binding; changing meaning does not automatically rebind evidence.

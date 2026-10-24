@@ -1,5 +1,5 @@
 {
-  "version": 22,
+  "version": 23,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -453,6 +453,7 @@
     "tests/variables.test.mjs",
     "tests/vendored-runtime.test.mjs",
     "tests/wiki-cli-reference.test.mjs",
+    "tests/work-acceptance.test.mjs",
     "tests/work-content-cli.test.mjs",
     "tests/work-delete-lock-scope.test.mjs",
     "tests/work-gates-field.test.mjs",
@@ -862,6 +863,7 @@
       "tests/variables.test.mjs",
       "tests/vendored-runtime.test.mjs",
       "tests/wiki-cli-reference.test.mjs",
+      "tests/work-acceptance.test.mjs",
       "tests/work-content-cli.test.mjs",
       "tests/work-delete-lock-scope.test.mjs",
       "tests/work-gates-field.test.mjs",
@@ -1592,7 +1594,7 @@
     "packages/core/src/variables-sections.ts": "b0d5287e6a4cba35413ac1d9b123ef8a05f93197d7a34119b54a0a9390616fb4",
     "packages/core/src/variables.ts": "c2bb55dae928481b9c078e31509ee2c9dcffdac3cc4be777bd3f5a2977994d6f",
     "packages/core/src/vocabulary.ts": "d92bbe7f270ca7f920d2bc4a2bc6eee8c8217f5461925f589897123d5c9b0ca0",
-    "packages/core/src/work-acceptance.ts": "5df75274c7f916e82485bcdc4c98221daa2dfec07857bb271a8c136a80b4b614",
+    "packages/core/src/work-acceptance.ts": "d7c89a995395292cddf1a1d3f0c79e223bccb5e5b7b10d4c8cb12414f84d41f5",
     "packages/core/src/work-batch.ts": "e6daa8857ac02792ecf8b87c37031ca06b37301f24c1cbbe975cad7c809ba463",
     "packages/core/src/work-content-context.ts": "a5b863e3253502413b0ba3b8b280320560ba58cb6d0c1de3a453011b7994dc78",
     "packages/core/src/work-content-templates.ts": "c932aa9e3e40af5e820757dd4d7a52c6d7c1949a0f6225020eb0551e56f472a8",
@@ -2154,7 +2156,7 @@
     "tests/vendored-runtime.test.mjs": "fa769b3e4f246b23b821752293e865b30c5cd5a5dc90150885d7be4f67a2ffc7",
     "tests/wiki-cli-reference.test.mjs": "569d6869d2940ba7d401b4620425b78eb6f80292b9aaafdc4d29e73d8ace52b6",
     "tests/wiki-pages.test.mjs": "680e180bdbe7920e21a1b9a64c76af7847c1df45de8e862feec70ae9cbd99bcc",
-    "tests/work-acceptance.test.mjs": "952e39bd1a92a2d85979d815e7520eee90dfd59a707f844d60c6c06371780efe",
+    "tests/work-acceptance.test.mjs": "5c2685cbffc9b0633d926b225243d694c5b4082e30989ce7a8ed550e9ad96b3b",
     "tests/work-content-cli.test.mjs": "8a041bf9c8f926e9abd964be65fb87f36b9a0f9c664dcf81b2d83ea8b733bf27",
     "tests/work-content-context.test.mjs": "a4240346f1e8b0433c9fd60db5b33fa550afcb3a57c1299d8fd893c6e17ff68d",
     "tests/work-content-lifecycle.test.mjs": "e8bf68f408f9b5d71f5bef1fd11c9df468352486f8e2de54b13c7e67a8d2a61e",

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { canonicalJson, canonicalSha256 } from "../../protocol/src/index.js";
-import type { WorkRecord } from "../../protocol/src/index.js";
-import { workContent, contentFail } from "./work-content.js";
+import type { JsonValue, WorkRecord } from "../../protocol/src/index.js";
+import { WORK_CONTENT_KEY, workContent, contentFail } from "./work-content.js";
 import type { WorkContent, WorkRequirement, WorkSource, RequirementRef } from "./work-content.js";
 export interface EffectiveWorkRequirement {
   readonly ref: RequirementRef;
@@ -25,6 +25,7 @@ export function effectiveWorkRequirements(work: readonly WorkRecord[], workId: s
       if (requirement.disposition !== "required") continue;
       const allocations = content.allocations.filter(a => a.workId === id && a.requirementId === requirement.id && a.version === requirement.version && lineage.includes(a.childId));
       if (id !== workId && !requirement.shared && !allocations.length) continue;
+      // Preserve allocation order here: historical acceptance evidence binds this projection.
       result.push({ ref: { workId: id, requirementId: requirement.id, version: requirement.version }, requirement, sources: content.sources.filter(s => requirement.sourceIds.includes(s.id)), inherited: id !== workId, responsibilities: [...new Set(allocations.map(a => a.responsibility))] });
     }
   }
@@ -64,12 +65,17 @@ function bindingMeaning(content: WorkContent): Pick<WorkContent, "kind" | "varia
   return { kind: content.kind, variant: content.variant, goal: content.goal, scope: content.scope, constraints: content.constraints, details: content.details };
 }
 function approvalSources(content: WorkContent): readonly WorkSource[] { return content.sources.filter(s => ["approved-draft", "decision"].includes(s.kind) && s.extraction === "complete"); }
+// Compare allocation sets without changing the historical acceptance-evidence projection above.
+function allocationMeaning(content: WorkContent): readonly string[] { return [...new Set(content.allocations.map(a => canonicalJson(a)))].sort(); }
+function responsibilityMeaning(requirement: EffectiveWorkRequirement | undefined): string {
+  return canonicalJson(requirement ? { ref: requirement.ref, responsibilities: [...requirement.responsibilities].sort() } : null);
+}
 /** Deterministic structural version, never a proof of semantic equivalence. */
 export function workContentMeaningDigest(work: readonly WorkRecord[], record: WorkRecord): string {
   const content = workContent(record);
-  return canonicalSha256({ direct: content ? { ...bindingMeaning(content), requirements: content.requirements, acceptance: content.acceptance, sources: content.sources } : null,
+  return canonicalSha256({ direct: content ? { ...bindingMeaning(content), requirements: content.requirements, allocations: allocationMeaning(content), acceptance: content.acceptance, sources: content.sources } : null,
     inherited: ancestry(work, record.id).slice(1).map(id => { const parent = work.find(w => w.id === id); const c = parent && workContent(parent); return { workId: id, meaning: c ? bindingMeaning(c) : null }; }),
-    effective: effectiveWorkRequirements([...work.filter(w => w.id !== record.id), record], record.id) });
+    effective: effectiveWorkRequirements([...work.filter(w => w.id !== record.id), record], record.id).map(r => ({ ...r, responsibilities: [...r.responsibilities].sort() })) });
 }
 export function workContentChangeImpact(work: readonly WorkRecord[], previous: WorkRecord, next: WorkContent): WorkContentChangeImpact {
   const old = workContent(previous);
@@ -80,11 +86,25 @@ export function workContentChangeImpact(work: readonly WorkRecord[], previous: W
   const requirementIds = [...new Set([...old.requirements, ...next.requirements].map(r => r.id))];
   const changedRequirements = requirementIds.filter(id => { const r = old.requirements.find(x => x.id === id), n = next.requirements.find(x => x.id === id); return !r || !n || r.version !== n.version || requirementMeaning(r) !== requirementMeaning(n) || [...r.sourceIds, ...n.sourceIds].some(s => changedSources.has(s)); });
   const changedAcceptance = [...new Set([...old.acceptance, ...next.acceptance].map(a => a.id))].filter(id => { const a = old.acceptance.find(x => x.id === id), n = next.acceptance.find(x => x.id === id); return !a || !n || canonicalJson(a) !== canonicalJson(n); });
+  // Allocation edits need a decision but do not change the requirement's own version contract.
+  const oldAllocations = new Set(allocationMeaning(old)), nextAllocations = new Set(allocationMeaning(next));
+  const changedAllocations = canonicalJson([...oldAllocations]) !== canonicalJson([...nextAllocations]);
+  const allocationIds = new Set([...old.allocations, ...next.allocations].filter(a => a.workId === previous.id && oldAllocations.has(canonicalJson(a)) !== nextAllocations.has(canonicalJson(a))).map(a => a.requirementId));
   const impactedIds = new Set([...changedRequirements, ...[...old.acceptance, ...next.acceptance].filter(a => changedAcceptance.includes(a.id) && a.requirement.workId === previous.id).map(a => a.requirement.requirementId)]);
-  const affectedWorkIds = work.filter(w => w.status !== "done" && w.status !== "cancelled" && !w.tombstone && ((changedMeaning && ancestry(work, w.id).includes(previous.id)) || (w.id === previous.id && (changedRequirements.length > 0 || changedAcceptance.length > 0)) || effectiveWorkRequirements(work, w.id).some(r => r.ref.workId === previous.id && impactedIds.has(r.ref.requirementId)))).map(w => w.id);
-  const affectedEvidence = work.filter(w => affectedWorkIds.includes(w.id)).flatMap(w => (workContent(w)?.evidence ?? []).filter(e => changedMeaning || (w.id === previous.id && changedAcceptance.includes(e.acceptanceId)) || (e.requirement.workId === previous.id && impactedIds.has(e.requirement.requirementId))).map(e => ({ workId: w.id, acceptanceId: e.acceptanceId, locator: e.locator })));
+  const candidate: WorkRecord = { ...previous, extensions: { ...previous.extensions, [WORK_CONTENT_KEY]: { required: false, value: next as unknown as JsonValue } } };
+  const beforeWork = work.map(w => w.id === previous.id ? previous : w), candidateWork = work.map(w => w.id === previous.id ? candidate : w);
+  const affectedAllocationIds = new Map<string, ReadonlySet<string>>();
+  const affectedWorkIds = beforeWork.filter(w => {
+    if (w.status === "done" || w.status === "cancelled" || w.tombstone) return false;
+    const before = effectiveWorkRequirements(beforeWork, w.id).filter(r => r.ref.workId === previous.id);
+    const after = effectiveWorkRequirements(candidateWork, w.id).filter(r => r.ref.workId === previous.id);
+    const allocationChanges = new Set([...allocationIds].filter(id => w.id === previous.id || responsibilityMeaning(before.find(r => r.ref.requirementId === id)) !== responsibilityMeaning(after.find(r => r.ref.requirementId === id))));
+    affectedAllocationIds.set(w.id, allocationChanges);
+    return (changedMeaning && ancestry(beforeWork, w.id).includes(previous.id)) || (w.id === previous.id && (changedRequirements.length > 0 || changedAcceptance.length > 0 || changedAllocations)) || allocationChanges.size > 0 || [...before, ...after].some(r => impactedIds.has(r.ref.requirementId));
+  }).map(w => w.id);
+  const affectedEvidence = beforeWork.filter(w => affectedWorkIds.includes(w.id)).flatMap(w => (workContent(w)?.evidence ?? []).filter(e => changedMeaning || (w.id === previous.id && changedAcceptance.includes(e.acceptanceId)) || (e.requirement.workId === previous.id && (impactedIds.has(e.requirement.requirementId) || affectedAllocationIds.get(w.id)?.has(e.requirement.requirementId)))).map(e => ({ workId: w.id, acceptanceId: e.acceptanceId, locator: e.locator })));
   const protectedApproval = old.approved === true || approvalSources(old).length > 0;
-  return { changedMeaning, approvalChanged, changedRequirements, changedAcceptance, affectedWorkIds, affectedEvidence, requiresDecision: protectedApproval && (changedMeaning || approvalChanged || changedRequirements.length > 0 || changedAcceptance.length > 0) };
+  return { changedMeaning, approvalChanged, changedRequirements, changedAcceptance, affectedWorkIds, affectedEvidence, requiresDecision: protectedApproval && (changedMeaning || approvalChanged || changedRequirements.length > 0 || changedAcceptance.length > 0 || changedAllocations) };
 }
 export function assertWorkContentChange(work: readonly WorkRecord[], previous: WorkRecord, next: WorkContent): void {
   const old = workContent(previous); if (!old) return;

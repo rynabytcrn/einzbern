@@ -550,9 +550,115 @@ if (!MUTATION) test("528 SUB-459: the work tree shows a lease with its holder an
   } finally { await closePage(page, fixture); }
 });
 
-if (!MUTATION) test("INIT068: typed drafts keep free body edits across type changes, repeated requests, disclosure close and navigation", async () => {
+if (!MUTATION) test("INIT068: failed first draft reads remain retryable and pending reads stay single-flight", async () => {
   const page = await preparePage();
   try {
+    const { document, window } = page;
+    await openWorkContentEditor(page);
+    const control = name => document.querySelector(`#work-content-editor [data-content-${name}]`);
+    const isDraft = path => path.startsWith("/api/work/draft?");
+    const reads = () => page.requests.filter(isDraft).length;
+    page.hold(isDraft);
+    control("draft").click(); control("draft").click();
+    await waitFor(() => page.held() === 1, "one pending first draft read");
+    assert.equal(reads(), 1, "repeated clicks do not duplicate a pending request");
+    assert.equal(page.release({ error: new Error("Synthetic connection failure") }), 1);
+    await waitFor(() => control("error"), "the first draft's read error");
+    assert.match(control("error").textContent, /PORTAL_READ_FAILED/u);
+    assert.equal(document.querySelector('[data-content-field="body"]'), null);
+
+    page.hold(isDraft);
+    control("draft").click(); control("draft").click();
+    await waitFor(() => page.held() === 1, "one pending retry");
+    assert.equal(reads(), 2, "the failed entry does not prevent another GET");
+    assert.equal(control("error"), null, "retry clears the obsolete read error");
+    assert.equal(page.release(), 1);
+    await waitFor(() => document.querySelector('[data-content-field="body"]'), "recovered editable draft");
+    assert.equal(control("error"), null);
+
+    // Preserve the real response's served-target headers while exercising an engine
+    // refusal separately from a thrown connection error. Repeated refusals may retry too.
+    const originalFetch = window.fetch;
+    let refusals = 2;
+    window.fetch = async (path, options) => {
+      const response = await originalFetch(path, options);
+      if (isDraft(String(path)) && refusals > 0) {
+        refusals -= 1;
+        response.json = async () => ({ ok: false, reasonCode: "SYNTHETIC_DRAFT_READ_REFUSED", error: "Try this read again" });
+      }
+      return response;
+    };
+    control("kind").value = "Epic";
+    control("kind").dispatchEvent(new window.Event("change", { bubbles: true }));
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      control("draft").click();
+      await page.waitForSettled();
+      assert.match(control("error")?.textContent ?? "", /SYNTHETIC_DRAFT_READ_REFUSED/u);
+      assert.equal(reads(), 3 + attempt, "each refused GET remains retryable");
+    }
+    control("draft").click();
+    await waitFor(() => document.querySelector('[data-content-field="details"]')?.value.includes("childResponsibilities"), "draft after repeated refusals");
+    assert.equal(reads(), 5);
+    assert.equal(control("error"), null);
+  } finally { page.release(); await page.cleanup(); }
+});
+
+if (!MUTATION) test("INIT068: late draft reads cannot replace a newer selection or a different library draft", async () => {
+  const page = await preparePage();
+  try {
+    const { document, window, fixture } = page;
+    await openWorkContentEditor(page);
+    const control = name => document.querySelector(`#work-content-editor [data-content-${name}]`);
+    const field = name => document.querySelector(`[data-content-field="${name}"]`);
+    const change = (node, value, event = "change") => { node.value = value; node.dispatchEvent(new window.Event(event, { bubbles: true })); };
+    const isDraft = path => path.startsWith("/api/work/draft?");
+    const reads = () => page.requests.filter(isDraft).length;
+    const switchLibrary = async library => { change(document.querySelector("#library-select"), library); await page.waitForSettled(); await openWorkContentEditor(page); };
+
+    page.hold(path => isDraft(path) && new URL(path, page.url).searchParams.get("kind") === "Story");
+    control("draft").click();
+    await waitFor(() => page.held() === 1, "the old selection's pending read");
+    change(control("kind"), "Epic"); control("draft").click();
+    await waitFor(() => field("details")?.value.includes("childResponsibilities"), "the newer Epic draft");
+    change(field("body"), "Keep the newer selection's edits", "input");
+    assert.equal(page.release(), 1);
+    await page.waitForSettled();
+    assert.equal(field("body").value, "Keep the newer selection's edits", "late success cannot replace the selected draft");
+    change(control("kind"), "Story");
+    const beforeRetry = reads(); control("draft").click();
+    await waitFor(() => field("details")?.value.includes("behavior"), "a fresh Story after discarding its old read");
+    assert.equal(reads(), beforeRetry + 1);
+
+    change(control("kind"), "Subtask");
+    page.hold(isDraft); control("draft").click();
+    await waitFor(() => page.held() === 1, "the first library's pending draft");
+    await switchLibrary(fixture.second.project);
+    page.hold(() => false);
+    control("draft").click();
+    await waitFor(() => field("body"), "the second library's draft");
+    change(field("body"), "Keep the second library's edits", "input");
+    assert.equal(page.release({ error: new Error("Late failure from the first library") }), 1);
+    await page.waitForSettled();
+    assert.equal(field("body").value, "Keep the second library's edits");
+    assert.equal(control("error"), null, "a late old-library error is not displayed");
+    await switchLibrary(fixture.proseRoot);
+    const beforeReturn = reads(); control("draft").click();
+    await waitFor(() => field("body"), "a fresh draft on returning to the first library");
+    assert.equal(reads(), beforeReturn + 1, "discarded old-library read does not leave an unretryable cache entry");
+    await switchLibrary(fixture.second.project);
+    const beforeCached = reads(); control("draft").click();
+    assert.equal(field("body").value, "Keep the second library's edits");
+    assert.equal(reads(), beforeCached, "switching back reuses successful edited content");
+  } finally { page.release(); await page.cleanup(); }
+});
+
+if (!MUTATION) test("INIT068: typed drafts keep free body edits across type changes, repeated requests, disclosure close and navigation", async () => {
+  const fixture = await scratch("init068-draft-cache-ui-");
+  let page;
+  try {
+    const initiative = (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "DRAFT-CACHE-INIT", "--kind", "Initiative", "--title", "Draft cache parent"], fixture.deviceEnv)).record;
+    const parent = (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "DRAFT-CACHE-EPIC", "--kind", "Epic", "--parent-id", initiative.id, "--title", "Draft cache Epic"], fixture.deviceEnv)).record;
+    page = await loadExecutedDom(fixture);
     const { document, window } = page;
     await openWorkContentEditor(page);
     const control = name => document.querySelector(`#work-content-editor [data-content-${name}]`);
@@ -578,12 +684,32 @@ if (!MUTATION) test("INIT068: typed drafts keep free body edits across type chan
     await waitFor(() => control("error"), "parse error is visible");
     assert.equal(document.querySelector('[data-content-field="sources"]').value, "{\"unfinished\": \"&quot;", "failed save retains invalid input for repair");
     assert.equal(body().value, "Free body without imposed headings 🧭 \"quoted\" &quot; </textarea><b>literal</b>");
+    const beforeFailedSaveDraft = page.requests.filter(path => path.startsWith("/api/work/draft?")).length;
+    control("draft").click();
+    change(control("kind"), "Epic"); control("draft").click();
+    change(control("kind"), "Story"); control("draft").click();
+    assert.equal(page.requests.filter(path => path.startsWith("/api/work/draft?")).length, beforeFailedSaveDraft, "save errors do not make loaded drafts eligible for regeneration");
+    change(control("parent"), parent.id); control("draft").click();
+    await waitFor(() => body()?.value === "", "the separate parent-scoped draft");
+    change(control("parent"), ""); control("draft").click();
+    assert.equal(document.querySelector('[data-content-field="sources"]').value, "{\"unfinished\": \"&quot;", "changing parents does not discard failed-save input");
+    const beforeLibrarySwitch = page.requests.filter(path => path.startsWith("/api/work/draft?")).length;
+    for (const library of [fixture.second.project, fixture.proseRoot]) {
+      change(document.querySelector("#library-select"), library);
+      await page.waitForSettled();
+      await openWorkContentEditor(page);
+    }
+    control("draft").click();
+    assert.equal(page.requests.filter(path => path.startsWith("/api/work/draft?")).length, beforeLibrarySwitch, "returning to the library reuses its failed-save draft");
+    assert.equal(document.querySelector('[data-content-field="sources"]').value, "{\"unfinished\": \"&quot;");
+    assert.equal(body().value, "Free body without imposed headings 🧭 \"quoted\" &quot; </textarea><b>literal</b>");
+    assert.match(control("error").textContent, /WORK_CONTENT_INVALID/u);
     control("undo").click();
     assert.equal(body().value, "");
     change(control("variant"), "defect"); control("draft").click();
     await waitFor(() => document.querySelector('[data-content-field="details"]')?.value.includes("reproduction"), "defect responsibilities");
     for (const field of ["expected", "actual", "reproduction", "affectedVersion", "fixBoundary", "regression"]) assert.ok(JSON.parse(document.querySelector('[data-content-field="details"]').value)[field] === "");
-  } finally { await page.cleanup(); }
+  } finally { if (page) await closePage(page, fixture); else await rm(fixture.base, { recursive: true, force: true }); }
 });
 
 if (!MUTATION) test("INIT068: segmented mixed legacy scope and explicit fields survive direct and inherited DOM delivery", async () => {
@@ -656,6 +782,11 @@ if (!MUTATION) test("INIT068: unenabled draft shows canonical not-ready evidence
     await waitFor(() => control("error"), "no implicit enablement or unbound typed write");
     assert.ok(control("error").textContent.includes("WORK_CONTENT_TEMPLATE_REQUIRED"));
     assert.equal(field("body").value, "Saved free body", "refusal keeps the authoring draft");
+    const beforeRefusedDraft = page.requests.filter(path => path.startsWith("/api/work/draft?")).length;
+    control("draft").click();
+    assert.equal(page.requests.filter(path => path.startsWith("/api/work/draft?")).length, beforeRefusedDraft, "a server-side save refusal does not trigger regeneration");
+    assert.equal(field("body").value, "Saved free body");
+    assert.ok(control("error").textContent.includes("WORK_CONTENT_TEMPLATE_REQUIRED"));
     control("advanced-receipt").open = true;
     change(page.document.querySelector('[data-content-meta="templateReceipt"]'), JSON.stringify(admitted.receipt));
     control("save").click();

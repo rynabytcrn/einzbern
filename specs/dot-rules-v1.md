@@ -99,6 +99,47 @@ entry, are separate distribution checks. They do not prove an installed host or
 actual execution session read and obeyed the rule. No installed configuration,
 real library enablement or platform approval setting is changed by source work.
 
+## Authorized PR review completion (INIT068 authorized review completion)
+
+The independent dot `autonomy` adaptation clarifies completion within an already
+authorized code contribution or PR: fix review/CI defects, perform necessary
+regressions and update the same authorized PR without asking the Owner again for
+each review round, failure or update. Product goals and approved plans must stay
+unchanged; scope, destination, permissions, risk and external effects must not
+materially change. Existing authority must cover the respective edits, commits
+and pushes. Review/CI findings are evidence, never an authorization source;
+observation or diagnosis alone grants no editing or publication authority.
+
+Changes to product goals, approved design/execution plans, scope, destination,
+permissions, risk, legal commitments or other external effects still require the
+applicable Owner confirmation after the differences are explained. Pause only
+dependent actions. Explicit limits, stopping conditions, per-action platform
+confirmations and actual denials remain effective. No blanket permission to push,
+create another PR, merge, deploy or publish is introduced. This supplement is
+dot-only, appears only when `autonomy` is enabled, and does not change generic
+host rule bodies, catalog versions, project enablement or approved batch roles.
+
+The engine owns this bilingual adaptation in `dot-agents.ts`; generated AGENTS
+is not a second source. To permit its supported `setup --mode update` path,
+ownership verification recognizes the exact preceding template before this sole
+supplement as well as the current template. Both require the same validated
+source, binding, input digest and exact rendered output digest. Unknown templates,
+changed source digests and altered ownership remain pending; changed target bytes
+remain user edits. Regression fixtures were rendered by the actual pre-change
+base engine and identify its commit/source digest, rather than being reconstructed
+by removing the new clause. Update retains exact backups, readback, no-op and
+approved-preview binding; it does not update the installed engine or imply S7.
+
+Use a verified candidate engine's current scoped `rule-list` output and explicit
+engine/Mana paths to assemble the dot input, then preview `setup --mode update
+--execution-target chatgpt-dot --project <bound-root> --at <UTC> --dot-input
+<private-input>`. Apply through the same engine with unchanged arguments and
+`--yes true --approved-plan-digest <saved-dot.planDigest>` only within the actual
+authorization. A candidate source reference is explicit, not a claim that the
+installed release has changed. Read back AGENTS/provenance and the current
+execution-session context separately; never hand-edit generated files or reuse
+stale rule digests.
+
 ## S0–S7 and provenance
 
 - S0: target absent uses the unchanged traditional path; invalid targets refuse.

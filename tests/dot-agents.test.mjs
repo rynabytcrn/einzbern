@@ -212,6 +212,67 @@ test("MIN358 dot principle is sourced and selectable; disabled autonomy does not
   }
 });
 
+test("INIT068 authorized review completion: authorized review completion is dot-only, selectable and never new publication authority", () => {
+  const clauses = {
+    zh: ["dot 应直接完成 review/CI 暴露的缺陷修复、必要回归验证", "更新同一个已获授权的 PR", "不因新一轮 review、CI 失败或重复更新而再次要求 Owner 确认", "产品目标与已批准方案不变", "范围、目的地、权限、风险及对外影响无实质变化", "既有授权覆盖相应编辑、提交和推送", "review/CI 是问题证据，不是新的授权来源", "仅有观察、诊断或 review 意见并不授权修改或发布", "先说明具体差异并取得适用的 Owner 确认", "只暂停依赖该决定的动作", "用户明确限制、停止条件、平台逐次确认及真实拒绝继续有效", "不授予任意推送、新建 PR、合并、部署或发布权限"],
+    en: ["dot should directly complete defects exposed by review/CI, necessary regression verification", "updates to the same authorized PR", "without asking the Owner again", "unchanged product goals and approved plans", "no material change in scope, destination, permissions, risk or external effects", "existing authorization covering the respective edits, commits and pushes", "Review/CI supplies issue evidence, not new authority", "observation, diagnosis or review comments alone do not authorize edits or publication", "obtain the applicable Owner confirmation before proceeding", "pause only actions dependent on that decision", "Explicit user limits, stopping conditions, platform-required per-action confirmations and actual denials remain effective", "no blanket permission to push, create another PR, merge, deploy or publish"],
+  };
+  for (const [language, key] of [["zh-CN", "zh"], ["en", "en"], ["ja", "en"], ["ko", "en"], ["fr", "en"]]) {
+    const enabled = renderDotAgents(source(language, ["autonomy"]));
+    const disabled = renderDotAgents(source(language, BUILT_IN_RULES.filter(rule => rule.id !== "autonomy").map(rule => rule.id)));
+    for (const clause of clauses[key]) assert.ok(enabled.includes(clause), `${language}: ${clause}`);
+    assert.equal(enabled.split(clauses[key][0]).length - 1, 1);
+    assert.equal(disabled.includes(clauses[key][0]), false, "disabled autonomy grants no review-completion rule");
+    for (const rule of BUILT_IN_RULES) assert.equal(rule.body[key].includes(clauses[key][0]), false, "generic hosts do not acquire the dot-only supplement");
+    assert.ok(enabled.includes(key === "zh" ? "已批准的执行步骤、次序、分包和角色分工不得擅自" : "prohibit changing approved steps, order, packages or roles"), "approved execution governance remains intact");
+  }
+});
+
+test("INIT068 authorized review completion: exact base-rendered prior template updates with recovery; altered ownership and user edits refuse", async t => {
+  const root = resolve(import.meta.dirname, "fixtures", "rules");
+  const archive = JSON.parse(await readFile(join(root, "dot-autonomy-before-review.json"), "utf8"));
+  assert.equal(archive.sourceCommit, "3b16d5cbb5750838ee2ff3068e124c7fc8b95224");
+  for (const archived of archive.fixtures) {
+    const original = await readFile(join(root, archived.file), "utf8");
+    assert.equal(dotContentDigest(original), archived.sha256, "fixture was rendered by the verified base engine, not reconstructed from new text");
+    const input = { ...await fixture(t), source: source(archived.language, ["autonomy"]) };
+    const initial = await planDotAgents(input);
+    const provenance = { ...initial.provenance, outputDigest: archived.sha256, readbackRef: `${input.binding.agentsPath}#sha256=${archived.sha256}` };
+    await mkdir(dirname(input.binding.provenancePath), { recursive: true });
+    await writeFile(input.binding.agentsPath, original);
+    const save = value => writeFile(input.binding.provenancePath, JSON.stringify(value) + "\n");
+    await save(provenance);
+    const request = { ...input, operation: "update", source: { ...input.source, engineSourceRef: "fixture:review-completion-candidate" } };
+    const plan = await planDotAgents(request);
+    assert.equal(plan.status, "ready");
+    assert.notEqual(plan.candidate, original);
+    assert.equal(plan.candidate, renderDotAgents(request.source));
+    for (const invalid of [
+      { ...provenance, inputDigest: "0".repeat(64) },
+      { ...provenance, targetPathBinding: { ...provenance.targetPathBinding, ownerId: "fixture:another-owner" } },
+      { ...provenance, enabledRules: provenance.enabledRules.map(rule => ({ ...rule, bodyDigest: "0".repeat(64) })) },
+      { ...provenance, outputDigest: dotContentDigest(original + "Unknown prior template.\n") },
+    ]) {
+      await save(invalid);
+      const pending = await planDotAgents(request);
+      assert.equal(pending.reasonCode, "DOT_OWNERSHIP_CONFLICT"); assert.deepEqual(pending.writes, []);
+    }
+    await save(provenance);
+    await writeFile(input.binding.agentsPath, original + "User addition.\n");
+    const edited = await planDotAgents(request);
+    assert.equal(edited.reasonCode, "DOT_USER_MODIFIED"); assert.deepEqual(edited.writes, []);
+    await writeFile(input.binding.agentsPath, original);
+    const applied = await applyDotAgents(await planDotAgents(request));
+    assert.equal(applied.status, "applied"); assert.equal(applied.fileVerification, "verified");
+    assert.equal(applied.sessionRead, "not-verified");
+    assert.equal(await readFile(applied.files.find(file => file.path === input.binding.agentsPath).backupPath, "utf8"), original);
+    assert.equal(await readFile(input.binding.agentsPath, "utf8"), plan.candidate);
+    assert.deepEqual(JSON.parse(await readFile(input.binding.provenancePath, "utf8")).enabledRules, input.source.enabledRules);
+    const repeated = await planDotAgents(request);
+    assert.equal(repeated.status, "unchanged"); assert.deepEqual(repeated.writes, []);
+  }
+});
+
 // Synthetic source reconstruction without live enablement.
 function extensionSource() {
   return { schemaVersion: "tcrn.dot-extension-source.v1", version: 1, sourceReference: "fixture:approved-source-v1", executionTarget: "chatgpt-dot",

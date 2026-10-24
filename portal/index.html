@@ -6177,7 +6177,9 @@ const BOOT = __PORTAL_BOOT__;
       const projectId = records.find(row => row.id === parentId)?.projectId ?? BOOT.library?.projectId;
       workContentSelection = `draft:${projectId}:${kind}:${variant}:${parentId}`;
       const next = workContentState();
-      if (next.draft) { renderWorkContentEditor(); return; }
+      // A failed first read has no editable content and can be retried. Keep in-flight
+      // requests single-flight and retain loaded drafts, including later save errors.
+      if (next.draft?.pending || next.draft?.content) { renderWorkContentEditor(); return; }
       const request = ++workContentRequest;
       const pending = { pending: true }; workContentDrafts.set(next.key, pending); renderWorkContentEditor();
       let result;

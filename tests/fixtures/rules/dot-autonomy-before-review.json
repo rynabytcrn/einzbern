@@ -1,0 +1,18 @@
+{
+  "sourceCommit": "3b16d5cbb5750838ee2ff3068e124c7fc8b95224",
+  "sourcePath": "packages/core/src/dot-agents.ts",
+  "sourceSha256": "61000746b27bde0db38b45be0d62233bc4f0e8e6e0c7cb28d81a79347f88c7c4",
+  "method": "Pre-change renderer build verified byte-for-byte against stripTypeScriptTypes of its Git source; sourceCommit identifies the integrator-verified equivalent published tree. renderDotAgents with only autonomy enabled.",
+  "fixtures": [
+    {
+      "file": "dot-autonomy-before-review.zh.md",
+      "language": "zh-CN",
+      "sha256": "361b2969f137bac3dc230bdf5a410a34dd9f8f59566358e693d1e2d4ba5cc0b3"
+    },
+    {
+      "file": "dot-autonomy-before-review.en.md",
+      "language": "en",
+      "sha256": "61603de52c5fbaefe2551bd6fc58a5fee46b7e5e9c2655bd5e62932893baa9eb"
+    }
+  ]
+}

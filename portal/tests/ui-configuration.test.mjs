@@ -428,7 +428,7 @@ if (!MUTATION) test("R47 c1-B: the coordination chain's artifact language saves 
 
 // The Rules page of a selected coordination library names the container's AGENTS.md its rules and variables
 // are written into and shows that file; a project library's Rules page carries no such note.
-if (!MUTATION) test("540 SUB-508: a coordination library's Rules page names and shows the container's AGENTS.md, and a project's carries no such note", async () => {
+if (!MUTATION) test("540 SUB-508: a coordination library's Rules page names and shows the container's AGENTS.md, and a project's carries no such note", async (context) => {
   const fixture = await coordinationContainerFixture("tcrn-540-coordination-");
   const locales = await localeTable();
   const page = await loadExecutedDom({ ...fixture, workspace: fixture.coordination });
@@ -450,8 +450,26 @@ if (!MUTATION) test("540 SUB-508: a coordination library's Rules page names and 
     const select = document.querySelector("#library-select");
     select.value = fixture.proseRoot;
     select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-    await waitFor(() => document.querySelector("#agents-path")?.textContent === join(fixture.proseRoot, "AGENTS.md"), "the page to switch to the project library");
+    // A switch includes its dependent reads. Observe their existing settle signal,
+    // then judge the content rather than turning a wrong path into a timeout.
+    await page.waitForSettled();
+    assert.equal(document.querySelector("#agents-path")?.textContent, join(fixture.proseRoot, "AGENTS.md"), "the settled page shows the project library's AGENTS.md");
     assert.equal(document.querySelector('[data-ui="prose-binding-note"]').hidden, true, "a project library's Rules page carries no coordination note");
+  } catch (error) {
+    // Keep a bounded pre-cleanup snapshot without replacing the original failure.
+    try {
+      context.diagnostic(JSON.stringify({
+        schemaVersion: "tcrn.sub508-switch-diagnostic.v1",
+        requestCount: page.requests.length,
+        recentRequests: page.requests.slice(-24).map(path => path.slice(0, 256)),
+        selectedLibrary: page.document.querySelector("#library-select")?.value,
+        selectorDisabled: page.document.querySelector("#library-select")?.disabled,
+        agentsPath: page.document.querySelector("#agents-path")?.textContent,
+        noteHidden: page.document.querySelector('[data-ui="prose-binding-note"]')?.hidden,
+        receipt: page.document.querySelector("#receipt-raw")?.textContent.slice(0, 1024),
+      }));
+    } catch { /* Diagnostic failure must not obscure the assertion or settle failure. */ }
+    throw error;
   } finally { await closePage(page, fixture); }
 });
 

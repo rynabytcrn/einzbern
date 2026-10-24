@@ -1,5 +1,5 @@
 {
-  "version": 21,
+  "version": 22,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1645,7 +1645,7 @@
     "portal/tests/proposal-renderer-source.test.mjs": "b417d862fa96a79c6bf5b5d15b6f60086e93e544752865003ef75b07c76cdd6b",
     "portal/tests/proposals.test.mjs": "b15282d8ecd05b432f17b2ca1d18357fedd677fb49692170e9365ad6f34be349",
     "portal/tests/theme-preference.test.mjs": "80e1ac7f56cd859dfb7e17cfd6d5e58d4b3e5f5381509c484cfa93267b77c193",
-    "portal/tests/ui-configuration.test.mjs": "765fa7ae5fccd650505a8ffadc54bd74e6763cf8861c28b3fc4635a077f475a7",
+    "portal/tests/ui-configuration.test.mjs": "f0cef45307711a45c87a98dc2c22bb730e155b8e4949710c568e2dfc872f7fa1",
     "portal/tests/ui-library.test.mjs": "636dd9167ea3804c25fb918664460e0e93db5c8a553036c1b89fdcb33df5aeb2",
     "portal/tests/ui-presence-support.mjs": "cc32f549566fb3ea2b45a0eb5a30bb3845bf1387b0ebcf410e303dd8b400b73e",
     "portal/tests/ui-presence.test.mjs": "598577afe1ff7ccc94f1cb7e9293a8218b46ae3a23b7841015d4e0945694bbf0",
@@ -2218,7 +2218,7 @@
     "portal/tests/proposal-renderer-source.test.mjs": "49fdb94b7a9284a591d718b20fb537ab5982c8888fc835971680bdd869d19f44",
     "portal/tests/proposals.test.mjs": "8b0a1ce696f0fd39d07c68bb9dc766c3807076fd4135fe1c7f8a049ebb85e113",
     "portal/tests/theme-preference.test.mjs": "906cc4ea5be1719889480c0eaaa8f7d0c4fccb89dfe03b03306411f015f58450",
-    "portal/tests/ui-configuration.test.mjs": "e07b3f1296e299bb28d79eeec9debc95f4401bd92c81bca7e9bd8a3fce63dac2",
+    "portal/tests/ui-configuration.test.mjs": "ccb183d38b4d107869f2ff572bb6494c78cb817a089d1109cb851d70e2152e50",
     "portal/tests/ui-library.test.mjs": "3dc5cad2520d6ef61efa454a05603798ffef2af1cdefadbe9cb4370a05124905",
     "portal/tests/ui-presence-support.mjs": "40eb90d192096ce03b309c1195abc5d38b9043366d382dad7f484679dd08c0c4",
     "portal/tests/ui-presence.test.mjs": "d5b0cd4ee17128beb1a4e4f93a3bc361514673125777fa0d844ea8f8651e9275",

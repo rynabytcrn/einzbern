@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 3.3.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 3.3.0.
+
 ### Structured work and lifecycle
 
 - Add native typed content for Initiatives, Epics, Stories, Subtasks and defect

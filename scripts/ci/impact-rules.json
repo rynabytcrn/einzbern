@@ -1,5 +1,5 @@
 {
-  "version": 23,
+  "version": 24,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1647,7 +1647,7 @@
     "portal/tests/proposal-renderer-source.test.mjs": "b417d862fa96a79c6bf5b5d15b6f60086e93e544752865003ef75b07c76cdd6b",
     "portal/tests/proposals.test.mjs": "b15282d8ecd05b432f17b2ca1d18357fedd677fb49692170e9365ad6f34be349",
     "portal/tests/theme-preference.test.mjs": "80e1ac7f56cd859dfb7e17cfd6d5e58d4b3e5f5381509c484cfa93267b77c193",
-    "portal/tests/ui-configuration.test.mjs": "f0cef45307711a45c87a98dc2c22bb730e155b8e4949710c568e2dfc872f7fa1",
+    "portal/tests/ui-configuration.test.mjs": "502051e1c55c3969fd41d8b793db5e6087cf0ec6ff6f030b19981d17a39a26ed",
     "portal/tests/ui-library.test.mjs": "636dd9167ea3804c25fb918664460e0e93db5c8a553036c1b89fdcb33df5aeb2",
     "portal/tests/ui-presence-support.mjs": "cc32f549566fb3ea2b45a0eb5a30bb3845bf1387b0ebcf410e303dd8b400b73e",
     "portal/tests/ui-presence.test.mjs": "598577afe1ff7ccc94f1cb7e9293a8218b46ae3a23b7841015d4e0945694bbf0",
@@ -1728,7 +1728,7 @@
     "scripts/lib/local-command.mjs": "781a8387aa6c439217593dd0cab93cb4437fb5109b797b8f10be3b1cb93858d0",
     "scripts/lib/names.mjs": "12b7838f5edaf792fb2bfee3688328d50b3ba8b896f7bf1d960addc9e50c7b3f",
     "scripts/lib/p8-workflow-rc.mjs": "f34e3006756daf413e32f6a98b6008a06d6cbbf4271565363c6cd925bf4ce4bc",
-    "scripts/lib/privacy.mjs": "01df52de95125d9bf7e934fa9df6bff9b7e6b2272913313f5be301d0f5c2dd66",
+    "scripts/lib/privacy.mjs": "22c5c24a69a077b4f42422a88c593794c646499b11f7873a78845a7bab4bae9e",
     "scripts/lib/private-token-roster.mjs": "b1215d2e2b701213980d35fac6100aa38ceed4f3e5285db36bdf2551faa97571",
     "scripts/lib/protocol-proof.mjs": "f32c144836dbb368b9852e66be617ba521eb0ba5b611f124ea581c3a8e329d3e",
     "scripts/lib/push-gate-children.mjs": "24cd269f3c99eddca52ef81f78db8e8c830f54e567fcb9679e041fa6a0ca5ecc",
@@ -2054,7 +2054,7 @@
     "tests/p4-knowledge-core.test.mjs": "f506c3d0f7827ff261a8be41692d9026318eb3caf870334fd37fa856b1b9c4bd",
     "tests/p5-core-reference-personas.test.mjs": "143499efa80e7e7feaf35214244c5c604f829129376e9ac5832823dfd1202d0b",
     "tests/p8-sbom-receipt-boundary.test.mjs": "9fe857e61d8a5a473493a0b1f241ac25a56627ab288dbfecb40ab18f6e4e6187",
-    "tests/p8-workflow-rc.test.mjs": "81644023f1a86f509b79bf618f78fe536f68d0de3b44d2ae1f3ed9aa8e2ab79c",
+    "tests/p8-workflow-rc.test.mjs": "f7d229ed466e6882ecc4b08de4b932a842ec4c8574e21588c727e2f44fc5455e",
     "tests/pack-release.test.mjs": "d3fcac45a458f91e0c42635f0f0d45b3b0e3066f4c0f5feca42b2ce02031191a",
     "tests/path-containment.test.mjs": "e4fc6520e8005633dd302ff435f39a8219a1f6312ef040d7357a116efe1cf42f",
     "tests/platform-chain-backup.test.mjs": "f8f67dd2e3626b54b1039a0fec4a3bcfef380e493051ef936e21217282f137e6",
@@ -2062,7 +2062,7 @@
     "tests/platform-doctor.test.mjs": "07f2792b4b24fd2fd228612e248cb1a32af72b3a5c384da7cc22ebe0c69b5423",
     "tests/portal-knowledge-pagination.test.mjs": "50491db0144369c7b6672d234802553b741bd9a43756dedf5230563356f635f1",
     "tests/preflight.test.mjs": "7c434cfb7624a656affadd05562012da47bf14553beaf020db4cc92e0700dcb1",
-    "tests/privacy-boundary.test.mjs": "fd4734c014d83b902e87c6796b1ca2bfbe040da70fd082693d7d9043d404cde8",
+    "tests/privacy-boundary.test.mjs": "32e63ac28e2a070bcc9bd440662d152b6676428f2216f613049ec80dfde589c0",
     "tests/privacy-git-metadata.test.mjs": "ad735b2e79321a3dc5920cdb9fda47e8aae2d78b6177b3113bf054331b389fae",
     "tests/privacy-normalization.test.mjs": "7c3e7103b5aea379ea114b6e2dbf2c755eb97619f12dca0941bedfc6b14f74da",
     "tests/project-chain-model.test.mjs": "88c2cc2df87910b6c3b0afee6e68016b18ba9ca67b505d74af1ead0ff86a31ea",

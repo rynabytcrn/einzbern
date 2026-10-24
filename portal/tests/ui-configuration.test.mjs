@@ -553,7 +553,7 @@ test("INIT-056 R5: the engine-host editor creates a complete policy and retains 
 
     // A locale redraw also reads project targets. Let each independent locale
     // interaction finish before the settings write below: waiting only for lang
-    // queued seven target reads beside that write and its full refresh in CI.
+    // can leave target reads queued beside that write and its full refresh.
     // Keep the existing request timeout and all draft/concurrency assertions.
     const selectLocale = async (locale) => {
       document.querySelector(`[data-locale-option="${locale}"]`).click();

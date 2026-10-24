@@ -171,6 +171,11 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
 // Archive sha256 14b6c874e670c06aa1b5405238318f5e769e29dabd2b8e5a2dbb26dab8d47c1c;
 // the same three generated members each contain the unchanged names.js owner line
 // exactly once. Only their exact labels are added; origin, value and line remain pinned.
+// Release 3.3.0: the failed P8 diagnostic package was byte-reviewed.
+// Archive sha256 9a86cf1bd38a2d985f13e46c10f57e99e7d8648827b42c09284ca97b3acd91ca;
+// each of the same three members contains the unchanged names.js owner line once.
+// The CLI also contains the existing complete public helper address. Only the exact
+// version/member labels are added; origin, value and whole-line checks remain pinned.
 const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
@@ -211,6 +216,9 @@ const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-3.2.0.tar.gz/einzbern-3.2.0/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-3.2.0.tar.gz/einzbern-3.2.0/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-3.2.0.tar.gz/einzbern-3.2.0/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.3.0.tar.gz/einzbern-3.3.0/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.3.0.tar.gz/einzbern-3.3.0/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.3.0.tar.gz/einzbern-3.3.0/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
 ]);
 const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
   [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [

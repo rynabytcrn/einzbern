@@ -370,18 +370,18 @@ function withHeader(tar, edit) {
   return archive;
 }
 
-test("3.2.0 reviewed package labels retain exact decoding and reject adjacent or injected private content", async () => {
+for (const reviewedVersion of ["3.2.0", "3.3.0"]) test(`${reviewedVersion} reviewed package labels retain exact decoding and reject adjacent or injected private content`, async () => {
   const names = await readFile(new URL("../dist/build/packages/core/src/names.js", import.meta.url), "utf8");
   const ownerLine = names.split("\n").find((line) => line.includes(scanOwner) && /\bowner\s*:/u.test(line));
   assert.equal(createHash("sha256").update(ownerLine).digest("hex"), "3861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56");
   const members = ["atelier/portal.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern.mjs"];
-  const decode = ({ version = "3.2.0", paths = members, content = ownerLine, suffix = "" } = {}) => p8FormalPackagePrivacyEntries(formalPackage(paths.map((path) => ({
+  const decode = ({ version = reviewedVersion, paths = members, content = ownerLine, suffix = "" } = {}) => p8FormalPackagePrivacyEntries(formalPackage(paths.map((path) => ({
     path: `${BRAND.engine.id}-${version}/${path}`, bytes: Buffer.from(`${content}\n`),
   }))), `dist/release/${BRAND.engine.id}-${version}${suffix}.tar.gz`);
   const valid = decode();
   assert.deepEqual(releaseScan(valid.entries), []);
   assert.deepEqual(valid.entries.filter((entry) => entry.releaseArchiveMember === true).map((entry) => entry.sourcePaths), members.map(() => ["dist/build/packages/core/src/names.js"]));
-  for (const change of [{ version: "3.2.1" }, { suffix: ".other" }, { paths: members.map((path) => `adjacent/${path}`) }, { content: `${ownerLine} // changed` }, { content: `${ownerLine}\n${scanOwner}` }]) {
+  for (const change of [{ version: reviewedVersion.replace(/\.0$/u, ".1") }, { suffix: ".other" }, { paths: members.map((path) => `adjacent/${path}`) }, { content: `${ownerLine} // changed` }, { content: `${ownerLine}\n${scanOwner}` }]) {
     assert.ok(releaseScan(decode(change).entries).some((finding) => finding.startsWith("OWNER_PRIVATE_IDENTIFIER:")));
   }
   const privatePath = joinParts(["", "Users", "private-person", "notes.txt"], "/");

@@ -551,18 +551,26 @@ test("INIT-056 R5: the engine-host editor creates a complete policy and retains 
     document.querySelector('[data-model-policy-link="engine-model-policy"]').click();
     await waitFor(() => document.querySelector('[data-page="engine-model-policy"]')?.hidden === false, "the compatibility link to open the engine policy");
 
-    for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
+    // A locale redraw also reads project targets. Let each independent locale
+    // interaction finish before the settings write below: waiting only for lang
+    // queued seven target reads beside that write and its full refresh in CI.
+    // Keep the existing request timeout and all draft/concurrency assertions.
+    const selectLocale = async (locale) => {
       document.querySelector(`[data-locale-option="${locale}"]`).click();
       await waitFor(() => document.documentElement.lang === locale, `${locale} policy labels`);
+      await page.waitForSettled();
+    };
+    for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
+      await selectLocale(locale);
       assert.ok(view().querySelector("[data-engine-model-policy-host]")?.getAttribute("aria-label"), `${locale} host selector has an accessible name`);
       assert.ok(field("categories", 0, "id")?.getAttribute("aria-label"), `${locale} category id has an accessible name`);
       assert.ok(field("tiers", 0, "model")?.getAttribute("aria-label"), `${locale} model has an accessible name`);
       assert.equal(escalation("enabled")?.getAttribute("role"), "switch", `${locale} escalation uses the existing switch semantics`);
       assert.ok(view().textContent.trim() && !view().textContent.includes("modelPolicy."), `${locale} translates the engine policy surface`);
     }
-    document.querySelector('[data-locale-option="en"]').click();
+    await selectLocale("en");
     type(field("tiers", 0, "note"), "kept through locale and refresh");
-    document.querySelector('[data-locale-option="fr"]').click();
+    await selectLocale("fr");
     await waitFor(() => field("tiers", 0, "note")?.value === "kept through locale and refresh", "the draft through a locale redraw");
     document.querySelector('[data-page-target="settings"]').click();
     document.querySelector('[data-setting-group="execution"]').click();

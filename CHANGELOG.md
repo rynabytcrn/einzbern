@@ -5,6 +5,75 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Structured work and lifecycle
+
+- Add native typed content for Initiatives, Epics, Stories, Subtasks and defect
+  Stories, with type-specific drafts, explicit missing fields and inherited
+  constraints. Legacy work and v1 templates retain their existing read behavior.
+- Bind v2 templates to one canonical work-content record. Typed legacy fields are
+  projections of that record; independent writes cannot create conflicting copies.
+  Drafts may remain incomplete, while implementation and completion check their
+  applicable content and evidence requirements.
+
+### Requirements and acceptance evidence
+
+- Track stable requirement, source and acceptance identities and versions.
+  Allocate implementation and verification responsibilities to direct children,
+  preserving shared inheritance and exact source references.
+- Record approved content changes and their effects on live descendants and
+  acceptance evidence. Allocation-only changes and formerly shared requirements
+  remain subject to the same decision and impact checks.
+- Bind completion evidence to its requirement, acceptance, structural content
+  version and code candidate. Preserve explicitly supplied and historical
+  digests; changed meaning cannot silently reuse an earlier result.
+- Accept the equivalent ordering of exactly two implementation/verification
+  responsibilities without changing stored digests. Failed and unverified
+  observations still block completion under the same matching rule.
+- Keep machine linkage, source/behavior review and Owner visual evidence distinct.
+  Identifiers and matching hashes do not establish the truth of a source or the
+  semantic correctness of a result.
+
+### Atelier and work context
+
+- Add structured work editing, drafts, source and evidence fields, requirement
+  responsibility and change-impact views to Atelier in all five supported
+  interface languages.
+- Preserve entered draft content after an unsuccessful first save, including
+  retry, so a failed request does not discard the user's work.
+- Wait for each locale readback before the next independent action in the model
+  policy editor regression test, preserving its timeouts and draft assertions.
+- Provide native CLI drafts and segmented work context with critical content,
+  missing fields, inherited requirements and exact digest/readback references.
+
+### Recoverable dot rules and private sources
+
+- Store private versioned dot extension source declarations and reconstruct
+  declared rule, checker and entry files through the existing preview, ownership,
+  backup and readback path. Reconstructed files remain inert; edited or unowned
+  content stays pending for review.
+- Verify explicitly classified Git commit references against actual objects at
+  each consuming operation while preserving decoded-content privacy checks.
+  A saved declaration or local digest is not identity authentication or a reusable
+  permission to execute source content.
+- Add the optional, default-off privacy/publication principle and keep rule
+  enablement, rendered bytes and actual host-session reads separate.
+- Clarify completion of already authorized PR review fixes in dot's autonomy
+  guidance. Recognize the exact preceding owned template during update while
+  continuing to protect user edits, source bindings and recovery copies.
+
+### Compatibility and rollout boundaries
+
+- Release Einzbern and its generated Mana Orchestrate skill together at 3.3.0,
+  retaining the existing format-3 library and legacy behavior in projects that
+  have not enabled the new content policy.
+- Separate the shared-library engine floor from project content opt-in. Native
+  readiness checks require current delivery and writer observations, and refuse
+  conflicting late increments or an unverified floor downgrade.
+- Publishing or installing this release does not enable production work-content
+  policy, change the shared-library floor, install dot rules or update other
+  devices. Complete real-host, writer-inventory, offline-copy and late-increment
+  rollout acceptance remains unverified until actual observations establish it.
+
 ## 3.2.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 3.2.0.

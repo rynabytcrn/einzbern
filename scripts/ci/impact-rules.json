@@ -1,5 +1,5 @@
 {
-  "version": 33,
+  "version": 34,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1461,7 +1461,7 @@
     ".github/ISSUE_TEMPLATE/bug.yml": "97a14a86b0d1b88eed0473c1edf940c1a65c44027403b89a171e3075cdd20877",
     ".github/ISSUE_TEMPLATE/config.yml": "8b09e7df09fc7534371988062769ee427af2954a02c04c763e8a8005be0f2be4",
     ".github/dependabot.yml": "9b74887725ee7ece5774faa1de3fc16d6997c82ef01f163700f6218e64f38dd7",
-    ".github/workflows/ci.yml": "bf0cd56ec786ec32d50e0577d966661e2b1b2297183fe407104a43280957856a",
+    ".github/workflows/ci.yml": "29cdbb38d40a09ab79a3b9fe1edef48a3a71923a1fbe90b89db20bcd259b0189",
     ".gitignore": "8aa3efa989924a589b76af2fa0cc23f965335b3b52eb3f2041885b754ce7a264",
     ".node-version": "2722b61f414f07f08be7f1f1316012813818f26f1c40d6a24a748686cec7d2ff",
     ".npmrc": "05be9eca5ed913f6c49da4b40233c7b2cd26ef7da80437104f2232701cdf5bcb",
@@ -1886,7 +1886,7 @@
     "tests/bundle.test.mjs": "2fd2fe08da9d5806b963b8fe59698dbaad3447088cb4d3a5aeabead334fa43fe",
     "tests/ci-artifact-transport.test.mjs": "b1f7bca2a20efad8eb6e0bba036350d46a2d5be8f61e9b91af9d447dde2fe399",
     "tests/ci-baseline-evidence.test.mjs": "58c0f24a9d71f3224d555905530bd34a5aabcbff2fa5ac40b8115621f694be1c",
-    "tests/ci-bootstrap-prerequisites.test.mjs": "e4fa7387bffad7fea3c22ed88991360239754dca07261d2dfaccd32b9596b1ab",
+    "tests/ci-bootstrap-prerequisites.test.mjs": "f14c65cc7ebf5ed7ea1c23771dfbdb6542a34226c1b715ff789d4abbc80c71d5",
     "tests/ci-bootstrap.test.mjs": "8e5a2265928041bdf85283c965342277acde62bb4ba0f6036a3fa76fea1756eb",
     "tests/ci-evidence-retention.test.mjs": "6117785d60af019c3cbbe13269ca295c3492c6c6eb0890b54ebf45d9018834e1",
     "tests/ci-git-source-blobs.test.mjs": "12f8c7db61ee85a6cc2ff2145676af29581ba6198a5305e22c5b05c066bf076a",

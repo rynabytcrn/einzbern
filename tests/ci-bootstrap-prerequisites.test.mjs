@@ -188,7 +188,8 @@ test("the existing online step uses the actual bootstrap decision and preserves 
 const fs = require("node:fs");
 fs.appendFileSync(process.env.BOOTSTRAP_TRACE, JSON.stringify({
   args: process.argv.slice(2), cache: process.env.pnpm_config_cache_dir ?? null,
-  home: process.env.HOME, persisted: fs.readFileSync(process.env.GITHUB_ENV, "utf8"),
+  home: process.env.HOME,
+  persisted: fs.readFileSync(process.env.GITHUB_ENV, "utf8"),
 }) + "\\n");
 `, { mode: 0o755 });
   const cases = [

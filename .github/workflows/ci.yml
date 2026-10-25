@@ -69,6 +69,8 @@ jobs:
     timeout-minutes: 45
     env:
       VERIFY_MODE: ${{ matrix.mode }}
+      # Both required installs retain genuine verification records across private HOME.
+      pnpm_config_cache_dir: ${{ runner.temp }}/einzbern-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.mode }}/pnpm
     steps:
       - name: Checkout full clean history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -121,17 +123,23 @@ jobs:
           NO_UPDATE_NOTIFIER: "1"
         run: pnpm install --frozen-lockfile --ignore-scripts --config.offline=false
 
-      - name: Acquire official pinned Corepack and its pnpm cache for manual H1
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'pf2-h1'
+      - name: Acquire official pinned Corepack and its pnpm cache when consumed
         env:
           npm_config_offline: "false"
           npm_config_prefer_offline: "false"
           COREPACK_ENABLE_NETWORK: "1"
+          COREPACK_HOME: ${{ runner.temp }}/einzbern-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.mode }}/corepack
         run: |
-          npm install --global corepack@0.34.6 --force --ignore-scripts --no-audit --no-fund --no-update-notifier --prefer-online
-          test "$(corepack --version)" = "0.34.6"
-          corepack install --global pnpm@11.3.0
-          test "$(corepack pnpm@11.3.0 --version)" = "11.3.0"
+          corepack_required="$(node scripts/ci/bootstrap-prerequisites.mjs "$VERIFY_MODE" "$RUNNER_TEMP/impact/impact-plan.json")"
+          if [ "$corepack_required" = true ]; then
+            npm install --global corepack@0.34.6 --force --ignore-scripts --no-audit --no-fund --no-update-notifier --prefer-online
+            test "$(corepack --version)" = "0.34.6"
+            corepack install --global pnpm@11.3.0
+            test "$(corepack pnpm@11.3.0 --version)" = "11.3.0"
+            # Preserve genuine cache inputs across the offline runner's private HOME.
+            # Its existing frozen offline clone install records its own lockfile stat.
+            printf 'COREPACK_HOME=%s\npnpm_config_cache_dir=%s\nCOREPACK_ENABLE_NETWORK=0\n' "$COREPACK_HOME" "$pnpm_config_cache_dir" >> "$GITHUB_ENV"
+          fi
 
       # Use the same complete HEAD-reachable privacy history for fork dispatch,
       # pull requests and main. A PR must not hide a failing base-history finding.

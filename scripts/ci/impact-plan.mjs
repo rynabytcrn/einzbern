@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readSourceBlobs } from "./git-source-blobs.mjs";
 import { P1_TASKS } from "../p1-sequence.mjs";
 import { verifyBaseline, collectBaseline } from "./baseline-evidence.mjs";
 export const canonical = (value) => JSON.stringify(value, function (key, item) {
@@ -636,15 +637,23 @@ export function categoryReaderAudit(texts, rules, graph = sourceDependencyGraph(
 // except documentation and known opaque image/font assets. Unknown binary or
 // unreadable inputs remain unresolved, rather than becoming a source exemption.
 export function documentReaderSources(root, ref) {
-  const files = git(root, ...(ref ? ["ls-tree", "-r", "--name-only", "-z", ref] : ["ls-files", "-z"])).toString().split("\0").filter(Boolean);
+  const include = (path) => !/\.(?:md|png|jpe?g|gif|webp|ico|woff2?|ttf|otf)$/iu.test(path);
   const texts = new Map(), unresolved = [];
-  for (const path of files) {
-    if (/\.(?:md|png|jpe?g|gif|webp|ico|woff2?|ttf|otf)$/iu.test(path)) continue;
-    try {
-      const bytes = ref ? git(root, "show", `${ref}:${path}`) : readFileSync(resolve(root, path));
-      if (!isUtf8(bytes) || bytes.includes(0)) throw new Error("Unknown non-text source");
-      texts.set(path, bytes.toString("utf8"));
-    } catch { unresolved.push(path); }
+  if (ref) {
+    for (const { path, bytes } of readSourceBlobs(root, ref, include)) {
+      if (!bytes || !isUtf8(bytes) || bytes.includes(0)) unresolved.push(path);
+      else texts.set(path, bytes.toString("utf8"));
+    }
+  } else {
+    const files = git(root, "ls-files", "-z").toString().split("\0").filter(Boolean);
+    for (const path of files) {
+      if (!include(path)) continue;
+      try {
+        const bytes = readFileSync(resolve(root, path));
+        if (!isUtf8(bytes) || bytes.includes(0)) throw new Error("Unknown non-text source");
+        texts.set(path, bytes.toString("utf8"));
+      } catch { unresolved.push(path); }
+    }
   }
   return { texts, unresolved: sorted(unresolved) };
 }

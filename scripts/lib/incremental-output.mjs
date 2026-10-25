@@ -2,7 +2,7 @@
 // TCRN-CROSS-STORY-414 — bounded, cursor-based progress evidence.
 
 import { constants } from "node:fs";
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, open, stat } from "node:fs/promises";
 
 export const PROGRESS_SCHEMA_VERSION = "tcrn.progress-event.v1";
 export const PROGRESS_WAIT_MAX_MS = 60_000;
@@ -63,42 +63,70 @@ export async function appendProgressIfConfigured(path, type, fields = {}, option
 
 /**
  * Read only complete NDJSON records after a byte cursor. A partial trailing line
- * remains unread so the next call can finish it; a malformed complete line is an
+ * remains buffered in the returned continuation state; a malformed complete line is an
  * error, never an empty successful delta.
  */
-export async function readProgressDelta(path, cursor = 0) {
+export async function readProgressDelta(path, cursor = 0, state = null) {
   assertProgressPath(path);
   const start = normalizeCursor(cursor);
-  let bytes;
+  const offset = state ? normalizeCursor(state.offset) : start;
+  const partial = state ? Buffer.from(state.partial ?? "", "base64") : Buffer.alloc(0);
+  if (state && (state.path !== path || state.cursor !== start || offset !== start + partial.length
+    || partial.toString("base64") !== state.partial || partial.includes(0x0a))) {
+    throw progressError("PROGRESS_CURSOR_INVALID", "inconsistent continuation state");
+  }
+  let handle;
+  let bytesRead = 0;
   try {
-    bytes = await readFile(path);
+    handle = await open(path, "r");
+    const before = await handle.stat();
+    const identity = `${before.dev}:${before.ino}:${before.birthtimeMs}`;
+    if (!before.isFile() || (state && state.identity !== identity)) {
+      throw progressError("PROGRESS_SOURCE_INVALIDATED", path);
+    }
+    if (offset > before.size) throw progressError("PROGRESS_CURSOR_INVALIDATED", `${offset} > ${before.size}`);
+    const chunks = [];
+    // A bounded allocation and explicit position avoid rereading consumed bytes.
+    while (offset + bytesRead < before.size) {
+      const buffer = Buffer.alloc(Math.min(64 * 1024, before.size - offset - bytesRead));
+      const read = await handle.read(buffer, 0, buffer.length, offset + bytesRead);
+      if (read.bytesRead === 0) throw progressError("PROGRESS_SOURCE_INVALIDATED", "source shortened during read");
+      chunks.push(buffer.subarray(0, read.bytesRead));
+      bytesRead += read.bytesRead;
+    }
+    const after = await stat(path);
+    if (`${after.dev}:${after.ino}:${after.birthtimeMs}` !== identity || after.size < offset + bytesRead) {
+      throw progressError("PROGRESS_SOURCE_INVALIDATED", path);
+    }
+    const delta = Buffer.concat([partial, ...chunks]);
+    const newline = delta.lastIndexOf(0x0a);
+    const complete = delta.subarray(0, newline + 1);
+    let text;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(complete); }
+    catch { throw progressError("PROGRESS_EVENT_INVALID", "invalid UTF-8"); }
+    const events = text.length === 0 ? [] : text.split("\n").slice(0, -1).map((line) => {
+      let parsed;
+      try { parsed = JSON.parse(line); }
+      catch (error) { throw progressError("PROGRESS_EVENT_INVALID", error.message); }
+      return normalizeProgressEvent(parsed);
+    });
+    const nextCursor = start + complete.length;
+    return {
+      events, nextCursor, bytesRead, returnedBytes: complete.length,
+      unchanged: events.length === 0, source: delta.length > complete.length ? "partial" : "ledger",
+      state: { path, identity, cursor: nextCursor, offset: offset + bytesRead, partial: delta.subarray(complete.length).toString("base64") },
+    };
   } catch (error) {
-    if (error?.code === "ENOENT" && start === 0) {
-      return { events: [], nextCursor: 0, bytesRead: 0, unchanged: true, source: "missing" };
+    if (error?.reasonCode) { error.bytesRead = bytesRead; throw error; }
+    if (error?.code === "ENOENT" && start === 0 && !state) {
+      return { events: [], nextCursor: 0, bytesRead: 0, returnedBytes: 0, unchanged: true, source: "missing", state: null };
     }
-    if (error?.code === "ENOENT") throw progressError("PROGRESS_SOURCE_INVALIDATED", path);
-    throw progressError("PROGRESS_SOURCE_UNREADABLE", `${path}: ${error?.message ?? error}`);
+    const failure = progressError(error?.code === "ENOENT" ? "PROGRESS_SOURCE_INVALIDATED" : "PROGRESS_SOURCE_UNREADABLE", `${path}: ${error?.message ?? error}`);
+    failure.bytesRead = bytesRead;
+    throw failure;
+  } finally {
+    await handle?.close();
   }
-  if (start > bytes.length) throw progressError("PROGRESS_CURSOR_INVALIDATED", `${start} > ${bytes.length}`);
-  const delta = bytes.subarray(start);
-  const newline = delta.lastIndexOf(0x0a);
-  if (newline < 0) {
-    return { events: [], nextCursor: start, bytesRead: delta.length, unchanged: delta.length === 0, source: "partial" };
-  }
-  const complete = delta.subarray(0, newline + 1);
-  const lines = complete.toString("utf8").split("\n").slice(0, -1);
-  const events = lines.map((line) => {
-    if (line.length === 0) throw progressError("PROGRESS_EVENT_INVALID", "blank line");
-    let parsed;
-    try {
-      parsed = JSON.parse(line);
-    } catch (error) {
-      throw progressError("PROGRESS_EVENT_INVALID", error.message);
-    }
-    return normalizeProgressEvent(parsed);
-  });
-  const nextCursor = start + complete.length;
-  return { events, nextCursor, bytesRead: complete.length, unchanged: events.length === 0, source: "ledger" };
 }
 
 function mergeEvents(existing, added) {
@@ -111,7 +139,7 @@ export function summarizeProgress(events) {
   const terminal = [...values].reverse().find((event) => ["completed", "error", "orphaned-before-bind"].includes(event.type)) ?? null;
   const exit = [...values].reverse().find((event) => event.type === "controller-exited") ?? null;
   const errors = values.filter((event) => event.type === "error" || (event.type === "controller-exited" && event.ok === false));
-  const status = terminal?.type === "completed" && terminal.ok === true
+  const status = terminal?.type === "completed" && terminal.ok === true && errors.length === 0
     ? "completed"
     : terminal?.type === "orphaned-before-bind"
       ? "orphaned"
@@ -161,6 +189,8 @@ export async function waitForProgress(path, {
   maxPollMs = 1_000,
   counters: initialCounters = {},
   signal,
+  state: initialState = null,
+  nextPollMs = pollMs,
 } = {}) {
   assertProgressPath(path);
   const startCursor = normalizeCursor(cursor);
@@ -175,7 +205,9 @@ export async function waitForProgress(path, {
   let polls = initialCounters.polls ?? 0;
   let unchangedPolls = initialCounters.unchangedPolls ?? 0;
   let bytesRead = initialCounters.bytesRead ?? 0;
-  let delayMs = pollMs;
+  let state = initialState;
+  let returnedBytes = initialCounters.returnedBytes ?? 0;
+  let delayMs = Math.min(maxPollMs, Math.max(pollMs, normalizeCursor(nextPollMs)));
   const startedAt = Date.now();
   const snapshot = (status, extra = {}) => ({
     status,
@@ -185,6 +217,9 @@ export async function waitForProgress(path, {
     polls,
     unchangedPolls,
     bytesRead,
+    returnedBytes,
+    state,
+    nextPollMs: delayMs,
     elapsedMs: Math.max(0, Date.now() - startedAt),
     ...extra,
   });
@@ -193,13 +228,16 @@ export async function waitForProgress(path, {
   while (true) {
     if (signal?.aborted) return snapshot("cancelled");
     let delta;
+    polls += 1;
     try {
-      delta = await readProgressDelta(path, nextCursor);
+      delta = await readProgressDelta(path, nextCursor, state);
     } catch (error) {
+      bytesRead += error.bytesRead ?? 0;
       return snapshot("failed", { reasonCode: error.reasonCode ?? "PROGRESS_READ_FAILED", error: error.message });
     }
-    polls += 1;
     bytesRead += delta.bytesRead;
+    returnedBytes += delta.returnedBytes;
+    state = delta.state;
     nextCursor = delta.nextCursor;
     if (delta.events.length === 0) unchangedPolls += 1;
     else {
@@ -214,6 +252,6 @@ export async function waitForProgress(path, {
     if (elapsed >= timeoutMs) return snapshot("timeout");
     const delayed = await abortableDelay(Math.min(delayMs, timeoutMs - elapsed), signal);
     if (delayed === "cancelled") return snapshot("cancelled");
-    delayMs = Math.min(maxPollMs, Math.max(pollMs, delayMs * 2));
+    if (delta.events.length === 0) delayMs = Math.min(maxPollMs, Math.max(pollMs, delayMs * 2));
   }
 }

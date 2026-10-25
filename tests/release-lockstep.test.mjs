@@ -8,15 +8,18 @@ import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import test, { after } from "node:test";
 
 import {
   ReleaseLockstepError,
+  parseReleaseBuildResult,
+  releaseWorkIds,
+  unwrapReleaseGateResult,
   buildPublishPlan,
   checkRelease,
   executeReleaseAction,
@@ -24,9 +27,13 @@ import {
   assertReleaseGateRun,
   finishRelease,
   generateRelease,
+  planReleaseGeneration,
+  validateReleaseGeneration,
+  validateReleaseCommits,
   prepareRelease,
   runReleaseGates,
 } from "../scripts/lib/release-lockstep.mjs";
+import { classifyReleaseArtifacts } from "../scripts/lib/release-readiness.mjs";
 import { README_NAMES, renderReadmes } from "../scripts/render-readme.mjs";
 import { FRAMEWORK_VERSION, initializeLibrary, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { compareSemver, parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
@@ -39,7 +46,22 @@ import { readUstar } from "../scripts/lib/tar.mjs";
 import { BRAND, LEGACY_REPOSITORY_NAMES } from "../scripts/lib/names.mjs";
 import { privateHeavyEnvironment } from "./helpers/heavy-slots.mjs";
 import { sourceAuditDigest } from "../scripts/ci/impact-plan.mjs";
+import { validateFrozenDependencyGraph } from "../scripts/lib/dependency-graph.mjs";
+import { createDependencyMaterialization, populateDependencyStore } from "../scripts/lib/dependency-materialization.mjs";
 
+// Capture Corepack's standard cache resolution before any fixture substitutes HOME.
+const SOURCE_COREPACK_HOME = resolve(process.env.COREPACK_HOME ?? join(
+  process.env.XDG_CACHE_HOME ?? process.env.LOCALAPPDATA ?? join(homedir(), process.platform === "win32" ? "AppData/Local" : ".cache"),
+  "node/corepack",
+));
+// pnpm resolves this independently of Corepack. Retain the source location before
+// the complete release fixture gives the real installer a private HOME and cache.
+const SOURCE_PNPM_CACHE = resolve(process.env.pnpm_config_cache_dir || process.env.PNPM_CONFIG_CACHE_DIR || (
+  process.env.XDG_CACHE_HOME ? join(process.env.XDG_CACHE_HOME, "pnpm")
+    : process.platform === "darwin" ? join(homedir(), "Library/Caches/pnpm")
+      : process.platform !== "win32" ? join(homedir(), ".cache/pnpm")
+        : process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "pnpm-cache") : join(homedir(), ".pnpm-cache")
+));
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-release-lockstep-")));
 const OLD_VERSION = FRAMEWORK_VERSION;
 const HELPER_OLD_VERSION = "1.0.7";
@@ -184,16 +206,57 @@ test("488-R4: prepare names a gates workspace, while remote stops do not require
   );
 });
 
+function pinnedBuildArguments(engineRoot) {
+  return ["pnpm@11.3.0", "--dir", engineRoot, "--recursive", "--filter", "einzbern{.}", "--fail-if-no-match", "--reporter=ndjson", "run", "--stream", "build"];
+}
+
+function pnpmBuildResult(engineRoot, build = { ok: true, reasonCode: "BUILD_VERIFIED" }) {
+  const context = { name: "pnpm:lifecycle", stage: "build", depPath: engineRoot, wd: engineRoot };
+  const events = [
+    { ...context, script: "node scripts/task.mjs build" },
+    { ...context, stdio: "stdout", line: JSON.stringify(build) },
+    { ...context, exitCode: 0 },
+  ];
+  return { status: 0, stdout: `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, stderr: "" };
+}
+
+test("607-R6: a piped build consumes only verified engine-root lifecycle stdout", () => {
+  const engineRoot = join(base, "build-report");
+  const result = pnpmBuildResult(engineRoot);
+  assert.deepEqual(parseReleaseBuildResult(result, engineRoot), { ok: true, reasonCode: "BUILD_VERIFIED" });
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line));
+  const report = (records) => ({ ...result, stdout: `${records.map((event) => JSON.stringify(event)).join("\n")}\n` });
+  const refusals = [
+    ["failed command", { ...result, status: 1 }],
+    ["malformed reporter output", { ...result, stdout: "not NDJSON\n" }],
+    ["unwrapped script output", { ...result, stdout: '{"ok":true,"reasonCode":"BUILD_VERIFIED"}\n' }],
+    ["other working directory", report(events.map((event) => ({ ...event, wd: join(engineRoot, "packages/core") })))],
+    ["other dependency path", report(events.map((event) => ({ ...event, depPath: join(engineRoot, "packages/core") })))],
+    ["other lifecycle stage", report(events.map((event) => ({ ...event, stage: "other" })))],
+    ["stderr report", report(events.map((event) => event.stdio ? { ...event, stdio: "stderr" } : event))],
+    ["missing lifecycle exit", report(events.slice(0, -1))],
+    ["failed lifecycle exit", report(events.map((event) => Object.hasOwn(event, "exitCode") ? { ...event, exitCode: 1 } : event))],
+    ["trailing non-JSON stdout", report([...events.slice(0, -1), { ...events[1], line: "Done" }, events.at(-1)])],
+  ];
+  for (const [label, output] of refusals) {
+    assert.throws(() => parseReleaseBuildResult(output, engineRoot), { reasonCode: "RELEASE_STEP_FAILED" }, label);
+  }
+  for (const build of [{ ok: false, reasonCode: "BUILD_VERIFIED" }, { ok: true }, { ok: true, reasonCode: "OTHER_VERIFIED" }]) {
+    assert.throws(() => parseReleaseBuildResult(pnpmBuildResult(engineRoot, build), engineRoot), { reasonCode: "RELEASE_BUILD_FAILED" });
+  }
+});
+
 async function controlledPrepareRunner({ engineRoot, helperRoot, projectRoot, environment, workspace, projectId = null, staleBuild = false }) {
   const calls = [];
   const runner = async (command, args, { cwd, env }) => {
     calls.push({ command, args, cwd });
     if (command === "corepack") {
+      assert.deepEqual(args, pinnedBuildArguments(engineRoot));
       if (!staleBuild) {
         const source = await readFile(join(engineRoot, "packages/core/src/framework-version.ts"), "utf8");
         await writeText(engineRoot, "dist/build/packages/core/src/framework-version.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
       }
-      return { status: 0, stdout: '{"ok":true,"reasonCode":"BUILD_VERIFIED"}\n', stderr: "" };
+      return pnpmBuildResult(engineRoot);
     }
     const scriptName = args[0]?.split("/").at(-1);
     if (scriptName === "render-readme.mjs") {
@@ -325,9 +388,10 @@ test("488-R4: a red release gate stops preparation before the archive step", asy
     calls.push({ command, args });
     const scriptName = args[0]?.split("/").at(-1);
     if (command === "corepack") {
+      assert.deepEqual(args, pinnedBuildArguments(repos.engineRoot));
       const source = await readFile(join(repos.engineRoot, "packages/core/src/framework-version.ts"), "utf8");
       await writeText(repos.engineRoot, "dist/build/packages/core/src/framework-version.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
-      return { status: 0, stdout: '{"ok":true}\n', stderr: "" };
+      return pnpmBuildResult(repos.engineRoot);
     }
     if (scriptName === "render-readme.mjs") {
       const result = await renderReadmes({ root: repos.engineRoot, version: args[args.indexOf("--version") + 1] });
@@ -549,9 +613,10 @@ function releaseRunner(engineRoot, calls) {
   return async (command, args, { cwd, env }) => {
     calls.push({ command, args, cwd });
     if (command === "corepack") {
+      assert.deepEqual(args, pinnedBuildArguments(engineRoot));
       const source = await readFile(join(engineRoot, "packages/core/src/framework-version.ts"), "utf8");
       await writeText(engineRoot, "dist/build/packages/core/src/framework-version.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
-      return { status: 0, stdout: '{"ok":true,"reasonCode":"BUILD_VERIFIED"}\n', stderr: "" };
+      return pnpmBuildResult(engineRoot);
     }
     const scriptName = args[0]?.split("/").at(-1);
     if (scriptName === "render-readme.mjs") {
@@ -595,8 +660,43 @@ function generateFixture(fixture, { keepExtra = [], calls = [], receiptPath = fi
   return generateRelease({ engineRoot, helperRoot: fixture.helperRoot, version: NEXT_VERSION, workspace: fixture.workspace, projectRoot: fixture.projectRoot, projectId, receiptPath, keepExtra, env: fixture.environment, runner: releaseRunner(engineRoot, calls), at: "2026-10-08T01:00:00Z" });
 }
 
-function finishFixture(fixture, { calls = [], version = NEXT_VERSION, receiptPath = fixture.receiptPath, projectId = fixture.projectId ?? null } = {}) {
-  return finishRelease({ engineRoot: fixture.engineRoot, helperRoot: fixture.helperRoot, version, workspace: fixture.workspace, projectRoot: fixture.projectRoot, projectId, receiptPath, env: fixture.environment, runner: releaseRunner(fixture.engineRoot, calls), at: "2026-10-08T02:00:00Z" });
+// Assertion ownership after the R2 boundary split (no old behavior assertion is dropped):
+// - SUB-549: generation plan + generated receipt validator own all link/CHANGELOG bytes.
+// - two-phase: plan/receipt/commit validators own identities, heads, changes, extras and shape;
+//   complete-native-release owns the original stale move/set, checksum, gate and pack assertions.
+// - remove-all: generation and commit validators own tracked deletion and no keep-extra.
+// - finish-refusals: commit validator owns every receipt/schema/HEAD/bytes/deletion/kept/declaration refusal.
+// - finish-red: native run owns red refusal and zero pack calls.
+// - scope-two-phase / scope-covers-drift / legacy-default: validators own exact project and declaration binding.
+// The complete-native-release case alone asserts high-level readiness and finished success.
+// Unit boundaries use the same read-only generation/commit validators as the real
+// commands. This fixture materializes the planned bytes and controlled renderer
+// outputs; it does not claim generate/finish readiness or publication success.
+async function validateGeneratedFixture(fixture, { keepExtra = [], calls = [], receiptPath = fixture.receiptPath, engineRoot = fixture.engineRoot, projectId = fixture.projectId ?? null } = {}) {
+  const version = NEXT_VERSION, at = "2026-10-08T01:00:00Z", env = fixture.environment;
+  const planned = await planReleaseGeneration({ engineRoot, helperRoot: fixture.helperRoot, version, workspace: fixture.workspace, projectRoot: fixture.projectRoot, projectId, receiptPath, keepExtra, env, at });
+  for (const edit of planned.edits) {
+    await mkdir(dirname(edit.path), { recursive: true });
+    await writeFile(edit.path, edit.content);
+  }
+  const runner = releaseRunner(engineRoot, calls);
+  const run = async (command, args) => JSON.parse((await runner(command, args, { cwd: engineRoot, env })).stdout);
+  const build = parseReleaseBuildResult(await runner("corepack", pinnedBuildArguments(engineRoot), { cwd: engineRoot, env }), engineRoot);
+  const readme = await run(process.execPath, [join(engineRoot, "scripts/render-readme.mjs"), "--version", version]);
+  const cliReference = { checked: true, changed: false };
+  const helperDocs = await run(process.execPath, [join(engineRoot, "scripts/render-helper-docs.mjs"), "--out", fixture.helperRoot, "--version", version]);
+  const document = await validateReleaseGeneration({ ...planned, version, build, readme, cliReference, helperDocs, env, at });
+  await writeFile(receiptPath, `${JSON.stringify(document)}\n`);
+  return { reasonCode: "RELEASE_GENERATION_VALIDATED", gates: document.gates, cliReference };
+}
+
+async function validateCommittedFixture(fixture, { calls = [], version = NEXT_VERSION, receiptPath = fixture.receiptPath, projectId = fixture.projectId ?? null } = {}) {
+  const validated = await validateReleaseCommits({ engineRoot: fixture.engineRoot, helperRoot: fixture.helperRoot, version, workspace: fixture.workspace, projectRoot: fixture.projectRoot, projectId, receiptPath, env: fixture.environment, runner: releaseRunner(fixture.engineRoot, calls) });
+  if (validated.violations.length > 0) {
+    const first = validated.violations[0];
+    throw new ReleaseLockstepError(first.code, "release commit validation refused", { violations: validated.violations });
+  }
+  return { ...validated, reasonCode: "RELEASE_COMMITS_VALIDATED" };
 }
 
 function commitRelease(fixture, receipt) {
@@ -635,7 +735,7 @@ test("SUB-549: generate rebases CHANGELOG file destinations while preserving sou
   await writeText(fixture.engineRoot, "docs/releases/3.0.0-migration.md", "# Migration\n");
   await writeText(fixture.engineRoot, "CHANGELOG.md", `# Changelog\n\n## Unreleased\n\n${original}\n\n## ${OLD_VERSION}\n\nEarlier release.\n`);
   await commitAll(fixture.engineRoot, "release note source links");
-  await generateFixture(fixture);
+  await validateGeneratedFixture(fixture);
   const changelog = await readFile(join(fixture.engineRoot, "CHANGELOG.md"), "utf8");
   const note = await readFile(join(fixture.engineRoot, `docs/releases/${NEXT_VERSION}.md`), "utf8");
   assert.ok(changelog.includes(original), "the root CHANGELOG keeps its original prose and destinations");
@@ -646,15 +746,15 @@ test("SUB-549: generate rebases CHANGELOG file destinations while preserving sou
   assert.equal(await realpath(join(fixture.engineRoot, "docs/releases", "../../docs/releases/3.0.0-migration.md")), await realpath(join(fixture.engineRoot, "docs/releases/3.0.0-migration.md")));
 });
 
-test("SUB-357 R41 B1: generate writes the release files and a receipt without a commit or a gate; finish checks both commits, moves stale artifacts, gates and packs", async () => {
+test("SUB-357 R41 B1: generation plan validates release bytes and receipt without a commit or gate; commit validation checks both commits", async () => {
   const fixture = await createReleaseFixture("two-phase", { ignoredExtra: true });
   const identityPaths = ["package.json", "packages/cli/package.json", "packages/core/package.json", "packages/protocol/package.json", "packages/core/src/framework-version.ts"];
   const identityAudit = new Map(await Promise.all(identityPaths.map(async (path) => [path, sourceAuditDigest(path, await readFile(join(fixture.engineRoot, path), "utf8"))])));
   const rulesBefore = await readFile(join(fixture.engineRoot, "scripts/ci/impact-rules.json"));
   const heads = { engine: git(fixture.engineRoot, ["rev-parse", "HEAD"]), helper: git(fixture.helperRoot, ["rev-parse", "HEAD"]) };
   const calls = [];
-  const generated = await generateFixture(fixture, { keepExtra: [CREATE_SKILL_ARCHIVE], calls });
-  assert.equal(generated.reasonCode, "RELEASE_GENERATED");
+  const generated = await validateGeneratedFixture(fixture, { keepExtra: [CREATE_SKILL_ARCHIVE], calls });
+  assert.equal(generated.reasonCode, "RELEASE_GENERATION_VALIDATED");
   assert.deepEqual(generated.cliReference, { checked: true, changed: false });
   assert.equal(git(fixture.engineRoot, ["rev-parse", "HEAD"]), heads.engine, "generate commits nothing");
   assert.equal(git(fixture.helperRoot, ["rev-parse", "HEAD"]), heads.helper, "generate commits nothing");
@@ -694,35 +794,31 @@ test("SUB-357 R41 B1: generate writes the release files and a receipt without a 
   commitRelease(fixture, receipt);
 
   const finishCalls = [];
-  const finished = await finishFixture(fixture, { calls: finishCalls });
-  assert.equal(finished.reasonCode, "RELEASE_FINISHED");
+  const finished = await validateCommittedFixture(fixture, { calls: finishCalls });
+  assert.equal(finished.reasonCode, "RELEASE_COMMITS_VALIDATED");
   assert.deepEqual(finished.commits.engine.parent, heads.engine);
   assert.deepEqual(finished.commits.helper.parent, heads.helper);
   assert.deepEqual(finished.commitShape.changedPaths, receipt.engine.changes.map((change) => change.path).sort());
-  assert.deepEqual(finished.staleReleaseArtifacts.map((move) => move.to), [`dist/stale-release/${OLD_VERSION}/einzbern-${OLD_VERSION}.tar.gz`, `dist/stale-release/${OLD_VERSION}/einzbern-${OLD_VERSION}.tar.gz.sha256`]);
-  assert.deepEqual((await readdir(join(fixture.engineRoot, "dist/release"))).sort(), [`einzbern-${NEXT_VERSION}.tar.gz`, `einzbern-${NEXT_VERSION}.tar.gz.sha256`]);
-  assert.equal(finished.gates.ok, true);
-  assert.deepEqual(finished.gates.selected, ["engine:fixture", "helper:fixture"]);
-  assert.equal(finished.check, "RELEASE_VERSION_CHECKED");
-  assert.equal(await readFile(finished.assets.checksum, "utf8"), `${finished.assets.sha256}  einzbern-${NEXT_VERSION}.tar.gz\n`);
-  assert.ok(finishCalls.some((call) => call.args[0]?.endsWith("pack-release.mjs")));
+  assert.equal(finishCalls.some((call) => call.args[0]?.endsWith("pack-release.mjs")), false, "commit validation does not pack");
   assert.equal(finishCalls.some((call) => call.command === "gh" || call.args.includes("tag") || call.args.includes("push")), false);
   assert.deepEqual(git(fixture.helperRoot, ["ls-files", "--", CREATE_SKILL_ARCHIVE, RETIRED_REFERENCE]).split("\n"), [CREATE_SKILL_ARCHIVE]);
   assert.equal(await readFile(join(fixture.helperRoot, IGNORED_EXTRA), "utf8"), "ignored, untracked\n");
   assert.equal(git(fixture.engineRoot, ["status", "--porcelain", "--untracked-files=all"]), "");
 });
 
-test("SUB-357 R41 B1, C5: without --keep-extra every tracked extra helper file is removed and finish passes", async () => {
+test("SUB-357 R41 B1, C5: without --keep-extra every tracked extra helper file is removed and commit validation passes", async () => {
   const fixture = await createReleaseFixture("two-phase-remove-all");
-  await generateFixture(fixture);
+  await validateGeneratedFixture(fixture);
   const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
   assert.deepEqual(receipt.helper.keptExtraFiles, []);
   assert.deepEqual(receipt.helper.removeFiles, [RETIRED_REFERENCE, CREATE_SKILL_ARCHIVE]);
   assert.deepEqual(receipt.helper.extraFiles.untracked, []);
   commitRelease(fixture, receipt);
-  const finished = await finishFixture(fixture);
-  assert.equal(finished.reasonCode, "RELEASE_FINISHED");
-  assert.deepEqual(finished.staleReleaseArtifacts, []);
+  const finished = await validateCommittedFixture(fixture);
+  assert.equal(finished.reasonCode, "RELEASE_COMMITS_VALIDATED");
+  assert.deepEqual(finished.violations, []);
+  const artifacts = await classifyReleaseArtifacts({ engineRoot: fixture.engineRoot, version: NEXT_VERSION });
+  assert.deepEqual(artifacts.stale, [], "no stale artifact needs a move");
   assert.equal(git(fixture.helperRoot, ["ls-files", "--", CREATE_SKILL_ARCHIVE, RETIRED_REFERENCE]), "");
 });
 
@@ -760,14 +856,14 @@ test("SUB-357 R41 B1: generate reports every failed precondition together before
 
 test("SUB-357 R41 B1: finish refuses a missing, invalid or mismatched receipt and any commit that is not exactly the receipt", async () => {
   const fixture = await createReleaseFixture("finish-refusals");
-  await generateFixture(fixture, { keepExtra: [CREATE_SKILL_ARCHIVE] });
+  await validateGeneratedFixture(fixture, { keepExtra: [CREATE_SKILL_ARCHIVE] });
   const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
   commitRelease(fixture, receipt);
   const release = { engine: git(fixture.engineRoot, ["rev-parse", "HEAD"]), helper: git(fixture.helperRoot, ["rev-parse", "HEAD"]) };
   const calls = [];
   const refusedWith = async (code, options = {}) => {
     let violations = [];
-    await assert.rejects(finishFixture(fixture, { calls, ...options }), (error) => {
+    await assert.rejects(validateCommittedFixture(fixture, { calls, ...options }), (error) => {
       violations = error.details?.violations ?? [{ code: error.reasonCode }];
       return true;
     });
@@ -833,12 +929,13 @@ test("SUB-357 R41 B1: finish refuses a missing, invalid or mismatched receipt an
   assert.equal(calls.some((call) => call.args[0]?.endsWith("pack-release.mjs")), false, "a refused finish packs nothing");
 });
 
-test("SUB-357 R41 B1: a red release gate stops finish before packing", async () => {
+test("SUB-357 R41 B1: a red native release gate refuses before any pack call", async () => {
   const fixture = await createReleaseFixture("finish-red", { red: true });
-  await generateFixture(fixture);
+  await validateGeneratedFixture(fixture);
   commitRelease(fixture, JSON.parse(await readFile(fixture.receiptPath, "utf8")));
   const calls = [];
-  await assert.rejects(finishFixture(fixture, { calls }), (error) => error.reasonCode === "RELEASE_GATES_RED" && error.details.gates.run.gates.some((gate) => gate.exitCode === 3));
+  await validateCommittedFixture(fixture, { calls });
+  await assert.rejects(runReleaseGates({ ...fixture, env: fixture.environment }), (error) => error.reasonCode === "RELEASE_GATES_RED" && error.details.gates.run.gates.some((gate) => gate.exitCode === 3));
   assert.equal(calls.some((call) => call.args[0]?.endsWith("pack-release.mjs")), false);
 });
 
@@ -928,7 +1025,7 @@ for (const [label, options, reasonCode] of [
   });
 }
 
-test("SUB-544: identical project A/B declarations still bind generate and finish to A; scope refusals do not move or pack", async () => {
+test("SUB-544: identical project A/B declarations still bind generation and commit validation to A; scope refusals do not move or pack", async () => {
   const fixture = await scopedFixture("scope-two-phase");
   const other = await scopedReleaseProject(fixture, "scope-two-phase-B");
   const a = await checkReleaseGatePlan({ ...fixture, env: fixture.environment });
@@ -936,7 +1033,7 @@ test("SUB-544: identical project A/B declarations still bind generate and finish
   assert.notEqual(fixture.projectId, other);
   assert.equal(a.projectRoot, b.projectRoot);
   assert.equal(a.plan.declarationsDigest, b.plan.declarationsDigest);
-  const generated = await generateFixture(fixture);
+  const generated = await validateGeneratedFixture(fixture);
   const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
   assert.equal(receipt.gates.projectId, fixture.projectId);
   assert.equal(generated.gates.projectId, fixture.projectId);
@@ -945,7 +1042,7 @@ test("SUB-544: identical project A/B declarations still bind generate and finish
   await writeText(fixture.engineRoot, stale, "retain until scope matches\n");
   for (const projectId of [other, null]) {
     const calls = [];
-    await assert.rejects(finishFixture(fixture, { projectId, calls }), (error) => error.details.violations.some((entry) => entry.code === "RELEASE_RECEIPT_MISMATCH" && entry.field === "gates.projectId"));
+    await assert.rejects(validateCommittedFixture(fixture, { projectId, calls }), (error) => error.details.violations.some((entry) => entry.code === "RELEASE_RECEIPT_MISMATCH" && entry.field === "gates.projectId"));
     assert.equal(calls.length, 0);
     assert.equal(await readFile(join(fixture.engineRoot, stale), "utf8"), "retain until scope matches\n");
   }
@@ -953,31 +1050,31 @@ test("SUB-544: identical project A/B declarations still bind generate and finish
   const legacy = structuredClone(receipt);
   delete legacy.gates.projectId;
   await writeFile(fixture.receiptPath, `${JSON.stringify(legacy)}\n`);
-  await assert.rejects(finishFixture(fixture), (error) => error.details.violations.some((entry) => entry.field === "gates.projectId"));
+  await assert.rejects(validateCommittedFixture(fixture), (error) => error.details.violations.some((entry) => entry.field === "gates.projectId"));
   await writeFile(fixture.receiptPath, `${JSON.stringify(receipt)}\n`);
-  const finished = await finishFixture(fixture);
-  assert.equal(finished.gates.projectId, fixture.projectId);
-  assert.equal(finished.gates.ok, true);
+  const finished = await validateCommittedFixture(fixture);
+  assert.equal(finished.receipt.gates.projectId, fixture.projectId);
+  assert.deepEqual(finished.violations, []);
 });
 
 test("SUB-544: scoped covers drift after generate refuses before finish gates and packing", async () => {
   const fixture = await scopedFixture("scope-covers-drift");
-  await generateFixture(fixture);
+  await validateGeneratedFixture(fixture);
   commitRelease(fixture, JSON.parse(await readFile(fixture.receiptPath, "utf8")));
   await setGate(fixture.workspace, { occurredAt: "2026-10-08T03:00:00Z", configurationProjectId: fixture.projectId, name: "engine:fixture", gate: { command: [process.execPath, "-e", `process.exit(process.cwd() === ${JSON.stringify(fixture.engineRoot)} ? 0 : 19)`], root: "einzbern", covers: ["src/**"], required: true, enabled: true, releaseOnly: true } });
   const calls = [];
-  await assert.rejects(finishFixture(fixture, { calls }), (error) => error.details.violations.some((entry) => entry.code === "RELEASE_RECEIPT_BASIS_CHANGED"));
+  await assert.rejects(validateCommittedFixture(fixture, { calls }), (error) => error.details.violations.some((entry) => entry.code === "RELEASE_RECEIPT_BASIS_CHANGED"));
   assert.equal(calls.length, 0);
 });
 
-test("SUB-544: legacy v1 receipt omission retains the library-default two-phase flow", async () => {
+test("SUB-544: legacy v1 receipt omission retains library-default commit validation", async () => {
   const fixture = await createReleaseFixture("scope-legacy-default");
-  await generateFixture(fixture);
+  await validateGeneratedFixture(fixture);
   const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
   delete receipt.gates.projectId;
   await writeFile(fixture.receiptPath, `${JSON.stringify(receipt)}\n`);
   commitRelease(fixture, receipt);
-  assert.equal((await finishFixture(fixture)).gates.projectId, null);
+  assert.equal((await validateCommittedFixture(fixture)).receipt.gates.projectId ?? null, null);
 });
 
 test("SUB-544: release CLI rejects invalid project scope before repository or receipt mutations", () => {
@@ -1014,4 +1111,334 @@ test("SUB-544: post-run declaration reread checks the selected project when its 
   await writeFile(script, `import { setGate } from ${JSON.stringify(module)};\nawait setGate(${JSON.stringify(fixture.workspace)}, ${JSON.stringify({ occurredAt: "2026-10-08T03:00:00Z", configurationProjectId: fixture.projectId, name: "engine:fixture", gate: changed })});\n`);
   await setGate(fixture.workspace, { occurredAt: "2026-10-08T00:00:04Z", configurationProjectId: fixture.projectId, name: "engine:fixture", gate });
   await assert.rejects(runReleaseGates({ ...fixture, env: fixture.environment, at: "2026-10-08T02:00:00Z" }), { reasonCode: "RELEASE_GATE_BASIS_CHANGED" });
+});
+
+
+test("607-R1: release work lists are canonical native sets and reject malformed members", () => {
+  const a = "work:000000000000000000000001", b = "work:000000000000000000000002";
+  assert.deepEqual(releaseWorkIds(`${b},${a},${b}`), [a, b]);
+  assert.deepEqual(releaseWorkIds(), []);
+  for (const value of ["", `${a},`, "Story-607", [a, null]]) assert.throws(() => releaseWorkIds(value), { reasonCode: "RELEASE_WORK_IDS_INVALID" });
+});
+
+test("607-R1: coordination release unwraps only the one complete native binding", () => {
+  const workIds = ["work:000000000000000000000001"];
+  const projectId = "project:000000000000000000000001", projectRoot = "/fixture/platform";
+  const plan = { projectRoot, workIds, release: true, gates: [] };
+  const binding = { projectId, projectRoot, workIds };
+  const good = { ok: true, reasonCode: "GATES_PLAN_READY", workspaceId: "workspace:fixture", version: 1, targets: [], library: [{ ...binding, ok: true, plan }] };
+  assert.deepEqual(unwrapReleaseGateResult(good, binding), { ...plan, projectId, reasonCode: good.reasonCode, workspaceId: good.workspaceId });
+  for (const bad of [
+    { ...good, targets: [{}] }, { ...good, library: [] }, { ...good, library: [...good.library, ...good.library] },
+    { ...good, library: [{ ...good.library[0], workIds: [] }] },
+    { ...good, library: [{ ...good.library[0], projectRoot: "/other" }] },
+    { ...good, library: [{ ...good.library[0], plan: { ...plan, projectRoot: "/other" } }] },
+    { ...good, library: [{ ...good.library[0], plan: { ...plan, workIds: [] } }] },
+    { ...good, ok: false },
+  ]) assert.throws(() => unwrapReleaseGateResult(bad, binding), { reasonCode: "RELEASE_GATE_BINDING_INVALID" });
+  assert.equal(unwrapReleaseGateResult(plan, { ...binding, workIds: [] }), plan, "old empty binding retains the native bare plan");
+});
+
+test("607-R1: an unbound or substituted native run cannot cover release work", async () => {
+  const workIds = ["work:000000000000000000000001"];
+  for (const actual of [undefined, [], ["work:000000000000000000000002"]]) {
+    await assert.rejects(assertReleaseGateRun({ gates: { run: { workIds: actual } }, plan: {}, tree: {}, at: "2026-10-25T00:00:00Z", workIds }), { reasonCode: "RELEASE_GATE_BINDING_INVALID" });
+  }
+});
+
+
+async function assertCorepackCacheCopy(sourceRoot, targetRoot) {
+  const [sourceEntries, targetEntries] = await Promise.all([
+    readdir(sourceRoot, { withFileTypes: true }),
+    readdir(targetRoot, { withFileTypes: true }),
+  ]);
+  sourceEntries.sort((left, right) => left.name.localeCompare(right.name));
+  targetEntries.sort((left, right) => left.name.localeCompare(right.name));
+  assert.deepEqual(targetEntries.map((entry) => entry.name), sourceEntries.map((entry) => entry.name));
+  for (const [index, sourceEntry] of sourceEntries.entries()) {
+    const source = join(sourceRoot, sourceEntry.name);
+    const target = join(targetRoot, sourceEntry.name);
+    const targetEntry = targetEntries[index];
+    if (sourceEntry.isDirectory()) {
+      assert.ok(targetEntry.isDirectory(), target);
+      await assertCorepackCacheCopy(source, target);
+    } else {
+      assert.ok(sourceEntry.isFile() && targetEntry.isFile(), `the cached pnpm runtime must contain regular files: ${source}`);
+      const [sourceBytes, targetBytes] = await Promise.all([readFile(source), readFile(target)]);
+      assert.deepEqual(targetBytes, sourceBytes, `the private Corepack cache preserves every byte of ${source}`);
+    }
+  }
+}
+
+async function materializePinnedCorepack(fixture) {
+  const sourceRoot = join(SOURCE_COREPACK_HOME, "v1", "pnpm", "11.3.0");
+  const [recordBytes, packageBytes] = await Promise.all([
+    readFile(join(sourceRoot, ".corepack")),
+    readFile(join(sourceRoot, "package.json")),
+  ]).catch((error) => {
+    throw new Error(`the complete release fixture requires genuine cached pnpm@11.3.0 at ${sourceRoot}; Corepack network access is disabled`, { cause: error });
+  });
+  const record = JSON.parse(recordBytes.toString("utf8"));
+  const packageJson = JSON.parse(packageBytes.toString("utf8"));
+  assert.deepEqual(record.locator, { name: "pnpm", reference: "11.3.0" });
+  assert.equal(record.bin.pnpm, "./bin/pnpm.mjs");
+  assert.equal(packageJson.name, "pnpm");
+  assert.equal(packageJson.version, "11.3.0");
+  assert.equal(packageJson.bin.pnpm, "bin/pnpm.mjs");
+  const corepackHome = join(fixture.environment.HOME, "release-corepack");
+  const targetRoot = join(corepackHome, "v1", "pnpm", "11.3.0");
+  await mkdir(dirname(targetRoot), { recursive: true });
+  // Copy this version's metadata and entire runtime closure, never the shared cache.
+  await cp(sourceRoot, targetRoot, { recursive: true, errorOnExist: true, force: false });
+  await assertCorepackCacheCopy(sourceRoot, targetRoot);
+  assert.deepEqual(await readFile(join(targetRoot, ".corepack")), recordBytes);
+  assert.deepEqual(await readFile(join(targetRoot, "package.json")), packageBytes);
+  return corepackHome;
+}
+
+async function materializeLockfileVerificationCache(fixture, lockContent) {
+  const sourceLockfile = await realpath(join(REPOSITORY_ROOT, "pnpm-lock.yaml"));
+  const sourceCache = join(SOURCE_PNPM_CACHE, "lockfile-verified.jsonl");
+  const [sourceContent, sourceStat, cacheContent] = await Promise.all([
+    readFile(sourceLockfile, "utf8"),
+    stat(sourceLockfile, { bigint: true }),
+    readFile(sourceCache, "utf8"),
+  ]);
+  assert.equal(sourceContent, lockContent, "the fixture retains the genuinely verified source lockfile bytes");
+  let sourceRecord;
+  for (const line of cacheContent.split("\n")) {
+    let record;
+    try { record = JSON.parse(line); } catch { continue; }
+    const lockfile = record?.lockfile;
+    // Match only this source installation's current native path/stat entry.
+    // The raw-byte comparison above establishes the same semantic lockfile;
+    // pinned pnpm still decides whether its recorded policy permits reuse.
+    if (lockfile?.path === sourceLockfile && typeof lockfile.hash === "string"
+      && lockfile.size === Number(sourceStat.size) && lockfile.mtimeNs === sourceStat.mtimeNs.toString()
+      && lockfile.inode === sourceStat.ino.toString()) sourceRecord = { line, record };
+  }
+  assert.ok(sourceRecord, `the complete release fixture requires a genuine current lockfile verification record in ${sourceCache}`);
+  const cacheDir = join(fixture.environment.HOME, "release-pnpm-cache");
+  const cachePath = join(cacheDir, "lockfile-verified.jsonl");
+  await mkdir(cacheDir, { recursive: true });
+  // Preserve one authentic record verbatim, including its timestamp and original
+  // path/stat. Native pnpm hashes the fixture and appends its own path/stat entry.
+  const recordBytes = Buffer.from(`${sourceRecord.line}\n`);
+  await writeFile(cachePath, recordBytes, { flag: "wx" });
+  assert.deepEqual(await readFile(cachePath), recordBytes);
+  return { cacheDir, cachePath, recordBytes, record: sourceRecord.record };
+}
+
+async function materializeReleaseDependencies(fixture) {
+  const [packageJson, dependencyPolicy, lockContent, modules] = await Promise.all([
+    readFile(join(fixture.engineRoot, "package.json"), "utf8").then(JSON.parse),
+    readFile(join(fixture.engineRoot, "scripts/policy/dependency-policy.json"), "utf8").then(JSON.parse),
+    readFile(join(fixture.engineRoot, "pnpm-lock.yaml"), "utf8"),
+    readFile(join(REPOSITORY_ROOT, "node_modules/.modules.yaml"), "utf8").then(JSON.parse),
+  ]);
+  assert.equal(modules.packageManager, packageJson.packageManager);
+  assert.equal(modules.packageManager, "pnpm@11.3.0");
+  const corepackHome = await materializePinnedCorepack(fixture);
+  const verificationCache = await materializeLockfileVerificationCache(fixture, lockContent);
+  assert.ok(typeof modules.storeDir === "string" && isAbsolute(modules.storeDir));
+  const sourceStore = await realpath(modules.storeDir);
+  assert.equal(basename(sourceStore), "v11");
+  const graph = validateFrozenDependencyGraph({ packageJson, dependencyPolicy, lockContent });
+  assert.ok(typeof modules.virtualStoreDir === "string" && modules.virtualStoreDir.length > 0);
+  const virtualStore = resolve(REPOSITORY_ROOT, "node_modules", modules.virtualStoreDir);
+  const packages = await Promise.all(graph.records.map(async ({ identity, integrity, name }) => ({
+    key: `${integrity}\t${identity}`,
+    root: await realpath(join(virtualStore, identity.replaceAll("/", "+"), "node_modules", name)),
+  })));
+  const materializationRoot = join(fixture.projectRoot, "release-dependency-input");
+  const inputStore = join(materializationRoot, "store", "v11");
+  const privateStore = join(fixture.environment.HOME, "release-pnpm-store");
+  await mkdir(inputStore, { recursive: true });
+  try {
+    // pnpm 11 stores opaque package-index records in SQLite. Retain only the
+    // frozen graph's exact integrity/identity keys and their verified CAS files;
+    // the source installation and its unrelated store entries remain read-only.
+    // Read a static committed index snapshot without opening a shared WAL or
+    // taking a writable SQLite connection. Missing cache inputs still fail the
+    // real offline install below; no shared installation is used by the build.
+    const copied = JSON.parse(execFileSync("python3", ["-I", "-c", String.raw`
+import hashlib, json, pathlib, sqlite3, stat, sys
+source_store, target_store = map(pathlib.Path, sys.argv[1:3])
+packages = json.loads(sys.argv[3])
+source = sqlite3.connect((source_store / "index.db").as_uri() + "?mode=ro&immutable=1", uri=True)
+target = sqlite3.connect(target_store / "index.db")
+copied = set()
+try:
+    target.execute("CREATE TABLE package_index (key TEXT PRIMARY KEY, data BLOB NOT NULL) WITHOUT ROWID")
+    for package in packages:
+        key = package["key"]
+        row = source.execute("SELECT data FROM package_index WHERE key = ?", (key,)).fetchone()
+        assert row is not None, "installed dependency store is missing " + key
+        data = row[0]
+        # Hash this exact installed package's regular files to locate its CAS
+        # inputs. Preserve the opaque index row; pnpm remains its actual decoder.
+        package_files = 0
+        for installed in sorted(pathlib.Path(package["root"]).rglob("*")):
+            assert not installed.is_symlink(), "unexpected installed package symlink: " + str(installed)
+            if installed.is_dir():
+                continue
+            assert installed.is_file(), "unexpected installed package entry: " + str(installed)
+            package_files += 1
+            content = installed.read_bytes()
+            digest = hashlib.sha512(content).hexdigest()
+            suffix = "-exec" if stat.S_IMODE(installed.stat().st_mode) & 0o111 else ""
+            path = pathlib.Path("files") / digest[:2] / (digest[2:] + suffix)
+            if str(path) in copied:
+                continue
+            input_path = source_store / path
+            assert input_path.is_file(), "installed dependency store is missing CAS file " + str(path)
+            assert input_path.read_bytes() == content, str(path)
+            output = target_store / path
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with output.open("xb") as stream:
+                stream.write(content)
+            output.chmod(stat.S_IMODE(input_path.stat().st_mode))
+            copied.add(str(path))
+        assert package_files > 0, "installed dependency package is empty: " + key
+        target.execute("INSERT INTO package_index (key, data) VALUES (?, ?)", (key, data))
+    target.commit()
+finally:
+    target.close()
+    source.close()
+print(json.dumps({"packages": len(packages), "files": len(copied)}))
+    `, sourceStore, inputStore, JSON.stringify(packages)], {
+      env: fixture.environment, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+    }));
+    assert.equal(copied.packages, graph.records.length);
+    assert.ok(copied.files > 0);
+    await createDependencyMaterialization(fixture.engineRoot, materializationRoot);
+    await populateDependencyStore(fixture.engineRoot, materializationRoot, privateStore);
+  } finally {
+    // The verified private store now owns the input; discard its temporary duplicate.
+    await rm(materializationRoot, { recursive: true, force: true });
+  }
+  fixture.environment = {
+    ...fixture.environment,
+    COREPACK_HOME: corepackHome,
+    COREPACK_ENABLE_NETWORK: "0", COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+    pnpm_config_store_dir: privateStore,
+    pnpm_config_cache_dir: verificationCache.cacheDir,
+    pnpm_config_offline: "true", pnpm_config_frozen_lockfile: "true", pnpm_config_ignore_scripts: "true",
+    pnpm_config_package_import_method: "copy",
+  };
+  execFileSync("corepack", ["pnpm@11.3.0", "--dir", fixture.engineRoot, "install", "--offline", "--frozen-lockfile", "--ignore-scripts", "--store-dir", privateStore, "--package-import-method=copy"], {
+    env: fixture.environment, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+  });
+  const installed = JSON.parse(await readFile(join(fixture.engineRoot, "node_modules/.modules.yaml"), "utf8"));
+  assert.equal(installed.packageManager, packageJson.packageManager);
+  assert.equal(await realpath(installed.storeDir), await realpath(join(privateStore, "v11")));
+  assert.notEqual(installed.storeDir, sourceStore);
+  assert.equal(await readFile(join(fixture.engineRoot, "pnpm-lock.yaml"), "utf8"), lockContent);
+  const cacheBytes = await readFile(verificationCache.cachePath);
+  assert.deepEqual(cacheBytes.subarray(0, verificationCache.recordBytes.length), verificationCache.recordBytes);
+  const fixtureLockfile = join(fixture.engineRoot, "pnpm-lock.yaml");
+  const nativeRecord = cacheBytes.toString("utf8").split("\n").filter(Boolean).map(JSON.parse)
+    .findLast((record) => record.lockfile?.path === fixtureLockfile);
+  assert.ok(nativeRecord, "native pnpm must recognize the semantic hash and append the fixture's own path/stat");
+  const fixtureStat = await stat(fixtureLockfile, { bigint: true });
+  assert.deepEqual(nativeRecord.lockfile, {
+    hash: verificationCache.record.lockfile.hash, path: fixtureLockfile,
+    size: Number(fixtureStat.size), mtimeNs: fixtureStat.mtimeNs.toString(), inode: fixtureStat.ino.toString(),
+  });
+  assert.deepEqual(nativeRecord.policy, verificationCache.record.policy);
+  assert.equal(nativeRecord.verifiedAt, verificationCache.record.verifiedAt, "reuse retains the authentic verification timestamp");
+}
+
+test("607-R2: complete generated release readiness, native multi-Story gates, pack and same-run done consumption", async () => {
+  const fixture = await createReleaseFixture("complete-native-release");
+  // One complete integration input. The receipt/commit refusal cases above remain
+  // small fixtures; only this case consumes the real source and renderers end to end.
+  const tracked = git(REPOSITORY_ROOT, ["ls-files", "-z"]).split("\0").filter(Boolean);
+  for (const path of tracked) {
+    await mkdir(dirname(join(fixture.engineRoot, path)), { recursive: true });
+    await cp(join(REPOSITORY_ROOT, path), join(fixture.engineRoot, path));
+  }
+  await cp(join(REPOSITORY_ROOT, "dist/build"), join(fixture.engineRoot, "dist/build"), { recursive: true });
+  git(fixture.engineRoot, ["rm", "-q", "--", "packages/protocol/schema-fixture.json"]);
+  await writeText(fixture.engineRoot, "CHANGELOG.md", `# Changelog\n\n## Unreleased\n\n${RELEASE_NOTES}\n\n## ${OLD_VERSION}\n\nEarlier release.\n`);
+  await commitAll(fixture.engineRoot, "complete release source input");
+  fixture.projectId = await scopedReleaseProject(fixture, "complete-native-release-project");
+  const cli = (args) => JSON.parse(execFileSync(process.execPath, [join(fixture.engineRoot, "scripts/einzbern.mjs"), ...args], { env: fixture.environment, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+  const common = ["--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", "2026-10-08T00:00:05Z"];
+  const initiative = cli(["work-create", ...common, "--external-key", "RELEASE-INIT", "--kind", "Initiative", "--title", "Release integration"]).record.id;
+  const epic = cli(["work-create", ...common, "--external-key", "RELEASE-EPIC", "--kind", "Epic", "--status", "active", "--parent-id", initiative, "--title", "Release integration"]).record.id;
+  const workIds = ["RELEASE-STORY-1", "RELEASE-STORY-2"].map((key) => cli(["work-create", ...common, "--external-key", key, "--kind", "Story", "--status", "active", "--parent-id", epic, "--title", key, "--goal", "Release package exists", "--acceptance", "GIVEN complete inputs WHEN gates pass THEN package exists"]).record.id).sort();
+  await writeText(fixture.engineRoot, "docs/releases/integration-input.md", "# Story source input\n");
+  await commitAll(fixture.engineRoot, "RELEASE-STORY-1 RELEASE-STORY-2: integration source");
+  await materializeReleaseDependencies(fixture);
+  const calls = [];
+  const runner = async (command, args, options) => {
+    calls.push({ command, args });
+    return { status: 0, stdout: execFileSync(command, args, { ...options, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }), stderr: "" };
+  };
+  const options = { ...fixture, workIds, version: NEXT_VERSION, env: fixture.environment, runner };
+  const generated = await generateRelease({ ...options, at: "2026-10-08T01:00:00Z" });
+  assert.equal(generated.reasonCode, "RELEASE_GENERATED");
+  const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+  assert.deepEqual(receipt.gates.workIds, workIds);
+  assert.deepEqual(receipt.generated.build, { reasonCode: "BUILD_VERIFIED", builtVersion: NEXT_VERSION });
+  assert.ok(receipt.generated.helperDocs.skillInstallTreeDigest);
+  commitRelease(fixture, receipt);
+  const wrongSet = await validateReleaseCommits({ ...options, workIds: [workIds[0]] });
+  assert.ok(wrongSet.violations.some((entry) => entry.code === "RELEASE_RECEIPT_MISMATCH" && entry.field === "gates.workIds"));
+  const originalReceipt = await readFile(fixture.receiptPath);
+  const legacyReceipt = structuredClone(receipt);
+  delete legacyReceipt.gates.workIds;
+  await writeFile(fixture.receiptPath, JSON.stringify(legacyReceipt));
+  const lateBinding = await validateReleaseCommits(options);
+  assert.ok(lateBinding.violations.some((entry) => entry.field === "gates.workIds"), "old receipts cannot acquire a new Story binding");
+  await writeFile(fixture.receiptPath, originalReceipt);
+  await writeText(fixture.engineRoot, `dist/release/einzbern-${OLD_VERSION}.tar.gz`, "previous formal package\n");
+  await writeText(fixture.engineRoot, `dist/release/einzbern-${OLD_VERSION}.tar.gz.sha256`, "previous digest\n");
+  const finished = await finishRelease({ ...options, at: "2026-10-08T02:00:00Z" });
+  assert.deepEqual(finished.staleReleaseArtifacts.map((move) => move.to), [`dist/stale-release/${OLD_VERSION}/einzbern-${OLD_VERSION}.tar.gz`, `dist/stale-release/${OLD_VERSION}/einzbern-${OLD_VERSION}.tar.gz.sha256`]);
+  assert.deepEqual((await readdir(join(fixture.engineRoot, "dist/release"))).sort(), [`einzbern-${NEXT_VERSION}.tar.gz`, `einzbern-${NEXT_VERSION}.tar.gz.sha256`]);
+  assert.equal(finished.gates.ok, true);
+  assert.deepEqual(finished.gates.selected, ["engine:fixture", "helper:fixture"]);
+  assert.equal(finished.check, "RELEASE_VERSION_CHECKED");
+  assert.equal(await readFile(finished.assets.checksum, "utf8"), `${finished.assets.sha256}  einzbern-${NEXT_VERSION}.tar.gz\n`);
+  assert.ok(calls.some((call) => call.args[0]?.endsWith("pack-release.mjs")));
+
+  assert.equal(finished.readiness.reasonCode, "RELEASE_READINESS_READY");
+  assert.ok(finished.readiness.checks.every((check) => check.status === "verified"));
+  assert.equal(finished.reasonCode, "RELEASE_FINISHED");
+  assert.ok((await readFile(finished.assets.archive)).length > 0);
+  const saved = JSON.parse(await readFile(finished.gates.recordPath, "utf8"));
+  assert.deepEqual(saved.workIds, workIds);
+  assert.equal(saved.gates.length, 2);
+  assert.ok(saved.gates.every((gate) => gate.ok && gate.matchedWorkIds.length === 2));
+  const bound = await checkReleaseGatePlan({ ...options });
+  assert.equal(saved.treeDigest, (await gateTreeState(fixture.projectRoot, bound.plan.roots)).treeDigest);
+  const countBefore = (await readdir(dirname(finished.gates.recordPath))).filter((name) => name.endsWith(".json")).length;
+  for (const id of workIds) {
+    const done = cli(["work-transition", "--workspace", fixture.workspace, "--at", "2026-10-08T03:00:00Z", "--id", id, "--status", "done", "--project", fixture.projectRoot]);
+    assert.equal(done.doneGates.runId, saved.runId);
+  }
+  assert.equal((await readdir(dirname(finished.gates.recordPath))).filter((name) => name.endsWith(".json")).length, countBefore, "done consumes the same saved run without another gate execution");
+  assert.equal(calls.filter((call) => call.command === "corepack").length, 1, "one real pinned build");
+  assert.deepEqual(calls.find((call) => call.command === "corepack").args, pinnedBuildArguments(fixture.engineRoot));
+  assert.equal(calls.filter((call) => call.args[0]?.endsWith("pack-release.mjs")).length, 1);
+  const buildIndex = calls.findIndex((call) => call.command === "corepack");
+  const renderIndex = calls.findIndex((call) => call.args[0]?.endsWith("render-helper-docs.mjs"));
+  const packIndex = calls.findIndex((call) => call.args[0]?.endsWith("pack-release.mjs"));
+  assert.ok(buildIndex >= 0 && renderIndex > buildIndex && packIndex > renderIndex);
+});
+
+
+test("607-R2: release helper rejects unbound engine and helper changes made during native gates", async () => {
+  for (const rootName of ["engineRoot", "helperRoot"]) {
+    const fixture = await scopedFixture(`full-tree-drift-${rootName}`);
+    const target = join(fixture[rootName], "not-bound-to-any-Story.txt");
+    await setGate(fixture.workspace, {
+      occurredAt: "2026-10-08T00:00:04Z", configurationProjectId: fixture.projectId, name: "engine:fixture",
+      gate: { command: [process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(target)}, 'changed\\n')`], root: "einzbern", covers: ["**"], required: true, enabled: true, releaseOnly: true },
+    });
+    await assert.rejects(runReleaseGates({ ...fixture, env: fixture.environment, at: "2026-10-08T02:00:00Z" }), { reasonCode: "RELEASE_GATE_BASIS_CHANGED" });
+    assert.equal(await readFile(target, "utf8"), "changed\n");
+  }
 });

@@ -20,8 +20,8 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // `files`, each one's content digest. A commit or a file another process makes elsewhere in the
 // project leaves such a run standing; a change to the content of one of the Story's files does not,
 // committed or not. When those commits touched no file under any root (Q1), the run is taken as one
-// made without keys, so its digest is never a constant. A run made without keys, a release run among
-// them, records each root's HEAD and the digest of every changed and untracked file, as before. The
+// made without keys, so its digest is never a constant. A non-release run made without keys, and every release run even with Story keys,
+// records each root's HEAD and the digest of every changed and untracked file, as before. The
 // done check reads the recorded files again and compares their digests.
 //
 // TCRN-CROSS-STORY-537 (MIN-257 D6; TCRN-CROSS-SUB-487): a gate can see what the same run has already
@@ -366,7 +366,7 @@ export async function runGates(plan: GatesPlan, options: {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > RUNTIME_CAPACITY.timerMilliseconds) fail("a gate timeout must fit the native timer and be at least 100 milliseconds", { timeoutMs: String(timeoutMs) });
   if (!Number.isSafeInteger(outputBytes) || outputBytes < 1_024 || outputBytes > RUNTIME_CAPACITY.bufferBytes) fail("a gate's output budget must fit the runtime buffer and be at least 1024 bytes", { outputBytes: String(outputBytes) });
   const directory = gateRunsDirectory(options.libraryId, options.deviceHome);
-  const tree = await gateTreeState(plan.projectRoot, plan.roots, plan.subjectKeys === undefined ? {} : { keys: plan.subjectKeys });
+  const tree = await gateTreeState(plan.projectRoot, plan.roots, plan.release || plan.subjectKeys === undefined ? {} : { keys: plan.subjectKeys });
   const runId = `${utcStamp(options.at)}-${canonicalSha256({
     projectRoot: plan.projectRoot,
     at: options.at,

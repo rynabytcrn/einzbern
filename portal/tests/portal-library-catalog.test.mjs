@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: Apache-2.0
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { CLI, cli, scratch, rm, readBoot, readOptions, request } from "./portal-support.mjs";
+import { portalFixture } from "./helpers/portal-fixture.mjs";
+import { execFileSync } from "node:child_process";
+
+const portal = fileURLToPath(new URL("../portal.mjs", import.meta.url));
+const worker = fileURLToPath(new URL("../../scripts/library-catalog-worker.mjs", import.meta.url));
+const at = "2026-10-25T00:00:00Z";
+
+for (const explicit of [false, true]) test(`catalog reads real shared-library registrations and fresh metadata (${explicit ? "explicit bundled" : "default"})`, async t => {
+  const fixture = await scratch("catalog-real-", `CATALOG-${explicit}`);
+  const server = await portalFixture(t, "catalog-server-");
+  t.after(async () => { await server.cleanup(); await rm(fixture.base, { recursive: true, force: true }); });
+  const trace = join(server.base, "processes.jsonl"), observer = join(server.base, "observe.mjs");
+  await writeFile(observer, 'import { appendFileSync } from "node:fs"; appendFileSync(process.env.CATALOG_TRACE, JSON.stringify({pid:process.pid,argv:process.argv})+"\\n");\n');
+  const env = { ...process.env, ...fixture.deviceEnv, TCRN_PORTAL_ACTOR: "agent:test-catalog", CATALOG_TRACE: trace, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${observer}` };
+  if (explicit) env.TCRN_WORKFLOW_CLI = CLI;
+  else delete env.TCRN_WORKFLOW_CLI;
+  const { url } = await server.start([portal, "--library", fixture.workspace, "--port", "0"], { env });
+  const { boot } = await readBoot(url);
+  const before = (await request(url, "/api/libraries", readOptions(boot.token))).body.libraries;
+  assert.equal(before.length, 2);
+  const created = await cli(["project-create", "--workspace", fixture.workspace, "--external-key", "SHARED", "--name", "Shared project", "--at", at], fixture.deviceEnv);
+  const sharedProject = join(fixture.base, "shared-project");
+  await mkdir(sharedProject);
+  await cli(["library-register", "--project", sharedProject, "--library", fixture.workspace, "--project-id", created.record.id, "--at", at], fixture.deviceEnv);
+  await cli(["project-update", "--workspace", fixture.workspace, "--id", fixture.projectId, "--name", "Fresh name", "--at", at], fixture.deviceEnv);
+  const after = (await request(url, "/api/libraries", readOptions(boot.token))).body.libraries;
+  assert.equal(after.length, 3);
+  assert.equal(after.find(entry => entry.projectId === fixture.projectId).name, "Fresh name");
+  assert.equal(after.find(entry => entry.projectId === created.record.id).name, "Shared project");
+  assert.equal(after.filter(entry => entry.libraryPath === fixture.workspace).length, 2);
+  const processes = (await readFile(trace, "utf8")).trim().split("\n").map(JSON.parse);
+  const workers = processes.filter(entry => entry.argv[1] === worker);
+  assert.ok(workers.length >= 3, "startup and each catalog read use fresh workers");
+  assert.equal(new Set(workers.map(entry => entry.pid)).size, workers.length);
+  assert.equal(processes.filter(entry => entry.argv[1] === CLI && ["library-list", "project-list", "chain-identity"].includes(entry.argv[2])).length, 0);
+  await rename(fixture.workspace, `${fixture.workspace}-original`);
+  await cli(["init", "--workspace", fixture.workspace, "--project-name", "Wrong identity", "--at", at], fixture.deviceEnv);
+  const refusedRefresh = (await request(url, "/api/libraries", readOptions(boot.token))).body.libraries;
+  assert.deepEqual(refusedRefresh, after, "identity mismatch keeps the last good catalog");
+});
+
+test("worker keeps real missing-library degradation and rejects a replaced library identity", async t => {
+  const fixture = await scratch("catalog-errors-", "CATALOG-ERRORS");
+  t.after(() => rm(fixture.base, { recursive: true, force: true }));
+  const read = () => JSON.parse(execFileSync(process.execPath, [worker], { env: { ...process.env, ...fixture.deviceEnv }, encoding: "utf8" }));
+  const original = read();
+  assert.equal(original.ok, true);
+  assert.equal(original.entries.length, 2);
+  await rename(fixture.workspace, `${fixture.workspace}-aside`);
+  const absent = read();
+  assert.equal(absent.ok, true);
+  const entry = absent.entries.find(entry => entry.libraryPath === fixture.workspace);
+  assert.equal(entry.name, null);
+  assert.equal(entry.chain, null);
+  await cli(["init", "--workspace", fixture.workspace, "--project-name", "Replacement", "--at", at], fixture.deviceEnv);
+  const replaced = read();
+  assert.equal(replaced.ok, false);
+  assert.equal(replaced.reasonCode, "PORTAL_LIBRARY_IDENTITY_MISMATCH");
+  assert.equal(replaced.detail.expected, original.entries.find(entry => entry.libraryPath === fixture.workspace).libraryId);
+  assert.notEqual(replaced.detail.expected, replaced.detail.actual);
+});
+
+test("external wrapper retains per-command stderr behavior and failed refresh keeps the previous catalog", async t => {
+  const fixture = await scratch("catalog-wrapper-", "CATALOG-WRAPPER");
+  const server = await portalFixture(t, "catalog-wrapper-server-");
+  t.after(async () => { await server.cleanup(); await rm(fixture.base, { recursive: true, force: true }); });
+  const wrapper = join(server.base, "wrapper.mjs"), marker = join(server.base, "fail"), log = join(server.base, "calls.jsonl");
+  await writeFile(wrapper, `import { spawnSync } from "node:child_process";
+import { existsSync, appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(log)}, JSON.stringify(args)+"\\n");
+if (args[0] === "library-list" && existsSync(${JSON.stringify(marker)})) args.push("--invalid-catalog-input");
+const run = spawnSync(process.execPath, [${JSON.stringify(CLI)}, ...args], { encoding: "utf8" });
+process.stdout.write(run.stdout ?? ""); process.stderr.write((run.stderr ?? "") + "wrapper stderr\\n"); process.exitCode = run.status ?? 1;
+`);
+  const { url } = await server.start([portal, "--library", fixture.workspace, "--port", "0"], { env: { ...process.env, ...fixture.deviceEnv, TCRN_PORTAL_ACTOR: "agent:test-catalog", TCRN_WORKFLOW_CLI: wrapper } });
+  const { boot } = await readBoot(url);
+  const before = (await request(url, "/api/libraries", readOptions(boot.token))).body.libraries;
+  assert.equal(before.length, 2);
+  await writeFile(marker, "fail catalog input\n");
+  const after = (await request(url, "/api/libraries", readOptions(boot.token))).body.libraries;
+  assert.deepEqual(after, before);
+  const calls = (await readFile(log, "utf8")).trim().split("\n").map(JSON.parse);
+  assert.ok(calls.filter(args => args[0] === "library-list").length >= 3);
+  assert.ok(calls.filter(args => args[0] === "project-list").length >= 4);
+  assert.ok(calls.filter(args => args[0] === "chain-identity").length >= 4);
+});

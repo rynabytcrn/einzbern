@@ -7,6 +7,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { README_NAMES, renderReadmes } from "../render-readme.mjs";
+import { checkReleaseReadiness } from "./release-readiness.mjs";
 import { canonicalJson } from "./canonical-json.mjs";
 import { assertReleaseCommitShape } from "./release-tag-gate.mjs";
 
@@ -288,6 +289,29 @@ function parseCommandJson(result, label) {
   }
 }
 
+// pnpm's NDJSON reporter wraps piped lifecycle stdout in pnpm:lifecycle records;
+// its final record is the lifecycle exit, rather than the script's JSON result.
+export function parseReleaseBuildResult(result, engineRoot) {
+  if (result.status !== 0) parseCommandJson(result, "build");
+  let events;
+  try {
+    events = result.stdout.split("\n").filter((line) => line.trim() !== "").map((line) => JSON.parse(line));
+  } catch (error) {
+    refuse("RELEASE_STEP_FAILED", "build did not return pnpm NDJSON records", { step: "build", stderr: result.stderr.trim(), stdout: result.stdout.trim(), error: String(error?.message ?? error) });
+  }
+  const lifecycle = events.filter((event) => isRecord(event) && event.name === "pnpm:lifecycle" && event.stage === "build" && event.depPath === engineRoot && event.wd === engineRoot);
+  const exits = lifecycle.filter((event) => Object.hasOwn(event, "exitCode"));
+  if (exits.length !== 1 || exits[0].exitCode !== 0) {
+    refuse("RELEASE_STEP_FAILED", "the engine-root build did not report one successful lifecycle exit", { step: "build", stderr: result.stderr.trim(), stdout: result.stdout.trim() });
+  }
+  const stdout = lifecycle.filter((event) => event.stdio === "stdout" && typeof event.line === "string").map((event) => event.line).join("\n");
+  const build = parseCommandJson({ ...result, stdout }, "build");
+  if (!isRecord(build) || build.ok !== true || build.reasonCode !== "BUILD_VERIFIED") {
+    refuse("RELEASE_BUILD_FAILED", "the release build did not report BUILD_VERIFIED", { build });
+  }
+  return build;
+}
+
 function writeResult(command, args, { cwd, env, runner } = {}) {
   return runner ? runner(command, args, { cwd, env }) : run(command, args, { cwd, env });
 }
@@ -310,9 +334,39 @@ function releaseProjectId(projectId) {
   return projectId;
 }
 
+/** The native CLI accepts a comma-separated list; release binds its canonical set. */
+export function releaseWorkIds(value = []) {
+  const ids = typeof value === "string" ? value.split(",").map((id) => id.trim()) : value;
+  if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string" || !/^work:[a-f0-9]{24}$/u.test(id))) {
+    refuse("RELEASE_WORK_IDS_INVALID", "workIds must contain native work identifiers", { workIds: value });
+  }
+  return [...new Set(ids)].sort();
+}
+
+function sameWorkIds(actual, expected) {
+  return Array.isArray(actual) && actual.length === new Set(actual).size && canonicalJson([...actual].sort()) === canonicalJson(expected);
+}
+
+// Coordination-only work is returned in library[], not in the development targets.
+export function unwrapReleaseGateResult(result, { projectRoot, projectId, workIds, run: executed = false }) {
+  if (workIds.length === 0) return result;
+  if (!isRecord(result) || typeof result.workspaceId !== "string" || !Number.isSafeInteger(result.version)) refuse("RELEASE_GATE_BINDING_INVALID", "native library result lacks library/version identity", { result });
+  if (!Array.isArray(result?.library) || result.library.length !== 1 || !Array.isArray(result.targets) || result.targets.length !== 0 || result.ok !== true) {
+    refuse("RELEASE_GATE_BINDING_INVALID", "release requires one library result and no unhandled development targets", { result });
+  }
+  const selected = result.library[0];
+  if (selected.ok !== true || selected.projectRoot !== projectRoot || (projectId !== null && selected.projectId !== projectId) || !sameWorkIds(selected.workIds, workIds)) {
+    refuse("RELEASE_GATE_BINDING_INVALID", "the native library result differs from the release work binding", { selected });
+  }
+  if (executed) return { ...selected, reasonCode: result.reasonCode, workspaceId: result.workspaceId, version: result.version };
+  if (!isRecord(selected.plan) || selected.plan.projectRoot !== projectRoot || (selected.plan.workspaceId !== undefined && selected.plan.workspaceId !== result.workspaceId) || !sameWorkIds(selected.plan.workIds, workIds)) refuse("RELEASE_GATE_BINDING_INVALID", "the library plan does not cover the bound work", { selected });
+  return { ...selected.plan, reasonCode: result.reasonCode, workspaceId: result.workspaceId, projectRoot: selected.projectRoot, projectId: selected.projectId };
+}
+
 /** Read the actual CLI's release plan and its registered roots; never create a release library. */
-export async function checkReleaseGatePlan({ engineRoot, helperRoot, workspace, projectRoot, projectId = null, env = process.env }) {
+export async function checkReleaseGatePlan({ engineRoot, helperRoot, workspace, projectRoot, projectId = null, workIds = [], env = process.env }) {
   projectId = releaseProjectId(projectId);
+  workIds = releaseWorkIds(workIds);
   if (typeof projectRoot !== "string" || projectRoot.length === 0) {
     refuse("RELEASE_PROJECT_REQUIRED", "prepare needs the explicitly registered project for release gates");
   }
@@ -325,11 +379,21 @@ export async function checkReleaseGatePlan({ engineRoot, helperRoot, workspace, 
   if (sources.some((root) => !inside(project, root))) {
     refuse("RELEASE_GATE_ROOT_MISMATCH", "the registered gate project must contain the engine and helper release trees", { project, sources });
   }
+  const workProjects = new Set();
+  for (const id of workIds) {
+    const work = releaseCli(engineRoot, ["work-show", "--workspace", library, "--id", id], env);
+    if (work.record?.id !== id || work.record.kind !== "Story" || work.record.tombstone === true || (projectId !== null && work.record.projectId !== projectId)) {
+      refuse("RELEASE_WORK_BINDING_INVALID", "release work binding requires existing Stories in the selected project", { id, record: work.record });
+    }
+    workProjects.add(work.record.projectId ?? null);
+  }
+  if (workProjects.size > 1) refuse("RELEASE_WORK_BINDING_INVALID", "release work must share one native library project", { projectIds: [...workProjects] });
+  if (projectId === null && workProjects.size === 1) projectId = [...workProjects][0];
   const registry = releaseCli(engineRoot, ["library-list"], env);
   const entry = registry.entries?.find((candidate) => candidate.projectPath === project && candidate.libraryPath === library);
   if (entry === undefined) refuse("RELEASE_GATE_REGISTRY_MISMATCH", "the explicit project and library are not registered together on this device", { project, workspace: library });
-  const scope = projectId === null ? [] : ["--project-id", projectId];
-  const declared = releaseCli(engineRoot, ["gates-config-list", "--workspace", library, ...scope], env);
+  const scope = [...(projectId === null ? [] : ["--project-id", projectId]), ...(workIds.length === 0 ? [] : ["--work-id", workIds.join(",")])];
+  const declared = releaseCli(engineRoot, ["gates-config-list", "--workspace", library, ...(projectId === null ? [] : ["--project-id", projectId])], env);
   if (declared.truncated !== false || !Array.isArray(declared.records) || declared.records.length !== declared.total) {
     refuse("RELEASE_GATE_DECLARATIONS_INVALID", "release needs the complete gate declaration list", { declared });
   }
@@ -337,8 +401,8 @@ export async function checkReleaseGatePlan({ engineRoot, helperRoot, workspace, 
   if (declared.records.length === 0) refuse("RELEASE_GATE_DECLARATIONS_EMPTY", "a release cannot pass without declared gates");
   const enabled = declared.records.filter((gate) => gate.enabled);
   if (!enabled.some((gate) => gate.required)) refuse("RELEASE_REQUIRED_GATES_MISSING", "a release needs enabled required gates");
-  const plan = releaseCli(engineRoot, ["gates-plan", "--workspace", library, "--project", project, ...scope, "--release", "true"], env);
-  if (plan.reasonCode !== "GATES_PLAN_READY" || plan.workspaceId !== entry.libraryId || plan.projectRoot !== project || plan.release !== true || !Array.isArray(plan.gates)) {
+  const plan = unwrapReleaseGateResult(releaseCli(engineRoot, ["gates-plan", "--workspace", library, "--project", project, ...scope, "--release", "true"], env), { projectRoot: project, projectId, workIds });
+  if (plan.reasonCode !== "GATES_PLAN_READY" || plan.workspaceId !== entry.libraryId || plan.projectRoot !== project || plan.release !== true || !Array.isArray(plan.gates) || (plan.unknownGates?.length ?? 0) > 0) {
     refuse("RELEASE_GATE_PLAN_INVALID", "the release plan does not bind the explicit project and library", { plan });
   }
   const { gateDeclarationsDigest, resolveGateRoot } = await builtReleaseModule(engineRoot, "packages/core/src/gates-plan.js");
@@ -355,17 +419,22 @@ export async function checkReleaseGatePlan({ engineRoot, helperRoot, workspace, 
   for (const source of sources) {
     if (!roots.includes(source)) refuse("RELEASE_REQUIRED_GATES_MISSING", "each release repository needs a required gate on that exact tree", { source, roots });
   }
-  return { plan, workspace: library, projectRoot: project, projectId };
+  return { plan, workspace: library, projectRoot: project, projectId: plan.projectId ?? projectId, workIds };
 }
 
 /** Validate the saved native run against its real selection, declarations and tree. */
-export async function assertReleaseGateRun({ gates, plan, tree, at, projectId = null }) {
+export async function assertReleaseGateRun({ gates, plan, tree, at, projectId = null, workIds = [] }) {
+  workIds = releaseWorkIds(workIds);
   const result = gates?.run;
+  if (!sameWorkIds(result?.workIds ?? [], workIds)) refuse("RELEASE_GATE_BINDING_INVALID", "the saved run does not cover the bound work", { workIds, actual: result?.workIds });
   if (gates?.reasonCode !== "GATES_RUN_COMPLETED" || !isRecord(result) || result.schemaVersion !== "einzbern.gate-run.v1" || (result.projectId ?? null) !== releaseProjectId(projectId) || result.libraryId !== plan.workspaceId || gates.workspaceId !== plan.workspaceId || result.release !== true || result.at !== at || result.declarationsDigest !== plan.declarationsDigest || result.treeDigest !== tree.treeDigest || canonicalJson(result.trees) !== canonicalJson(tree.trees) || !Array.isArray(result.gates)) {
     refuse("RELEASE_GATE_RUN_INVALID", "the release run does not bind the actual selected tree and declarations", { gates });
   }
   if (result.gates.length !== plan.gates.length || result.gates.some((gate, index) => gate.name !== plan.gates[index].name || gate.root !== plan.gates[index].root || gate.required !== plan.gates[index].required)) {
     refuse("RELEASE_GATE_EXECUTION_MISMATCH", "every selected release gate must execute exactly once", { gates });
+  }
+  if (workIds.length > 0 && result.gates.some((gate, index) => !sameWorkIds(gate.matchedWorkIds, [...(plan.gates[index].matchedWorkIds ?? [])].sort()))) {
+    refuse("RELEASE_GATE_BINDING_INVALID", "per-gate Story coverage differs from the selected plan", { gates });
   }
   const reds = result.gates.filter((gate) => gate.ok !== true || gate.exitCode !== 0 || gate.signal !== null || gate.timedOut !== false).map((gate) => gate.name);
   if (gates.ok !== true || reds.length > 0 || JSON.stringify(gates.reds) !== "[]" || JSON.stringify(gates.requiredReds) !== "[]" || JSON.stringify(result.reds) !== "[]") {
@@ -376,14 +445,15 @@ export async function assertReleaseGateRun({ gates, plan, tree, at, projectId = 
   return gates;
 }
 
-export async function runReleaseGates({ engineRoot, helperRoot, workspace, projectRoot, projectId = null, env = process.env, at = utcNow() }) {
+export async function runReleaseGates({ engineRoot, helperRoot, workspace, projectRoot, projectId = null, workIds = [], env = process.env, at = utcNow() }) {
   projectId = releaseProjectId(projectId);
-  const bound = await checkReleaseGatePlan({ engineRoot, helperRoot, workspace, projectRoot, projectId, env });
+  workIds = releaseWorkIds(workIds);
+  const bound = await checkReleaseGatePlan({ engineRoot, helperRoot, workspace, projectRoot, projectId, workIds, env });
   const { gateTreeState } = await builtReleaseModule(engineRoot, "packages/core/src/gates-run.js");
   const tree = await gateTreeState(bound.projectRoot, bound.plan.roots);
-  const gates = releaseCli(engineRoot, ["gates-run", "--workspace", bound.workspace, "--project", bound.projectRoot, ...(bound.projectId === null ? [] : ["--project-id", bound.projectId]), "--release", "true", "--at", at], env);
-  await assertReleaseGateRun({ gates, plan: bound.plan, tree, at, projectId: bound.projectId });
-  const after = await checkReleaseGatePlan({ engineRoot, helperRoot, workspace, projectRoot, projectId, env });
+  const gates = unwrapReleaseGateResult(releaseCli(engineRoot, ["gates-run", "--workspace", bound.workspace, "--project", bound.projectRoot, ...(bound.projectId === null ? [] : ["--project-id", bound.projectId]), ...(workIds.length === 0 ? [] : ["--work-id", workIds.join(",")]), "--release", "true", "--at", at], env), { projectRoot: bound.projectRoot, projectId: bound.projectId, workIds, run: true });
+  await assertReleaseGateRun({ gates, plan: bound.plan, tree, at, projectId: bound.projectId, workIds });
+  const after = await checkReleaseGatePlan({ engineRoot, helperRoot, workspace, projectRoot, projectId, workIds, env });
   const afterTree = await gateTreeState(bound.projectRoot, after.plan.roots);
   if (after.plan.declarationsDigest !== bound.plan.declarationsDigest || afterTree.treeDigest !== tree.treeDigest) {
     refuse("RELEASE_GATE_BASIS_CHANGED", "the release tree or declarations changed during the gate run", { before: tree.treeDigest, after: afterTree.treeDigest });
@@ -539,8 +609,9 @@ async function writeReleaseVersion({ engineRoot, version, state, changelog }) {
 }
 
 async function buildReleaseTree({ engineRoot, version, env, runner }) {
-  const build = parseCommandJson(await writeResult("corepack", ["pnpm@11.3.0", "--dir", engineRoot, "run", "build"], { cwd: engineRoot, env, runner }), "build");
-  if (build.ok === false) refuse("RELEASE_BUILD_FAILED", "the release build reported failure", { build });
+  // pnpm 11.3.0's ordinary single-script run inherits stdio. Recursive --stream
+  // pipes even one selected package; the name and cwd select this root alone.
+  const build = parseReleaseBuildResult(await writeResult("corepack", ["pnpm@11.3.0", "--dir", engineRoot, "--recursive", "--filter", `${ENGINE_PACKAGE_NAME}{.}`, "--fail-if-no-match", "--reporter=ndjson", "run", "--stream", "build"], { cwd: engineRoot, env, runner }), engineRoot);
   const rebuilt = await releaseFrameworkVersions(engineRoot);
   mismatchError(version, [versionMismatch(version, FRAMEWORK_VERSION_BUILT, rebuilt.builtVersion)].filter(Boolean));
   return { reasonCode: build.reasonCode ?? null, builtVersion: rebuilt.builtVersion };
@@ -567,11 +638,12 @@ async function packRelease({ engineRoot, version, env, runner }) {
 }
 
 function gateSummary(gates) {
-  return { projectId: gates.run.projectId ?? null, reasonCode: gates.reasonCode, ok: gates.ok, reds: gates.reds, selected: gates.run.gates.map((gate) => gate.name), treeDigest: gates.run.treeDigest, declarationsDigest: gates.run.declarationsDigest, recordPath: gates.recordPath };
+  return { projectId: gates.run.projectId ?? null, workIds: gates.run.workIds, reasonCode: gates.reasonCode, ok: gates.ok, reds: gates.reds, selected: gates.run.gates.map((gate) => gate.name), treeDigest: gates.run.treeDigest, declarationsDigest: gates.run.declarationsDigest, recordPath: gates.recordPath };
 }
 
-export async function prepareRelease({ engineRoot, helperRoot, version, workspace = null, projectRoot = null, projectId = null, env = process.env, runner = null, at = utcNow() }) {
+export async function prepareRelease({ engineRoot, helperRoot, version, workspace = null, projectRoot = null, projectId = null, workIds = [], env = process.env, runner = null, at = utcNow() }) {
   projectId = releaseProjectId(projectId);
+  workIds = releaseWorkIds(workIds);
   if (typeof version !== "string" || !RELEASE_VERSION_SHAPE.test(version)) {
     refuse("RELEASE_VERSION_INVALID", `${String(version)} is not a stable release version`, { version: String(version) });
   }
@@ -583,7 +655,7 @@ export async function prepareRelease({ engineRoot, helperRoot, version, workspac
   ensureSeparateRepositories(engine.root, helper.root);
   // Read the existing declaration and registry before changing either release tree. These reads
   // and the actual gate process bypass a test runner: a synthetic ok cannot prove a release.
-  await checkReleaseGatePlan({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, env });
+  await checkReleaseGatePlan({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, workIds, env });
 
   const state = await currentReleaseState(engine.root);
   const changelog = await cutReleaseChangelog(engine.root, version);
@@ -592,7 +664,7 @@ export async function prepareRelease({ engineRoot, helperRoot, version, workspac
   await renderEngineReadmes({ engineRoot: engine.root, version, env, runner });
   const helperDocs = await renderHelperTree({ engineRoot: engine.root, helperRoot: helper.root, version, env, runner });
 
-  const gates = await runReleaseGates({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, env, at });
+  const gates = await runReleaseGates({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, workIds, env, at });
 
   const assets = await packRelease({ engineRoot: engine.root, version, env, runner });
   const checked = await checkRelease({ engineRoot: engine.root, helperRoot: helper.root, version, env });
@@ -753,8 +825,9 @@ async function checkCliReference({ engineRoot, env, runner }) {
   return { checked: true, changed: true };
 }
 
-export async function generateRelease({ engineRoot, helperRoot, version, workspace = null, projectRoot = null, projectId = null, receiptPath = null, keepExtra = [], env = process.env, runner = null, at = utcNow() }) {
+export async function planReleaseGeneration({ engineRoot, helperRoot, version, workspace = null, projectRoot = null, projectId = null, workIds = [], receiptPath = null, keepExtra = [], env = process.env, runner = null, at = utcNow() }) {
   projectId = releaseProjectId(projectId);
+  workIds = releaseWorkIds(workIds);
   if (typeof version !== "string" || !RELEASE_VERSION_SHAPE.test(version)) {
     refuse("RELEASE_VERSION_INVALID", `${String(version)} is not a stable release version`, { version: String(version) });
   }
@@ -774,19 +847,27 @@ export async function generateRelease({ engineRoot, helperRoot, version, workspa
   if (await lstat(join(engine.root, ...notePath.split("/"))).then(() => true, () => false)) {
     before.push({ code: "RELEASE_NOTE_EXISTS", path: notePath, message: "the release note of this version already exists" });
   }
-  const bound = await collect(before, () => checkReleaseGatePlan({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, env }));
+  const bound = await collect(before, () => checkReleaseGatePlan({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, workIds, env }));
   const state = await collect(before, () => currentReleaseState(engine.root));
   const changelog = await collect(before, () => cutReleaseChangelog(engine.root, version));
   refuseViolations(before, "release generation preconditions failed; neither tree was changed");
   const heads = { engine: git(engine.root, ["rev-parse", "HEAD"], env), helper: git(helper.root, ["rev-parse", "HEAD"], env) };
 
-  await writeReleaseVersion({ engineRoot: engine.root, version, state, changelog });
-  await mkdir(join(engine.root, ...RELEASE_NOTE_DIRECTORY.split("/")), { recursive: true });
-  await writeFile(join(engine.root, ...notePath.split("/")), `# Einzbern ${version}\n\n${releaseNoteContent(changelogSection(changelog.nextChangelog, version))}\n`, { flag: "wx" });
-  const build = await buildReleaseTree({ engineRoot: engine.root, version, env, runner });
-  const readme = await renderEngineReadmes({ engineRoot: engine.root, version, env, runner });
-  const cliReference = await checkCliReference({ engineRoot: engine.root, env, runner });
-  const helperDocs = await renderHelperTree({ engineRoot: engine.root, helperRoot: helper.root, version, env, runner });
+  const edits = [];
+  for (const path of state.packagePaths) {
+    const manifest = await readJson(path);
+    edits.push({ path, content: `${JSON.stringify({ ...manifest, version }, null, 2)}\n` });
+  }
+  const { framework } = state;
+  const declaration = framework.declaration;
+  edits.push({ path: join(engine.root, FRAMEWORK_VERSION_SOURCE), content: `${framework.source.slice(0, declaration.index)}${declaration[0].replace(`"${declaration[1]}"`, `"${version}"`)}${framework.source.slice(declaration.index + declaration[0].length)}` });
+  edits.push({ path: changelog.changelogPath, content: changelog.nextChangelog });
+  edits.push({ path: join(engine.root, notePath), content: `# Einzbern ${version}\n\n${releaseNoteContent(changelogSection(changelog.nextChangelog, version))}\n` });
+  return { engine, helper, receipt, bound, heads, kept, notePath, edits };
+}
+
+// Read-only validation boundary: does not write a receipt, run gates or pack.
+export async function validateReleaseGeneration({ engine, helper, version, bound, heads, kept, notePath, build, readme, cliReference, helperDocs, env = process.env, at }) {
   if (!Array.isArray(helperDocs.files) || !Array.isArray(helperDocs.extraFiles)) {
     refuse("RELEASE_HELPER_RENDER_FAILED", "render-helper-docs did not list its generated and extra files", { helperDocs });
   }
@@ -829,7 +910,7 @@ export async function generateRelease({ engineRoot, helperRoot, version, workspa
       keptExtraFiles,
       removeFiles,
     },
-    gates: { projectId: bound.projectId, workspace: bound.workspace, projectRoot: bound.projectRoot, libraryId: bound.plan.workspaceId, declarationsDigest: bound.plan.declarationsDigest },
+    gates: { workIds: bound.workIds, projectId: bound.projectId, workspace: bound.workspace, projectRoot: bound.projectRoot, libraryId: bound.plan.workspaceId, declarationsDigest: bound.plan.declarationsDigest },
     generated: {
       releaseNote: notePath,
       build,
@@ -839,6 +920,24 @@ export async function generateRelease({ engineRoot, helperRoot, version, workspa
       commitShape,
     },
   };
+  return document;
+}
+
+export async function generateRelease(options) {
+  const { version, env = process.env, runner = null, at = utcNow() } = options;
+  const planned = await planReleaseGeneration({ ...options, at });
+  const { engine, helper, receipt } = planned;
+  for (const edit of planned.edits) {
+    await mkdir(dirname(edit.path), { recursive: true });
+    await writeFile(edit.path, edit.content, edit.path === join(engine.root, planned.notePath) ? { flag: "wx" } : undefined);
+  }
+  const build = await buildReleaseTree({ engineRoot: engine.root, version, env, runner });
+  const readme = await renderEngineReadmes({ engineRoot: engine.root, version, env, runner });
+  const cliReference = await checkCliReference({ engineRoot: engine.root, env, runner });
+  const helperDocs = await renderHelperTree({ engineRoot: engine.root, helperRoot: helper.root, version, env, runner });
+  const document = await validateReleaseGeneration({ ...planned, version, build, readme, cliReference, helperDocs, env, at });
+  const readiness = await checkReleaseReadiness({ engineRoot: engine.root, helperRoot: helper.root, version, receipt: document, env });
+  refuseViolations(readiness.violations, "release generation readiness failed; generated changes remain uncommitted");
   await writeFile(receipt, `${JSON.stringify(document, null, 2)}\n`, { flag: "wx" }).catch((error) => {
     refuse(error?.code === "EEXIST" ? "RELEASE_RECEIPT_EXISTS" : "RELEASE_RECEIPT_INVALID", `the receipt ${receipt} could not be written`, { receipt, code: error?.code ?? "UNKNOWN" });
   });
@@ -848,8 +947,8 @@ export async function generateRelease({ engineRoot, helperRoot, version, workspa
     version,
     at,
     receipt,
-    engine: { head: heads.engine, changes: engineChanges.length },
-    helper: { head: heads.helper, changes: helperChanges.length, keptExtraFiles, removeFiles, untrackedExtraFiles: document.helper.extraFiles.untracked },
+    engine: { head: document.engine.head, changes: document.engine.changes.length },
+    helper: { head: document.helper.head, changes: document.helper.changes.length, keptExtraFiles: document.helper.keptExtraFiles, removeFiles: document.helper.removeFiles, untrackedExtraFiles: document.helper.extraFiles.untracked },
     gates: document.gates,
     cliReference,
   };
@@ -873,6 +972,7 @@ function receiptProblems(document) {
   const gates = isRecord(document.gates) ? document.gates : {};
   for (const field of ["workspace", "projectRoot", "libraryId", "declarationsDigest"]) if (!text(gates[field])) problems.push(`gates.${field}`);
   if (gates.projectId !== undefined && gates.projectId !== null && (typeof gates.projectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(gates.projectId))) problems.push("gates.projectId");
+  if (gates.workIds !== undefined && (!Array.isArray(gates.workIds) || gates.workIds.some((id) => typeof id !== "string" || !/^work:[a-f0-9]{24}$/u.test(id)) || !sameWorkIds(gates.workIds, releaseWorkIds(gates.workIds)))) problems.push("gates.workIds");
   return problems;
 }
 
@@ -948,8 +1048,9 @@ function committedChangeViolations({ repository, root, parent, recorded, removeF
   return committed.map((change) => change.path);
 }
 
-export async function finishRelease({ engineRoot, helperRoot, version, workspace = null, projectRoot = null, projectId = null, receiptPath = null, env = process.env, runner = null, at = utcNow() }) {
+export async function validateReleaseCommits({ engineRoot, helperRoot, version, workspace = null, projectRoot = null, projectId = null, workIds = [], receiptPath = null, env = process.env, runner = null, at = utcNow() }) {
   projectId = releaseProjectId(projectId);
+  workIds = releaseWorkIds(workIds);
   if (typeof version !== "string" || !RELEASE_VERSION_SHAPE.test(version)) {
     refuse("RELEASE_VERSION_INVALID", `${String(version)} is not a stable release version`, { version: String(version) });
   }
@@ -970,10 +1071,11 @@ export async function finishRelease({ engineRoot, helperRoot, version, workspace
     ["helper.root", helper.root, receipt.helper.root],
     ["gates.workspace", await named(workspace), receipt.gates.workspace],
     ["gates.projectRoot", await named(projectRoot), receipt.gates.projectRoot],
-    ["gates.projectId", projectId, receipt.gates.projectId ?? null],
+    ...(projectId === null && workIds.length > 0 ? [] : [["gates.projectId", projectId, receipt.gates.projectId ?? null]]),
   ]) {
     if (expected !== actual) violations.push({ code: "RELEASE_RECEIPT_MISMATCH", field, expected, actual });
   }
+  if (!sameWorkIds(receipt.gates.workIds ?? [], workIds)) violations.push({ code: "RELEASE_RECEIPT_MISMATCH", field: "gates.workIds", expected: workIds, actual: receipt.gates.workIds ?? [] });
   const commits = {
     engine: releaseCommit("engine", engine.root, receipt.engine.head, env, violations),
     helper: releaseCommit("helper", helper.root, receipt.helper.head, env, violations),
@@ -1000,8 +1102,8 @@ export async function finishRelease({ engineRoot, helperRoot, version, workspace
       }
     }
   }
-  const bound = await collect(violations, () => checkReleaseGatePlan({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, env }));
-  if (bound !== undefined && (bound.plan.declarationsDigest !== receipt.gates.declarationsDigest || bound.plan.workspaceId !== receipt.gates.libraryId)) {
+  const bound = await collect(violations, () => checkReleaseGatePlan({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, workIds, env }));
+  if (bound !== undefined && (bound.plan.declarationsDigest !== receipt.gates.declarationsDigest || bound.plan.workspaceId !== receipt.gates.libraryId || bound.projectId !== (receipt.gates.projectId ?? null))) {
     violations.push({ code: "RELEASE_RECEIPT_BASIS_CHANGED", expected: { libraryId: receipt.gates.libraryId, declarationsDigest: receipt.gates.declarationsDigest }, actual: { libraryId: bound.plan.workspaceId, declarationsDigest: bound.plan.declarationsDigest }, message: "the gate library or its declarations changed after generate" });
   }
   const framework = await collect(violations, () => releaseFrameworkVersions(engine.root));
@@ -1010,6 +1112,16 @@ export async function finishRelease({ engineRoot, helperRoot, version, workspace
       if (actual !== version) violations.push({ code: "RELEASE_VERSION_MISMATCH", path, expected: version, actual: typeof actual === "string" ? actual : null });
     }
   }
+  return { engine, helper, location, receipt, commits, commitShape, violations };
+}
+
+export async function finishRelease(options) {
+  const { version, workspace = null, projectRoot = null, env = process.env, runner = null, at = utcNow() } = options;
+  const projectId = releaseProjectId(options.projectId ?? null);
+  const workIds = releaseWorkIds(options.workIds ?? []);
+  const { engine, helper, location, receipt, commits, commitShape, violations } = await validateReleaseCommits(options);
+  const readiness = await checkReleaseReadiness({ engineRoot: engine.root, helperRoot: helper.root, version, receipt, env });
+  violations.push(...readiness.violations);
   refuseViolations(violations, "the release commits do not match the generate receipt; no gate ran and nothing was packed");
 
   // TCRN-CROSS-STORY-461 R1 (#232): the repository's own P8 rule moves the source archive and formal
@@ -1019,7 +1131,7 @@ export async function finishRelease({ engineRoot, helperRoot, version, workspace
   const { withExclusiveOutputSession } = await import("./safe-io.mjs");
   const { moveStaleReleaseArtifacts, staleReleaseArtifactMoves } = await import("./p8-workflow-rc.mjs");
   const staleReleaseArtifacts = await withExclusiveOutputSession(engine.root, () => moveStaleReleaseArtifacts(engine.root, { version }));
-  const gates = await runReleaseGates({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, env, at });
+  const gates = await runReleaseGates({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, workIds, env, at });
   const releaseNames = await readdir(join(engine.root, RELEASE_OUTPUT_DIRECTORY)).catch((error) => {
     if (error?.code === "ENOENT") return [];
     throw error;
@@ -1039,6 +1151,7 @@ export async function finishRelease({ engineRoot, helperRoot, version, workspace
     commits,
     commitShape,
     staleReleaseArtifacts,
+    readiness,
     gates: gateSummary(gates),
     assets,
     check: checked.reasonCode,

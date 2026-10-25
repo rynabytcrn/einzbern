@@ -194,7 +194,18 @@ async function runDetachedTestController(arguments_, extraEnvironment, tests, p8
     const resultOutcome = result.then((value) => ({ kind: "exit", value }), (error) => ({ kind: "error", error }));
     let cursor = 0;
     let events = [];
-    let counters = { polls: 0, unchangedPolls: 0, bytesRead: 0 };
+    let counters = { polls: 0, unchangedPolls: 0, bytesRead: 0, returnedBytes: 0 };
+    let progressReadFailure = null;
+    let progressState = null;
+    let nextPollMs = 25;
+    const consumeWait = (value) => {
+      if (value.reasonCode) progressReadFailure = { reasonCode: value.reasonCode, error: value.error };
+      cursor = value.cursor;
+      events = value.events;
+      progressState = value.state;
+      nextPollMs = value.nextPollMs;
+      counters = { polls: value.polls, unchangedPolls: value.unchangedPolls, bytesRead: value.bytesRead, returnedBytes: value.returnedBytes };
+    };
     let completed;
     while (completed === undefined) {
       const remaining = timeoutMs - (Date.now() - startedAt);
@@ -223,6 +234,8 @@ async function runDetachedTestController(arguments_, extraEnvironment, tests, p8
         pollMs: 25,
         maxPollMs: 1_000,
         counters,
+        state: progressState,
+        nextPollMs,
         signal: waitController.signal,
       });
       const outcome = await Promise.race([
@@ -230,28 +243,38 @@ async function runDetachedTestController(arguments_, extraEnvironment, tests, p8
         wait.then((value) => ({ kind: "progress", value }), (error) => ({ kind: "progress-error", error })),
       ]);
       waitController.abort();
+      // Join the cancelled observer before reading again: it may have consumed
+      // events while the process close won the race. Never restart the child.
+      const observed = await wait;
+      consumeWait(observed);
       if (outcome.kind === "error") throw outcome.error;
       if (outcome.kind === "exit") {
         completed = outcome.value;
         try {
-          const delta = await readProgressDelta(progressPath, cursor);
+          const delta = await readProgressDelta(progressPath, cursor, progressState);
+          progressState = delta.state;
           cursor = delta.nextCursor;
           events = [...events, ...delta.events];
           counters = {
             polls: counters.polls + 1,
             unchangedPolls: counters.unchangedPolls + (delta.events.length === 0 ? 1 : 0),
             bytesRead: counters.bytesRead + delta.bytesRead,
+            returnedBytes: counters.returnedBytes + delta.returnedBytes,
           };
-        } catch {
+        } catch (error) {
+          counters = {
+            ...counters,
+            polls: counters.polls + 1,
+            bytesRead: counters.bytesRead + (error.bytesRead ?? 0),
+          };
+          progressReadFailure = { reasonCode: error.reasonCode ?? "PROGRESS_READ_FAILED", error: error.message };
           // The controller's exit result remains authoritative when the final
           // progress read cannot be completed.
         }
         break;
       }
       if (outcome.kind === "progress-error") throw outcome.error;
-      cursor = outcome.value.cursor;
-      events = outcome.value.events;
-      counters = { polls: outcome.value.polls, unchangedPolls: outcome.value.unchangedPolls, bytesRead: outcome.value.bytesRead };
+      consumeWait(outcome.value);
       if (["completed", "failed", "orphaned"].includes(outcome.value.status)) {
         const remainingAfterProgress = timeoutMs - (Date.now() - startedAt);
         let exitOutcome = { kind: "timeout" };
@@ -290,6 +313,9 @@ async function runDetachedTestController(arguments_, extraEnvironment, tests, p8
     await waitForProcessGroupExit(child.pid);
     await waitForProcessGroupExit(reaperProcessGroup);
     const progress = { ...summarizeProgress(events), cursor, ...counters, lastProgress: events.at(-1) ?? null, diagnostics: collectTestDiagnostics(diagnostics, diagnosticSnapshot, progressPath, true) };
+    if (completed.code === 0 && progressReadFailure) {
+      fail("TEST_CONTROLLER_PROGRESS_INVALID", JSON.stringify({ ...progress, progressReadFailure }));
+    }
     if (completed.code === 0 && progress.status !== "completed") {
       fail("TEST_CONTROLLER_PROGRESS_MISSING", JSON.stringify(progress));
     }

@@ -31,6 +31,7 @@ import {
   buildCanonicalUstar,
   buildP8ReleaseArtifacts,
 } from "../scripts/lib/p8-workflow-rc.mjs";
+import { verifySkillSpecifications } from "../scripts/lib/release-package-inputs.mjs";
 import { TAR_REASON_CODES, readUstar, tarMode, writeUstar } from "../scripts/lib/tar.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -101,14 +102,19 @@ test("605: every contract referenced by the shipped Skill resolves to manifest-v
 
 test("605: a packaging-list omission is refused from the actual Skill reference before any archive is written", async () => {
   const source = await readFile(packScript, "utf8");
+  const inputs = await readFile(join(repositoryRoot, "scripts/lib/release-package-inputs.mjs"), "utf8");
   for (const specification of ["context-v1.md", "work-content-v1.md"]) {
     const copy = join(base, `missing-${specification}`);
-    await mkdir(join(copy, "scripts"), { recursive: true });
-    const mutated = source.replace(`, "${specification}"`, "");
-    assert.notEqual(mutated, source);
-    await writeFile(join(copy, "scripts/pack-release.mjs"), mutated);
+    await mkdir(join(copy, "scripts/lib"), { recursive: true });
+    const mutated = inputs.replace(`, "${specification}"`, "");
+    assert.notEqual(mutated, inputs);
+    await writeFile(join(copy, "scripts/pack-release.mjs"), source);
+    await writeFile(join(copy, "scripts/lib/release-package-inputs.mjs"), mutated);
+    for (const name of await readdir(join(repositoryRoot, "scripts/lib"))) {
+      if (name !== "release-package-inputs.mjs") await symlink(join(repositoryRoot, "scripts/lib", name), join(copy, "scripts/lib", name));
+    }
     for (const name of await readdir(join(repositoryRoot, "scripts"))) {
-      if (name !== "pack-release.mjs") await symlink(join(repositoryRoot, "scripts", name), join(copy, "scripts", name));
+      if (name !== "pack-release.mjs" && name !== "lib") await symlink(join(repositoryRoot, "scripts", name), join(copy, "scripts", name));
     }
     for (const name of ["package.json", "packages", "dist", "portal", "specs"]) await symlink(join(repositoryRoot, name), join(copy, name));
     const out = join(copy, "out");
@@ -202,7 +208,7 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
   const readmes = (await readdir(repositoryRoot)).filter((name) => /^README(?:\.[A-Za-z-]+)?\.md$/u.test(name));
   const template = await filesUnder(join(repositoryRoot, "skill/mana-orchestrate"));
   const expected = [
-    "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
+    "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "scripts/library-catalog-worker.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
     "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
     ...SPECIFICATIONS.map(name => `specs/${name}`),
@@ -338,12 +344,43 @@ test("481-R2: Atelier runs from the release, serves its static files and reaches
   let registry;
   try { registry = JSON.parse(innerCli.stdout); } catch { assert.fail(`Packaged library-list did not return JSON: ${diagnostic({ status: null, signal: null, stdout: "", stderr: "" })}`); }
   assert.deepEqual(registry.entries, [], `The clean device should have an empty registry: ${diagnostic({ status: null, signal: null, stdout: "", stderr: "" })}`);
+  const catalog = node([join(tree, "scripts/library-catalog-worker.mjs")], { cwd, env });
+  assert.equal(catalog.status, 0, safeDiagnostic(catalog.stderr));
+  assert.deepEqual(JSON.parse(catalog.stdout), { ok: true, entries: [] });
   const run = node([join(tree, "atelier/portal.mjs")], { cwd, env, timeout: 60_000 });
   assert.equal(run.status, 2, diagnostic(run));
   assert.equal(run.stdout, "", diagnostic(run));
   let startup;
   try { startup = JSON.parse(lastLine(run.stderr)); } catch { assert.fail(`Atelier startup did not return a JSON diagnostic: ${diagnostic(run)}`); }
   assert.equal(startup.reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY", `Atelier packaged CLI startup diagnostic (${bridge}): ${diagnostic(run)}; startup=${safeDiagnostic(JSON.stringify({ reasonCode: startup.reasonCode, error: startup.error }))}`);
+});
+
+test("catalog worker in the Node-only archive rereads real project metadata", async () => {
+  const { tree } = await packedRelease();
+  const { root, env, cwd } = await environment("archive-catalog-worker");
+  const library = join(root, "library"), project = join(root, "project");
+  await mkdir(project);
+  const invoke = args => {
+    const run = node([join(tree, "scripts/einzbern.mjs"), ...args], { cwd, env });
+    assert.equal(run.status, 0, safeDiagnostic(run.stderr));
+    return JSON.parse(run.stdout);
+  };
+  const at = "2026-10-25T00:00:00Z";
+  invoke(["init", "--workspace", library, "--project-name", "Archive catalog", "--at", at]);
+  const created = invoke(["project-create", "--workspace", library, "--external-key", "ARCHIVE-CATALOG", "--name", "Before", "--at", at]);
+  invoke(["library-register", "--project", project, "--library", library, "--project-id", created.record.id, "--at", at]);
+  const read = () => {
+    const run = node([join(tree, "scripts/library-catalog-worker.mjs")], { cwd, env });
+    assert.equal(run.status, 0, safeDiagnostic(run.stderr));
+    const result = JSON.parse(run.stdout);
+    assert.equal(result.ok, true);
+    assert.equal(result.entries.length, 1);
+    assert.equal(result.entries[0].projectId, created.record.id);
+    return result.entries[0];
+  };
+  assert.equal(read().name, "Before");
+  invoke(["project-update", "--workspace", library, "--id", created.record.id, "--name", "After", "--at", at]);
+  assert.equal(read().name, "After");
 });
 
 // INIT-053 R45 (U11, PP-1): Atelier holds the device registry lock through the engine's own file lock
@@ -700,4 +737,12 @@ test("INIT-062 packaged CLI distributes the universal rule revision to ordinary 
     assert.equal(independent.includes("<!-- einzbern:section"), false, "dot remains an independent file, not generic sections");
     assert.equal(existsSync(join(dotRoot, "CLAUDE.md")), false, "dot does not install another host's bridge");
   }
+});
+
+
+test("607-R2: shared Skill validation refuses a package whose manifest could still hash missing contracts", async () => {
+  const tree = await mkdtemp(join(base, "skill-contract-"));
+  await mkdir(join(tree, "skill", BRAND.helper.id), { recursive: true });
+  await writeFile(join(tree, "skill", BRAND.helper.id, "SKILL.md"), "Read specs/work-content-v1.md.\n");
+  await assert.rejects(verifySkillSpecifications(tree, `skill/${BRAND.helper.id}`), { reasonCode: "PACK_SKILL_SPEC_MISSING" });
 });

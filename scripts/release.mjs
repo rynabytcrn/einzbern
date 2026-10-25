@@ -23,7 +23,7 @@ import {
 } from "./lib/release-lockstep.mjs";
 
 const ENGINE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const USAGE = "usage: node scripts/release.mjs check --version <version> --helper <working tree> | prepare --version <version> --helper <working tree> --workspace <library> --project <registered project> [--project-id <stable project id>] | generate --version <version> --helper <working tree> --workspace <library> --project <registered project> [--project-id <stable project id>] --receipt <new file outside both repositories> [--keep-extra <helper path>]... | finish --version <version> --helper <working tree> --workspace <library> --project <registered project> [--project-id <stable project id>] --receipt <generate receipt> | publish-plan --version <version> --helper <working tree> --wiki-dir <Wiki working tree> [--execute tag|push|release|wiki]";
+const USAGE = "usage: node scripts/release.mjs check --version <version> --helper <working tree> | prepare --version <version> --helper <working tree> --workspace <library> --project <registered project> [--project-id <stable project id>] [--work-id <comma-separated work ids>] | generate --version <version> --helper <working tree> --workspace <library> --project <registered project> [--project-id <stable project id>] [--work-id <comma-separated work ids>] --receipt <new file outside both repositories> [--keep-extra <helper path>]... | finish --version <version> --helper <working tree> --workspace <library> --project <registered project> [--project-id <stable project id>] [--work-id <comma-separated work ids>] --receipt <generate receipt> | publish-plan --version <version> --helper <working tree> --wiki-dir <Wiki working tree> [--execute tag|push|release|wiki]";
 const COMMANDS = Object.freeze(["check", "prepare", "generate", "finish", "publish-plan"]);
 const GATED_COMMANDS = Object.freeze(["prepare", "generate", "finish"]);
 const RECEIPT_COMMANDS = Object.freeze(["generate", "finish"]);
@@ -36,7 +36,7 @@ function parseArguments(argv) {
   let command = null;
   const values = new Map();
   const keepExtra = [];
-  const options = new Set(["--version", "--helper", "--workspace", "--project", "--project-id", "--wiki-dir", "--execute", "--receipt", "--keep-extra"]);
+  const options = new Set(["--version", "--helper", "--workspace", "--project", "--project-id", "--work-id", "--wiki-dir", "--execute", "--receipt", "--keep-extra"]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (!argument.startsWith("--") && command === null && COMMANDS.includes(argument)) {
@@ -81,6 +81,7 @@ function parseArguments(argv) {
   if (values.has("--project-id") && (!GATED_COMMANDS.includes(command) || !/^project:[a-f0-9]{24}$/u.test(values.get("--project-id")))) {
     fail("RELEASE_ARGUMENT_INVALID", "--project-id requires a stable project identifier and prepare, generate or finish", { flag: "--project-id" });
   }
+  if (values.has("--work-id") && !GATED_COMMANDS.includes(command)) fail("RELEASE_ARGUMENT_INVALID", "--work-id is only used by prepare, generate and finish");
   if (RECEIPT_COMMANDS.includes(command) && !values.has("--receipt")) {
     fail("RELEASE_ARGUMENT_MISSING", `--receipt is required for ${command}`, { flag: "--receipt" });
   }
@@ -98,6 +99,7 @@ function parseArguments(argv) {
     projectRoot: values.has("--project") ? resolve(values.get("--project")) : null,
     projectId: values.get("--project-id") ?? null,
     receiptPath: values.has("--receipt") ? resolve(values.get("--receipt")) : null,
+    workIds: values.get("--work-id") ?? [],
     keepExtra,
     wikiDirectory: values.has("--wiki-dir") ? resolve(values.get("--wiki-dir")) : null,
     execute,
@@ -110,10 +112,10 @@ async function main() {
     return checkRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version });
   }
   if (options.command === "prepare") {
-    return prepareRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, projectId: options.projectId });
+    return prepareRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, projectId: options.projectId, workIds: options.workIds });
   }
   if (options.command === "generate") {
-    return generateRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, projectId: options.projectId, receiptPath: options.receiptPath, keepExtra: options.keepExtra });
+    return generateRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, projectId: options.projectId, workIds: options.workIds, receiptPath: options.receiptPath, keepExtra: options.keepExtra });
   }
   if (options.command === "finish") {
     // TCRN-CROSS-SUB-484 (MIN-257 D6): finish runs the release gates and packs, a heavy run. It takes
@@ -122,7 +124,7 @@ async function main() {
     // EINZBERN_HEAVY_SLOT.
     const slot = await acquireHeavySlot({ command: "release finish" });
     try {
-      return await finishRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, projectId: options.projectId, receiptPath: options.receiptPath });
+      return await finishRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, projectId: options.projectId, workIds: options.workIds, receiptPath: options.receiptPath });
     } finally {
       slot.release();
     }

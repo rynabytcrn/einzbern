@@ -13,6 +13,7 @@ import test from "node:test";
 
 import { appendProgressIfConfigured, readProgressDelta } from "../scripts/lib/incremental-output.mjs";
 import { admitLegacyOutputSessionReceipt, bindOutputSessionProcessGroup, readBoundClaim, recoverStaleOutputSessionLock, safeWriteOutput, withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
+import { privateHeavyEnvironment } from "./helpers/heavy-slots.mjs";
 
 const ownerSchema = "tcrn.output-session-owner.v1";
 async function fixture(context, { tempRoot = tmpdir(), prefix = "tcrn-output-session-", resolvePath = true } = {}) {
@@ -377,13 +378,15 @@ async function importGuardTaskFixture(context, testLine) {
   return { root, importPath };
 }
 
-function startTaskEntrypoint(root, extraEnvironment = {}) {
-  const environment = {
+function startTaskEntrypoint(root, extraEnvironment = {}, privateHeavyDirectory) {
+  const mergedEnvironment = {
     ...process.env,
     TCRN_TASK_DESCENDANT_PID_PATH: resolve(root, "descendant.pid"),
     npm_config_user_agent: "pnpm/11.3.0 npm/? node/v24.16.0 darwin arm64",
     ...extraEnvironment,
   };
+  // Remove any outer slot only after the complete spawn environment is merged.
+  const environment = privateHeavyDirectory === undefined ? mergedEnvironment : privateHeavyEnvironment(privateHeavyDirectory, mergedEnvironment);
   delete environment.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [resolve(root, "scripts/task.mjs"), "test"], {
     cwd: root,
@@ -3042,11 +3045,31 @@ test("a fresh real task entrypoint fails closed while a killed predecessor group
 
 test("a concurrent real task entrypoint preserves its live command-wide owner and rejects the contender", async (context) => {
   const root = await taskEntrypointFixture(context, [
+    'import { existsSync, watch } from "node:fs";',
+    'import { writeFile } from "node:fs/promises";',
+    'import { dirname } from "node:path";',
     'import test from "node:test";',
-    'test("hold the command-wide session while dist build imports remain stable", async () => { await new Promise((resolve) => setTimeout(resolve, 1_000)); });',
+    'test("hold the command-wide session while dist build imports remain stable", async () => {',
+    '  const releasePath = process.env.TCRN_TASK_OWNER_RELEASE_PATH;',
+    '  let watcher;',
+    '  const released = new Promise((resolve, reject) => {',
+    '    watcher = watch(dirname(releasePath), () => { if (existsSync(releasePath)) resolve(); });',
+    '    watcher.once("error", reject);',
+    '    if (existsSync(releasePath)) resolve();',
+    '  });',
+    '  try {',
+    '    await writeFile(process.env.TCRN_TASK_OWNER_READY_PATH, "ready\\n", { mode: 0o600, flag: "wx" });',
+    '    await released;',
+    '  } finally { watcher.close(); }',
+    '});',
     "",
   ].join("\n"));
-  const owner = startTaskEntrypoint(root);
+  const readyPath = resolve(root, ".git", "owner-ready");
+  const releasePath = resolve(root, ".git", "owner-release");
+  const owner = startTaskEntrypoint(root, {
+    TCRN_TASK_OWNER_READY_PATH: readyPath,
+    TCRN_TASK_OWNER_RELEASE_PATH: releasePath,
+  }, resolve(root, ".git", "heavy-locks", "owner"));
   // TCRN-CROSS-INC-231, superseding the INC-229 attempt at this same line. Establishing
   // an owner publishes owner.json TWICE: once with processGroup null, and again --
   // staged and renamed over the first, so a different inode -- once the process group
@@ -3058,16 +3081,27 @@ test("a concurrent real task entrypoint preserves its live command-wide owner an
   // on owner.json merely moved it to the first, which is squarely inside the window.
   // The precondition this criterion actually needs is a SEALED owner: the record
   // present, parseable, and carrying its process group.
-  await waitForSealedOwner(root, owner.result);
-  const contender = await startTaskEntrypoint(root).result;
-  assert.equal(contender.code, 1);
-  assert.equal(contender.signal, null);
-  assert.equal(contender.stdout, "");
-  const contenderReceipt = JSON.parse(contender.stderr);
-  assert.equal(contenderReceipt.ok, false);
-  assert.equal(contenderReceipt.reasonCode, "OUTPUT_SESSION_RECOVERY_OWNER_LIVE", contender.stderr);
-  await lstat(lockPath(root));
-  const ownerResult = await owner.result;
+  // The ready/release handshake keeps that sealed owner alive until the contender
+  // has finished, independently of build or controller startup time.
+  let ownerResult;
+  try {
+    await waitForSealedOwner(root, owner.result);
+    await waitForFixtureReadiness(readyPath, owner.result);
+    // Each entrant acquires its own real heavy slot before competing for this
+    // fixture's shared output lock; neither waits for the other's heavy slot.
+    const contender = await startTaskEntrypoint(root, {}, resolve(root, ".git", "heavy-locks", "contender")).result;
+    assert.equal(contender.code, 1);
+    assert.equal(contender.signal, null);
+    assert.equal(contender.stdout, "");
+    const contenderReceipt = JSON.parse(contender.stderr);
+    assert.equal(contenderReceipt.ok, false);
+    assert.equal(contenderReceipt.reasonCode, "OUTPUT_SESSION_RECOVERY_OWNER_LIVE", contender.stderr);
+    await lstat(lockPath(root));
+  } finally {
+    // Release and join the real owner on assertion failure before fixture teardown.
+    await writeFile(releasePath, "release\n", { mode: 0o600 });
+    ownerResult = await owner.result;
+  }
   assert.equal(ownerResult.code, 0, ownerResult.stderr);
   assert.equal(ownerResult.signal, null);
   assert.equal(ownerResult.stderr, "");
@@ -3798,4 +3832,38 @@ test("SIGKILL injection at each staged publication and release boundary resumes 
     else assert.ok(["OUTPUT_SESSION_STALE_LOCK_RECOVERED", "OUTPUT_SESSION_RECOVERY_RESIDUE_CLEARED"].includes(restarted.reasonCode), name);
     await assertRecoveryStateClean(root);
   }
+});
+
+
+test("607-R2: the real controller's final malformed tail counts the failed poll and physical bytes", async (context) => {
+  const root = await taskEntrypointFixture(context, 'import test from "node:test"; test("passes", () => {});\n');
+  const taskPath = resolve(root, "scripts/task.mjs");
+  const source = await readFile(taskPath, "utf8");
+  const marker = "          const delta = await readProgressDelta(progressPath, cursor, progressState);";
+  assert.equal(source.split(marker).length, 2, "one final-read boundary");
+  // Mutate only the isolated fixture at the actual final read boundary, after the real
+  // controller exited. No timing delay or alternate controller simulates completion.
+  const injected = [
+    '          await writeFile(resolve(repositoryRoot, "final-read-before.json"), JSON.stringify({ ...counters, finalBytes: (await lstat(progressPath)).size - (progressState?.offset ?? cursor) + 6 }));',
+    '          await writeFile(progressPath, "{bad}\\n", { flag: "a" });',
+    marker,
+  ].join("\n");
+  const raceStart = source.indexOf("      const outcome = await Promise.race([");
+  const raceEnd = source.indexOf("      waitController.abort();", raceStart);
+  assert.ok(raceStart >= 0 && raceEnd > raceStart);
+  const finalReadSource = source.slice(0, raceStart) + "      const outcome = await resultOutcome;\n" + source.slice(raceEnd);
+  await writeFile(taskPath, finalReadSource.replace(marker, injected));
+  runGit(root, ["add", "scripts/task.mjs"]);
+  runGit(root, ["commit", "--quiet", "-m", "fixture final malformed progress tail"]);
+  const result = await startTaskEntrypoint(root).result;
+  assert.equal(result.code, 1, result.stderr);
+  const report = JSON.parse(result.stderr.trim());
+  assert.equal(report.reasonCode, "TEST_CONTROLLER_PROGRESS_INVALID");
+  const progress = JSON.parse(report.error);
+  const before = JSON.parse(await readFile(resolve(root, "final-read-before.json"), "utf8"));
+  assert.equal(progress.polls, before.polls + 1);
+  assert.equal(progress.bytesRead, before.bytesRead + before.finalBytes, "all physical final-read bytes are counted exactly once");
+  assert.equal(progress.returnedBytes, before.returnedBytes, "invalid records return no bytes");
+  assert.equal(progress.progressReadFailure.reasonCode, "PROGRESS_EVENT_INVALID");
+  await assertTaskResidueClean(root);
 });

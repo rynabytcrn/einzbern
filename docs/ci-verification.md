@@ -262,3 +262,72 @@ candidate observations, not this package's pass, standalone narrow runs, hosted
 timing, or speedup estimates. Same-run transfer/byte validation remains
 every-run work. This package preserves the existing provenance and negative-case
 assertions and timeouts; it introduces no benchmark, new stage, or claimed saving.
+
+## Observed CI runs and immutable source reads
+
+The October 25 review inspected retained plans for runs
+`39946361161`,
+`39994839287`,
+`40123029828`, and
+`40165506746`.
+The planner executed in all four and selected full coverage in all four. The
+first three lacked usable exact-base evidence and also contained independent
+full triggers. The 3.3.1 run (40165506746) had a verified full baseline from
+40123029828, attempt 1; its Core, CLI, package/version and structural changes
+still required full coverage. These observations provide no evidence that
+selective planning failed. They also do not establish a hosted selective run.
+
+In 40165506746 the plan step took 65 seconds and final aggregation took 66
+seconds. Core verification took 649 seconds; Portal verification took 1165
+seconds. The Portal functional-test step reported 1,057,727 ms (about 17m37s)
+for 197 tests across 19 files: 196 passed and one was TODO. Current proof took
+1306 ms and the historical complete restoration replay took 6329 ms. Functional
+tests dominate this observed Portal path. This change retains the complete
+Portal roster, fixture boundaries, concurrency and timeouts. Its internal slow
+causes require separate stage evidence; faster source reads do not establish
+faster Portal tests.
+
+Immutable baseline source audits now enumerate one tree with `ls-tree -r -z`
+and read its exact blob OIDs in one `cat-file --batch` process. Framing uses raw
+Buffer byte lengths, validates each OID/type/length/body delimiter and the exact
+response count, and rejects truncation or trailing bytes. Tree parsing rejects
+malformed paths and invalid encoding. Binary or unreadable candidates remain
+unresolved. Existing text exclusions, UTF-8/NUL checks, source audit and reader
+closure semantics remain in effect. Duplicate OIDs share bytes only within that
+request; there is no cross-ref cache. Worktree scans retain their filesystem path.
+
+Before this change, a local scan of commit
+`1cb45a2d216a3b4fac9427ab6a112dfeac54390b` found 775 texts and zero unresolved
+inputs using 776 Git processes in 5608.62 ms. The parent batch compares identical
+path/content digests and the same source commit with the two-process reader.
+That local measurement is separate from hosted elapsed time. Hosted improvement
+and token savings remain unknown until measured; baseline provenance validation,
+same-SHA/run/attempt artifact closure and remote aggregation replay are retained.
+
+## Local source scanning and catalog measurements
+
+Immutable source discovery uses one NUL-framed `ls-tree` and one byte-framed
+`cat-file --batch` invocation, retaining exact object IDs, byte lengths, delimiter
+validation and conservative unresolved-input handling. Aggregation is limited by
+the executing Node runtime's Buffer capacity. It has no fixed 64 MiB repository
+budget: three individually compatible 23 MiB text objects remain compatible as a
+single request. This does not change category selection or baseline provenance.
+
+On the recorded local same-root/ref/Node input, all 775 text digests matched;
+Git child processes fell from 776 to 2 and source scanning measured
+6934.592417 ms before versus 69.343583 ms after. A complete real baseline-plan
+replay on the same candidate tree measured 20.168241166 s versus 14.647176375 s,
+with exit status zero on both sides. These are local measurements; hosted runner
+and end-to-end CI improvements remain unknown.
+
+Each bundled Atelier catalog refresh starts one isolated worker. Within that
+fresh lifetime it invokes the real CLI parser/writer for `library-list` and for
+each entry's `project-list` and `chain-identity`; entries sharing a library still
+receive both reads. The worker retains no governance state between refreshes.
+Default selection and an explicit CLI path exactly equal to the bundled CLI use
+the worker. Custom wrappers retain one CLI process per command, including their
+stderr and failure behavior. A failed or empty refresh retains the last good
+catalog. The release archive includes the worker and its complete CLI closure
+for Node-only use. The recorded full Portal before measurement was 399.905174542 s
+for 197 cases (196 passing, one existing TODO); after measurements must use the
+same command and environment and preserve that complete set of assertions.

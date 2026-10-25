@@ -484,3 +484,47 @@ test("530-GWT1, GWT2, GWT3: a run for a Story records the files its commits touc
   await put(project, "another-process.txt", "again\n");
   assert.equal((await done()).runId, run.runId, "once the whole tree moved, the run limited to the Story's files is the latest that stands");
 });
+
+
+test("607-R2: Release binds the full engine and helper trees while preserving Story coverage and same-run done consumption", async (context) => {
+  const { project, desk, library } = await setup(context);
+  const helper = join(project, "helper");
+  await mkdir(helper);
+  git(helper, ["init", "-q"]);
+  await put(helper, "SKILL.md", "helper\n");
+  git(helper, ["add", "-A"]);
+  git(helper, ["commit", "-q", "-m", "initial helper without Story key"]);
+  await put(project, ".gitignore", "/helper/\n");
+  await put(project, "src/a.ts", "story\n");
+  git(project, ["add", "-A"]);
+  git(project, ["commit", "-q", "-m", "TCRN-TEST-STORY-1: source"]);
+  const other = `work:${"6".repeat(24)}`;
+  const declared = await declareAll(library, {
+    engine: declare([node, "-e", "process.exit(0)"], ["**"]),
+    helper: declare([node, "-e", "process.exit(0)"], ["**"], { root: "helper", releaseOnly: true }),
+  });
+  const state = { ...declared, work: [...declared.work,
+    { id: STORY, externalKey: "TCRN-TEST-STORY-1", kind: "Story", parentId: null, tombstone: false, extensions: {} },
+    { id: other, externalKey: "TCRN-TEST-STORY-2", kind: "Story", parentId: null, tombstone: false, extensions: {} },
+  ] };
+  const workIds = [STORY, other];
+  const plan = await planGates({ projectRoot: project, gates: listGates(state), release: true, workIds, subjectKeys: workSubjectKeys(state.work, workIds) });
+  const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk });
+  assert.deepEqual(run.workIds, workIds);
+  assert.equal(run.gates.length, 2);
+  assert.ok(run.gates.every((gate) => gate.ok && gate.matchedWorkIds.length === 2));
+  assert.deepEqual(run.trees, (await gateTreeState(project, plan.roots)).trees);
+  assert.ok(run.trees.every((tree) => tree.files === undefined && tree.head !== null));
+  assert.deepEqual(JSON.parse(await readFile(recordPath, "utf8")), run);
+  const done = () => assertDoneGates({ projectRoot: project, library: state, workIds, deviceHome: desk });
+  assert.equal((await done()).runId, run.runId, "both Stories consume this saved run without running gates again");
+  await put(project, "README.md", "unbound source changed\n");
+  assert.equal((await refusal(done)).reasonCode, "WORK_DONE_GATES_NOT_RUN");
+  git(project, ["checkout", "--", "README.md"]);
+  assert.equal((await done()).runId, run.runId);
+  await put(helper, "SKILL.md", "helper root drift\n");
+  assert.equal((await refusal(done)).reasonCode, "WORK_DONE_GATES_NOT_RUN");
+  git(helper, ["checkout", "--", "SKILL.md"]);
+  await put(helper, "unbound.md", "new helper source\n");
+  assert.equal((await refusal(done)).reasonCode, "WORK_DONE_GATES_NOT_RUN");
+});

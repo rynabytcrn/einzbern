@@ -730,6 +730,8 @@ test("519-GWT1 (CLI): a Story a coordination library's own gates cover by exact 
   await gate("unit", [node, "-e", "process.exit(require('node:fs').existsSync('src/ok') ? 0 : 1)"], ["--covers", `src/**,${storyId}`]);
   await gate("links", [node, "-e", "process.exit(0)"], ["--covers", "**/*.md", "--required", "false"]);
   await put(project, "src/ok", "");
+  git(project, ["add", "src/ok"]);
+  git(project, ["commit", "-q", "-m", "CO-STORY-1: bind a real Story source file"]);
   const args = ["--workspace", library, "--release", "true", "--work-id", storyId];
 
   // In 2.0.0 this plan answered PROJECT_SCOPE_UNDECIDED for the Story and no gate ran.
@@ -750,6 +752,7 @@ test("519-GWT1 (CLI): a Story a coordination library's own gates cover by exact 
   assert.deepEqual([result.run.libraryId, result.run.projectId, result.run.workIds, result.run.release], [libraryId, projectId, [storyId], true]);
   assert.deepEqual(result.run.gates.map((entry) => [entry.name, entry.required, entry.matchedWorkIds, entry.ok]), [["links", false, [], true], ["unit", true, [storyId], true]]);
   assert.deepEqual(JSON.parse(readFileSync(result.recordPath, "utf8")), result.run, "the run is recorded in this device's cache of the library");
+  assert.ok(result.run.trees.every((tree) => tree.files === undefined && tree.head !== null && typeof tree.changes === "string"), "a native single-Story Release retains the full HEAD/changes tree despite its Story-keyed commit");
 
   // A --project-id other than the Story's is refused before any gate runs.
   const otherProjectId = (await raw(["project-create", "--workspace", library, "--at", at(), "--external-key", "CO-OTHER", "--name", "Other"])).record.id;

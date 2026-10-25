@@ -15,6 +15,7 @@
 //
 //   scripts/einzbern.mjs        the CLI entry and every module it reaches, as one file (scripts/lib/bundle.mjs)
 //   scripts/einzbern-hook.mjs   the hook entry as one file, which the stable hook launcher imports
+//   scripts/library-catalog-worker.mjs  the CLI catalog adapter and its Node-only closure as one file
 //   launchers/einzbern.mjs      scripts/einzbern-launcher.mjs as it is; installed as engine/einzbern.mjs
 //   launchers/hook.mjs          scripts/einzbern-hook-launcher.mjs as it is; installed as engine/hook.mjs
 //   atelier/                    the portal as one file, portal.mjs, and the static files it serves; the
@@ -34,6 +35,8 @@
 //
 // Prints {"ok":true,"reasonCode":"RELEASE_PACKED",...} on stdout, or a reason code and its details
 // on stderr with exit code 1.
+
+import { SPECIFICATIONS, verifySkillSpecifications } from "./lib/release-package-inputs.mjs";
 
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -75,11 +78,6 @@ const registryLockStagedSpecifier = (module) => `"../../packages/core/src/${modu
 const BUNDLED_CLI_DECLARATION = /^const BUNDLED_CLI = .*;$/gmu;
 const README = /^README(?:\.[A-Za-z-]+)?\.md$/u;
 const DOCUMENTS = Object.freeze(["CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt"]);
-// Only public CLI contracts consumed by the installed helper, not the whole source specs tree.
-const SPECIFICATIONS = Object.freeze([
-  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
-  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md",
-]);
 
 class PackError extends Error {
   constructor(reasonCode, message, details = {}) {
@@ -142,24 +140,6 @@ async function treeFiles(root, relativePath = "") {
   return files;
 }
 
-// Validate the consumer's references independently of SPECIFICATIONS. A valid manifest
-// can hash an incomplete tree; an installed Skill must also resolve its named contracts.
-async function verifySkillSpecifications(tree, skillRoot) {
-  const files = new Set(await treeFiles(tree));
-  for (const source of files) {
-    if (!source.startsWith(`${skillRoot}/`) || !source.endsWith(".md")) continue;
-    const markdown = await readFile(join(tree, ...source.split("/")), "utf8");
-    for (const [reference] of markdown.matchAll(/\bspecs\/[A-Za-z0-9._/-]+\.md\b/gu)) {
-      if (reference.split("/").some((part) => part === "" || part === "." || part === "..")) {
-        fail("PACK_SKILL_SPEC_INVALID", "a packaged Skill specification reference is not a canonical relative path", { source, reference });
-      }
-      if (!files.has(reference)) {
-        fail("PACK_SKILL_SPEC_MISSING", "a specification referenced by the packaged Skill is missing", { source, reference });
-      }
-      await readFile(join(tree, ...reference.split("/")));
-    }
-  }
-}
 
 /**
  * The Atelier bundle: portal/portal.mjs and the modules it imports are staged as they sit in the
@@ -258,6 +238,7 @@ async function packRelease({ version: requested, out }) {
     await copyStaged(tree, "launchers/hook.mjs", join(repositoryRoot, "scripts", "einzbern-hook-launcher.mjs"));
     const atelier = BRAND.portal.id;
     await writeStaged(tree, `${atelier}/portal.mjs`, await bundleAtelier(stage, join(repositoryRoot, "dist", "build", "packages", "core", "src")));
+    await writeStaged(tree, "scripts/library-catalog-worker.mjs", (await bundleEntry(join(repositoryRoot, "scripts", "library-catalog-worker.mjs"))).code);
     for (const file of ATELIER_STATIC_FILES) await copyStaged(tree, `${atelier}/${file}`, join(repositoryRoot, "portal", file));
     let rendered = "";
     await runCli(["skill-render", "--out", join(tree, "skill", BRAND.helper.id), "--version", version], {

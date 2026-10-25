@@ -133,6 +133,16 @@ const publicLibrary = ({ projectPath, libraryId, libraryPath, projectId, configu
 // The registry's own order (by project path). A registry entry is keyed by its project: two
 // projects may share one library, and the Rules page belongs to the project.
 async function readLibraryCatalog() {
+  // One new process per refresh; custom wrappers retain their per-command contract.
+  if (CLI === BUNDLED_CLI) {
+    const { stdout } = await execFileAsync(process.execPath, [join(portalRoot, "..", "scripts", "library-catalog-worker.mjs")], {
+      cwd: portalRoot, encoding: "utf8", maxBuffer: RUNTIME_CAPACITY.bufferBytes,
+      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+    });
+    const result = JSON.parse(stdout);
+    if (!result.ok) throw startupError(result.reasonCode, result.detail ?? {}, result.error);
+    return result.entries;
+  }
   const result = await cliResult(["library-list"]);
   if (!result.ok || !Array.isArray(result.body?.entries)) {
     throw startupError(result.body?.reasonCode ?? "PORTAL_LIBRARY_LIST_FAILED", {}, result.body?.error ?? "library-list failed");

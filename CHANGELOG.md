@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 3.3.1
+
+Einzbern and Mana Orchestrate ship in lockstep at 3.3.1.
+
 ### Complete installed contracts
 
 - Include `specs/context-v1.md` and `specs/work-content-v1.md` in the formal release

@@ -1,5 +1,5 @@
 {
-  "version": 25,
+  "version": 26,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1421,7 +1421,7 @@
     "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
     "NOTICE": "045fa532821b114e93e7c1c1ba41a80f642d7a4d57967e6d51e8d3c53a7a98dd",
     "THIRD_PARTY_NOTICES.txt": "4ed9fbf62ca58c4588755446b7563e411645d156b6a2542181641e4716d64af1",
-    "docs/implementation/configuration-inventory.json": "214f3f24c3d9e85d01e2d917a1a553c17a9d1250c715ac2b156d54b07d55e074",
+    "docs/implementation/configuration-inventory.json": "83b4e0ced915c63193ba74f0d424d72a4f17ec227970fc197ccff6a8e92ea14a",
     "docs/implementation/integrated-engine-acceptance.txt": "0eddea5d85b327172bfa21d03087acfa13428885664db9cdea4255e2a4445611",
     "docs/reports/init-020/STORY-191-adapter-equivalence-matrix.json": "7fa136385de3d67e2d16436c58778dabdae7425bf0f6351dbd0c8498adc4836f",
     "docs/verification/2026-07-20-event-chain-ceiling-samples.json": "95cd11ea156c02e39d85a4af22dfb17d2f1da1aeb554a657b5a0ed06d1a98bb3",
@@ -2047,7 +2047,7 @@
     "tests/output-session-lifecycle.test.mjs": "4c22ef08c276781344826435a420b27bfddb8500058849886ba0d08b8f2b22bc",
     "tests/p1-all-legs.test.mjs": "e3e3c51af16224ad192587138250b378ce9734e7b90dc9f4f7d7d725620fd4e3",
     "tests/p1-roster.test.mjs": "4f551696ba44f1405dd55c74785b0dbcd08f56a6d912e545ea5b1ae6480ba586",
-    "tests/p3-cli-catalog.test.mjs": "9f53e783395bd084cf694b268d62841bc9c66357a545715d4e510afe936b1627",
+    "tests/p3-cli-catalog.test.mjs": "70b2e903c78c601e522df6edad97ea5e5bfb62c470b34757ca5bbfbc01957e9f",
     "tests/p3-cli-read-surface.test.mjs": "9f4b092d331222b94f88277eb8f69f08f2bc4c66e55b30d5b5106b7347979634",
     "tests/p3-engine-complexity.test.mjs": "57197db1bb8665db63f425750ba5ae8042f53abb076fd1a1f863f8f3739d5508",
     "tests/p3-file-engine.test.mjs": "d28569ee01c1d613ca9d56d38eb420914da5a9f9229727ebf4154cb951bb7804",
@@ -2078,7 +2078,7 @@
     "tests/recall-inputs.test.mjs": "cf2d8f27bcbf2f8fe3c265e64c479459937297944b39cbee41550c406e4a22a7",
     "tests/recall-strong-hit.test.mjs": "777f65889a4a553c17ebbe3afafdf64a354f21a00fd83bf8ae3b36804346aa2b",
     "tests/registry-resolve.test.mjs": "ad178e9d62a842de761b94e42e54e64027b29a3ba98b070183c9130eb5cba13d",
-    "tests/release-lockstep.test.mjs": "0e66242ae7beb4b05f8d2221baae57056fc06d21f219e79604fa237fd0228baa",
+    "tests/release-lockstep.test.mjs": "15bd62bda56875484f2496e44015a9ccf9141dfd6f87f0aace6a90262063893f",
     "tests/release-tag-gate.test.mjs": "8f41389ef5554c7efb17db2e1e528bc22cdf62b2f910b47b2333e71f9f254098",
     "tests/release-tooling-audit-boundaries.test.mjs": "4bfe8b3e0dd702e925aeefdfc2f8ad1d67dcb5ea9919aca1199d12ffc18b5001",
     "tests/release-trust.test.mjs": "76766bfef30465655743cbf697b007da13a59143277f0a8d39f3cc70c1c730f6",

@@ -388,7 +388,7 @@ test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --
   assert.deepEqual(verbs.filter((name) => entry(name).flags.some((flag) => flag.name === "workspace")), ["rule-list"], "explicit library-only rule read is declared");
 });
 
-test("STORY-480: setup writes and takes the wizard's flags; doctor reads and takes --project alone", () => {
+test("STORY-480/605: setup writes and takes the wizard's flags; doctor reads and accepts an optional execution target", () => {
   const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
   const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
   assert.equal(entry("setup").mutates, true);
@@ -400,7 +400,7 @@ test("STORY-480: setup writes and takes the wizard's flags; doctor reads and tak
     ["yes", false, "boolean"],
   ]);
   assert.equal(entry("doctor").mutates, false);
-  assert.deepEqual(flags("doctor"), [["project", false, "string"]]);
+  assert.deepEqual(flags("doctor"), [["project", false, "string"], ["execution-target", false, "string"]]);
   // Neither takes --workspace: the project's library is the one this device's registry names.
   assert.equal(["setup", "doctor"].some((name) => entry(name).flags.some((flag) => flag.name === "workspace")), false);
 });
@@ -434,6 +434,7 @@ test("integrated engine: non-decision valueShapes document projection selection,
       name: "output-keys", required: false, valueKind: "string",
       valueShape: "JSON array of stable registered output keys; omitted selects all known outputs, [] selects none",
     }],
+    ["doctor", { name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }],
     ["dot-extension-source-set", { name: "source", required: true, valueKind: "json", valueShape: "Private dot extension source JSON; data only, not publication approval" }],
     ["dot-extension-source-set", { name: "verification", required: true, valueKind: "json", valueShape: "Ephemeral local Git bindings {gitExecutable,scratchRoot,repositories:[{key,root}]}; authorized absolute roots only, never persisted" }],
     ["execution-evidence", {

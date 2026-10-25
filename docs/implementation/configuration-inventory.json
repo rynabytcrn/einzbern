@@ -6949,6 +6949,12 @@
             "name": "project",
             "required": false,
             "valueKind": "string"
+          },
+          {
+            "name": "execution-target",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "traditional | chatgpt-dot"
           }
         ]
       },

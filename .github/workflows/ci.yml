@@ -69,8 +69,6 @@ jobs:
     timeout-minutes: 45
     env:
       VERIFY_MODE: ${{ matrix.mode }}
-      # Both required installs retain genuine verification records across private HOME.
-      pnpm_config_cache_dir: ${{ runner.temp }}/einzbern-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.mode }}/pnpm
     steps:
       - name: Checkout full clean history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -121,7 +119,11 @@ jobs:
           npm_config_fund: "false"
           npm_config_update_notifier: "false"
           NO_UPDATE_NOTIFIER: "1"
-        run: pnpm install --frozen-lockfile --ignore-scripts --config.offline=false
+        run: |
+          # Both required installs retain genuine verification records across private HOME.
+          export pnpm_config_cache_dir="$RUNNER_TEMP/einzbern-bootstrap-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${VERIFY_MODE}/pnpm"
+          printf 'pnpm_config_cache_dir=%s\n' "$pnpm_config_cache_dir" >> "$GITHUB_ENV"
+          pnpm install --frozen-lockfile --ignore-scripts --config.offline=false
 
       - name: Acquire official pinned Corepack and its pnpm cache when consumed
         env:

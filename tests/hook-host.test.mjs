@@ -124,3 +124,22 @@ test("BL34 scope: DSH subagent navigation remains pointer-only even with a match
   assert.match(answer.hookSpecificOutput.additionalContext, /Recall first:/u);
   assert.doesNotMatch(answer.hookSpecificOutput.additionalContext, /HOOK-STORY/u);
 });
+
+test("Codex-only SubagentStop returns an empty response for unassociated work and does not answer for other hosts", async (context) => {
+  const { directory, library } = await registeredProject(context);
+  const { runHookEvent } = await import(pathToFileURL(join(repositoryRoot, "scripts/einzbern-hook.mjs")).href);
+  const previous = { host: process.env.EINZBERN_HOST, home: process.env.EINZBERN_HOME, claude: process.env.CLAUDE_PROJECT_DIR };
+  context.after(() => {
+    if (previous.host === undefined) delete process.env.EINZBERN_HOST; else process.env.EINZBERN_HOST = previous.host;
+    if (previous.home === undefined) delete process.env.EINZBERN_HOME; else process.env.EINZBERN_HOME = previous.home;
+    if (previous.claude === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = previous.claude;
+  });
+  process.env.EINZBERN_HOME = join(directory, ".fixture-device");
+  process.env.EINZBERN_HOST = "codex";
+  const unassociated = await runHookEvent({ event: "subagent-stop", payload: { last_assistant_message: "ordinary final" }, libraryPath: library, cwd: directory });
+  assert.equal(unassociated, "{}\n");
+  process.env.EINZBERN_HOST = "claude-code";
+  assert.equal(await runHookEvent({ event: "subagent-stop", payload: {}, libraryPath: library, cwd: directory }), null);
+  process.env.EINZBERN_HOST = "dsh";
+  assert.equal(await runHookEvent({ event: "subagent-stop", payload: {}, libraryPath: library, cwd: directory }), null);
+});

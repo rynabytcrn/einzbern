@@ -35,7 +35,7 @@ import { effectiveProjectState } from "./project-chain.js";
 
 import { NAVIGATION_LINES } from "./agents-sections.js";
 import { isSharedLibrary } from "./chain-identity.js";
-import { HOST_HOOK_EVENTS, HOST_HOOK_HOSTS, HOST_HOOK_POINTER_EVENTS } from "./host-hooks.js";
+import { CODEX_HOOK_EVENTS, HOST_HOOK_EVENTS, HOST_HOOK_HOSTS, HOST_HOOK_POINTER_EVENTS } from "./host-hooks.js";
 import type { HostHookHost } from "./host-hooks.js";
 import { recall, recallDocuments } from "./recall.js";
 import { readRecallCards, recallContextLines, recallDecisionHints, recallInputsFromState } from "./recall-inputs.js";
@@ -65,10 +65,10 @@ function fail(reasonCode: HookRecallReasonCode, message: string, details: Readon
   throw new HookRecallError(reasonCode, message, details);
 }
 
-// Every event the launcher may be run for, with its word: the prompt hook and the pointer hooks.
+// Every event the launcher may be run for, with its word: common, Codex-only stop and pointer hooks.
 // Read when it is asked for, not when this module loads: host-hooks.ts can still be loading then.
 function hookEventWords(): Readonly<Record<string, string>> {
-  return { ...HOST_HOOK_EVENTS, ...HOST_HOOK_POINTER_EVENTS };
+  return { ...HOST_HOOK_EVENTS, ...CODEX_HOOK_EVENTS, ...HOST_HOOK_POINTER_EVENTS };
 }
 
 /** The host event a launcher word names (user-prompt-submit → UserPromptSubmit, session-start → SessionStart), or null. */

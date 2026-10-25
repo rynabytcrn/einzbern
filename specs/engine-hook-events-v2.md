@@ -2,10 +2,12 @@
 # Engine hook events
 
 The installed engine owns UserPromptSubmit, SubagentStart and PreToolUse for
-Claude Code and Codex. Setup, update and host-render reconcile the same stable
-launcher commands; doctor compares the installed hooks with that same plan.
-SessionStart remains the navigation fallback when agents.navigation is declined.
-No Stop, SSH or control-tree hook is restored. DSH's existing contract is unchanged.
+Claude Code and Codex. Codex additionally owns SubagentStop for the bounded
+collector protocol below; it is not in the common event table. Setup, update and
+host-render reconcile the same stable launcher commands; doctor compares the
+installed hooks with that same plan. SessionStart remains the navigation fallback
+when agents.navigation is declined. SSH and control-tree hooks remain retired.
+DSH's existing contract is unchanged.
 
 ## Subagent first-work context (BL-34)
 
@@ -36,6 +38,52 @@ not parsed or executed, and they are never refused by this guard. Unknown input,
 missing paths, directories and filesystem exceptions fail open. The engine records
 an observed/denied outcome without recording command text or file contents. Hosts
 without a dedicated Read surface do not acquire shell enforcement through aliases.
+
+## Codex SubagentStop collector
+
+The Codex-only `SubagentStop` command reaches the versioned engine entry as
+`subagent-stop`. The handler accepts only one exact single-line
+`EINZBERN_SUBAGENT_STOP_V1 ` JSON envelope in `last_assistant_message`, with
+`batchId`, `nonce` and `manifestPath`. An absent or malformed marker returns `{}`.
+The handler reads only the exact batch manifest path under the device directory's
+`subagent-stop/batches/<batchId>/` directory. The parent writes the manifest before
+dispatch; the collector task name and every target task name must be the actual
+native task names. The nonce is a correlation value, not authentication.
+
+The first matching stop validates the existing manifest, then persists the real
+payload `session_id` and `agent_id` once in `binding.json` and synchronously blocks.
+Further stops are considered only when both IDs match that binding. A matching
+nonce cannot bind a replacement agent or session. The handler never reads a task
+transcript, private session database, or native task store, and it never invokes
+collaboration or sends a parent message. `stop_hook_active` does not imply that a
+target is complete.
+
+The native collector writes `snapshot.json` with the exact fixed target list, each
+raw host state, an explicit finality classification (`completed`, `failed`,
+`cancelled_confirmed`, `pending` or `unknown`), evidence reference, observation
+time, next query time, consecutive query failure count, latest query error,
+exception reason and report attempt. The handler does not translate raw host
+states into finality. Pending snapshots must schedule `nextQueryAt` no earlier
+than `observedAt + queryIntervalMs`. While within budget the handler blocks the
+same collector and tells it to wait with a native timer, then query the fixed list
+once. It does not sleep inside the synchronous hook. A repeated stop without a
+new snapshot is allowed through, preventing a rapid block loop.
+
+All targets must have an explicit terminal classification before a normal report
+is requested. A terminal `reportAttempt` is recorded as `in-flight` before the
+collector calls its authorized native parent-message tool once. Only a saved
+`acknowledged` state with the actual tool-result evidence permits a confirmed
+normal release. `unknown` and `failed` outcomes are retained and never retried
+blindly; the hook and local file cannot make host delivery plus acknowledgement
+storage atomic. In-flight results get at most one reconciliation continuation.
+Deadline, query failure limit, explicit collector cancellation, script error and
+protocol error remain distinct; a bound collector gets at most one focused
+exception-report continuation, then ends with unresolved delivery or target
+facts left visible. An unbound or unrelated stop always fails open with `{}`.
+
+This local protocol decision is not authentication, proof that the host fired the
+hook, or proof that a native message was delivered. Source and fixture regressions
+cannot establish those separate native-host facts.
 
 ## Platform doctor (BL-41)
 

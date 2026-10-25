@@ -82,6 +82,15 @@ function packedRelease() {
   return packed;
 }
 
+test("Codex SubagentStop release carries both the versioned route and its core evaluator", async () => {
+  const { entries } = await packedRelease();
+  const files = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry.bytes]));
+  assert.ok(files.has("scripts/einzbern-hook.mjs"), "the versioned hook entry is packaged");
+  assert.ok(files.has("dist/build/packages/core/src/codex-subagent-stop.js"), "the exact imported evaluator is packaged");
+  assert.match(files.get("scripts/einzbern-hook.mjs").toString("utf8"), /codex-subagent-stop\.js/u);
+  assert.match(files.get("dist/build/packages/core/src/codex-subagent-stop.js").toString("utf8"), /CODEX_STOP_FIRST_BINDING/u);
+});
+
 test("605: every contract referenced by the shipped Skill resolves to manifest-verified archive bytes", async () => {
   const { entries } = await packedRelease();
   const files = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry.bytes]));

@@ -4,7 +4,8 @@
 // guard. Each host file runs the stable device launcher, never a checkout or platform script.
 // SessionStart is added only when agents.navigation is declined. SubagentStart always carries
 // navigation and recalls against the host's documented agent_type (not a fabricated task field).
-// Stop, SSH and control-tree hooks remain retired. DSH keeps its separate plugin contract.
+// SubagentStop is a Codex-only bounded collector hook. SSH and control-tree hooks remain retired.
+// DSH keeps its separate plugin contract.
 // Engine updates change engine/current without rewriting host command paths.
 //
 // Rendering a file keeps everything that is not Einzbern's: other tools' hook groups, in their
@@ -90,6 +91,11 @@ export const HOST_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze(
   SubagentStart: "subagent-start",
   PreToolUse: "pre-tool-use",
 });
+// Codex-only events are deliberately separate from the common table: rendering one must never
+// add a native event to Claude Code or DSH.
+export const CODEX_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze({
+  SubagentStop: "subagent-stop",
+});
 // TCRN-CROSS-STORY-478 R4, AC5: the pointer hooks of a device whose agents.navigation is declined,
 // with their launcher words. SubagentStart also recalls and is always installed.
 export const HOST_HOOK_POINTER_EVENTS: Readonly<Record<string, string>> = Object.freeze({
@@ -97,7 +103,7 @@ export const HOST_HOOK_POINTER_EVENTS: Readonly<Record<string, string>> = Object
   SubagentStart: "subagent-start",
 });
 // Every event a launcher word may name, pointer hooks included.
-const HOOK_EVENT_WORDS: Readonly<Record<string, string>> = Object.freeze({ ...HOST_HOOK_EVENTS, ...HOST_HOOK_POINTER_EVENTS });
+const HOOK_EVENT_WORDS: Readonly<Record<string, string>> = Object.freeze({ ...HOST_HOOK_EVENTS, ...CODEX_HOOK_EVENTS, ...HOST_HOOK_POINTER_EVENTS });
 // The stable launcher, in engine/ of the device directory; installed from
 // scripts/einzbern-hook-launcher.mjs. Its name has one source, device-home.ts.
 export const HOST_HOOK_LAUNCHER = ENGINE_HOOK_LAUNCHER;
@@ -148,8 +154,8 @@ export interface HostHooksExpectation {
   readonly launcher: string;
   readonly hooksFile: string;
   readonly configFile: string | null;
-  // Event → the Einzbern hook groups the file must carry: one UserPromptSubmit group, and one on
-  // each pointer event when navigation is declined; none when nothing is installed.
+  // Event → the Einzbern hook groups the file must carry: common events, Codex-only events for
+  // Codex, and pointer events when navigation is declined; none when nothing is installed.
   readonly groups: Readonly<Record<string, readonly HostHookGroup[]>>;
 }
 
@@ -220,7 +226,11 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   const launcher = hookLauncherPath(request.deviceHome, platform);
   const groups: Record<string, readonly HostHookGroup[]> = {};
   if (install) {
-    const events = [...new Set([...Object.keys(HOST_HOOK_EVENTS), ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : [])])];
+    const events = [...new Set([
+      ...Object.keys(HOST_HOOK_EVENTS),
+      ...(host === "codex" ? Object.keys(CODEX_HOOK_EVENTS) : []),
+      ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : []),
+    ])];
     for (const event of events) {
       groups[event] = [{ hooks: [{ type: "command", command: hostHookCommand(launcher, event) }] }];
     }

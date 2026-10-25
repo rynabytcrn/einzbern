@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // CFG-B03/B04/P01. Synthetic policy values below are fixture-only, not product defaults.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile, readdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { configBackupCanonical, planConfigBackup, writeConfigBackupPackage } from "../dist/build/packages/core/src/config-backup.js";
 import { createConfigBackup, evaluateConfigBackupEnablement, listConfigBackups, resumeConfigBackup, retireConfigBackup, validateConfigBackupRetentionPolicy } from "../dist/build/packages/core/src/config-backup-retention.js";
+import { CONFIG_BACKUP_RESERVATION_FILE, CONFIG_BACKUP_RESERVATION_TEXT } from "../scripts/lib/config-backup-reservation.mjs";
+import { runConfigBackupCommand } from "../dist/build/packages/cli/src/config-backup-commands.js";
 const ref = { libraryId: `workspace:${"1".repeat(24)}`, projectId: `project:${"2".repeat(24)}` };
 const version = { engineVersion: "3.1.0", engineCommit: null, engineCommitStatus: "unknown", artifactIdentity: { kind: "observed-artifact-identity", schemaVersion: "einzbern.install-tree-digest.v1", sha256: "3".repeat(64) }, templateVersions: ["rules-v1"] };
 const fixturePolicy = { schemaVersion: "einzbern.config-backup-retention.v1", activeLimit: 1, transactionLimit: 1, recoveryLimit: 2, maxPackageBytes: 65536, maxTotalBytes: 262144, retentionDuration: 1000, recoveryDuration: 86400000, noChangePolicy: "skip", atLimitAction: "stop-new-and-report", retirementMethod: "verified-recovery-move", approvalEvidenceRef: "fixture-only:retention-policy" };
@@ -17,6 +19,46 @@ async function fixture(t) {
   const store = { reservedRoot: reserve, localBindingRoot: join(root, "config-backup-bindings"), protectedRoots: [project], binding: { projectRef: ref, backupGroupId: "4".repeat(32), writerBindingRef: "fixture-only:writer", executionEnvironmentRef: "fixture-only:environment", hostname: "device" }, policy: fixturePolicy, approval: { approved: true, policyDigest: approved.policyDigest, approvalEvidenceRef: fixturePolicy.approvalEvidenceRef } };
   return { root, store, proposal: (id, theme, at) => planConfigBackup({ projectRef: ref, backupId: id.repeat(32), backupGroupId: store.binding.backupGroupId, hostname: "device", sourceVersion: version, at, payloads: [{ kind: "device-preference", key: "portal.defaultTheme", value: theme, source: "device-declaration" }] }) };
 }
+test("CFG-B02/P01: retained project and generated subdirectories create and list the same verified groups", async t => {
+  for (const generated of [false, true]) {
+    const f = await fixture(t), project = join(f.root, "project"), library = join(project, "library"), artifacts = join(library, "artifacts"), device = join(f.root, "device");
+    const reservedRoot = join(generated ? artifacts : project, "retained");
+    await mkdir(reservedRoot, { recursive: true }); await mkdir(device);
+    const store = { ...f.store, reservedRoot, protectedRoots: [device, join(library, "akasha"), join(library, "config"), join(library, "crest")], retainedContainerRoots: [{ path: project, kind: "project" }, { path: library, kind: "library" }, { path: artifacts, kind: "generated" }] };
+    const proposal = f.proposal("5", "dark", "2026-10-20T00:00:00Z");
+    await assert.rejects(createConfigBackup({ ...store, approval: null }, proposal, proposal.manifest.createdAtUtc), { reasonCode: "policy-unapproved" });
+    assert.deepEqual(await readdir(reservedRoot), [], "policy refusal does not reserve a directory");
+    assert.equal((await createConfigBackup(store, proposal, proposal.manifest.createdAtUtc)).status, "settled");
+    assert.equal(await readFile(join(reservedRoot, CONFIG_BACKUP_RESERVATION_FILE), "utf8"), CONFIG_BACKUP_RESERVATION_TEXT);
+    const listed = await listConfigBackups({ reservedRoot, at: "2026-10-20T00:00:01Z" });
+    assert.equal(listed.scanStatus, "scanned"); assert.equal(listed.groups.length, 1);
+    assert.equal(listed.groups[0].integrity, "verified"); assert.equal(listed.groups[0].activeCount, 1);
+    assert.deepEqual(listed.groups[0].projectRef, ref); assert.equal(listed.groups[0].backupGroupId, store.binding.backupGroupId);
+    assert.equal((await resumeConfigBackup(store, "2026-10-20T00:00:02Z")).status, "settled");
+    assert.ok(proposal.manifest.files.every(file => !file.memberPath.includes("config-backup")), "protection metadata and other backups are not members");
+  }
+});
+
+test("CFG-B02: corrupt or linked reservation metadata is never overwritten", async t => {
+  for (const linked of [false, true]) {
+    const f = await fixture(t), marker = join(f.store.reservedRoot, CONFIG_BACKUP_RESERVATION_FILE);
+    if (linked) { const outside = join(f.root, "marker-source"); await writeFile(outside, CONFIG_BACKUP_RESERVATION_TEXT); await symlink(outside, marker); }
+    else await writeFile(marker, "not a reservation");
+    const proposal = f.proposal("5", "dark", "2026-10-20T00:00:00Z");
+    await assert.rejects(createConfigBackup(f.store, proposal, proposal.manifest.createdAtUtc), { reasonCode: linked ? "CONFIG_BACKUP_PATH_INVALID" : "CONFIG_BACKUP_RESERVATION_INVALID" });
+    assert.deepEqual(await readdir(f.store.reservedRoot), [CONFIG_BACKUP_RESERVATION_FILE]);
+    assert.equal(await readFile(marker, "utf8"), linked ? CONFIG_BACKUP_RESERVATION_TEXT : "not a reservation");
+  }
+});
+test("CFG-B02: request JSON cannot supply root-boundary exceptions", async t => {
+  const f = await fixture(t), requestPath = join(f.root, "request.json");
+  for (const key of ["protectedRoots", "retainedContainerRoots"]) {
+    const request = { selection: [], store: { reservedRoot: f.store.reservedRoot, binding: f.store.binding, policy: fixturePolicy, [key]: [] }, backupId: "5".repeat(32), expectedSelectionDigest: "0".repeat(64) };
+    await writeFile(requestPath, JSON.stringify(request), { mode: 0o600 });
+    await assert.rejects(runConfigBackupCommand("config-backup-create", { request: requestPath, at: "2026-10-20T00:00:00Z" }, { resolveSource: async () => ({ projectRef: ref }) }), { reasonCode: "CONFIG_BACKUP_FIELD_UNKNOWN" });
+    assert.deepEqual(await readdir(f.store.reservedRoot), []);
+  }
+});
 test("CFG-B03: every field and actual approval are required; no production defaults", () => {
   assert.equal(validateConfigBackupRetentionPolicy(undefined).status, "policy-unapproved");
   for (const key of Object.keys(fixturePolicy)) { const policy = { ...fixturePolicy }; delete policy[key]; assert.equal(validateConfigBackupRetentionPolicy(policy).status, "policy-unapproved", key); }

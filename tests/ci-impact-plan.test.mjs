@@ -1006,7 +1006,7 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   const names = (text) => text.trim().split(/\s+/u).map((name) => `tests/${name}.test.mjs`);
   const sorted = (files) => [...new Set(files)].sort();
   const integrity = names("ci-artifact-transport ci-baseline-evidence ci-bootstrap ci-evidence-retention ci-impact-plan ci-selective-runner ci-test-roster");
-  const common = names(`bootstrap bundle configuration-contract dependency-materialization dependency-policy
+  const common = names(`bootstrap bundle config-backup-format configuration-contract dependency-materialization dependency-policy
     dispatch-admission-evidence final-gate-plan final-gate-plan-batch-verify heavy-runs inc263-closeout inc275-mcp-absent
     native-tool-evidence no-sibling-dependency node-floor offline-boundary operational-audit-boundaries output-session-lifecycle
     p1-all-legs p1-roster p8-sbom-receipt-boundary p8-workflow-rc pack-release platform-doctor privacy-boundary project-chain-model
@@ -1021,7 +1021,7 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   expectedDocuments["docs/wiki/Glossary.md"] = sorted([...expectedDocuments["docs/wiki/Glossary.md"], ...names("names-alias-table")]);
   expectedDocuments["docs/wiki/Home.md"] = sorted([...expectedDocuments["docs/wiki/Home.md"], ...names("inc238-markdown-link-gate")]);
   const privacy = names(`bootstrap bundle ci-artifact-transport ci-baseline-evidence ci-bootstrap ci-evidence-retention ci-impact-plan ci-selective-runner ci-test-roster
-    configuration-contract cross-repo-privacy dependency-materialization dependency-policy dispatch-admission-evidence final-gate-plan final-gate-plan-batch-verify
+    config-backup-format configuration-contract cross-repo-privacy dependency-materialization dependency-policy dispatch-admission-evidence final-gate-plan final-gate-plan-batch-verify
     heavy-runs inc263-closeout inc275-mcp-absent local-command-byte-fidelity native-tool-evidence no-sibling-dependency node-floor offline-boundary
     operational-audit-boundaries otel-privacy-guard output-session-lifecycle p1-all-legs p1-roster p8-sbom-receipt-boundary p8-workflow-rc pack-release platform-doctor
     privacy-boundary privacy-git-metadata privacy-normalization project-chain-model push-gate-p1-coverage readme-render release-lockstep release-tag-gate
@@ -1058,7 +1058,7 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   const graph = sourceDependencyGraph(texts);
   assert.equal(graph.get("packages/core/src/names.ts").has("scripts/lib/privacy.mjs"), false);
   assert.equal(graph.get("portal/tests/portal.test.mjs").has("scripts/lib/log.mjs"), false);
-  const mergedPortalConsumers = names("host-fallback-recommendation host-native-dispatch");
+  const mergedPortalConsumers = names("config-backup-format config-backup-retention host-fallback-recommendation host-native-dispatch");
   const portalInput = { ...input, records: [{ status: "M", paths: [rules.portalPaths[0]] }] };
   const portalPlan = createPlan(portalInput, rules, rulesHash);
   assert.equal(portalPlan.coverage, "selective");

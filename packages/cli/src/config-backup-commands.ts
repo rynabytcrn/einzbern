@@ -7,7 +7,7 @@ import {
   configBackupInstant, configBackupObject, configBackupString, planConfigBackup,
   readConfigBackupFile, verifyConfigBackup, writeConfigBackupNewFile,
 } from "../../core/src/config-backup.js";
-import type { ConfigBackupSelection, ConfigBackupSource, ConfigBackupSourceVersion } from "../../core/src/config-backup.js";
+import type { ConfigBackupSelection, ConfigBackupSource, ConfigBackupSourceVersion, ConfigBackupRetainedContainer } from "../../core/src/config-backup.js";
 import { createConfigBackup, listConfigBackups, resumeConfigBackup, retireConfigBackup } from "../../core/src/config-backup-retention.js";
 import type { ConfigBackupGroupBinding, ConfigBackupPolicyApproval, ConfigBackupStore } from "../../core/src/config-backup-retention.js";
 import { applyConfigRestore, planConfigRestore } from "../../core/src/config-restore.js";
@@ -34,6 +34,7 @@ export interface ConfigBackupCommandContext {
   /** Resolve the actual library/project/device/cleaner roots. Do not trust request-provided exclusions. */
   localBindingRoot(source: ConfigBackupSource): Promise<string>;
   protectedRoots(source: ConfigBackupSource): Promise<readonly string[]>;
+  retainedContainerRoots?(source: ConfigBackupSource): Promise<readonly ConfigBackupRetainedContainer[]>;
   /** Existing permission boundary validates this exact policy/evidence, not merely its string shape. */
   approvePolicy(request: ConfigBackupStoreRequest, source: ConfigBackupSource, values: Readonly<Record<string, string>>): Promise<ConfigBackupPolicyApproval | null>;
   /** Reuse actual settings/rule/variable CLI permission checks; read-only preview never grants them. */
@@ -61,7 +62,7 @@ async function storeFor(value: unknown, source: ConfigBackupSource, values: Read
   if (configBackupCanonical(request.binding.projectRef) !== configBackupCanonical(source.projectRef)) configBackupFail("CONFIG_BACKUP_SOURCE_MISMATCH");
   const timeout = values["timeout-ms"];
   if (timeout !== undefined && (!/^(0|[1-9][0-9]*)$/u.test(timeout) || !Number.isSafeInteger(Number(timeout)))) configBackupFail("CLI_ARGUMENT_MALFORMED");
-  return { ...request, ...(timeout === undefined ? {} : { lockTimeoutMs: Number(timeout) }), localBindingRoot: await context.localBindingRoot(source), protectedRoots: await context.protectedRoots(source), approval: await context.approvePolicy(request, source, values) };
+  return { ...request, ...(timeout === undefined ? {} : { lockTimeoutMs: Number(timeout) }), localBindingRoot: await context.localBindingRoot(source), protectedRoots: await context.protectedRoots(source), ...(context.retainedContainerRoots === undefined ? {} : { retainedContainerRoots: await context.retainedContainerRoots(source) }), approval: await context.approvePolicy(request, source, values) };
 }
 async function output(result: unknown, path: string | undefined): Promise<JsonValue> {
   const text = configBackupCanonical(result);

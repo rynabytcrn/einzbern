@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Tests in this file run sequentially; Node isolates each file in a process.
 import { CLI, R46_AT, RETIRED_PERSONA_ACTIONS, RETIRED_ROUTES, TEST_ACTOR, appendHistoricalModelSetting, assert, cli, clientTargets, execFileAsync, httpRequest, join, mkdir, mkdtemp, portalRoot, readBoot, readFile, readOptions, realpath, request, rm, scratch, spawn, startPortal, startupRefusal, test, tmpdir, unregisterLibrary, writeFile, writeOptions } from "./portal-support.mjs";
+import { createConfigBackupInventoryFixture } from "../../tests/helpers/config-backup-fixture.mjs";
 
 
 
@@ -504,4 +505,43 @@ test("configuration backup inventory is a read-only public CLI route with an exp
   assert.match(route, /await cli\(\["config-backup-list"/u);
   assert.doesNotMatch(route, /(?:readFile|readdir|writeFile|restore|upload)\(/u);
   assert.ok(!source.includes('request.method === "POST" && pathname === "/api/config-backups"'));
+});
+
+test("configuration backup inventory reads project-local retained packages without browser-selected paths or writes", async t => {
+  const { readdir } = await import("node:fs/promises");
+  const fixture = await scratch("einzbern-portal-retained-backups-", "RETAINED-BACKUPS");
+  const children = [];
+  t.after(async () => {
+    await Promise.all(children.map(child => child.exitCode === null ? new Promise(resolve => { child.once("exit", resolve); child.kill(); }) : undefined));
+    await rm(fixture.base, { recursive: true, force: true });
+  });
+  const root = join(fixture.proseRoot, "retained");
+  await mkdir(root);
+  await createConfigBackupInventoryFixture({ reservedRoot: root, projectRoot: fixture.proseRoot, projectId: fixture.projectId, protectedRoots: [fixture.workspace, fixture.deviceEnv.EINZBERN_HOME], localBindingRoot: join(fixture.base, "config-backup-bindings") });
+  async function snapshot(directory) {
+    const entries = [];
+    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name))) {
+      const path = join(directory, entry.name);
+      entries.push([entry.name, entry.isDirectory() ? await snapshot(path) : (await readFile(path)).toString("base64")]);
+    }
+    return entries;
+  }
+  const before = await snapshot(root);
+  const explicit = await startPortal({ ...fixture, configBackupRoot: root });
+  children.push(explicit.child);
+  const { boot } = await readBoot(explicit.url);
+  const listing = await request(explicit.url, `/api/config-backups?root=${encodeURIComponent(fixture.home)}`, readOptions(boot.token));
+  assert.equal(listing.response.status, 200);
+  assert.equal(listing.body.scanStatus, "scanned");
+  assert.deepEqual(listing.body.groups.map(group => [group.hostname, group.activeCount, group.integrity]).sort(), [["Device one", 1, "verified"], ["Device two", 1, "verified"]]);
+  const write = await request(explicit.url, "/api/config-backups", writeOptions(boot.token, "POST", { root: fixture.home, action: "restore" }));
+  assert.equal(write.response.status, 404);
+  assert.equal(write.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
+  const unspecified = await startPortal(fixture);
+  children.push(unspecified.child);
+  const otherBoot = (await readBoot(unspecified.url)).boot;
+  const notScanned = await request(unspecified.url, `/api/config-backups?root=${encodeURIComponent(root)}`, readOptions(otherBoot.token));
+  assert.equal(notScanned.body.scanStatus, "not-scanned");
+  assert.deepEqual(notScanned.body.groups, []);
+  assert.deepEqual(await snapshot(root), before, "inventory and refused writes leave every retained byte unchanged");
 });

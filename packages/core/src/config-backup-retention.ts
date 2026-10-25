@@ -7,9 +7,9 @@ import {
   CONFIG_BACKUP_RESERVED_ROOTS, assertConfigBackupDirectory, assertConfigBackupReservedRoot,
   configBackupCanonical, configBackupDigest, configBackupFail, configBackupId, configBackupInstant,
   configBackupObject, configBackupProjectRef, configBackupString, readConfigBackupFile,
-  safeConfigBackupHostname, validateConfigBackupManifest, validateConfigBackupPayload, verifyConfigBackup, writeConfigBackupNewFile, writeConfigBackupPackage,
+  safeConfigBackupHostname, validateConfigBackupManifest, validateConfigBackupPayload, verifyConfigBackup, writeConfigBackupNewFile, writeConfigBackupPackage, reserveConfigBackupRoot,
 } from "./config-backup.js";
-import type { ConfigBackupManifest, ConfigBackupPlan, ConfigBackupProjectRef } from "./config-backup.js";
+import type { ConfigBackupManifest, ConfigBackupPlan, ConfigBackupProjectRef, ConfigBackupRetainedContainer } from "./config-backup.js";
 
 export const CONFIG_BACKUP_RETENTION_VERSION = "einzbern.config-backup-retention.v1" as const;
 export const CONFIG_BACKUP_LOCAL_BINDING_DIRECTORY = "config-backup-bindings" as const;
@@ -89,8 +89,10 @@ export interface ConfigBackupStore {
   readonly reservedRoot: string;
   /** Device-local group binding root, resolved by the CLI, never supplied by a package. */
   readonly localBindingRoot: string;
-  /** Actual library, project, device and generated/cleaned roots, resolved by the caller. */
+  /** Hard protected roots, resolved by the caller; no overlap is permitted. */
   readonly protectedRoots: readonly string[];
+  /** Actual project/library/generated containers, not request-provided exclusions. */
+  readonly retainedContainerRoots?: readonly ConfigBackupRetainedContainer[];
   readonly binding: ConfigBackupGroupBinding;
   readonly policy: unknown; readonly approval: ConfigBackupPolicyApproval | null;
   readonly lockTimeoutMs?: number;
@@ -133,7 +135,9 @@ async function assertLocalBinding(store: ConfigBackupStore, mayCreate: boolean):
   if (text !== configBackupCanonical(expected)) configBackupFail("CONFIG_BACKUP_GROUP_UNBOUND");
 }
 async function preparePaths(store: ConfigBackupStore): Promise<GroupPaths> {
-  await assertConfigBackupReservedRoot(store.reservedRoot, store.protectedRoots);
+  await assertConfigBackupReservedRoot(store.reservedRoot, store.protectedRoots, store.retainedContainerRoots);
+  // Establish durable cleaner protection before any package, index or staging write.
+  await reserveConfigBackupRoot(store.reservedRoot);
   for (const root of CONFIG_BACKUP_RESERVED_ROOTS) {
     const area = await directory(store.reservedRoot, root); const host = await directory(area, safeConfigBackupHostname(store.binding.hostname));
     await directory(host, store.binding.backupGroupId);
@@ -318,7 +322,8 @@ async function retireUnderLock(paths: GroupPaths, index: ConfigBackupGroupIndex,
   return { status: "settled", index: next, reason: null };
 }
 export async function resumeConfigBackup(store: ConfigBackupStore, at: string, mode: "resume" | "recover-failed" = "resume"): Promise<ConfigBackupOperationResult> {
-  configBackupInstant(at); approvedPolicy(store); await assertConfigBackupReservedRoot(store.reservedRoot, store.protectedRoots); const paths = groupPaths(store);
+  configBackupInstant(at); approvedPolicy(store); await assertConfigBackupReservedRoot(store.reservedRoot, store.protectedRoots, store.retainedContainerRoots); const paths = groupPaths(store);
+  await reserveConfigBackupRoot(store.reservedRoot);
   await assertConfigBackupDirectory(paths.active);
   return withFileLock(join(paths.active, ".writer.lock"), async () => {
     const index = await readIndex(paths); if (!index) configBackupFail("CONFIG_BACKUP_GROUP_UNBOUND");
@@ -369,7 +374,8 @@ async function recoverFailedTransaction(store: ConfigBackupStore, paths: GroupPa
 }
 export async function retireConfigBackup(store: ConfigBackupStore, backupId: string, at: string): Promise<ConfigBackupOperationResult> {
   configBackupId(backupId); configBackupInstant(at); const policy = approvedPolicy(store).policy;
-  await assertConfigBackupReservedRoot(store.reservedRoot, store.protectedRoots); const paths = groupPaths(store); await assertConfigBackupDirectory(paths.active);
+  await assertConfigBackupReservedRoot(store.reservedRoot, store.protectedRoots, store.retainedContainerRoots); const paths = groupPaths(store); await assertConfigBackupDirectory(paths.active);
+  await reserveConfigBackupRoot(store.reservedRoot);
   return withFileLock(join(paths.active, ".writer.lock"), async () => {
     const index = await readIndex(paths); if (!index) configBackupFail("CONFIG_BACKUP_GROUP_UNBOUND"); await assertLocalBinding(store, false); assertBinding(index, store); await assertTracked(paths, index);
     if (index.transactions.length) return pendingResult(paths, index, at, "pending", "resume-existing-transaction-first");

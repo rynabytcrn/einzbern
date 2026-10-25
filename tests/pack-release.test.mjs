@@ -40,7 +40,7 @@ const ARCHIVE = `${RELEASE}.tar.gz`;
 const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
 const SPECIFICATIONS = Object.freeze([
   "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
-  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md",
+  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md",
 ]);
 
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-pack-release-")));
@@ -80,6 +80,47 @@ function packedRelease() {
   packed ??= packAndUnpack();
   return packed;
 }
+
+test("605: every contract referenced by the shipped Skill resolves to manifest-verified archive bytes", async () => {
+  const { entries } = await packedRelease();
+  const files = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry.bytes]));
+  const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
+  const references = new Set();
+  for (const [path, bytes] of files) {
+    if (!path.startsWith("skill/mana-orchestrate/") || !path.endsWith(".md")) continue;
+    for (const [reference] of bytes.toString("utf8").matchAll(/\bspecs\/[A-Za-z0-9._/-]+\.md\b/gu)) references.add(reference);
+  }
+  assert.ok(references.has("specs/context-v1.md"));
+  assert.ok(references.has("specs/work-content-v1.md"));
+  for (const reference of references) {
+    assert.ok(files.has(reference), reference);
+    assert.deepEqual(files.get(reference), await readFile(join(repositoryRoot, reference)), reference);
+    assert.equal(manifest.files.find((entry) => entry.path === reference)?.sha256, sha256(files.get(reference)), reference);
+  }
+});
+
+test("605: a packaging-list omission is refused from the actual Skill reference before any archive is written", async () => {
+  const source = await readFile(packScript, "utf8");
+  for (const specification of ["context-v1.md", "work-content-v1.md"]) {
+    const copy = join(base, `missing-${specification}`);
+    await mkdir(join(copy, "scripts"), { recursive: true });
+    const mutated = source.replace(`, "${specification}"`, "");
+    assert.notEqual(mutated, source);
+    await writeFile(join(copy, "scripts/pack-release.mjs"), mutated);
+    for (const name of await readdir(join(repositoryRoot, "scripts"))) {
+      if (name !== "pack-release.mjs") await symlink(join(repositoryRoot, "scripts", name), join(copy, "scripts", name));
+    }
+    for (const name of ["package.json", "packages", "dist", "portal", "specs"]) await symlink(join(repositoryRoot, name), join(copy, name));
+    const out = join(copy, "out");
+    const run = node([join(copy, "scripts/pack-release.mjs"), "--out", out]);
+    assert.equal(run.status, 1, safeDiagnostic(run.stderr));
+    const refusal = JSON.parse(lastLine(run.stderr));
+    assert.equal(refusal.reasonCode, "PACK_SKILL_SPEC_MISSING");
+    assert.equal(refusal.reference, `specs/${specification}`);
+    assert.equal(refusal.source, "skill/mana-orchestrate/SKILL.md");
+    assert.equal(existsSync(out), false, "the refusal does not leave a publishable archive");
+  }
+});
 
 /** A clean device, home and working directory under `name`, for a process run from the unpacked release. */
 async function environment(name) {

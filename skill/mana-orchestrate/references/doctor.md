@@ -6,12 +6,22 @@ migrate, uninstall, or doctor); do not load it for any other work.
 `doctor` only reads. Run `doctor --project <dir>` inside a project, where `--project` is the root
 of the project, or plain `doctor`, which takes the current directory as the project. It answers
 `DOCTOR_READY` with `ok` and eight items, each `{check, ok, reasonCode, detail}`; the same eight come
-back as `selfCheck.checks` after every `setup` apply. Run the engine verbs below the way SKILL.md
+back as `selfCheck.checks` after a traditional `setup` apply. Run the engine verbs below the way SKILL.md
 says to invoke the engine.
+
+For an independent dot installation, run `doctor --project <dir> --execution-target chatgpt-dot`.
+It runs the six shared device/library checks and lists `hooks-present` and `skill-copies` under
+`notApplicableChecks`, with their reasons. Those two traditional integrations are not installed
+or counted as passing. `ok` still fails when any applicable check fails. Omitting the target, or
+selecting `traditional`, keeps the existing eight-check behavior.
+
+This dot result is device/library health only. It does not verify dot's AGENTS, rule provenance,
+actual session reads or native admission; keep the independent readbacks in `install.md`.
 
 ## Report
 
-Show all eight checks in one short table, ok or not. A check that is not ok has one reasonCode of
+Show every applicable check in one short table, ok or not, and any not-applicable items separately.
+A check that is not ok has one reasonCode of
 its own, and `detail.causes` names what made it so; quote both, and the rest of the detail, as they
 are. Say in one plain sentence what it means and give the handling below. List the registry
 check's `detail.hints` under the table, if any; a hint never makes a check not ok. Fix nothing

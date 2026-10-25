@@ -882,7 +882,7 @@ export type { KeyAlias, LibraryReplay, LibraryStreamHead, RejectedEvent } from "
 // TCRN-CROSS-STORY-480 R4, AC5 (TCRN-CROSS-SUB-326, SUB-327): doctor, the eight checks of this device
 // and one project, each green or naming its red; the doctor verb reads it, and every setup apply
 // reports it as its self-check.
-export { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_REASON_CODES, runDoctor } from "./doctor.js";
+export { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_REASON_CODES, DOCTOR_TRADITIONAL_CHECKS, runDoctor } from "./doctor.js";
 export { DSH_PLUGIN_REASON_CODES, inspectDshPlugin } from "./dsh-plugin.js";
 export type { DshPluginInspection, DshProfileInspection } from "./dsh-plugin.js";
 export type { DoctorCheck, DoctorCheckName, DoctorInput, DoctorReasonCode } from "./doctor.js";

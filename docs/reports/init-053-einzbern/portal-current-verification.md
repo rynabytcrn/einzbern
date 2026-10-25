@@ -145,13 +145,13 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "packages/core/src/doctor.ts",
-      "bytes": 35108,
-      "sha256": "6bb3c08d707771ff29f27df820e1a6913ba6b7995e4fdf7f586314c46a6658a1"
+      "bytes": 35804,
+      "sha256": "8c2f533f00a467681195ab9cbbab3a14f64c3c9459c5e5cc263857b8b433c685"
     },
     {
       "path": "tests/doctor.test.mjs",
-      "bytes": 26519,
-      "sha256": "c3865eb7236140f39a402f2a38e8e6dfc0d18632c80f9742ba66cc803ade1356"
+      "bytes": 27959,
+      "sha256": "2ef3298b60b59103a842927e1bb93858a4a8d03a1a126b8484cd7619b1cf9863"
     },
     {
       "path": "scripts/verify-portal.mjs",

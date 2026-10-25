@@ -97,6 +97,33 @@ async function fixture(context) {
 
 const setup = (f, mode, ...flags) => cli(["setup", "--mode", mode, "--project", f.project, "--at", at(), ...flags]);
 
+test("605: doctor CLI reports dot exclusions separately and preserves common failures and the traditional default", async (context) => {
+  const f = await fixture(context);
+  await setup(f, "fresh", "--artifacts", f.library, "--yes", "true");
+  for (const path of [".claude", ".codex", ".agents"]) await rm(join(f.home, path), { recursive: true, force: true });
+  const before = await snapshot([f.home, f.deviceHome, f.project]);
+  await assert.rejects(cli(["doctor", "--project", f.project, "--execution-target", "unknown"]), { reasonCode: "CLI_ARGUMENT_MALFORMED" });
+  assert.deepEqual(await snapshot([f.home, f.deviceHome, f.project]), before);
+  const dot = await cli(["doctor", "--project", f.project, "--execution-target", "chatgpt-dot"]);
+  assert.equal(dot.executionTarget, "chatgpt-dot");
+  assert.equal(dot.ok, true);
+  assert.equal(dot.checks.length, 6);
+  assert.deepEqual(dot.notApplicableChecks.map((entry) => entry.check), ["hooks-present", "skill-copies"]);
+  for (const entry of dot.notApplicableChecks) {
+    assert.equal(Object.hasOwn(entry, "ok"), false, "not applicable is not a pass");
+    assert.match(entry.reason, /Traditional host integration/u);
+  }
+  const traditional = await cli(["doctor", "--project", f.project]);
+  assert.equal(traditional.ok, false);
+  assert.equal(traditional.checks.length, 8);
+  assert.equal(Object.hasOwn(traditional, "notApplicableChecks"), false);
+  assert.deepEqual(traditional.checks.filter((entry) => !entry.ok).map((entry) => entry.check), ["hooks-present", "skill-copies"]);
+  await rm(join(f.deviceHome, "engine", "current"));
+  const broken = await cli(["doctor", "--project", f.project, "--execution-target", "chatgpt-dot"]);
+  assert.equal(broken.ok, false);
+  assert.equal(broken.checks.find((entry) => entry.check === "engine-version").reasonCode, "DOCTOR_ENGINE_NOT_READY");
+});
+
 function rows(writes) {
   return writes.map((entry) => [entry.step, entry.path, entry.action]);
 }

@@ -176,6 +176,9 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
 // each of the same three members contains the unchanged names.js owner line once.
 // The CLI also contains the existing complete public helper address. Only the exact
 // version/member labels are added; origin, value and whole-line checks remain pinned.
+// Release 3.3.1: retain the exact reviewed compiled names.js line and origin for
+// these three versioned members. Final package bytes are checked before publication;
+// this classification does not exempt other members, values or additional content.
 const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
@@ -219,6 +222,9 @@ const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-3.3.0.tar.gz/einzbern-3.3.0/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-3.3.0.tar.gz/einzbern-3.3.0/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-3.3.0.tar.gz/einzbern-3.3.0/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.3.1.tar.gz/einzbern-3.3.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.3.1.tar.gz/einzbern-3.3.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.3.1.tar.gz/einzbern-3.3.1/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
 ]);
 const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
   [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [

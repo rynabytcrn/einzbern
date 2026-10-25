@@ -55,7 +55,7 @@ async function writeEngine(deviceHome, version, previous = null) {
 // A device and a project as setup leaves them: the engine current, one hook in each host's user
 // settings, both skill copies recorded, a registered library in the project, and one managed
 // section in AGENTS.md with its library record.
-async function healthy(context) {
+async function healthy(context, { traditional = true } = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-doctor-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const home = join(base, "home");
@@ -66,14 +66,14 @@ async function healthy(context) {
   // The library writes below go through this device directory, as the engine's own writes do.
   process.env.EINZBERN_HOME = deviceHome;
   await writeEngine(deviceHome, FRAMEWORK_VERSION);
-  for (const host of HOST_HOOK_FILE_HOSTS) {
+  for (const host of traditional ? HOST_HOOK_FILE_HOSTS : []) {
     await applyHostHooks(await readHostHooks(planHostHooks({ host, scope: "user", deviceHome }), { root: home, home }), { at: AT });
   }
   const skill = join(base, "skill");
   await mkdir(join(skill, "references"), { recursive: true });
   await writeFile(join(skill, "SKILL.md"), "---\nname: mana-orchestrate\ndescription: doctor fixture\n---\n");
   await writeFile(join(skill, "references", "doctor.md"), "# doctor\n");
-  await installSkillCopies({ source: skill, now: AT, home, deviceHome });
+  if (traditional) await installSkillCopies({ source: skill, now: AT, home, deviceHome });
   const library = join(project, ".ether");
   await initializeLibrary({ root: library, createdAt: AT });
   await registerLibrary({ projectPath: project, libraryPath: library, registeredAt: AT, cloudHosted: false, gitRemote: null }, deviceHome);
@@ -125,6 +125,22 @@ test("480-R4: each of the eight checks answers one reason code of its own", () =
   const codes = Object.values(DOCTOR_CHECK_REASON_CODES);
   assert.equal(new Set(codes).size, 8, "no two checks share a reason code");
   assert.deepEqual([...codes].sort(), [...DOCTOR_REASON_CODES].sort());
+});
+
+test("605: a dot-only device has six applicable checks and does not acquire traditional integrations", async (context) => {
+  const fixture = await healthy(context, { traditional: false });
+  const dot = await doctor(fixture, { executionTarget: "chatgpt-dot" });
+  assert.deepEqual(dot.map((entry) => entry.check), ["engine-version", "registry", "library-format", "device-stream", "managed-sections", "cloud-flag"]);
+  assert.ok(dot.every((entry) => entry.ok), JSON.stringify(dot));
+  for (const path of [".claude", ".codex", ".agents"]) await assert.rejects(lstat(join(fixture.home, path)), { code: "ENOENT" });
+  const traditional = await doctor(fixture);
+  assert.equal(traditional.length, 8);
+  assert.deepEqual(traditional.filter((entry) => !entry.ok).map((entry) => entry.check), ["hooks-present", "skill-copies"]);
+  assert.deepEqual((await doctor(fixture, { executionTarget: "traditional" })).map((entry) => [entry.check, entry.ok]), traditional.map((entry) => [entry.check, entry.ok]));
+  await rm(join(fixture.deviceHome, "engine", "current"));
+  const broken = await doctor(fixture, { executionTarget: "chatgpt-dot" });
+  assert.deepEqual(broken.filter((entry) => !entry.ok).map((entry) => [entry.check, entry.reasonCode]), [["engine-version", "DOCTOR_ENGINE_NOT_READY"]]);
+  await assert.rejects(doctor(fixture, { executionTarget: "unknown" }), RangeError);
 });
 
 test("480-AC5: a device and project as setup leaves them are green on all eight checks, and doctor leaves nothing behind", async (context) => {

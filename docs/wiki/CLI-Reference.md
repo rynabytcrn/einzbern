@@ -238,9 +238,10 @@
 - 可用范围：`cli`。
 - 是否写入：否。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--project` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--project` | 可选 | `string` |  |
+| `--execution-target` | 可选 | `string` | `traditional | chatgpt-dot` |
 
 ## `dot-extension-source-set`
 

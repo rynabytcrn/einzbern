@@ -52,6 +52,7 @@ import { matchCloudRoot } from "./cloud-roots.js";
 import type { CloudRootContext } from "./cloud-roots.js";
 import { deviceHome as currentDeviceHome, ensureDeviceDirectory, lockPath, registryPath } from "./device-home.js";
 import { readDevice } from "./device-identity.js";
+import type { SetupExecutionTarget } from "./dot-agents.js";
 import { ENGINE_FILES, engineLauncherPath, engineVersionDirectory, readEngineCurrent } from "./engine-home.js";
 import type { EngineCurrent } from "./engine-home.js";
 import { LIBRARY_FILES, hasLibraryManifest, openLibrary, readLibraryVersionFields, realLibraryPath } from "./ether-library.js";
@@ -82,6 +83,9 @@ export const DOCTOR_CHECKS = Object.freeze([
   "cloud-flag",
 ] as const);
 export type DoctorCheckName = typeof DOCTOR_CHECKS[number];
+
+/** Traditional host files are not prerequisites for the independent dot target. */
+export const DOCTOR_TRADITIONAL_CHECKS: readonly DoctorCheckName[] = Object.freeze(["hooks-present", "skill-copies"]);
 
 export const DOCTOR_REASON_CODES = Object.freeze([
   "DOCTOR_CLOUD_FLAG_MISMATCH",
@@ -119,6 +123,8 @@ const MANAGED_SECTION_COLLECTION = "managed-section";
 export interface DoctorInput {
   // The project the checks are about: its hook files, its registration, its library and its files.
   readonly projectRoot: string;
+  // Explicit applicability only; a dot device check does not attest native session reads.
+  readonly executionTarget?: SetupExecutionTarget;
   // The user's home, where both hosts keep their user hooks and skills; the process's by default.
   readonly home?: string;
   // The device directory; EINZBERN_HOME or ~/.einzbern by default.
@@ -706,8 +712,10 @@ async function doctorContext(input: DoctorInput): Promise<DoctorContext> {
   };
 }
 
-/** The eight checks of this device and one project, in DOCTOR_CHECKS order. Each is green or names its red. */
+/** Applicable checks in DOCTOR_CHECKS order. The traditional default retains all eight. */
 export async function runDoctor(input: DoctorInput): Promise<readonly DoctorCheck[]> {
+  const executionTarget = input.executionTarget ?? "traditional";
+  if (executionTarget !== "traditional" && executionTarget !== "chatgpt-dot") throw new RangeError("unknown doctor execution target");
   const context = await doctorContext(input);
   const located = await locateLibrary(context);
   const checks: readonly (readonly [DoctorCheckName, () => Promise<DoctorCheck>])[] = [
@@ -722,6 +730,9 @@ export async function runDoctor(input: DoctorInput): Promise<readonly DoctorChec
   ];
   const results: DoctorCheck[] = [];
   // One after another: device-stream's lock never overlaps another check's reads.
-  for (const [check, run] of checks) results.push(await guarded(check, run));
+  for (const [check, run] of checks) {
+    if (executionTarget === "chatgpt-dot" && DOCTOR_TRADITIONAL_CHECKS.includes(check)) continue;
+    results.push(await guarded(check, run));
+  }
   return Object.freeze(results);
 }

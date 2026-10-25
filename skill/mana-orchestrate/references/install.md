@@ -100,6 +100,10 @@ modes, nor traditional `--artifacts`, `--cloud`, `--language`, `--navigation`, `
 `--rollback`, `--managed-sections`, `--mapping` or `--restore` flags. Do not fall back to a
 traditional setup or doctor self-check to fabricate dot coverage.
 
+For shared device/library health, use `doctor --project <root> --execution-target chatgpt-dot`.
+Its six applicable checks exclude traditional hooks and Skill copies explicitly; it does not
+replace the dot file, provenance and actual execution-session readbacks above.
+
 Before each new task, resume or independent delegation, the actual execution session reads
 AGENTS, Mana and its current work. Machine-assemble `ExecutionContextRead` with the actual
 `sessionRef`, `readAt`, `workReference`, `workRevision`, `scopeDigest`, `effectiveRoots` and

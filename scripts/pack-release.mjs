@@ -78,7 +78,7 @@ const DOCUMENTS = Object.freeze(["CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PAR
 // Only public CLI contracts consumed by the installed helper, not the whole source specs tree.
 const SPECIFICATIONS = Object.freeze([
   "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
-  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md",
+  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md",
 ]);
 
 class PackError extends Error {
@@ -140,6 +140,25 @@ async function treeFiles(root, relativePath = "") {
     else fail("PACK_TREE_INVALID", `${path} in the staged release is not a regular file`, { path });
   }
   return files;
+}
+
+// Validate the consumer's references independently of SPECIFICATIONS. A valid manifest
+// can hash an incomplete tree; an installed Skill must also resolve its named contracts.
+async function verifySkillSpecifications(tree, skillRoot) {
+  const files = new Set(await treeFiles(tree));
+  for (const source of files) {
+    if (!source.startsWith(`${skillRoot}/`) || !source.endsWith(".md")) continue;
+    const markdown = await readFile(join(tree, ...source.split("/")), "utf8");
+    for (const [reference] of markdown.matchAll(/\bspecs\/[A-Za-z0-9._/-]+\.md\b/gu)) {
+      if (reference.split("/").some((part) => part === "" || part === "." || part === "..")) {
+        fail("PACK_SKILL_SPEC_INVALID", "a packaged Skill specification reference is not a canonical relative path", { source, reference });
+      }
+      if (!files.has(reference)) {
+        fail("PACK_SKILL_SPEC_MISSING", "a specification referenced by the packaged Skill is missing", { source, reference });
+      }
+      await readFile(join(tree, ...reference.split("/")));
+    }
+  }
 }
 
 /**
@@ -248,6 +267,7 @@ async function packRelease({ version: requested, out }) {
     });
     if (JSON.parse(rendered).reasonCode !== "SKILL_RENDERED") fail("PACK_INTERNAL_ERROR", "skill-render did not render the skill");
     for (const specification of SPECIFICATIONS) await copyStaged(tree, `specs/${specification}`, join(repositoryRoot, "specs", specification));
+    await verifySkillSpecifications(tree, `skill/${BRAND.helper.id}`);
     const documents = [...(await readdir(repositoryRoot)).filter((file) => README.test(file)).sort(), ...DOCUMENTS];
     for (const file of documents) await copyStaged(tree, file, join(repositoryRoot, file));
     const digest = await core.computeInstallTreeDigest(tree);

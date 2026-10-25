@@ -1,5 +1,5 @@
 {
-  "version": 34,
+  "version": 35,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1886,7 +1886,7 @@
     "tests/bundle.test.mjs": "2fd2fe08da9d5806b963b8fe59698dbaad3447088cb4d3a5aeabead334fa43fe",
     "tests/ci-artifact-transport.test.mjs": "b1f7bca2a20efad8eb6e0bba036350d46a2d5be8f61e9b91af9d447dde2fe399",
     "tests/ci-baseline-evidence.test.mjs": "58c0f24a9d71f3224d555905530bd34a5aabcbff2fa5ac40b8115621f694be1c",
-    "tests/ci-bootstrap-prerequisites.test.mjs": "f14c65cc7ebf5ed7ea1c23771dfbdb6542a34226c1b715ff789d4abbc80c71d5",
+    "tests/ci-bootstrap-prerequisites.test.mjs": "afc5ca81249edd4ef70b4a35ab54c42fa0a6a0a01b9bcb1b4ff7f067c4476e07",
     "tests/ci-bootstrap.test.mjs": "8e5a2265928041bdf85283c965342277acde62bb4ba0f6036a3fa76fea1756eb",
     "tests/ci-evidence-retention.test.mjs": "6117785d60af019c3cbbe13269ca295c3492c6c6eb0890b54ebf45d9018834e1",
     "tests/ci-git-source-blobs.test.mjs": "12f8c7db61ee85a6cc2ff2145676af29581ba6198a5305e22c5b05c066bf076a",

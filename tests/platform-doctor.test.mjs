@@ -1052,7 +1052,7 @@ test("T7: the core barrel keeps only consumed skill entrypoints and removes stal
   assert.deepEqual(coreExportedSymbols(barrel).filter((symbol) => skillExports.has(symbol)), ["SKILL_COPIES_FILES", "renderSkillMarkdown"]);
 
   const policy = JSON.parse(await readFile(join(import.meta.dirname, "../scripts/policy/core-export-consumers.json"), "utf8"));
-  assert.deepEqual(policy.allowedUnconsumed.filter((symbol) => ["computeInstallTreeDigest", "managedSectionRecordsFor", "writeVariablesSections", "DIRECTORY", "Library"].includes(symbol)), []);
+  assert.deepEqual(policy.allowedUnconsumed.filter((symbol) => ["computeInstallTreeDigest", "managedSectionRecordsFor", "writeVariablesSections", "DIRECTORY", "Library", "LEGACY_CONTROL_DIRECTORY"].includes(symbol)), []);
 });
 
 // The half that keeps the file a register rather than an amnesty. An entry may only

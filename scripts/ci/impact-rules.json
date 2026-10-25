@@ -1,5 +1,5 @@
 {
-  "version": 27,
+  "version": 28,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1777,7 +1777,7 @@
     "scripts/policy/adr-criteria.json": "25ab0ed073623c52169c20ab52aa5136bf318063eee727659e966a09655fdb6b",
     "scripts/policy/ceremony-cost-init048.json": "5661bba140b0d9779d40860e072567c370b4126e466dce7dd2ab2ff2e21a84d1",
     "scripts/policy/closeout-inc263-baseline.json": "746a1e02ac611376f95b1be098e6477e3ef6345a3069a74fa0bfea53266034c6",
-    "scripts/policy/core-export-consumers.json": "74f08623c6584918597db1892b3ff247abd9a066c2aa69de2303e45a625aa9c8",
+    "scripts/policy/core-export-consumers.json": "7dacc8f6e44e4ce978ad2336ea21a16874f3a0b9a7a7d0cc47ea4aeda4d4778e",
     "scripts/policy/dependency-policy.json": "4263da05360adb41e0ec6e9505b82d889a9c2729ea4a07f6453e7164b471204f",
     "scripts/policy/failure-pattern-register.json": "97d518a2028343d28c9a500d1c5b637fe19f07044b9e62389a52f969c6b65a53",
     "scripts/policy/gate-containment.json": "81b008ff59982c9e991bd3e17ced87bedbd1861dcbfc98952ae2dbf013c678e1",
@@ -1849,10 +1849,10 @@
     "tests/ci-baseline-evidence.test.mjs": "58c0f24a9d71f3224d555905530bd34a5aabcbff2fa5ac40b8115621f694be1c",
     "tests/ci-bootstrap.test.mjs": "8e5a2265928041bdf85283c965342277acde62bb4ba0f6036a3fa76fea1756eb",
     "tests/ci-evidence-retention.test.mjs": "6117785d60af019c3cbbe13269ca295c3492c6c6eb0890b54ebf45d9018834e1",
-    "tests/ci-impact-plan.test.mjs": "d34b3148b2781a60d8798b047c4f79015b2c3fc58810b76e007cf300e00fa44f",
+    "tests/ci-impact-plan.test.mjs": "1d0a65f008f869bed7fcdc40092d58acda85c930d9d4a1853e827c6efa8cdcce",
     "tests/ci-selective-runner.test.mjs": "e4e29e120653aa26fcff9989b044dec255ca34e2face2cca9fefa31849b30c87",
     "tests/ci-test-roster.test.mjs": "56ed21b4b1ff023e9aacdc15984fa459e0ea730ddd981c2d46bc2db015dc72cc",
-    "tests/cli-audit-boundaries.test.mjs": "9a84e8ac868efafb0ea5ad3ee3301046e6b6b40198417d023de6d321ddb0fc7f",
+    "tests/cli-audit-boundaries.test.mjs": "8096a9ed7fa5b4249d46264d65f8c9207d00dc4ac6ae2cc43e296c4fef45dab4",
     "tests/closeout-verify-dispositions.test.mjs": "4506a82487361c0d9b4a4e7c88be0c5aa8d262ca08e2f6f5e1aaabaa4f3885e6",
     "tests/cloud-roots.test.mjs": "001e0a352d617d6434336deecf1f0cbc6e47ecfccaf93012110b9bffb04401b8",
     "tests/code-only.test.mjs": "3e142ce62d12311e855d5f70442fff90ad015b428ae608a39cde09a194cec000",
@@ -2077,7 +2077,7 @@
     "tests/path-containment.test.mjs": "e4fc6520e8005633dd302ff435f39a8219a1f6312ef040d7357a116efe1cf42f",
     "tests/platform-chain-backup.test.mjs": "f8f67dd2e3626b54b1039a0fec4a3bcfef380e493051ef936e21217282f137e6",
     "tests/platform-doctor-current.test.mjs": "b14a80ad022d042c9c24f44aedd4fd4f8e8de6be42a07254a95914f2d75a351a",
-    "tests/platform-doctor.test.mjs": "07f2792b4b24fd2fd228612e248cb1a32af72b3a5c384da7cc22ebe0c69b5423",
+    "tests/platform-doctor.test.mjs": "3587544cf118f83f39005d0e5816a5676054a6839144ea188a164643091bb1fc",
     "tests/portal-knowledge-pagination.test.mjs": "50491db0144369c7b6672d234802553b741bd9a43756dedf5230563356f635f1",
     "tests/preflight.test.mjs": "7c434cfb7624a656affadd05562012da47bf14553beaf020db4cc92e0700dcb1",
     "tests/privacy-boundary.test.mjs": "6aa3a4668113c4da56f8d484e9fa0d17ef17c0f20576ba13ec31c765aa8dc8e6",

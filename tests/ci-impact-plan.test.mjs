@@ -1054,7 +1054,9 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   const full = createPlan({ ...input, records: [{ status: "M", paths: ["docs/wiki/CLI-Reference.md"] }], unaccountedConsumers: unknown }, missing, digest(missing));
   assert.equal(full.coverage, "full");
   assert.deepEqual(full.reasons, ["unaccounted-consumers"]);
-  const { texts } = documentReaderSources(root);
+  const { texts, unresolved } = documentReaderSources(root);
+  assert.deepEqual(unresolved, []);
+  const sourceSnapshotDigest = digest([...texts]);
   const graph = sourceDependencyGraph(texts);
   assert.equal(graph.get("packages/core/src/names.ts").has("scripts/lib/privacy.mjs"), false);
   assert.equal(graph.get("portal/tests/portal.test.mjs").has("scripts/lib/log.mjs"), false);
@@ -1066,15 +1068,26 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   for (const consumer of mergedPortalConsumers) {
     assert.ok(rules.consumers.portal.includes(consumer));
     assert.ok(portalPlan.coreTests.includes(consumer), consumer);
-    for (const field of ["readers", "tests"]) {
-      const incomplete = structuredClone(rules);
-      if (field === "readers") incomplete.consumers.portal = incomplete.consumers.portal.filter((path) => path !== consumer);
-      else incomplete.portalTests = incomplete.portalTests.filter((path) => path !== consumer);
-      const unknown = checkConsumers(root, incomplete);
-      assert.ok(unknown.includes(consumer), `${consumer}: ${field}`);
-      assert.equal(createPlan({ ...portalInput, unaccountedConsumers: unknown }, incomplete, digest(incomplete)).coverage, "full");
-    }
   }
+  // These declarations all refer to the same unchanged real source snapshot.
+  // Audit each field once, rather than re-tokenizing the repository for every
+  // consumer. Exact per-path findings retain every omission check: one missing
+  // reader cannot make another undetected reader pass merely because the plan
+  // is already full. Source-changing negative cases elsewhere remain independent.
+  for (const field of ["readers", "tests"]) {
+    const incomplete = structuredClone(rules);
+    if (field === "readers") incomplete.consumers.portal = incomplete.consumers.portal.filter((path) => !mergedPortalConsumers.includes(path));
+    else incomplete.portalTests = incomplete.portalTests.filter((path) => !mergedPortalConsumers.includes(path));
+    const unknown = checkConsumers(root, incomplete);
+    assert.deepEqual(unknown, sorted(mergedPortalConsumers), field);
+    const omitted = createPlan({ ...portalInput, unaccountedConsumers: unknown }, incomplete, digest(incomplete));
+    assert.equal(omitted.coverage, "full", field);
+    assert.deepEqual(omitted.reasons, ["unaccounted-consumers"], field);
+  }
+  const sourceAfter = documentReaderSources(root);
+  assert.deepEqual(sourceAfter.unresolved, []);
+  assert.equal(digest([...sourceAfter.texts]), sourceSnapshotDigest, "all tracked reader/dependency source bytes remain unchanged across declaration omissions");
+  assert.equal(execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), head);
 });
 
 function categoryFixtureOptions(category) {

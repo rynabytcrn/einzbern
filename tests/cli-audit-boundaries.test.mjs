@@ -193,6 +193,7 @@ test("configuration backup boundary resolution separates actual containers from 
     fail: reasonCode => { throw Object.assign(new Error(reasonCode), { reasonCode }); },
   });
   const result = JSON.parse(JSON.stringify(await resolveRoots(source)));
+  assert.ok(result.protectedRoots.includes(join(source.libraryRoot, LEGACY_CONTROL_DIRECTORY)), "the CLI consumes the exported legacy name to protect the actual library control directory");
   for (const path of ["/fixture/device", "/fixture/engine", join(source.libraryRoot, "akasha"), join(source.libraryRoot, "crest"), join(source.libraryRoot, "config"), join(source.projectRoot, ".git")]) assert.ok(result.protectedRoots.includes(path), path);
   for (const path of [SHARED_SUBMIT_RESERVED_ROOT.relativePath, "artifacts/consolidation", "artifacts/relocations"]) assert.ok(result.protectedRoots.includes(join(source.libraryRoot, path)), `${path} is protected before any writer creates it`);
   for (const [path, kind] of [[source.projectRoot, "project"], [source.libraryRoot, "library"], [join(source.projectRoot, "dist"), "generated"], [join(source.libraryRoot, "artifacts"), "generated"]]) {

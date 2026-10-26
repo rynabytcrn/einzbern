@@ -41,7 +41,7 @@ const ARCHIVE = `${RELEASE}.tar.gz`;
 const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
 const SPECIFICATIONS = Object.freeze([
   "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
-  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md",
+  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md", "engine-hook-events-v2.md",
 ]);
 
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-pack-release-")));
@@ -86,9 +86,10 @@ test("Codex SubagentStop release carries both the versioned route and its core e
   const { entries } = await packedRelease();
   const files = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry.bytes]));
   assert.ok(files.has("scripts/einzbern-hook.mjs"), "the versioned hook entry is packaged");
-  assert.ok(files.has("dist/build/packages/core/src/codex-subagent-stop.js"), "the exact imported evaluator is packaged");
+  assert.equal(files.has("dist/build/packages/core/src/codex-subagent-stop.js"), false, "release hook is self-contained, not a source-tree import");
+  assert.ok(files.has("specs/engine-hook-events-v2.md"), "installed capability boundary and collector contract are readable");
   assert.match(files.get("scripts/einzbern-hook.mjs").toString("utf8"), /codex-subagent-stop\.js/u);
-  assert.match(files.get("dist/build/packages/core/src/codex-subagent-stop.js").toString("utf8"), /CODEX_STOP_FIRST_BINDING/u);
+  assert.match(files.get("scripts/einzbern-hook.mjs").toString("utf8"), /CODEX_STOP_CAPABILITY_UNAVAILABLE/u);
 });
 
 test("605: every contract referenced by the shipped Skill resolves to manifest-verified archive bytes", async () => {

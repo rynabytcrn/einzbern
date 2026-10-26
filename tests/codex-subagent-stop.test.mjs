@@ -1,231 +1,144 @@
 // SPDX-License-Identifier: Apache-2.0
-// Source regressions for the Codex-only bounded collector continuation. This suite is authored
-// for the batch build and is intentionally not run by the implementation package.
-
+// Synthetic contract tests. These do not prove a native callback, adapter or delivery.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
-
 import {
+  CODEX_COLLECTOR_INITIAL_PROGRESS,
+  CODEX_SUBAGENT_STOP_CAPABILITY,
   CODEX_SUBAGENT_STOP_ENVELOPE_PREFIX,
-  CODEX_SUBAGENT_STOP_SNAPSHOT_SCHEMA,
-  createCodexSubagentStopManifest,
+  evaluateCodexCollectorStop,
   handleCodexSubagentStop,
+  validateCodexCollectorCapacity,
 } from "../dist/build/packages/core/src/codex-subagent-stop.js";
 
 const AT = "2026-10-26T12:00:00Z";
-const COLLECTOR = "/root/collector_1";
-const TARGETS = ["/root/target_a", "/root/target_b", "/root/target_c"];
-
-async function fixture(t, { deadline = "2026-10-26T12:05:00Z", maxConsecutiveQueryFailures = 3 } = {}) {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-codex-stop-")));
-  const deviceHome = join(root, "device");
-  const manifest = createCodexSubagentStopManifest({
-    deviceHome,
-    batchId: "batch-20261026-1",
-    nonce: "opaque-nonce-0123456789",
-    collectorTaskName: COLLECTOR,
-    targetTaskNames: TARGETS,
-    queryIntervalMs: 30_000,
-    deadline,
-    maxConsecutiveQueryFailures,
-  });
-  await mkdir(dirname(manifest.manifestPath), { recursive: true });
-  await writeFile(manifest.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-  t.after(() => rm(root, { recursive: true, force: true }));
-  return { root, deviceHome, manifest };
-}
-
-function payload(manifest, overrides = {}) {
+const IDENTITY = { role: "collector", batchId: "batch-1", agentId: "native-agent-1", attemptId: "application-attempt-1", parentSessionId: "parent-1" };
+function input() {
   return {
-    session_id: "session-real-1",
-    agent_id: "agent-real-1",
-    stop_hook_active: false,
-    last_assistant_message: `${CODEX_SUBAGENT_STOP_ENVELOPE_PREFIX}${JSON.stringify({ batchId: manifest.batchId, nonce: manifest.nonce, manifestPath: manifest.manifestPath })}`,
-    ...overrides,
+    contract: { collector: { ...IDENTITY }, targetAgentIds: ["a", "b", "c"], startedAt: AT, deadline: "2026-10-26T12:05:00Z", queryIntervalMs: 30_000, maxConsecutiveQueryFailures: 3 },
+    identity: { ...IDENTITY }, progress: { ...CODEX_COLLECTOR_INITIAL_PROGRESS }, collectorStatus: "live", now: AT,
+    observation: { batchId: IDENTITY.batchId, attemptId: IDENTITY.attemptId, sequence: 0, observedAt: AT,
+      facts: ["a", "b", "c"].map(agentId => ({ agentId, hostState: "running", finalityKind: "pending", evidenceRef: null, rawResult: null })),
+      consecutiveQueryFailures: 0, exception: null },
   };
 }
-
-function row(taskName, finalityKind, evidenceRef = null) {
-  return {
-    taskName,
-    hostState: finalityKind === "pending" || finalityKind === "unknown" ? "running" : `native-${finalityKind}`,
-    finalityKind,
-    evidenceRef,
-  };
+function terminal(value = input()) {
+  value.observation.facts = value.observation.facts.map((fact, i) => ({ ...fact, hostState: ["completed", "errored", "shutdown"][i], finalityKind: ["completed", "failed", "cancelled_confirmed"][i], evidenceRef: `synthetic-${i}`, rawResult: { result: i } }));
+  return value;
 }
 
-function snapshot(manifest, {
-  observedAt = AT,
-  states = ["pending", "pending", "pending"],
-  nextQueryAt = "2026-10-26T12:00:30Z",
-  consecutiveQueryFailures = 0,
-  latestQueryError = null,
-  exceptionReason = null,
-  reportState = "not-started",
-} = {}) {
-  const terminalState = ["completed", "failed", "cancelled_confirmed"];
-  return {
-    schemaVersion: CODEX_SUBAGENT_STOP_SNAPSHOT_SCHEMA,
-    batchId: manifest.batchId,
-    nonce: manifest.nonce,
-    observedAt,
-    targets: manifest.targetTaskNames.map((name, index) => row(name, states[index], terminalState.includes(states[index]) ? `native-evidence://${index}` : null)),
-    nextQueryAt,
-    consecutiveQueryFailures,
-    latestQueryError,
-    exceptionReason,
-    reportAttempt: {
-      state: reportState,
-      attemptedAt: ["in-flight", "acknowledged", "unknown", "failed"].includes(reportState) ? "2026-10-26T12:00:01Z" : null,
-      toolName: ["in-flight", "acknowledged", "unknown", "failed"].includes(reportState) ? "native-parent-message" : null,
-      evidenceRef: reportState === "acknowledged" ? "native-tool-result://ack-1" : null,
-      detail: reportState === "unknown" ? "connection ended before acknowledgement" : null,
-    },
-  };
-}
-
-async function saveSnapshot(manifest, value) {
-  await writeFile(manifest.snapshotPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-}
-
-async function bindFirstStop(f, now = AT) {
-  const result = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now });
-  assert.equal(result.decision, "block", "the first matching stop binds real IDs and immediately continues synchronously");
-  assert.equal(result.reasonCode, "CODEX_STOP_FIRST_BINDING");
-  const binding = JSON.parse(await readFile(f.manifest.bindingPath, "utf8"));
-  assert.deepEqual([binding.sessionId, binding.agentId], ["session-real-1", "agent-real-1"]);
-  return result;
-}
-
-test("manifest helper fixes device-local batch paths and rejects fabricated or duplicate task names", async (t) => {
-  const f = await fixture(t);
-  assert.equal(f.manifest.manifestPath, join(f.deviceHome, "subagent-stop", "batches", f.manifest.batchId, "manifest.json"));
-  assert.equal(f.manifest.snapshotPath, join(dirname(f.manifest.manifestPath), "snapshot.json"));
-  assert.throws(() => createCodexSubagentStopManifest({ ...f.manifest, deviceHome: f.deviceHome, collectorTaskName: "collector_1" }), /actual native/u);
-  assert.throws(() => createCodexSubagentStopManifest({ ...f.manifest, deviceHome: f.deviceHome, targetTaskNames: [COLLECTOR, COLLECTOR] }), /unique/u);
-});
-
-test("ordinary messages, wrong nonce and mismatched agent/session never bind or block", async (t) => {
-  const f = await fixture(t);
-  assert.deepEqual(await handleCodexSubagentStop({ payload: { last_assistant_message: "ordinary final" }, deviceHome: f.deviceHome, now: AT }), { matched: false, decision: "allow" });
-  const wrongNonce = payload(f.manifest, { last_assistant_message: `${CODEX_SUBAGENT_STOP_ENVELOPE_PREFIX}${JSON.stringify({ batchId: f.manifest.batchId, nonce: "different-nonce", manifestPath: f.manifest.manifestPath })}` });
-  assert.equal((await handleCodexSubagentStop({ payload: wrongNonce, deviceHome: f.deviceHome, now: AT })).decision, "allow");
-  assert.equal(await readFile(f.manifest.bindingPath, "utf8").catch(() => null), null, "a wrong nonce does not bind IDs");
-  await bindFirstStop(f);
-  for (const changed of [{ agent_id: "agent-replacement" }, { session_id: "session-replacement" }]) {
-    const result = await handleCodexSubagentStop({ payload: payload(f.manifest, changed), deviceHome: f.deviceHome, now: AT });
-    assert.equal(result.decision, "allow");
-    assert.equal(result.reasonCode, "CODEX_STOP_ID_MISMATCH");
+test("installed hook never enrolls a self-claimed first marker or consumes local files", async t => {
+  const deviceHome = await mkdtemp(join(tmpdir(), "codex-stop-contract-"));
+  t.after(() => rm(deviceHome, { recursive: true, force: true }));
+  const ordinary = { agent_id: "ordinary", last_assistant_message: "native final unchanged" };
+  const before = structuredClone(ordinary);
+  assert.deepEqual(await handleCodexSubagentStop({ payload: ordinary, deviceHome }), { matched: false, decision: "allow" });
+  assert.deepEqual(ordinary, before);
+  for (const agent_id of ["spoof-before-first-binding", IDENTITY.agentId]) {
+    const result = await handleCodexSubagentStop({ payload: { agent_id, session_id: IDENTITY.parentSessionId, last_assistant_message: `${CODEX_SUBAGENT_STOP_ENVELOPE_PREFIX}${JSON.stringify({ ...IDENTITY, manifestPath: "/not/read" })}` }, deviceHome });
+    assert.deepEqual(result, { matched: false, decision: "allow", reasonCode: "CODEX_STOP_CAPABILITY_UNAVAILABLE" });
   }
-  const binding = JSON.parse(await readFile(f.manifest.bindingPath, "utf8"));
-  assert.deepEqual([binding.sessionId, binding.agentId], ["session-real-1", "agent-real-1"], "a replacement cannot rebind the same nonce");
+  assert.deepEqual(await readdir(deviceHome), []);
+  assert.equal(CODEX_SUBAGENT_STOP_CAPABILITY.state, "unverified");
 });
 
-test("pending snapshots enforce wait/query cadence, stop_hook_active is not completion, and no-progress repeats fail open", async (t) => {
-  const f = await fixture(t);
-  await bindFirstStop(f);
-  await saveSnapshot(f.manifest, snapshot(f.manifest));
-  const early = await handleCodexSubagentStop({ payload: payload(f.manifest, { stop_hook_active: true }), deviceHome: f.deviceHome, now: "2026-10-26T12:00:10Z" });
-  assert.equal(early.decision, "block");
-  assert.equal(early.reasonCode, "CODEX_STOP_WAIT_UNTIL_QUERY");
-  assert.match(early.reason, /native wait\/sleep until 2026-10-26T12:00:30Z/u);
-  const rapidRepeat = await handleCodexSubagentStop({ payload: payload(f.manifest, { stop_hook_active: true }), deviceHome: f.deviceHome, now: "2026-10-26T12:00:10Z" });
-  assert.equal(rapidRepeat.decision, "allow", "the same snapshot cannot cause a fast Stop/block loop");
-  const due = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now: "2026-10-26T12:00:31Z" });
-  assert.equal(due.decision, "block");
-  assert.equal(due.reasonCode, "CODEX_STOP_QUERY_DUE");
-  assert.match(due.reason, /each manifest targetTaskNames entry exactly once now/u);
-  assert.equal((await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now: "2026-10-26T12:00:31Z" })).decision, "allow");
-  await saveSnapshot(f.manifest, snapshot(f.manifest, { observedAt: "2026-10-26T12:00:31Z", nextQueryAt: "2026-10-26T12:01:01Z" }));
-  const advanced = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now: "2026-10-26T12:00:32Z" });
-  assert.equal(advanced.reasonCode, "CODEX_STOP_WAIT_UNTIL_QUERY", "a new snapshot permits the next bounded interval");
+test("exactly one collector is cap-exempt but never hard-slot-exempt; other hosts are inapplicable", () => {
+  const capacity = { host: "codex", workers: 2, collectors: 1, workerCap: 2, availableSlots: 3 };
+  assert.equal(validateCodexCollectorCapacity(capacity).admitted, true);
+  for (const collectors of [0, 2]) assert.equal(validateCodexCollectorCapacity({ ...capacity, collectors }).reasonCode, "EXACTLY_ONE_DEDICATED_COLLECTOR");
+  assert.equal(validateCodexCollectorCapacity({ ...capacity, workers: 3, availableSlots: 4 }).reasonCode, "WORKER_CAP");
+  assert.equal(validateCodexCollectorCapacity({ ...capacity, availableSlots: 2 }).reasonCode, "RESERVE_COLLECTOR_SLOT");
+  assert.equal(validateCodexCollectorCapacity({ ...capacity, workers: 1, availableSlots: 1 }).admitted, false);
+  for (const host of ["dot", "claude-code", "dsh"]) assert.equal(validateCodexCollectorCapacity({ ...capacity, host }).applicable, false);
 });
 
-test("completed, failed and confirmed-cancelled targets remain distinct and require acknowledged one-time reporting", async (t) => {
-  const f = await fixture(t);
-  await bindFirstStop(f);
-  await saveSnapshot(f.manifest, snapshot(f.manifest, { states: ["completed", "failed", "cancelled_confirmed"], nextQueryAt: null, reportState: "acknowledged" }));
-  const result = await handleCodexSubagentStop({ payload: payload(f.manifest, { stop_hook_active: true }), deviceHome: f.deviceHome, now: AT });
-  assert.equal(result.decision, "allow");
-  assert.equal(result.reasonCode, "CODEX_STOP_REPORT_ACKNOWLEDGED");
-
-  const unreported = await fixture(t);
-  await bindFirstStop(unreported);
-  await saveSnapshot(unreported.manifest, snapshot(unreported.manifest, { states: ["completed", "failed", "cancelled_confirmed"], nextQueryAt: null }));
-  const report = await handleCodexSubagentStop({ payload: payload(unreported.manifest), deviceHome: unreported.deviceHome, now: AT });
-  assert.equal(report.reasonCode, "CODEX_STOP_REPORT_ONCE");
-  assert.match(report.reason, /reportAttempt state in-flight/u);
-  const repeated = await handleCodexSubagentStop({ payload: payload(unreported.manifest), deviceHome: unreported.deviceHome, now: AT });
-  assert.equal(repeated.decision, "allow", "a missing acknowledgement never authorizes another send");
-});
-
-test("an unknown target is not treated as complete even when the other fixed targets are terminal", async (t) => {
-  const f = await fixture(t);
-  await bindFirstStop(f);
-  await saveSnapshot(f.manifest, snapshot(f.manifest, { states: ["unknown", "completed", "failed"] }));
-  const result = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now: AT });
-  assert.equal(result.decision, "block");
-  assert.equal(result.reasonCode, "CODEX_STOP_WAIT_UNTIL_QUERY");
-  assert.doesNotMatch(result.reason, /parent-message/u, "unknown is not terminal and cannot produce a success report");
-});
-
-test("in-flight reconciliation, unknown delivery and failed delivery do not trigger a second message", async (t) => {
-  const f = await fixture(t);
-  await bindFirstStop(f);
-  await saveSnapshot(f.manifest, snapshot(f.manifest, { states: ["completed", "completed", "failed"], nextQueryAt: null, reportState: "in-flight" }));
-  const reconcile = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now: AT });
-  assert.equal(reconcile.reasonCode, "CODEX_STOP_REPORT_RECONCILE_ONCE");
-  assert.match(reconcile.reason, /do not call the parent-message tool again/u);
-  const unreconciled = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now: AT });
-  assert.equal(unreconciled.decision, "allow");
-  assert.equal(unreconciled.reasonCode, "CODEX_STOP_REPORT_UNCONFIRMED");
-
-  for (const reportState of ["unknown", "failed"]) {
-    const another = await fixture(t);
-    await bindFirstStop(another);
-    await saveSnapshot(another.manifest, snapshot(another.manifest, { states: ["completed", "completed", "completed"], nextQueryAt: null, reportState }));
-    const final = await handleCodexSubagentStop({ payload: payload(another.manifest), deviceHome: another.deviceHome, now: AT });
-    assert.equal(final.decision, "allow");
-    assert.equal(final.reasonCode, reportState === "unknown" ? "CODEX_STOP_REPORT_UNKNOWN" : "CODEX_STOP_REPORT_FAILED");
+test("role, batch, exact agent, attempt and parent must all match parent mapping", () => {
+  for (const field of Object.keys(IDENTITY)) {
+    const value = input(); value.identity[field] = "spoof";
+    const result = evaluateCodexCollectorStop(value);
+    assert.equal(result.outcome, "unrelated"); assert.equal(result.decision, "allow"); assert.equal(result.final, undefined);
   }
 });
 
-test("deadline, query failure, cancellation, script and protocol exceptions each get one focused continuation", async (t) => {
+test("only same live collector continues; ended is not reused and unknown retains responsibility", () => {
+  for (const [collectorStatus, outcome] of [["ended", "already-ended"], ["unknown", "capability-unavailable"]]) {
+    const result = evaluateCodexCollectorStop({ ...input(), collectorStatus });
+    assert.equal(result.outcome, outcome); assert.equal(result.final, undefined);
+  }
+});
+
+test("pending and unknown wait boundedly; duplicate/early query is explicit no-progress, not a busy loop", () => {
+  const value = input(); value.observation.facts[0].finalityKind = "unknown";
+  const first = evaluateCodexCollectorStop(value);
+  assert.equal(first.outcome, "waiting"); assert.equal(first.waitUntil, "2026-10-26T12:00:30.000Z");
+  value.progress = first.progress;
+  assert.equal(evaluateCodexCollectorStop(value).final.exception, "no-progress");
+  value.observation.sequence++; value.observation.observedAt = value.now = "2026-10-26T12:00:10Z";
+  assert.equal(evaluateCodexCollectorStop(value).final.exception, "no-progress");
+  value.observation.observedAt = value.now = "2026-10-26T12:00:30Z";
+  assert.equal(evaluateCodexCollectorStop(value).outcome, "waiting");
+  value.contract.deadline = "2026-10-26T12:00:40Z";
+  assert.equal(evaluateCodexCollectorStop(value).waitUntil, "2026-10-26T12:00:40.000Z");
+});
+
+test("all confirmed terminal raw facts return once without parent-message or acknowledgement", () => {
+  const value = terminal(); const original = structuredClone(value);
+  const result = evaluateCodexCollectorStop(value);
+  assert.equal(result.decision, "allow"); assert.equal(result.outcome, "terminal");
+  assert.deepEqual(result.final, { exception: null, facts: value.observation.facts });
+  assert.deepEqual(value, original, "raw facts and inputs are not rewritten or summarized");
+  assert.equal(evaluateCodexCollectorStop({ ...value, progress: result.progress }).final, undefined);
+});
+
+test("stale/future/pre-dispatch, replay, wrong attempt/batch, order and missing evidence never succeed", () => {
   const cases = [
-    { exceptionReason: "deadline", deadline: "2026-10-26T12:00:10Z", now: "2026-10-26T12:00:11Z" },
-    { exceptionReason: null, maxConsecutiveQueryFailures: 2, consecutiveQueryFailures: 2, expected: "query-failure-limit" },
-    { exceptionReason: "user-cancelled" },
-    { exceptionReason: "script-error" },
-    { exceptionReason: "protocol-error" },
+    v => { v.now = "2026-10-26T12:00:31Z"; },
+    v => { v.observation.observedAt = "2026-10-26T12:00:01Z"; },
+    v => { v.observation.observedAt = "2026-10-26T11:59:59Z"; },
+    v => { v.observation.attemptId = "other"; },
+    v => { v.observation.batchId = "other"; },
+    v => { v.observation.facts.reverse(); },
+    v => { v.observation.facts[0].evidenceRef = null; },
+    v => { v.observation.sequence = -1; },
   ];
-  for (const item of cases) {
-    const f = await fixture(t, item);
-    await bindFirstStop(f);
-    await saveSnapshot(f.manifest, snapshot(f.manifest, {
-      consecutiveQueryFailures: item.consecutiveQueryFailures ?? 0,
-      exceptionReason: item.exceptionReason,
-    }));
-    const now = item.now ?? AT;
-    const exception = item.expected ?? item.exceptionReason;
-    const first = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now });
-    assert.equal(first.decision, "block", exception);
-    assert.equal(first.reasonCode, "CODEX_STOP_EXCEPTION_REPORT_ONCE", exception);
-    assert.match(first.reason, new RegExp(exception, "u"));
-    const second = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now });
-    assert.equal(second.decision, "allow", `${exception}: no repeated error continuation`);
+  for (const mutate of cases) {
+    const value = terminal(); mutate(value); const result = evaluateCodexCollectorStop(value);
+    assert.equal(result.outcome, "exception"); assert.equal(result.final.exception, "protocol-error");
+  }
+  const value = terminal(); value.progress = { lastSequence: 0, lastObservedAt: AT, nextQueryAt: null, ended: false };
+  assert.equal(evaluateCodexCollectorStop(value).final.exception, "no-progress");
+});
+
+test("bounded exceptional exits preserve raw states, including budget/pause/safety/permission", () => {
+  for (const exception of ["deadline", "query-failure-limit", "budget-exhausted", "paused", "user-cancelled", "safety", "permission", "no-progress", "protocol-error", "script-error"]) {
+    const value = input(); value.observation.exception = exception;
+    const result = evaluateCodexCollectorStop(value);
+    assert.equal(result.outcome, "exception"); assert.equal(result.decision, "allow");
+    assert.deepEqual(result.final, { exception, facts: value.observation.facts });
+    assert.equal(evaluateCodexCollectorStop({ ...value, progress: result.progress }).final, undefined);
+  }
+  const value = input(); value.now = value.observation.observedAt = value.contract.deadline;
+  assert.equal(evaluateCodexCollectorStop(value).final.exception, "deadline");
+  value.now = value.observation.observedAt = AT; value.observation.consecutiveQueryFailures = 3;
+  assert.equal(evaluateCodexCollectorStop(value).final.exception, "query-failure-limit");
+});
+
+test("query failure and ambiguous raw states cannot be coerced into success", () => {
+  const value = terminal(); value.observation.consecutiveQueryFailures = 1;
+  assert.equal(evaluateCodexCollectorStop(value).outcome, "waiting");
+  for (const hostState of ["idle", "notLoaded", "interrupted", "shutdown", "notFound"]) {
+    const ambiguous = input(); ambiguous.observation.facts[0] = { ...ambiguous.observation.facts[0], hostState, finalityKind: "unknown" };
+    assert.equal(evaluateCodexCollectorStop(ambiguous).outcome, "waiting");
   }
 });
 
-test("malformed snapshots block once as a protocol error, then leave unresolved responsibility visible", async (t) => {
-  const f = await fixture(t);
-  await bindFirstStop(f);
-  await saveSnapshot(f.manifest, { schemaVersion: CODEX_SUBAGENT_STOP_SNAPSHOT_SCHEMA, batchId: f.manifest.batchId, nonce: "wrong" });
-  const first = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now: AT });
-  assert.equal(first.reasonCode, "CODEX_STOP_PROTOCOL_ERROR_ONCE");
-  const second = await handleCodexSubagentStop({ payload: payload(f.manifest), deviceHome: f.deviceHome, now: AT });
-  assert.equal(second.decision, "allow");
-  assert.equal(second.reasonCode, "CODEX_STOP_PROTOCOL_ERROR_UNCONFIRMED");
+
+test("uncertain recovery progress never replays a final or enrolls a replacement", () => {
+  for (const progress of [undefined, { ...CODEX_COLLECTOR_INITIAL_PROGRESS, lastSequence: NaN }, { ...CODEX_COLLECTOR_INITIAL_PROGRESS, lastObservedAt: "unknown" }]) {
+    const result = evaluateCodexCollectorStop({ ...terminal(), progress });
+    assert.equal(result.outcome, "capability-unavailable"); assert.equal(result.final, undefined);
+  }
 });

@@ -139,6 +139,16 @@ const BATCH_ZH = `## 批量处理原则 v3
 2. 中途通信限定例外。安全问题、无法继续的硬阻塞，以及不立即协调就会阻塞其他代理的依赖或冲突，可以立即上报；保留解决这些问题所需的事实澄清，不禁止必要通信。
 3. 主代理减少往返。不回复纯确认，不催问普通进度；收到需要决策或行动的信息时直接处理。普通状态消息不触发额外的全体状态查询或重复汇报。
 4. 等待避免空轮询。使用宿主支持的完成通知与阻塞等待；连续没有新状态时延长查询间隔，遵守宿主等待上限和用户中断要求；有独立可做的工作时继续该工作。
+
+### Codex 专用收集契约（其他宿主与 dot 不适用）
+
+明确采用多子代理编排的 Codex 每个已派出批段必须且只能有一个全新、独立专用经济档 collector，一代理一个有界包；不复用普通实施/验收代理，不跨批常驻，不复用已结束 worker。仅精确 collector 角色豁免 harness 工作代理 cap；先预留真实宿主槽位，工作并发仍受 execution.maxConcurrentSubagents 与硬容量约束。不够则减工作并发或分批，连一工作加一收集也容不下则报告阻塞，不能省略收集者或回退主对话轮询。
+
+父会话用受支持的真实派工回执固定角色、batchId、agentId、attempt 与成员范围；名称、marker、自述、首个退出事件或本地 JSON 都不证明授权。hook 只在已证明可用的同宿主绑定、状态、等待与原生回传能力下约束该精确角色；缺口明确报告 capability-unavailable，只停依赖路径，不假装完成。非收集代理不增加消息、不额外阻止退出，保留原生 final，不承诺压制宿主通知。
+
+collector 只收集/去重原始事实、原始结果与位置，不总结、分析、验收、实施、集成、跑正式门或增派代理。每次退出前以受支持接口新鲜查询固定成员；unknown、过期、未来、重放、错批/错 attempt 与查询失败不算终态。未齐只通过受支持同步 hook 继续同一尚未结束 collector，合理间隔、有截止、有预算，不能 Stop→block 忙循环。期限、查询失败上限、预算耗尽、暂停、取消、安全、权限和无进展均明确异常退出；终结未知前不派第二收集者。
+
+全部确认终态（保留 failed 与 cancelled_confirmed）后一次原始事实经原生 final 返回并自然退出；父会话确认收件不是退出前置条件。分别核实退出、原生交付、真正空闲父会话恢复与资源释放，不能用文件或模拟测试替代。主会话不得用 /goal 或 /loop 主动等待子代理，保留既有用户目标、自动化及 M 正常治理轮次；本限制不取消有实质工作的后续轮。
 `;
 
 // Translated when this module was written, clause 7 with the Owner's revision (INIT-053 R40),
@@ -166,6 +176,16 @@ A cycle in which fixing one red result turns up another is itself a sign that th
 2. Limit communication during a package to necessary exceptions. Immediately report safety issues, hard blockers that prevent further work, and dependencies or conflicts that would block other agents without immediate coordination. Keep the factual clarification needed to resolve these issues; necessary communication remains allowed.
 3. The main agent reduces round trips. Do not reply with pure acknowledgments or ask for ordinary progress. Act directly on information that needs a decision or action. Ordinary status messages do not trigger extra queries of every agent's status or repeated reports.
 4. Avoid empty polling while waiting. Use completion notifications and blocking waits supported by the host. Lengthen query intervals when there is repeatedly no new state, respect the host's wait limit and user interruption requirements, and continue independent work when it is available.
+
+### Codex dedicated collection contract (not other hosts or dot)
+
+For Codex explicitly using multi-subagent orchestration, each dispatched stage must have exactly one fresh, independent, dedicated economy-tier collector for one bounded package. Never repurpose an implementation/review agent, keep a collector across batches, or reuse an ended worker. Only this exact collector role is exempt from the harness worker cap. Reserve a real host slot first; workers still obey execution.maxConcurrentSubagents and hard capacity. Reduce worker concurrency or split stages when needed. If even one worker plus one collector cannot fit, report a blocker; never omit the collector or fall back to main-thread polling.
+
+The parent fixes role, batchId, agentId, application attempt and member scope using supported actual dispatch receipts. A name, marker, self-report, first stop event or local JSON is not authorization. Enforce only with proven same-host binding, state, waiting and native return capabilities; explicitly report capability-unavailable and stop only the dependent path, never claim completion. Ordinary agents receive no additional hook message or exit block and retain their native final; suppression of host notifications is not promised.
+
+The collector only gathers/deduplicates raw facts, raw results and locations, with no summary, analysis, acceptance, implementation, integration, formal gates or further dispatch. Before exit, freshly query the fixed members using supported interfaces. Unknown, stale, future, replayed, wrong-batch/wrong-attempt observations and query failure are not terminal. While pending, a supported synchronous hook continues only the same still-live collector with bounded intervals, deadline and budget, never a Stop-to-block busy loop. Deadline, query-failure limit, budget exhaustion, pause, cancellation, safety, permission and no-progress exits are explicit exceptions. Do not dispatch a second collector while termination is unknown.
+
+Once all members have confirmed terminal facts (preserving failed and cancelled_confirmed), return raw facts once through native final and exit naturally. Parent receipt acknowledgement is not an exit prerequisite. Independently verify exit, native delivery, genuinely idle parent resumption and resource release; neither files nor simulation tests prove these. The main thread must not use /goal or /loop to actively wait for subagents. Preserve existing user goals, automations and legitimate M governance rounds; this restriction does not cancel later rounds with substantive work.
 `;
 
 const UNATTENDED_COMMANDS_ZH = `## 无人值守指令原则 v2

@@ -137,7 +137,7 @@ test("INIT-053 R1-R5, R40, R48, R52: v3 preserves the six principles in both lan
   for (const language of LANGUAGES) {
     const previous = await readFile(join(fixtures, `batch-v2.${language}.md`), "utf8");
     const rev3 = await readFile(join(fixtures, `batch-v3-rev3.${language}.md`), "utf8");
-    const current = builtInRule("batch").body[language];
+    const current = builtInRule("batch").body[language].split("\n### Codex ")[0];
     const heading = language === "zh" ? "### 代理通信与等待" : "### Agent communication and waiting";
     const principles = current.split(heading)[0].split("\n");
     const clause6 = principles.filter((line) => line.startsWith("6. "));
@@ -319,4 +319,10 @@ test("INIT068 R21: common privacy principle covers authorized identity/minimizat
   for (const clause of ["actual contributor", "noreply", "Git metadata", "candidate version", "preserve the original branch", "Never weaken gates", "without authorization", "grants no commit, push, PR, identity-rewrite", "not universal automatic approval"]) assert.ok(rule.body.en.includes(clause), clause);
   for (const clause of ["不得未经授权切换为 owner 或其他身份", "数据最小化", "Git 元数据", "保留原分支、提交及失败证据", "不弱化门", "不擅改远端历史", "不授予提交、推送、PR、身份重写"]) assert.ok(rule.body.zh.includes(clause), clause);
   assert.equal(/fixture-contributor|fixture-owner|users\.noreply\.github\.com/u.test(rule.body.en + rule.body.zh), false);
+});
+
+
+test("INIT076: Codex collector supplement preserves governance rounds without extending to dot", () => {
+  const body = builtInRule("batch").body.en;
+  for (const phrase of ["not other hosts or dot", "exactly one", "economy-tier collector", "exempt from the harness worker cap", "Reserve a real host slot", "capability-unavailable", "application attempt", "no-progress", "Parent receipt acknowledgement is not an exit prerequisite", "/goal or /loop", "legitimate M governance rounds", "never repurpose".replace("never", "Never")]) assert.ok(body.includes(phrase), phrase);
 });

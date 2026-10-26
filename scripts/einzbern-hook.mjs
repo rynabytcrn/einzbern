@@ -80,6 +80,7 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
     try {
       const { handleCodexSubagentStop } = await import("../dist/build/packages/core/src/codex-subagent-stop.js");
       const result = await handleCodexSubagentStop({ payload: body, deviceHome: deviceHome(process.env) });
+      if (result.reasonCode) noteRecall(deviceHome(process.env), name, cwd, result.reasonCode, host);
       if (result.decision !== "block") return "{}\n";
       return `${JSON.stringify({ decision: "block", reason: result.reason })}\n`;
     } catch {

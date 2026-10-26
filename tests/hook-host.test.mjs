@@ -8,7 +8,7 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { devNull, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -135,9 +135,17 @@ test("Codex-only SubagentStop returns an empty response for unassociated work an
     if (previous.claude === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = previous.claude;
   });
   process.env.EINZBERN_HOME = join(directory, ".fixture-device");
+  await mkdir(process.env.EINZBERN_HOME, { recursive: true });
   process.env.EINZBERN_HOST = "codex";
   const unassociated = await runHookEvent({ event: "subagent-stop", payload: { last_assistant_message: "ordinary final" }, libraryPath: library, cwd: directory });
   assert.equal(unassociated, "{}\n");
+  const logPath = join(process.env.EINZBERN_HOME, "log", "hook.ndjson");
+  assert.equal(await readFile(logPath, "utf8").catch(() => null), null, "ordinary final adds no hook message or diagnostic");
+  const unavailable = await runHookEvent({ event: "subagent-stop", payload: { agent_id: "self-claimed", last_assistant_message: "EINZBERN_SUBAGENT_STOP_V1 {}" }, libraryPath: library, cwd: directory });
+  assert.equal(unavailable, "{}\n", "a marker cannot block or bind a collector");
+  const diagnostic = JSON.parse((await readFile(logPath, "utf8")).trim());
+  assert.equal(diagnostic.reasonCode, "CODEX_STOP_CAPABILITY_UNAVAILABLE");
+  assert.equal(diagnostic.event, "SubagentStop");
   process.env.EINZBERN_HOST = "claude-code";
   assert.equal(await runHookEvent({ event: "subagent-stop", payload: {}, libraryPath: library, cwd: directory }), null);
   process.env.EINZBERN_HOST = "dsh";

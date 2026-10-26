@@ -259,12 +259,12 @@ test("477-AC1, AC4: after the move each host's user file holds one Einzbern User
   assert.deepEqual(claude.permissions, { deny: [] });
   assert.deepEqual(containerClaudeAfter.permissions, { deny: [] });
 
-  // Codex's config keeps its switch and the one trust state whose hook did not change (the other
-  // tool's PreToolUse hook at position 0); every trust state of a removed or replaced hook is gone,
+  // Codex keeps trust for unchanged user-owned PreToolUse and SubagentStop hooks;
+  // every trust state of a removed or replaced hook is gone,
   // and every other byte stays.
   const kept = userStates[0];
   assert.match(kept[0], /:pre_tool_use:0:0"\]$/u);
-  assert.equal(await readFile(join(home, CODEX_CONFIG_FILE), "utf8"), [...configHead, ...kept].join("\n"));
+  assert.equal(await readFile(join(home, CODEX_CONFIG_FILE), "utf8"), [...configHead, ...kept, ...userStates.find(state => state[0].includes(":subagent_stop:0:0"))].join("\n"));
 
   // The originals went to the device directory first, byte for byte.
   const backups = join(device, "backups", STAMP, "host-hooks");
@@ -349,7 +349,8 @@ test("BL34/35: the three engine events render for both hosts, and a clean-only p
   const claude = planHostHooks({ host: "claude-code", scope: "user", deviceHome, platform: "linux" });
   const codex = planHostHooks({ host: "codex", scope: "project", deviceHome, platform: "linux" });
   assert.deepEqual(Object.keys(claude.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
-  assert.deepEqual(codex.groups, claude.groups);
+  assert.deepEqual(Object.keys(codex.groups), [...Object.keys(claude.groups), "SubagentStop"]);
+  for (const event of Object.keys(claude.groups)) assert.deepEqual(codex.groups[event], claude.groups[event]);
   assert.deepEqual([claude.hooksFile, claude.configFile, codex.hooksFile, codex.configFile], [CLAUDE, null, CODEX, CODEX_CONFIG_FILE]);
   assert.deepEqual(mergeHostHooks(null, claude).document, { hooks: claude.groups });
   const clean = planHostHooks({ host: "claude-code", scope: "project", deviceHome, platform: "linux", install: false });

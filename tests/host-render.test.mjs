@@ -46,11 +46,11 @@ function refusal(args, env) {
   return JSON.parse(result.stderr.trim().split("\n").at(-1)).reasonCode;
 }
 
-function oneHook(device) {
-  return Object.fromEntries([["UserPromptSubmit", "user-prompt-submit"], ["SubagentStart", "subagent-start"], ["PreToolUse", "pre-tool-use"]].map(([event, word]) => [event, [{ hooks: [{ type: "command", command: `node "${join(device, "engine", "hook.mjs")}" ${word}` }] }]]));
+function oneHook(device, host = "claude-code") {
+  return Object.fromEntries([["UserPromptSubmit", "user-prompt-submit"], ["SubagentStart", "subagent-start"], ["PreToolUse", "pre-tool-use"], ...(host === "codex" ? [["SubagentStop", "subagent-stop"]] : [])].map(([event, word]) => [event, [{ hooks: [{ type: "command", command: `node "${join(device, "engine", "hook.mjs")}" ${word}` }] }]]));
 }
 
-test("BL34/35: --scope user renders the three engine hooks for each host into the home directory", async (t) => {
+test("BL34/35: --scope user renders the exact host-specific engine hooks into the home directory", async (t) => {
   const { home, device, env } = await machine(t, "einzbern-host-render-user-");
   for (const host of ["claude-code", "codex"]) {
     const plan = run(["--host", host, "--scope", "user", "--plan-only"], env);
@@ -65,7 +65,7 @@ test("BL34/35: --scope user renders the three engine hooks for each host into th
     assert.equal(receipt.command, oneHook(device).UserPromptSubmit[0].hooks[0].command);
   }
   assert.deepEqual(JSON.parse(await readFile(join(home, ".claude", "settings.json"), "utf8")), { hooks: oneHook(device) });
-  assert.deepEqual(JSON.parse(await readFile(join(home, ".codex", "hooks.json"), "utf8")), { hooks: oneHook(device) });
+  assert.deepEqual(JSON.parse(await readFile(join(home, ".codex", "hooks.json"), "utf8")), { hooks: oneHook(device, "codex") });
   assert.equal(await readFile(join(home, ".codex", "config.toml"), "utf8"), "[features]\nhooks = true\n");
   assert.deepEqual((await readdir(home)).sort(), [".claude", ".codex"]);
   assert.deepEqual(await readdir(join(home, ".claude")), ["settings.json"], "no agent files, no CLAUDE.md bridge");
@@ -109,7 +109,7 @@ test("477-R1, R3: --scope project renders the hook into the project and leaves t
     assert.deepEqual([receipt.reasonCode, receipt.root], ["HOST_RENDER_COMMITTED", project]);
   }
   assert.deepEqual(JSON.parse(await readFile(join(project, ".claude", "settings.json"), "utf8")), { ...before, hooks: { ...before.hooks, ...oneHook(device) } });
-  assert.deepEqual(JSON.parse(await readFile(join(project, ".codex", "hooks.json"), "utf8")), { hooks: oneHook(device) });
+  assert.deepEqual(JSON.parse(await readFile(join(project, ".codex", "hooks.json"), "utf8")), { hooks: oneHook(device, "codex") });
   assert.deepEqual((await readdir(project)).sort(), [".claude", ".codex"], "no CLAUDE.md");
   assert.deepEqual((await readdir(join(project, ".claude"))).sort(), ["settings.json"], "no agent files");
   assert.deepEqual(await readdir(join(project, ".codex")), ["hooks.json"], "Codex's config.toml is the user's");

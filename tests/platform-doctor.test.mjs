@@ -680,7 +680,7 @@ test("R47-06: a launcher hook on a device without the installed engine is its ow
   assert.equal(hooks(both).reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
   assert.deepEqual(hooks(both).failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
     ["container.claude-settings", "Stop", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
-    ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["container.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
+    ...["UserPromptSubmit", "SubagentStart", "PreToolUse", "SubagentStop"].map((event) => ["container.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
     ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["container.claude-settings", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
   ]);
 });
@@ -707,9 +707,9 @@ test("R47-06: the hook leg reads the user-level Claude and Codex files of the gi
   assert.equal(leg.reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
   assert.deepEqual(leg.failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
     ["machine.claude-settings", "UserPromptSubmit", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
-    ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["machine.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
+    ...["UserPromptSubmit", "SubagentStart", "PreToolUse", "SubagentStop"].map((event) => ["machine.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
   ]);
-  assert.deepEqual([leg.user.claude.state, leg.user.claude.checked, leg.user.codex.state, leg.user.codex.checked], ["broken", 1, "broken", 3]);
+  assert.deepEqual([leg.user.claude.state, leg.user.claude.checked, leg.user.codex.state, leg.user.codex.checked], ["broken", 1, "broken", 4]);
   assert.equal(leg.failures[0].target, oldScript);
 
   // An absent container Claude file defers that file only; the user-level findings stay red.
@@ -724,7 +724,7 @@ test("R47-06: the hook leg reads the user-level Claude and Codex files of the gi
   await writeFile(join(device, DEVICE_HOME_ENTRIES.registry), `${JSON.stringify({ schemaVersion: "einzbern.registry.v1", entries: [] })}\n`);
   const live = hooks(await inspectInstallFixture(fixture));
   assert.equal(live.ok, true, JSON.stringify(live));
-  assert.deepEqual([live.user.claude.state, live.user.codex.state, live.user.codex.events], ["live", "live", ["PreToolUse", "SubagentStart", "UserPromptSubmit"]]);
+  assert.deepEqual([live.user.claude.state, live.user.codex.state, live.user.codex.events], ["live", "live", ["PreToolUse", "SubagentStart", "SubagentStop", "UserPromptSubmit"]]);
 
   await writeFile(join(fixture.home, ".codex", "hooks.json"), "{ not json");
   const invalid = hooks(await inspectInstallFixture(fixture));

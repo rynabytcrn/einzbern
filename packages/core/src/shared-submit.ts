@@ -62,7 +62,25 @@ export interface SharedSubmitAssessment { readonly phase: "baseline-ready" | "lo
 export class SharedSubmitError extends Error { readonly reasonCode = "SHARED_SUBMIT_INVALID"; }
 function fail(message: string): never { throw new SharedSubmitError(message); }
 function safePath(value: unknown): asserts value is string { dotText(value, "relative path"); if (value.startsWith("/") || /[\\:\u0000-\u001f]/u.test(value) || value.split("/").some(p => p === "." || p === ".." || p === "")) fail("unsafe relative path"); }
-export function validateSharedBaseline(value: unknown): SharedBaseline {
+// Exact historical record names only. This is a read-side description of existing bytes,
+// not permission to create/overwrite a colon path. Archive shape is not provenance authentication.
+const LEGACY_KNOWLEDGE_PATH = /^(crest|artifacts\/consolidation\/(?:workspace|library)-[a-f0-9]{24}\/crest)\/(metadata|bodies)\/knowledge:[a-f0-9]{24}\.(json|body)$/u;
+function legacyKnowledgePath(path: unknown): path is string {
+  if (typeof path !== "string") return false;
+  const match = LEGACY_KNOWLEDGE_PATH.exec(path);
+  return match !== null && (match[2] === "metadata" ? match[3] === "json" : match[3] === "body");
+}
+function pathPrefixes(path: string): readonly string[] {
+  const parts = path.split("/");
+  return parts.map((_, index) => parts.slice(0, index + 1).join("/"));
+}
+function portableOutputPath(value: unknown): asserts value is string {
+  safePath(value);
+  const parts = value.split("/");
+  if (!/^[A-Za-z0-9._/-]+$/u.test(value) || value.length > 240 || parts.some(part => part.length > 128 || part.endsWith(".") || /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/iu.test(part))) fail("nonportable new output path");
+}
+/** Initial inventory evidence may describe old knowledge paths; refresh/readback binds them to it. */
+export function validateSharedBaseline(value: unknown, preservedFrom?: SharedBaseline): SharedBaseline {
   const b = dotObject(value, "baseline", ["schemaVersion", "libraryId", "format", "minEngine", "canonicalRootRef", "completeInventoryRef", "completeInventoryDigest", "requiredRoots", "includedRoots", "exclusionsWithReasons", "inventory", "archiveWitness", "sourceVersion", "head", "versionVector", "capturedAt", "refreshedAt", "coverageStatus", "atomicSnapshot"]);
   if (b.schemaVersion !== "tcrn.shared-baseline.v1" || !/^(library|workspace):[a-f0-9]{24}$/u.test(String(b.libraryId)) || b.atomicSnapshot !== false || !["complete", "unknown"].includes(String(b.coverageStatus))) fail("baseline identity, coverage and non-atomic observation required");
   for (const key of ["canonicalRootRef", "completeInventoryRef", "minEngine"]) dotText(b[key], key);
@@ -74,17 +92,35 @@ export function validateSharedBaseline(value: unknown): SharedBaseline {
   if (!Array.isArray(b.inventory) || !b.inventory.length || !Array.isArray(b.exclusionsWithReasons)) fail("complete inventory and explicit exclusions required");
   const paths = new Set<string>();
   for (const item of b.inventory) {
-    const i = dotObject(item, "inventory member", ["path", "bytes", "sha256", "kind", "linkRepresentation"]); safePath(i.path); dotSha(i.sha256, "inventory sha256");
+    const i = dotObject(item, "inventory member", ["path", "bytes", "sha256", "kind", "linkRepresentation"]);
+    if (legacyKnowledgePath(i.path)) {
+      if (i.kind !== "file" || i.linkRepresentation !== undefined || !b.includedRoots.some(root => i.path === root || String(i.path).startsWith(`${root}/`))) fail("legacy knowledge must be an included ordinary file");
+    } else safePath(i.path);
+    dotSha(i.sha256, "inventory sha256");
     if (paths.has(i.path) || !Number.isSafeInteger(i.bytes) || Number(i.bytes) < 0 || !["file", "link-raw"].includes(String(i.kind))) fail("inventory member duplicate or invalid");
     paths.add(i.path); if (i.kind === "link-raw") dotText(i.linkRepresentation, "unfollowed link representation");
   }
   if (dotDigest(b.inventory) !== b.completeInventoryDigest) fail("complete inventory digest mismatch");
+  const baseline = value as SharedBaseline;
+  for (const member of baseline.inventory.filter(item => legacyKnowledgePath(item.path))) {
+    const crest = member.path.slice(0, member.path.lastIndexOf("/"));
+    const root = crest.slice(0, crest.lastIndexOf("/"));
+    const required = [`${root}/store.json`, ...(root === "crest" ? [] : ["artifacts/consolidation/index.json", `${root.slice(0, -"/crest".length)}/source.json`])];
+    if (required.some(path => !baseline.inventory.some(item => item.path === path && item.kind === "file"))) fail("legacy knowledge closure evidence is missing");
+  }
   for (const raw of b.exclusionsWithReasons) { const e = dotObject(raw, "exclusion", ["path", "reason"]); safePath(e.path); dotText(e.reason, "exclusion reason"); if (b.requiredRoots.some(root => e.path === root || root.startsWith(`${String(e.path)}/`))) fail("cannot exclude a required closure root"); }
   dotObject(b.versionVector, "versionVector", Object.keys((b.versionVector ?? {}) as object));
   for (const hash of Object.values(b.versionVector as Record<string, unknown>)) dotSha(hash, "stream head");
   if (dotInstant(b.refreshedAt, "refreshedAt") < dotInstant(b.capturedAt, "capturedAt")) fail("refresh predates capture");
   if (b.archiveWitness !== null) { const a = dotObject(b.archiveWitness, "archiveWitness", ["ref", "sha256"]); dotText(a.ref, "archive ref"); dotSha(a.sha256, "archive digest"); }
-  return value as SharedBaseline;
+  if (preservedFrom !== undefined) {
+    const prior = validateSharedBaseline(preservedFrom);
+    if (prior.libraryId !== baseline.libraryId || prior.canonicalRootRef !== baseline.canonicalRootRef) fail("legacy preservation requires the same library and canonical root");
+    const old = prior.inventory.filter(item => legacyKnowledgePath(item.path));
+    const current = baseline.inventory.filter(item => legacyKnowledgePath(item.path));
+    if (old.length !== current.length || current.some(item => !old.some(saved => saved.path === item.path && saved.bytes === item.bytes && saved.sha256 === item.sha256 && saved.kind === item.kind))) fail("legacy knowledge inventory must remain unchanged; new or changed colon paths are not permitted");
+  }
+  return baseline;
 }
 export function validateSharedSubmitAdvisory(value: unknown): SharedSubmitAdvisory {
   const a = dotObject(value, "advisory", ["schemaVersion", "libraryId", "operationId", "holder", "state", "baseDigest", "handoffEvidenceRef", "observedAt", "updatedAt", "previousDigest", "releaseEvidenceRef"]);
@@ -116,7 +152,7 @@ export function planSharedSubmit(value: SharedSubmitInput): SharedSubmitAssessme
     if (receipt.actor !== value.actor || receipt.baseDigest !== dotDigest(base) || !["applied", "already-present"].includes(receipt.status) || !receipt.readbackRef) return result("local-work", "pending", "SEMANTIC_RESULT_NOT_READ_BACK", "resolve actual engine outcome without recreating existing IDs");
   }
   if (value.refreshedBaseline === null) return result("refresh-ready", "pending", "FRESH_COMPLETE_BASELINE_REQUIRED", "refresh complete baseline once before submitting");
-  const fresh = validateSharedBaseline(value.refreshedBaseline); const freshDigest = dotDigest(fresh);
+  const fresh = validateSharedBaseline(value.refreshedBaseline, base); const freshDigest = dotDigest(fresh);
   if (fresh.libraryId !== base.libraryId || fresh.format !== base.format || fresh.sourceVersion < base.sourceVersion || fresh.minEngine !== base.minEngine || fresh.coverageStatus !== "complete" || dotInstant(fresh.refreshedAt, "refresh") < dotInstant(value.localWorkCompletedAt, "localWorkCompletedAt")) return result("refresh-ready", "refused", "REFRESH_STALE_OR_INCOMPATIBLE", "refresh and reassess work revisions");
   const merge = value.merge;
   if (merge !== null) dotObject(merge, "merge", ["kind", "refreshedBaselineDigest", "semanticChangePlanDigest", "engineOutputMembers", "receiptRef", "readbackRef", "status", "observedAt"]);
@@ -125,10 +161,21 @@ export function planSharedSubmit(value: SharedSubmitInput): SharedSubmitAssessme
   if (dotInstant(merge.observedAt, "merge.observedAt") < dotInstant(fresh.refreshedAt, "fresh.refreshedAt")) return result("merge-ready", "refused", "MERGE_PREDATES_REFRESH", "reconcile actual operation order without redating evidence");
   if (!Array.isArray(merge.engineOutputMembers) || !merge.engineOutputMembers.some(item => item.kind === "segment") || !merge.engineOutputMembers.some(item => item.kind === "manifest")) fail("supported merge must identify the complete engine output member plan");
   const plannedPaths = new Set<string>();
+  const knownPrefixes = new Map<string, Set<string>>();
+  const rememberPrefixes = (path: string): void => {
+    for (const prefix of pathPrefixes(path)) {
+      const key = prefix.toLowerCase(), spellings = knownPrefixes.get(key) ?? new Set<string>();
+      spellings.add(prefix); knownPrefixes.set(key, spellings);
+    }
+  };
+  for (const existing of fresh.inventory) rememberPrefixes(existing.path);
   for (const item of merge.engineOutputMembers) {
-    dotObject(item, "engine output member", ["exactPath", "bytes", "sha256", "kind"]); safePath(item.exactPath); dotSha(item.sha256, "engine output digest");
-    if (plannedPaths.has(item.exactPath) || !Number.isSafeInteger(item.bytes) || item.bytes < 0 || !["segment", "manifest"].includes(item.kind)) fail("invalid engine output member plan");
-    plannedPaths.add(item.exactPath);
+    dotObject(item, "engine output member", ["exactPath", "bytes", "sha256", "kind"]); portableOutputPath(item.exactPath); dotSha(item.sha256, "engine output digest");
+    if (plannedPaths.has(item.exactPath.toLowerCase()) || !Number.isSafeInteger(item.bytes) || item.bytes < 0 || !["segment", "manifest"].includes(item.kind)) fail("invalid engine output member plan");
+    for (const prefix of pathPrefixes(item.exactPath)) if ([...(knownPrefixes.get(prefix.toLowerCase()) ?? [])].some(spelling => spelling !== prefix)) fail("new output aliases an existing path or planned path component");
+    if (fresh.inventory.some(existing => existing.kind === "link-raw" && (item.exactPath === existing.path || item.exactPath.startsWith(`${existing.path}/`)))) fail("new output cannot replace or descend through an inventoried link");
+    if (fresh.inventory.some(existing => item.exactPath.startsWith(`${existing.path}/`) || existing.path.startsWith(`${item.exactPath}/`)) || [...plannedPaths].some(path => item.exactPath.toLowerCase().startsWith(`${path}/`) || path.startsWith(`${item.exactPath.toLowerCase()}/`))) fail("new output conflicts with an existing file/directory boundary");
+    plannedPaths.add(item.exactPath.toLowerCase()); rememberPrefixes(item.exactPath);
   }
   const handoff = value.writerHandoff;
   if (handoff !== null) { dotObject(handoff, "writerHandoff", ["libraryId", "operationId", "status", "writerScopeRefs", "evidenceRef", "baselineDigest", "observedAt"]); dotRefs(handoff.writerScopeRefs, "writerScopeRefs"); }
@@ -147,7 +194,7 @@ export function planSharedSubmit(value: SharedSubmitInput): SharedSubmitAssessme
   const paths = new Set<string>(); const ids = new Set<string>();
   for (const member of value.publicationMembers) {
     dotObject(member, "publication member", ["exactPath", "providerId", "parentId", "bytes", "sha256", "kind", "actualReceipt", "publishedAt"]);
-    safePath(member.exactPath); dotSha(member.sha256, "publication digest"); dotText(member.providerId, "providerId"); dotText(member.parentId, "parentId"); dotText(member.actualReceipt, "actualReceipt"); dotInstant(member.publishedAt, "publishedAt");
+    portableOutputPath(member.exactPath); dotSha(member.sha256, "publication digest"); dotText(member.providerId, "providerId"); dotText(member.parentId, "parentId"); dotText(member.actualReceipt, "actualReceipt"); dotInstant(member.publishedAt, "publishedAt");
     if (dotInstant(member.publishedAt, "publishedAt") < dotInstant(advisory.observedAt, "advisory.observedAt")) return result("publishing-segments", "refused", "PUBLICATION_PREDATES_HANDOFF", "preserve the actual order and reconcile publication");
     if (!Number.isSafeInteger(member.bytes) || member.bytes < 0 || !["segment", "manifest"].includes(member.kind) || paths.has(member.exactPath) || ids.has(member.providerId)) fail("duplicate or invalid publication member");
     if (!member.exactPath.startsWith(`${DIRECTORY.events}/`) || member.kind === "manifest" && !member.exactPath.endsWith("/manifest.json") || member.kind === "segment" && !member.exactPath.endsWith(".ndjson")) fail("publication must be actual engine event segments or their manifests");

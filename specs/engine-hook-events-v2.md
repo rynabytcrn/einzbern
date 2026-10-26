@@ -91,7 +91,9 @@ are required but not authenticated by their string shape. Replay, stale/future,
 wrong-attempt data, unknown and query failure cannot establish success.
 
 Pending decisions continue only the same live collector to a bounded native wait,
-clamped to the deadline, not a sleep in the hook or Stop-to-block loop. Early query,
+one query interval after the current evaluation and clamped to the deadline, not
+a sleep in the hook or Stop-to-block loop. Accepted observation age does not shorten
+that wait; an elapsed deadline exits before blocking. Early query,
 replay and no progress terminate the model with an explicit exception. Deadline,
 query-failure limit, budget exhaustion, pause, user cancellation, safety, permission,
 protocol and script errors also retain explicit exceptional facts; no success

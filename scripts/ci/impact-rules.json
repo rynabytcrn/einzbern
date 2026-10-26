@@ -1,5 +1,5 @@
 {
-  "version": 39,
+  "version": 40,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1548,7 +1548,7 @@
     "packages/core/src/background-resource.ts": "aa52f28d300d04702bcb27b5e711bb24c9b7bb29f7be4f894dab28f04abe4419",
     "packages/core/src/chain-identity.ts": "58c9b1d03551758ecfb5ffa1bc366c3c8e2f84a29a93809bb66437b49a42ec8e",
     "packages/core/src/cloud-roots.ts": "9dbce282738aca8d86fd27a0b8211d1e3932764fe2ca4869ea9de70648a3d3c1",
-    "packages/core/src/codex-subagent-stop.ts": "dd4b00a21ee88c0e80a2063cb2a950f3abdb96fd85d9d9da0490b6eb42cdb5f3",
+    "packages/core/src/codex-subagent-stop.ts": "a5fecf968b85f7136e8b3f741e71c2c379d1bb6be9da612ea538eb8d76008d48",
     "packages/core/src/conference-execution.ts": "617975b49ce80cc2d6f639437094a4e0807956be82baa49fabd311d5611a2e81",
     "packages/core/src/conference.ts": "88da25785bca1dd7ee2a53edb1be032a60fefbe952ebb785a6d7d7c3b252c34a",
     "packages/core/src/config-backup-retention.ts": "8267c43ab9f6362a9ca81dd5a906452a3f8f8936376d0c3530d0326b44fe7e5d",
@@ -1914,7 +1914,7 @@
     "tests/closeout-verify-dispositions.test.mjs": "4506a82487361c0d9b4a4e7c88be0c5aa8d262ca08e2f6f5e1aaabaa4f3885e6",
     "tests/cloud-roots.test.mjs": "001e0a352d617d6434336deecf1f0cbc6e47ecfccaf93012110b9bffb04401b8",
     "tests/code-only.test.mjs": "3e142ce62d12311e855d5f70442fff90ad015b428ae608a39cde09a194cec000",
-    "tests/codex-subagent-stop.test.mjs": "491ff3db67acaee1b6dfef31156233cdb965986e7525c0a7f19b5c9d04b2e15a",
+    "tests/codex-subagent-stop.test.mjs": "3f75fe94b8bf02e0aee76b7c1b94e7a5ec353d144c5e3a3e2842f9cfd5198ac7",
     "tests/conference-execution.test.mjs": "43ddf8c214df652e5490cc9f61b7fbfd5b6ba13b78031cbf56eafa64fcb02cc2",
     "tests/conference.test.mjs": "159aa57a7485c5c26cd1e1281fbd3f030c75ebc426a48b4d8919da3b93c0e7a1",
     "tests/config-backup-format.test.mjs": "e6c151e95c6e4e1904ddedd78d24a39ec8f23439abf7716d4529e721a51b3226",
@@ -2138,7 +2138,7 @@
     "tests/path-containment.test.mjs": "e4fc6520e8005633dd302ff435f39a8219a1f6312ef040d7357a116efe1cf42f",
     "tests/platform-chain-backup.test.mjs": "f8f67dd2e3626b54b1039a0fec4a3bcfef380e493051ef936e21217282f137e6",
     "tests/platform-doctor-current.test.mjs": "b14a80ad022d042c9c24f44aedd4fd4f8e8de6be42a07254a95914f2d75a351a",
-    "tests/platform-doctor.test.mjs": "804cc4ecee3c028a0004a9fb6ca4574096d71fae5f25fc5620851eee18ba6d68",
+    "tests/platform-doctor.test.mjs": "67710ad833bbb9e9f6805055fe7d31ad50e5fde8e7643b6dce7ddfb4e3515f15",
     "tests/portal-knowledge-pagination.test.mjs": "50491db0144369c7b6672d234802553b741bd9a43756dedf5230563356f635f1",
     "tests/preflight.test.mjs": "7c434cfb7624a656affadd05562012da47bf14553beaf020db4cc92e0700dcb1",
     "tests/privacy-boundary.test.mjs": "6aa3a4668113c4da56f8d484e9fa0d17ef17c0f20576ba13ec31c765aa8dc8e6",

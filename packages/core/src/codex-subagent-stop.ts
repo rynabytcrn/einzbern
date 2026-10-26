@@ -142,7 +142,10 @@ export function evaluateCodexCollectorStop(input: {
   // Query failures and unknown never become terminal, even if older facts looked complete.
   if (observation.consecutiveQueryFailures === 0 && observation.facts.every(fact => TERMINAL.has(fact.finalityKind))) return finish(null);
   if (progress.nextQueryAt !== null && observed < instant(progress.nextQueryAt)) return finish("no-progress");
-  const waitUntil = new Date(Math.min(observed + contract.queryIntervalMs, deadline)).toISOString();
+  // Freshness may include an observation exactly one interval old. Anchor the next
+  // wait to this evaluation, not that observation, so accepted data cannot cause
+  // immediate or near-zero reentry. The earlier deadline check keeps it future.
+  const waitUntil = new Date(Math.min(now + contract.queryIntervalMs, deadline)).toISOString();
   return {
     decision: "block", reasonCode: "CODEX_STOP_BOUNDED_WAIT", outcome: "waiting", waitUntil,
     progress: { lastSequence: observation.sequence, lastObservedAt: observation.observedAt, nextQueryAt: waitUntil, ended: false },

@@ -84,6 +84,36 @@ test("pending and unknown wait boundedly; duplicate/early query is explicit no-p
   assert.equal(evaluateCodexCollectorStop(value).waitUntil, "2026-10-26T12:00:40.000Z");
 });
 
+test("inclusive freshness boundary still waits from now, never immediate reentry", () => {
+  const start = Date.parse(AT);
+  for (const age of [29_999, 30_000]) {
+    for (const finalityKind of ["pending", "unknown"]) {
+      const value = input();
+      value.now = new Date(start + age).toISOString();
+      value.observation.facts[0].finalityKind = finalityKind;
+      const waiting = evaluateCodexCollectorStop(value);
+      assert.equal(waiting.reasonCode, "CODEX_STOP_BOUNDED_WAIT");
+      assert.equal(Date.parse(waiting.waitUntil) - Date.parse(value.now), value.contract.queryIntervalMs);
+      assert.equal(waiting.progress.nextQueryAt, waiting.waitUntil);
+      value.progress = waiting.progress;
+      value.observation.sequence++;
+      value.observation.observedAt = value.now = new Date(start + age + 1).toISOString();
+      assert.equal(evaluateCodexCollectorStop(value).final.exception, "no-progress", "a newer observation cannot authorize early reentry");
+    }
+  }
+  const terminalBoundary = terminal();
+  terminalBoundary.now = new Date(start + 30_000).toISOString();
+  assert.equal(evaluateCodexCollectorStop(terminalBoundary).outcome, "terminal", "inclusive freshness is unchanged");
+  const clamped = input();
+  clamped.now = new Date(start + 30_000).toISOString();
+  clamped.contract.deadline = new Date(start + 30_001).toISOString();
+  const waiting = evaluateCodexCollectorStop(clamped);
+  assert.equal(waiting.waitUntil, clamped.contract.deadline);
+  assert.ok(Date.parse(waiting.waitUntil) > Date.parse(clamped.now));
+  clamped.now = clamped.observation.observedAt = clamped.contract.deadline;
+  assert.equal(evaluateCodexCollectorStop(clamped).final.exception, "deadline");
+});
+
 test("all confirmed terminal raw facts return once without parent-message or acknowledgement", () => {
   const value = terminal(); const original = structuredClone(value);
   const result = evaluateCodexCollectorStop(value);

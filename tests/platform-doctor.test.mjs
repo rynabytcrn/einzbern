@@ -659,7 +659,7 @@ test("R47-06: a launcher hook on a device without the installed engine is its ow
   assert.equal(noRegistry.ok, false);
   assert.equal(noRegistry.reasonCode, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED");
   assert.deepEqual(noRegistry.failures.map((failure) => [failure.source, failure.reasonCode, failure.missing]), [
-    ...[1, 2, 3].map(() => ["container.codex-hooks", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
+    ...[1, 2, 3, 4].map(() => ["container.codex-hooks", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
     ...[1, 2, 3].map(() => ["container.claude-settings", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
   ]);
   assert.equal(noRegistry.failures[0].device, device);

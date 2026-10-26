@@ -598,6 +598,7 @@ async function loadSafeIoHarness(root, name, transform, { asUrl = false } = {}) 
   const instrumented = transform(source);
   const harnessPath = resolve(root, `${name}-safe-io-harness.mjs`);
   await writeFile(resolve(root, "runtime-capacity.mjs"), await readFile(new URL("../scripts/lib/runtime-capacity.mjs", import.meta.url)), { mode: 0o600 });
+  await writeFile(resolve(root, "config-backup-reservation.mjs"), await readFile(new URL("../scripts/lib/config-backup-reservation.mjs", import.meta.url)), { mode: 0o600 });
   await writeFile(harnessPath, instrumented, { mode: 0o600 });
   const url = pathToFileURL(harnessPath).href;
   return asUrl ? url : import(`${url}?${Date.now()}`);
@@ -656,6 +657,7 @@ async function crashInjectionHarness(root, name, marker, { before = false, parti
   const harnessPath = resolve(root, `${name}-safe-io-harness.mjs`);
   const runnerPath = resolve(root, `${name}-runner.mjs`);
   await writeFile(resolve(root, "runtime-capacity.mjs"), await readFile(new URL("../scripts/lib/runtime-capacity.mjs", import.meta.url)), { mode: 0o600 });
+  await writeFile(resolve(root, "config-backup-reservation.mjs"), await readFile(new URL("../scripts/lib/config-backup-reservation.mjs", import.meta.url)), { mode: 0o600 });
   await writeFile(harnessPath, instrumented, { mode: 0o600 });
   await writeFile(runnerPath, `import { recoverStaleOutputSessionLock } from ${JSON.stringify(pathToFileURL(harnessPath).href)};\nawait recoverStaleOutputSessionLock(process.argv[2]);\n`, { mode: 0o600 });
   const child = spawn(process.execPath, [runnerPath, root], { stdio: "ignore" });

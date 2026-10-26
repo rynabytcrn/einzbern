@@ -22,6 +22,8 @@ import { P1_TASKS, runAllP1Legs } from "./p1-sequence.mjs";
 import { selectTestFiles, validateSelectedTests, coreTestArgv } from "./lib/test-roster.mjs";
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
+import { isConfigBackupFormatProtected } from "./lib/config-backup-format.mjs";
+import { ConfigBackupReservationError } from "./lib/config-backup-reservation.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
 import { DependencyGraphError, validateFrozenDependencyGraph } from "./lib/dependency-graph.mjs";
 import { validateVendoredRuntimeInventory, VENDORED_RUNTIME_NOTICES, VENDORED_RUNTIME_SOURCE } from "./lib/vendored-runtime.mjs";
@@ -479,6 +481,7 @@ async function formatCheck({ write = false } = {}) {
     if (!textExtensions.has(extname(path)) && !textNames.has(name)) {
       continue;
     }
+    if (await isConfigBackupFormatProtected(repositoryRoot, path)) continue;
     const original = await readText(path);
     let normalized = original.replace(/\r\n?/gu, "\n");
     if (!name.endsWith(".md")) {
@@ -493,6 +496,7 @@ async function formatCheck({ write = false } = {}) {
     }
     if (normalized !== original) {
       if (write) {
+        if (await isConfigBackupFormatProtected(repositoryRoot, path)) continue;
         await writeFile(path, normalized);
       } else {
         findings.push(name);
@@ -638,6 +642,8 @@ async function build() {
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/runtime-capacity.mjs", runtimeCapacity);
   const canonicalOrder = await readSourceFile(resolve(repositoryRoot, "scripts/lib/canonical-order.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/canonical-order.mjs", canonicalOrder);
+  const configBackupReservation = await readSourceFile(resolve(repositoryRoot, "scripts/lib/config-backup-reservation.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/config-backup-reservation.mjs", configBackupReservation);
   // TCRN-CROSS-SUB-484: the heavy-run semaphore, which the CLI's gates-run and the machine settings
   // catalog import by relative path, as they import runtime-capacity.mjs.
   const heavyRuns = await readSourceFile(resolve(repositoryRoot, "scripts/lib/heavy-runs.mjs"));
@@ -1577,7 +1583,7 @@ const handlers = {
 };
 
 function errorReason(error) {
-  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError || error instanceof HeavyRunsError) {
+  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ConfigBackupReservationError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError || error instanceof HeavyRunsError) {
     return error.reasonCode;
   }
   return "TASK_INTERNAL_ERROR";

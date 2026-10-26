@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { CONFIG_BACKUP_RESERVATION_FILE, CONFIG_BACKUP_RESERVED_AREAS, readConfigBackupReservation } from "./config-backup-reservation.mjs";
 
 let temporarySequence = 0;
 const outputSessionStorage = new AsyncLocalStorage();
@@ -1415,14 +1416,97 @@ async function ensureSafeOutputDirectory(repositoryPath, relativeDirectory = "di
   const segments = outputSegments(relativeDirectory === "dist" ? "dist/.sentinel" : `${relativeDirectory}/.sentinel`).slice(0, -1);
   const repository = await requireOutputSession(repositoryPath);
   let current = repository.realPath;
+  if (await readConfigBackupReservation(current)) fail("OUTPUT_CONFIG_BACKUP_RESERVED", current);
   for (const [index, segment] of segments.entries()) {
     current = resolve(current, segment);
     await ensureDirectory(current, repository.realPath, index === 0);
+    if (await readConfigBackupReservation(current)) fail("OUTPUT_CONFIG_BACKUP_RESERVED", current);
   }
   return current;
 }
 
-export async function safeResetOutputDirectory(repositoryPath, relativeDirectory) {
+async function assertOutputDirectoryIdentity(directory) {
+  const current = await pathMetadata(directory.path, "OUTPUT_DIRECTORY_CHANGED");
+  if (current.isSymbolicLink() || !current.isDirectory() || !sameIdentity(directory.metadata, current)) {
+    fail("OUTPUT_DIRECTORY_CHANGED", directory.path);
+  }
+}
+
+async function outputAncestorIdentities(repository, directory) {
+  const chain = [{ path: repository.realPath, metadata: repository.metadata }];
+  let path = repository.realPath;
+  for (const segment of relative(repository.realPath, directory).split(sep).filter(Boolean)) {
+    path = resolve(path, segment);
+    chain.push({ path, metadata: await pathMetadata(path, "OUTPUT_DIRECTORY_CHANGED") });
+  }
+  return chain;
+}
+
+async function assertOutputAncestorsWritable(chain) {
+  for (const directory of chain) {
+    await assertOutputDirectoryIdentity(directory);
+    if (await readConfigBackupReservation(directory.path)) fail("OUTPUT_CONFIG_BACKUP_RESERVED", directory.path);
+  }
+}
+
+async function outputDirectoryReservation(directory) {
+  await assertOutputDirectoryIdentity(directory);
+  if (await readConfigBackupReservation(directory.path)) return true;
+  // An old store may predate the marker, or a first publication may have been
+  // interrupted. Names alone never establish a valid reservation: stop rather
+  // than guessing that these are disposable generated directories.
+  const names = await readdir(directory.path);
+  if (names.some(name => CONFIG_BACKUP_RESERVED_AREAS.includes(name))) {
+    fail("OUTPUT_CONFIG_BACKUP_RESERVATION_REQUIRED", directory.path);
+  }
+  return false;
+}
+
+async function cleanOutputDirectory(repository, target, { keepRoot = false, afterPlan } = {}) {
+  const plan = [];
+  const retained = new Set();
+  const outer = await outputAncestorIdentities(repository, dirname(target));
+  await assertOutputAncestorsWritable(outer);
+  async function visit(path, ancestors) {
+    const metadata = await pathMetadata(path, "OUTPUT_DIRECTORY_CHANGED");
+    const entry = { path, metadata, ancestors };
+    if (metadata.isDirectory() && !metadata.isSymbolicLink()) {
+      if (await outputDirectoryReservation(entry)) { retained.add(path); return; }
+      const chain = [...ancestors, entry];
+      for (const name of (await readdir(path)).sort()) await visit(resolve(path, name), chain);
+    }
+    plan.push(entry);
+  }
+  await visit(target, outer);
+  // Tests exercise publication between discovery and deletion without relying
+  // on scheduler timing. Production callers do not supply this hook.
+  if (afterPlan) await afterPlan();
+  let removed = false;
+  for (const entry of plan) {
+    const directories = entry.metadata.isDirectory() ? [...entry.ancestors, entry] : entry.ancestors;
+    let protectedRoot;
+    for (const directory of directories) {
+      await assertOutputDirectoryIdentity(directory);
+      if (await readConfigBackupReservation(directory.path)) { protectedRoot = directory.path; break; }
+    }
+    if (protectedRoot) { retained.add(protectedRoot); continue; }
+    if ([...retained].some(root => inside(entry.path, root)) || (keepRoot && entry.path === target)) continue;
+    const before = await pathMetadata(entry.path, "OUTPUT_DIRECTORY_CHANGED");
+    if (!sameIdentity(entry.metadata, before) || entry.metadata.isDirectory() !== before.isDirectory() ||
+        entry.metadata.isSymbolicLink() !== before.isSymbolicLink() || (!before.isDirectory() &&
+        (entry.metadata.mtimeMs !== before.mtimeMs || entry.metadata.ctimeMs !== before.ctimeMs))) {
+      fail("OUTPUT_DIRECTORY_CHANGED", entry.path);
+    }
+    // Never quarantine a parent or recursively remove it: a marker/new package
+    // published after discovery must survive, even if rmdir then fails nonempty.
+    if (before.isDirectory()) await rmdir(entry.path).catch(error => fail("OUTPUT_DIRECTORY_CHANGED", `${entry.path}: ${error.code ?? error.message}`));
+    else await rm(entry.path);
+    removed = true;
+  }
+  return { removed, retained: [...retained].sort().map(path => relative(repository.realPath, path).split(sep).join("/")) };
+}
+
+export async function safeResetOutputDirectory(repositoryPath, relativeDirectory, options = {}) {
   const segments = outputSegments(`${relativeDirectory}/.sentinel`).slice(0, -1);
   if (segments.length < 2) {
     fail("OUTPUT_RESET_INVALID", "The dist root itself cannot be reset");
@@ -1430,6 +1514,7 @@ export async function safeResetOutputDirectory(repositoryPath, relativeDirectory
   const parentRelative = segments.slice(0, -1).join("/");
   const parent = await ensureSafeOutputDirectory(repositoryPath, parentRelative);
   const target = resolve(parent, segments.at(-1));
+  const repository = await requireOutputSession(repositoryPath);
   try {
     const metadata = await lstat(target);
     if (metadata.isSymbolicLink()) {
@@ -1438,22 +1523,24 @@ export async function safeResetOutputDirectory(repositoryPath, relativeDirectory
     if (!metadata.isDirectory()) {
       fail("OUTPUT_DIRECTORY_INVALID", `${target} must be a directory`);
     }
-    const quarantine = resolve(parent, `.reset-${process.pid}-${temporarySequence += 1}`);
-    await rename(target, quarantine);
-    await rm(quarantine, { recursive: true, force: true });
+    if (await readConfigBackupReservation(target)) fail("OUTPUT_CONFIG_BACKUP_RESERVED", target);
+    await cleanOutputDirectory(repository, target, { ...options, keepRoot: true });
   } catch (error) {
     if (error.code !== "ENOENT") {
       throw error;
     }
   }
-  await mkdir(target);
+  await mkdir(target).catch(error => { if (error.code !== "EEXIST") throw error; });
   return ensureSafeOutputDirectory(repositoryPath, relativeDirectory);
 }
 
-export async function safeWriteOutput(repositoryPath, relativePath, content, { mode = 0o600 } = {}) {
+export async function safeWriteOutput(repositoryPath, relativePath, content, { mode = 0o600, beforePublish } = {}) {
   const segments = outputSegments(relativePath);
+  if (segments.at(-1) === CONFIG_BACKUP_RESERVATION_FILE) fail("OUTPUT_CONFIG_BACKUP_RESERVED", relativePath);
   const directoryRelative = segments.slice(0, -1).join("/");
   const directory = await ensureSafeOutputDirectory(repositoryPath, directoryRelative);
+  const ancestors = await outputAncestorIdentities(await requireOutputSession(repositoryPath), directory);
+  await assertOutputAncestorsWritable(ancestors);
   const target = resolve(directory, segments.at(-1));
   try {
     const existing = await lstat(target);
@@ -1471,12 +1558,14 @@ export async function safeWriteOutput(repositoryPath, relativePath, content, { m
 
   const temporary = resolve(directory, `.write-${process.pid}-${temporarySequence += 1}`);
   let handle;
+  let temporaryIdentity;
   try {
     handle = await open(
       temporary,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
       mode,
     );
+    temporaryIdentity = await handle.stat();
     await handle.writeFile(content);
     await handle.sync();
     const written = await handle.stat();
@@ -1485,6 +1574,9 @@ export async function safeWriteOutput(repositoryPath, relativePath, content, { m
     }
     await handle.close();
     handle = undefined;
+    if (beforePublish) await beforePublish();
+    await requireOutputSession(repositoryPath);
+    await assertOutputAncestorsWritable(ancestors);
     await rename(temporary, target);
     const targetMetadata = await pathMetadata(target, "OUTPUT_TARGET_INVALID");
     if (targetMetadata.isSymbolicLink() || !targetMetadata.isFile() || targetMetadata.nlink !== 1 || !sameIdentity(written, targetMetadata)) {
@@ -1500,11 +1592,20 @@ export async function safeWriteOutput(repositoryPath, relativePath, content, { m
     if (handle) {
       await handle.close();
     }
-    await rm(temporary, { force: true });
+    // A failed final ancestor check must not clean up through the replacement
+    // path. Only unlink the temporary inode in its still-bound parent chain.
+    let parentsUnchanged = true;
+    for (const ancestor of ancestors) {
+      try { await assertOutputDirectoryIdentity(ancestor); } catch { parentsUnchanged = false; break; }
+    }
+    if (parentsUnchanged && temporaryIdentity) {
+      const leftover = await lstat(temporary).catch(error => { if (error.code !== "ENOENT") throw error; });
+      if (leftover && sameIdentity(temporaryIdentity, leftover)) await rm(temporary);
+    }
   }
 }
 
-export async function safeCleanOutputRoot(repositoryPath) {
+export async function safeCleanOutputRoot(repositoryPath, options = {}) {
   const repository = await requireOutputSession(repositoryPath);
   const dist = resolve(repository.realPath, "dist");
   try {
@@ -1519,10 +1620,7 @@ export async function safeCleanOutputRoot(repositoryPath) {
     if (dirname(distReal) !== repository.realPath) {
       fail("OUTPUT_DIRECTORY_ESCAPE", `${dist} resolves outside the repository`);
     }
-    const quarantine = resolve(repository.realPath, `.dist-clean-${process.pid}-${temporarySequence += 1}`);
-    await rename(dist, quarantine);
-    await rm(quarantine, { recursive: true, force: true });
-    return { removed: true };
+    return cleanOutputDirectory(repository, dist, options);
   } catch (error) {
     if (error.code === "ENOENT") {
       return { removed: false };

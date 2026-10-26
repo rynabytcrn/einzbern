@@ -39,6 +39,19 @@ async function fixture(t, home, payloads) {
   const target = { source, sourceVersion: version, availablePartitions: [projectRef.libraryId], permittedKeys: keys, originalsStore, actorId: "actor:fixture", authorizations: Object.fromEntries(keys.map(key => [key, { surface: "atelier" }])) };
   return { root, source, target, packageRoot, proposal };
 }
+test("CFG-B02: allowlisted collection never walks retained backups, staging or recovery", async t => asPinnedDevice(async home => {
+  const f = await fixture(t, home, []);
+  await writeFile(join(f.source.projectRoot, "AGENTS.md"), "Preserve the selected user fragment.\n");
+  const selection = [{ kind: "agents-user-fragment", key: "0" }];
+  const before = await collectConfigBackupPayloads(f.source, selection);
+  for (const area of ["config-backups", "config-backup-staging", "config-backup-recovery"]) {
+    const path = join(f.source.projectRoot, "retained", area); await mkdir(path, { recursive: true });
+    await writeFile(join(path, "AGENTS.md"), "Unselected nested material must never enter the package.\n");
+    await symlink(f.source.projectRoot, join(path, "self"));
+  }
+  assert.deepEqual(await collectConfigBackupPayloads(f.source, selection), before);
+  assert.equal(before.length, 1); assert.equal(before[0].text, "Preserve the selected user fragment.\n");
+}));
 test("R4 restore fixture canonicalizes an aliased device home while the production directory guard still rejects it", async t => asPinnedDevice(async home => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-restore-home-alias-"))); t.after(() => rm(root, { recursive: true, force: true }));
   const canonicalHome = await realpath(home); const alias = join(root, "device-home-alias");

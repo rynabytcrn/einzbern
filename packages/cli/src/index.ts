@@ -22,7 +22,10 @@ import { discardRelocationPreparation } from "../../core/src/relocate.js";
 import { planConfigurationProjectionRefresh, refreshConfigurationProjections, diagnoseLegacySharedPaths } from "../../core/src/configuration-projections.js";
 import { CONFIG_BACKUP_COMMAND_CATALOG, runConfigBackupCommand } from "./config-backup-commands.js";
 import type { ConfigBackupCommandContext } from "./config-backup-commands.js";
-import type { ConfigBackupSource, ConfigBackupSourceVersion } from "../../core/src/config-backup.js";
+import type { ConfigBackupSource, ConfigBackupSourceVersion, ConfigBackupRetainedContainer } from "../../core/src/config-backup.js";
+import { CONFIG_BACKUP_UNSAFE_DIRECTORY_NAMES } from "../../core/src/config-backup.js";
+import { LEGACY_CONTROL_DIRECTORY } from "../../core/src/names.js";
+import { SHARED_SUBMIT_RESERVED_ROOT } from "../../core/src/shared-submit.js";
 import { resolveGeneratedArtifactsRoot } from "../../core/src/artifact-store.js";
 import { verifyInstallTree } from "../../core/src/install-tree-digest.js";
 import { readEngineCurrent, engineVersionDirectory } from "../../core/src/engine-home.js";
@@ -2229,10 +2232,25 @@ async function configBackupSource(values: Readonly<Record<string, string>>): Pro
   return { libraryRoot, projectRoot: await realpath(bound.projectPath), machineSettingsPath: machineSettingsPath(), projectRef: { libraryId: state.metadata.workspaceId, projectId: selectedProjectId }, declarationScope: chainIdentity(state)?.role === "coordination" && bound.projectId === undefined ? "library" : "project" };
 }
 
-async function configBackupProtectedRoots(source: ConfigBackupSource): Promise<readonly string[]> {
+async function configBackupRootBoundaries(source: ConfigBackupSource): Promise<{ readonly protectedRoots: readonly string[]; readonly retainedContainerRoots: readonly ConfigBackupRetainedContainer[] }> {
   const entries = (await readRegistry()).entries;
-  const roots = new Set([source.libraryRoot, source.projectRoot, deviceHome(), resolve(await skillSourceDirectory(), "../..")]);
-  for (const entry of entries) { roots.add(entry.libraryPath); roots.add(entry.projectPath); roots.add(join(entry.projectPath, "dist")); }
+  const roots = new Set([deviceHome(), resolve(await skillSourceDirectory(), "../..")]);
+  const containers: ConfigBackupRetainedContainer[] = [];
+  const projects = new Set([source.projectRoot, ...entries.map(entry => entry.projectPath)]);
+  const libraries = new Set([source.libraryRoot, ...entries.map(entry => entry.libraryPath)]);
+  for (const project of projects) {
+    containers.push({ path: project, kind: "project" }, { path: join(project, "dist"), kind: "generated" });
+    for (const child of CONFIG_BACKUP_UNSAFE_DIRECTORY_NAMES) roots.add(join(project, child));
+  }
+  for (const library of libraries) {
+    containers.push({ path: library, kind: "library" });
+    for (const child of [DIRECTORY.events, DIRECTORY.knowledge, DIRECTORY.projectConfig, DIRECTORY.device, LEGACY_CONTROL_DIRECTORY]) roots.add(join(library, child));
+    // These fixed library namespaces have writers independent of artifact output cleanup.
+    // Protect future paths as well as existing ones; their absence does not make them free.
+    roots.add(join(library, SHARED_SUBMIT_RESERVED_ROOT.relativePath));
+    roots.add(join(library, DIRECTORY.artifacts, "consolidation"));
+    roots.add(join(library, DIRECTORY.artifacts, "relocations"));
+  }
   const targets = [{ libraryPath: source.libraryRoot, projectId: source.declarationScope === "project" ? source.projectRef.projectId : undefined }, ...entries];
   const visited = new Set<string>();
   for (const target of targets) {
@@ -2243,7 +2261,7 @@ async function configBackupProtectedRoots(source: ConfigBackupSource): Promise<r
     const effective = await effectiveProjectState(state, target.projectId);
     const value = effective.settings.find(row => row.key === "workspace.generatedArtifactsPath" && !row.tombstone)?.value ?? SETTINGS_CATALOG.find(row => row.key === "workspace.generatedArtifactsPath")?.defaultValue;
     if (typeof value !== "string") fail("CONFIG_BACKUP_ROOT_UNAVAILABLE", "an actual registered generated-artifact root is unknown");
-    roots.add(resolveGeneratedArtifactsRoot(target.libraryPath, value));
+    containers.push({ path: resolveGeneratedArtifactsRoot(target.libraryPath, value), kind: "generated" });
   }
   // Preserve lexical protection for not-yet-created output roots; canonical existing roots
   // additionally close aliases. The reserve itself rejects links at every component.
@@ -2251,7 +2269,11 @@ async function configBackupProtectedRoots(source: ConfigBackupSource): Promise<r
     try { roots.add(await realpath(root)); }
     catch (error) { if ((error as { code?: string }).code !== "ENOENT") throw error; }
   }
-  return [...roots];
+  for (const container of [...containers]) {
+    try { const path = await realpath(container.path); if (path !== container.path) containers.push({ ...container, path }); }
+    catch (error) { if ((error as { code?: string }).code !== "ENOENT") throw error; }
+  }
+  return { protectedRoots: [...roots], retainedContainerRoots: containers };
 }
 
 /** Bind source identity to this executing bundle, never cwd, argv or uploaded JSON. */
@@ -2279,11 +2301,14 @@ async function configBackupRunningVersion(): Promise<ConfigBackupSourceVersion> 
 }
 
 function configBackupContext(): ConfigBackupCommandContext {
+  let boundaries: ReturnType<typeof configBackupRootBoundaries> | undefined;
+  const roots = (source: ConfigBackupSource): ReturnType<typeof configBackupRootBoundaries> => boundaries ??= configBackupRootBoundaries(source);
   return {
     sourceVersion: configBackupRunningVersion,
     resolveSource: configBackupSource,
     localBindingRoot: async () => join(await realpath(deviceHome()), CONFIG_BACKUP_LOCAL_BINDING_DIRECTORY),
-    protectedRoots: configBackupProtectedRoots,
+    protectedRoots: async source => (await roots(source)).protectedRoots,
+    retainedContainerRoots: async source => (await roots(source)).retainedContainerRoots,
     approvePolicy: async (request, source) => {
       const validation = validateConfigBackupRetentionPolicy(request.policy);
       if (validation.status !== "policy-valid") return null;

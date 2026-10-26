@@ -8,6 +8,7 @@ import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:p
 import { homedir } from "node:os";
 import { assertStrictInstant, compareCanonicalText } from "../../protocol/src/index.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
+import { CONFIG_BACKUP_RESERVATION_FILE, CONFIG_BACKUP_RESERVED_AREAS, CONFIG_BACKUP_RESERVATION_TEXT } from "../../../scripts/lib/config-backup-reservation.mjs";
 import { absolutePathLine, parseManagedFile } from "./managed-sections.js";
 import { CONFIG_BACKUP_MACHINE_KEYS, readMachineSettings, validateMachineSettingValue } from "./machine-settings.js";
 import { validateSettingValue } from "./settings.js";
@@ -19,7 +20,10 @@ import { readRegistry } from "./registry.js";
 export const CONFIG_BACKUP_VERSION = "einzbern.config-backup.v1" as const;
 export const CONFIG_BACKUP_MAPPING_VERSION = "einzbern.config-restore-mapping.v1" as const;
 export const CONFIG_BACKUP_SETTING_KEYS = Object.freeze(["agents.generation", "agents.sharedNavigation", "artifact.language", "engine.requiredVersion", "execution.maxConcurrentSubagents", "injection.perPromptBytes", "retrieval.promptLanguages", "retrieval.scopeExcerptBytes", "retrieval.tau"] as const);
-export const CONFIG_BACKUP_RESERVED_ROOTS = Object.freeze(["config-backups", "config-backup-staging", "config-backup-recovery"] as const);
+export const CONFIG_BACKUP_RESERVED_ROOTS = CONFIG_BACKUP_RESERVED_AREAS;
+export const CONFIG_BACKUP_UNSAFE_DIRECTORY_NAMES: readonly string[] = Object.freeze([".git", ".hg", ".svn", ".ssh", ".aws", ".azure", ".gnupg", ".config", ".einzbern", ".tcrn-workflow", ".dot-config", ".codex", ".claude", ".agents", "identity", "credentials"]);
+/** Actual caller-resolved boundaries, never accepted from backup request JSON. */
+export interface ConfigBackupRetainedContainer { readonly path: string; readonly kind: "project" | "generated" | "library" }
 export type ConfigBackupCategory = "user-content" | "governed-input" | "device-preference" | "regeneration-input";
 export interface ConfigBackupProjectRef { readonly libraryId: string; readonly projectId: string }
 export interface ConfigBackupSourceVersion {
@@ -278,14 +282,37 @@ export async function writeConfigBackupNewFile(root: string, member: string, tex
   try { await file.writeFile(text, "utf8"); await file.sync(); } finally { await file.close(); }
   if (!(await readConfigBackupFile(root, member)).equals(Buffer.from(text))) configBackupFail("CONFIG_BACKUP_READBACK_FAILED");
 }
-export async function assertConfigBackupReservedRoot(root: string, protectedRoots: readonly string[]): Promise<void> {
+function inside(root: string, path: string): boolean {
+  const part = relative(root, path); return part === "" || (!part.startsWith(`..${sep}`) && part !== ".." && !isAbsolute(part));
+}
+export async function assertConfigBackupReservedRoot(root: string, protectedRoots: readonly string[], retainedContainerRoots: readonly ConfigBackupRetainedContainer[] = []): Promise<void> {
   await assertConfigBackupDirectory(root);
   if (root === parse(root).root || root === homedir() || protectedRoots.length === 0) configBackupFail("CONFIG_BACKUP_ROOT_UNSAFE");
   for (const protectedRoot of protectedRoots) {
     if (!isAbsolute(protectedRoot)) configBackupFail("CONFIG_BACKUP_ROOT_UNSAFE");
-    const a = relative(root, resolve(protectedRoot)); const b = relative(resolve(protectedRoot), root);
-    if (a === "" || (!a.startsWith(`..${sep}`) && a !== ".." && !isAbsolute(a)) || (!b.startsWith(`..${sep}`) && b !== ".." && !isAbsolute(b))) configBackupFail("CONFIG_BACKUP_ROOT_UNSAFE");
+    if (inside(root, resolve(protectedRoot)) || inside(resolve(protectedRoot), root)) configBackupFail("CONFIG_BACKUP_ROOT_UNSAFE");
   }
+  for (const container of retainedContainerRoots) {
+    if (!isAbsolute(container.path) || resolve(container.path) !== container.path || !["project", "generated", "library"].includes(container.kind)) configBackupFail("CONFIG_BACKUP_ROOT_UNSAFE");
+    // No project, library or generated root (nor its ancestor) becomes a backup root.
+    if (inside(root, container.path)) configBackupFail("CONFIG_BACKUP_ROOT_UNSAFE");
+    if (container.kind === "library" && inside(container.path, root) && !retainedContainerRoots.some(candidate => candidate.kind === "generated" && candidate.path !== container.path && inside(container.path, candidate.path) && candidate.path !== root && inside(candidate.path, root))) configBackupFail("CONFIG_BACKUP_ROOT_UNSAFE");
+  }
+  if (retainedContainerRoots.some(container => inside(container.path, root))) {
+    // A dedicated, explicitly selected subdirectory, not an occupied source tree.
+    for (const name of await readdir(root)) if (name !== CONFIG_BACKUP_RESERVATION_FILE && !CONFIG_BACKUP_RESERVED_ROOTS.some(area => area === name)) configBackupFail("CONFIG_BACKUP_ROOT_NOT_RESERVED");
+    for (const container of retainedContainerRoots) {
+      if (!inside(container.path, root)) continue;
+      const parts = relative(container.path, root).split(sep);
+      if (parts.some(part => CONFIG_BACKUP_UNSAFE_DIRECTORY_NAMES.includes(part.toLowerCase()))) configBackupFail("CONFIG_BACKUP_ROOT_UNSAFE");
+    }
+  }
+}
+/** Protection metadata, not configuration, policy approval or a package member. */
+export async function reserveConfigBackupRoot(root: string): Promise<void> {
+  try { await writeConfigBackupNewFile(root, CONFIG_BACKUP_RESERVATION_FILE, CONFIG_BACKUP_RESERVATION_TEXT); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+  if ((await readConfigBackupFile(root, CONFIG_BACKUP_RESERVATION_FILE)).toString("utf8") !== CONFIG_BACKUP_RESERVATION_TEXT) configBackupFail("CONFIG_BACKUP_RESERVATION_INVALID");
 }
 export interface ConfigBackupVerification { readonly integrity: "verified" | "corrupt" | "unreadable"; readonly manifest: ConfigBackupManifest | null; readonly error: string | null }
 export async function verifyConfigBackup(packageRoot: string): Promise<ConfigBackupVerification> {

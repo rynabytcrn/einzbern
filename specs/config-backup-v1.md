@@ -73,9 +73,44 @@ verified is never accepted on that declaration alone.
 
 ## Roots, binding and publication
 
-The caller resolves an explicit existing reserved root disjoint from the actual
-library, project, device, generated-artifact and destructive-output roots. Its only
-three areas are config-backups, config-backup-staging and config-backup-recovery.
+The caller resolves an explicit existing dedicated reserved directory. It may be a
+strict descendant of an actual project or generated-artifact root, or a disjoint
+external directory. Project, library and generated roots themselves and their
+ancestors are never reserved directories. Inside a library, only a strict descendant
+of its actual generated-artifact root is eligible; library control, device, installed
+engine, VCS, identity and credential trees remain excluded. Fixed library artifact
+namespaces for shared-submit coordination, consolidation and relocation evidence are
+also excluded, including before their writers create them. These are actual library
+paths, not a global ban on same-named user directories. The CLI derives these
+boundaries from the actual registry and effective artifact settings, never from
+request-provided exclusions. Canonical paths and every ancestor reject symbolic links.
+
+An in-tree reservation must be dedicated: it contains only the canonical
+`.einzbern-config-backup-reserved.json` marker and the three backup areas (or is
+initially empty). The existing policy decision still binds the exact reserved root;
+no new configuration or approval source is introduced. After that policy is checked,
+the writer creates and reads back the marker before creating areas, indexes or
+packages. This marker is protection metadata, not authority, identity or a backup
+member. A corrupt, linked or conflicting marker is never overwritten. Existing
+external stores remain readable and receive protection on their next authorized
+write; nothing relocates old packages automatically.
+
+The repository's output reset/clean and output writers honor this explicit reservation,
+preserving the marked root and its contents while cleaning unrelated output. Cleanup
+does not rename a containing tree or recursively remove it: it rechecks reservation
+ancestors and directory identity before individual removals, and new unplanned entries
+fail closed. Output writers recheck before replacement. Format check/write likewise
+preserve only canonical, closed backup-protocol members; unknown mixed source content
+refuses that exemption. General source discovery and privacy auditing do not hide
+reserved content. Invalid markers and unmarked legacy backup areas fail closed instead
+of being deleted. An
+external generator must likewise exclude the reserved directory; this protocol does
+not control arbitrary third-party deletion, share a lock with every writer, or claim
+hostile concurrent-filesystem or distributed atomicity.
+Collection reads selected logical keys, never recursively walks the source tree, so
+backups, staging, recovery and the marker cannot recursively enter another package.
+
+The three areas are config-backups, config-backup-staging and config-backup-recovery.
 Each uses `<safe-host-label>/<full-random-group-id>/<UTC-backup-id>/`. Full random IDs
 avoid shortened-prefix aliasing. Hostname is a display label, never identity.
 

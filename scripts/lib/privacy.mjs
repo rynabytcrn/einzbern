@@ -295,6 +295,20 @@ function isPublicRepositoryAddress(entry, reasonCode, input, match) {
   });
 }
 
+// INIT076: only this reviewed public engine repository's canonical Actions run URL.
+// Classify literal raw spans BEFORE normalization: decoding escapes must never mint
+// a public exception. Only the owner projection changes; all other detectors retain
+// the original bytes, and filename/archive-header/history traversal is unchanged.
+function publicActionsRunProjection(entry, content, owner) {
+  if (privacyDigest(owner) !== REVIEWED_OWNER_DIGEST
+    || !PUBLIC_REPOSITORY_ADDRESS_KINDS.has(entry.kind)
+    || entry.label.includes("#header:")) return content;
+  const prefix = `${PUBLIC_REPOSITORY_URL_PREFIX}${owner}/einzbern/actions/runs/`;
+  const pattern = new RegExp(`(^|[\\s"'\`(<\\[])(${escaped(prefix)}[1-9][0-9]*)(?=$|[\\s"'\`)>\\]])`, "gu");
+  return content.replace(pattern, (_, boundary, url) =>
+    `${boundary}${url.replace(owner, "[PUBLIC_ACTIONS_OWNER]")}`);
+}
+
 function hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, inputs) {
   const origins = classifiedOrigins(entry);
   const isClassified = (origin, digest, lineDigest) => {
@@ -974,6 +988,11 @@ export function scanPrivacyEntries(entries, { owner, privateTokens = [], reposit
         const content = sanitizeAllowedPublicMetadata(entry, owner, repositories);
         const normalized = normalizePrivacyText(content);
         const metadataProjections = publicGitMetadataProjections(entry, content, owner);
+        const ownerContent = metadataProjections.get("OWNER_PRIVATE_IDENTIFIER")?.[0] ?? content;
+        const publicRuns = publicActionsRunProjection(entry, ownerContent, owner);
+        if (publicRuns !== ownerContent) {
+          metadataProjections.set("OWNER_PRIVATE_IDENTIFIER", [publicRuns, normalizePrivacyText(publicRuns)]);
+        }
         matchedReasons = [];
         for (const [reasonCode, pattern] of patterns) {
           if (hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, metadataProjections.get(reasonCode) ?? [content, normalized])) {

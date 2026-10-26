@@ -14,6 +14,17 @@ noreply addresses are allowed only where Git commit or annotated-tag metadata
 requires them. They are not allowed in source, filenames, archives, or commit
 messages merely because they are public.
 
+The scanner also classifies the two digest-pinned, reviewed public repository-root
+addresses, and canonical HTTPS GitHub Actions run permalinks for this public
+engine repository only: `https://github.com/<reviewed-owner>/einzbern/actions/runs/<positive-decimal-id>`.
+The run URL must be a complete literal delimited by whitespace, quotes, backticks,
+or Markdown/HTML brackets. Other owners/repositories, private hosts, userinfo,
+ports, queries, fragments, suffix paths, encoded/escaped URLs and noncanonical IDs
+are not covered. Classification replaces only the exact owner occurrence for the
+owner detector, before normalization; every other detector still sees original
+bytes. Adjacent private text, filenames, archive headers and historical paths
+remain scanned. This is not an owner allowlist or a historical/archive exemption.
+
 `pnpm verify:privacy` scans current filenames and contents, the source archive,
 all stored Git commit/tree/blob/tag objects, full recursive paths from every
 reachable commit root, and ref metadata. Reads fail closed; single-link regular

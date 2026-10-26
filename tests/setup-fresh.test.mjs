@@ -288,7 +288,7 @@ test("480-AC1: the default answers install the library, the registry entry, both
   const launcher = join(f.deviceHome, "engine", "hook.mjs");
   assert.deepEqual(await readFile(launcher), await readFile(join(repositoryRoot, "scripts/einzbern-hook-launcher.mjs")));
   assert.deepEqual(await einzbernHooks(join(f.home, ".claude", "settings.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
-  assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
+  assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`], ["SubagentStop", `node "${launcher}" subagent-stop`]]);
   assert.match(await readFile(join(f.home, ".codex", "config.toml"), "utf8"), /^\[features\]\nhooks = true$/mu);
   const claude = await readFile(join(f.project, "CLAUDE.md"), "utf8");
   assert.match(claude, /<!-- einzbern:section id=claude-import rev=1 digest=[0-9a-f]{64} -->\n@AGENTS\.md\n<!-- einzbern:section-end id=claude-import -->/u);
@@ -343,7 +343,7 @@ test("480-AC2: a second run with the same answers plans no write and writes noth
   assert.deepEqual(await Promise.all(files.map((path) => readFile(path, "utf8"))), before, "every file keeps its bytes");
   assert.deepEqual(await snapshot([join(f.home, ".claude", "skills"), join(f.home, ".agents", "skills")]), copies);
   assert.equal((await einzbernHooks(join(f.home, ".claude", "settings.json"))).length, 3);
-  assert.equal((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).length, 3);
+  assert.equal((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).length, 4);
   assert.equal((before[3].match(/einzbern:section id=navigation /gu) ?? []).length, 1);
   assertSelfCheckGreen(second);
 });

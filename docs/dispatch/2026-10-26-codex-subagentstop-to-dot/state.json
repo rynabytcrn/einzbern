@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "einzbern.init076.dot-handoff.v1",
+  "date": "2026-10-26",
+  "status": "unverified-source-preserved-for-Dot; local implementation and acceptance stopped by Owner",
+  "repository": "https://github.com/tpmoonchefryan/einzbern",
+  "branch": "codex/subagentstop-dot-handoff",
+  "codeCommit": "03f62af259ceb4072c9cf8dd82d0933228ed280a",
+  "baseCommit": "f5ad507d65e52ef21e3fb275e32d05d8d01b4a5e",
+  "authorization": {
+    "source": "Owner: 不继续了，先推送到github，由dot继续完成",
+    "prior": [
+      "TCRN-CROSS-MIN-384 D1",
+      "TCRN-CROSS-MIN-385 D2-D3",
+      "TCRN-CROSS-MIN-386 D1"
+    ],
+    "currentMinutes": "TCRN-CROSS-MIN-387 D1",
+    "scope": "GitHub handoff branch and truthful unfinished-work handoff; publication is not acceptance"
+  },
+  "workIds": {
+    "initiative": "work:d535ac2ff952181867e04d35",
+    "epic": "work:bc39cac92b44d34876e7c9e9",
+    "analysisStory": "work:81cefcfb92659143e967542b",
+    "collectorSubtask": "work:ecbcc14fc0be4f595fc7f1b3",
+    "productStory": "work:30965e84dd200fbac4761494",
+    "hostProofStory": "work:687121e7f44307fd333c0822",
+    "installationSubtask": "work:740566dd2943d28a83f65b47",
+    "protocolSubtask": "work:be1768457895374bcceafe97",
+    "liveWiringSubtask": "work:c16e6c400fac2ceea83e9f20",
+    "liveContinuationSubtask": "work:51d863adf9465e2be5ebbe73"
+  },
+  "verification": {
+    "newCandidateTests": "not-run",
+    "newCandidateGates": "not-run",
+    "independentAcceptance": "not-run",
+    "sourceWhitespaceCheck": "passed before the E1 code commit",
+    "normalInstallFixtures": "authored, not executed",
+    "actualSubagentStopCallback": "not-observed in the two earlier observer trials",
+    "sameCollectorContinuation": "unverified",
+    "oneReportAcknowledgement": "unverified",
+    "idleParentResumption": "unverified",
+    "formalWorkCompletion": "not-recorded",
+    "resourceCleanup": "partial; pending-input worktrees and evidence retained"
+  },
+  "currentDevice": {
+    "hookRegistered": true,
+    "officialReview": {
+      "binaryVersion": "0.164.0-alpha.11.1",
+      "pathCliVersion": "0.156.1 is a separate installation",
+      "trusted": true,
+      "installedCount": 1,
+      "activeCount": 1,
+      "claimLimit": "Definition review is not native callback evidence"
+    },
+    "currentWrapper": "Candidate collector wrapper and one transpiled core sidecar, replacing the observer during the interrupted resume; no new business/collector was dispatched after this replacement",
+    "ordinaryLoaderSmoke": "synthetic unassociated event returned {}; not an actual-host test",
+    "fullEngineOrSkillInstalled": false,
+    "normalPackageByteIdentity": "not asserted",
+    "allExistingSubagents": "confirmed terminal before GitHub preservation",
+    "automaticGoal": "none at preservation",
+    "hashes": {
+      "coreSource": "9bed5aca58c9954bb9034af9f78a713c647b288f7f1265e18192088eb4152b2b",
+      "standaloneTranspiledCore": "81a8d1b469f840601b662461ccc4c3601381e56dd4b59e8e6ecf3cf0a03e79e8",
+      "currentWrapper": "8271e2ab1dbfce12c85dee0a5a140f82f4e998162a813b0f96a7bc3d32a66098"
+    }
+  },
+  "gateRoots": {
+    "projectRoot": "A real isolated container containing both declared roots",
+    "engine": "TCRN Platform/einzbern",
+    "helper": "TCRN Platform/mana-orchestrate",
+    "helperBase": "0a201cb83ece2d73be3e03d708a11550bc9fdbd4",
+    "helperChanged": false,
+    "rule": "Resolve every enabled root inside this container; read current configuration and commands; use actual base-by-root and work IDs"
+  },
+  "previousCi": {
+    "commit": "f5ad507d65e52ef21e3fb275e32d05d8d01b4a5e",
+    "runId": 40222231539,
+    "attempt": 1,
+    "url": "https://github.com/tpmoonchefryan/einzbern/actions/runs/40222231539",
+    "conclusion": "success",
+    "wallSeconds": 969,
+    "coverage": "full",
+    "reason": "Actual plan includes full-path rules for CI/planner/gates/release changes and structural-change:A",
+    "claimLimit": "This is the earlier published candidate, not validation of 03f62af or this handoff commit",
+    "rerunsOrDispatches": 0
+  },
+  "retainedResources": {
+    "localWorktrees": "Integration, E1 and unchanged Helper are retained as pending source/review inputs; the older INIT075 frozen candidate is separate",
+    "analysisTrashLogicalBytes": 8788793,
+    "trashPhysicalDeletion": false,
+    "backgroundWatchers": "all prior collection watchers exited",
+    "emptyCliReviewSessions": "exited; official archive attempts failed; inert history retained",
+    "localEvidence": "Not uploaded; contains device-specific paths and raw observations. Dot must not assume it has access or substitute that absence with a pass."
+  },
+  "dotContinuation": "Continue the original Codex-only product and direct-host requirements from this branch, independently recall/read native work, run the applicable batch checks and independent source/behavior acceptance, preserve every unknown and the actual parent-idle precondition. Do not implement a SubagentStop hook for Dot itself or treat this handoff as permission for an unapproved live install, main merge, tag or Release."
+}

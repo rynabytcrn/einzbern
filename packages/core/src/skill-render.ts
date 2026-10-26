@@ -65,7 +65,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall", "rule-list"],
-    action: "Run `recall --query \"<task>\"`. Each new/resumed/delegated session reads AGENTS, Skill and work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults. Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`.",
+    action: "Run `recall --query \"<task>\"`. New/resumed/delegated sessions read AGENTS, Skill and work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults. Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`.",
   },
   {
     moment: "Draft by work type",
@@ -80,7 +80,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Native dispatch (Codex, Claude, dot)",
     verbs: ["execution-host-prepare", "execution-host-record", "execution-host-evidence"],
-    action: "Authorized tools, normal prompt reports. No runtime adapter or optional telemetry prerequisite. Existing class fallback authority applies unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[] needs no binding; check scope/permission. Audit: machine-assemble inputs, never hand-fill JSON; raw returns/reports via `--binding`/`--prior`, actual status names/attempt association. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; saving needs authority. `specs/host-fallback-v1.md`.",
+    action: "Authorized tools, normal prompt reports. No runtime adapter or optional telemetry prerequisite. Existing class fallback authority applies unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[] needs no binding; check scope/permission. Audit: machine-assemble inputs, never hand-fill JSON; raw returns/reports via `--binding`/`--prior`, actual status names/attempt association. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; saving needs authority. `specs/host-fallback-v1.md`. Codex: specs/engine-hook-events-v2.md.",
   },
   {
     moment: "Shared submission",

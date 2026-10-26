@@ -2,10 +2,12 @@
 # Engine hook events
 
 The installed engine owns UserPromptSubmit, SubagentStart and PreToolUse for
-Claude Code and Codex. Setup, update and host-render reconcile the same stable
-launcher commands; doctor compares the installed hooks with that same plan.
-SessionStart remains the navigation fallback when agents.navigation is declined.
-No Stop, SSH or control-tree hook is restored. DSH's existing contract is unchanged.
+Claude Code and Codex. Codex additionally owns SubagentStop for the bounded
+collector protocol below; it is not in the common event table. Setup, update and
+host-render reconcile the same stable launcher commands; doctor compares the
+installed hooks with that same plan. SessionStart remains the navigation fallback
+when agents.navigation is declined. SSH and control-tree hooks remain retired.
+DSH's existing contract is unchanged.
 
 ## Subagent first-work context (BL-34)
 
@@ -36,6 +38,73 @@ not parsed or executed, and they are never refused by this guard. Unknown input,
 missing paths, directories and filesystem exceptions fail open. The engine records
 an observed/denied outcome without recording command text or file contents. Hosts
 without a dedicated Read surface do not acquire shell enforcement through aliases.
+
+## Codex SubagentStop collector
+
+The Codex-only `SubagentStop` command reaches the versioned engine entry as
+`subagent-stop`. Normal install, upgrade, repair, managed merge and package paths
+retain this registration. Registration and executable syntax do not establish
+actual callback, trust/version support or live collection capability.
+
+### Current activation boundary
+
+Live enforcement is **capability-unavailable / unverified** in this candidate.
+The installed handler returns `{}` without changing the ordinary native final.
+An old `EINZBERN_SUBAGENT_STOP_V1` marker yields the internal diagnostic
+`CODEX_STOP_CAPABILITY_UNAVAILABLE` in the existing hook log, never a binding or a completion verdict.
+No worker text, nonce, manifest, local snapshot or first matching stop may enroll
+an authorized collector. Old device files are left untouched: no migration,
+private session parsing, second daemon, invented RPC or unconditional host claim.
+Do not dispatch a stage as contract-compliant while this prerequisite is missing.
+
+Supported protocol pieces alone are insufficient: the parent must correlate its
+actual native spawn receipt to an immutable exact role/batch/agent/application
+attempt and fixed members. Native turn IDs are not application attempt IDs.
+An authorized same-host reader must prove fresh member status/results and
+reentrant hook access, and a supported wait must continue the same live collector.
+A last-known agentsStates record, idle/notLoaded thread, interrupted/shutdown or
+notFound state is not confirmed completion/cancellation. Until that wiring and
+actual callback are evidenced, the runtime does not call the deterministic evaluator.
+
+### Deterministic contract (not a host adapter)
+
+`evaluateCodexCollectorStop` models decisions from already-proven parent mapping
+and same-host observations. It does not authenticate its arguments. Fixture inputs
+are synthetic and never constitute native evidence. Any future adapter must
+serialize and persist progress per exact batch/attempt before delivering a decision;
+recovery with missing/uncertain progress must not replay a final or revive a worker.
+The model's `ended` flag closes its decision stream, not proof of native termination.
+
+Exactly one dedicated economy collector is required per dispatched stage. Only
+that role is outside the harness worker cap; it still consumes a real reserved
+slot. The capacity validator models remaining child capacity after the parent and
+other active agents. Reduce workers/split stages, or block if one worker plus the
+collector cannot fit. No ended-worker reuse or second collector while termination
+is unknown. These are E-owned rules; M is compact generated navigation, not an
+independent scheduler or policy authority. Non-Codex hosts and dot are unaffected.
+
+The fixed member list retains raw host states/results and explicit completed,
+failed, cancelled_confirmed, pending and unknown classifications. Observations
+must be within this attempt, after dispatch, no later than now, at most one query
+interval old, monotonic and in exact member order. Terminal evidence references
+are required but not authenticated by their string shape. Replay, stale/future,
+wrong-attempt data, unknown and query failure cannot establish success.
+
+Pending decisions continue only the same live collector to a bounded native wait,
+clamped to the deadline, not a sleep in the hook or Stop-to-block loop. Early query,
+replay and no progress terminate the model with an explicit exception. Deadline,
+query-failure limit, budget exhaustion, pause, user cancellation, safety, permission,
+protocol and script errors also retain explicit exceptional facts; no success
+substitution, blind retry or fabricated cancellation acknowledgement.
+
+All confirmed terminal facts produce one raw native-final handback and allow exit
+immediately. No parent-message tool or acknowledgement-before-exit handshake exists.
+Repeated finalized decisions do not emit another final. Exit, native delivery,
+genuinely idle parent resumption and resource release require separate actual-host
+evidence, not the evaluator's decision. Collectors perform no analysis, summary,
+implementation, acceptance, formal gate, integration or dispatch. Main-thread
+/goal or /loop active waiting is forbidden; existing goals/automations and legitimate
+M governance rounds with substantive work remain intact.
 
 ## Platform doctor (BL-41)
 

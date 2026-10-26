@@ -230,7 +230,7 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   assert.equal((await current(f)).previous, FRAMEWORK_VERSION);
   assert.deepEqual(await copyDigests(f), [release.skillDigest, release.skillDigest], "both copies are the new version's skill");
   assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
-  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
   assert.deepEqual(await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file)))), sections, "478-R6: no managed section is written");
   assert.ok(await exists(join(staging, `einzbern-${NEWER}`, "scripts", "einzbern.mjs")), "the unpacked release stays in the device directory's trash");
   assertSelfCheckGreen(updated);
@@ -252,7 +252,7 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   const original = (await computeInstallTreeDigest(join(f.deviceHome, "engine", FRAMEWORK_VERSION, "skill", "mana-orchestrate"))).sha256;
   assert.deepEqual(await copyDigests(f), [original, original]);
   assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
-  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
   assertSelfCheckGreen(rolled);
 
   // The unpacked release directory installs too: the version is already there, so it is reused.
@@ -321,6 +321,10 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
   const f = await installed(context);
   const claudeCopy = skillCopyPath(f.home, SKILL_COPY_ROOTS[0]);
   const settings = join(f.home, ".claude", "settings.json");
+  const codexHooks = join(f.home, ".codex", "hooks.json");
+  const codexDocument = JSON.parse(await readFile(codexHooks, "utf8"));
+  delete codexDocument.hooks.SubagentStop;
+  await writeFile(codexHooks, `${JSON.stringify(codexDocument, null, 2)}\n`);
   await rm(claudeCopy, { recursive: true, force: true });
   await writeFile(settings, "{}\n");
 
@@ -332,13 +336,15 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
     ["skill-copies", claudeCopy, "create"],
     ["skill-copies", join(f.deviceHome, "skills.json"), "update"],
     ["host-hooks", settings, "update"],
+    ["host-hooks", codexHooks, "update"],
   ];
   assert.deepEqual(rows(planned.writes), expected);
   const repaired = await applySetup(planned);
   assert.deepEqual(rows(repaired.written), expected);
   // R46 I08: repair names no coordination binding, in the plan or the receipt.
   assert.deepEqual([Object.hasOwn(planned, "coordination"), Object.hasOwn(repaired, "coordination")], [false, false]);
-  assert.deepEqual(repaired.backups.map((entry) => entry.path), [settings], "the settings file is backed up before it is replaced");
+  assert.deepEqual(repaired.backups.map((entry) => entry.path), [settings, codexHooks], "both host files are backed up before replacement");
+  assert.deepEqual((await einzbernHooks(codexHooks)).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
   assertSelfCheckGreen(repaired);
 
   const files = [settings, join(f.home, ".codex", "hooks.json"), join(f.project, "AGENTS.md"), join(f.project, "CLAUDE.md"), join(f.deviceHome, "registry.json"), join(f.deviceHome, "skills.json")];
@@ -413,6 +419,8 @@ test("480-AC4: uninstall takes the hooks, both skill copies and the registry ent
     before: async (fixture) => {
       await mkdir(join(fixture.home, ".claude"), { recursive: true });
       await writeFile(join(fixture.home, ".claude", "settings.json"), `${JSON.stringify({ theme: "dark", hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "other-tool notify" }] }] } }, null, 2)}\n`);
+      await mkdir(join(fixture.home, ".codex"), { recursive: true });
+      await writeFile(join(fixture.home, ".codex", "hooks.json"), `${JSON.stringify({ hooks: { SubagentStop: [{ hooks: [{ type: "command", command: "other-tool stop" }] }] } }, null, 2)}\n`);
     },
   });
   const libraryDigest = (await computeInstallTreeDigest(f.library)).sha256;
@@ -441,6 +449,8 @@ test("480-AC4: uninstall takes the hooks, both skill copies and the registry ent
   const kept = JSON.parse(await readFile(settings, "utf8"));
   assert.equal(kept.theme, "dark");
   assert.deepEqual(kept.hooks.UserPromptSubmit.map((group) => group.hooks.map((hook) => hook.command)), [["other-tool notify"]]);
+  const keptCodex = JSON.parse(await readFile(join(f.home, ".codex", "hooks.json"), "utf8"));
+  assert.deepEqual(keptCodex.hooks.SubagentStop.map((group) => group.hooks.map((hook) => hook.command)), [["other-tool stop"]], "uninstall removes Einzbern's stop group and preserves another product's group");
   // Copies and skills.json: moved whole into the backups, never deleted.
   for (const [index, root] of SKILL_COPY_ROOTS.entries()) {
     assert.equal(await exists(copies[index]), false, root.host);

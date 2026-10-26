@@ -9,6 +9,8 @@
 // build (dist/build); a release carries it as one file (TCRN-CROSS-STORY-481).
 // BL-34: SubagentStart recalls from the native agent_type and includes navigation before work.
 // SessionStart remains a navigation-only fallback. BL-35 adds the narrowly bounded Read guard.
+// Codex SubagentStop is a separate fixed-batch collector continuation. The hook itself never
+// queries host task state or sends parent messages.
 // TCRN-CROSS-SUB-483 (TCRN-CROSS-STORY-529, MIN-257 D6): every prompt recalled here also leaves
 // one line in log/hook.ndjson in the device directory, naming why it got what it got, so a prompt
 // that was answered can be told from one that got nothing and from a hook that never ran. The line
@@ -73,6 +75,19 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   const name = hookEventName(event);
   // Read once, for the recall and for its log line alike.
   const host = hookHost(process.env);
+  if (name === "SubagentStop") {
+    if (host !== "codex") return null;
+    try {
+      const { handleCodexSubagentStop } = await import("../dist/build/packages/core/src/codex-subagent-stop.js");
+      const result = await handleCodexSubagentStop({ payload: body, deviceHome: deviceHome(process.env) });
+      if (result.reasonCode) noteRecall(deviceHome(process.env), name, cwd, result.reasonCode, host);
+      if (result.decision !== "block") return "{}\n";
+      return `${JSON.stringify({ decision: "block", reason: result.reason })}\n`;
+    } catch {
+      // A broken collector hook must not stop unrelated or unassociated agents.
+      return "{}\n";
+    }
+  }
   // DSH retains its existing navigation contract; its next feature batch is separate.
   if (name === "SubagentStart" && host === "dsh") return `${navigationPointerAnswer(host, name).output}\n`;
   switch (name) {

@@ -65,7 +65,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall", "rule-list"],
-    action: "Run `recall --query \"<task>\"` for discovery. Each new/resumed/delegated session reads AGENTS, Skill and work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults. privacy-publication: `specs/dot-rules-v1.md`.",
+    action: "Run `recall --query \"<task>\"`. Each new/resumed/delegated session reads AGENTS, Skill and work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults. Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`.",
   },
   {
     moment: "Draft by work type",

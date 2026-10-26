@@ -1,0 +1,18 @@
+{
+  "sourceCommit": "f5ad507d65e52ef21e3fb275e32d05d8d01b4a5e",
+  "sourcePath": "packages/core/src/dot-agents.ts",
+  "sourceSha256": "6e3df5772fe7baebadae3102248b1a55394b7524c9a8d038132193fd29d0f8e8",
+  "method": "Built unchanged pinned upstream source, then rendered with only autonomy enabled before candidate edits.",
+  "fixtures": [
+    {
+      "file": "dot-before-context-recovery.zh.md",
+      "language": "zh-CN",
+      "sha256": "2cefcba3cfe695fe137f38f547fe0d06eb54de8fd2423b1a760651e04abbeada"
+    },
+    {
+      "file": "dot-before-context-recovery.en.md",
+      "language": "en",
+      "sha256": "93646b71e85e0ef213c3995ba2f7dc839593ed073657cc2b5a04b7f3bf4404d0"
+    }
+  ]
+}

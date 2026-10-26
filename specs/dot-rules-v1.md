@@ -140,6 +140,50 @@ installed release has changed. Read back AGENTS/provenance and the current
 execution-session context separately; never hand-edit generated files or reuse
 stale rule digests.
 
+## Context recovery before infrastructure blockers
+
+This dot-only stable template discipline is independent of the Codex-only
+collector/hook scope. E owns the bilingual text; M's generated starting-work row
+routes dot here on demand. No scheduler prompt, daemon, collector, new state schema
+or user-filled evidence form is introduced. Generic host rules are unchanged.
+
+Before an infrastructure limitation claim, repeated decision request or blocker:
+
+1. Use task-targeted `recall` and scoped `rule-list`; read relevant AGENTS/Mana,
+   work and `minutes-show` references plus historical attempt/receipt excerpts.
+   Check which decisions remain valid. Separate approved, implemented and verified
+   for the current action; missing recall or one failed interface proves neither
+   unsupported infrastructure nor a missing user decision. Old success is history,
+   not proof of current capability.
+2. Within current authorization/permissions, try the supported existing route and
+   safe recovery. Do not access sensitive material or expand access before approval,
+   bypass denials or impersonate another actor. Query unknown outcomes first; after
+   actual denial, at most one retry needs material new relevant evidence, confirmed
+   non-execution and permission under current rules.
+3. If a genuine new failure, permission gap or design difference remains, report
+   the original decision/source, attempted action/target, actual evidence and
+   denied/pending/unknown state, remaining action and required decision. Pause only
+   dependent work; do not ask the user to repeat settled choices.
+4. Reuse existing work acceptance and `shared-submit-plan`/`shared-submit-evidence`
+   (see `shared-submit-v1.md`). Local validation is prepared, not shared completion.
+   Current remote publication, byte readback, complete destination replay/record
+   readback and observed release must establish shared completion. Preserve absent
+   or unknown stages; ordinary evidence collection adds no approval ceremony.
+
+Patrol only reminds. The actual executing session retrieves relevant sections or
+excerpts after its prompt; do not pre-load a whole library, inflate automation
+prompts or put dynamic progress into AGENTS. These rules guide behavior, not proof
+that a model obeyed them. Existing completion checks assess submitted evidence;
+no new universal gate purports to authenticate infrastructure or model recall.
+
+Fresh generation, exact prior-template update and missing-file repair retain the
+new discipline. Ownership accepts only the two exact retained preceding renders
+and the current render, with unchanged source/binding/input validation. Current
+pre-change fixtures were produced from the recorded upstream build, not by
+removing new text. Unknown templates, altered ownership and user edits still
+refuse automatic replacement. Source work does not update installed AGENTS or
+claim execution-session reads, real permissions or shared publication succeeded.
+
 ## S0–S7 and provenance
 
 - S0: target absent uses the unchanged traditional path; invalid targets refuse.

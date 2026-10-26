@@ -305,3 +305,21 @@ test("new output rejects component-case aliases and known link/file ancestor bou
   bindFixtureInventories(ancestor);
   assert.throws(() => planSharedSubmit(ancestor), /file\/directory boundary/u);
 });
+
+test("dot recovery reuses completion evidence: local preparation and historical success cannot become current shared completion", () => {
+  const local = fixture();
+  const before = structuredClone(local);
+  assert.equal(planSharedSubmit(local).status, "pending");
+  assert.notEqual(planSharedSubmit(local).status, "complete");
+  assert.deepEqual(local, before, "assessment adds no persistent state or remote operation");
+  const remote = publish(publish(local, "segment", "fixture-event\n", 3), "manifest", "fixture-manifest", 5);
+  const replay = { libraryId, operationId: remote.operationId, status: "verified", receiptRef: "fixture:replay", readbackRefs: ["fixture:work"], memberSetDigest: dotDigest(remote.publicationMembers), observedAt: at(7) };
+  for (const historical of [{ ...replay, operationId: "fixture:older-operation" }, { ...replay, observedAt: at(1) }]) {
+    const assessed = planSharedSubmit({ ...remote, replay: historical });
+    assert.equal(assessed.status, "pending");
+    assert.equal(assessed.reasonCodes[0], "INDEPENDENT_REPLAY_REQUIRED");
+  }
+  const refused = planSharedSubmit({ ...local, lastError: { phase: "publishing-segments", message: "fixture:permission-denied", outcome: "not-executed" } });
+  assert.equal(refused.status, "refused");
+  assert.notEqual(refused.status, "complete");
+});

@@ -107,3 +107,19 @@ test("configuration backup and restore identify authority inputs, not projection
   assert.match(restore.editing, /existing setters and independent readback/);
   assert.match(restore.sharing, /no credentials, identity, authorization or runtime-state/);
 });
+
+
+test("runtime dictionary binds native socket and setup observations to their invocation owners", () => {
+  const entries = configurationContract(COMMAND_CATALOG).runtimeInputs.entries;
+  const socket = entries.find(entry => entry.name === "EINZBERN_CODEX_NATIVE_HOOK_SOCKET");
+  assert.equal(socket.classification, "internal-transient");
+  assert.equal(socket.persistence, "invocation");
+  assert.match(socket.owner, /owning live/u);
+  assert.match(socket.sharing, /never persisted/u);
+  const admission = entries.find(entry => entry.key === "cli:setup:codex-admission");
+  assert.equal(admission.classification, "internal-transient");
+  assert.equal(admission.persistence, "invocation");
+  assert.equal(admission.flag.name, "codex-admission");
+  assert.match(admission.effect, /Does not grant trust, enable hooks=false/u);
+  assert.match(admission.sharing, /never a shared or global setting/u);
+});

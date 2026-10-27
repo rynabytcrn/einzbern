@@ -1048,6 +1048,38 @@
     "schemaVersion": "einzbern.runtime-input-contract.v1",
     "entries": [
       {
+        "classification": "internal-transient",
+        "visibility": "integration",
+        "transport": "environment-string",
+        "defaultValue": null,
+        "owner": "owning live native app-server client",
+        "source": "process environment",
+        "persistence": "invocation",
+        "sensitivity": "local-path",
+        "pathBase": "absolute private filesystem socket",
+        "sharing": "never persisted in library, host/global settings or shared generated files",
+        "export": "no shared persistence; socket is removed when owning bridge closes",
+        "restart": "each explicit child invocation",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "env:EINZBERN_CODEX_NATIVE_HOOK_SOCKET",
+        "kind": "environment",
+        "name": "EINZBERN_CODEX_NATIVE_HOOK_SOCKET",
+        "semanticType": "path",
+        "validation": "Absolute normalized filesystem Unix socket in a canonical private directory; no symlink, same UID, directory 0700 and socket 0600 (or stricter). Relative, abstract, shared and network destinations refuse.",
+        "defaultDescription": "absent: ordinary hook path, no native controller",
+        "precedence": [
+          "explicit invocation-local EINZBERN_CODEX_NATIVE_HOOK_SOCKET",
+          "no native controller"
+        ],
+        "scope": "one isolated native host invocation",
+        "consumer": [
+          "scripts/einzbern-hook.mjs SubagentStop/collector-wait",
+          "scripts/lib/codex-native-hook-ipc.mjs requestCodexNativeHookDecision"
+        ],
+        "effect": "Routes hook/helper frames to the already registered live owner; does not create a client, enroll members or authenticate hostile same-UID code."
+      },
+      {
         "classification": "startup-override",
         "visibility": "public",
         "transport": "environment-string",
@@ -2044,6 +2076,48 @@
           "portal/portal.mjs argument/port/server.listen"
         ],
         "effect": "Initial listener port; first occurrence with following token wins. --port=value is not this parser's syntax."
+      },
+      {
+        "classification": "internal-transient",
+        "visibility": "integration",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "owning live Codex client",
+        "source": "owning client capability/version/trust observations; not authentication",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "explicit absolute path",
+        "sharing": "never a shared or global setting; input file retained by its caller",
+        "export": "local plan/receipt only; no raw observation promoted to shared configuration",
+        "restart": "applies only through the requested lifecycle operation; plan alone writes nothing",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:setup:codex-admission",
+        "kind": "cli-argument",
+        "name": "--codex-admission",
+        "command": "setup",
+        "catalogReference": "COMMAND_CATALOG[setup].flags[codex-admission]",
+        "consumer": [
+          "packages/cli/src/index.ts setup handler",
+          "packages/core/src/setup.ts planSetup/applySetup",
+          "packages/core/src/setup-fresh.ts planWiring/applyWiring",
+          "packages/core/src/host-hooks.ts planHostHooks"
+        ],
+        "precedence": [
+          "explicit invocation observation",
+          "unknown"
+        ],
+        "semanticType": "path",
+        "validation": "Absolute readable JSON file containing only CodexHookAdmission state/version/evidenceRef/subagentStop/trust. Supported requires explicit observed version, nonempty source evidence, true capability and permitted trust; malformed refuses. No version range or flag implies support.",
+        "defaultDescription": "absent: unknown; new native stop entry omitted",
+        "scope": "one traditional setup plan/apply",
+        "effect": "Carries qualified observation into fresh/update/repair/restore/migrate Codex wiring. Does not grant trust, enable hooks=false, change non-Codex events or enroll a native controller.",
+        "flag": {
+          "name": "codex-admission",
+          "required": false,
+          "valueKind": "string",
+          "valueShape": "absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override"
+        }
       },
       {
         "classification": "lifecycle-input",
@@ -9862,6 +9936,12 @@
         "availability": "cli",
         "mutates": true,
         "flags": [
+          {
+            "name": "codex-admission",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override"
+          },
           {
             "name": "execution-target",
             "required": false,

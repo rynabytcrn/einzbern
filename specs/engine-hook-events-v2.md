@@ -146,3 +146,25 @@ diagnostic for migration investigations, not an installation acceptance command.
 The collector helper authenticates/snapshots the immutable attempt under serialization, then releases shared state before its timer. Signal and clock context belongs to the operation; an unrelated stop can complete while the helper is outstanding, and an authenticated control settles that helper. Accepted safety/pause/cancel/budget/permission remains the primary cause through query, transport, artifact and deadline errors. Secondary errors and unknown member facts retain owner responsibility; no error fabricates native release.
 
 Changed session/turn callbacks never enroll or replay the frozen attempt. Identity faults are recorded for the owner; repeated faults (query-failure bound), elapsed deadline or an already ended attempt allow only an explicit outside-attempt fault handoff. This does not mark the original attempt ended, cancel children or certify a final return. Physical installer and default Desktop support remain separately unverified.
+
+
+## Normal setup admission input
+
+`SetupOptions.codexAdmission` is the existing `CodexHookAdmission` observation,
+carried by `SetupModeInput` and `SetupPlan` to both plan and apply wiring for fresh,
+update, repair, restore and migrate. The public CLI registers `--codex-admission`
+as an absolute JSON file path and uses that same validator. The closed record is
+`{ state, version, evidenceRef, subagentStop, trust }`; no boolean flag or known
+version range creates support. A supported declaration requires the actual owning
+client's observed version, source reference, true native capability and permitted
+trust. Preserve that source when recording local plan/apply evidence. The validator
+checks the declaration and source reference, not the authenticity of external facts;
+native acceptance must independently bind the actual observations to the same host.
+Absent/unknown/unsupported input omits new SubagentStop registrations, retaining
+existing entries pending explicit resolution. Current user files are reread before
+apply. Admission never authorizes changing hooks=false or erasing edited restrictions
+or native trust. It is invocation-local, excluded from dot/uninstall and from shared
+settings. Apply receipts retain the checked record separately from installation and
+native acceptance results. Setup's launcher self-check also retains `hookError`, the
+actual launcher/process error detail, so HOOK_LAUNCH_FAILED alone cannot hide an
+incomplete unbundled entry graph. Ordinary successful checks report null detail.

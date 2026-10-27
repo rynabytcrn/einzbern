@@ -121,3 +121,16 @@ admission, managed-render and identity-bound recovery consumers.
 ### Invocation-local Codex Unix IPC
 
 `EINZBERN_CODEX_NATIVE_HOOK_SOCKET` is an internal transient local integration input, owned by the live native app-server client. It is passed only to that invocation's hook/helper children; it is never a persistent host setting, library field or shared export. Absent input keeps the ordinary path. The consumer rejects relative, abstract, noncanonical and symlink paths, shared directories/sockets, non-sockets and a different UID. The canonical directory must be private (0700 or stricter) and the socket private (0600 or stricter). Frames, time and abort are bounded. Socket access is local-account isolation, not attestation against hostile same-UID code. Owner bridge close removes its socket; controller/children remain separately owned until real native release.
+
+
+The invocation-local Codex socket is `env:EINZBERN_CODEX_NATIVE_HOOK_SOCKET`, owned
+by the already live app-server caller. Its canonical private Unix path checks do
+not grant trust or hostile same-UID attestation, and its lifetime ends with the
+owned bridge. `cli:setup:codex-admission` carries only the owning client's current
+capability/version/trust observation to the normal setup planner and application.
+It neither persists a global setting nor overrides hooks=false; unknown omits the
+new event. Both entries are internal-transient integration inputs. The checked-in
+configuration inventory is derived from `configurationContract(COMMAND_CATALOG)`
+(the same object emitted in `settings-catalog.configurationContract`), never patched
+as an independent authority. Regenerate it once at integration batch close along
+with the normal E-to-M outputs; exact inventory equality remains required.

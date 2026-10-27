@@ -1855,7 +1855,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // --yes true it answers SETUP_PLAN_READY and writes nothing; with it, SETUP_APPLIED, whose
   // traditional self-check is doctor's eight checks and the hook run once. The dot target returns
   // only its independent file receipt; it never invokes a legacy hook.
-  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "absolute path to JSON dot target options; required for chatgpt-dot" }, { name: "approved-plan-digest", required: false, valueKind: "string", valueShape: "saved preview dot.planDigest; required for dot apply" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "codex-admission", required: false, valueKind: "string", valueShape: "absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override" }, { name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "absolute path to JSON dot target options; required for chatgpt-dot" }, { name: "approved-plan-digest", required: false, valueKind: "string", valueShape: "saved preview dot.planDigest; required for dot apply" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   // TCRN-CROSS-STORY-479 R1: the skill directory this engine generates for its version, written
   // into a missing or empty --out; it runs only where the skill template sits beside the engine.
   { name: "skill-render", availability: "cli", mutates: true, flags: [{ name: "out", required: true, valueKind: "string" }, { name: "version", required: false, valueKind: "string" }] },
@@ -2388,10 +2388,11 @@ function hookSelfCheck(applied: SetupApplied): {
   readonly exitCode: number | null;
   readonly injected: readonly string[];
   readonly hookReasonCode: string | null;
+  readonly hookError: string | null;
 } {
   const prompt = basename(applied.projectRoot);
   const launcher = hookLauncherPath(applied.deviceHome);
-  if (!existsSync(launcher)) return { prompt, exitCode: null, injected: [], hookReasonCode: "HOOK_LAUNCHER_MISSING" };
+  if (!existsSync(launcher)) return { prompt, exitCode: null, injected: [], hookReasonCode: "HOOK_LAUNCHER_MISSING", hookError: "the installed hook launcher is missing" };
   const run = spawnSync(process.execPath, [launcher, "user-prompt-submit"], {
     cwd: applied.projectRoot,
     input: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "einzbern-setup-self-check", cwd: applied.projectRoot, prompt }),
@@ -2402,17 +2403,24 @@ function hookSelfCheck(applied: SetupApplied): {
     windowsHide: true,
   });
   let hookReasonCode: string | null = null;
+  let hookError: string | null = null;
   const said = String(run.stderr ?? "").trim().split("\n").at(-1) ?? "";
   if (said !== "") {
     try {
       const refusal: unknown = JSON.parse(said);
       const code = refusal !== null && typeof refusal === "object" ? (refusal as { readonly reasonCode?: unknown }).reasonCode : undefined;
+      const detail = refusal !== null && typeof refusal === "object" ? (refusal as { readonly error?: unknown }).error : undefined;
       hookReasonCode = typeof code === "string" ? code : "HOOK_SELF_CHECK_STDERR";
+      hookError = typeof detail === "string" ? detail : said;
     } catch {
       hookReasonCode = "HOOK_SELF_CHECK_STDERR";
+      hookError = said;
     }
   }
-  if (run.error !== undefined) hookReasonCode = String((run.error as { readonly code?: unknown }).code ?? "HOOK_SELF_CHECK_FAILED");
+  if (run.error !== undefined) {
+    hookReasonCode = String((run.error as { readonly code?: unknown }).code ?? "HOOK_SELF_CHECK_FAILED");
+    hookError = run.error.message;
+  }
   let injected: readonly string[] = [];
   const stdout = String(run.stdout ?? "");
   if (run.status === 0 && stdout.trim() !== "") {
@@ -2425,7 +2433,7 @@ function hookSelfCheck(applied: SetupApplied): {
       hookReasonCode ??= "HOOK_OUTPUT_INVALID";
     }
   }
-  return { prompt, exitCode: run.status, injected, hookReasonCode };
+  return { prompt, exitCode: run.status, injected, hookReasonCode, hookError };
 }
 
 async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<void> {
@@ -2996,9 +3004,20 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-480 (setup.ts): plan in the chosen mode; apply the plan only with --yes true. The
   // device directory is this process's (EINZBERN_HOME), the one the library records go through.
   if (command === "setup") {
-    const values = parseArguments(rest, ["execution-target", "dot-input", "approved-plan-digest", "mode", "project", "at", "artifacts", "cloud", "restore", "language", "navigation", "archive", "rollback", "managed-sections", "mapping", "yes"]);
+    const values = parseArguments(rest, ["codex-admission", "execution-target", "dot-input", "approved-plan-digest", "mode", "project", "at", "artifacts", "cloud", "restore", "language", "navigation", "archive", "rollback", "managed-sections", "mapping", "yes"]);
     required(values, ["mode", "project", "at"]);
     let options = setupOptions(values);
+    if (values["codex-admission"] !== undefined) {
+      if (options.executionTarget === DOT_INSTALLATION_TARGET || options.mode === "uninstall") fail("SETUP_OPTION_NOT_APPLICABLE", "--codex-admission is for traditional installation wiring only");
+      const path = values["codex-admission"]!;
+      if (!isAbsolute(path)) fail("CLI_ARGUMENT_MALFORMED", "--codex-admission must name an absolute JSON path");
+      let observation: unknown;
+      try { observation = JSON.parse(await readFile(path, "utf8")); }
+      catch { fail("SETUP_INPUT_INVALID", "--codex-admission must name a readable Codex hook admission JSON observation"); }
+      // planSetup validates the closed observation. Neither this flag nor --yes
+      // manufactures support, grants trust or enables an explicitly disabled feature.
+      options = { ...options, codexAdmission: observation as NonNullable<SetupOptions["codexAdmission"]> };
+    }
     if (options.executionTarget === DOT_INSTALLATION_TARGET) {
       required(values, ["dot-input"]);
       if (!isAbsolute(values["dot-input"]!)) fail("CLI_ARGUMENT_MALFORMED", "--dot-input must name an absolute JSON path");

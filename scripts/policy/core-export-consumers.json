@@ -597,6 +597,6 @@
     "CodexNativeClient": "Live app-server client implements abortable RPC; no bundled default client is fabricated.",
     "CodexNativeControllerOptions": "Owning native integration supplies immutable run, transport, runtime path and explicit wake opt-in.",
     "CodexNativeRun": "Owning native integration captures immutable attempt, parent, policy and capacity before registration.",
-    "CodexHookAdmission": "Programmatic supported installation requires explicit version/evidence/trust admission; normal CLI remains unknown without it."
+    "CodexHookAdmission": "External owning-client version/capability/trust observation type carried by SetupOptions and the normal CLI JSON-file route; nested SetupOptions usage does not name it in the recorded roots. The checked record is not native authentication or acceptance."
   }
 }

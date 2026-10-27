@@ -199,7 +199,7 @@ test("478-AC5: declined adds SessionStart; prompt, subagent and read-guard hooks
     assert.equal(declined.groups.SubagentStart[0].hooks[0].command, 'node "/srv/einzbern/device/engine/hook.mjs" subagent-start');
     for (const choice of ["written", null, undefined]) {
       const expected = planHostHooks({ host, scope: "user", deviceHome, platform: "linux", ...(choice === undefined ? {} : { navigation: choice }) });
-      assert.deepEqual(Object.keys(expected.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse", ...(host === "codex" ? ["SubagentStop"] : [])], `${host}: ${choice}`);
+      assert.deepEqual(Object.keys(expected.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse"], `${host}: ${choice}`);
     }
     const clean = planHostHooks({ host, scope: "project", deviceHome, platform: "linux", navigation: "declined", install: false });
     assert.deepEqual(clean.groups, {}, "a clean-only plan renders no pointer hook either");

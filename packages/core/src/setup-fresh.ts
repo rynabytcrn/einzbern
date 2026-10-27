@@ -953,6 +953,7 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
     schemaVersion: SETUP_APPLIED_SCHEMA_VERSION,
     reasonCode: "SETUP_APPLIED",
     mode: plan.mode,
+    ...(plan.codexAdmission === undefined ? {} : { codexAdmission: structuredClone(plan.codexAdmission) }),
     at,
     engineVersion: FRAMEWORK_VERSION,
     projectRoot,
@@ -1044,6 +1045,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
   // registry, skill-copies, launchers, host-hooks, writable-roots, machine-settings, managed-sections
   const files = engine.directory === null ? null : await readEngineFiles(recorder, engine.directory);
   const pending = await planWiring(recorder, {
+    ...(input.codexAdmission === undefined ? {} : { codexAdmission: input.codexAdmission }),
     projectRoot,
     home,
     deviceHome,
@@ -1136,6 +1138,7 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
 
   // registry, skill-copies, launchers, host-hooks, writable-roots, machine-settings, managed-sections
   const pending = await applyWiring(recorder, {
+    ...(plan.codexAdmission === undefined ? {} : { codexAdmission: plan.codexAdmission }),
     projectRoot,
     home,
     deviceHome,

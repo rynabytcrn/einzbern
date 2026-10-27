@@ -2,6 +2,7 @@
 // Owned, canonical component sources. Production scripts are copied byte for
 // byte; only the tiny source roster and its explicit audit are fixture inputs.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -216,6 +217,14 @@ export async function createOfflineScannerFixture(context, { unexpectedSource = 
       const updated = mutation.replace ? source.replace(...mutation.replace) : `${source}\n${mutation.append}\n`;
       assert.notEqual(updated, source, "scanner mutation must change its intended source site");
       await writeFile(join(root, path), updated);
+      if (path === "scripts/lib/codex-native-hook-ipc.mjs" && mutation.rebindDigest) {
+        // Adversarial fixture only: even a matching replacement digest cannot
+        // exempt an undeclared call, alias or missing request/server validation.
+        const policyPath = join(root, "scripts/policy/offline-loopback-harness.json");
+        const policy = JSON.parse(await readFile(policyPath, "utf8"));
+        policy[path].sourceSha256 = createHash("sha256").update(updated).digest("hex");
+        await writeFile(policyPath, JSON.stringify(policy));
+      }
     }
     await mkdir(join(root, "node_modules"));
     for (const dependency of ["ajv", "typescript"]) await symlink(await realpath(join(componentSourceRoot, "node_modules", dependency)), join(root, "node_modules", dependency), "dir");

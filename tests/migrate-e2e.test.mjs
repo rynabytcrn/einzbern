@@ -159,6 +159,8 @@ async function installEngine(m) {
   await mkdir(join(tree, "scripts", "policy"), { recursive: true });
   await copyFile(join(repositoryRoot, "scripts/einzbern.mjs"), join(tree, "scripts/einzbern.mjs"));
   await copyFile(join(repositoryRoot, "scripts/einzbern-hook.mjs"), join(tree, "scripts/einzbern-hook.mjs"));
+  await mkdir(join(tree, "scripts", "lib"), { recursive: true });
+  await copyFile(join(repositoryRoot, "scripts/lib/codex-native-hook-ipc.mjs"), join(tree, "scripts/lib/codex-native-hook-ipc.mjs"));
   await copyFile(join(repositoryRoot, "scripts/policy/knowledge-provenance.json"), join(tree, "scripts/policy/knowledge-provenance.json"));
   await cp(join(repositoryRoot, "dist/build"), join(tree, "dist/build"), { recursive: true });
   await mkdir(join(tree, "launchers"));
@@ -426,7 +428,8 @@ test("489-AC1, AC2, AC3, AC4 (fixture): setup --mode migrate --yes true on a mac
   assert.deepEqual((await readdir(m.legacyDevice)).sort(), ["attestations", LEGACY_ENGINE_NAME, "machine-settings.json"].sort(), "the old device directory keeps its old engine, archive and settings");
 
   // AC3: doctor's eight checks, as the self-check and as the doctor verb answers them.
-  assert.deepEqual([applied.selfCheck.exitCode, applied.selfCheck.hookReasonCode], [0, null], "the hook ran once as a host runs it");
+  assert.deepEqual([applied.selfCheck.exitCode, applied.selfCheck.hookReasonCode], [0, null], JSON.stringify(applied.selfCheck));
+  assert.equal(applied.selfCheck.hookError, null, "retain actual launcher failure detail");
   assert.deepEqual(applied.selfCheck.checks.map((entry) => [entry.check, entry.ok]), DOCTOR_CHECKS.map((check) => [check, true]),
     JSON.stringify(applied.selfCheck.checks.filter((entry) => !entry.ok)));
   const doctor = receipt(run(m, ["doctor", "--project", m.container]));

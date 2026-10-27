@@ -95,6 +95,23 @@ aborts its operations, rejects later direct callbacks, unregisters tools and dra
 serialized work. Socket disposal alone never releases native children. Connected
 transport failures surface an explicit error instead of a fabricated `{}` completion.
 
+The normal public `planSetup({ ..., codexAdmission })` route carries the checked
+`CodexHookAdmission` through its closed mode input, fresh/update/repair/restore/migrate
+wiring, `applySetup` and local readback receipt. The CLI exposes the same route as
+`setup --codex-admission <absolute JSON file>`; the normal setup planner validates
+that file's closed record, rather than treating a flag or a version string as support.
+The record has exactly `state`, `version`, `evidenceRef`, `subagentStop` and `trust`.
+Only explicit `state: "supported"`, a nonempty observed version and source evidence
+reference, boolean `subagentStop: true` and `trust: "permitted"` add the Codex event.
+The owning client must obtain those facts from its actual qualified native version,
+capability and trust observations, and retain their source referenced by `evidenceRef`.
+Unknown observations must be reported as unknown. This declaration is not independent
+authentication, does not grant native UI trust and does not prove acceptance. Synthetic
+fixtures use explicitly synthetic references; their support state is never production proof.
+Each invocation supplies current observations; no shared/global admission setting,
+registry inference or automatic version allowlist is introduced. No Codex admission
+is accepted for dot or uninstall, and Claude/DSH receive no Codex event.
+
 Installation plans accept `CodexHookAdmission` with state, observed version, source
 evidence and actual trust/capability. Missing evidence stays unknown; unsupported or
 restricted hosts do not gain a new SubagentStop entry. Existing entries are preserved

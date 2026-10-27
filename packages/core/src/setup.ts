@@ -56,7 +56,8 @@ import { readEngineCurrent } from "./engine-home.js";
 import { DOT_INSTALLATION_TARGET, SETUP_EXECUTION_TARGETS, assertNotDotAgentsTarget } from "./dot-agents.js";
 import type { DotAgentsApplied, DotAgentsOptions, DotAgentsPlan, SetupExecutionTarget } from "./dot-agents.js";
 import { promptRecallContext } from "./hook-recall.js";
-import { HOST_HOOK_HOSTS } from "./host-hooks.js";
+import { HOST_HOOK_HOSTS, planHostHooks } from "./host-hooks.js";
+import type { CodexHookAdmission } from "./host-hooks.js";
 import { listKnowledgeMetadata } from "./knowledge-core.js";
 import { ARTIFACT_LANGUAGE_TAGS } from "./knowledge-language.js";
 import { legacyControlDirectory } from "./legacy-workspace.js";
@@ -224,6 +225,9 @@ export interface SetupModeOptions {
 // Besides the answers, the options of the other modes (C7 of INIT-053): a library to restore, a
 // local archive, a rollback, what uninstall does with managed sections, a migration mapping.
 export interface SetupOptions extends SetupModeOptions {
+  // Invocation-local observations from the owning Codex client. Never inferred from
+  // a version range, registry entry or setup --yes; does not authorize hooks=false.
+  readonly codexAdmission?: CodexHookAdmission;
   readonly mode: string;
   // Omitted is the byte-compatible traditional installation route. Not a host enum.
   readonly executionTarget?: SetupExecutionTarget;
@@ -388,6 +392,7 @@ export async function detectSetupContext(input: { readonly projectRoot: string; 
 // ---- Plans and their apply ----
 
 export interface SetupPlan {
+  readonly codexAdmission?: CodexHookAdmission;
   readonly schemaVersion: typeof SETUP_PLAN_SCHEMA_VERSION;
   readonly reasonCode: "SETUP_PLAN_READY";
   readonly mode: SetupMode;
@@ -506,6 +511,7 @@ export interface SetupColumns {
 }
 
 export interface SetupApplied {
+  readonly codexAdmission?: CodexHookAdmission;
   readonly executionTarget?: SetupExecutionTarget;
   readonly dot?: DotAgentsApplied;
   readonly schemaVersion: typeof SETUP_APPLIED_SCHEMA_VERSION;
@@ -562,6 +568,7 @@ export type SetupRecallSmoke =
 
 /** What a mode's planner is given: the context and the checked inputs. */
 export interface SetupModeInput {
+  readonly codexAdmission?: CodexHookAdmission;
   readonly executionTarget?: SetupExecutionTarget;
   readonly dot?: Omit<DotAgentsOptions, "executionTarget" | "operation" | "at">;
   readonly mode: SetupMode;
@@ -743,6 +750,7 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
   if (mapping !== null && !ownCoordination) {
     const files = engine.directory === null ? null : await readEngineFiles(recorder, engine.directory);
     pending = await planWiring(recorder, {
+      ...(input.codexAdmission === undefined ? {} : { codexAdmission: input.codexAdmission }),
       projectRoot,
       home,
       deviceHome,
@@ -854,6 +862,7 @@ async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
   const smoke = own === null ? null : await recallSmoke(own.target, projectRoot, at);
   const hostCleanup = await applyCleanup(recorder, { ...migrateCleanupInput(plan.context, migration.partitions, resolved.navigation), at });
   const pending = await applyWiring(recorder, {
+    ...(plan.codexAdmission === undefined ? {} : { codexAdmission: plan.codexAdmission }),
     projectRoot,
     home,
     deviceHome,
@@ -989,6 +998,8 @@ export async function planSetup(options: SetupOptions): Promise<SetupPlan> {
   const executionTarget = options.executionTarget ?? "traditional";
   if (!(SETUP_EXECUTION_TARGETS as readonly string[]).includes(executionTarget)) setupFail("SETUP_TARGET_UNSUPPORTED", "unknown installation target", { target: String(executionTarget) });
   if (executionTarget !== DOT_INSTALLATION_TARGET && options.dot !== undefined) setupFail("SETUP_OPTION_NOT_APPLICABLE", "dot paths require executionTarget=chatgpt-dot");
+  if (executionTarget === DOT_INSTALLATION_TARGET && options.codexAdmission !== undefined) setupFail("SETUP_OPTION_NOT_APPLICABLE", "Codex admission applies only to traditional Codex hook wiring");
+  if (mode === "uninstall" && options.codexAdmission !== undefined) setupFail("SETUP_OPTION_NOT_APPLICABLE", "uninstall removes owned hooks and accepts no Codex admission");
   if (executionTarget === DOT_INSTALLATION_TARGET) {
     if (mode === "migrate" || mode === "restore") setupFail("SETUP_TARGET_UNSUPPORTED", "chatgpt-dot does not support legacy migration or library restore through setup", { mode });
     if (options.dot === undefined || options.dot === null || typeof options.dot !== "object" || typeof options.projectRoot !== "string" || !isAbsolute(options.projectRoot) || resolve(options.projectRoot) !== options.projectRoot || options.dot.binding?.root !== options.projectRoot) setupFail("SETUP_INPUT_INVALID", "dot requires one explicit project root and matching target path binding");
@@ -1009,7 +1020,8 @@ export async function planSetup(options: SetupOptions): Promise<SetupPlan> {
     ...(options.home === undefined ? {} : { home: options.home }),
     ...(options.deviceHome === undefined ? {} : { deviceHome: options.deviceHome }),
   });
-  const planned = await entry.plan({ mode, at: options.at, context, answers, options: modeOptions });
+  const codexAdmission = options.codexAdmission === undefined ? undefined : planHostHooks({ host: "codex", scope: "user", deviceHome: context.deviceHome, codexAdmission: options.codexAdmission }).codexAdmission;
+  const planned = await entry.plan({ mode, at: options.at, context, answers, options: modeOptions, ...(codexAdmission === undefined ? {} : { codexAdmission }) });
   return {
     schemaVersion: SETUP_PLAN_SCHEMA_VERSION,
     reasonCode: "SETUP_PLAN_READY",
@@ -1022,6 +1034,7 @@ export async function planSetup(options: SetupOptions): Promise<SetupPlan> {
     context,
     answers,
     options: modeOptions,
+    ...(codexAdmission === undefined ? {} : { codexAdmission }),
     ...planned,
     warnings: planned.warnings ?? [],
   };
@@ -1046,9 +1059,13 @@ export async function applySetup(plan: SetupPlan): Promise<SetupApplied> {
     });
   }
   if (plan.executionTarget === DOT_INSTALLATION_TARGET) {
+    if (plan.codexAdmission !== undefined) setupFail("SETUP_OPTION_NOT_APPLICABLE", "dot does not consume Codex admission");
     if (plan.mode === "migrate" || plan.mode === "restore") setupFail("SETUP_TARGET_UNSUPPORTED", "dot target cannot use a legacy mode");
     return applyDotSetup(plan);
   }
+  // Revalidate the declared observation at the public apply boundary too. File
+  // restrictions and trust are read afresh by applyHostHooks; admission grants no override.
+  if (plan.codexAdmission !== undefined) planHostHooks({ host: "codex", scope: "user", deviceHome: plan.deviceHome, codexAdmission: plan.codexAdmission });
   if (plan.mode !== "update") await assertNotDotAgentsTarget(plan.projectRoot);
   const writing = resolve(currentDeviceHome());
   if (plan.deviceHome !== writing) {

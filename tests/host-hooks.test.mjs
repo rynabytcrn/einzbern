@@ -581,3 +581,37 @@ for (const command of ['node "/old/device/engine/hook.mjs" user-prompt-submit', 
     });
   }
 }
+
+
+test("exact owned defaults deduplicate across hooks/groups without accepting any edited copy", () => {
+  for (const host of ["codex", "claude-code"]) {
+    const expected = planHostHooks({ host, scope: "user", deviceHome: "/fixture/device" });
+    for (const event of Object.keys(expected.groups)) {
+      const group = expected.groups[event][0];
+      const doubled = { hooks: { [event]: [OTHER_PROMPT, structuredClone(group), { hooks: [...structuredClone(group.hooks), ...structuredClone(group.hooks)] }, OTHER_TOOL] } };
+      const before = structuredClone(doubled);
+      const merged = mergeHostHooks(doubled, expected);
+      assert.deepEqual(doubled, before);
+      assert.deepEqual(merged.document.hooks[event], [OTHER_PROMPT, ...expected.groups[event], OTHER_TOOL]);
+      assert.equal(merged.removedHooks.filter(hook => hook.event === event).length, 2);
+      assert.deepEqual(mergeHostHooks(merged.document, expected).removedHooks, []);
+      for (const edit of [copy => { copy.matcher = "limited"; }, copy => { copy.timeout = 3; }, copy => { copy.settings = { user: true }; }, copy => { copy.hooks[0].timeout = 3; }, copy => { copy.hooks[0].settings = { user: true }; }]) {
+        const edited = structuredClone(before);
+        edit(edited.hooks[event][2]);
+        const original = structuredClone(edited);
+        assert.throws(() => mergeHostHooks(edited, expected), /explicit plan conflict/u);
+        assert.deepEqual(edited, original);
+      }
+    }
+  }
+});
+
+test("unchanged native user_prompt_submit trust slot survives duplicate-owned cleanup", () => {
+  const expected = planHostHooks({ host: "codex", scope: "user", deviceHome: "/fixture/device" });
+  const before = { hooks: { UserPromptSubmit: [OTHER_PROMPT, ...expected.groups.UserPromptSubmit, ...expected.groups.UserPromptSubmit] } };
+  const after = mergeHostHooks(before, expected).document;
+  const config = '# unchanged user hook approval\n[features]\nhooks = true\n\n[hooks.state."/fixture/hooks.json:user_prompt_submit:0:0"]\ntrusted_hash = "sha256:real-native-slot-fixture"\n';
+  const readback = codexHookConfig(config, { hooksPath: "/fixture/hooks.json", before, after, enableHooks: true });
+  assert.equal(readback.text, config);
+  assert.deepEqual(readback.removedTrustStates, []);
+});

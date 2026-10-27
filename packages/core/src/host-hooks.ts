@@ -236,8 +236,14 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   const platform = request.platform ?? process.platform;
   const install = request.install ?? true;
   const launcher = hookLauncherPath(request.deviceHome, platform);
-  const admission: CodexHookAdmission = structuredClone(request.codexAdmission ?? { state: "unknown", version: null, evidenceRef: null, subagentStop: false, trust: "unknown" });
-  if (admission.state === "supported" && (!admission.version || !admission.evidenceRef || !admission.subagentStop || admission.trust !== "permitted")) fail("HOST_HOOKS_INPUT_INVALID", "supported Codex admission requires actual version/capability/trust evidence");
+  const admission: CodexHookAdmission = structuredClone(request.codexAdmission === undefined ? { state: "unknown", version: null, evidenceRef: null, subagentStop: false, trust: "unknown" } : request.codexAdmission);
+  const observedText = (value: unknown): boolean => value === null || (typeof value === "string" && value.trim().length > 0 && !value.includes("\u0000"));
+  if (!isObject(admission) || Object.keys(admission).some(key => !["state", "version", "evidenceRef", "subagentStop", "trust"].includes(key)) ||
+      !["supported", "unsupported", "unknown"].includes(admission.state) || !["permitted", "restricted", "unknown"].includes(admission.trust) ||
+      typeof admission.subagentStop !== "boolean" || !observedText(admission.version) || !observedText(admission.evidenceRef)) {
+    fail("HOST_HOOKS_INPUT_INVALID", "Codex admission must contain only state, observed version/evidenceRef, boolean subagentStop and trust");
+  }
+  if (admission.state === "supported" && (admission.version === null || admission.evidenceRef === null || !admission.subagentStop || admission.trust !== "permitted")) fail("HOST_HOOKS_INPUT_INVALID", "supported Codex admission requires actual version/capability/trust evidence");
   const groups: Record<string, readonly HostHookGroup[]> = {};
   if (install) {
     const events = [...new Set([
@@ -379,12 +385,16 @@ function mergeEvent(event: string, groups: readonly unknown[], wanted: readonly 
   }
   if (ours.length === 0 && wanted.length === 0) return null;
   const pending = wanted.flatMap((group) => group.hooks.map((hook) => stableJson(hook)));
+  const defaults = new Set(pending);
   for (const hook of ours) {
-    const index = pending.indexOf(stableJson(hook));
+    const serialized = stableJson(hook);
+    const index = pending.indexOf(serialized);
     if (index === -1) {
       const command = commandOf(hook);
       const ownedWanted = wanted.flatMap((group) => group.hooks).find(candidate => command !== null && commandOf(candidate) === command);
-      if (ownedWanted !== undefined) unsupported(`hooks.${event}`, "an owned hook was edited (matcher, timeout, group or settings); explicit conflict resolution is required");
+      // Group and hook restrictions were checked above, before consuming anything.
+      // An exact default already consumed by a previous copy is redundant, not edited.
+      if (ownedWanted !== undefined && !defaults.has(serialized)) unsupported(`hooks.${event}`, "an owned hook was edited (matcher, timeout, group or settings); explicit conflict resolution is required");
       removed.push({ event, command: command ?? "" });
     }
     else pending.splice(index, 1);

@@ -417,6 +417,11 @@ for (const nativeIpcMutation of [
   { replace: ["const socket = createConnection(socketPath);", 'const socket = createConnection(443, "example.invalid");'] },
   { replace: ["await requirePrivateDirectory(socketPath);", "// private validation removed"] },
   { append: 'createConnection("relative.sock");' },
+  { replace: ["await requirePrivateDirectory(socketPath);\n  const stat = await lstat(socketPath);", "const stat = await lstat(socketPath);"], rebindDigest: true },
+  { replace: ["await requirePrivateDirectory(socketPath);\n  if (controller?.capability", "if (controller?.capability"], rebindDigest: true },
+  { replace: ["const socket = createConnection(socketPath);", 'const socket = createConnection(443, "example.invalid");'], rebindDigest: true },
+  { append: 'createConnection("relative.sock");', rebindDigest: true },
+  { append: "const alias = createConnection;", rebindDigest: true },
 ]) {
   test("native Unix source classification rejects changed call/validation sites", async t => {
     const fixture = await createOfflineScannerFixture(t, { nativeIpcMutation });

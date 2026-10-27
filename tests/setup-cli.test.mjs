@@ -406,3 +406,40 @@ test("dot CLI applies its independent receipt without spawning the traditional s
   await writeFile(inputPath, JSON.stringify({ ...input, unknown: true }));
   await assert.rejects(cli(flags), { reasonCode: "DOT_INPUT_INVALID" });
 });
+
+
+test("setup CLI reads explicit synthetic Codex observations through normal fresh/apply/repair", async t => {
+  const f = await fixture(t);
+  const path = join(f.base, "codex-observation.json");
+  const admission = { state: "supported", version: "synthetic-observed-version", evidenceRef: "synthetic-fixture-only:cli", subagentStop: true, trust: "permitted" };
+  await writeFile(path, JSON.stringify(admission));
+  const before = await snapshot([f.home, f.deviceHome, f.project]);
+  const preview = await setup(f, "fresh", "--artifacts", f.library, "--codex-admission", path);
+  assert.deepEqual(preview.codexAdmission, admission);
+  assert.deepEqual(await snapshot([f.home, f.deviceHome, f.project]), before, "explicit admission planning writes nothing");
+  const applied = await setup(f, "fresh", "--artifacts", f.library, "--codex-admission", path, "--yes", "true");
+  assert.deepEqual(applied.codexAdmission, admission);
+  assert.equal(applied.selfCheck.hookReasonCode, null, JSON.stringify(applied.selfCheck));
+  assert.equal(applied.selfCheck.hookError, null);
+  const hooksPath = join(f.home, ".codex", "hooks.json");
+  assert.equal(JSON.parse(await readFile(hooksPath, "utf8")).hooks.SubagentStop.length, 1);
+  assert.deepEqual((await setup(f, "repair", "--codex-admission", path, "--yes", "true")).written, []);
+  await assert.rejects(setup(f, "repair", "--codex-admission", "relative.json"), { reasonCode: "CLI_ARGUMENT_MALFORMED" });
+  await writeFile(path, JSON.stringify({ ...admission, enableHooksAuthorized: true }));
+  await assert.rejects(setup(f, "repair", "--codex-admission", path), { reasonCode: "HOST_HOOKS_INPUT_INVALID" });
+  await assert.rejects(setup(f, "fresh", "--execution-target", "chatgpt-dot", "--codex-admission", path), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
+  await writeFile(path, JSON.stringify({ ...admission, state: "unsupported", subagentStop: false, trust: "restricted" }));
+  assert.equal((await setup(f, "repair", "--codex-admission", path)).codexAdmission.state, "unsupported");
+  // Existing stop remains pending explicit resolution; unsupported never removes it.
+  assert.equal(JSON.parse(await readFile(hooksPath, "utf8")).hooks.SubagentStop.length, 1);
+});
+
+test("setup self-check retains the actual failure detail of an unbundled launcher entry", async t => {
+  const f = await fixture(t);
+  await setup(f, "fresh", "--artifacts", f.library, "--yes", "true");
+  const ipc = join(f.deviceHome, "engine", FRAMEWORK_VERSION, "scripts/lib/codex-native-hook-ipc.mjs");
+  await rm(ipc);
+  const applied = await setup(f, "repair", "--yes", "true");
+  assert.equal(applied.selfCheck.hookReasonCode, "HOOK_LAUNCH_FAILED");
+  assert.match(applied.selfCheck.hookError, /codex-native-hook-ipc/u);
+});

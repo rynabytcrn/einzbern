@@ -701,6 +701,7 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
     navigation,
   };
   const pending = await planWiring(recorder, {
+    ...(input.codexAdmission === undefined ? {} : { codexAdmission: input.codexAdmission }),
     projectRoot,
     home,
     deviceHome,
@@ -774,6 +775,7 @@ export async function applyRestoreSetup(plan: SetupPlan): Promise<SetupApplied> 
     recorder.write("registry", registryFile, kind === null ? "create" : "update");
   }
   const pending = await applyWiring(recorder, {
+    ...(plan.codexAdmission === undefined ? {} : { codexAdmission: plan.codexAdmission }),
     projectRoot,
     home,
     deviceHome,

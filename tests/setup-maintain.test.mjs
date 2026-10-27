@@ -65,6 +65,9 @@ async function engineTree(base, version) {
   const tree = join(base, "trees", version);
   await mkdir(join(tree, "scripts", "policy"), { recursive: true });
   await copyFile(join(repositoryRoot, "scripts/einzbern.mjs"), join(tree, "scripts/einzbern.mjs"));
+  await copyFile(join(repositoryRoot, "scripts/einzbern-hook.mjs"), join(tree, "scripts/einzbern-hook.mjs"));
+  await mkdir(join(tree, "scripts", "lib"), { recursive: true });
+  await copyFile(join(repositoryRoot, "scripts/lib/codex-native-hook-ipc.mjs"), join(tree, "scripts/lib/codex-native-hook-ipc.mjs"));
   await copyFile(join(repositoryRoot, "scripts/policy/knowledge-provenance.json"), join(tree, "scripts/policy/knowledge-provenance.json"));
   await cp(join(repositoryRoot, "dist/build"), join(tree, "dist/build"), { recursive: true });
   if (version !== FRAMEWORK_VERSION) {
@@ -623,4 +626,41 @@ test("upgrade with unknown admission preserves an existing owned stop hook for e
   const stop = [{ matcher: "owner-edited", hooks: [{ type: "command", command: 'node "/fixture/device/engine/hook.mjs" subagent-stop', timeout: 3 }] }];
   const merged = mergeHostHooks({ hooks: { SubagentStop: stop } }, plan);
   assert.deepEqual(merged.document.hooks.SubagentStop, stop); assert.equal(plan.codexAdmission.state, "unknown");
+});
+
+
+test("public update and repair carry synthetic native admission without granting user restrictions", async t => {
+  const f = await installed(t);
+  const admission = { state: "supported", version: "synthetic-observed-version", evidenceRef: "synthetic-fixture-only:update", subagentStop: true, trust: "permitted" };
+  const path = join(f.home, ".codex", "hooks.json");
+  assert.equal(JSON.parse(await readFile(path, "utf8")).hooks.SubagentStop, undefined);
+  // This release is a synthetic version fixture, not a genuine historical install.
+  const release = await releaseOf(f.base, NEWER);
+  const planned = await plan(f, "update", { archive: release.archive, codexAdmission: admission });
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.codexAdmission, admission);
+  const updated = await applySetup(planned);
+  assertSelfCheckGreen(updated);
+  assert.deepEqual(updated.codexAdmission, admission);
+  const document = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(document.hooks.SubagentStop.length, 1);
+  assert.ok(updated.backups.some(entry => entry.path === path));
+  assert.equal(JSON.parse(await readFile(join(f.home, ".claude", "settings.json"), "utf8")).hooks.SubagentStop, undefined);
+  const repeat = await plan(f, "repair", { codexAdmission: admission });
+  assert.deepEqual(repeat.writes, []);
+  assert.deepEqual((await applySetup(repeat)).written, []);
+  delete document.hooks.SubagentStop;
+  await writeFile(path, JSON.stringify(document));
+  const repair = await plan(f, "repair", { codexAdmission: admission });
+  assert.ok(repair.writes.some(write => write.path === path));
+  await applySetup(repair);
+  document.hooks.SubagentStop = [{ matcher: "user-restriction", hooks: [{ type: "command", command: `node "${f.deviceHome}/engine/hook.mjs" subagent-stop`, timeout: 3 }] }];
+  await writeFile(path, JSON.stringify(document));
+  const unknown = await plan(f, "repair");
+  assert.deepEqual(unknown.blockers, []);
+  await applySetup(unknown);
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")).hooks.SubagentStop, document.hooks.SubagentStop, "unknown preserves the edited native entry");
+  const conflicted = await plan(f, "repair", { codexAdmission: admission });
+  assert.ok(conflicted.blockers.some(blocker => blocker.reasonCode === "HOST_HOOKS_FILE_UNSUPPORTED"));
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")).hooks.SubagentStop, document.hooks.SubagentStop);
 });

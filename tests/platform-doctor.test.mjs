@@ -659,7 +659,7 @@ test("R47-06: a launcher hook on a device without the installed engine is its ow
   assert.equal(noRegistry.ok, false);
   assert.equal(noRegistry.reasonCode, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED");
   assert.deepEqual(noRegistry.failures.map((failure) => [failure.source, failure.reasonCode, failure.missing]), [
-    ...[1, 2, 3, 4].map(() => ["container.codex-hooks", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
+    ...[1, 2, 3].map(() => ["container.codex-hooks", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
     ...[1, 2, 3].map(() => ["container.claude-settings", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
   ]);
   assert.equal(noRegistry.failures[0].device, device);
@@ -680,7 +680,7 @@ test("R47-06: a launcher hook on a device without the installed engine is its ow
   assert.equal(hooks(both).reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
   assert.deepEqual(hooks(both).failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
     ["container.claude-settings", "Stop", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
-    ...["UserPromptSubmit", "SubagentStart", "PreToolUse", "SubagentStop"].map((event) => ["container.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
+    ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["container.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
     ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["container.claude-settings", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
   ]);
 });
@@ -707,9 +707,9 @@ test("R47-06: the hook leg reads the user-level Claude and Codex files of the gi
   assert.equal(leg.reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
   assert.deepEqual(leg.failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
     ["machine.claude-settings", "UserPromptSubmit", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
-    ...["UserPromptSubmit", "SubagentStart", "PreToolUse", "SubagentStop"].map((event) => ["machine.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
+    ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["machine.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
   ]);
-  assert.deepEqual([leg.user.claude.state, leg.user.claude.checked, leg.user.codex.state, leg.user.codex.checked], ["broken", 1, "broken", 4]);
+  assert.deepEqual([leg.user.claude.state, leg.user.claude.checked, leg.user.codex.state, leg.user.codex.checked], ["broken", 1, "broken", 3]);
   assert.equal(leg.failures[0].target, oldScript);
 
   // An absent container Claude file defers that file only; the user-level findings stay red.

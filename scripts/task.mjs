@@ -1408,8 +1408,17 @@ function loopbackHarnessSites(content, declaration) {
     const call = /\bfetch\s*\(/u.exec(source);
     if (offset >= 0 && call) result.fetchOffsets.add(offset + call.index);
   }
-  for (const { module: moduleName, source } of declaration.moduleImports) {
-    if (uniqueOffset(source) >= 0 && content.split(moduleName).length === 2) result.modules.add(moduleName);
+  for (const { module: moduleName, source, bindings = [] } of declaration.moduleImports) {
+    // A source hash cannot replace call-site classification. Each imported native
+    // binding has one import reference and only the declared exact calls; aliases,
+    // added calls and duplicate fragments do not acquire a module allowance.
+    const exactBindings = bindings.every(({ name, callSites }) => {
+      if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(name) || !Array.isArray(callSites) || callSites.length === 0) return false;
+      const references = [...content.matchAll(new RegExp(`\\b${name}\\b`, "gu"))];
+      return references.length === callSites.length + 1 && source.includes(name) && callSites.every(site =>
+        uniqueOffset(site) >= 0 && new RegExp(`\\b${name}\\s*\\(`, "u").test(site));
+    });
+    if (exactBindings && uniqueOffset(source) >= 0 && content.split(moduleName).length === 2) result.modules.add(moduleName);
   }
   return result;
 }

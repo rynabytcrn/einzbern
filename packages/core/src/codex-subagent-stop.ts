@@ -24,12 +24,15 @@ export interface CodexDynamicToolRequest {
   readonly arguments: unknown;
 }
 
+export interface CodexDynamicToolSpec {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Readonly<Record<string, unknown>>;
+}
+
 export interface CodexDynamicToolHost {
   /** The app-server implementation invokes this only for its actual dynamic-tool requests. */
-  registerDynamicTool(input: {
-    readonly name: string;
-    readonly description: string;
-    readonly inputSchema: Readonly<Record<string, unknown>>;
+  registerDynamicTool(input: CodexDynamicToolSpec & {
     readonly handler: (request: CodexDynamicToolRequest) => Promise<unknown>;
   }, options?: { readonly signal?: AbortSignal }): (() => void) | Promise<() => void>;
 }
@@ -70,6 +73,15 @@ export interface CodexNativeControllerOptions {
 
 const REGISTRATION_TOOL = "einzbern_register_native_batch";
 const CONTROL_TOOL = "einzbern_control_native_batch";
+
+/** Pure definitions for thread/start, before that call supplies the real parent thread ID. */
+export function codexNativeDynamicToolSpecs(maxAgents: number): readonly [CodexDynamicToolSpec, CodexDynamicToolSpec] {
+  if (!Number.isSafeInteger(maxAgents) || maxAgents < 2 || maxAgents > 128) throw new Error("NATIVE_RUN_CONFIGURATION_INVALID");
+  return [
+    { name: REGISTRATION_TOOL, description: "Owner-only fixed batch registration; failure retains all child responsibility.", inputSchema: { type: "object", additionalProperties: false, required: ["batchId", "attemptId", "members"], properties: { batchId: { type: "string" }, attemptId: { type: "string" }, members: { type: "array", minItems: 2, maxItems: maxAgents, items: { type: "object", additionalProperties: false, required: ["role", "taskName"], properties: { role: { enum: ["worker", "collector"] }, taskName: { type: "string" }, targets: { type: "array", items: { type: "string" } } } } } } } },
+    { name: CONTROL_TOOL, description: "Owner-only immutable-membership exception control.", inputSchema: { type: "object", additionalProperties: false, required: ["batchId", "attemptId", "exception"], properties: { batchId: { type: "string" }, attemptId: { type: "string" }, exception: { enum: ["budget-exhausted", "paused", "user-cancelled", "safety", "permission"] } } } },
+  ];
+}
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
 type RecordValue = Record<string, unknown>;
 type StopInput = { readonly payload: unknown; readonly now?: string; readonly signal?: AbortSignal };
@@ -254,7 +266,8 @@ export async function createCodexNativeController(options: CodexNativeController
     if (!options.transport?.evidenceRef || run.queryIntervalMs > 890_000 || !options.transport || options.transport.hookTimeoutMs > 900_000 || options.transport.abort !== "supported" || !Number.isSafeInteger(options.transport.rpcTimeoutMs) || options.transport.rpcTimeoutMs < 1 || !Number.isSafeInteger(options.transport.hookTimeoutMs) || options.transport.hookTimeoutMs <= options.transport.rpcTimeoutMs) throw new Error("NATIVE_TRANSPORT_SUPPORT_UNKNOWN");
     if (!options.helperEntry || !options.helperEntry.startsWith("/")) throw new Error("NATIVE_HELPER_SUPPORT_UNKNOWN");
     await privateDirectory(root);
-    unregs.push(await registerTool({ name: REGISTRATION_TOOL, description: "Owner-only fixed batch registration; failure retains all child responsibility.", inputSchema: { type: "object", additionalProperties: false, required: ["batchId", "attemptId", "members"], properties: { batchId: { type: "string" }, attemptId: { type: "string" }, members: { type: "array", minItems: 2, maxItems: run.maxAgents, items: { type: "object", additionalProperties: false, required: ["role", "taskName"], properties: { role: { enum: ["worker", "collector"] }, taskName: { type: "string" }, targets: { type: "array", items: { type: "string" } } } } } } }, handler: request => locked(async () => {
+    const [registrationSpec, controlSpec] = codexNativeDynamicToolSpecs(run.maxAgents);
+    unregs.push(await registerTool({ ...registrationSpec, handler: request => locked(async () => {
       if (request.threadId !== run.parentThreadId || !text(request.callId)) throw new Error("NATIVE_PARENT_REGISTRATION_REFUSED");
       if (attempted || closed) return { status: "failed", reasonCode: "NATIVE_REGISTRATION_ALREADY_ATTEMPTED", responsibility: responsibility() };
       attempted = true; ownerState = "registration-in-flight";
@@ -287,7 +300,7 @@ export async function createCodexNativeController(options: CodexNativeController
         return { status: "registered", batchId: run.batchId, attemptId: run.attemptId, fingerprint, collectorThreadId: resolved.find(m => m.role === "collector")!.threadId, workerThreadIds: resolved.filter(m => m.role === "worker").map(m => m.threadId) };
       } catch (error) { ownerError = message(error); ownerState = "registration-failed-unresolved"; if (!closed) await evidence("registration-failed", responsibility()).catch(() => undefined); return { status: "failed", reasonCode: ownerError, responsibility: responsibility(), discovery: "unresolved dispatched children remain owned, including identities not yet resolved" }; }
     }) }));
-    unregs.push(await registerTool({ name: CONTROL_TOOL, description: "Owner-only immutable-membership exception control.", inputSchema: { type: "object", additionalProperties: false, required: ["batchId", "attemptId", "exception"], properties: { batchId: { type: "string" }, attemptId: { type: "string" }, exception: { enum: ["budget-exhausted", "paused", "user-cancelled", "safety", "permission"] } } }, handler: request => locked(async () => {
+    unregs.push(await registerTool({ ...controlSpec, handler: request => locked(async () => {
       check(); const args = record(request.arguments);
       if (!registration || request.threadId !== run.parentThreadId || !text(request.callId) || args.batchId !== run.batchId || args.attemptId !== run.attemptId || !["budget-exhausted", "paused", "user-cancelled", "safety", "permission"].includes(string(args.exception))) throw new Error("NATIVE_CONTROL_REFUSED");
       if (registration.ended) throw new Error("NATIVE_BATCH_ENDED"); registration.exception = args.exception as CollectorException;

@@ -31,7 +31,7 @@ import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
 import { requestCodexNativeHookDecision, waitCodexNativeCollector } from "./lib/codex-native-hook-ipc.mjs";
 
 // The owning temporary app-server host can use these exports from the versioned hook entry.
-export { createCodexNativeController } from "../dist/build/packages/core/src/codex-subagent-stop.js";
+export { codexNativeDynamicToolSpecs, createCodexNativeController } from "../dist/build/packages/core/src/codex-subagent-stop.js";
 export { createCodexNativeHookBridge, waitCodexNativeCollector } from "./lib/codex-native-hook-ipc.mjs";
 
 // Held equal to scripts/einzbern-hook-launcher.mjs (LOG_DIRECTORY, LOG_FILE, LOG_SCHEMA_VERSION).

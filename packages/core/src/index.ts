@@ -904,6 +904,7 @@ export {
   CODEX_COLLECTOR_INITIAL_PROGRESS,
   CODEX_SUBAGENT_STOP_CAPABILITY,
   CODEX_SUBAGENT_STOP_ENVELOPE_PREFIX,
+  codexNativeDynamicToolSpecs,
   createCodexNativeController,
   evaluateCodexCollectorStop,
   handleCodexSubagentStop,
@@ -912,6 +913,7 @@ export {
 export type {
   CodexDynamicToolHost,
   CodexDynamicToolRequest,
+  CodexDynamicToolSpec,
   CodexNativeClient,
   CodexNativeControllerOptions,
   CodexNativeRun,

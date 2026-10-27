@@ -6,7 +6,7 @@ import { mkdtemp, readFile, readdir, rm, chmod, symlink, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createCodexNativeController, handleCodexSubagentStop } from "../dist/build/packages/core/src/index.js";
+import { codexNativeDynamicToolSpecs, createCodexNativeController, handleCodexSubagentStop } from "../dist/build/packages/core/src/index.js";
 
 const PARENT = "11111111-1111-4111-8111-111111111111";
 const PARENT_TURN = "66666666-6666-4666-8666-666666666666";
@@ -65,6 +65,26 @@ async function start(f, runtimeDirectory, wakeOnAgentMessagesApproved = true, wa
   assert.equal(receipt.status, "registered");
   return controller;
 }
+
+test("native tool definitions bootstrap thread/start before the real parent ID exists", async t => {
+  const definitions = codexNativeDynamicToolSpecs(4);
+  const threadStartTools = definitions.map(spec => ({ type: "function", ...spec }));
+  assert.equal(threadStartTools[0].inputSchema.properties.members.maxItems, 4);
+  assert.throws(() => codexNativeDynamicToolSpecs(1), /NATIVE_RUN_CONFIGURATION_INVALID/u);
+  const f = fixture();
+  assert.equal(f.handlers.size, 0, "definitions perform no registration or native reads");
+  const registered = [];
+  const register = f.toolHost.registerDynamicTool;
+  f.toolHost.registerDynamicTool = async spec => {
+    registered.push({ type: "function", name: spec.name, description: spec.description, inputSchema: spec.inputSchema });
+    return register(spec);
+  };
+  const root = await mkdtemp(join(tmpdir(), "codex-native-bootstrap-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const controller = await start(f, root);
+  t.after(() => controller.close());
+  assert.deepEqual(registered, threadStartTools, "the actual owner handlers use the exact declared native schemas");
+});
 
 test("native registration is parent-owned, exact-role, closed and resolves real task activity", async t => {
   const root = await mkdtemp(join(tmpdir(), "codex-native-adapter-"));

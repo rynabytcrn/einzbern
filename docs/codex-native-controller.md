@@ -4,7 +4,7 @@ Default Desktop callback, installation, wake and unload remain unverified. This 
 only for an expressly authorized isolated Unix native host. It neither enables wake nor
 changes a live Desktop/control tree. Non-Codex and dot do not receive this hook.
 
-Import `createCodexNativeController`, `createCodexNativeHookBridge` and
+Import `codexNativeDynamicToolSpecs`, `createCodexNativeController`, `createCodexNativeHookBridge` and
 `waitCodexNativeCollector` from the normal **versioned** `scripts/einzbern-hook.mjs`
 entry after the approved build (or from its normally bundled installed entry).
 The helper is reachable through the existing static import graph; no sidecar copy,
@@ -24,8 +24,20 @@ cancellation acknowledgement. `now()` is the one clock seam for deterministic te
 Pass the unchanged fixed `run`, private owned `runtimeDirectory` (0700), approved
 `wakeOnAgentMessagesApproved`, and absolute normal installed `helperEntry` path.
 The host itself must have the separately approved native wake configuration.
-Register real server-origin dynamic-tool handlers, preserving actual caller thread,
-call ID and arguments. The parent calls `einzbern_register_native_batch` once after
+Before `thread/start`, call the pure `codexNativeDynamicToolSpecs(maxAgents)` and
+pass each definition as `{ type: "function", ...definition }` in `dynamicTools`.
+After the server returns the real parent thread ID, create this controller with that
+ID/session and connect `registerDynamicTool` to the matching owner handler table.
+Only then start the parent turn. This avoids inventing a parent ID to obtain schemas.
+The two exported definitions are also the definitions the controller registers.
+
+Register real server-origin `item/tool/call` requests, preserving the actual request
+ID and `params.threadId`, `params.callId`, `params.turnId`, tool and arguments.
+Invoke only that registered handler with `{ threadId, callId, arguments }` and answer
+the original server request with `{ success: true, contentItems: [{ type: "inputText",
+text: JSON.stringify(result) }] }`; a handler/transport error needs an explicit failed
+response and owner handoff. A direct fabricated handler call is not native evidence.
+No turn starts until both owner handlers and the private bridge are ready. The parent calls `einzbern_register_native_batch` once after
 dispatch with exact task names and one collector targeting every fixed worker.
 Registration is serialized and an attempted registration cannot be reenrolled. A
 bounded failed result reaches the actual owner, retaining all unresolved dispatched

@@ -128,7 +128,17 @@ export interface HostHookGroup {
   readonly hooks: readonly HostHook[];
 }
 
+export interface CodexHookAdmission {
+  readonly state: "supported" | "unsupported" | "unknown";
+  readonly version: string | null;
+  readonly evidenceRef: string | null;
+  readonly subagentStop: boolean;
+  readonly trust: "permitted" | "restricted" | "unknown";
+}
+
 export interface HostHooksRequest {
+  readonly codexAdmission?: CodexHookAdmission;
+  readonly enableHooksAuthorized?: boolean;
   readonly host: HostHookHost;
   readonly scope: HostHookScope;
   // The device directory the command names: an absolute path in the form of `platform`.
@@ -144,6 +154,8 @@ export interface HostHooksRequest {
 }
 
 export interface HostHooksExpectation {
+  readonly codexAdmission: CodexHookAdmission;
+  readonly enableHooksAuthorized: boolean;
   readonly host: HostHookFileHost;
   readonly scope: HostHookScope;
   readonly platform: NodeJS.Platform;
@@ -224,11 +236,13 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   const platform = request.platform ?? process.platform;
   const install = request.install ?? true;
   const launcher = hookLauncherPath(request.deviceHome, platform);
+  const admission: CodexHookAdmission = structuredClone(request.codexAdmission ?? { state: "unknown", version: null, evidenceRef: null, subagentStop: false, trust: "unknown" });
+  if (admission.state === "supported" && (!admission.version || !admission.evidenceRef || !admission.subagentStop || admission.trust !== "permitted")) fail("HOST_HOOKS_INPUT_INVALID", "supported Codex admission requires actual version/capability/trust evidence");
   const groups: Record<string, readonly HostHookGroup[]> = {};
   if (install) {
     const events = [...new Set([
       ...Object.keys(HOST_HOOK_EVENTS),
-      ...(host === "codex" ? Object.keys(CODEX_HOOK_EVENTS) : []),
+      ...(host === "codex" && admission.state === "supported" ? Object.keys(CODEX_HOOK_EVENTS) : []),
       ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : []),
     ])];
     for (const event of events) {
@@ -237,6 +251,8 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   }
   return {
     host,
+    codexAdmission: admission,
+    enableHooksAuthorized: request.enableHooksAuthorized === true,
     scope: request.scope,
     platform,
     deviceHome: request.deviceHome,
@@ -331,6 +347,15 @@ function mergeEvent(event: string, groups: readonly unknown[], wanted: readonly 
       kept.push(group);
       continue;
     }
+    for (const hook of hooks.filter(isOurs)) {
+      const command = commandOf(hook);
+      const expectedGroup = wanted.find(candidate => candidate.hooks.some(wantedHook => commandOf(wantedHook) === command));
+      if (expectedGroup) {
+        const around = { ...group }; delete around.hooks;
+        const expectedAround: Record<string, unknown> = { ...expectedGroup }; delete expectedAround.hooks;
+        if (stableJson(around) !== stableJson(expectedAround)) unsupported(`hooks.${event}`, "owned hook group matcher/settings were edited; explicit plan conflict");
+      }
+    }
     insertAt ??= kept.length;
     ours.push(...hooks.filter(isOurs));
     // Another tool's hook sharing the group stays, and so does the group around it.
@@ -341,7 +366,12 @@ function mergeEvent(event: string, groups: readonly unknown[], wanted: readonly 
   const pending = wanted.flatMap((group) => group.hooks.map((hook) => stableJson(hook)));
   for (const hook of ours) {
     const index = pending.indexOf(stableJson(hook));
-    if (index === -1) removed.push({ event, command: commandOf(hook) ?? "" });
+    if (index === -1) {
+      const command = commandOf(hook);
+      const ownedWanted = wanted.flatMap((group) => group.hooks).find(candidate => command !== null && commandOf(candidate) === command);
+      if (ownedWanted !== undefined) unsupported(`hooks.${event}`, "an owned hook was edited (matcher, timeout, group or settings); explicit conflict resolution is required");
+      removed.push({ event, command: command ?? "" });
+    }
     else pending.splice(index, 1);
   }
   const at = insertAt ?? kept.length;
@@ -359,6 +389,7 @@ export function mergeHostHooks(existing: unknown, expected: HostHooksExpectation
   let touched = false;
   const events = [...Object.keys(hooks), ...Object.keys(expected.groups).filter((event) => !Object.hasOwn(hooks, event))];
   for (const event of events) {
+    if (event === "SubagentStop" && expected.host === "codex" && expected.install && expected.codexAdmission.state !== "supported") continue;
     const current = hooks[event];
     const wanted = expected.groups[event] ?? [];
     if (current !== undefined && !Array.isArray(current)) {
@@ -403,6 +434,7 @@ export function mergeHostHooks(existing: unknown, expected: HostHooksExpectation
 // so its comments, order and layout stay.
 
 export interface CodexTrustChange {
+  readonly enableHooksAuthorized?: boolean;
   // The hooks file as Codex names it in a trust state: its absolute path.
   readonly hooksPath: string;
   // The hooks document before and after rendering; null where there is no file.
@@ -536,6 +568,7 @@ export function codexHookConfig(current: string | null, change: CodexTrustChange
       const value = SWITCH_VALUE.exec(line.replace(/\r$/u, ""));
       if (value === null) unsupported(file, `${FEATURES_TABLE}.${HOOKS_SWITCH} is not true or false`);
       if (value[2] === "false") {
+        if (!change.enableHooksAuthorized) unsupported(file, "hooks=false is a user restriction; explicit installation-plan authority required");
         replace.set(switchLine, `${value[1] ?? ""}true${value[3] ?? ""}${line.endsWith("\r") ? "\r" : ""}`);
         hooksEnabled = true;
       }
@@ -659,7 +692,7 @@ export async function readHostHooks(expectation: HostHooksExpectation, location:
   if (expectation.configFile !== null) {
     const configPath = join(home, expectation.configFile);
     const configBefore = await readHostFile(configPath, expectation.configFile);
-    const edit = codexHookConfig(configBefore, { hooksPath, before: document, after: merge.document, enableHooks: expectation.install });
+    const edit = codexHookConfig(configBefore, { hooksPath, before: document, after: merge.document, enableHooks: expectation.install, enableHooksAuthorized: expectation.enableHooksAuthorized });
     const configAfter = configBefore === null && edit.text === "" ? null : edit.text;
     files.push({ path: configPath, root: home, name: expectation.configFile, before: configBefore, after: configAfter, changed: configAfter !== configBefore });
     removedTrustStates = edit.removedTrustStates;
@@ -679,6 +712,7 @@ export async function readHostHooks(expectation: HostHooksExpectation, location:
 export type HostHooksOutcome = "HOST_HOOKS_WRITTEN" | "HOST_HOOKS_CURRENT";
 
 export interface AppliedHostHooks {
+  readonly codexAdmission: CodexHookAdmission;
   readonly reasonCode: HostHooksOutcome;
   readonly host: HostHookFileHost;
   readonly scope: HostHookScope;
@@ -725,7 +759,7 @@ export async function applyHostHooks(plan: HostHooksPlan, options: ApplyHostHook
     }
   }
   const files = plan.files.map(({ path, name, changed: fileChanged }) => ({ path, name, changed: fileChanged }));
-  const summary = { host: expectation.host, scope: expectation.scope, root: plan.root, files };
+  const summary = { codexAdmission: expectation.codexAdmission, host: expectation.host, scope: expectation.scope, root: plan.root, files };
   if (changed.length === 0) return { reasonCode: "HOST_HOOKS_CURRENT", ...summary, backupDir: null };
   const backupDir = changed.some((file) => file.before !== null)
     ? join(options.backupRoot ?? backupsPath(expectation.deviceHome), stamp, "host-hooks")
@@ -742,8 +776,9 @@ export async function applyHostHooks(plan: HostHooksPlan, options: ApplyHostHook
     for (const file of changed) {
       if (file.after === null) continue;
       await mkdir(dirname(file.path), { recursive: true });
-      await writeFileAtomic(file.path, file.after);
       written.push(file);
+      await writeFileAtomic(file.path, file.after);
+      if (await readHostFile(file.path, file.name) !== file.after) throw new Error("HOST_HOOKS_WRITE_READBACK_MISMATCH");
     }
   } catch (error) {
     const rollbackErrors: { readonly path: string; readonly backup: string | null; readonly error: unknown }[] = [];
@@ -751,6 +786,8 @@ export async function applyHostHooks(plan: HostHooksPlan, options: ApplyHostHook
       try {
         if (file.before === null) await rm(file.path, { force: true });
         else await writeFileAtomic(file.path, file.before);
+        const restored = await readHostFile(file.path, file.name);
+        if (restored !== file.before) throw new Error(file.before === null ? "rollback did not restore absence" : "rollback bytes differ from original");
       } catch (rollbackError) {
         const backup = file.before === null || backupDir === null ? null
           : join(backupDir, createHash("sha256").update(file.root).digest("hex").slice(0, 16), file.name);
@@ -776,6 +813,7 @@ export async function applyHostHooks(plan: HostHooksPlan, options: ApplyHostHook
         details: { ...primary?.details, rollbackErrors: JSON.stringify(failures) },
       });
     }
+    if (error instanceof Error) Object.assign(error, { backupDir, rollbackVerified: true });
     throw error;
   }
   return { reasonCode: "HOST_HOOKS_WRITTEN", ...summary, backupDir };

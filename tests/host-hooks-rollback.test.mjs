@@ -151,3 +151,19 @@ for (const scenario of [
     }
   });
 }
+
+
+test("rollback detects successful-looking restoration whose bytes differ", async context => {
+  const { plan, backupFor } = await fixture(context);
+  const primary = new Error("primary write failure"); let recovering = false;
+  await withFilesystemFailures({
+    mkdir: make => async (path, options) => { if (path === dirname(plan.files[3].path)) { recovering = true; throw primary; } return make(path, options); },
+    readFile: read => async (path, ...args) => { const value = await read(path, ...args); return recovering && path === plan.files[0].path ? Buffer.from("wrong restored bytes") : value; },
+  }, async () => {
+    await assert.rejects(applyHostHooks(plan, { at: AT }), error => {
+      assert.equal(error.cause, primary); assert.match(error.message, /rollback bytes differ/u);
+      assert.match(error.details.rollbackErrors, /backup/u); return true;
+    });
+  });
+  assert.equal(await readFile(backupFor(plan.files[0]), "utf8"), plan.files[0].before);
+});

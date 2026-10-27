@@ -27,9 +27,12 @@ import {
   isLegacyDenyRule,
   isLegacyHookCommand,
   mergeHostHooks,
-  planHostHooks,
+  planHostHooks as rawPlanHostHooks,
   readHostHooks,
 } from "../dist/build/packages/core/src/host-hooks.js";
+// Explicit synthetic capability for preexisting renderer fixtures, never native admission evidence.
+const fixtureAdmission = { state: "supported", version: "fixture", evidenceRef: "synthetic-only", subagentStop: true, trust: "permitted" };
+const planHostHooks = input => rawPlanHostHooks({ codexAdmission: fixtureAdmission, enableHooksAuthorized: true, ...input });
 import {
   DIRECTORY,
   LEGACY_CONTAINER_DIRECTORY,
@@ -406,7 +409,7 @@ test("477-R4: only the deny rules that fence the old directories go, and a user'
 });
 
 test("477-R4: Codex's config keeps its hooks switch on and every byte that is not ours", () => {
-  const change = (enableHooks) => ({ hooksPath: "/srv/user/.codex/hooks.json", before: null, after: { hooks: {} }, enableHooks });
+  const change = (enableHooks) => ({ hooksPath: "/srv/user/.codex/hooks.json", before: null, after: { hooks: {} }, enableHooks, enableHooksAuthorized: true });
   assert.equal(codexHookConfig(null, change(true)).text, "[features]\nhooks = true\n");
   assert.equal(codexHookConfig(null, change(false)).text, "");
   assert.equal(codexHookConfig('model = "m"\n', change(true)).text, 'model = "m"\n\n[features]\nhooks = true\n');
@@ -531,4 +534,29 @@ test("478-AC5, BL34/35: declined navigation adds SessionStart; subagent recall a
 test("DOT-I01: chatgpt-dot is not a traditional hook host or fallback", () => {
   assert.deepEqual(HOST_HOOK_HOSTS, ["claude-code", "codex", "dsh"]);
   assert.throws(() => planHostHooks({ host: "chatgpt-dot", scope: "user", deviceHome: "/fixture/device" }), error => error.reasonCode === "HOST_HOOKS_INPUT_INVALID");
+});
+
+
+test("native capability admission remains unknown/unsupported without invented version ranges", () => {
+  const input = { host: "codex", scope: "user", deviceHome: "/fixture/device" };
+  const unknown = rawPlanHostHooks(input);
+  assert.equal(unknown.codexAdmission.state, "unknown"); assert.equal(unknown.groups.SubagentStop, undefined);
+  const unsupported = rawPlanHostHooks({ ...input, codexAdmission: { ...fixtureAdmission, state: "unsupported", trust: "restricted" } });
+  assert.equal(unsupported.groups.SubagentStop, undefined);
+  assert.throws(() => rawPlanHostHooks({ ...input, codexAdmission: { ...fixtureAdmission, evidenceRef: null } }), /requires actual/u);
+  assert.equal(planHostHooks(input).groups.SubagentStop.length, 1);
+});
+
+test("owned matcher, timeout and group settings edits surface explicit plan conflicts", () => {
+  const expected = planHostHooks({ host: "codex", scope: "user", deviceHome: "/fixture/device" });
+  for (const mutation of [group => { group.matcher = "edited"; }, group => { group.timeout = 7; }, group => { group.hooks[0].timeout = 3; }, group => { group.settings = { active: false }; }]) {
+    const existing = { hooks: structuredClone(expected.groups) }; mutation(existing.hooks.SubagentStop[0]);
+    assert.throws(() => mergeHostHooks(existing, expected), /edited|conflict/u);
+  }
+});
+
+test("hooks=false remains a restriction until actual plan authority is supplied", () => {
+  const change = { hooksPath: "/fixture/hooks.json", before: null, after: {}, enableHooks: true };
+  assert.throws(() => codexHookConfig("[features]\nhooks = false\n", change), /explicit installation-plan authority/u);
+  assert.match(codexHookConfig("[features]\nhooks = false\n", { ...change, enableHooksAuthorized: true }).text, /hooks = true/u);
 });

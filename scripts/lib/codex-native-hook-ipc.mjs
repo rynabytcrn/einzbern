@@ -59,23 +59,32 @@ export async function createCodexNativeHookBridge({ controller, socketPath, time
   await requirePrivateDirectory(socketPath);
   if (controller?.capability !== "ready" || typeof controller.handleSubagentStop !== "function") throw new Error("CODEX_NATIVE_IPC_CONTROLLER_UNAVAILABLE");
   const connections = new Set();
+  const active = new Set();
+  let closed = false;
   const server = createServer(socket => {
+    if (closed) { socket.destroy(); return; }
     connections.add(socket);
+    const abort = new AbortController();
+    socket.once("close", () => abort.abort(new Error("CODEX_NATIVE_IPC_DISCONNECTED")));
     socket.once("close", () => connections.delete(socket));
     // Keep an error listener after framing; a hook process may exit while the controller waits.
     socket.on("error", () => undefined);
     const timer = setTimeout(() => socket.destroy(), timeoutMs);
     socket.once("close", () => clearTimeout(timer));
-    void (async () => {
+    const task = (async () => {
       try {
         const request = await readFrame(socket, timeoutMs);
-        if (request?.event !== "SubagentStop" || request.payload === null || typeof request.payload !== "object" || Array.isArray(request.payload)) throw new Error("CODEX_NATIVE_IPC_REQUEST_INVALID");
-        const decision = await controller.handleSubagentStop({ payload: request.payload });
-        socket.end(`${JSON.stringify({ decision })}\n`);
+        if (!["SubagentStop", "CollectorWait"].includes(request?.event) || request.payload === null || typeof request.payload !== "object" || Array.isArray(request.payload)) throw new Error("CODEX_NATIVE_IPC_REQUEST_INVALID");
+        const value = request.event === "CollectorWait"
+          ? await controller.waitCollector({ payload: request.payload, signal: abort.signal })
+          : await controller.handleSubagentStop({ payload: request.payload, signal: abort.signal });
+        if (!closed && !socket.destroyed && !abort.signal.aborted) socket.end(`${JSON.stringify(request.event === "CollectorWait" ? { result: value } : { decision: value })}\n`);
       } catch (error) {
         if (!socket.destroyed) socket.end(`${JSON.stringify({ error: String(error?.message ?? error) })}\n`);
       }
     })();
+    active.add(task);
+    void task.finally(() => active.delete(task)).catch(() => undefined);
   });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -88,14 +97,16 @@ export async function createCodexNativeHookBridge({ controller, socketPath, time
   return {
     socketPath,
     close: async () => {
+      closed = true;
       for (const socket of connections) socket.destroy();
       if (server.listening) await new Promise(resolve => server.close(resolve));
+      await Promise.allSettled([...active]);
     },
   };
 }
 
 /** Used only when the isolated host explicitly passes its socket in the hook environment. */
-export async function requestCodexNativeHookDecision({ socketPath, payload, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+export async function requestCodexNativeHookDecision({ socketPath, payload, timeoutMs = DEFAULT_TIMEOUT_MS, event = "SubagentStop" }) {
   requireTimeout(timeoutMs);
   await requirePrivateDirectory(socketPath);
   const stat = await lstat(socketPath);
@@ -104,11 +115,12 @@ export async function requestCodexNativeHookDecision({ socketPath, payload, time
   const socket = createConnection(socketPath);
   const response = readFrame(socket, timeoutMs);
   try {
-    const frame = `${JSON.stringify({ event: "SubagentStop", payload })}\n`;
+    const frame = `${JSON.stringify({ event, payload })}\n`;
     if (Buffer.byteLength(frame) > MAX_BYTES) throw new Error("CODEX_NATIVE_IPC_FRAME_TOO_LARGE");
     socket.write(frame);
     const answer = await response;
     if (typeof answer?.error === "string") throw new Error(answer.error);
+    if (event === "CollectorWait") { if (answer?.result?.status !== "waited") throw new Error("CODEX_NATIVE_HELPER_RESPONSE_INVALID"); return answer.result; }
     if (!["allow", "block"].includes(answer?.decision?.decision) ||
         (answer.decision.decision === "block" && typeof answer.decision.reason !== "string")) throw new Error("CODEX_NATIVE_IPC_RESPONSE_INVALID");
     return answer.decision;
@@ -116,4 +128,9 @@ export async function requestCodexNativeHookDecision({ socketPath, payload, time
     socket.destroy();
     await response.catch(() => undefined);
   }
+}
+
+/** Explicit helper called by the SAME live collector outside SubagentStop. No enrollment. */
+export async function waitCodexNativeCollector({ socketPath, payload, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  return requestCodexNativeHookDecision({ socketPath, payload, timeoutMs, event: "CollectorWait" });
 }

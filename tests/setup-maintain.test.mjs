@@ -230,7 +230,7 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   assert.equal((await current(f)).previous, FRAMEWORK_VERSION);
   assert.deepEqual(await copyDigests(f), [release.skillDigest, release.skillDigest], "both copies are the new version's skill");
   assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
-  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
   assert.deepEqual(await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file)))), sections, "478-R6: no managed section is written");
   assert.ok(await exists(join(staging, `einzbern-${NEWER}`, "scripts", "einzbern.mjs")), "the unpacked release stays in the device directory's trash");
   assertSelfCheckGreen(updated);
@@ -252,7 +252,7 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   const original = (await computeInstallTreeDigest(join(f.deviceHome, "engine", FRAMEWORK_VERSION, "skill", "mana-orchestrate"))).sha256;
   assert.deepEqual(await copyDigests(f), [original, original]);
   assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
-  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
   assertSelfCheckGreen(rolled);
 
   // The unpacked release directory installs too: the version is already there, so it is reused.
@@ -344,7 +344,7 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
   // R46 I08: repair names no coordination binding, in the plan or the receipt.
   assert.deepEqual([Object.hasOwn(planned, "coordination"), Object.hasOwn(repaired, "coordination")], [false, false]);
   assert.deepEqual(repaired.backups.map((entry) => entry.path), [settings, codexHooks], "both host files are backed up before replacement");
-  assert.deepEqual((await einzbernHooks(codexHooks)).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(codexHooks)).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
   assertSelfCheckGreen(repaired);
 
   const files = [settings, join(f.home, ".codex", "hooks.json"), join(f.project, "AGENTS.md"), join(f.project, "CLAUDE.md"), join(f.deviceHome, "registry.json"), join(f.deviceHome, "skills.json")];
@@ -614,4 +614,13 @@ test("DOT-I01/I03/R02: dot update/repair/uninstall never enter traditional maint
   assert.equal(removed.dot.status, "applied"); assert.ok(removed.written.every(write => write.step === "dot-agents"));
   assert.deepEqual(await readdir(home), []); await assert.rejects(lstat(deviceHome), error => error.code === "ENOENT");
   assert.equal(await readFile(manaSkillPath, "utf8"), "# Fixture Mana source\n");
+});
+
+
+test("upgrade with unknown admission preserves an existing owned stop hook for explicit resolution", async () => {
+  const { planHostHooks, mergeHostHooks } = await import("../dist/build/packages/core/src/host-hooks.js");
+  const plan = planHostHooks({ host: "codex", scope: "user", deviceHome: "/fixture/device" });
+  const stop = [{ matcher: "owner-edited", hooks: [{ type: "command", command: 'node "/fixture/device/engine/hook.mjs" subagent-stop', timeout: 3 }] }];
+  const merged = mergeHostHooks({ hooks: { SubagentStop: stop } }, plan);
+  assert.deepEqual(merged.document.hooks.SubagentStop, stop); assert.equal(plan.codexAdmission.state, "unknown");
 });

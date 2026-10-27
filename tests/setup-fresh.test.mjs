@@ -288,7 +288,7 @@ test("480-AC1: the default answers install the library, the registry entry, both
   const launcher = join(f.deviceHome, "engine", "hook.mjs");
   assert.deepEqual(await readFile(launcher), await readFile(join(repositoryRoot, "scripts/einzbern-hook-launcher.mjs")));
   assert.deepEqual(await einzbernHooks(join(f.home, ".claude", "settings.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
-  assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`], ["SubagentStop", `node "${launcher}" subagent-stop`]]);
+  assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
   assert.match(await readFile(join(f.home, ".codex", "config.toml"), "utf8"), /^\[features\]\nhooks = true$/mu);
   const claude = await readFile(join(f.project, "CLAUDE.md"), "utf8");
   assert.match(claude, /<!-- einzbern:section id=claude-import rev=1 digest=[0-9a-f]{64} -->\n@AGENTS\.md\n<!-- einzbern:section-end id=claude-import -->/u);
@@ -633,4 +633,12 @@ test("DOT-I01/I02: explicit chatgpt-dot skip never installs host hooks, skill co
   await assert.rejects(planSetup({ ...options, executionTarget: "dot" }), error => error.reasonCode === "SETUP_TARGET_UNSUPPORTED");
   await assert.rejects(planSetup({ ...options, projectRoot: "." }), error => error.reasonCode === "SETUP_INPUT_INVALID");
   await assert.rejects(planSetup({ ...options, answers: { navigation: true } }), error => error.reasonCode === "SETUP_OPTION_NOT_APPLICABLE");
+});
+
+
+test("fresh setup hook planning carries explicit unsupported native evidence without guessing a version", async () => {
+  const { planHostHooks } = await import("../dist/build/packages/core/src/host-hooks.js");
+  const plan = planHostHooks({ host: "codex", scope: "user", deviceHome: "/fixture/device", codexAdmission: { state: "unsupported", version: "observed-fixture", evidenceRef: "synthetic-only", subagentStop: false, trust: "restricted" } });
+  assert.equal(plan.codexAdmission.state, "unsupported"); assert.equal(plan.groups.SubagentStop, undefined);
+  assert.ok(plan.groups.UserPromptSubmit);
 });

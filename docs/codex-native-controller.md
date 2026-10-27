@@ -1,77 +1,94 @@
-# Opt-in Codex native controller
+# Opt-in isolated Codex native controller
 
-This API connects a caller-owned Codex app-server client to the Einzbern SubagentStop
-handler in an isolated host. It does not establish support in the default Desktop
-client. The standard handler remains unavailable without this explicit connection.
+Default Desktop callback, installation, wake and unload remain unverified. This API is
+only for an expressly authorized isolated Unix native host. It neither enables wake nor
+changes a live Desktop/control tree. Non-Codex and dot do not receive this hook.
 
-The host owner supplies an initialized `client.call(method, params)` and a
-`tools.registerDynamicTool({ name, description, inputSchema, handler })` interface.
-The latter must register real tools with that app-server and invoke the handler
-only from server-origin dynamic-tool requests, preserving `threadId`, `callId` and
-`arguments`. A local map or agent-authored payload is not native registration.
+Import `createCodexNativeController`, `createCodexNativeHookBridge` and
+`waitCodexNativeCollector` from the normal **versioned** `scripts/einzbern-hook.mjs`
+entry after the approved build (or from its normally bundled installed entry).
+The helper is reachable through the existing static import graph; no sidecar copy,
+private session reader, daemon or independently installed helper is required.
 
-The required native methods are `thread/read`, `thread/turns/list`,
-`thread/items/list`, `thread/loaded/list` and `thread/archive`. Their responses
-must expose the parent/session relationship, full turn items, native task activity,
-model and effort, terminal states and dynamic-tool receipts consumed by the
-controller. The owning client is responsible for transport timeouts and disposal.
-API compatibility and real native behavior require separate acceptance evidence.
+The owning initialized app-server client supplies `call(method, params, {signal})`
+and `registerDynamicTool(spec, {signal})`. They must actually support cancellation
+and finite settlement. `transport` must carry `abort: "supported"`, `rpcTimeoutMs`,
+`hookTimeoutMs` and the real `evidenceRef`. Unknown support disables this dependent
+route. The RPC bound must be shorter than the actual hook timeout; the selected
+transport permits at most 900000ms and helper intervals at most 890000ms. These
+are transport limits, not extra query/stop budgets or a guessed Codex version range.
+A nonconforming client can leave a native operation unsettled: `responsibility()`
+reports it, and the owning client must dispose/query it. Timeout is never a native
+cancellation acknowledgement. `now()` is the one clock seam for deterministic tests.
 
-The versioned hook entry exports the controller and local bridge as well as
-`runHookEvent`. A caller can import the same source entry after building, or the
-versioned entry supplied by its normal installation:
+Pass the unchanged fixed `run`, private owned `runtimeDirectory` (0700), approved
+`wakeOnAgentMessagesApproved`, and absolute normal installed `helperEntry` path.
+The host itself must have the separately approved native wake configuration.
+Register real server-origin dynamic-tool handlers, preserving actual caller thread,
+call ID and arguments. The parent calls `einzbern_register_native_batch` once after
+dispatch with exact task names and one collector targeting every fixed worker.
+Registration is serialized and an attempted registration cannot be reenrolled. A
+bounded failed result reaches the actual owner, retaining all unresolved dispatched
+children even when identities could not be resolved. Ordinary/unregistered stops
+remain untouched. Tool arguments or artifact files alone never confer role authority.
 
-```js
-const { createCodexNativeController, createCodexNativeHookBridge } =
-  await import(versionedHookEntryUrl);
-const controller = await createCodexNativeController({
-  client, tools, run, runtimeDirectory, wakeOnAgentMessagesApproved: true,
-});
-if (controller.capability !== "ready") throw new Error(controller.reasonCode);
-const bridge = await createCodexNativeHookBridge({
-  controller, socketPath, timeoutMs: 900_000,
-});
-try {
-  // Start the authorized isolated app-server host with this inherited environment.
-  // Its normal installed hook launcher reaches the same in-memory controller.
-  await ownHostSession({
-    env: { ...process.env, EINZBERN_CODEX_NATIVE_HOOK_SOCKET: bridge.socketPath },
-  });
-} finally {
-  await bridge.close();
-  await controller.close();
-  await disposeOwnedClient();
-}
+Create the bridge in the owning process with a private socket directory and supply
+`EINZBERN_CODEX_NATIVE_HOOK_SOCKET` only to that isolated host. The normal launcher
+reaches its versioned entry. A running-member stop returns promptly with an instruction:
+
+```
+node '<normal versioned entry>' collector-wait '<JSON identity>'
 ```
 
-`ownHostSession`, tool registration and client disposal above are the caller's
-existing native interfaces, not interfaces implemented by Einzbern. Keep the
-socket path short enough for the OS Unix socket limit, in an existing private
-directory (0700); the bridge creates a 0600 socket. Set `EINZBERN_HOST=codex` only
-in the authorized host environment. Preserve the ordinary installed launcher and
-its project registry. No live Desktop or global configuration change is needed.
-The socket carries only hook JSON and decisions. It neither reads private session
-storage nor enrolls members from files. Same-account hostile code is outside this
-filesystem transport's authentication boundary.
+The **same live collector** executes that helper outside SubagentStop using its
+ordinary command tool and inherited isolated socket. The bridge validates its exact
+batch/attempt/collector/turn/session and fresh native pinned turn, waits until the
+persisted next-query time or deadline, then settles. No child dynamic-tool inheritance
+is assumed. The hook never sleeps. Early stop callbacks return the same helper
+instruction without spending query-failure budget. Paths/JSON are shell-quoted as
+literal arguments; the helper does not enroll from those arguments. Local account
+socket access is not hostile same-UID attestation.
 
-`run` pins batch/attempt, native parent thread/session, start/deadline, query
-interval (at least 10 seconds), query-failure bound, worker/collector model and
-effort, and host-observed pre-dispatch capacity. Pass the approved per-run wake
-opt-in; this flag does not enable native wake behavior itself. Dispatch the fixed
-workers and exactly one dedicated collector, then have the parent invoke
-`einzbern_register_native_batch` with their exact native task names. The collector
-lists all worker names in `targets`. Parent-only `einzbern_control_native_batch`
-can signal the documented exception exits without changing membership.
+All constituent native reads retain acquisition/completion times and are rechecked
+against the current clock after asynchronous work. Pages, progress, repeated cursors,
+duplicate/empty pages, bytes, each RPC and whole hook callbacks are bounded. Successful
+internal reads do not consume stop/format/query-failure budgets. Parent-only
+`einzbern_control_native_batch` signals pause, user cancel, budget, safety or permission.
+Failed/systemError, confirmed interrupted cancellation, pending and unknown remain
+distinct. Final allow rechecks registration receipt, dispatch identity, pinned native
+turns, controls, worker status/error/final items and artifact hash. Parent receipt is
+never required before collector exit.
 
-Registration/progress exist only in the owning process. Restart recovery is not
-implemented. Do not recreate an attempt or a second collector after an unknown
-outcome. Result artifacts preserve complete structured final items as canonical
-JSON, with digest and native references; they do not preserve transport frames.
-Worker archiving and observed unload are separate from collector exit, native
-return and parent wake. The owner must retain evidence and observe the latter
-events through the native client before declaring acceptance or releasing all
-resources. `close()` unregisters callbacks; it does not cancel native children.
+Artifacts are complete **canonical structured native turn content**, not transport
+frames. Exclusive no-follow creation, owner/type/mode/link checks and digest readback
+reject unsafe preexisting artifacts, including writable equal-byte files. Private
+content-addressed runtime evidence retains registration, read timing, progress,
+exceptions and handoff dispositions. It is evidence, never enrollment authority.
+The owning caller retains it until downstream acceptance/audit retention permits
+cleanup. Unsupported restart/recovery cannot replay a final, reenroll an attempt or
+start a second collector; native history must resolve the old attempt first.
 
-The bridge bounds each connection's size and lifetime. It cannot abort an already
-running controller query. Bridge or controller failures retain the launcher's
-ordinary fail-open policy, and do not prove structured collector completion.
+Four malformed formatting responses produce an auditable `failed-final-unresolved`
+handoff preserving the actual failed final. That allow permits native exit; it does
+not verify arbitrary text or release children. Authenticated query/control exceptions
+similarly retain explicit unknown facts and owner responsibility. A verified packet,
+failed final, exception handoff, collector exit, native return, idle-parent wake,
+actual unload and resource release are separate facts. This controller does not
+archive active workers or claim native release. The owner handles subsequent real
+unload/handoff through its supported client and retains all active children.
+
+Close the bridge, close the controller, then dispose the owned client. Bridge close
+aborts its connection-owned in-flight work and waits for handlers; controller close
+aborts its operations, rejects later direct callbacks, unregisters tools and drains
+serialized work. Socket disposal alone never releases native children. Connected
+transport failures surface an explicit error instead of a fabricated `{}` completion.
+
+Installation plans accept `CodexHookAdmission` with state, observed version, source
+evidence and actual trust/capability. Missing evidence stays unknown; unsupported or
+restricted hosts do not gain a new SubagentStop entry. Existing entries are preserved
+pending explicit resolution. Other installation/event tasks continue. `hooks=false`
+requires explicit `enableHooksAuthorized` plan authority to change. Owned matcher,
+timeout/group/settings edits conflict instead of being dropped; unrelated hooks and
+native trust states are retained. Apply verifies installed bytes and every rollback's
+original bytes/absence, retaining the primary error and backup references. These source
+contracts and synthetic fixtures do not establish actual native support or acceptance.

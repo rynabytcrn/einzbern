@@ -25,13 +25,14 @@
 
 import { appendFileSync, mkdirSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
-import { requestCodexNativeHookDecision } from "./lib/codex-native-hook-ipc.mjs";
+import { requestCodexNativeHookDecision, waitCodexNativeCollector } from "./lib/codex-native-hook-ipc.mjs";
 
 // The owning temporary app-server host can use these exports from the versioned hook entry.
 export { createCodexNativeController } from "../dist/build/packages/core/src/codex-subagent-stop.js";
-export { createCodexNativeHookBridge } from "./lib/codex-native-hook-ipc.mjs";
+export { createCodexNativeHookBridge, waitCodexNativeCollector } from "./lib/codex-native-hook-ipc.mjs";
 
 // Held equal to scripts/einzbern-hook-launcher.mjs (LOG_DIRECTORY, LOG_FILE, LOG_SCHEMA_VERSION).
 const LOG_DIRECTORY = "log";
@@ -91,9 +92,10 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, nativeCon
       if (result.reasonCode) noteRecall(deviceHome(process.env), name, cwd, result.reasonCode, host);
       if (result.decision !== "block") return "{}\n";
       return `${JSON.stringify({ decision: "block", reason: result.reason })}\n`;
-    } catch {
-      // A broken collector hook must not stop unrelated or unassociated agents.
-      return "{}\n";
+    } catch (error) {
+      // No manufactured successful packet after a connected owner transport failed.
+      // The native owner retains unresolved children; ordinary unconnected calls above stay inert.
+      throw new Error(`CODEX_NATIVE_OWNER_OUTCOME_UNRESOLVED: ${String(error?.message ?? error)}`, { cause: error });
     }
   }
   // DSH retains its existing navigation contract; its next feature batch is separate.
@@ -160,4 +162,13 @@ export function readGuardAnswer(payload, cwd, host) {
     // An unreadable path, invalid input or filesystem exception must never block a tool.
     return null;
   }
+}
+
+// Normal versioned product helper entry, deliberately outside runHookEvent/SubagentStop.
+if (process.argv[2] === "collector-wait" && process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    if (process.env.EINZBERN_HOST !== "codex") throw new Error("CODEX_NATIVE_HELPER_HOST_REFUSED");
+    const result = await waitCodexNativeCollector({ socketPath: process.env.EINZBERN_CODEX_NATIVE_HOOK_SOCKET, payload: JSON.parse(process.argv[3] ?? "null") });
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+  } catch (error) { process.stderr.write(`${String(error?.message ?? error)}\n`); process.exitCode = 1; }
 }

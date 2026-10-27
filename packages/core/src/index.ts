@@ -951,3 +951,5 @@ export { workContentContext, workContentContextSegment } from "./work-content-co
 export { readDotExtensionSource } from "./dot-agents.js";
 
 export { readWorkContentRolloutReadiness } from "./workspace.js";
+
+export type { CodexHookAdmission } from "./host-hooks.js";

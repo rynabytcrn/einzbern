@@ -43,12 +43,15 @@ without a dedicated Read surface do not acquire shell enforcement through aliase
 
 The Codex-only `SubagentStop` command reaches the versioned engine entry as
 `subagent-stop`. Normal install, upgrade, repair, managed merge and package paths
-retain this registration. Registration and executable syntax do not establish
+carry explicit capability/version/trust admission. Unknown/unsupported admission
+does not add a new stop entry; existing entries remain for explicit resolution. Registration and executable syntax do not establish
 actual callback, trust/version support or live collection capability.
 
 ### Current activation boundary
 
-Live enforcement is **capability-unavailable / unverified** in this candidate.
+Default Desktop enforcement remains **capability-unavailable / unverified**.
+The expressly authorized isolated controller/bridge route is described in
+`docs/codex-native-controller.md`; source availability is not actual-host acceptance.
 The installed handler returns `{}` without changing the ordinary native final.
 An old `EINZBERN_SUBAGENT_STOP_V1` marker yields the internal diagnostic
 `CODEX_STOP_CAPABILITY_UNAVAILABLE` in the existing hook log, never a binding or a completion verdict.
@@ -63,8 +66,8 @@ attempt and fixed members. Native turn IDs are not application attempt IDs.
 An authorized same-host reader must prove fresh member status/results and
 reentrant hook access, and a supported wait must continue the same live collector.
 A last-known agentsStates record, idle/notLoaded thread, interrupted/shutdown or
-notFound state is not confirmed completion/cancellation. Until that wiring and
-actual callback are evidenced, the runtime does not call the deterministic evaluator.
+notFound state is not confirmed completion/cancellation. Only the owning initialized client can provide that wiring. Actual callback and
+normal installed-route behavior need separate native evidence.
 
 ### Deterministic contract (not a host adapter)
 
@@ -99,8 +102,13 @@ query-failure limit, budget exhaustion, pause, user cancellation, safety, permis
 protocol and script errors also retain explicit exceptional facts; no success
 substitution, blind retry or fabricated cancellation acknowledgement.
 
-All confirmed terminal facts produce one raw native-final handback and allow exit
-immediately. No parent-message tool or acknowledgement-before-exit handshake exists.
+The product stages one canonical raw handback and freshly revalidates native
+provenance, controls and artifact digests before allowing that exact final. Formatting
+exhaustion permits only an explicitly audited failed-final handoff with unresolved
+ownership, never a verified raw packet or true resource release. The versioned
+`collector-wait` helper executes outside the hook in the same live collector;
+validated progress and per-read timestamps persist as private runtime evidence.
+Recovery/restart is unsupported and cannot enroll from these files or replay a final. No parent-message tool or acknowledgement-before-exit handshake exists.
 Repeated finalized decisions do not emit another final. Exit, native delivery,
 genuinely idle parent resumption and resource release require separate actual-host
 evidence, not the evaluator's decision. Collectors perform no analysis, summary,

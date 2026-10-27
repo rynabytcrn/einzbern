@@ -900,6 +900,29 @@ export { RELEASE_REASON_CODES, ReleaseSourceError } from "./setup-maintain.js";
 export type { ReleaseReasonCode } from "./setup-maintain.js";
 // The launcher a host's hook runs, which the setup self-check runs the way a host does.
 export { hookLauncherPath } from "./host-hooks.js";
+export {
+  CODEX_COLLECTOR_INITIAL_PROGRESS,
+  CODEX_SUBAGENT_STOP_CAPABILITY,
+  CODEX_SUBAGENT_STOP_ENVELOPE_PREFIX,
+  createCodexNativeController,
+  evaluateCodexCollectorStop,
+  handleCodexSubagentStop,
+  validateCodexCollectorCapacity,
+} from "./codex-subagent-stop.js";
+export type {
+  CodexDynamicToolHost,
+  CodexDynamicToolRequest,
+  CodexNativeClient,
+  CodexNativeControllerOptions,
+  CodexNativeRun,
+  CollectorContract,
+  CollectorDecision,
+  CollectorException,
+  CollectorFact,
+  CollectorIdentity,
+  CollectorObservation,
+  CollectorProgress,
+} from "./codex-subagent-stop.js";
 
 export * from "./project-scope.js";
 

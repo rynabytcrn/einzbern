@@ -9,8 +9,8 @@
 // build (dist/build); a release carries it as one file (TCRN-CROSS-STORY-481).
 // BL-34: SubagentStart recalls from the native agent_type and includes navigation before work.
 // SessionStart remains a navigation-only fallback. BL-35 adds the narrowly bounded Read guard.
-// Codex SubagentStop is a separate fixed-batch collector continuation. The hook itself never
-// queries host task state or sends parent messages.
+// Codex SubagentStop delegates to an explicitly connected caller-owned controller. Without
+// that connection it cannot query host task state. It never sends parent messages.
 // TCRN-CROSS-SUB-483 (TCRN-CROSS-STORY-529, MIN-257 D6): every prompt recalled here also leaves
 // one line in log/hook.ndjson in the device directory, naming why it got what it got, so a prompt
 // that was answered can be told from one that got nothing and from a hook that never ran. The line
@@ -27,6 +27,11 @@ import { appendFileSync, mkdirSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
+import { requestCodexNativeHookDecision } from "./lib/codex-native-hook-ipc.mjs";
+
+// The owning temporary app-server host can use these exports from the versioned hook entry.
+export { createCodexNativeController } from "../dist/build/packages/core/src/codex-subagent-stop.js";
+export { createCodexNativeHookBridge } from "./lib/codex-native-hook-ipc.mjs";
 
 // Held equal to scripts/einzbern-hook-launcher.mjs (LOG_DIRECTORY, LOG_FILE, LOG_SCHEMA_VERSION).
 const LOG_DIRECTORY = "log";
@@ -62,7 +67,7 @@ function noteRecall(device, event, cwd, reasonCode, host) {
  * entry the launcher matched and `cwd` the directory it matched from (the payload's cwd, or this
  * process's, when left out). Returns the text for stdout, or null when the hook prints nothing.
  */
-export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
+export async function runHookEvent({ event, payload, libraryPath, cwd, nativeController } = {}) {
   // TCRN-CROSS-STORY-481 R2, R4: the stable launcher refuses older Node.js before it imports this
   // file. Keep this guard for direct callers too: a hook answers nothing, and the CLI is where the
   // floor is reported (ENGINE_NODE_TOO_OLD).
@@ -79,7 +84,10 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
     if (host !== "codex") return null;
     try {
       const { handleCodexSubagentStop } = await import("../dist/build/packages/core/src/codex-subagent-stop.js");
-      const result = await handleCodexSubagentStop({ payload: body, deviceHome: deviceHome(process.env) });
+      const socketPath = process.env.EINZBERN_CODEX_NATIVE_HOOK_SOCKET;
+      const result = !nativeController && socketPath
+        ? await requestCodexNativeHookDecision({ socketPath, payload: body })
+        : await handleCodexSubagentStop({ payload: body, deviceHome: deviceHome(process.env), nativeController });
       if (result.reasonCode) noteRecall(deviceHome(process.env), name, cwd, result.reasonCode, host);
       if (result.decision !== "block") return "{}\n";
       return `${JSON.stringify({ decision: "block", reason: result.reason })}\n`;

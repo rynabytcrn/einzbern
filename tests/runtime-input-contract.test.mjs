@@ -71,14 +71,29 @@ test("runtime dictionary has complete immutable per-field metadata without readi
 
 test("catalog adapter preserves all operational flag metadata and lifecycle fields use that same catalog", () => {
   assert.deepEqual(contract.commandCatalog, COMMAND_CATALOG);
+  assert.deepEqual(contract.entries.filter((entry) => entry.kind === "cli-argument" && entry.classification === "internal-transient").map((entry) => entry.key), ["cli:setup:codex-admission"]);
   for (const entry of contract.entries.filter((item) => item.kind === "cli-argument")) {
     const command = COMMAND_CATALOG.find((item) => item.name === entry.command);
     const flag = command.flags.find((item) => `--${item.name}` === entry.name);
     assert.deepEqual(entry.flag, flag, entry.key);
     assert.notEqual(entry.flag, flag, "immutable copy, not mutation of command metadata");
-    assert.equal(entry.classification, "lifecycle-input");
+    assert.equal(entry.classification, entry.key === "cli:setup:codex-admission" ? "internal-transient" : "lifecycle-input", entry.key);
     assert.equal(entry.persistence, "invocation");
   }
+  const admission = byKey.get("cli:setup:codex-admission");
+  assert.equal(admission.visibility, "integration");
+  assert.equal(admission.owner, "owning live Codex client");
+  assert.equal(admission.source, "owning client capability/version/trust observations; not authentication");
+  assert.equal(admission.scope, "one traditional setup plan/apply");
+  assert.equal(admission.defaultValue, null);
+  assert.equal(admission.pathBase, "explicit absolute path");
+  assert.equal(admission.sensitivity, "context-may-contain-private-data");
+  assert.equal(admission.sharing, "never a shared or global setting; input file retained by its caller");
+  assert.equal(admission.export, "local plan/receipt only; no raw observation promoted to shared configuration");
+  assert.deepEqual(admission.consumer, ["packages/cli/src/index.ts setup handler", "packages/core/src/setup.ts planSetup/applySetup", "packages/core/src/setup-fresh.ts planWiring/applyWiring", "packages/core/src/host-hooks.ts planHostHooks"]);
+  assert.match(admission.defaultDescription, /unknown; new native stop entry omitted/u);
+  assert.match(admission.validation, /No version range or flag implies support/u);
+  assert.match(admission.effect, /Does not grant trust, enable hooks=false, change non-Codex events or enroll a native controller/u);
   for (const command of ["setup", "engine-update", "engine-rollback", "device-clean"]) {
     assert.deepEqual(contract.entries.filter((item) => item.command === command).map((item) => item.name).sort(), COMMAND_CATALOG.find((item) => item.name === command).flags.map((item) => `--${item.name}`).sort(), command);
   }

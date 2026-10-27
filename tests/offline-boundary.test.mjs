@@ -20,7 +20,7 @@ import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { createCodexNativeHookBridge, requestCodexNativeHookDecision, waitCodexNativeCollector } from "../scripts/lib/codex-native-hook-ipc.mjs";
-import { createOfflineScannerFixture } from "./helpers/ci-component-fixture.mjs";
+import { createOfflineScannerFixture, assertOfflineUnixFixturePathBudget, offlineUnixFixtureLayout } from "./helpers/ci-component-fixture.mjs";
 import http from "node:http";
 import http2 from "node:http2";
 import net, { connect as namedConnect, createConnection as namedCreateConnection } from "node:net";
@@ -213,8 +213,11 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
 }
 
 test("offline permits only canonical owned private filesystem Unix IPC", async t => {
-  const directory = await realpath(await mkdtemp(join(tmpdir(), "offline-unix-")));
+  const parent = await realpath(tmpdir());
+  assertOfflineUnixFixturePathBudget(join(parent, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
+  const directory = await realpath(await mkdtemp(join(parent, offlineUnixFixtureLayout.directoryPrefix)));
   t.after(() => rm(directory, { recursive: true, force: true }));
+  assertOfflineUnixFixturePathBudget(directory);
   const bridge = await createCodexNativeHookBridge({ socketPath: join(directory, "h"), timeoutMs: 1000, controller: {
     capability: "ready", handleSubagentStop: async () => ({ matched: false, decision: "allow" }), waitCollector: async () => ({ status: "waited" }),
   } });

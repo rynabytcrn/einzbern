@@ -200,11 +200,30 @@ print(json.dumps(dict(capture=record,input=before,output=m.identity(repo),inputM
   return { ...capture, step, task, shard, taskStreams, planPath, temporary, evidence };
 }
 
+// mkdtemp appends six ASCII characters. Account for both owned directories below
+// the admitted canonical TMPDIR, not just the final socket basename. The portable
+// fixture budget uses Darwin's 104-byte sun_path, including its NUL terminator.
+export const offlineUnixFixtureLayout = Object.freeze({ scannerPrefix: "os-", directoryPrefix: "u-", suffix: "XXXXXX", sunPathBytes: 104 });
+
+export function assertOfflineUnixFixturePathBudget(directory) {
+  // Include the negative filesystem destinations as well, so a pathname overflow
+  // cannot masquerade as one of the required privacy/ownership refusals.
+  const paths = ["h", "absent", "link", "file", "alias/h"].map((relativePath) => {
+    const path = join(directory, relativePath), pathnameBytes = Buffer.byteLength(path, "utf8"), requiredBytes = pathnameBytes + 1;
+    assert.ok(requiredBytes <= offlineUnixFixtureLayout.sunPathBytes, `UNIX_FIXTURE_PATH_TOO_LONG: ${path} requires ${requiredBytes} bytes including terminator; budget ${offlineUnixFixtureLayout.sunPathBytes}`);
+    return { relativePath, path, pathnameBytes, requiredBytes };
+  });
+  return { directory, sunPathBytes: offlineUnixFixtureLayout.sunPathBytes, terminatorBytes: 1, paths };
+}
+
 export async function createOfflineScannerFixture(context, { unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null, nativeIpcMutation = null } = {}) {
-  const temporaryRoot = await realpath(await mkdtemp(join(tmpdir(), "einzbern-offline-scan-")));
+  const parent = await realpath(tmpdir());
+  assertOfflineUnixFixturePathBudget(join(parent, `${offlineUnixFixtureLayout.scannerPrefix}${offlineUnixFixtureLayout.suffix}`, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
+  const temporaryRoot = await realpath(await mkdtemp(join(parent, offlineUnixFixtureLayout.scannerPrefix)));
   context?.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const root = join(temporaryRoot, "engine");
   try {
+    const unixPathBudget = assertOfflineUnixFixturePathBudget(join(temporaryRoot, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
     await mkdir(join(root, ".git"), { recursive: true });
     await cp(join(componentSourceRoot, "scripts"), join(root, "scripts"), { recursive: true });
     for (const path of ["skill/mana-orchestrate/scripts/install.mjs", "tests/offline-boundary.test.mjs", "tests/helpers/ci-component-fixture.mjs", "tests/helpers/heavy-slots.mjs", "package.json", ".npmrc", "portal/tests/ui-presence-support.mjs", "portal/tests/disposable-portal-fetch.test.mjs", "portal/tests/helpers/disposable-portal-fetch.mjs"]) {
@@ -236,7 +255,7 @@ export async function createOfflineScannerFixture(context, { unexpectedSource = 
     }
     const env = privateHeavyEnvironment(heavyLockDirectoryUnder(temporaryRoot), { ...process.env, TMPDIR: temporaryRoot, EINZBERN_HOME: join(temporaryRoot, "device"), TCRN_OFFLINE_PROOF: "1" });
     delete env.NODE_TEST_CONTEXT;
-    return { root, repo: root, temporaryRoot, directory: temporaryRoot, env };
+    return { root, repo: root, temporaryRoot, directory: temporaryRoot, env, unixPathBudget };
   } catch (error) {
     await rm(temporaryRoot, { recursive: true, force: true });
     throw error;

@@ -393,6 +393,7 @@ test("STORY-480/605: setup writes and takes the wizard's flags; doctor reads and
   const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
   assert.equal(entry("setup").mutates, true);
   assert.deepEqual(flags("setup"), [
+    ["codex-admission", false, "string"],
     ["execution-target", false, "string"], ["dot-input", false, "string"], ["approved-plan-digest", false, "string"],
     ["mode", true, "string"], ["project", true, "string"], ["at", true, "instant"], ["artifacts", false, "string"],
     ["cloud", false, "boolean"], ["restore", false, "string"], ["language", false, "string"], ["navigation", false, "boolean"],
@@ -550,10 +551,10 @@ test("INIT062 new valueShape roster is closed and preserves the existing transpo
   assert.deepEqual(shaped, [
     "config-backup-create:request", "config-backup-create:output", "config-backup-plan:request", "config-backup-plan:output", "config-backup-resume:request", "config-backup-resume:output", "config-backup-retire:request", "config-backup-retire:output",
     "config-restore-apply:request", "config-restore-apply:output", "config-restore-apply:approved-plan-digest", "config-restore-plan:request", "config-restore-plan:output",
-    "execution-native-prepare:request", "execution-native-prepare:tool-contract", "execution-native-prepare:arguments", "execution-native-prepare:retry-from", "execution-native-prepare:reconciliation", "execution-native-record:response", "execution-native-record:prior", "setup:execution-target", "setup:dot-input", "setup:approved-plan-digest",
+    "execution-native-prepare:request", "execution-native-prepare:tool-contract", "execution-native-prepare:arguments", "execution-native-prepare:retry-from", "execution-native-prepare:reconciliation", "execution-native-record:response", "execution-native-record:prior", "setup:codex-admission", "setup:execution-target", "setup:dot-input", "setup:approved-plan-digest",
   ]);
   const setup = entries.find(entry => entry.name === "setup");
-  assert.deepEqual(setup.flags.filter(flag => flag.valueShape !== undefined).map(flag => flag.valueShape), ["traditional | chatgpt-dot", "absolute path to JSON dot target options; required for chatgpt-dot", "saved preview dot.planDigest; required for dot apply"]);
+  assert.deepEqual(setup.flags.filter(flag => flag.valueShape !== undefined).map(flag => flag.valueShape), ["absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override", "traditional | chatgpt-dot", "absolute path to JSON dot target options; required for chatgpt-dot", "saved preview dot.planDigest; required for dot apply"]);
   for (const entry of entries) for (const flag of entry.flags.filter(flag => flag.valueShape !== undefined)) assert.equal(flag.valueKind, "string");
 });
 

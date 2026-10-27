@@ -327,7 +327,7 @@ test("489-R3, AC2 (fixture): after the cleanup each host's user file holds one E
   assert.deepEqual(applied, planned, "the apply did what the plan listed");
   assert.deepEqual(recorder.writes, planRecorder.writes);
 
-  // AC2: each user file holds exactly one Einzbern hook, on UserPromptSubmit, and nothing old.
+  // AC2: each user file holds exactly its current host-specific Einzbern events, and nothing old.
   const userClaude = await readJson(join(m.home, CLAUDE));
   const userCodex = await readJson(join(m.home, CODEX));
   for (const [label, document] of [["claude", userClaude], ["codex", userCodex]]) {

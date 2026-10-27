@@ -322,3 +322,26 @@ test("INIT068 R05/R08/R12–14: generated navigation uses typed native content a
   for (const clause of ["work-draft", "work-content-context", "specs/work-content-v1.md", "specs/context-v1.md", "inherited constraints", "not a second acceptance copy", "Dot/local consumption separately", "unavailable remains unverified", "original source, behavior and assertions", "structure is not semantic acceptance", "privacy-publication", "specs/dot-rules-v1.md"]) assert.ok(body.includes(clause), clause);
   for (const name of ["work-draft", "work-content-context"]) assert.throws(() => render({ catalogNames: catalogNames.filter(entry => entry !== name) }), refusal("SKILL_NAVIGATION_VERB_UNKNOWN"));
 });
+
+test("dot blocker recovery is an on-demand E-owned workflow, not a patrol context payload", async () => {
+  const body = render();
+  const start = tableRows(body).find(([moment]) => moment === "Starting work")[2];
+  assert.ok(start.includes("Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`"));
+  const spec = await readFile(join(repositoryRoot, "specs", "dot-rules-v1.md"), "utf8");
+  for (const clause of ["task-targeted `recall`", "approved, implemented and verified", "sensitive material", "Current remote publication"]) {
+    // The authoritative workflow carries detail; the high-frequency navigation remains compact.
+    assert.ok(spec.includes(clause), clause);
+  }
+  assert.ok(spec.includes("Patrol only reminds"));
+  assert.ok(spec.includes("No scheduler prompt, daemon, collector, new state schema"));
+  assert.ok(Buffer.byteLength(body) < 6000);
+  assert.equal(body.includes("## Context recovery before infrastructure blockers"), false, "details are fetched only when relevant");
+});
+
+test("Codex isolated helper navigation retains opt-in and Desktop qualification within ordinary budget", () => {
+  const body = render();
+  assert.ok(body.includes("docs/codex-native-controller.md"));
+  assert.ok(body.includes("isolated opt-in/same-live helper"));
+  assert.ok(body.includes("Desktop unverified"));
+  assert.ok(Buffer.byteLength(body) < 6000);
+});

@@ -2,8 +2,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { verifyBaseline, collectBaseline } from "../scripts/ci/baseline-evidence.mjs";
-import { createCiComponentFixture, fixturePlan, captureFixtureCore, withFixtureEnvironment, createOfflineScannerFixture, runFixtureTask } from "./helpers/ci-component-fixture.mjs";
+import { createCiComponentFixture, fixturePlan, captureFixtureCore, withFixtureEnvironment, createOfflineScannerFixture, runFixtureTask, assertOfflineUnixFixturePathBudget, offlineUnixFixtureLayout } from "./helpers/ci-component-fixture.mjs";
 const expected = { repository: "example/project", base: "a".repeat(40) };
 const full = { state: "verified", repository: expected.repository, sha: expected.base, runId: "1", attempt: "2", workflow: ".github/workflows/ci.yml", conclusion: "success", coverage: "full", verification: "CI_VERIFIED", evidenceDigest: "b".repeat(64) };
 test("full and sound selective baseline retain honest coverage; green names alone are insufficient", () => {
@@ -63,6 +64,15 @@ test("online acquisition requires CI workflow purpose and repository-scoped read
   assert.equal(calls, 1);
 });
 
+test("private Unix fixture budget includes both nested names, UTF-8 bytes and the terminator", () => {
+  // Arithmetic only: these boundary strings never select a filesystem root.
+  const directory = join("/", "x".repeat(75), `${offlineUnixFixtureLayout.scannerPrefix}${offlineUnixFixtureLayout.suffix}`, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`);
+  const budget = assertOfflineUnixFixturePathBudget(directory);
+  assert.deepEqual(budget.paths.map(({ relativePath, requiredBytes }) => [relativePath, requiredBytes]), [["h", 98], ["absent", 103], ["link", 101], ["file", 101], ["alias/h", 104]]);
+  assert.throws(() => assertOfflineUnixFixturePathBudget(`${directory}x`), /UNIX_FIXTURE_PATH_TOO_LONG/u);
+  assert.throws(() => assertOfflineUnixFixturePathBudget(`${directory.slice(0, -1)}界`), /UNIX_FIXTURE_PATH_TOO_LONG/u);
+});
+
 // Always registered, including Core's TCRN_OFFLINE_PROOF=1 environment. The real
 // offline task invokes only its inner runtime proof, whose recursion guard stays.
 for (const [name, options, expectedFinding] of [
@@ -76,10 +86,13 @@ for (const [name, options, expectedFinding] of [
 ]) {
   test(`mandatory offline exact-site scanner: ${name}`, async (t) => {
     const fixture = await createOfflineScannerFixture(t, options);
+    assert.equal(fixture.env.TMPDIR, fixture.temporaryRoot, "the real child inherits the owned scanner root");
+    assert.equal(fixture.unixPathBudget.directory, join(fixture.env.TMPDIR, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
     const run = runFixtureTask(fixture, ["offline"]);
+    assert.equal(run.status, expectedFinding ? 1 : 0, JSON.stringify({ status: run.status, signal: run.signal, error: run.error?.message, stderr: run.stderr, stdout: run.stdout }));
     const stream = expectedFinding ? run.stderr : run.stdout;
+    assert.ok(stream.trim(), "expected structured scanner receipt; stdout=" + run.stdout + "; stderr=" + run.stderr);
     const report = JSON.parse(stream.trim().split("\n").at(-1));
-    assert.equal(run.status, expectedFinding ? 1 : 0, run.stderr || run.stdout);
     assert.equal(report.reasonCode, expectedFinding ? "OFFLINE_BOUNDARY_FINDINGS" : "OFFLINE_BOUNDARY_VERIFIED");
     if (expectedFinding) assert.ok(report.error.includes(expectedFinding), report.error);
     else assert.equal(run.stderr, "");
@@ -409,5 +422,25 @@ seal=root/("package-smoke-"+p["head"]+"-1")/"package-seal.json";value=json.loads
       assert.equal((await collect()).state, "verified");
       assert.deepEqual((await fs.readdir(fixture.directory)).filter((name) => name.startsWith("einzbern-ci-baseline-")), []);
     });
+  });
+}
+
+for (const nativeIpcMutation of [
+  { replace: ["const socket = createConnection(socketPath);", 'const socket = createConnection(443, "example.invalid");'] },
+  { replace: ["await requirePrivateDirectory(socketPath);", "// private validation removed"] },
+  { append: 'createConnection("relative.sock");' },
+  { replace: ["await requirePrivateDirectory(socketPath);\n  const stat = await lstat(socketPath);", "const stat = await lstat(socketPath);"], rebindDigest: true },
+  { replace: ["await requirePrivateDirectory(socketPath);\n  if (controller?.capability", "if (controller?.capability"], rebindDigest: true },
+  { replace: ["const socket = createConnection(socketPath);", 'const socket = createConnection(443, "example.invalid");'], rebindDigest: true },
+  { append: 'createConnection("relative.sock");', rebindDigest: true },
+  { append: "const alias = createConnection;", rebindDigest: true },
+]) {
+  test("native Unix source classification rejects changed call/validation sites", async t => {
+    const fixture = await createOfflineScannerFixture(t, { nativeIpcMutation });
+    const run = runFixtureTask(fixture, ["offline"]);
+    assert.equal(run.status, 1, run.stdout || run.stderr);
+    const report = JSON.parse(run.stderr.trim().split("\n").at(-1));
+    assert.equal(report.reasonCode, "OFFLINE_BOUNDARY_FINDINGS");
+    assert.ok(report.error.includes("NETWORK_MODULE:scripts/lib/codex-native-hook-ipc.mjs"));
   });
 }

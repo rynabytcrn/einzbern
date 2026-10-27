@@ -22,7 +22,10 @@ import { discardRelocationPreparation } from "../../core/src/relocate.js";
 import { planConfigurationProjectionRefresh, refreshConfigurationProjections, diagnoseLegacySharedPaths } from "../../core/src/configuration-projections.js";
 import { CONFIG_BACKUP_COMMAND_CATALOG, runConfigBackupCommand } from "./config-backup-commands.js";
 import type { ConfigBackupCommandContext } from "./config-backup-commands.js";
-import type { ConfigBackupSource, ConfigBackupSourceVersion } from "../../core/src/config-backup.js";
+import type { ConfigBackupSource, ConfigBackupSourceVersion, ConfigBackupRetainedContainer } from "../../core/src/config-backup.js";
+import { CONFIG_BACKUP_UNSAFE_DIRECTORY_NAMES } from "../../core/src/config-backup.js";
+import { LEGACY_CONTROL_DIRECTORY } from "../../core/src/names.js";
+import { SHARED_SUBMIT_RESERVED_ROOT } from "../../core/src/shared-submit.js";
 import { resolveGeneratedArtifactsRoot } from "../../core/src/artifact-store.js";
 import { verifyInstallTree } from "../../core/src/install-tree-digest.js";
 import { readEngineCurrent, engineVersionDirectory } from "../../core/src/engine-home.js";
@@ -1852,7 +1855,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // --yes true it answers SETUP_PLAN_READY and writes nothing; with it, SETUP_APPLIED, whose
   // traditional self-check is doctor's eight checks and the hook run once. The dot target returns
   // only its independent file receipt; it never invokes a legacy hook.
-  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "absolute path to JSON dot target options; required for chatgpt-dot" }, { name: "approved-plan-digest", required: false, valueKind: "string", valueShape: "saved preview dot.planDigest; required for dot apply" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "codex-admission", required: false, valueKind: "string", valueShape: "absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override" }, { name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "absolute path to JSON dot target options; required for chatgpt-dot" }, { name: "approved-plan-digest", required: false, valueKind: "string", valueShape: "saved preview dot.planDigest; required for dot apply" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   // TCRN-CROSS-STORY-479 R1: the skill directory this engine generates for its version, written
   // into a missing or empty --out; it runs only where the skill template sits beside the engine.
   { name: "skill-render", availability: "cli", mutates: true, flags: [{ name: "out", required: true, valueKind: "string" }, { name: "version", required: false, valueKind: "string" }] },
@@ -2229,10 +2232,25 @@ async function configBackupSource(values: Readonly<Record<string, string>>): Pro
   return { libraryRoot, projectRoot: await realpath(bound.projectPath), machineSettingsPath: machineSettingsPath(), projectRef: { libraryId: state.metadata.workspaceId, projectId: selectedProjectId }, declarationScope: chainIdentity(state)?.role === "coordination" && bound.projectId === undefined ? "library" : "project" };
 }
 
-async function configBackupProtectedRoots(source: ConfigBackupSource): Promise<readonly string[]> {
+async function configBackupRootBoundaries(source: ConfigBackupSource): Promise<{ readonly protectedRoots: readonly string[]; readonly retainedContainerRoots: readonly ConfigBackupRetainedContainer[] }> {
   const entries = (await readRegistry()).entries;
-  const roots = new Set([source.libraryRoot, source.projectRoot, deviceHome(), resolve(await skillSourceDirectory(), "../..")]);
-  for (const entry of entries) { roots.add(entry.libraryPath); roots.add(entry.projectPath); roots.add(join(entry.projectPath, "dist")); }
+  const roots = new Set([deviceHome(), resolve(await skillSourceDirectory(), "../..")]);
+  const containers: ConfigBackupRetainedContainer[] = [];
+  const projects = new Set([source.projectRoot, ...entries.map(entry => entry.projectPath)]);
+  const libraries = new Set([source.libraryRoot, ...entries.map(entry => entry.libraryPath)]);
+  for (const project of projects) {
+    containers.push({ path: project, kind: "project" }, { path: join(project, "dist"), kind: "generated" });
+    for (const child of CONFIG_BACKUP_UNSAFE_DIRECTORY_NAMES) roots.add(join(project, child));
+  }
+  for (const library of libraries) {
+    containers.push({ path: library, kind: "library" });
+    for (const child of [DIRECTORY.events, DIRECTORY.knowledge, DIRECTORY.projectConfig, DIRECTORY.device, LEGACY_CONTROL_DIRECTORY]) roots.add(join(library, child));
+    // These fixed library namespaces have writers independent of artifact output cleanup.
+    // Protect future paths as well as existing ones; their absence does not make them free.
+    roots.add(join(library, SHARED_SUBMIT_RESERVED_ROOT.relativePath));
+    roots.add(join(library, DIRECTORY.artifacts, "consolidation"));
+    roots.add(join(library, DIRECTORY.artifacts, "relocations"));
+  }
   const targets = [{ libraryPath: source.libraryRoot, projectId: source.declarationScope === "project" ? source.projectRef.projectId : undefined }, ...entries];
   const visited = new Set<string>();
   for (const target of targets) {
@@ -2243,7 +2261,7 @@ async function configBackupProtectedRoots(source: ConfigBackupSource): Promise<r
     const effective = await effectiveProjectState(state, target.projectId);
     const value = effective.settings.find(row => row.key === "workspace.generatedArtifactsPath" && !row.tombstone)?.value ?? SETTINGS_CATALOG.find(row => row.key === "workspace.generatedArtifactsPath")?.defaultValue;
     if (typeof value !== "string") fail("CONFIG_BACKUP_ROOT_UNAVAILABLE", "an actual registered generated-artifact root is unknown");
-    roots.add(resolveGeneratedArtifactsRoot(target.libraryPath, value));
+    containers.push({ path: resolveGeneratedArtifactsRoot(target.libraryPath, value), kind: "generated" });
   }
   // Preserve lexical protection for not-yet-created output roots; canonical existing roots
   // additionally close aliases. The reserve itself rejects links at every component.
@@ -2251,7 +2269,11 @@ async function configBackupProtectedRoots(source: ConfigBackupSource): Promise<r
     try { roots.add(await realpath(root)); }
     catch (error) { if ((error as { code?: string }).code !== "ENOENT") throw error; }
   }
-  return [...roots];
+  for (const container of [...containers]) {
+    try { const path = await realpath(container.path); if (path !== container.path) containers.push({ ...container, path }); }
+    catch (error) { if ((error as { code?: string }).code !== "ENOENT") throw error; }
+  }
+  return { protectedRoots: [...roots], retainedContainerRoots: containers };
 }
 
 /** Bind source identity to this executing bundle, never cwd, argv or uploaded JSON. */
@@ -2279,11 +2301,14 @@ async function configBackupRunningVersion(): Promise<ConfigBackupSourceVersion> 
 }
 
 function configBackupContext(): ConfigBackupCommandContext {
+  let boundaries: ReturnType<typeof configBackupRootBoundaries> | undefined;
+  const roots = (source: ConfigBackupSource): ReturnType<typeof configBackupRootBoundaries> => boundaries ??= configBackupRootBoundaries(source);
   return {
     sourceVersion: configBackupRunningVersion,
     resolveSource: configBackupSource,
     localBindingRoot: async () => join(await realpath(deviceHome()), CONFIG_BACKUP_LOCAL_BINDING_DIRECTORY),
-    protectedRoots: configBackupProtectedRoots,
+    protectedRoots: async source => (await roots(source)).protectedRoots,
+    retainedContainerRoots: async source => (await roots(source)).retainedContainerRoots,
     approvePolicy: async (request, source) => {
       const validation = validateConfigBackupRetentionPolicy(request.policy);
       if (validation.status !== "policy-valid") return null;
@@ -2363,10 +2388,11 @@ function hookSelfCheck(applied: SetupApplied): {
   readonly exitCode: number | null;
   readonly injected: readonly string[];
   readonly hookReasonCode: string | null;
+  readonly hookError: string | null;
 } {
   const prompt = basename(applied.projectRoot);
   const launcher = hookLauncherPath(applied.deviceHome);
-  if (!existsSync(launcher)) return { prompt, exitCode: null, injected: [], hookReasonCode: "HOOK_LAUNCHER_MISSING" };
+  if (!existsSync(launcher)) return { prompt, exitCode: null, injected: [], hookReasonCode: "HOOK_LAUNCHER_MISSING", hookError: "the installed hook launcher is missing" };
   const run = spawnSync(process.execPath, [launcher, "user-prompt-submit"], {
     cwd: applied.projectRoot,
     input: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "einzbern-setup-self-check", cwd: applied.projectRoot, prompt }),
@@ -2377,17 +2403,24 @@ function hookSelfCheck(applied: SetupApplied): {
     windowsHide: true,
   });
   let hookReasonCode: string | null = null;
+  let hookError: string | null = null;
   const said = String(run.stderr ?? "").trim().split("\n").at(-1) ?? "";
   if (said !== "") {
     try {
       const refusal: unknown = JSON.parse(said);
       const code = refusal !== null && typeof refusal === "object" ? (refusal as { readonly reasonCode?: unknown }).reasonCode : undefined;
+      const detail = refusal !== null && typeof refusal === "object" ? (refusal as { readonly error?: unknown }).error : undefined;
       hookReasonCode = typeof code === "string" ? code : "HOOK_SELF_CHECK_STDERR";
+      hookError = typeof detail === "string" ? detail : said;
     } catch {
       hookReasonCode = "HOOK_SELF_CHECK_STDERR";
+      hookError = said;
     }
   }
-  if (run.error !== undefined) hookReasonCode = String((run.error as { readonly code?: unknown }).code ?? "HOOK_SELF_CHECK_FAILED");
+  if (run.error !== undefined) {
+    hookReasonCode = String((run.error as { readonly code?: unknown }).code ?? "HOOK_SELF_CHECK_FAILED");
+    hookError = run.error.message;
+  }
   let injected: readonly string[] = [];
   const stdout = String(run.stdout ?? "");
   if (run.status === 0 && stdout.trim() !== "") {
@@ -2400,7 +2433,7 @@ function hookSelfCheck(applied: SetupApplied): {
       hookReasonCode ??= "HOOK_OUTPUT_INVALID";
     }
   }
-  return { prompt, exitCode: run.status, injected, hookReasonCode };
+  return { prompt, exitCode: run.status, injected, hookReasonCode, hookError };
 }
 
 async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<void> {
@@ -2971,9 +3004,20 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-480 (setup.ts): plan in the chosen mode; apply the plan only with --yes true. The
   // device directory is this process's (EINZBERN_HOME), the one the library records go through.
   if (command === "setup") {
-    const values = parseArguments(rest, ["execution-target", "dot-input", "approved-plan-digest", "mode", "project", "at", "artifacts", "cloud", "restore", "language", "navigation", "archive", "rollback", "managed-sections", "mapping", "yes"]);
+    const values = parseArguments(rest, ["codex-admission", "execution-target", "dot-input", "approved-plan-digest", "mode", "project", "at", "artifacts", "cloud", "restore", "language", "navigation", "archive", "rollback", "managed-sections", "mapping", "yes"]);
     required(values, ["mode", "project", "at"]);
     let options = setupOptions(values);
+    if (values["codex-admission"] !== undefined) {
+      if (options.executionTarget === DOT_INSTALLATION_TARGET || options.mode === "uninstall") fail("SETUP_OPTION_NOT_APPLICABLE", "--codex-admission is for traditional installation wiring only");
+      const path = values["codex-admission"]!;
+      if (!isAbsolute(path)) fail("CLI_ARGUMENT_MALFORMED", "--codex-admission must name an absolute JSON path");
+      let observation: unknown;
+      try { observation = JSON.parse(await readFile(path, "utf8")); }
+      catch { fail("SETUP_INPUT_INVALID", "--codex-admission must name a readable Codex hook admission JSON observation"); }
+      // planSetup validates the closed observation. Neither this flag nor --yes
+      // manufactures support, grants trust or enables an explicitly disabled feature.
+      options = { ...options, codexAdmission: observation as NonNullable<SetupOptions["codexAdmission"]> };
+    }
     if (options.executionTarget === DOT_INSTALLATION_TARGET) {
       required(values, ["dot-input"]);
       if (!isAbsolute(values["dot-input"]!)) fail("CLI_ARGUMENT_MALFORMED", "--dot-input must name an absolute JSON path");

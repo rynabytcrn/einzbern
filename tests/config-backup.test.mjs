@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // CFG-B01/B02/B05. Isolated sequential fixtures only; no real host or race probes.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -45,7 +45,7 @@ test("CFG-B01: non-JSON, duplicate selections and unapproved restore mappings re
   assert.throws(() => validateConfigBackupManifest(changed));
 });
 
-test("CFG-B02: reserved roots are explicit and disjoint from home/library/generated roots", async (t) => {
+test("CFG-B02: legacy callers retain disjoint protected roots and canonical paths", async (t) => {
   const base = await temporary(t); const reserve = join(base, "reserve"); const project = join(base, "project");
   await mkdir(reserve); await mkdir(project);
   await assertConfigBackupReservedRoot(reserve, [project]);
@@ -54,6 +54,30 @@ test("CFG-B02: reserved roots are explicit and disjoint from home/library/genera
   await assert.rejects(assertConfigBackupReservedRoot(reserve, []));
   assert.deepEqual(CONFIG_BACKUP_RESERVED_ROOTS, ["config-backups", "config-backup-staging", "config-backup-recovery"]);
   for (const path of ["/absolute", "../escape", "a/../x", "a//x", "a\\b", "C:x", "a/./b", "trailing."]) assert.throws(() => configBackupMemberPath(path));
+});
+
+test("CFG-B02: explicit project and generated containers admit only dedicated safe descendants", async t => {
+  const base = await temporary(t);
+  const project = join(base, "project"), library = join(project, "library"), generated = join(library, "artifacts"), device = join(base, "device");
+  const control = ["akasha", "crest", "config", ".einzbern"].map(name => join(library, name));
+  const retained = [{ path: project, kind: "project" }, { path: library, kind: "library" }, { path: generated, kind: "generated" }];
+  const protectedRoots = [device, ...control];
+  for (const path of [device, generated, ...control]) await mkdir(path, { recursive: true });
+  const projectReserve = join(project, "retained"), generatedReserve = join(generated, "retained"), external = join(base, "external");
+  for (const root of [projectReserve, generatedReserve, external]) {
+    await mkdir(root); await assertConfigBackupReservedRoot(root, protectedRoots, retained);
+  }
+  for (const root of [base, project, library, generated, device, ...control]) await assert.rejects(assertConfigBackupReservedRoot(root, protectedRoots, retained), { reasonCode: "CONFIG_BACKUP_ROOT_UNSAFE" });
+  for (const path of [join(library, "other"), join(project, ".git", "retained"), join(project, "nested", "credentials", "retained")]) {
+    await mkdir(path, { recursive: true }); await assert.rejects(assertConfigBackupReservedRoot(path, protectedRoots, retained), { reasonCode: "CONFIG_BACKUP_ROOT_UNSAFE" });
+  }
+  await writeFile(join(projectReserve, "source.ts"), "not a reservation");
+  await assert.rejects(assertConfigBackupReservedRoot(projectReserve, protectedRoots, retained), { reasonCode: "CONFIG_BACKUP_ROOT_NOT_RESERVED" });
+  const alias = join(project, "alias"); await symlink(generatedReserve, alias);
+  await assert.rejects(assertConfigBackupReservedRoot(alias, protectedRoots, retained), { reasonCode: "CONFIG_BACKUP_PATH_INVALID" });
+  await assert.rejects(assertConfigBackupReservedRoot(`${generated}/../artifacts/retained`, protectedRoots, retained), { reasonCode: "CONFIG_BACKUP_PATH_INVALID" });
+  // An enclosing output root is not an exemption for a library's control namespace.
+  await assert.rejects(assertConfigBackupReservedRoot(join(library, "other"), protectedRoots, [...retained.filter(row => row.path !== generated), { path: project, kind: "generated" }]), { reasonCode: "CONFIG_BACKUP_ROOT_UNSAFE" });
 });
 
 test("CFG-B05: manifest digest excludes only itself; actual bytes are independently verified", async (t) => {

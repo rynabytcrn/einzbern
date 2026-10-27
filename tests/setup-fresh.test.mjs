@@ -60,6 +60,9 @@ async function engineTree(base) {
   const tree = join(base, "trees", FRAMEWORK_VERSION);
   await mkdir(join(tree, "scripts", "policy"), { recursive: true });
   await copyFile(join(repositoryRoot, "scripts/einzbern.mjs"), join(tree, "scripts/einzbern.mjs"));
+  await copyFile(join(repositoryRoot, "scripts/einzbern-hook.mjs"), join(tree, "scripts/einzbern-hook.mjs"));
+  await mkdir(join(tree, "scripts", "lib"), { recursive: true });
+  await copyFile(join(repositoryRoot, "scripts/lib/codex-native-hook-ipc.mjs"), join(tree, "scripts/lib/codex-native-hook-ipc.mjs"));
   await copyFile(join(repositoryRoot, "scripts/policy/knowledge-provenance.json"), join(tree, "scripts/policy/knowledge-provenance.json"));
   await cp(join(repositoryRoot, "dist/build"), join(tree, "dist/build"), { recursive: true });
   await mkdir(join(tree, "launchers"));
@@ -633,4 +636,46 @@ test("DOT-I01/I02: explicit chatgpt-dot skip never installs host hooks, skill co
   await assert.rejects(planSetup({ ...options, executionTarget: "dot" }), error => error.reasonCode === "SETUP_TARGET_UNSUPPORTED");
   await assert.rejects(planSetup({ ...options, projectRoot: "." }), error => error.reasonCode === "SETUP_INPUT_INVALID");
   await assert.rejects(planSetup({ ...options, answers: { navigation: true } }), error => error.reasonCode === "SETUP_OPTION_NOT_APPLICABLE");
+});
+
+
+// These are declared synthetic observations through the PUBLIC setup API, not
+// evidence that any real host/version grants capability or trust.
+for (const state of ["supported", "unsupported", "unknown"]) {
+  test(`public fresh setup carries ${state} Codex observations through apply and repeat`, async t => {
+    const f = await fixture(t);
+    const codexAdmission = { state, version: "synthetic-observed-version", evidenceRef: "synthetic-fixture-only:fresh", subagentStop: state === "supported", trust: state === "supported" ? "permitted" : "unknown" };
+    const planned = await plan(f, {}, { codexAdmission });
+    assert.deepEqual(planned.blockers, []);
+    assert.deepEqual(planned.codexAdmission, codexAdmission);
+    const applied = await applySetup(planned);
+    assert.deepEqual(applied.codexAdmission, codexAdmission);
+    assertSelfCheckGreen(applied);
+    for (const host of ["codex", "claude"]) {
+      const document = JSON.parse(await readFile(join(f.home, `.${host}`, host === "codex" ? "hooks.json" : "settings.json"), "utf8"));
+      assert.equal(Object.hasOwn(document.hooks, "SubagentStop"), host === "codex" && state === "supported");
+    }
+    const again = await plan(f, {}, { codexAdmission });
+    assert.deepEqual(again.writes, []);
+    assert.deepEqual((await applySetup(again)).written, []);
+  });
+}
+
+test("public setup rejects malformed admission and cannot override a later hooks=false restriction", async t => {
+  const f = await fixture(t);
+  const admission = { state: "supported", version: "synthetic-only", evidenceRef: "synthetic-fixture-only:restriction", subagentStop: true, trust: "permitted" };
+  for (const codexAdmission of [null, {}, { ...admission, state: "guessed" }, { ...admission, subagentStop: "true" }, { ...admission, trust: "restricted" }, { ...admission, evidenceRef: null }, { ...admission, enableHooksAuthorized: true }]) {
+    await assert.rejects(plan(f, {}, { codexAdmission }), { reasonCode: "HOST_HOOKS_INPUT_INVALID" });
+  }
+  const planned = await plan(f, {}, { codexAdmission: admission });
+  admission.evidenceRef = "changed-after-plan";
+  assert.equal(planned.codexAdmission.evidenceRef, "synthetic-fixture-only:restriction", "the checked mode input snapshots the observation");
+  await mkdir(join(f.home, ".codex"), { recursive: true });
+  const restricted = "# user restriction\n[features]\nhooks = false\n";
+  await writeFile(join(f.home, ".codex", "config.toml"), restricted);
+  await assert.rejects(applySetup(planned), /explicit installation-plan authority/u);
+  assert.equal(await readFile(join(f.home, ".codex", "config.toml"), "utf8"), restricted);
+  const denied = await plan(f, {}, { codexAdmission: planned.codexAdmission });
+  assert.ok(denied.blockers.some(blocker => blocker.reasonCode === "HOST_HOOKS_FILE_UNSUPPORTED"));
+  await assert.rejects(planSetup({ mode: "fresh", executionTarget: "chatgpt-dot", projectRoot: f.project, at: at(), codexAdmission: planned.codexAdmission }), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
 });

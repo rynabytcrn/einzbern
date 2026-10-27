@@ -1439,3 +1439,45 @@ test("MIN-337: historical Ether fixture variants remain exact path-and-line clas
     assert.ok(scanPrivacyEntries([{ ...entry, sourcePaths: ["tests/unreviewed-cloud.test.mjs"] }], { owner: LEGACY_REPOSITORY_NAMES.owner }).includes(`LOCAL_ABSOLUTE_PATH:blob:${label}`));
   }
 });
+
+test("INIT076: public Actions run classification is literal, repository-scoped and occurrence-local", () => {
+  const owner = LEGACY_REPOSITORY_NAMES.owner;
+  const url = `https://github.com/${owner}/einzbern/actions/runs/40222231539`;
+  const findings = (content, entry = {}, scanOwner = owner) => scanPrivacyEntries(
+    [{ label: "fixture", kind: "source", ...entry, content }], { owner: scanOwner },
+  );
+  const ownerFindings = (content, entry = {}, scanOwner = owner) => findings(content, entry, scanOwner)
+    .filter((finding) => finding.startsWith("OWNER_PRIVATE_IDENTIFIER:"));
+  for (const kind of ["source", "blob", "build", "archive", "release", "commit", "tag"]) {
+    for (const content of [url, `"${url}"`, `[run](${url})`, `<${url}>`, `\`${url}\``, `run\n${url}\n`]) {
+      // A bare archive string is not a tar surface; real archive expansion is tested below.
+      if (kind !== "archive") assert.deepEqual(ownerFindings(content, { kind }), [], kind);
+    }
+  }
+  const rejected = [
+    ...["/", "/jobs/1", "/attempts/1", "?x=1", "#logs", ".git", "a", "-private", "%2fprivate", "\\private", ":80", "@host", "&x=1", "=x", ";x", ",x", "+x", "!x", "é"].map((suffix) => url + suffix),
+    ...["x", "/", "\\", "@", "%20", "https://elsewhere/", "git+", "é"].map((prefix) => prefix + url),
+    url.replace("https:", "http:"), url.replace("github.com", "github.com.evil"),
+    url.replace("github.com", joinParts(["user", "github.com"], "@")), url.replace("github.com", "github.com:443"),
+    url.replace("github.com", "private.example"), url.replace("/einzbern/", "/mana-orchestrate/"),
+    url.replace("/einzbern/", "/einzbern-private/"), url.replace("/actions/", "/issues/"),
+    ...["", "0", "01", "-1", "1.0", "1e2"].map((id) => url.replace("40222231539", id)),
+    url.replace("/actions/", "/%61ctions/"), url.replace("/runs/", "/runs%2f"),
+    url.replace("https", "HTTPS"), url.replaceAll("/", "\\/"),
+    url.replace("actions", "\\u0061ctions"), url.replace(owner[0], `\\u${owner.charCodeAt(0).toString(16).padStart(4, "0")}`),
+    `Buffer.from("${Buffer.from(url).toString("base64")}", "base64").toString("utf8")`,
+    `${url} ${owner}`, `${owner}\n${url}`, `${url}\n${owner}`,
+  ];
+  for (let index = 0; index < rejected.length; index += 1) {
+    assert.equal(ownerFindings(rejected[index]).length, 1, `rejected case ${index}`);
+  }
+  for (const kind of ["filename", "remote"]) assert.equal(ownerFindings(url, { kind }).length, 1, kind);
+  assert.equal(ownerFindings(url, { kind: "archive", label: "archive#header:fixture" }).length, 1);
+  const otherOwner = publicIdentity.login;
+  assert.equal(ownerFindings(url.replace(owner, otherOwner), {}, otherOwner).length, 1);
+  assert.ok(findings(`${url}\n${PRIVATE_DNS_HOST}`).some((finding) => !finding.startsWith("OWNER_PRIVATE_IDENTIFIER:")));
+  const archived = (content) => writeUstar([{ path: "docs/run.md", bytes: Buffer.from(content) }]);
+  assert.deepEqual(findings(archived(url), { kind: "archive", label: "dist/source/einzbern-source.tar" }), []);
+  assert.equal(ownerFindings(archived(`${url}\n${owner}`), { kind: "archive", label: "dist/source/einzbern-source.tar" }).length, 1);
+  assert.equal(ownerFindings(`${url}\n${owner}`, { kind: "blob", label: `git-blob:${"f".repeat(40)}`, sourcePaths: ["deleted.md"] }).length, 1);
+});

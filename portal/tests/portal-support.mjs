@@ -85,10 +85,11 @@ async function scratch(prefix, externalKey) {
 
 // `library` names the library to open first; null starts the portal without --library, so it
 // chooses from the registry by its working directory (`cwd`).
-async function startPortal({ workspace, home, deviceEnv = {}, env = {}, library = workspace, cwd }) {
+async function startPortal({ workspace, home, deviceEnv = {}, env = {}, library = workspace, cwd, configBackupRoot }) {
   assert.ok(home, "every portal child needs a scratch HOME inside its fixture (TCRN-CROSS-INC-386)");
   const args = [join(portalRoot, "portal.mjs")];
   if (library !== null) args.push("--library", library);
+  if (configBackupRoot !== undefined) args.push("--config-backup-root", configBackupRoot);
   args.push("--port", "0");
   const child = spawn(process.execPath, args, {
     env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, TCRN_PORTAL_ACTOR: TEST_ACTOR, ...deviceEnv, ...env, HOME: home },

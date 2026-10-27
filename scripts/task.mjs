@@ -22,6 +22,8 @@ import { P1_TASKS, runAllP1Legs } from "./p1-sequence.mjs";
 import { selectTestFiles, validateSelectedTests, coreTestArgv } from "./lib/test-roster.mjs";
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
+import { isConfigBackupFormatProtected } from "./lib/config-backup-format.mjs";
+import { ConfigBackupReservationError } from "./lib/config-backup-reservation.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
 import { DependencyGraphError, validateFrozenDependencyGraph } from "./lib/dependency-graph.mjs";
 import { validateVendoredRuntimeInventory, VENDORED_RUNTIME_NOTICES, VENDORED_RUNTIME_SOURCE } from "./lib/vendored-runtime.mjs";
@@ -479,6 +481,7 @@ async function formatCheck({ write = false } = {}) {
     if (!textExtensions.has(extname(path)) && !textNames.has(name)) {
       continue;
     }
+    if (await isConfigBackupFormatProtected(repositoryRoot, path)) continue;
     const original = await readText(path);
     let normalized = original.replace(/\r\n?/gu, "\n");
     if (!name.endsWith(".md")) {
@@ -493,6 +496,7 @@ async function formatCheck({ write = false } = {}) {
     }
     if (normalized !== original) {
       if (write) {
+        if (await isConfigBackupFormatProtected(repositoryRoot, path)) continue;
         await writeFile(path, normalized);
       } else {
         findings.push(name);
@@ -638,6 +642,8 @@ async function build() {
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/runtime-capacity.mjs", runtimeCapacity);
   const canonicalOrder = await readSourceFile(resolve(repositoryRoot, "scripts/lib/canonical-order.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/canonical-order.mjs", canonicalOrder);
+  const configBackupReservation = await readSourceFile(resolve(repositoryRoot, "scripts/lib/config-backup-reservation.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/config-backup-reservation.mjs", configBackupReservation);
   // TCRN-CROSS-SUB-484: the heavy-run semaphore, which the CLI's gates-run and the machine settings
   // catalog import by relative path, as they import runtime-capacity.mjs.
   const heavyRuns = await readSourceFile(resolve(repositoryRoot, "scripts/lib/heavy-runs.mjs"));
@@ -1391,6 +1397,7 @@ function baselineFetchOffset(label, content) {
 function loopbackHarnessSites(content, declaration) {
   const result = { fetchOffsets: new Set(), modules: new Set() };
   if (!declaration) return result;
+  if (declaration.sourceSha256 && createHash("sha256").update(content).digest("hex") !== declaration.sourceSha256) return result;
   const uniqueOffset = (source) => {
     const offset = content.indexOf(source);
     return offset >= 0 && content.indexOf(source, offset + source.length) < 0 ? offset : -1;
@@ -1401,8 +1408,17 @@ function loopbackHarnessSites(content, declaration) {
     const call = /\bfetch\s*\(/u.exec(source);
     if (offset >= 0 && call) result.fetchOffsets.add(offset + call.index);
   }
-  for (const { module: moduleName, source } of declaration.moduleImports) {
-    if (uniqueOffset(source) >= 0 && content.split(moduleName).length === 2) result.modules.add(moduleName);
+  for (const { module: moduleName, source, bindings = [] } of declaration.moduleImports) {
+    // A source hash cannot replace call-site classification. Each imported native
+    // binding has one import reference and only the declared exact calls; aliases,
+    // added calls and duplicate fragments do not acquire a module allowance.
+    const exactBindings = bindings.every(({ name, callSites }) => {
+      if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(name) || !Array.isArray(callSites) || callSites.length === 0) return false;
+      const references = [...content.matchAll(new RegExp(`\\b${name}\\b`, "gu"))];
+      return references.length === callSites.length + 1 && source.includes(name) && callSites.every(site =>
+        uniqueOffset(site) >= 0 && new RegExp(`\\b${name}\\s*\\(`, "u").test(site));
+    });
+    if (exactBindings && uniqueOffset(source) >= 0 && content.split(moduleName).length === 2) result.modules.add(moduleName);
   }
   return result;
 }
@@ -1577,7 +1593,7 @@ const handlers = {
 };
 
 function errorReason(error) {
-  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError || error instanceof HeavyRunsError) {
+  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ConfigBackupReservationError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError || error instanceof HeavyRunsError) {
     return error.reasonCode;
   }
   return "TASK_INTERNAL_ERROR";

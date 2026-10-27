@@ -146,7 +146,7 @@ test("INIT062 policy approval invokes existing Owner-decision authority with exa
   const request = { reservedRoot: "/fixture/reserve", policy: {}, binding: { backupGroupId: "group", writerBindingRef: "writer", executionEnvironmentRef: "device:fixture-device" } };
   const calls = [];
   const globals = {
-    configBackupRunningVersion: () => {}, configBackupSource: () => {}, configBackupProtectedRoots: () => {},
+    configBackupRunningVersion: () => {}, configBackupSource: () => {}, configBackupRootBoundaries: () => {},
     validateConfigBackupRetentionPolicy: () => ({ status: "policy-valid", policyDigest: "a".repeat(64), policy: { approvalEvidenceRef: "minutes:fixture#D1" } }),
     readDevice: async () => ({ deviceId: "fixture-device" }), canonicalSha256: value => canonicalSha256(JSON.parse(JSON.stringify(value))), materializeWorkspace: async () => ({ fixture: true }),
     verifyWriteAuthorization: async input => { calls.push(input); return {}; },
@@ -167,7 +167,7 @@ test("RJ03 public policy approval seam rejects non-string noChangePolicy before 
   const policy = { schemaVersion: "einzbern.config-backup-retention.v1", activeLimit: 1, transactionLimit: 1, recoveryLimit: 2, maxPackageBytes: 65536, maxTotalBytes: 262144, retentionDuration: 1000, recoveryDuration: 86400000, noChangePolicy: "skip", atLimitAction: "stop-new-and-report", retirementMethod: "verified-recovery-move", approvalEvidenceRef: "fixture-only:retention-policy" };
   const calls = [];
   const context = (await integrationFunction("configBackupContext", {
-    configBackupRunningVersion: () => {}, configBackupSource: () => {}, configBackupProtectedRoots: () => {},
+    configBackupRunningVersion: () => {}, configBackupSource: () => {}, configBackupRootBoundaries: () => {},
     validateConfigBackupRetentionPolicy,
     readDevice: async () => { calls.push("device"); return { deviceId: "fixture-device" }; },
     verifyWriteAuthorization: async () => { calls.push("authority"); return {}; },
@@ -176,4 +176,28 @@ test("RJ03 public policy approval seam rejects non-string noChangePolicy before 
     assert.equal(await context.approvePolicy({ policy: { ...policy, noChangePolicy } }, {}, {}), null);
   }
   assert.deepEqual(calls, []);
+});
+
+test("configuration backup boundary resolution separates actual containers from hard control roots", async () => {
+  const { resolve } = await import("node:path");
+  const { DIRECTORY, LEGACY_CONTROL_DIRECTORY } = await import("../dist/build/packages/core/src/names.js");
+  const { CONFIG_BACKUP_UNSAFE_DIRECTORY_NAMES } = await import("../dist/build/packages/core/src/config-backup.js");
+  const { SHARED_SUBMIT_RESERVED_ROOT } = await import("../dist/build/packages/core/src/shared-submit.js");
+  const source = { libraryRoot: "/fixture/project/library", projectRoot: "/fixture/project", declarationScope: "project", projectRef: { projectId: "project-fixture" } };
+  const resolveRoots = await integrationFunction("configBackupRootBoundaries", {
+    readRegistry: async () => ({ entries: [{ libraryPath: source.libraryRoot, projectPath: source.projectRoot, projectId: "project-fixture" }] }),
+    deviceHome: () => "/fixture/device", skillSourceDirectory: async () => "/fixture/engine/skill/mana-orchestrate",
+    join, resolve, realpath: async path => path, DIRECTORY, LEGACY_CONTROL_DIRECTORY, CONFIG_BACKUP_UNSAFE_DIRECTORY_NAMES, SHARED_SUBMIT_RESERVED_ROOT,
+    materializeWorkspace: async () => ({}), effectiveProjectState: async () => ({ settings: [{ key: "workspace.generatedArtifactsPath", value: "artifacts" }] }),
+    SETTINGS_CATALOG: [], resolveGeneratedArtifactsRoot: (root, value) => resolve(root, value),
+    fail: reasonCode => { throw Object.assign(new Error(reasonCode), { reasonCode }); },
+  });
+  const result = JSON.parse(JSON.stringify(await resolveRoots(source)));
+  assert.ok(result.protectedRoots.includes(join(source.libraryRoot, LEGACY_CONTROL_DIRECTORY)), "the CLI consumes the exported legacy name to protect the actual library control directory");
+  for (const path of ["/fixture/device", "/fixture/engine", join(source.libraryRoot, "akasha"), join(source.libraryRoot, "crest"), join(source.libraryRoot, "config"), join(source.projectRoot, ".git")]) assert.ok(result.protectedRoots.includes(path), path);
+  for (const path of [SHARED_SUBMIT_RESERVED_ROOT.relativePath, "artifacts/consolidation", "artifacts/relocations"]) assert.ok(result.protectedRoots.includes(join(source.libraryRoot, path)), `${path} is protected before any writer creates it`);
+  for (const [path, kind] of [[source.projectRoot, "project"], [source.libraryRoot, "library"], [join(source.projectRoot, "dist"), "generated"], [join(source.libraryRoot, "artifacts"), "generated"]]) {
+    assert.ok(result.retainedContainerRoots.some(row => row.path === path && row.kind === kind), `${kind}: ${path}`);
+    assert.ok(!result.protectedRoots.includes(path), `${path} is not blanket-forbidden`);
+  }
 });

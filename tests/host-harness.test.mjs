@@ -13,34 +13,39 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  CODEX_HOOK_EVENTS,
   HOST_HOOK_EVENTS,
   HOST_HOOK_FILE_HOSTS,
   HOST_HOOK_HOSTS,
   isEinzbernHookCommand,
   isLegacyHookCommand,
   mergeHostHooks,
-  planHostHooks,
+  planHostHooks as rawPlanHostHooks,
 } from "../dist/build/packages/core/src/host-hooks.js";
 import { LEGACY_DEVICE_DIRECTORY, LEGACY_ENGINE_NAME, LEGACY_HOOK_SCRIPTS, LOCAL_DIRECTORY_NAMES } from "../dist/build/packages/core/src/names.js";
 
 // Codex's documented event set. Every event the harness uses must be in it, and Codex's set is a
 // strict subset of Claude Code's, so membership here settles both directions.
+const planHostHooks = input => rawPlanHostHooks({ codexAdmission: { state: "supported", version: "fixture", evidenceRef: "synthetic event-contract fixture", subagentStop: true, trust: "permitted" }, ...input });
+
 const CODEX_EVENTS = new Set([
   "PreToolUse", "PermissionRequest", "PostToolUse", "PreCompact", "PostCompact",
   "UserPromptSubmit", "SubagentStop", "Stop", "SessionStart", "SessionEnd", "SubagentStart",
 ]);
-const RETIRED_EVENTS = ["SessionStart", "PostToolUse", "Stop", "SubagentStop"];
+const RETIRED_EVENTS = ["SessionStart", "PostToolUse", "Stop"];
 const DEVICE = Object.freeze({ darwin: "/srv/einzbern/device", linux: "/srv/einzbern/device", win32: "D:\\Einzbern\\device" });
 
-test("INC-220, 477-R1: both hosts carry the same three engine hooks and commands", () => {
+test("INC-220, 477-R1: common hooks stay shared and Codex alone renders the collector stop", () => {
   // TCRN-CROSS-STORY-548 R1: DSH runs the hook too, but only these two keep a hook file.
   assert.deepEqual([...HOST_HOOK_HOSTS], ["claude-code", "codex", "dsh"]);
   assert.deepEqual([...HOST_HOOK_FILE_HOSTS], ["claude-code", "codex"]);
   assert.deepEqual(Object.keys(HOST_HOOK_EVENTS), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
+  assert.deepEqual(CODEX_HOOK_EVENTS, { SubagentStop: "subagent-stop" });
   for (const [platform, deviceHome] of Object.entries(DEVICE)) {
     const [claude, codex] = HOST_HOOK_FILE_HOSTS.map((host) => planHostHooks({ host, scope: "user", deviceHome, platform }));
-    assert.deepEqual(codex.groups, claude.groups, `${platform}: a capability present on one host is present on the other`);
     assert.deepEqual(Object.keys(claude.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
+    assert.deepEqual(Object.keys(codex.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse", "SubagentStop"]);
+    assert.equal(codex.groups.SubagentStop[0].hooks[0].command, `node "${codex.launcher}" subagent-stop`);
     for (const event of ["UserPromptSubmit", "SubagentStart", "PreToolUse"]) {
       assert.equal(claude.groups[event].length, 1);
       assert.equal(claude.groups[event][0].hooks.length, 1);
@@ -49,7 +54,7 @@ test("INC-220, 477-R1: both hosts carry the same three engine hooks and commands
 });
 
 test("INC-220: every event the harness hooks exists on Codex", () => {
-  for (const event of Object.keys(HOST_HOOK_EVENTS)) assert.ok(CODEX_EVENTS.has(event), `${event} is a documented Codex hook event`);
+  for (const event of [...Object.keys(HOST_HOOK_EVENTS), ...Object.keys(CODEX_HOOK_EVENTS)]) assert.ok(CODEX_EVENTS.has(event), `${event} is a documented Codex hook event`);
 });
 
 test("477-R3: none of the retired events is rendered, and no hook names a checkout, a container or a host", () => {
@@ -57,6 +62,7 @@ test("477-R3: none of the retired events is rendered, and no hook names a checko
     for (const host of HOST_HOOK_FILE_HOSTS) {
       const expected = planHostHooks({ host, scope: "project", deviceHome, platform });
       for (const event of RETIRED_EVENTS) assert.equal(Object.hasOwn(expected.groups, event), false, `${platform}/${host}: no ${event}`);
+      assert.equal(Object.hasOwn(expected.groups, "SubagentStop"), host === "codex", `${platform}/${host}: Codex-only SubagentStop`);
       const [hook] = expected.groups.UserPromptSubmit[0].hooks;
       assert.equal(hook.type, "command", "only type:command runs on Codex");
       assert.equal(hook.command, `node "${expected.launcher}" user-prompt-submit`);
@@ -69,10 +75,11 @@ test("477-R3: none of the retired events is rendered, and no hook names a checko
   }
 });
 
-test("477-R1: the two hosts' files differ only in where they keep the hooks", () => {
+test("477-R1: Codex stop is additive and the shared host-file contract remains intact", () => {
   const [claude, codex] = HOST_HOOK_FILE_HOSTS.map((host) => planHostHooks({ host, scope: "user", deviceHome: DEVICE.linux, platform: "linux" }));
   assert.deepEqual([claude.hooksFile, codex.hooksFile], [".claude/settings.json", ".codex/hooks.json"]);
-  assert.deepEqual(mergeHostHooks(null, codex).document, mergeHostHooks(null, claude).document);
+  assert.deepEqual(Object.keys(mergeHostHooks(null, claude).document.hooks), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
+  assert.deepEqual(Object.keys(mergeHostHooks(null, codex).document.hooks), ["UserPromptSubmit", "SubagentStart", "PreToolUse", "SubagentStop"]);
 });
 
 test("477-R3: the old harness's hooks are recognised wherever they ran from, and nothing else is", () => {

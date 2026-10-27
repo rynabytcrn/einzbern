@@ -28,5 +28,36 @@
       "const nativeFetch = (input, options) => fetch(input, options).catch((error) => {"
     ],
     "moduleImports": []
+  },
+  "scripts/lib/codex-native-hook-ipc.mjs": {
+    "note": "Exact-byte local Unix request/server sites; private canonical directory and socket UID/type/mode enforced in source and offline guard. No Internet allowance. Independent candidate review remains required.",
+    "sourceSha256": "eced801881e7160a646b55e72a0ade34a9402d0ba2f20a6c93da5373cc13a6a6",
+    "requiredSource": [
+      "requireTimeout(timeoutMs);\n  await requirePrivateDirectory(socketPath);\n  if (controller?.capability",
+      "requireTimeout(timeoutMs);\n  await requirePrivateDirectory(socketPath);\n  const stat = await lstat(socketPath);",
+      "const socket = createConnection(socketPath);",
+      "server.listen(socketPath, () => { server.off(\"error\", reject); resolve(); });"
+    ],
+    "fetchSites": [],
+    "moduleImports": [
+      {
+        "module": "node:net",
+        "source": "import { createConnection, createServer } from \"node:net\";",
+        "bindings": [
+          {
+            "name": "createConnection",
+            "callSites": [
+              "const socket = createConnection(socketPath);"
+            ]
+          },
+          {
+            "name": "createServer",
+            "callSites": [
+              "const server = createServer(socket => {"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

@@ -24,6 +24,8 @@ import test, { after } from "node:test";
 import { BRAND, FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
 import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
 import { normalizedInstallBytes } from "../dist/build/packages/core/src/install-tree-digest.js";
+import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { configBackupCanonical, configBackupDigest } from "../dist/build/packages/core/src/config-backup.js";
 import {
   P8_RELEASE_ARTIFACTS,
   P8_RELEASE_ARCHIVE,
@@ -41,7 +43,7 @@ const ARCHIVE = `${RELEASE}.tar.gz`;
 const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
 const SPECIFICATIONS = Object.freeze([
   "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
-  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md",
+  "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md", "engine-hook-events-v2.md",
 ]);
 
 const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-pack-release-")));
@@ -81,6 +83,100 @@ function packedRelease() {
   packed ??= packAndUnpack();
   return packed;
 }
+
+test("CFG-B02 packaged CLI creates and inventories retained in-tree backups with real policy resolution", async () => {
+  const { tree } = await packedRelease();
+  const isolated = await environment("configuration-backup-retained-roots");
+  const entry = join(tree, "scripts/einzbern.mjs");
+  assert.equal(existsSync(join(tree, "dist")), false);
+  assert.equal(existsSync(join(tree, "node_modules")), false);
+  const options = { cwd: isolated.cwd, env: { ...isolated.env } };
+  delete options.env.EINZBERN_SURFACE;
+  const call = args => node([entry, ...args], options);
+  const invoke = args => {
+    const result = call(args); assert.equal(result.status, 0, `${args[0]}: ${result.stderr}`);
+    return JSON.parse(result.stdout);
+  };
+  const at = "2026-10-22T00:00:00Z", project = join(isolated.root, "project"), library = join(project, "library");
+  await mkdir(project);
+  invoke(["init", "--workspace", library, "--project", project, "--at", at]);
+  const created = invoke(["project-create", "--workspace", library, "--external-key", "BACKUP-CLI-PROJECT", "--name", "Synthetic backup project", "--at", at]);
+  const projectId = created.record.id, projectRef = { libraryId: created.workspaceId, projectId };
+  invoke(["library-register", "--library", library, "--project", project, "--project-id", projectId, "--at", at]);
+  invoke(["machine-settings-set", "--key", "portal.defaultTheme", "--value", "dark", "--at", at]);
+  const device = JSON.parse(await readFile(join(isolated.env.EINZBERN_HOME, "device.json"), "utf8"));
+  const artifacts = join(library, "artifacts"), marker = ".einzbern-config-backup-reserved.json";
+  const cases = [
+    { name: "project", root: join(project, "retained"), success: true },
+    { name: "generated", root: join(artifacts, "retained"), success: true },
+    { name: "project-root", root: project, success: false },
+    { name: "generated-root", root: artifacts, success: false },
+    { name: "control", root: join(library, "config", "retained"), success: false },
+    { name: "shared-advisory", root: join(artifacts, "coordination", "shared-submit"), success: false },
+    { name: "consolidation", root: join(artifacts, "consolidation", "retained"), success: false },
+    { name: "relocation", root: join(artifacts, "relocations", "retained"), success: false },
+  ];
+  const externalKey = "BACKUP-CLI-OWNER-POLICY", minutesId = deriveStableId("minutes", externalKey);
+  // These are isolated synthetic decisions, not actual Owner approval or production policy.
+  // Pure digest/ID functions assemble the input; authorization itself runs in the archive CLI.
+  for (const [index, item] of cases.entries()) {
+    await mkdir(item.root, { recursive: true });
+    item.store = {
+      reservedRoot: item.root,
+      binding: { projectRef, backupGroupId: String(index + 1).repeat(32), writerBindingRef: "fixture:writer", executionEnvironmentRef: `device:${device.deviceId}`, hostname: "fixture-device" },
+      policy: { schemaVersion: "einzbern.config-backup-retention.v1", activeLimit: 2, transactionLimit: 1, recoveryLimit: 2, maxPackageBytes: 65536, maxTotalBytes: 262144, retentionDuration: 1000, recoveryDuration: 86400000, noChangePolicy: "skip", atLimitAction: "stop-new-and-report", retirementMethod: "verified-recovery-move", approvalEvidenceRef: `${minutesId}#D${index + 1}` },
+    };
+    const policyDigest = configBackupDigest(configBackupCanonical(item.store.policy));
+    const scopeDigest = canonicalSha256({ projectRef, backupGroupId: item.store.binding.backupGroupId, reservedRoot: item.root, writerBindingRef: item.store.binding.writerBindingRef, executionEnvironmentRef: item.store.binding.executionEnvironmentRef });
+    item.target = `config-backup-policy:${policyDigest}:${scopeDigest}`;
+  }
+  const decisions = join(isolated.root, "decisions.json");
+  await writeFile(decisions, JSON.stringify(cases.map(item => `Synthetic approval for ${item.target} only.`)), { mode: 0o600 });
+  const recorded = invoke(["minutes-record", "--workspace", library, "--project-id", projectId, "--external-key", externalKey, "--title", "Synthetic backup policy", "--summary", "Isolated regression decisions only", "--decisions-file", decisions, "--decided-by", "owner:governance", "--at", at]);
+  assert.equal(recorded.id, minutesId);
+  const selection = [{ kind: "device-preference", key: "portal.defaultTheme" }];
+  const target = ["--project", project, "--project-id", projectId, "--at", at];
+  for (const item of cases) {
+    const request = join(isolated.root, `${item.name}-request.json`);
+    await writeFile(request, JSON.stringify({ selection, backupGroupId: item.store.binding.backupGroupId, hostname: item.store.binding.hostname }), { mode: 0o600 });
+    const planned = invoke(["config-backup-plan", ...target, "--request", request]);
+    assert.equal(planned.integrity, "not-verified"); assert.deepEqual(planned.manifest.projectRef, projectRef);
+    assert.equal(planned.manifest.sourceVersion.artifactIdentity.kind, "observed-artifact-identity");
+    const create = { selection, store: item.store, backupId: planned.manifest.backupId, expectedSelectionDigest: planned.manifest.selectionDigest };
+    if (item.success) {
+      await writeFile(request, JSON.stringify({ ...create, store: { ...item.store, policy: { ...item.store.policy, approvalEvidenceRef: `${deriveStableId("minutes", "BACKUP-CLI-MISSING-POLICY")}#D1` } } }), { mode: 0o600 });
+      const denied = call(["config-backup-create", ...target, "--request", request]);
+      assert.equal(denied.status, 1); assert.equal(JSON.parse(lastLine(denied.stderr)).reasonCode, "policy-unapproved");
+      assert.equal(existsSync(join(item.root, marker)), false, "unapproved policy cannot reserve a directory");
+    }
+    await writeFile(request, JSON.stringify(create), { mode: 0o600 });
+    const result = call(["config-backup-create", ...target, "--request", request]);
+    if (!item.success) {
+      assert.equal(result.status, 1); assert.equal(JSON.parse(lastLine(result.stderr)).reasonCode, "CONFIG_BACKUP_ROOT_UNSAFE", item.name);
+      assert.equal(existsSync(join(item.root, marker)), false, "a synthetic approval cannot waive root safety");
+      continue;
+    }
+    assert.equal(result.status, 0, result.stderr);
+    const receipt = JSON.parse(result.stdout); assert.equal(receipt.status, "settled");
+    const packageRoot = join(item.root, "config-backups", "fixture-device", item.store.binding.backupGroupId, receipt.index.active[0].directory);
+    const verified = invoke(["config-backup-verify", "--package", packageRoot]);
+    assert.equal(verified.integrity, "verified"); assert.equal(verified.manifest.backupId, planned.manifest.backupId);
+    const listed = invoke(["config-backup-list", "--root", item.root, "--at", at]);
+    assert.equal(listed.scanStatus, "scanned"); assert.equal(listed.groups.length, 1);
+    assert.deepEqual(listed.groups[0].projectRef, projectRef); assert.equal(listed.groups[0].integrity, "verified");
+    assert.equal(listed.groups[0].activeCount, 1); assert.equal(listed.groups[0].backupGroupId, item.store.binding.backupGroupId);
+  }
+});
+
+test("Codex SubagentStop release carries both the versioned route and its core evaluator", async () => {
+  const { entries } = await packedRelease();
+  const files = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry.bytes]));
+  assert.ok(files.has("scripts/einzbern-hook.mjs"), "the versioned hook entry is packaged");
+  assert.equal(files.has("dist/build/packages/core/src/codex-subagent-stop.js"), false, "release hook is self-contained, not a source-tree import");
+  assert.ok(files.has("specs/engine-hook-events-v2.md"), "installed capability boundary and collector contract are readable");
+  assert.match(files.get("scripts/einzbern-hook.mjs").toString("utf8"), /codex-subagent-stop\.js/u);
+  assert.match(files.get("scripts/einzbern-hook.mjs").toString("utf8"), /CODEX_STOP_CAPABILITY_UNAVAILABLE/u);
+});
 
 test("605: every contract referenced by the shipped Skill resolves to manifest-verified archive bytes", async () => {
   const { entries } = await packedRelease();

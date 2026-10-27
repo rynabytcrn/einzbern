@@ -228,10 +228,13 @@ test("INIT068 authorized review completion: authorized review completion is dot-
   }
 });
 
-test("INIT068 authorized review completion: exact base-rendered prior template updates with recovery; altered ownership and user edits refuse", async t => {
+for (const [archiveName, sourceCommit] of [
+  ["dot-autonomy-before-review", "3b16d5cbb5750838ee2ff3068e124c7fc8b95224"],
+  ["dot-before-context-recovery", "f5ad507d65e52ef21e3fb275e32d05d8d01b4a5e"],
+]) test(`${archiveName}: exact base-rendered prior template updates with recovery; altered ownership and user edits refuse`, async t => {
   const root = resolve(import.meta.dirname, "fixtures", "rules");
-  const archive = JSON.parse(await readFile(join(root, "dot-autonomy-before-review.json"), "utf8"));
-  assert.equal(archive.sourceCommit, "3b16d5cbb5750838ee2ff3068e124c7fc8b95224");
+  const archive = JSON.parse(await readFile(join(root, `${archiveName}.json`), "utf8"));
+  assert.equal(archive.sourceCommit, sourceCommit);
   for (const archived of archive.fixtures) {
     const original = await readFile(join(root, archived.file), "utf8");
     assert.equal(dotContentDigest(original), archived.sha256, "fixture was rendered by the verified base engine, not reconstructed from new text");
@@ -379,4 +382,33 @@ test("INIT068 R19: safe private declaration remains in the existing backup allow
   assert.deepEqual(validateConfigBackupPayload(payload), payload);
   assert.equal(variableExportDecision(record.value, "agents"), "not-exported");
   assert.equal(variableExportDecision(record.value, "handoff"), "not-exported");
+});
+
+test("dot context recovery is task-scoped, permission-bound and separate from current proof", () => {
+  const clauses = {
+    zh: ["在断言基础设施不支持、要求用户重复既有决定或宣布阻塞前", "E/M 权威规则、仍有效的用户决定", "已决定」「已实施」「本次已验证", "巡检只提醒", "按需取相关节号或摘录", "不把整库、大段历史或运行状态塞进巡检 prompt", "单个接口失败，不等于产品能力不存在", "旧成功也不证明当前仍可用", "先尝试受支持的现有路径及安全恢复", "恢复敏感信息或新增访问须先获授权", "已确认未执行且现行规则允许", "一次有限重试", "不换工具、路径或身份规避拒绝", "保留原决定及来源", "拒绝/待定/未知状态", "只暂停依赖该阻点的工作", "已准备」，不是「共享落链完成", "shared-submit-plan / shared-submit-evidence", "字节读回、完整目的地 replay", "不另建持久状态或要求用户手填 JSON"],
+    en: ["Before asserting infrastructure is unsupported", "asking the user to repeat a settled decision", "authoritative E/M rules, still-valid user decisions", "Distinguish decided, implemented and verified now", "Patrol only reminds", "sections/excerpts on demand", "without stuffing whole libraries", "one failed interface is not proof of a product limitation", "old success is not current capability proof", "try supported existing routes and safe recovery", "Sensitive recovery or new access requires prior authorization", "only one bounded retry", "material new relevant evidence, confirmed non-execution", "never change tools, paths or identity to evade it", "retain the original decision/source", "denied/pending/unknown status", "Pause only dependent work", "prepared, not shared completion", "shared-submit-plan / shared-submit-evidence", "byte readback, complete destination replay", "without new persistent state or user-authored JSON"],
+  };
+  for (const [language, key] of [["zh-CN", "zh"], ["en", "en"], ["ja", "en"], ["ko", "en"], ["fr", "en"]]) {
+    for (const ids of [[], ["autonomy"]]) {
+      const output = renderDotAgents(source(language, ids));
+      for (const clause of clauses[key]) assert.ok(output.includes(clause), `${language}: ${clause}`);
+      assert.equal(output.split(clauses[key][0]).length - 1, 1);
+      assert.equal(output.includes("SubagentStop"), false, "dot discipline does not install the Codex-only collector");
+    }
+    for (const rule of BUILT_IN_RULES) assert.equal(rule.body[key].includes(clauses[key][0]), false, "traditional rule bodies stay unchanged");
+  }
+});
+
+test("dot context recovery survives fresh generation and missing-file repair without a session-read claim", async t => {
+  const input = await fixture(t);
+  const installed = await applyDotAgents(await planDotAgents(input));
+  assert.equal(installed.status, "applied");
+  const expected = renderDotAgents(input.source);
+  assert.ok(expected.includes("基础设施阻点前先恢复上下文"));
+  await rm(input.binding.agentsPath);
+  const repaired = await applyDotAgents(await planDotAgents({ ...input, operation: "repair" }));
+  assert.equal(repaired.status, "applied"); assert.equal(repaired.sessionRead, "not-verified");
+  assert.equal(await readFile(input.binding.agentsPath, "utf8"), expected);
+  assert.equal((await planDotAgents({ ...input, operation: "repair" })).status, "unchanged");
 });

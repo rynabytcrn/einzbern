@@ -1,0 +1,205 @@
+// SPDX-License-Identifier: Apache-2.0
+
+import assert from "node:assert/strict";
+import { lstat, link, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { CONFIG_BACKUP_RESERVATION_FILE, CONFIG_BACKUP_RESERVATION_TEXT, CONFIG_BACKUP_RESERVED_AREAS, readConfigBackupReservation } from "../scripts/lib/config-backup-reservation.mjs";
+import { safeCleanOutputRoot, safeResetOutputDirectory, safeWriteOutput, withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
+
+async function fixture(t) {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-backup-output-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, ".git"));
+  return root;
+}
+async function reserve(root) {
+  await mkdir(root, { recursive: true });
+  await writeFile(join(root, CONFIG_BACKUP_RESERVATION_FILE), CONFIG_BACKUP_RESERVATION_TEXT, { flag: "wx", mode: 0o600 });
+}
+async function bytes(path, value) {
+  await mkdir(join(path, ".."), { recursive: true });
+  await writeFile(path, value);
+}
+async function missing(path) { await assert.rejects(lstat(path), { code: "ENOENT" }); }
+
+test("normal output cleanup still removes an unreserved dist and reset permits new output", async t => {
+  const root = await fixture(t);
+  await withExclusiveOutputSession(root, async () => {
+    await safeWriteOutput(root, "dist/build/old.js", "old");
+    await safeResetOutputDirectory(root, "dist/build");
+    await missing(join(root, "dist/build/old.js"));
+    await safeWriteOutput(root, "dist/build/new.js", "new");
+    assert.deepEqual(await safeCleanOutputRoot(root), { removed: true, retained: [] });
+    await missing(join(root, "dist"));
+    assert.deepEqual(await safeCleanOutputRoot(root), { removed: false });
+  });
+});
+
+test("reset and clean retain active, failed staging, recovery and their original directory identities", async t => {
+  const root = await fixture(t);
+  const retained = join(root, "dist/build/nested/retained");
+  await reserve(retained);
+  const expected = new Map([[join(retained, CONFIG_BACKUP_RESERVATION_FILE), CONFIG_BACKUP_RESERVATION_TEXT]]);
+  for (const area of CONFIG_BACKUP_RESERVED_AREAS) {
+    const path = join(retained, area, "device", "a".repeat(32), "20261025T063000Z-" + "b".repeat(32), "members/snapshot.json");
+    expected.set(path, `retained-${area}`);
+    await bytes(path, expected.get(path));
+  }
+  const before = await lstat(retained);
+  await bytes(join(root, "dist/build/nested/generated.js"), "discard");
+  await bytes(join(root, "dist/release/generated.json"), "discard");
+  await withExclusiveOutputSession(root, async () => {
+    await safeResetOutputDirectory(root, "dist/build");
+    await missing(join(root, "dist/build/nested/generated.js"));
+    await safeWriteOutput(root, "dist/build/new.js", "new generation");
+    const clean = await safeCleanOutputRoot(root);
+    assert.deepEqual(clean, { removed: true, retained: ["dist/build/nested/retained"] });
+    await missing(join(root, "dist/build/new.js"));
+    await missing(join(root, "dist/release"));
+    for (const [path, content] of expected) assert.equal(await readFile(path, "utf8"), content);
+    const after = await lstat(retained);
+    assert.equal(after.ino, before.ino);
+    assert.equal(after.dev, before.dev);
+    for (const relative of ["dist/build/nested/retained", "dist/build/nested/retained/config-backups/device"]) {
+      await assert.rejects(safeResetOutputDirectory(root, relative), { reasonCode: "OUTPUT_CONFIG_BACKUP_RESERVED" });
+      await assert.rejects(safeWriteOutput(root, `${relative}/generated.json`, "must not write"), { reasonCode: "OUTPUT_CONFIG_BACKUP_RESERVED" });
+    }
+    await assert.rejects(safeWriteOutput(root, `dist/other/${CONFIG_BACKUP_RESERVATION_FILE}`, "spoof"), { reasonCode: "OUTPUT_CONFIG_BACKUP_RESERVED" });
+  });
+});
+
+test("an empty reservation is protected before the first package exists without inspecting payloads", async t => {
+  const root = await fixture(t);
+  const retained = join(root, "dist/build/empty-reservation");
+  await reserve(retained);
+  await withExclusiveOutputSession(root, async () => {
+    await safeResetOutputDirectory(root, "dist/build");
+    assert.deepEqual(await readdir(retained), [CONFIG_BACKUP_RESERVATION_FILE]);
+    assert.deepEqual(await safeCleanOutputRoot(root), { removed: false, retained: ["dist/build/empty-reservation"] });
+  });
+});
+
+test("a reservation published after output staging prevents final overwrite", async t => {
+  const root = await fixture(t);
+  const retained = join(root, "dist/retained");
+  await bytes(join(retained, "existing.json"), "original bytes");
+  await withExclusiveOutputSession(root, async () => {
+    await assert.rejects(safeWriteOutput(root, "dist/retained/existing.json", "new generated bytes", {
+      beforePublish: () => reserve(retained),
+    }), { reasonCode: "OUTPUT_CONFIG_BACKUP_RESERVED" });
+  });
+  assert.equal(await readFile(join(retained, "existing.json"), "utf8"), "original bytes");
+  assert.equal(await readConfigBackupReservation(retained), true);
+  assert.deepEqual((await readdir(retained)).sort(), [CONFIG_BACKUP_RESERVATION_FILE, "existing.json"].sort());
+});
+
+test("an output ancestor replaced after staging fails its final inode check", async t => {
+  const root = await fixture(t);
+  const directory = join(root, "dist/ordinary");
+  await bytes(join(directory, "existing.json"), "original bytes");
+  const outside = join(root, "outside");
+  await bytes(join(outside, "existing.json"), "outside bytes");
+  await withExclusiveOutputSession(root, async () => {
+    await assert.rejects(safeWriteOutput(root, "dist/ordinary/existing.json", "replacement", { beforePublish: async () => {
+      await rename(directory, join(root, "saved"));
+      await symlink(outside, directory);
+    } }), { reasonCode: "OUTPUT_DIRECTORY_CHANGED" });
+  });
+  assert.equal(await readFile(join(root, "saved/existing.json"), "utf8"), "original bytes");
+  assert.equal(await readFile(join(outside, "existing.json"), "utf8"), "outside bytes");
+});
+
+test("a reservation marker does not traverse backup payload links", async t => {
+  const root = await fixture(t);
+  const retained = join(root, "dist/retained");
+  await reserve(retained);
+  const outside = join(root, "outside");
+  await bytes(join(outside, "private.txt"), "untouched");
+  await symlink(outside, join(retained, "config-backups"));
+  await withExclusiveOutputSession(root, () => safeCleanOutputRoot(root));
+  assert.equal(await readFile(join(outside, "private.txt"), "utf8"), "untouched");
+  assert.ok((await lstat(join(retained, "config-backups"))).isSymbolicLink());
+});
+
+test("invalid, unknown, linked and unmarked legacy reservations fail before any generated byte is deleted", async t => {
+  for (const kind of ["truncated", "unknown-version", "symlink", "hardlink", "legacy-active", "legacy-staging", "legacy-recovery"]) {
+    await t.test(kind, async sub => {
+      const root = await fixture(sub);
+      const target = join(root, "dist/build/z-reserved");
+      await mkdir(target, { recursive: true });
+      const marker = join(target, CONFIG_BACKUP_RESERVATION_FILE);
+      if (kind === "truncated") await writeFile(marker, "{");
+      else if (kind === "unknown-version") await writeFile(marker, CONFIG_BACKUP_RESERVATION_TEXT.replace("reservation.v1", "reservation.v2"));
+      else if (kind === "symlink" || kind === "hardlink") {
+        const outside = join(root, "marker-source");
+        await writeFile(outside, CONFIG_BACKUP_RESERVATION_TEXT);
+        await (kind === "symlink" ? symlink : link)(outside, marker);
+      } else {
+        const area = { "legacy-active": "config-backups", "legacy-staging": "config-backup-staging", "legacy-recovery": "config-backup-recovery" }[kind];
+        await mkdir(join(target, area));
+      }
+      const generated = join(root, "dist/build/a-generated.js");
+      await bytes(generated, "keep on refusal");
+      await withExclusiveOutputSession(root, async () => {
+        const reasonCode = kind.startsWith("legacy-") ? "OUTPUT_CONFIG_BACKUP_RESERVATION_REQUIRED" : "CONFIG_BACKUP_RESERVATION_INVALID";
+        await assert.rejects(safeResetOutputDirectory(root, "dist/build"), { reasonCode });
+        await assert.rejects(safeCleanOutputRoot(root), { reasonCode });
+      });
+      assert.equal(await readFile(generated, "utf8"), "keep on refusal");
+    });
+  }
+});
+
+test("a marker published after planning protects previously planned files and newly published backup bytes", async t => {
+  for (const operation of ["reset", "clean"]) {
+    await t.test(operation, async sub => {
+      const root = await fixture(sub);
+      const retained = join(root, "dist/build/retained");
+      await bytes(join(retained, "existing.json"), "existing bytes");
+      await bytes(join(root, "dist/build/other.js"), "discard");
+      const afterPlan = async () => {
+        await reserve(retained);
+        await bytes(join(retained, "config-backup-staging/device/group/new.json"), "new backup bytes");
+      };
+      await withExclusiveOutputSession(root, () => operation === "reset"
+        ? safeResetOutputDirectory(root, "dist/build", { afterPlan })
+        : safeCleanOutputRoot(root, { afterPlan }));
+      assert.equal(await readFile(join(retained, "existing.json"), "utf8"), "existing bytes");
+      assert.equal(await readFile(join(retained, "config-backup-staging/device/group/new.json"), "utf8"), "new backup bytes");
+      assert.equal(await readConfigBackupReservation(retained), true);
+      await missing(join(root, "dist/build/other.js"));
+    });
+  }
+});
+
+test("an entirely new reserved subtree after planning cannot be removed through its ancestor", async t => {
+  const root = await fixture(t);
+  await mkdir(join(root, "dist/build/old"), { recursive: true });
+  const retained = join(root, "dist/build/old/new-retained");
+  await withExclusiveOutputSession(root, async () => {
+    await assert.rejects(safeCleanOutputRoot(root, { afterPlan: async () => {
+      await reserve(retained);
+      await bytes(join(retained, "config-backups/device/group/package.json"), "published after scan");
+    } }), { reasonCode: "OUTPUT_DIRECTORY_CHANGED" });
+  });
+  assert.equal(await readFile(join(retained, "config-backups/device/group/package.json"), "utf8"), "published after scan");
+  assert.equal(await readConfigBackupReservation(retained), true);
+});
+
+test("a planned ancestor replaced by a link fails without touching either original or linked bytes", async t => {
+  const root = await fixture(t);
+  const original = join(root, "dist/build/ordinary");
+  await bytes(join(original, "file.json"), "original");
+  const outside = join(root, "outside");
+  await bytes(join(outside, "file.json"), "outside");
+  await withExclusiveOutputSession(root, async () => {
+    await assert.rejects(safeCleanOutputRoot(root, { afterPlan: async () => {
+      await rename(original, join(root, "saved-original"));
+      await symlink(outside, original);
+    } }), { reasonCode: "OUTPUT_DIRECTORY_CHANGED" });
+  });
+  assert.equal(await readFile(join(outside, "file.json"), "utf8"), "outside");
+  assert.equal(await readFile(join(root, "saved-original/file.json"), "utf8"), "original");
+});

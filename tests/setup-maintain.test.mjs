@@ -65,6 +65,9 @@ async function engineTree(base, version) {
   const tree = join(base, "trees", version);
   await mkdir(join(tree, "scripts", "policy"), { recursive: true });
   await copyFile(join(repositoryRoot, "scripts/einzbern.mjs"), join(tree, "scripts/einzbern.mjs"));
+  await copyFile(join(repositoryRoot, "scripts/einzbern-hook.mjs"), join(tree, "scripts/einzbern-hook.mjs"));
+  await mkdir(join(tree, "scripts", "lib"), { recursive: true });
+  await copyFile(join(repositoryRoot, "scripts/lib/codex-native-hook-ipc.mjs"), join(tree, "scripts/lib/codex-native-hook-ipc.mjs"));
   await copyFile(join(repositoryRoot, "scripts/policy/knowledge-provenance.json"), join(tree, "scripts/policy/knowledge-provenance.json"));
   await cp(join(repositoryRoot, "dist/build"), join(tree, "dist/build"), { recursive: true });
   if (version !== FRAMEWORK_VERSION) {
@@ -321,6 +324,10 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
   const f = await installed(context);
   const claudeCopy = skillCopyPath(f.home, SKILL_COPY_ROOTS[0]);
   const settings = join(f.home, ".claude", "settings.json");
+  const codexHooks = join(f.home, ".codex", "hooks.json");
+  const codexDocument = JSON.parse(await readFile(codexHooks, "utf8"));
+  delete codexDocument.hooks.PreToolUse; // Unknown admission installs the ordinary read guard, not native stop.
+  await writeFile(codexHooks, `${JSON.stringify(codexDocument, null, 2)}\n`);
   await rm(claudeCopy, { recursive: true, force: true });
   await writeFile(settings, "{}\n");
 
@@ -332,13 +339,15 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
     ["skill-copies", claudeCopy, "create"],
     ["skill-copies", join(f.deviceHome, "skills.json"), "update"],
     ["host-hooks", settings, "update"],
+    ["host-hooks", codexHooks, "update"],
   ];
   assert.deepEqual(rows(planned.writes), expected);
   const repaired = await applySetup(planned);
   assert.deepEqual(rows(repaired.written), expected);
   // R46 I08: repair names no coordination binding, in the plan or the receipt.
   assert.deepEqual([Object.hasOwn(planned, "coordination"), Object.hasOwn(repaired, "coordination")], [false, false]);
-  assert.deepEqual(repaired.backups.map((entry) => entry.path), [settings], "the settings file is backed up before it is replaced");
+  assert.deepEqual(repaired.backups.map((entry) => entry.path), [settings, codexHooks], "both host files are backed up before replacement");
+  assert.deepEqual((await einzbernHooks(codexHooks)).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
   assertSelfCheckGreen(repaired);
 
   const files = [settings, join(f.home, ".codex", "hooks.json"), join(f.project, "AGENTS.md"), join(f.project, "CLAUDE.md"), join(f.deviceHome, "registry.json"), join(f.deviceHome, "skills.json")];
@@ -413,6 +422,8 @@ test("480-AC4: uninstall takes the hooks, both skill copies and the registry ent
     before: async (fixture) => {
       await mkdir(join(fixture.home, ".claude"), { recursive: true });
       await writeFile(join(fixture.home, ".claude", "settings.json"), `${JSON.stringify({ theme: "dark", hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "other-tool notify" }] }] } }, null, 2)}\n`);
+      await mkdir(join(fixture.home, ".codex"), { recursive: true });
+      await writeFile(join(fixture.home, ".codex", "hooks.json"), `${JSON.stringify({ hooks: { SubagentStop: [{ hooks: [{ type: "command", command: "other-tool stop" }] }] } }, null, 2)}\n`);
     },
   });
   const libraryDigest = (await computeInstallTreeDigest(f.library)).sha256;
@@ -441,6 +452,8 @@ test("480-AC4: uninstall takes the hooks, both skill copies and the registry ent
   const kept = JSON.parse(await readFile(settings, "utf8"));
   assert.equal(kept.theme, "dark");
   assert.deepEqual(kept.hooks.UserPromptSubmit.map((group) => group.hooks.map((hook) => hook.command)), [["other-tool notify"]]);
+  const keptCodex = JSON.parse(await readFile(join(f.home, ".codex", "hooks.json"), "utf8"));
+  assert.deepEqual(keptCodex.hooks.SubagentStop.map((group) => group.hooks.map((hook) => hook.command)), [["other-tool stop"]], "uninstall removes Einzbern's stop group and preserves another product's group");
   // Copies and skills.json: moved whole into the backups, never deleted.
   for (const [index, root] of SKILL_COPY_ROOTS.entries()) {
     assert.equal(await exists(copies[index]), false, root.host);
@@ -604,4 +617,50 @@ test("DOT-I01/I03/R02: dot update/repair/uninstall never enter traditional maint
   assert.equal(removed.dot.status, "applied"); assert.ok(removed.written.every(write => write.step === "dot-agents"));
   assert.deepEqual(await readdir(home), []); await assert.rejects(lstat(deviceHome), error => error.code === "ENOENT");
   assert.equal(await readFile(manaSkillPath, "utf8"), "# Fixture Mana source\n");
+});
+
+
+test("upgrade with unknown admission preserves an existing owned stop hook for explicit resolution", async () => {
+  const { planHostHooks, mergeHostHooks } = await import("../dist/build/packages/core/src/host-hooks.js");
+  const plan = planHostHooks({ host: "codex", scope: "user", deviceHome: "/fixture/device" });
+  const stop = [{ matcher: "owner-edited", hooks: [{ type: "command", command: 'node "/fixture/device/engine/hook.mjs" subagent-stop', timeout: 3 }] }];
+  const merged = mergeHostHooks({ hooks: { SubagentStop: stop } }, plan);
+  assert.deepEqual(merged.document.hooks.SubagentStop, stop); assert.equal(plan.codexAdmission.state, "unknown");
+});
+
+
+test("public update and repair carry synthetic native admission without granting user restrictions", async t => {
+  const f = await installed(t);
+  const admission = { state: "supported", version: "synthetic-observed-version", evidenceRef: "synthetic-fixture-only:update", subagentStop: true, trust: "permitted" };
+  const path = join(f.home, ".codex", "hooks.json");
+  assert.equal(JSON.parse(await readFile(path, "utf8")).hooks.SubagentStop, undefined);
+  // This release is a synthetic version fixture, not a genuine historical install.
+  const release = await releaseOf(f.base, NEWER);
+  const planned = await plan(f, "update", { archive: release.archive, codexAdmission: admission });
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.codexAdmission, admission);
+  const updated = await applySetup(planned);
+  assertSelfCheckGreen(updated);
+  assert.deepEqual(updated.codexAdmission, admission);
+  const document = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(document.hooks.SubagentStop.length, 1);
+  assert.ok(updated.backups.some(entry => entry.path === path));
+  assert.equal(JSON.parse(await readFile(join(f.home, ".claude", "settings.json"), "utf8")).hooks.SubagentStop, undefined);
+  const repeat = await plan(f, "repair", { codexAdmission: admission });
+  assert.deepEqual(repeat.writes, []);
+  assert.deepEqual((await applySetup(repeat)).written, []);
+  delete document.hooks.SubagentStop;
+  await writeFile(path, JSON.stringify(document));
+  const repair = await plan(f, "repair", { codexAdmission: admission });
+  assert.ok(repair.writes.some(write => write.path === path));
+  await applySetup(repair);
+  document.hooks.SubagentStop = [{ matcher: "user-restriction", hooks: [{ type: "command", command: `node "${f.deviceHome}/engine/hook.mjs" subagent-stop`, timeout: 3 }] }];
+  await writeFile(path, JSON.stringify(document));
+  const unknown = await plan(f, "repair");
+  assert.deepEqual(unknown.blockers, []);
+  await applySetup(unknown);
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")).hooks.SubagentStop, document.hooks.SubagentStop, "unknown preserves the edited native entry");
+  const conflicted = await plan(f, "repair", { codexAdmission: admission });
+  assert.ok(conflicted.blockers.some(blocker => blocker.reasonCode === "HOST_HOOKS_FILE_UNSUPPORTED"));
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")).hooks.SubagentStop, document.hooks.SubagentStop);
 });

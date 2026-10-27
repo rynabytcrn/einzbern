@@ -724,6 +724,8 @@ test("R47-06: the hook leg reads the user-level Claude and Codex files of the gi
   await writeFile(join(device, DEVICE_HOME_ENTRIES.registry), `${JSON.stringify({ schemaVersion: "einzbern.registry.v1", entries: [] })}\n`);
   const live = hooks(await inspectInstallFixture(fixture));
   assert.equal(live.ok, true, JSON.stringify(live));
+  // This live file still has no supported admission; restoring the engine does
+  // not promote the unknown host observation or add the native stop event.
   assert.deepEqual([live.user.claude.state, live.user.codex.state, live.user.codex.events], ["live", "live", ["PreToolUse", "SubagentStart", "UserPromptSubmit"]]);
 
   await writeFile(join(fixture.home, ".codex", "hooks.json"), "{ not json");
@@ -1052,7 +1054,7 @@ test("T7: the core barrel keeps only consumed skill entrypoints and removes stal
   assert.deepEqual(coreExportedSymbols(barrel).filter((symbol) => skillExports.has(symbol)), ["SKILL_COPIES_FILES", "renderSkillMarkdown"]);
 
   const policy = JSON.parse(await readFile(join(import.meta.dirname, "../scripts/policy/core-export-consumers.json"), "utf8"));
-  assert.deepEqual(policy.allowedUnconsumed.filter((symbol) => ["computeInstallTreeDigest", "managedSectionRecordsFor", "writeVariablesSections", "DIRECTORY", "Library"].includes(symbol)), []);
+  assert.deepEqual(policy.allowedUnconsumed.filter((symbol) => ["computeInstallTreeDigest", "managedSectionRecordsFor", "writeVariablesSections", "DIRECTORY", "Library", "LEGACY_CONTROL_DIRECTORY"].includes(symbol)), []);
 });
 
 // The half that keeps the file a register rather than an amnesty. An entry may only

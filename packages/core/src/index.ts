@@ -900,6 +900,10 @@ export { RELEASE_REASON_CODES, ReleaseSourceError } from "./setup-maintain.js";
 export type { ReleaseReasonCode } from "./setup-maintain.js";
 // The launcher a host's hook runs, which the setup self-check runs the way a host does.
 export { hookLauncherPath } from "./host-hooks.js";
+// Native entry points consumed by the normal versioned hook entry. Pure evaluator
+// helpers remain module-local surface, not unconsumed barrel APIs.
+export { codexNativeDynamicToolSpecs, createCodexNativeController, handleCodexSubagentStop } from "./codex-subagent-stop.js";
+export type { CodexDynamicToolHost, CodexDynamicToolRequest, CodexDynamicToolSpec, CodexNativeClient, CodexNativeControllerOptions, CodexNativeRun } from "./codex-subagent-stop.js";
 
 export * from "./project-scope.js";
 
@@ -928,3 +932,5 @@ export { workContentContext, workContentContextSegment } from "./work-content-co
 export { readDotExtensionSource } from "./dot-agents.js";
 
 export { readWorkContentRolloutReadiness } from "./workspace.js";
+
+export type { CodexHookAdmission } from "./host-hooks.js";

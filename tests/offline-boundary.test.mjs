@@ -15,8 +15,12 @@ import { spawnSync } from "node:child_process";
 import dgram from "node:dgram";
 import dns from "node:dns";
 import dnsPromises from "node:dns/promises";
-import { rm } from "node:fs/promises";
-import { createOfflineScannerFixture } from "./helpers/ci-component-fixture.mjs";
+import { chmod, lstat, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { tmpdir } from "node:os";
+import { createCodexNativeHookBridge, requestCodexNativeHookDecision, waitCodexNativeCollector } from "../scripts/lib/codex-native-hook-ipc.mjs";
+import { createOfflineScannerFixture, assertOfflineUnixFixturePathBudget, offlineUnixFixtureLayout } from "./helpers/ci-component-fixture.mjs";
 import http from "node:http";
 import http2 from "node:http2";
 import net, { connect as namedConnect, createConnection as namedCreateConnection } from "node:net";
@@ -207,3 +211,49 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
     }
   });
 }
+
+test("offline permits only canonical owned private filesystem Unix IPC", async t => {
+  const parent = await realpath(tmpdir());
+  assertOfflineUnixFixturePathBudget(join(parent, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
+  const directory = await realpath(await mkdtemp(join(parent, offlineUnixFixtureLayout.directoryPrefix)));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  assertOfflineUnixFixturePathBudget(directory);
+  const bridge = await createCodexNativeHookBridge({ socketPath: join(directory, "h"), timeoutMs: 1000, controller: {
+    capability: "ready", handleSubagentStop: async () => ({ matched: false, decision: "allow" }), waitCollector: async () => ({ status: "waited" }),
+  } });
+  t.after(() => bridge.close());
+  assert.equal((await requestCodexNativeHookDecision({ socketPath: bridge.socketPath, payload: {}, timeoutMs: 1000 })).decision, "allow");
+  assert.equal((await waitCodexNativeCollector({ socketPath: bridge.socketPath, payload: {}, timeoutMs: 1000 })).status, "waited");
+  for (const path of ["relative.sock", "\0abstract", join(directory, "absent"), "https://example.invalid/socket"]) {
+    refuses(`Unix invalid destination ${JSON.stringify(path)}`, () => net.connect(path));
+  }
+  const link = join(directory, "link"); await symlink(bridge.socketPath, link);
+  refuses("symlink socket", () => namedCreateConnection(link));
+  const ordinary = join(directory, "file"); await writeFile(ordinary, "x", { mode: 0o600 });
+  refuses("regular file", () => new net.Socket().connect(ordinary));
+  await chmod(directory, 0o755);
+  refuses("shared parent", () => namedConnect(bridge.socketPath));
+  await chmod(directory, 0o700);
+  await chmod(bridge.socketPath, 0o666);
+  refuses("shared socket", () => net.connect(bridge.socketPath));
+  await chmod(bridge.socketPath, 0o600);
+  const alias = join(directory, "alias"); await symlink(directory, alias);
+  refuses("symlink directory", () => net.connect(join(alias, "h")));
+  // Ownership validation seam: no privileged chown or external account is needed.
+  const original = fs.lstatSync;
+  for (const unowned of [directory, bridge.socketPath]) {
+    fs.lstatSync = (...args) => {
+      const stat = original(...args);
+      if (args[0] === unowned) Object.defineProperty(stat, "uid", { value: (process.getuid?.() ?? 0) + 1 });
+      return stat;
+    };
+    syncBuiltinESMExports();
+    try { refuses("unowned destination", () => net.connect(bridge.socketPath)); }
+    finally { fs.lstatSync = original; syncBuiltinESMExports(); }
+  }
+  refuses("inherited TCP options", () => net.connect(Object.assign(Object.create({ port: 9, host: loopbackHost() }), { path: bridge.socketPath })));
+  refuses("mutable path accessor", () => net.connect({ get path() { return bridge.socketPath; } }));
+  assert.equal((await lstat(bridge.socketPath)).isSocket(), true);
+  await assert.rejects(fetch("https://example.invalid"), /OFFLINE_NETWORK_BLOCKED/u);
+  refuses("TCP remains blocked", () => net.connect({ host: loopbackHost(), port: 9 }));
+});

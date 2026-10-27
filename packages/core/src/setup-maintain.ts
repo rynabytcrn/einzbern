@@ -489,6 +489,7 @@ export async function planUpdateSetup(input: SetupModeInput): Promise<SetupModeP
   }
   const deviceNavigation = await readDeviceNavigation(recorder, deviceHome);
   await planWiring(recorder, {
+    ...(input.codexAdmission === undefined ? {} : { codexAdmission: input.codexAdmission }),
     projectRoot,
     home,
     deviceHome,
@@ -547,6 +548,7 @@ export async function applyUpdateSetup(plan: SetupPlan): Promise<SetupApplied> {
   }
   const deviceNavigation = await readAgentsNavigation(deviceHome);
   await applyWiring(recorder, {
+    ...(plan.codexAdmission === undefined ? {} : { codexAdmission: plan.codexAdmission }),
     projectRoot,
     home,
     deviceHome,
@@ -617,6 +619,7 @@ export async function planRepairSetup(input: SetupModeInput): Promise<SetupModeP
   await planDevice(recorder, deviceHome);
   const resolved = maintainedAnswers(context, answers, library?.state ?? null, deviceNavigation);
   let pending = library === null ? [] : await planWiring(recorder, {
+    ...(input.codexAdmission === undefined ? {} : { codexAdmission: input.codexAdmission }),
     projectRoot,
     home,
     deviceHome,
@@ -651,6 +654,7 @@ export async function applyRepairSetup(plan: SetupPlan): Promise<SetupApplied> {
   const recorder = new SetupRecorder(deviceHome, at);
   const device = await applyDevice(recorder, deviceHome, at);
   let pending = await applyWiring(recorder, {
+    ...(plan.codexAdmission === undefined ? {} : { codexAdmission: plan.codexAdmission }),
     projectRoot,
     home,
     deviceHome,

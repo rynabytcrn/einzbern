@@ -2,6 +2,7 @@
 // Owned, canonical component sources. Production scripts are copied byte for
 // byte; only the tiny source roster and its explicit audit are fixture inputs.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -185,6 +186,7 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 env=dict(os.environ)
 before=m.identity(repo);manifest=m.source_manifest(repo,node,env)
 fixtures={"tmp":m.fixture_location(tmp),"device":m.fixture_location(device)}
+if not all(f["checksPassed"] for f in fixtures.values()): raise RuntimeError("CI_COMPONENT_FIXTURE_PREFLIGHT_REFUSED: "+json.dumps(fixtures,sort_keys=True))
 record=m.capture_process([node,str(repo/"scripts/ci/p1-shard.mjs"),"core",plan],repo,env,tmp,evidence,"p1-core")
 print(json.dumps(dict(capture=record,input=before,output=m.identity(repo),inputManifest=manifest,outputManifest=m.source_manifest(repo,node,env),fixtures=fixtures)))
 `;
@@ -198,23 +200,50 @@ print(json.dumps(dict(capture=record,input=before,output=m.identity(repo),inputM
   return { ...capture, step, task, shard, taskStreams, planPath, temporary, evidence };
 }
 
-export async function createOfflineScannerFixture(context, { unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null } = {}) {
-  const temporaryRoot = await realpath(await mkdtemp(join(tmpdir(), "einzbern-offline-scan-")));
+// mkdtemp appends six ASCII characters. Account for both owned directories below
+// the admitted canonical TMPDIR, not just the final socket basename. The portable
+// fixture budget uses Darwin's 104-byte sun_path, including its NUL terminator.
+export const offlineUnixFixtureLayout = Object.freeze({ scannerPrefix: "os-", directoryPrefix: "u-", suffix: "XXXXXX", sunPathBytes: 104 });
+
+export function assertOfflineUnixFixturePathBudget(directory) {
+  // Include the negative filesystem destinations as well, so a pathname overflow
+  // cannot masquerade as one of the required privacy/ownership refusals.
+  const paths = ["h", "absent", "link", "file", "alias/h"].map((relativePath) => {
+    const path = join(directory, relativePath), pathnameBytes = Buffer.byteLength(path, "utf8"), requiredBytes = pathnameBytes + 1;
+    assert.ok(requiredBytes <= offlineUnixFixtureLayout.sunPathBytes, `UNIX_FIXTURE_PATH_TOO_LONG: ${path} requires ${requiredBytes} bytes including terminator; budget ${offlineUnixFixtureLayout.sunPathBytes}`);
+    return { relativePath, path, pathnameBytes, requiredBytes };
+  });
+  return { directory, sunPathBytes: offlineUnixFixtureLayout.sunPathBytes, terminatorBytes: 1, paths };
+}
+
+export async function createOfflineScannerFixture(context, { unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null, nativeIpcMutation = null } = {}) {
+  const parent = await realpath(tmpdir());
+  assertOfflineUnixFixturePathBudget(join(parent, `${offlineUnixFixtureLayout.scannerPrefix}${offlineUnixFixtureLayout.suffix}`, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
+  const temporaryRoot = await realpath(await mkdtemp(join(parent, offlineUnixFixtureLayout.scannerPrefix)));
   context?.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const root = join(temporaryRoot, "engine");
   try {
+    const unixPathBudget = assertOfflineUnixFixturePathBudget(join(temporaryRoot, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
     await mkdir(join(root, ".git"), { recursive: true });
     await cp(join(componentSourceRoot, "scripts"), join(root, "scripts"), { recursive: true });
     for (const path of ["skill/mana-orchestrate/scripts/install.mjs", "tests/offline-boundary.test.mjs", "tests/helpers/ci-component-fixture.mjs", "tests/helpers/heavy-slots.mjs", "package.json", ".npmrc", "portal/tests/ui-presence-support.mjs", "portal/tests/disposable-portal-fetch.test.mjs", "portal/tests/helpers/disposable-portal-fetch.mjs"]) {
       await mkdir(dirname(join(root, path)), { recursive: true });
       await cp(join(componentSourceRoot, path), join(root, path));
     }
-    for (const [path, mutation] of [["scripts/ci/baseline-evidence.mjs", baselineMutation], [harnessMutation ? `portal/tests/${harnessMutation.file}` : "", harnessMutation]]) {
+    for (const [path, mutation] of [["scripts/lib/codex-native-hook-ipc.mjs", nativeIpcMutation], ["scripts/ci/baseline-evidence.mjs", baselineMutation], [harnessMutation ? `portal/tests/${harnessMutation.file}` : "", harnessMutation]]) {
       if (!mutation) continue;
       const source = await readFile(join(root, path), "utf8");
       const updated = mutation.replace ? source.replace(...mutation.replace) : `${source}\n${mutation.append}\n`;
       assert.notEqual(updated, source, "scanner mutation must change its intended source site");
       await writeFile(join(root, path), updated);
+      if (path === "scripts/lib/codex-native-hook-ipc.mjs" && mutation.rebindDigest) {
+        // Adversarial fixture only: even a matching replacement digest cannot
+        // exempt an undeclared call, alias or missing request/server validation.
+        const policyPath = join(root, "scripts/policy/offline-loopback-harness.json");
+        const policy = JSON.parse(await readFile(policyPath, "utf8"));
+        policy[path].sourceSha256 = createHash("sha256").update(updated).digest("hex");
+        await writeFile(policyPath, JSON.stringify(policy));
+      }
     }
     await mkdir(join(root, "node_modules"));
     for (const dependency of ["ajv", "typescript"]) await symlink(await realpath(join(componentSourceRoot, "node_modules", dependency)), join(root, "node_modules", dependency), "dir");
@@ -226,7 +255,7 @@ export async function createOfflineScannerFixture(context, { unexpectedSource = 
     }
     const env = privateHeavyEnvironment(heavyLockDirectoryUnder(temporaryRoot), { ...process.env, TMPDIR: temporaryRoot, EINZBERN_HOME: join(temporaryRoot, "device"), TCRN_OFFLINE_PROOF: "1" });
     delete env.NODE_TEST_CONTEXT;
-    return { root, repo: root, temporaryRoot, directory: temporaryRoot, env };
+    return { root, repo: root, temporaryRoot, directory: temporaryRoot, env, unixPathBudget };
   } catch (error) {
     await rm(temporaryRoot, { recursive: true, force: true });
     throw error;

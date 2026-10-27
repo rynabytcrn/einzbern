@@ -67,6 +67,7 @@ import { ENGINE_FILES, engineCurrentPath, engineVersionDirectory, readEngineCurr
 import type { EngineCurrent } from "./engine-home.js";
 import { hasLibraryManifest, openLibrary } from "./ether-library.js";
 import { inspectDshPlugin } from "./dsh-plugin.js";
+import type { CodexHookAdmission } from "./host-hooks.js";
 import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
 import {
   HostWritableRootsError,
@@ -504,6 +505,8 @@ function questionsFor(input: SetupModeInput, defaults: ResolvedSetupAnswers): re
 
 /** What planWiring needs: the project, the library it is wired to and the answers the steps take. */
 export interface WiringPlanInput {
+  readonly codexAdmission?: CodexHookAdmission;
+  readonly enableHooksAuthorized?: boolean;
   readonly projectRoot: string;
   readonly home: string;
   readonly deviceHome: string;
@@ -583,10 +586,10 @@ async function planLaunchers(recorder: SetupRecorder, launchers: EngineFiles["la
 }
 
 /** The host-hooks step of a plan: each host's user files, rendered with (or, install false, without) the Einzbern hooks. */
-export async function planHooks(recorder: SetupRecorder, home: string, deviceHome: string, navigation: AgentsNavigationChoice | null, install = true): Promise<void> {
+export async function planHooks(recorder: SetupRecorder, home: string, deviceHome: string, navigation: AgentsNavigationChoice | null, install = true, codexAdmission?: CodexHookAdmission, enableHooksAuthorized = false): Promise<void> {
   for (const host of HOST_HOOK_FILE_HOSTS) {
     const plan = await recorder.attempt("host-hooks", join(home, ...HOST_HOOK_FILES[host].split("/")),
-      async () => readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install }), { root: home, home }));
+      async () => readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install, ...(codexAdmission ? { codexAdmission } : {}), enableHooksAuthorized }), { root: home, home }));
     if (plan === null) continue;
     for (const file of plan.files) {
       if (!file.changed || file.after === null) continue;
@@ -689,7 +692,7 @@ export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput
   const skillDigest = input.engine?.skillDigest ?? null;
   if (skillDigest !== null && runs(steps, "skill-copies")) await planSkillCopies(recorder, skillDigest, home, deviceHome);
   if (input.engine !== null && runs(steps, "launchers")) await planLaunchers(recorder, input.engine.launchers, deviceHome);
-  if (runs(steps, "host-hooks")) await planHooks(recorder, home, deviceHome, navigation);
+  if (runs(steps, "host-hooks")) await planHooks(recorder, home, deviceHome, navigation, true, input.codexAdmission, input.enableHooksAuthorized === true);
   if (library !== null && runs(steps, "writable-roots")) await planRoots(recorder, projectRoot, library.path);
   const settingsFile = join(deviceHome, MACHINE_SETTINGS_FILE_NAME);
   if (runs(steps, "machine-settings") && input.deviceNavigation !== navigation && recorder.blockers.every((blocker) => blocker.step !== "machine-settings")) {
@@ -715,6 +718,8 @@ export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput
 
 /** What applyWiring needs: the project, the library it is wired to, the answers and the engine version installed from. */
 export interface WiringApplyInput {
+  readonly codexAdmission?: CodexHookAdmission;
+  readonly enableHooksAuthorized?: boolean;
   readonly projectRoot: string;
   readonly home: string;
   readonly deviceHome: string;
@@ -822,10 +827,12 @@ export async function applyHooks(recorder: SetupRecorder, input: {
   readonly at: string;
   readonly navigation: AgentsNavigationChoice | null;
   readonly install?: boolean;
+  readonly codexAdmission?: CodexHookAdmission;
+  readonly enableHooksAuthorized?: boolean;
 }): Promise<void> {
   const { home, deviceHome, at, navigation } = input;
   for (const host of HOST_HOOK_FILE_HOSTS) {
-    const hooks = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install: input.install ?? true }), { root: home, home });
+    const hooks = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install: input.install ?? true, ...(input.codexAdmission ? { codexAdmission: input.codexAdmission } : {}), enableHooksAuthorized: input.enableHooksAuthorized === true }), { root: home, home });
     await applyHostHooks(hooks, { at, backupRoot: backupsPath(deviceHome) });
     for (const file of hooks.files) {
       if (!file.changed || file.after === null) continue;
@@ -946,6 +953,7 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
     schemaVersion: SETUP_APPLIED_SCHEMA_VERSION,
     reasonCode: "SETUP_APPLIED",
     mode: plan.mode,
+    ...(plan.codexAdmission === undefined ? {} : { codexAdmission: structuredClone(plan.codexAdmission) }),
     at,
     engineVersion: FRAMEWORK_VERSION,
     projectRoot,
@@ -1037,6 +1045,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
   // registry, skill-copies, launchers, host-hooks, writable-roots, machine-settings, managed-sections
   const files = engine.directory === null ? null : await readEngineFiles(recorder, engine.directory);
   const pending = await planWiring(recorder, {
+    ...(input.codexAdmission === undefined ? {} : { codexAdmission: input.codexAdmission }),
     projectRoot,
     home,
     deviceHome,
@@ -1129,6 +1138,7 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
 
   // registry, skill-copies, launchers, host-hooks, writable-roots, machine-settings, managed-sections
   const pending = await applyWiring(recorder, {
+    ...(plan.codexAdmission === undefined ? {} : { codexAdmission: plan.codexAdmission }),
     projectRoot,
     home,
     deviceHome,

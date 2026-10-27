@@ -296,11 +296,15 @@ The CLI's fixed advisoryStorageAuditEvidenceRef points here, never to a request 
 Runtime path checks remain mandatory on every advisory operation.
 
 - Config backup reserves config-backups, config-backup-staging and
-  config-backup-recovery below one explicit external root. The CLI supplies actual
-  source/registered library and project roots, device root, engine/helper source
-  root and all registered effective generated-artifact roots, including canonical
-  aliases. It uses resolveGeneratedArtifactsRoot, not the mkdir-capable assertion.
+  config-backup-recovery below an explicit dedicated directory: a strict descendant
+  of a project or generated-artifact root, or a disjoint external root. Inside a
+  library, only a strict descendant of its actual generated-artifact root is eligible.
+  The CLI derives actual source/registered roots and canonical aliases; device,
+  engine/helper source, library control, VCS, identity and credential trees remain
+  protected. It uses resolveGeneratedArtifactsRoot, not the mkdir-capable assertion.
   Unknown registered generated roots refuse rather than disappearing from protection.
+  The exact-root policy approval remains required; the reservation marker is only
+  preservation metadata, never approval or a configuration backup member.
 - Group bindings live in the separate device config-backup-bindings directory.
   device-clean examines only device trash/backups and recognized stale/version/skill
   entries. It does not recursively clean the device or this binding directory.
@@ -308,19 +312,28 @@ Runtime path checks remain mandatory on every advisory operation.
   artifacts/coordination/shared-submit/advisory.json. Its consumer rejects device
   roots, dist ancestors, registered repository dist roots, links/nonregular files,
   and uses the actual local library lock plus readback. It is never a CAS/lease.
-  Config backup root disjointness from every library excludes this advisory tree.
+  Config backup admission explicitly protects this fixed directory and the fixed
+  artifacts/consolidation and artifacts/relocations evidence directories, including
+  their future lexical paths and existing canonical aliases, before a writer creates them.
 - artifact-store stages/removes only explicit digest blobs and lists top-level .gz
-  entries, not a recursive directory sweep. safeCleanOutputRoot quarantines the
-  explicit repository dist, and task build resets dist/build. These do not consume
-  the external reserved tree or library advisory. Projection refresh writes only
-  declared output files and preserves independent dot ownership as pending.
+  entries, not a recursive directory sweep. Repository dist cleanup and dist/build
+  reset preserve marked backup roots and their ancestors while removing unrelated
+  output, without quarantining or recursively deleting a parent. Invalid markers and
+  unmarked legacy backup areas fail closed. Output writers recheck reservation and
+  directory identity before publication. The formatter preserves only protocol JSON
+  paths under valid dedicated reservations; source, lint and privacy readers retain
+  their own scope. Collection reads selected logical keys, not recursive source trees.
+  Projection refresh writes only declared output files and preserves independent
+  dot ownership as pending.
 - Helper rendering reports extras rather than deleting them. Original G must still
   retain the handoff's create-skill-archive.mjs exact keep item and verify its own
   final generated directory; this source audit does not claim G's generation ran.
 
-No generalized cleanup framework was changed. An explicit future cleanup target or
-new consumer overlapping either reserved surface needs a new audit, not reliance
-on this static description. No real reserve, advisory or device cleanup ran here.
+These protections cover the repository's named consumers, not arbitrary third-party
+generators or distributed filesystem atomicity. A generator must explicitly exclude
+the reserved directory. An explicit future cleanup target or new overlapping consumer
+needs a new audit, not reliance on this description. No real reserve, advisory or device
+cleanup ran here; source and disposable-fixture coverage is not native acceptance.
 
 ### Candidate sourceVersion refinement and remaining E4
 

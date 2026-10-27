@@ -118,7 +118,9 @@ type SharedSubmitInput = {
 
 Library IDs are `library:` or `workspace:` followed by 24 lowercase hex digits.
 Inventory/root/member paths are normalized relative paths: no empty, `.` or `..`
-components, backslashes, colon or control characters. Required roots and inventory
+components, backslashes, colon or control characters, except the exact unchanged
+historical knowledge inventory observations described below. Root and new-output
+paths never inherit that read-side exception. Required roots and inventory
 are nonempty; required roots must be included and cannot be excluded. Link-raw
 requires the unfollowed linkRepresentation; do not substitute target content.
 completeInventoryDigest is SHA-256 of the engine canonical JSON inventory, not a
@@ -159,3 +161,37 @@ Do not deduce current writer ownership from hostname, age, missing markers, loca
 lock acquisition or the existence of a prior successful operation. These commands
 assess/persist bounded local evidence only; actual remote operations remain the
 existing authorized tools and supported engine entries.
+
+## Existing knowledge filenames versus new output paths
+
+The initial complete baseline may describe existing `knowledge:<24 lowercase hex>`
+metadata (`crest/metadata/*.json`) and flat bodies (`crest/bodies/*.body`), including
+those exact layouts below `artifacts/consolidation/{workspace|library}-<24 hex>/`.
+These are ordinary-file observations only, inside declared included roots, with
+size and SHA-256 in the canonical inventory digest. The corresponding crest
+marker must be inventoried; archived paths also require the source manifest and
+consolidation index in that complete inventory. Path shape alone does **not**
+authenticate archive provenance; the complete snapshot and engine replay remain
+separate required evidence.
+
+Refresh and complete-copy readback may preserve those files only against the
+same initial library/canonical-root identity and exact path, size, SHA-256 and
+kind. `validateSharedBaseline(readback, initialBaseline)` performs that binding;
+`planSharedSubmit` applies it to the refreshed baseline. A missing, renamed,
+changed or newly introduced legacy path refuses. Initial baseline observations
+are supplied evidence, not an authentication of remote storage or permission to
+manufacture a new legacy file before taking a baseline.
+
+This compatibility is read-side only: legacy bytes, filenames, consolidation
+indexes and event history are not migrated or rewritten. New/changed engine
+output and publication paths never inherit the exception. They use ASCII letters,
+digits, `.`, `-`, `_` and directory separators, at most 128 bytes per component
+and 240 bytes per relative path, no trailing dots or reserved Windows device
+components, and no case-insensitive alias of another planned/existing path component. Outputs
+cannot replace or descend through inventoried raw links, or conflict with an
+inventoried/planned file-versus-directory boundary.
+These are relative-path budgets, not a claim that an arbitrarily long absolute
+destination root is portable. Existing colon names are **not** claimed to become
+Windows-portable. Normal current-library knowledge writes already use portable
+sequence/hash event filenames; no writer rewrite or version-floor change is
+needed to preserve existing data and admit its unchanged baseline inventory.

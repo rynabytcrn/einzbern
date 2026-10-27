@@ -65,7 +65,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall", "rule-list"],
-    action: "Run `recall --query \"<task>\"` for discovery. Each new/resumed/delegated session reads AGENTS, Skill and work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults. privacy-publication: `specs/dot-rules-v1.md`.",
+    action: "Run `recall --query \"<task>\"`. New/resumed/delegated sessions read AGENTS, Skill and work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults. Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`.",
   },
   {
     moment: "Draft by work type",
@@ -75,12 +75,12 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Need the full text",
     verbs: ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Read whole work/minutes and each target's `handoff`; a native host dispatch passes that object for that target, gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. Segments/digests: `specs/context-v1.md`; never omit critical clauses. Legacy `--execution-request`: `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute; retain stdout, stderr and exit code. Evidence is not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. See `specs/dispatch-admission-evidence-v1.md`.",
+    action: "Read whole work/minutes and each target's `handoff`; a native host dispatch passes that object for that target, gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. Segments/digests: `specs/context-v1.md`; never omit critical clauses. Legacy `--execution-request`: `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute; retain stdout, stderr and exit code. Evidence is not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
     moment: "Native dispatch (Codex, Claude, dot)",
     verbs: ["execution-host-prepare", "execution-host-record", "execution-host-evidence"],
-    action: "Authorized tools, normal prompt reports. No runtime adapter or optional telemetry prerequisite. Existing class fallback authority applies unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[] needs no binding; check scope/permission. Audit: machine-assemble inputs, never hand-fill JSON; raw returns/reports via `--binding`/`--prior`, actual status names/attempt association. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; saving needs authority. `specs/host-fallback-v1.md`.",
+    action: "Authorized tools, normal prompt reports. No runtime adapter or optional telemetry prerequisite. Existing class fallback authority applies unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[]: no binding; check scope/permission. Audit: machine-assemble inputs, never hand-fill JSON; raw returns/reports via `--binding`/`--prior`, actual status names/attempt association. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; saving needs authority. `specs/host-fallback-v1.md`. Codex: `docs/codex-native-controller.md` for isolated opt-in/same-live helper; Desktop unverified.",
   },
   {
     moment: "Shared submission",
@@ -95,17 +95,17 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Work is done",
     verbs: ["work-transition", "work-annotate"],
-    action: "Use actual actor and readback. Pending is not complete. Compare original source, behavior and assertions: structure is not semantic acceptance. Dot/local consumption separately; unavailable remains unverified.",
+    action: "Use actual actor/readback. Pending is not complete. Compare original source, behavior and assertions: structure is not semantic acceptance. Dot/local consumption separately; unavailable remains unverified.",
   },
   {
     moment: "A decision is made",
     verbs: ["minutes-record"],
-    action: "As soon as you judge a decision, record D1–Dn; end with `已记 <minutes key> Dn` (`Recorded <minutes key> Dn` in English). Prior decisions: `--supersedes`/`--withdraws`/`--coexists`.",
+    action: "As soon as you judge a decision, record D1–Dn; end with `已记 <minutes key> Dn` (`Recorded <minutes key> Dn` in English). Prior: `--supersedes`/`--withdraws`/`--coexists`.",
   },
   {
     moment: "A lesson is learned",
     verbs: ["knowledge-create", "knowledge-capture"],
-    action: "An INIT batch covers all pending Stories; preserve approved roles/stages. Capture at most five sourced lessons via `knowledge-capture`; read back. No dynamic progress in AGENTS.",
+    action: "An INIT batch covers all pending Stories; preserve approved roles/stages. Capture at most five sourced lessons with `knowledge-capture`; read back. No dynamic progress in AGENTS.",
   },
   {
     moment: "UI design",
@@ -158,13 +158,13 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     `# ${BRAND.helper.name}`,
     "",
-    `Navigation for ${BRAND.engine.name} ${input.version}: generated by this engine; do not edit by hand.`,
+    `Navigation for ${BRAND.engine.name} ${input.version}: engine-generated; do not hand-edit.`,
     "",
     "Execution protocol: tcrn.host-execution-request.v1.",
     "",
     "## Navigation",
     "",
-    `Run \`node "<device directory>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb> --<flag> <value>\`. Root: \`~/${DIRECTORY.device}\` or \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\`; missing engine means install first. \`commands\` / \`<verb> --help\`: verbs/flags. Use current UTC \`--at\` and \`--workspace <library>\` as required. Closed inputs: actual engine bundle root \`specs/\` (beside \`scripts/\`), not this Skill.`,
+    `Run \`node "<device directory>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb> --<flag> <value>\`. Root: \`~/${DIRECTORY.device}\` or \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\`; if missing, install first. \`commands\` / \`<verb> --help\`: verbs/flags. Use current UTC \`--at\` and \`--workspace <library>\` as required. Closed inputs: actual engine bundle root \`specs/\` (beside \`scripts/\`), not this Skill.`,
     "",
     "Local sessions share queued writes without stepping aside, not cross-device exclusion. Remote submission needs serial handoff. No platform-native dot hook, background lifecycle manager or sync service is installed.",
     "",
@@ -175,12 +175,12 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "## Three steps",
     "",
     "1. Install this skill: `npx skills add tpmoonchefryan/mana-orchestrate`.",
-    `2. Say "install ${BRAND.engine.name}". Choose traditional hooks or independent dot target via \`setup\`; install.md guides approval.`,
-    "3. Follow the navigation. Installation, policy changes, restoration and publication retain their separate approvals. 20-minute patrol and daily 00:00 Asia/Shanghai backup are independent; unapproved policy forbids daily enablement; unknown stays unknown.",
+    `2. Say "install ${BRAND.engine.name}". Traditional hooks or independent dot target: \`setup\`; approval: install.md.`,
+    "3. Installation, policy changes, restoration and publication retain their separate approvals. 20-minute patrol and daily 00:00 Asia/Shanghai backup are independent; unapproved policy forbids daily enablement; unknown stays unknown.",
     "",
     "## Install-type tasks",
     "",
-    "For install, restore, update, repair, rollback, migration, uninstall or health check, read `references/` (`install.md`, `restore.md`, `update.md`, `migrate.md`, `uninstall.md`, `doctor.md`); dot uses install; never load them for any other work.",
+    "For install, restore, update, repair, rollback, migration, uninstall or health check, read `references/` (`install.md`, `restore.md`, `update.md`, `migrate.md`, `uninstall.md`, `doctor.md`); dot: install; never load them for any other work.",
     "",
   ];
   const markdown = lines.join("\n");

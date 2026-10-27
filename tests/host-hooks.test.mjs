@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-477 R1, R3, R4, R5; AC1 and AC4 (the mechanism) (MIN-227 D4, D5): a host's hook
-// file carries exactly one Einzbern hook group, on UserPromptSubmit, whose one command runs the
+// files carry Einzbern's host-specific event groups, whose one command per group runs the
 // stable launcher in the device directory. Rendering keeps other tools' hooks and every other key;
 // it takes out the old platform harness's hooks, the permissions.deny rules that fenced the old
 // directories and the old inert key, keeps Codex's hooks switch on and drops the trust states of
@@ -27,9 +27,12 @@ import {
   isLegacyDenyRule,
   isLegacyHookCommand,
   mergeHostHooks,
-  planHostHooks,
+  planHostHooks as rawPlanHostHooks,
   readHostHooks,
 } from "../dist/build/packages/core/src/host-hooks.js";
+// Explicit synthetic capability for preexisting renderer fixtures, never native admission evidence.
+const fixtureAdmission = { state: "supported", version: "fixture", evidenceRef: "synthetic-only", subagentStop: true, trust: "permitted" };
+const planHostHooks = input => rawPlanHostHooks({ codexAdmission: fixtureAdmission, enableHooksAuthorized: true, ...input });
 import {
   DIRECTORY,
   LEGACY_CONTAINER_DIRECTORY,
@@ -77,6 +80,7 @@ function launcherCommand(device) {
 const OTHER_PROMPT = { hooks: [{ type: "command", command: "echo other-tool", timeout: 5 }] };
 const OTHER_TOOL = { matcher: "Write", hooks: [{ type: "command", command: "prettier --write", timeout: 5 }] };
 const OTHER_EVENT = { Notification: [{ hooks: [{ type: "command", command: "say done" }] }] };
+const OTHER_STOP = { hooks: [{ type: "command", command: "other-tool stop", timeout: 3 }] };
 
 // The Claude form of the old harness: guarded by the project directory, seven events.
 function claudeOldGroups() {
@@ -194,7 +198,7 @@ test("477-AC1, AC4: after the move each host's user file holds one Einzbern User
     [LEGACY_INERT_SETTINGS_KEY]: { activation: false, hostProduct: "claude-code" },
   };
   const oldCodex = codexOldGroups(oldEngine, container);
-  const userCodex = { description: "the user's own hooks", hooks: { ...oldCodex, PreToolUse: [OTHER_TOOL, ...oldCodex.PreToolUse] } };
+  const userCodex = { description: "the user's own hooks", hooks: { ...oldCodex, PreToolUse: [OTHER_TOOL, ...oldCodex.PreToolUse], SubagentStop: [OTHER_STOP, ...oldCodex.SubagentStop] } };
   const containerCodex = { description: "the old platform harness", hooks: oldCodex };
   assert.equal(hookCommands(containerCodex).length, 12, "the container's Codex file holds the twelve old commands");
   assert.equal(containerClaude.permissions.deny.length, 13);
@@ -226,12 +230,13 @@ test("477-AC1, AC4: after the move each host's user file holds one Einzbern User
     assert.equal(cleaned.applied.reasonCode, "HOST_HOOKS_WRITTEN", `${host} container`);
   }
 
-  // BL34/35: each user file holds the three current engine events and no old harness.
+  // Claude retains the common engine events; Codex also gets its collector-only stop event.
   const claude = await readJson(join(home, CLAUDE));
   const codex = await readJson(userCodexHooks);
   for (const [label, document] of [["claude", claude], ["codex", codex]]) {
     const ours = hookCommands(document).filter((hook) => isEinzbernHookCommand(hook.command));
-    assert.deepEqual(ours.map((hook) => hook.event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"], `${label}: current engine hooks`);
+    const expectedEvents = label === "codex" ? ["PreToolUse", "SubagentStart", "SubagentStop", "UserPromptSubmit"] : ["PreToolUse", "SubagentStart", "UserPromptSubmit"];
+    assert.deepEqual(ours.map((hook) => hook.event).sort(), expectedEvents, `${label}: current engine hooks`);
     assert.deepEqual(hookCommands(document).filter((hook) => isLegacyHookCommand(hook.command)), [], `${label}: no old hook`);
   }
   // Other tools' hooks and the rest of each file stay, in their order.
@@ -245,7 +250,7 @@ test("477-AC1, AC4: after the move each host's user file holds one Einzbern User
   assert.equal(claude.skipWorkflowUsageWarning, true);
   assert.deepEqual(codex, {
     description: "the user's own hooks",
-    hooks: { PreToolUse: [OTHER_TOOL, { hooks: [{ type: "command", command: launcherCommand(device).replace("user-prompt-submit", "pre-tool-use") }] }], UserPromptSubmit: [{ hooks: [{ type: "command", command: launcherCommand(device) }] }], SubagentStart: [{ hooks: [{ type: "command", command: launcherCommand(device).replace("user-prompt-submit", "subagent-start") }] }] },
+    hooks: { PreToolUse: [OTHER_TOOL, { hooks: [{ type: "command", command: launcherCommand(device).replace("user-prompt-submit", "pre-tool-use") }] }], UserPromptSubmit: [{ hooks: [{ type: "command", command: launcherCommand(device) }] }], SubagentStart: [{ hooks: [{ type: "command", command: launcherCommand(device).replace("user-prompt-submit", "subagent-start") }] }], SubagentStop: [OTHER_STOP, { hooks: [{ type: "command", command: launcherCommand(device).replace("user-prompt-submit", "subagent-stop") }] }] },
   });
 
   // The container keeps no hook of ours, old or new, and keeps everything else.
@@ -257,12 +262,12 @@ test("477-AC1, AC4: after the move each host's user file holds one Einzbern User
   assert.deepEqual(claude.permissions, { deny: [] });
   assert.deepEqual(containerClaudeAfter.permissions, { deny: [] });
 
-  // Codex's config keeps its switch and the one trust state whose hook did not change (the other
-  // tool's PreToolUse hook at position 0); every trust state of a removed or replaced hook is gone,
+  // Codex keeps trust for unchanged user-owned PreToolUse and SubagentStop hooks;
+  // every trust state of a removed or replaced hook is gone,
   // and every other byte stays.
   const kept = userStates[0];
   assert.match(kept[0], /:pre_tool_use:0:0"\]$/u);
-  assert.equal(await readFile(join(home, CODEX_CONFIG_FILE), "utf8"), [...configHead, ...kept].join("\n"));
+  assert.equal(await readFile(join(home, CODEX_CONFIG_FILE), "utf8"), [...configHead, ...kept, ...userStates.find(state => state[0].includes(":subagent_stop:0:0"))].join("\n"));
 
   // The originals went to the device directory first, byte for byte.
   const backups = join(device, "backups", STAMP, "host-hooks");
@@ -347,7 +352,8 @@ test("BL34/35: the three engine events render for both hosts, and a clean-only p
   const claude = planHostHooks({ host: "claude-code", scope: "user", deviceHome, platform: "linux" });
   const codex = planHostHooks({ host: "codex", scope: "project", deviceHome, platform: "linux" });
   assert.deepEqual(Object.keys(claude.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
-  assert.deepEqual(codex.groups, claude.groups);
+  assert.deepEqual(Object.keys(codex.groups), [...Object.keys(claude.groups), "SubagentStop"]);
+  for (const event of Object.keys(claude.groups)) assert.deepEqual(codex.groups[event], claude.groups[event]);
   assert.deepEqual([claude.hooksFile, claude.configFile, codex.hooksFile, codex.configFile], [CLAUDE, null, CODEX, CODEX_CONFIG_FILE]);
   assert.deepEqual(mergeHostHooks(null, claude).document, { hooks: claude.groups });
   const clean = planHostHooks({ host: "claude-code", scope: "project", deviceHome, platform: "linux", install: false });
@@ -373,12 +379,16 @@ test("477-R3: another tool's hook sharing a group with an old hook stays in its 
     ],
   };
   const moved = { hooks: [{ type: "command", command: 'node "/opt/elsewhere/engine/hook.mjs" user-prompt-submit', timeout: 30 }] };
-  const merged = mergeHostHooks({ hooks: { SessionStart: [mixed], UserPromptSubmit: [OTHER_PROMPT, moved, OTHER_TOOL] } }, expected);
-  assert.deepEqual(merged.document.hooks.SessionStart, [{ matcher: "startup", hooks: [{ type: "command", command: "echo mine" }] }]);
-  assert.deepEqual(merged.document.hooks.UserPromptSubmit, [OTHER_PROMPT, ...expected.groups.UserPromptSubmit, OTHER_TOOL], "the new group takes the old one's place");
-  assert.deepEqual(merged.removedHooks.map((hook) => hook.event), ["SessionStart", "UserPromptSubmit"]);
+  const edited = { hooks: { SessionStart: [mixed], UserPromptSubmit: [OTHER_PROMPT, moved, OTHER_TOOL] } };
+  assert.throws(() => mergeHostHooks(edited, expected), /explicit plan conflict/u);
+  assert.equal(edited.hooks.SessionStart[0].matcher, "startup", "conflicts never mutate the user's document");
+  const cleanMixed = { hooks: [{ type: "command", command: mixed.hooks[0].command, timeout: 30 }, mixed.hooks[1]] };
+  const cleanMoved = { hooks: [{ type: "command", command: moved.hooks[0].command }] };
+  const merged = mergeHostHooks({ hooks: { SessionStart: [cleanMixed], UserPromptSubmit: [OTHER_PROMPT, cleanMoved, OTHER_TOOL] } }, expected);
+  assert.deepEqual(merged.document.hooks.SessionStart, [{ hooks: [mixed.hooks[1]] }]);
+  assert.deepEqual(merged.document.hooks.UserPromptSubmit, [OTHER_PROMPT, ...expected.groups.UserPromptSubmit, OTHER_TOOL]);
   const again = mergeHostHooks(merged.document, expected);
-  assert.deepEqual([again.document, again.removedHooks], [merged.document, []], "merging again changes nothing and lists nothing");
+  assert.deepEqual([again.document, again.removedHooks], [merged.document, []]);
 
   // Two copies of the Einzbern group become one.
   const doubled = mergeHostHooks({ hooks: { UserPromptSubmit: [...expected.groups.UserPromptSubmit, ...expected.groups.UserPromptSubmit] } }, expected);
@@ -403,7 +413,7 @@ test("477-R4: only the deny rules that fence the old directories go, and a user'
 });
 
 test("477-R4: Codex's config keeps its hooks switch on and every byte that is not ours", () => {
-  const change = (enableHooks) => ({ hooksPath: "/srv/user/.codex/hooks.json", before: null, after: { hooks: {} }, enableHooks });
+  const change = (enableHooks) => ({ hooksPath: "/srv/user/.codex/hooks.json", before: null, after: { hooks: {} }, enableHooks, enableHooksAuthorized: true });
   assert.equal(codexHookConfig(null, change(true)).text, "[features]\nhooks = true\n");
   assert.equal(codexHookConfig(null, change(false)).text, "");
   assert.equal(codexHookConfig('model = "m"\n', change(true)).text, 'model = "m"\n\n[features]\nhooks = true\n');
@@ -493,12 +503,13 @@ test("478-AC5, BL34/35: declined navigation adds SessionStart; subagent recall a
     for (const host of ["claude-code", "codex"]) {
       const expected = planHostHooks({ host, scope: "user", deviceHome, platform, navigation: "declined" });
       const commands = Object.fromEntries(Object.entries(expected.groups).map(([event, groups]) => [event, groups.flatMap((group) => group.hooks.map((hook) => hook.command))]));
-      assert.deepEqual(commands, {
+      const shared = {
         UserPromptSubmit: [`node "${launcher}" user-prompt-submit`],
         PreToolUse: [`node "${launcher}" pre-tool-use`],
         SessionStart: [`node "${launcher}" session-start`],
         SubagentStart: [`node "${launcher}" subagent-start`],
-      }, `${platform}/${host}`);
+      };
+      assert.deepEqual(commands, host === "codex" ? { ...shared, SubagentStop: [`node "${launcher}" subagent-stop`] } : shared, `${platform}/${host}`);
       for (const [command] of Object.values(commands)) assert.equal(isEinzbernHookCommand(command), true, command);
     }
   }
@@ -511,7 +522,7 @@ test("478-AC5, BL34/35: declined navigation adds SessionStart; subagent recall a
   assert.equal((await render("claude-code", "user", home, home, device, { navigation: "declined" })).applied.reasonCode, "HOST_HOOKS_CURRENT", "rendering again writes nothing");
   const codex = await render("codex", "user", home, home, device, { navigation: "declined" });
   assert.equal(codex.applied.reasonCode, "HOST_HOOKS_WRITTEN");
-  assert.deepEqual(Object.keys((await readJson(join(home, CODEX))).hooks).sort(), ["PreToolUse", "SessionStart", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual(Object.keys((await readJson(join(home, CODEX))).hooks).sort(), ["PreToolUse", "SessionStart", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
   assert.match(await readFile(join(home, CODEX_CONFIG_FILE), "utf8"), /^\[features\]\nhooks = true\n/mu);
 
   // Written: SessionStart comes out; the three engine-owned events remain.
@@ -527,4 +538,80 @@ test("478-AC5, BL34/35: declined navigation adds SessionStart; subagent recall a
 test("DOT-I01: chatgpt-dot is not a traditional hook host or fallback", () => {
   assert.deepEqual(HOST_HOOK_HOSTS, ["claude-code", "codex", "dsh"]);
   assert.throws(() => planHostHooks({ host: "chatgpt-dot", scope: "user", deviceHome: "/fixture/device" }), error => error.reasonCode === "HOST_HOOKS_INPUT_INVALID");
+});
+
+
+test("native capability admission remains unknown/unsupported without invented version ranges", () => {
+  const input = { host: "codex", scope: "user", deviceHome: "/fixture/device" };
+  const unknown = rawPlanHostHooks(input);
+  assert.equal(unknown.codexAdmission.state, "unknown"); assert.equal(unknown.groups.SubagentStop, undefined);
+  const unsupported = rawPlanHostHooks({ ...input, codexAdmission: { ...fixtureAdmission, state: "unsupported", trust: "restricted" } });
+  assert.equal(unsupported.groups.SubagentStop, undefined);
+  assert.throws(() => rawPlanHostHooks({ ...input, codexAdmission: { ...fixtureAdmission, evidenceRef: null } }), /requires actual/u);
+  assert.equal(planHostHooks(input).groups.SubagentStop.length, 1);
+});
+
+test("owned matcher, timeout and group settings edits surface explicit plan conflicts", () => {
+  const expected = planHostHooks({ host: "codex", scope: "user", deviceHome: "/fixture/device" });
+  for (const mutation of [group => { group.matcher = "edited"; }, group => { group.timeout = 7; }, group => { group.hooks[0].timeout = 3; }, group => { group.settings = { active: false }; }]) {
+    const existing = { hooks: structuredClone(expected.groups) }; mutation(existing.hooks.SubagentStop[0]);
+    assert.throws(() => mergeHostHooks(existing, expected), /edited|conflict/u);
+  }
+});
+
+test("hooks=false remains a restriction until actual plan authority is supplied", () => {
+  const change = { hooksPath: "/fixture/hooks.json", before: null, after: {}, enableHooks: true };
+  assert.throws(() => codexHookConfig("[features]\nhooks = false\n", change), /explicit installation-plan authority/u);
+  assert.match(codexHookConfig("[features]\nhooks = false\n", { ...change, enableHooksAuthorized: true }).text, /hooks = true/u);
+});
+
+for (const command of ['node "/old/device/engine/hook.mjs" user-prompt-submit', 'node "/old/tcrn-workflow/scripts/knowledge-inject-hook.mjs" --host codex']) {
+  for (const edit of ["matcher", "group-timeout", "hook-timeout", "settings"]) {
+    test(`moved/legacy owned restrictions conflict: ${command}/${edit}`, () => {
+      const hook = { type: "command", command, ...(command.includes("knowledge-inject") ? { timeout: 30 } : {}) };
+      const group = { hooks: [hook] };
+      if (edit === "matcher") group.matcher = "user-limited";
+      if (edit === "group-timeout") group.timeout = 77;
+      if (edit === "hook-timeout") hook.timeout = 77;
+      if (edit === "settings") hook.settings = { user: true };
+      const document = { hooks: { UserPromptSubmit: [group, OTHER_PROMPT] } };
+      const before = structuredClone(document);
+      assert.throws(() => mergeHostHooks(document, planHostHooks({ host: "codex", scope: "user", deviceHome: "/new/device" })), /explicit plan conflict/u);
+      assert.deepEqual(document, before);
+    });
+  }
+}
+
+
+test("exact owned defaults deduplicate across hooks/groups without accepting any edited copy", () => {
+  for (const host of ["codex", "claude-code"]) {
+    const expected = planHostHooks({ host, scope: "user", deviceHome: "/fixture/device" });
+    for (const event of Object.keys(expected.groups)) {
+      const group = expected.groups[event][0];
+      const doubled = { hooks: { [event]: [OTHER_PROMPT, structuredClone(group), { hooks: [...structuredClone(group.hooks), ...structuredClone(group.hooks)] }, OTHER_TOOL] } };
+      const before = structuredClone(doubled);
+      const merged = mergeHostHooks(doubled, expected);
+      assert.deepEqual(doubled, before);
+      assert.deepEqual(merged.document.hooks[event], [OTHER_PROMPT, ...expected.groups[event], OTHER_TOOL]);
+      assert.equal(merged.removedHooks.filter(hook => hook.event === event).length, 2);
+      assert.deepEqual(mergeHostHooks(merged.document, expected).removedHooks, []);
+      for (const edit of [copy => { copy.matcher = "limited"; }, copy => { copy.timeout = 3; }, copy => { copy.settings = { user: true }; }, copy => { copy.hooks[0].timeout = 3; }, copy => { copy.hooks[0].settings = { user: true }; }]) {
+        const edited = structuredClone(before);
+        edit(edited.hooks[event][2]);
+        const original = structuredClone(edited);
+        assert.throws(() => mergeHostHooks(edited, expected), /explicit plan conflict/u);
+        assert.deepEqual(edited, original);
+      }
+    }
+  }
+});
+
+test("unchanged native user_prompt_submit trust slot survives duplicate-owned cleanup", () => {
+  const expected = planHostHooks({ host: "codex", scope: "user", deviceHome: "/fixture/device" });
+  const before = { hooks: { UserPromptSubmit: [OTHER_PROMPT, ...expected.groups.UserPromptSubmit, ...expected.groups.UserPromptSubmit] } };
+  const after = mergeHostHooks(before, expected).document;
+  const config = '# unchanged user hook approval\n[features]\nhooks = true\n\n[hooks.state."/fixture/hooks.json:user_prompt_submit:0:0"]\ntrusted_hash = "sha256:real-native-slot-fixture"\n';
+  const readback = codexHookConfig(config, { hooksPath: "/fixture/hooks.json", before, after, enableHooks: true });
+  assert.equal(readback.text, config);
+  assert.deepEqual(readback.removedTrustStates, []);
 });

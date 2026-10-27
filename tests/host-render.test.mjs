@@ -46,8 +46,8 @@ function refusal(args, env) {
   return JSON.parse(result.stderr.trim().split("\n").at(-1)).reasonCode;
 }
 
-function oneHook(device, host = "claude-code") {
-  return Object.fromEntries([["UserPromptSubmit", "user-prompt-submit"], ["SubagentStart", "subagent-start"], ["PreToolUse", "pre-tool-use"], ...(host === "codex" ? [["SubagentStop", "subagent-stop"]] : [])].map(([event, word]) => [event, [{ hooks: [{ type: "command", command: `node "${join(device, "engine", "hook.mjs")}" ${word}` }] }]]));
+function oneHook(device) {
+  return Object.fromEntries([["UserPromptSubmit", "user-prompt-submit"], ["SubagentStart", "subagent-start"], ["PreToolUse", "pre-tool-use"]].map(([event, word]) => [event, [{ hooks: [{ type: "command", command: `node "${join(device, "engine", "hook.mjs")}" ${word}` }] }]]));
 }
 
 test("BL34/35: --scope user renders the exact host-specific engine hooks into the home directory", async (t) => {

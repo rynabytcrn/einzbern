@@ -117,3 +117,7 @@ Pure consumer functions are extracted from their actual source for isolated dete
 The added execution-request, selective projection output-keys and relocation transaction-id
 are invocation controls, not new persisted project settings. Their detailed rows link to the
 admission, managed-render and identity-bound recovery consumers.
+
+### Invocation-local Codex Unix IPC
+
+`EINZBERN_CODEX_NATIVE_HOOK_SOCKET` is an internal transient local integration input, owned by the live native app-server client. It is passed only to that invocation's hook/helper children; it is never a persistent host setting, library field or shared export. Absent input keeps the ordinary path. The consumer rejects relative, abstract, noncanonical and symlink paths, shared directories/sockets, non-sockets and a different UID. The canonical directory must be private (0700 or stricter) and the socket private (0600 or stricter). Frames, time and abort are bounded. Socket access is local-account isolation, not attestation against hostile same-UID code. Owner bridge close removes its socket; controller/children remain separately owned until real native release.

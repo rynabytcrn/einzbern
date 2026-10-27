@@ -337,29 +337,44 @@ export interface HostHooksMerge {
 // One event's groups with ours taken out and the wanted groups put where the first of ours was
 // (at the end when there was none), so that rendering again leaves the list as it is. null when
 // the event holds nothing of ours and nothing is wanted in it.
-function mergeEvent(event: string, groups: readonly unknown[], wanted: readonly HostHookGroup[], removed: RemovedHook[]): unknown[] | null {
+function mergeEvent(event: string, groups: readonly unknown[], wanted: readonly HostHookGroup[], removed: RemovedHook[], preserveNativeStop = false): unknown[] | null {
+  const owns = (hook: unknown): boolean => isOurs(hook) && !(preserveNativeStop && isEinzbernHookCommand(commandOf(hook) ?? ""));
   const kept: unknown[] = [];
   const ours: unknown[] = [];
   let insertAt: number | null = null;
   for (const group of groups) {
     const hooks: readonly unknown[] | null = isObject(group) && Array.isArray(group.hooks) ? group.hooks : null;
-    if (!isObject(group) || hooks === null || !hooks.some(isOurs)) {
+    if (!isObject(group) || hooks === null || !hooks.some(owns)) {
       kept.push(group);
       continue;
     }
-    for (const hook of hooks.filter(isOurs)) {
+    for (const hook of hooks.filter(owns)) {
       const command = commandOf(hook);
+      // Ownership recognizes old device paths and legacy scripts too. Compare
+      // restrictions against their historical defaults before replacing/removing.
       const expectedGroup = wanted.find(candidate => candidate.hooks.some(wantedHook => commandOf(wantedHook) === command));
-      if (expectedGroup) {
-        const around = { ...group }; delete around.hooks;
-        const expectedAround: Record<string, unknown> = { ...expectedGroup }; delete expectedAround.hooks;
-        if (stableJson(around) !== stableJson(expectedAround)) unsupported(`hooks.${event}`, "owned hook group matcher/settings were edited; explicit plan conflict");
+      const around = { ...group }; delete around.hooks;
+      let baselineAround: Record<string, unknown> = {};
+      let baselineHook: Record<string, unknown> = { type: "command", command };
+      if (command !== null && isLegacyHookCommand(command)) {
+        const normalized = command.replaceAll("\\", "/");
+        if (Object.hasOwn(group, "matcher") && normalized.includes("ssh-write-observer.mjs")) baselineAround = { matcher: "Bash" };
+        else if (Object.hasOwn(group, "matcher") && normalized.includes("chain-write-guard.mjs")) baselineAround = { matcher: "Edit|Write|apply_patch" };
+        if (!/ssh-write-observer|chain-write-guard/u.test(normalized) && isObject(hook) && Object.hasOwn(hook, "timeout")) {
+          baselineHook = { ...baselineHook, timeout: /knowledge-(?:inject|capture)-hook\.mjs/u.test(normalized) ? 30 : 10 };
+        }
+      } else if (expectedGroup) {
+        baselineAround = { ...expectedGroup }; delete baselineAround.hooks;
+        baselineHook = { ...expectedGroup.hooks.find(candidate => commandOf(candidate) === command) };
+      }
+      if (stableJson(around) !== stableJson(baselineAround) || stableJson(hook) !== stableJson(baselineHook)) {
+        unsupported(`hooks.${event}`, "owned hook restrictions/settings were edited; explicit plan conflict (including moved/legacy commands)");
       }
     }
     insertAt ??= kept.length;
-    ours.push(...hooks.filter(isOurs));
+    ours.push(...hooks.filter(owns));
     // Another tool's hook sharing the group stays, and so does the group around it.
-    const rest = hooks.filter((hook) => !isOurs(hook));
+    const rest = hooks.filter((hook) => !owns(hook));
     if (rest.length > 0) kept.push({ ...group, hooks: rest });
   }
   if (ours.length === 0 && wanted.length === 0) return null;
@@ -389,14 +404,14 @@ export function mergeHostHooks(existing: unknown, expected: HostHooksExpectation
   let touched = false;
   const events = [...Object.keys(hooks), ...Object.keys(expected.groups).filter((event) => !Object.hasOwn(hooks, event))];
   for (const event of events) {
-    if (event === "SubagentStop" && expected.host === "codex" && expected.install && expected.codexAdmission.state !== "supported") continue;
+    const preserveNativeStop = event === "SubagentStop" && expected.host === "codex" && expected.install && expected.codexAdmission.state !== "supported";
     const current = hooks[event];
     const wanted = expected.groups[event] ?? [];
     if (current !== undefined && !Array.isArray(current)) {
       if (wanted.length > 0) unsupported(file, `hooks.${event} is not a list`);
       continue;
     }
-    const next = mergeEvent(event, current ?? [], wanted, removedHooks);
+    const next = mergeEvent(event, current ?? [], wanted, removedHooks, preserveNativeStop);
     if (next === null) continue;
     touched = true;
     // An event left with nothing but ours goes with it; the hooks object itself stays, if empty.

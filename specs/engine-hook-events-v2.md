@@ -142,3 +142,7 @@ Run the current check with `pnpm platform:doctor --platform-root <container>`.
 The CLI has no legacy mode or automatic fallback: an old-only container fails the
 current library check. `inspectLegacyPlatform` is an explicitly imported historical
 diagnostic for migration investigations, not an installation acceptance command.
+
+The collector helper authenticates/snapshots the immutable attempt under serialization, then releases shared state before its timer. Signal and clock context belongs to the operation; an unrelated stop can complete while the helper is outstanding, and an authenticated control settles that helper. Accepted safety/pause/cancel/budget/permission remains the primary cause through query, transport, artifact and deadline errors. Secondary errors and unknown member facts retain owner responsibility; no error fabricates native release.
+
+Changed session/turn callbacks never enroll or replay the frozen attempt. Identity faults are recorded for the owner; repeated faults (query-failure bound), elapsed deadline or an already ended attempt allow only an explicit outside-attempt fault handoff. This does not mark the original attempt ended, cancel children or certify a final return. Physical installer and default Desktop support remain separately unverified.

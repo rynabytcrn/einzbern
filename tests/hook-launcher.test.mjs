@@ -78,6 +78,8 @@ async function installEngine(home, entry = null) {
   await mkdir(join(tree, "scripts", "policy"), { recursive: true });
   if (entry === null) {
     await copyFile(join(repositoryRoot, "scripts/einzbern-hook.mjs"), join(tree, "scripts/einzbern-hook.mjs"));
+    await mkdir(join(tree, "scripts/lib"), { recursive: true });
+    await copyFile(join(repositoryRoot, "scripts/lib/codex-native-hook-ipc.mjs"), join(tree, "scripts/lib/codex-native-hook-ipc.mjs"));
     await copyFile(join(repositoryRoot, "scripts/policy/knowledge-provenance.json"), join(tree, "scripts/policy/knowledge-provenance.json"));
     await cp(join(repositoryRoot, "dist/build"), join(tree, "dist/build"), { recursive: true });
   } else {

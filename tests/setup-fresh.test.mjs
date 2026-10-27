@@ -343,7 +343,7 @@ test("480-AC2: a second run with the same answers plans no write and writes noth
   assert.deepEqual(await Promise.all(files.map((path) => readFile(path, "utf8"))), before, "every file keeps its bytes");
   assert.deepEqual(await snapshot([join(f.home, ".claude", "skills"), join(f.home, ".agents", "skills")]), copies);
   assert.equal((await einzbernHooks(join(f.home, ".claude", "settings.json"))).length, 3);
-  assert.equal((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).length, 4);
+  assert.equal((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).length, 3);
   assert.equal((before[3].match(/einzbern:section id=navigation /gu) ?? []).length, 1);
   assertSelfCheckGreen(second);
 });

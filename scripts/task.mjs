@@ -1397,6 +1397,7 @@ function baselineFetchOffset(label, content) {
 function loopbackHarnessSites(content, declaration) {
   const result = { fetchOffsets: new Set(), modules: new Set() };
   if (!declaration) return result;
+  if (declaration.sourceSha256 && createHash("sha256").update(content).digest("hex") !== declaration.sourceSha256) return result;
   const uniqueOffset = (source) => {
     const offset = content.indexOf(source);
     return offset >= 0 && content.indexOf(source, offset + source.length) < 0 ? offset : -1;

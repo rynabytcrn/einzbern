@@ -348,3 +348,13 @@ test("full-core controller defaults and caps at 900000ms while P8 and explicit s
   assert.ok(text.includes('const dogfood = await runTests({ p8Only: true });'));
   assert.ok(text.includes('return runTests();'));
 });
+
+test("native IPC environment is invocation-local integration, never shared configuration", () => {
+  const input = byKey.get("env:EINZBERN_CODEX_NATIVE_HOOK_SOCKET");
+  assert.equal(input.classification, "internal-transient");
+  assert.equal(input.persistence, "invocation");
+  assert.equal(input.visibility, "integration");
+  assert.match(input.validation, /same UID/u);
+  assert.match(input.sharing, /never persisted/u);
+  assert.match(input.effect, /does not create a client/u);
+});

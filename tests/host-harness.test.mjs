@@ -20,12 +20,14 @@ import {
   isEinzbernHookCommand,
   isLegacyHookCommand,
   mergeHostHooks,
-  planHostHooks,
+  planHostHooks as rawPlanHostHooks,
 } from "../dist/build/packages/core/src/host-hooks.js";
 import { LEGACY_DEVICE_DIRECTORY, LEGACY_ENGINE_NAME, LEGACY_HOOK_SCRIPTS, LOCAL_DIRECTORY_NAMES } from "../dist/build/packages/core/src/names.js";
 
 // Codex's documented event set. Every event the harness uses must be in it, and Codex's set is a
 // strict subset of Claude Code's, so membership here settles both directions.
+const planHostHooks = input => rawPlanHostHooks({ codexAdmission: { state: "supported", version: "fixture", evidenceRef: "synthetic event-contract fixture", subagentStop: true, trust: "permitted" }, ...input });
+
 const CODEX_EVENTS = new Set([
   "PreToolUse", "PermissionRequest", "PostToolUse", "PreCompact", "PostCompact",
   "UserPromptSubmit", "SubagentStop", "Stop", "SessionStart", "SessionEnd", "SubagentStart",

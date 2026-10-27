@@ -77,9 +77,10 @@ for (const [name, options, expectedFinding] of [
   test(`mandatory offline exact-site scanner: ${name}`, async (t) => {
     const fixture = await createOfflineScannerFixture(t, options);
     const run = runFixtureTask(fixture, ["offline"]);
+    assert.equal(run.status, expectedFinding ? 1 : 0, JSON.stringify({ status: run.status, signal: run.signal, error: run.error?.message, stderr: run.stderr, stdout: run.stdout }));
     const stream = expectedFinding ? run.stderr : run.stdout;
+    assert.ok(stream.trim(), "expected structured scanner receipt; stdout=" + run.stdout + "; stderr=" + run.stderr);
     const report = JSON.parse(stream.trim().split("\n").at(-1));
-    assert.equal(run.status, expectedFinding ? 1 : 0, run.stderr || run.stdout);
     assert.equal(report.reasonCode, expectedFinding ? "OFFLINE_BOUNDARY_FINDINGS" : "OFFLINE_BOUNDARY_VERIFIED");
     if (expectedFinding) assert.ok(report.error.includes(expectedFinding), report.error);
     else assert.equal(run.stderr, "");
@@ -409,5 +410,20 @@ seal=root/("package-smoke-"+p["head"]+"-1")/"package-seal.json";value=json.loads
       assert.equal((await collect()).state, "verified");
       assert.deepEqual((await fs.readdir(fixture.directory)).filter((name) => name.startsWith("einzbern-ci-baseline-")), []);
     });
+  });
+}
+
+for (const nativeIpcMutation of [
+  { replace: ["const socket = createConnection(socketPath);", 'const socket = createConnection(443, "example.invalid");'] },
+  { replace: ["await requirePrivateDirectory(socketPath);", "// private validation removed"] },
+  { append: 'createConnection("relative.sock");' },
+]) {
+  test("native Unix source classification rejects changed call/validation sites", async t => {
+    const fixture = await createOfflineScannerFixture(t, { nativeIpcMutation });
+    const run = runFixtureTask(fixture, ["offline"]);
+    assert.equal(run.status, 1, run.stdout || run.stderr);
+    const report = JSON.parse(run.stderr.trim().split("\n").at(-1));
+    assert.equal(report.reasonCode, "OFFLINE_BOUNDARY_FINDINGS");
+    assert.ok(report.error.includes("NETWORK_MODULE:scripts/lib/codex-native-hook-ipc.mjs"));
   });
 }

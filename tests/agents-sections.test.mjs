@@ -193,7 +193,7 @@ test("478-AC5: declined adds SessionStart; prompt, subagent and read-guard hooks
   const deviceHome = "/srv/einzbern/device";
   for (const host of ["claude-code", "codex"]) {
     const declined = planHostHooks({ host, scope: "user", deviceHome, platform: "linux", navigation: "declined" });
-    assert.deepEqual(Object.keys(declined.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse", ...(host === "codex" ? ["SubagentStop"] : []), "SessionStart"], host);
+    assert.deepEqual(Object.keys(declined.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse", "SessionStart"], host);
     assert.equal(declined.navigation, "declined");
     assert.equal(declined.groups.SessionStart[0].hooks[0].command, 'node "/srv/einzbern/device/engine/hook.mjs" session-start');
     assert.equal(declined.groups.SubagentStart[0].hooks[0].command, 'node "/srv/einzbern/device/engine/hook.mjs" subagent-start');

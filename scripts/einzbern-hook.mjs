@@ -31,7 +31,7 @@ import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
 import { requestCodexNativeHookDecision, waitCodexNativeCollector } from "./lib/codex-native-hook-ipc.mjs";
 
 // The owning temporary app-server host can use these exports from the versioned hook entry.
-export { codexNativeDynamicToolSpecs, createCodexNativeController } from "../dist/build/packages/core/src/codex-subagent-stop.js";
+export { codexNativeDynamicToolSpecs, createCodexNativeController } from "../dist/build/packages/core/src/index.js";
 export { createCodexNativeHookBridge, waitCodexNativeCollector } from "./lib/codex-native-hook-ipc.mjs";
 
 // Held equal to scripts/einzbern-hook-launcher.mjs (LOG_DIRECTORY, LOG_FILE, LOG_SCHEMA_VERSION).
@@ -84,7 +84,7 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, nativeCon
   if (name === "SubagentStop") {
     if (host !== "codex") return null;
     try {
-      const { handleCodexSubagentStop } = await import("../dist/build/packages/core/src/codex-subagent-stop.js");
+      const { handleCodexSubagentStop } = await import("../dist/build/packages/core/src/index.js");
       const socketPath = process.env.EINZBERN_CODEX_NATIVE_HOOK_SOCKET;
       const result = !nativeController && socketPath
         ? await requestCodexNativeHookDecision({ socketPath, payload: body })

@@ -323,7 +323,7 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
   const settings = join(f.home, ".claude", "settings.json");
   const codexHooks = join(f.home, ".codex", "hooks.json");
   const codexDocument = JSON.parse(await readFile(codexHooks, "utf8"));
-  delete codexDocument.hooks.SubagentStop;
+  delete codexDocument.hooks.PreToolUse; // Unknown admission installs the ordinary read guard, not native stop.
   await writeFile(codexHooks, `${JSON.stringify(codexDocument, null, 2)}\n`);
   await rm(claudeCopy, { recursive: true, force: true });
   await writeFile(settings, "{}\n");

@@ -113,7 +113,7 @@ for (const scenario of [
       await assert.rejects(applyHostHooks(plan, { at: AT }), (error) => {
         failure = error;
         assert.ok(error instanceof AggregateError);
-        assert.equal(error.errors.length, 3);
+        assert.equal(error.errors.length, scenario.primaryKind === "atomic" ? 4 : 3);
         assert.equal(error.errors[0], error.cause);
         if (scenario.primaryKind === "atomic") {
           assert.ok(error.cause instanceof AtomicFileError);
@@ -123,7 +123,7 @@ for (const scenario of [
           assert.equal(error.cause, primary);
           assert.equal(error.reasonCode, "HOST_HOOKS_ROLLBACK_FAILED");
         }
-        const failures = [first, second].map((file, index) => ({
+        const failures = [first, second, ...(scenario.primaryKind === "atomic" ? [last] : [])].map((file, index) => ({
           path: file.path,
           backup: backupFor(file),
           error: error.errors[index + 1].message,
@@ -142,6 +142,10 @@ for (const scenario of [
     if (scenario.firstMissing) assert.equal(failure.errors[1], removalFailure);
     else assert.equal(failure.errors[1].details.path, first.path);
     assert.equal(failure.errors[2].details.path, second.path);
+    if (scenario.primaryKind === "atomic") {
+      assert.equal(failure.errors[3].details.path, last.path);
+      assert.match(failure.errors[3].message, /rename/u);
+    }
     assert.equal(await readFile(first.path, "utf8"), first.after);
     assert.equal(await readFile(second.path, "utf8"), second.after);
     assert.equal(await readFile(third.path, "utf8"), third.before, "a later restoration succeeds despite both earlier failures");

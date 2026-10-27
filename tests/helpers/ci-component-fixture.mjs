@@ -185,6 +185,7 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 env=dict(os.environ)
 before=m.identity(repo);manifest=m.source_manifest(repo,node,env)
 fixtures={"tmp":m.fixture_location(tmp),"device":m.fixture_location(device)}
+if not all(f["checksPassed"] for f in fixtures.values()): raise RuntimeError("CI_COMPONENT_FIXTURE_PREFLIGHT_REFUSED: "+json.dumps(fixtures,sort_keys=True))
 record=m.capture_process([node,str(repo/"scripts/ci/p1-shard.mjs"),"core",plan],repo,env,tmp,evidence,"p1-core")
 print(json.dumps(dict(capture=record,input=before,output=m.identity(repo),inputManifest=manifest,outputManifest=m.source_manifest(repo,node,env),fixtures=fixtures)))
 `;
@@ -198,7 +199,7 @@ print(json.dumps(dict(capture=record,input=before,output=m.identity(repo),inputM
   return { ...capture, step, task, shard, taskStreams, planPath, temporary, evidence };
 }
 
-export async function createOfflineScannerFixture(context, { unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null } = {}) {
+export async function createOfflineScannerFixture(context, { unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null, nativeIpcMutation = null } = {}) {
   const temporaryRoot = await realpath(await mkdtemp(join(tmpdir(), "einzbern-offline-scan-")));
   context?.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const root = join(temporaryRoot, "engine");
@@ -209,7 +210,7 @@ export async function createOfflineScannerFixture(context, { unexpectedSource = 
       await mkdir(dirname(join(root, path)), { recursive: true });
       await cp(join(componentSourceRoot, path), join(root, path));
     }
-    for (const [path, mutation] of [["scripts/ci/baseline-evidence.mjs", baselineMutation], [harnessMutation ? `portal/tests/${harnessMutation.file}` : "", harnessMutation]]) {
+    for (const [path, mutation] of [["scripts/lib/codex-native-hook-ipc.mjs", nativeIpcMutation], ["scripts/ci/baseline-evidence.mjs", baselineMutation], [harnessMutation ? `portal/tests/${harnessMutation.file}` : "", harnessMutation]]) {
       if (!mutation) continue;
       const source = await readFile(join(root, path), "utf8");
       const updated = mutation.replace ? source.replace(...mutation.replace) : `${source}\n${mutation.append}\n`;

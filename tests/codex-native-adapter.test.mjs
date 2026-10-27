@@ -222,7 +222,7 @@ test("concurrent duplicate finals serialize and changed native final is revalida
   const duplicates = await Promise.all([1, 2].map(() => controller.handleSubagentStop({ payload: { ...collectorPayload, last_assistant_message: exactFinal(updated) } })));
   assert.deepEqual(duplicates.map(x => x.reasonCode), ["CODEX_STOP_NATIVE_FINAL_ACCEPTED_RELEASE_UNVERIFIED", "CODEX_STOP_ALREADY_ENDED_RELEASE_UNVERIFIED"]);
   const later = await controller.handleSubagentStop({ payload: { ...collectorPayload, turn_id: WORK_TURN } });
-  assert.equal(later.decision, "block");
+  assert.equal(later.reasonCode, "CODEX_STOP_OUTSIDE_ATTEMPT_IDENTITY_FAULT_HANDOFF");
 });
 
 test("changed parent control cannot reuse staged final", async t => {
@@ -321,3 +321,83 @@ test("failed native systemError remains failed while altered immutable bytes fai
   const result = await controller.handleSubagentStop({ payload: { ...collectorPayload, last_assistant_message: exactFinal(prompt) } });
   assert.equal(result.decision, "block"); assert.match(controller.responsibility().error, /DIGEST|UNSAFE/u);
 });
+
+// Keep the helper outstanding while both unrelated stop and control execute.
+// A timer that is resolved before these calls cannot expose shared-lock starvation.
+test("outstanding helper releases shared state and authenticated control settles it", async t => {
+  const root = await mkdtemp(join(tmpdir(), "codex-concurrent-helper-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const f = fixture({ workerState: "inProgress" });
+  let entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const controller = await start(f, root, true, (_delay, signal) => new Promise((_resolve, reject) => {
+    entered();
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  }));
+  t.after(() => controller.close());
+  const payload = { agent_id: COLLECTOR, session_id: PARENT, turn_id: COLLECT_TURN };
+  assert.equal((await controller.handleSubagentStop({ payload })).reasonCode, "CODEX_STOP_WAIT_REQUIRED");
+  const helper = controller.waitCollector({ payload: { batchId: f.run.batchId, attemptId: f.run.attemptId, agentId: COLLECTOR, turnId: COLLECT_TURN, sessionId: PARENT } });
+  await waiting;
+  const within = async promise => {
+    let timer;
+    try { return await Promise.race([promise, new Promise((_resolve, reject) => { timer = setTimeout(() => reject(new Error("shared timer lock blocked concurrent callback")), 500); })]); }
+    finally { clearTimeout(timer); }
+  };
+  assert.deepEqual(await within(controller.handleSubagentStop({ payload: { agent_id: WORKER } })), { matched: false, decision: "allow" });
+  const control = await within(f.handlers.get("einzbern_control_native_batch")({ threadId: PARENT, callId: "control-live-helper", arguments: { batchId: f.run.batchId, attemptId: f.run.attemptId, exception: "paused" } }));
+  assert.equal(control.status, "accepted");
+  assert.equal((await within(helper)).exception, "paused");
+  assert.deepEqual(await within(controller.handleSubagentStop({ payload: { agent_id: WORKER } })), { matched: false, decision: "allow" }, "helper abort cannot poison the next operation context");
+  assert.equal(controller.responsibility().acceptedControl, "paused");
+});
+
+for (const exception of ["safety", "paused", "user-cancelled", "budget-exhausted", "permission"]) {
+  for (const fault of ["query", "deadline"]) {
+    test(`accepted ${exception} survives ${fault} with unresolved worker facts`, async t => {
+      const root = await mkdtemp(join(tmpdir(), "codex-accepted-control-"));
+      t.after(() => rm(root, { recursive: true, force: true }));
+      const f = fixture();
+      const controller = await start(f, root);
+      t.after(() => controller.close());
+      await f.handlers.get("einzbern_control_native_batch")({ threadId: PARENT, callId: "accepted-control", arguments: { batchId: f.run.batchId, attemptId: f.run.attemptId, exception } });
+      if (fault === "query") f.faults.failWorkerRead = true;
+      else f.advance(300_001);
+      const payload = { agent_id: COLLECTOR, session_id: PARENT, turn_id: COLLECT_TURN };
+      const prompt = await controller.handleSubagentStop({ payload });
+      const raw = prompt.reason.slice(prompt.reason.indexOf("{"));
+      const result = JSON.parse(raw);
+      assert.equal(result.exception, exception);
+      assert.equal(result.facts[0].finalityKind, "unknown");
+      assert.equal(result.facts[0].rawResult.acceptedControl, exception);
+      assert.ok(result.facts[0].rawResult.secondaryException);
+      assert.equal((await controller.handleSubagentStop({ payload: { ...payload, last_assistant_message: raw } })).reasonCode, "CODEX_STOP_EXCEPTION_HANDOFF_RELEASE_UNVERIFIED");
+      assert.equal(controller.responsibility().acceptedControl, exception);
+      assert.equal(controller.responsibility().children.includes(WORKER), true);
+    });
+  }
+}
+
+for (const identity of ["turn", "session"]) for (const state of ["live", "deadline", "ended"]) {
+  test(`identity faults have an explicit bounded outside-attempt handoff: ${identity}/${state}`, async t => {
+    const root = await mkdtemp(join(tmpdir(), "codex-identity-handoff-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const f = fixture();
+    const controller = await start(f, root);
+    t.after(() => controller.close());
+    const payload = { agent_id: COLLECTOR, session_id: PARENT, turn_id: COLLECT_TURN };
+    if (state === "ended") {
+      const prompt = await controller.handleSubagentStop({ payload });
+      const raw = prompt.reason.slice(prompt.reason.indexOf("{"));
+      await controller.handleSubagentStop({ payload: { ...payload, last_assistant_message: raw } });
+    }
+    if (state === "deadline") f.advance(300_001);
+    const changed = identity === "turn" ? { ...payload, turn_id: WORK_TURN } : { ...payload, session_id: WORKER };
+    let result;
+    for (let attempt = 0; attempt < f.run.maxConsecutiveQueryFailures; attempt++) result = await controller.handleSubagentStop({ payload: changed });
+    assert.equal(result.reasonCode, "CODEX_STOP_OUTSIDE_ATTEMPT_IDENTITY_FAULT_HANDOFF");
+    assert.equal(controller.responsibility().error, "NATIVE_COLLECTOR_IDENTITY_FAULT");
+    assert.equal(controller.responsibility().children.includes(COLLECTOR), true);
+    await assert.rejects(() => f.handlers.get("einzbern_register_native_batch")({ threadId: WORKER, callId: "replay", arguments: {} }), /NATIVE_PARENT_REGISTRATION_REFUSED/u);
+  });
+}

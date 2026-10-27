@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { lstatSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 import dgram from "node:dgram";
 import dns from "node:dns";
 import dnsPromises from "node:dns/promises";
@@ -20,6 +22,24 @@ async function blockedAsync() {
   blocked();
 }
 
+// Local IPC is the sole transport exception. No environment flag can enable it.
+// Validate again at the transport boundary, including direct Socket callers.
+function privateUnixPath(args) {
+  const values = Array.isArray(args[0]) ? args[0] : args;
+  const first = values[0];
+  const plain = first && typeof first === "object" && [Object.prototype, null].includes(Object.getPrototypeOf(first)) && Object.keys(first).every(key => key === "path");
+  const path = typeof first === "string" ? first : plain ? Object.getOwnPropertyDescriptor(first, "path")?.value : null;
+  if (values.length > 2 || (values[1] != null && typeof values[1] !== "function")) blocked();
+  if (typeof path !== "string" || !isAbsolute(path) || path.includes("\0") || resolve(path) !== path) blocked();
+  try {
+    const parent = dirname(path), directory = lstatSync(parent), socket = lstatSync(path);
+    if (realpathSync(parent) !== parent || directory.isSymbolicLink() || !directory.isDirectory() || (directory.mode & 0o077) ||
+        socket.isSymbolicLink() || !socket.isSocket() || (socket.mode & 0o077) ||
+        (process.getuid && (directory.uid !== process.getuid() || socket.uid !== process.getuid()))) blocked();
+  } catch { blocked(); }
+  return values[1] == null ? [path] : [path, values[1]];
+}
+
 export function installNoNetworkGuard() {
   if (globalThis.__TCRN_OFFLINE_GUARD__ === true) {
     return;
@@ -37,8 +57,9 @@ export function installNoNetworkGuard() {
   http.get = blocked;
   https.request = blocked;
   https.get = blocked;
-  net.connect = blocked;
-  net.createConnection = blocked;
+  const connect = net.connect, createConnection = net.createConnection, socketConnect = net.Socket.prototype.connect;
+  net.connect = function (...args) { return connect.apply(this, privateUnixPath(args)); };
+  net.createConnection = function (...args) { return createConnection.apply(this, privateUnixPath(args)); };
   tls.connect = blocked;
   dns.lookup = blocked;
   dns.resolve = blocked;
@@ -48,7 +69,7 @@ export function installNoNetworkGuard() {
   // The transport a socket actually uses. Patching net.connect only replaces the
   // convenience factory; `new net.Socket().connect(...)` reaches the wire untouched,
   // and so does everything layered on it (http.Agent, undici, raw client code).
-  net.Socket.prototype.connect = blocked;
+  net.Socket.prototype.connect = function (...args) { return socketConnect.apply(this, privateUnixPath(args)); };
   tls.TLSSocket.prototype.connect = blocked;
 
   // The promise-shaped resolvers are separate function objects from the callback ones,

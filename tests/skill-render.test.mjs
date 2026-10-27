@@ -337,3 +337,11 @@ test("dot blocker recovery is an on-demand E-owned workflow, not a patrol contex
   assert.ok(Buffer.byteLength(body) < 6000);
   assert.equal(body.includes("## Context recovery before infrastructure blockers"), false, "details are fetched only when relevant");
 });
+
+test("Codex isolated helper navigation retains opt-in and Desktop qualification within ordinary budget", () => {
+  const body = render();
+  assert.ok(body.includes("docs/codex-native-controller.md"));
+  assert.ok(body.includes("isolated opt-in/same-live helper"));
+  assert.ok(body.includes("Desktop unverified"));
+  assert.ok(Buffer.byteLength(body) < 6000);
+});

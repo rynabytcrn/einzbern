@@ -379,12 +379,16 @@ test("477-R3: another tool's hook sharing a group with an old hook stays in its 
     ],
   };
   const moved = { hooks: [{ type: "command", command: 'node "/opt/elsewhere/engine/hook.mjs" user-prompt-submit', timeout: 30 }] };
-  const merged = mergeHostHooks({ hooks: { SessionStart: [mixed], UserPromptSubmit: [OTHER_PROMPT, moved, OTHER_TOOL] } }, expected);
-  assert.deepEqual(merged.document.hooks.SessionStart, [{ matcher: "startup", hooks: [{ type: "command", command: "echo mine" }] }]);
-  assert.deepEqual(merged.document.hooks.UserPromptSubmit, [OTHER_PROMPT, ...expected.groups.UserPromptSubmit, OTHER_TOOL], "the new group takes the old one's place");
-  assert.deepEqual(merged.removedHooks.map((hook) => hook.event), ["SessionStart", "UserPromptSubmit"]);
+  const edited = { hooks: { SessionStart: [mixed], UserPromptSubmit: [OTHER_PROMPT, moved, OTHER_TOOL] } };
+  assert.throws(() => mergeHostHooks(edited, expected), /explicit plan conflict/u);
+  assert.equal(edited.hooks.SessionStart[0].matcher, "startup", "conflicts never mutate the user's document");
+  const cleanMixed = { hooks: [{ type: "command", command: mixed.hooks[0].command, timeout: 30 }, mixed.hooks[1]] };
+  const cleanMoved = { hooks: [{ type: "command", command: moved.hooks[0].command }] };
+  const merged = mergeHostHooks({ hooks: { SessionStart: [cleanMixed], UserPromptSubmit: [OTHER_PROMPT, cleanMoved, OTHER_TOOL] } }, expected);
+  assert.deepEqual(merged.document.hooks.SessionStart, [{ hooks: [mixed.hooks[1]] }]);
+  assert.deepEqual(merged.document.hooks.UserPromptSubmit, [OTHER_PROMPT, ...expected.groups.UserPromptSubmit, OTHER_TOOL]);
   const again = mergeHostHooks(merged.document, expected);
-  assert.deepEqual([again.document, again.removedHooks], [merged.document, []], "merging again changes nothing and lists nothing");
+  assert.deepEqual([again.document, again.removedHooks], [merged.document, []]);
 
   // Two copies of the Einzbern group become one.
   const doubled = mergeHostHooks({ hooks: { UserPromptSubmit: [...expected.groups.UserPromptSubmit, ...expected.groups.UserPromptSubmit] } }, expected);
@@ -560,3 +564,20 @@ test("hooks=false remains a restriction until actual plan authority is supplied"
   assert.throws(() => codexHookConfig("[features]\nhooks = false\n", change), /explicit installation-plan authority/u);
   assert.match(codexHookConfig("[features]\nhooks = false\n", { ...change, enableHooksAuthorized: true }).text, /hooks = true/u);
 });
+
+for (const command of ['node "/old/device/engine/hook.mjs" user-prompt-submit', 'node "/old/tcrn-workflow/scripts/knowledge-inject-hook.mjs" --host codex']) {
+  for (const edit of ["matcher", "group-timeout", "hook-timeout", "settings"]) {
+    test(`moved/legacy owned restrictions conflict: ${command}/${edit}`, () => {
+      const hook = { type: "command", command, ...(command.includes("knowledge-inject") ? { timeout: 30 } : {}) };
+      const group = { hooks: [hook] };
+      if (edit === "matcher") group.matcher = "user-limited";
+      if (edit === "group-timeout") group.timeout = 77;
+      if (edit === "hook-timeout") hook.timeout = 77;
+      if (edit === "settings") hook.settings = { user: true };
+      const document = { hooks: { UserPromptSubmit: [group, OTHER_PROMPT] } };
+      const before = structuredClone(document);
+      assert.throws(() => mergeHostHooks(document, planHostHooks({ host: "codex", scope: "user", deviceHome: "/new/device" })), /explicit plan conflict/u);
+      assert.deepEqual(document, before);
+    });
+  }
+}

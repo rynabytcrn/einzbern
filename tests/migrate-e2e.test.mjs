@@ -404,7 +404,7 @@ test("489-AC1, AC2, AC3, AC4 (fixture): setup --mode migrate --yes true on a mac
   // rule at either level; other tools' hooks and keys, and Codex's hooks switch, stay.
   for (const file of [CLAUDE, CODEX]) {
     const user = await readJson(join(m.home, file));
-    assert.deepEqual(hookCommands(user).filter((hook) => isEinzbernHookCommand(hook.command)).map((hook) => hook.event).sort(), ["PreToolUse", "SubagentStart", ...(file === CODEX ? ["SubagentStop"] : []), "UserPromptSubmit"], file);
+    assert.deepEqual(hookCommands(user).filter((hook) => isEinzbernHookCommand(hook.command)).map((hook) => hook.event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"], file);
     const container = await readJson(join(m.container, file));
     for (const document of [user, container]) assert.deepEqual(hookCommands(document).filter((hook) => isLegacyHookCommand(hook.command)), [], file);
     assert.deepEqual(hookCommands(container).filter((hook) => isEinzbernHookCommand(hook.command)), [], file);

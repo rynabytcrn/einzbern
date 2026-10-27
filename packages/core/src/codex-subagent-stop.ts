@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /** Public native-host contract. The pure evaluator remains useful without a native host. */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open } from "node:fs/promises";
@@ -116,22 +117,28 @@ export async function createCodexNativeController(options: CodexNativeController
   readonly capability: "ready" | "unavailable"; readonly reasonCode: string;
   handleSubagentStop(input: StopInput): Promise<StopResult>;
   waitCollector(input: { readonly payload: unknown; readonly signal?: AbortSignal }): Promise<unknown>;
-  responsibility(): { readonly state: string; readonly children: readonly string[]; readonly error: string | null; readonly nativeOperationsUnsettled: number };
+  responsibility(): { readonly state: string; readonly children: readonly string[]; readonly error: string | null; readonly acceptedControl: CollectorException | null; readonly secondaryErrors: readonly string[]; readonly identityFaults: number; readonly nativeOperationsUnsettled: number };
   close(): Promise<void>;
 }> {
   const run = structuredClone(options.run), root = resolve(options.runtimeDirectory);
-  const now = options.now ?? Date.now;
+  const clock = options.now ?? Date.now;
+  const now = () => (operation.getStore()?.clock ?? clock)();
   const deadline = Date.parse(run.deadline);
   const lifetime = new AbortController();
-  let activeSignal: AbortSignal | undefined;
+  const operation = new AsyncLocalStorage<{ readonly signal?: AbortSignal; readonly clock: () => number }>();
+  const helpers = new Set<AbortController>();
+  let identityFaults = 0;
   let closed = false, registration: Registration | null = null, attempted = false;
+  const secondaryErrors: string[] = [];
+  const rememberSecondary = (error: unknown): void => { if (secondaryErrors.at(-1) !== message(error)) secondaryErrors.push(message(error)); if (secondaryErrors.length > 16) secondaryErrors.shift(); };
   let ownerError: string | null = null, ownerState = "not-registered";
   const children = new Set<string>(), operations = new Set<Promise<unknown>>();
   const unregs: Array<() => void> = [];
   let serial: Promise<unknown> = Promise.resolve();
   const locked = <T>(action: () => Promise<T>): Promise<T> => { const task = serial.then(action); serial = task.catch(() => undefined); return task; };
-  const check = (): void => { if (activeSignal?.aborted) throw activeSignal.reason; if (closed) throw new Error("NATIVE_CONTROLLER_CLOSED"); if (now() < Date.parse(run.startedAt)) throw new Error("NATIVE_CLOCK_SKEW"); };
-  const responsibility = () => ({ state: ownerState, children: [...children], error: ownerError, nativeOperationsUnsettled: operations.size });
+  const ownerLocked = <T>(action: () => Promise<T>): Promise<T> => operation.run({ clock }, () => locked(action));
+  const check = (): void => { const signal = operation.getStore()?.signal; if (signal?.aborted) throw signal.reason; if (closed) throw new Error("NATIVE_CONTROLLER_CLOSED"); if (now() < Date.parse(run.startedAt)) throw new Error("NATIVE_CLOCK_SKEW"); };
+  const responsibility = () => ({ state: ownerState, children: [...children], error: ownerError, acceptedControl: registration?.exception ?? null, secondaryErrors: [...secondaryErrors], identityFaults, nativeOperationsUnsettled: operations.size });
   const unrelated = (): StopResult => ({ matched: false, decision: "allow" });
   const blocked = (reasonCode: string, reason: string): StopResult => ({ matched: true, decision: "block", reasonCode, reason });
   async function bounded<T>(action: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, permitDeadline = false, helperWait = false): Promise<T> {
@@ -219,10 +226,11 @@ export async function createCodexNativeController(options: CodexNativeController
     if (confirmations.length !== 1 || !confirm || confirm.status !== "completed" || confirm.success !== true || canonical(confirm.arguments) !== canonical(reg.args)) throw new Error("NATIVE_REGISTRATION_NOT_CONFIRMED");
     const receipt: unknown = JSON.parse(records(confirm.contentItems).filter(item => item.type === "inputText").map(item => string(item.text)).join(""));
     if (!object(receipt) || receipt.fingerprint !== reg.fingerprint || receipt.status !== "registered" || receipt.batchId !== run.batchId || receipt.attemptId !== run.attemptId) throw new Error("NATIVE_REGISTRATION_RECEIPT_MISMATCH");
-    let exception = reg.exception;
+    let observedControl: CollectorException | null = null;
     for (const item of items) if (item.type === "dynamicToolCall" && item.tool === CONTROL_TOOL && item.status === "completed" && item.success === true) {
-      const args = record(item.arguments); if (args.batchId === run.batchId && args.attemptId === run.attemptId && EXCEPTIONS.has(args.exception as CollectorException)) exception = args.exception as CollectorException;
+      const args = record(item.arguments); if (args.batchId === run.batchId && args.attemptId === run.attemptId && EXCEPTIONS.has(args.exception as CollectorException)) observedControl = args.exception as CollectorException;
     }
+    let exception = reg.exception ?? observedControl;
     for (const member of reg.members) {
       const receipts = items.filter(item => item.id === member.dispatchItemId && item.type === "subAgentActivity" && item.kind === "started" && item.agentThreadId === member.threadId);
       const policy = member.role === "collector" ? run.collectorPolicy : run.workerPolicy;
@@ -248,7 +256,7 @@ export async function createCodexNativeController(options: CodexNativeController
     }
     check(); const evaluated = now();
     if (acquired.some(at => at > evaluated || evaluated - at > run.queryIntervalMs) || readReceipts.some(read => read.startedAt > read.completedAt || read.completedAt > evaluated || evaluated - read.startedAt > run.queryIntervalMs)) throw new Error("NATIVE_OBSERVATION_STALE");
-    if (evaluated >= deadline) exception = "deadline";
+    if (evaluated >= deadline) exception ??= "deadline";
     await evidence("observation", { reads: readReceipts, evaluated, facts, exception });
     if (now() - Math.min(...acquired) > run.queryIntervalMs) throw new Error("NATIVE_OBSERVATION_STALE");
     return { exception, facts };
@@ -267,7 +275,7 @@ export async function createCodexNativeController(options: CodexNativeController
     if (!options.helperEntry || !options.helperEntry.startsWith("/")) throw new Error("NATIVE_HELPER_SUPPORT_UNKNOWN");
     await privateDirectory(root);
     const [registrationSpec, controlSpec] = codexNativeDynamicToolSpecs(run.maxAgents);
-    unregs.push(await registerTool({ ...registrationSpec, handler: request => locked(async () => {
+    unregs.push(await registerTool({ ...registrationSpec, handler: request => ownerLocked(async () => {
       if (request.threadId !== run.parentThreadId || !text(request.callId)) throw new Error("NATIVE_PARENT_REGISTRATION_REFUSED");
       if (attempted || closed) return { status: "failed", reasonCode: "NATIVE_REGISTRATION_ALREADY_ATTEMPTED", responsibility: responsibility() };
       attempted = true; ownerState = "registration-in-flight";
@@ -300,10 +308,11 @@ export async function createCodexNativeController(options: CodexNativeController
         return { status: "registered", batchId: run.batchId, attemptId: run.attemptId, fingerprint, collectorThreadId: resolved.find(m => m.role === "collector")!.threadId, workerThreadIds: resolved.filter(m => m.role === "worker").map(m => m.threadId) };
       } catch (error) { ownerError = message(error); ownerState = "registration-failed-unresolved"; if (!closed) await evidence("registration-failed", responsibility()).catch(() => undefined); return { status: "failed", reasonCode: ownerError, responsibility: responsibility(), discovery: "unresolved dispatched children remain owned, including identities not yet resolved" }; }
     }) }));
-    unregs.push(await registerTool({ ...controlSpec, handler: request => locked(async () => {
+    unregs.push(await registerTool({ ...controlSpec, handler: request => ownerLocked(async () => {
       check(); const args = record(request.arguments);
       if (!registration || request.threadId !== run.parentThreadId || !text(request.callId) || args.batchId !== run.batchId || args.attemptId !== run.attemptId || !["budget-exhausted", "paused", "user-cancelled", "safety", "permission"].includes(string(args.exception))) throw new Error("NATIVE_CONTROL_REFUSED");
       if (registration.ended) throw new Error("NATIVE_BATCH_ENDED"); registration.exception = args.exception as CollectorException;
+      for (const helper of helpers) helper.abort(new Error("NATIVE_HELPER_CONTROL_ACCEPTED"));
       await evidence("control", args); return { status: "accepted", batchId: run.batchId, attemptId: run.attemptId };
     }) }));
   } catch (error) { ownerError = message(error); for (const off of unregs.splice(0)) { try { off(); } catch (cleanupError) { ownerError += `; unregister: ${message(cleanupError)}`; } } return { capability: "unavailable", reasonCode: ownerError, handleSubagentStop: async () => unrelated(), waitCollector: async () => { throw new Error("NATIVE_HELPER_UNAVAILABLE"); }, responsibility, close: async () => { closed = true; lifetime.abort(); } }; }
@@ -312,11 +321,22 @@ export async function createCodexNativeController(options: CodexNativeController
     if (!reg) return unrelated();
     const collector = reg.members.find(m => m.role === "collector")!;
     if (body.agent_id !== collector.threadId) return unrelated();
-    if (body.session_id !== run.parentSessionId || body.turn_id !== collector.turnId) return blocked("CODEX_STOP_IDENTITY_MISMATCH", "Authenticated collector identity changed; owning client retains responsibility.");
+    if (body.session_id !== run.parentSessionId || body.turn_id !== collector.turnId) {
+      identityFaults++;
+      ownerError = "NATIVE_COLLECTOR_IDENTITY_FAULT";
+      ownerState = "identity-fault-unresolved-owner-retains-children";
+      await evidence("identity-fault", { identityFaults, ended: reg.ended, responsibility: responsibility() }).catch(rememberSecondary);
+      if (reg.ended || now() >= deadline || identityFaults >= run.maxConsecutiveQueryFailures) {
+        // This callback is outside the frozen turn authority. Let it exit with an
+        // explicit owner fault; it neither ends nor reenrolls the registered attempt.
+        return { matched: true, decision: "allow", reasonCode: "CODEX_STOP_OUTSIDE_ATTEMPT_IDENTITY_FAULT_HANDOFF" };
+      }
+      return blocked("CODEX_STOP_IDENTITY_MISMATCH", "Identity fault: frozen attempt unchanged; owning client retains children. Repeated faults have a bounded owner handoff.");
+    }
     const finalText = typeof body.last_assistant_message === "string" ? body.last_assistant_message : "";
     if (reg.ended) return stage?.acceptedText === finalText ? { matched: true, decision: "allow", reasonCode: "CODEX_STOP_ALREADY_ENDED_RELEASE_UNVERIFIED" } : blocked("CODEX_STOP_ENDED_REENTRY_REFUSED", "Later followups cannot replay this ended attempt.");
     try {
-      if (reg.progress.nextQueryAt && now() < Date.parse(reg.progress.nextQueryAt) && !stage) return blocked("CODEX_STOP_WAIT_REQUIRED", waitInstruction());
+      if (reg.progress.nextQueryAt && now() < Date.parse(reg.progress.nextQueryAt) && !stage && !reg.exception) return blocked("CODEX_STOP_WAIT_REQUIRED", waitInstruction());
       if (stage && finalText !== canonical(stage.final)) {
         stage.formats++;
         if (stage.formats >= 4) { ownerState = "failed-final-unresolved"; ownerError = "NATIVE_FINAL_FORMAT_LIMIT"; await evidence("failed-final", { finalText, expected: stage.final, responsibility: responsibility() }); reg.ended = true; stage.acceptedText = finalText; return { matched: true, decision: "allow", reasonCode: "CODEX_STOP_FAILED_FINAL_HANDOFF_RELEASE_UNVERIFIED" }; }
@@ -334,16 +354,18 @@ export async function createCodexNativeController(options: CodexNativeController
       reg.progress = { lastSequence: reg.progress.lastSequence + 1, lastObservedAt: new Date(now()).toISOString(), nextQueryAt: new Date(Math.min(deadline, now() + run.queryIntervalMs)).toISOString(), ended: false };
       await evidence("progress", reg.progress); return blocked("CODEX_STOP_WAIT_REQUIRED", waitInstruction());
     } catch (error) {
+      rememberSecondary(error);
       ownerError = message(error);
       if (closed || input.signal?.aborted) { if (!closed) ownerState = "disconnected-unresolved-owner-retains-children"; throw error; }
       ownerState = "query-exception-owned";
       reg.failures++;
-      const exception: CollectorException = now() >= deadline || ownerError === "NATIVE_DEADLINE_EXCEEDED" ? "deadline" : reg.failures >= run.maxConsecutiveQueryFailures ? "query-failure-limit" : "script-error";
-      await evidence("query-exception", { error: ownerError, failures: reg.failures, responsibility: responsibility() });
+      const secondaryException: CollectorException = now() >= deadline || ownerError === "NATIVE_DEADLINE_EXCEEDED" ? "deadline" : reg.failures >= run.maxConsecutiveQueryFailures ? "query-failure-limit" : "script-error";
+      const exception = reg.exception ?? secondaryException;
+      await evidence("query-exception", { acceptedControl: reg.exception, secondaryException, error: ownerError, failures: reg.failures, responsibility: responsibility() }).catch(rememberSecondary);
       if (exception === "script-error") { reg.progress = { ...reg.progress, nextQueryAt: new Date(Math.min(deadline, now() + run.queryIntervalMs)).toISOString() }; return blocked("CODEX_STOP_QUERY_RETRY_WAIT_REQUIRED", waitInstruction()); }
       // No further reads past deadline. Native failure handoff is explicit and is never a verified final packet.
-      if (stage && finalText === canonical(stage.final) && stage.final.exception === exception) { await evidence("exception-handoff", { finalText, error: ownerError, responsibility: responsibility() }); reg.ended = true; stage.acceptedText = finalText; ownerState = "exception-handoff-unresolved"; return { matched: true, decision: "allow", reasonCode: "CODEX_STOP_EXCEPTION_HANDOFF_RELEASE_UNVERIFIED" }; }
-      stage = { final: { exception, facts: reg.members.filter(m => m.role === "worker").map(m => ({ agentId: m.threadId, hostState: `query-error/${ownerError}`, finalityKind: "unknown", evidenceRef: null, rawResult: { error: ownerError } })) }, formats: 0, acceptedText: null };
+      if (stage && finalText === canonical(stage.final) && stage.final.exception === exception) { await evidence("exception-handoff", { finalText, error: ownerError, responsibility: responsibility() }).catch(rememberSecondary); reg.ended = true; stage.acceptedText = finalText; ownerState = "exception-handoff-unresolved"; return { matched: true, decision: "allow", reasonCode: "CODEX_STOP_EXCEPTION_HANDOFF_RELEASE_UNVERIFIED" }; }
+      stage = { final: { exception, facts: reg.members.filter(m => m.role === "worker").map(m => ({ agentId: m.threadId, hostState: `query-error/${ownerError}`, finalityKind: "unknown", evidenceRef: null, rawResult: { error: ownerError, acceptedControl: reg.exception, secondaryException, secondaryErrors: [...secondaryErrors] } })) }, formats: 0, acceptedText: null };
       return blocked("CODEX_STOP_RAW_FINAL_REQUIRED", `Native outcome is unresolved. Return exactly: ${canonical(stage.final)}`);
     }
   }
@@ -353,19 +375,39 @@ export async function createCodexNativeController(options: CodexNativeController
       const onAbort = () => abort.abort(input.signal?.reason ?? new Error("NATIVE_OPERATION_ABORTED"));
       input.signal?.addEventListener("abort", onAbort, { once: true }); if (input.signal?.aborted) onAbort();
       const timer = setTimeout(() => abort.abort(new Error("NATIVE_HOOK_CALLBACK_TIMEOUT")), options.transport!.hookTimeoutMs - 1);
-      const task = locked(() => { if (abort.signal.aborted) throw abort.signal.reason; activeSignal = abort.signal; return handle({ ...input, signal: abort.signal }).finally(() => { activeSignal = undefined; }); });
+      const task = locked(() => { if (abort.signal.aborted) throw abort.signal.reason; return operation.run({ signal: abort.signal, clock }, () => handle({ ...input, signal: abort.signal })); });
       const aborted = new Promise<never>((_resolve, reject) => { abort.signal.addEventListener("abort", () => reject(abort.signal.reason), { once: true }); if (abort.signal.aborted) reject(abort.signal.reason); });
       return Promise.race([task, aborted]).finally(() => { clearTimeout(timer); input.signal?.removeEventListener("abort", onAbort); });
     },
-    waitCollector: input => locked(async () => {
-      activeSignal = input.signal;
-      check(); const args = record(input.payload), reg = registration, collector = reg?.members.find(m => m.role === "collector");
-      if (!reg || !collector || reg.ended || args.batchId !== run.batchId || args.attemptId !== run.attemptId || args.agentId !== collector.threadId || args.turnId !== collector.turnId || args.sessionId !== run.parentSessionId) throw new Error("NATIVE_HELPER_IDENTITY_REFUSED");
-      const snap = await snapshot(collector.threadId, input.signal); pinned(snap, collector);
-      const delay = Math.max(0, Math.min(deadline, Date.parse(reg.progress.nextQueryAt ?? new Date(now()).toISOString())) - now());
-      if (delay > 0) await bounded(signal => options.wait ? options.wait(delay, signal) : new Promise<void>((resolveWait, reject) => { const timer = setTimeout(resolveWait, delay); signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true }); }), input.signal, false, true);
-      check(); return { status: "waited", batchId: run.batchId, attemptId: run.attemptId, at: new Date(now()).toISOString() };
-    }).finally(() => { activeSignal = undefined; }),
+    waitCollector: async input => {
+      const helper = new AbortController();
+      const onAbort = () => helper.abort(input.signal?.reason ?? new Error("NATIVE_OPERATION_ABORTED"));
+      input.signal?.addEventListener("abort", onAbort, { once: true });
+      if (input.signal?.aborted) onAbort();
+      helpers.add(helper);
+      let validated = false;
+      try {
+        return await operation.run({ signal: helper.signal, clock }, async () => {
+          const delay = await locked(async () => {
+            check(); const args = record(input.payload), reg = registration, collector = reg?.members.find(m => m.role === "collector");
+            if (!reg || !collector || reg.ended || args.batchId !== run.batchId || args.attemptId !== run.attemptId || args.agentId !== collector.threadId || args.turnId !== collector.turnId || args.sessionId !== run.parentSessionId) throw new Error("NATIVE_HELPER_IDENTITY_REFUSED");
+            validated = true;
+            const snap = await snapshot(collector.threadId, helper.signal); pinned(snap, collector);
+            if (reg.exception) return 0;
+            return Math.max(0, Math.min(deadline, Date.parse(reg.progress.nextQueryAt ?? new Date(now()).toISOString())) - now());
+          });
+          // State is frozen above; no shared state lock is held by the timer.
+          if (delay > 0) await bounded(signal => options.wait ? options.wait(delay, signal) : new Promise<void>((resolveWait, reject) => {
+            const timer = setTimeout(resolveWait, delay);
+            signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+          }), helper.signal, false, true);
+          check(); return { status: "waited", batchId: run.batchId, attemptId: run.attemptId, at: new Date(now()).toISOString() };
+        });
+      } catch (error) {
+        if (validated && registration?.exception && !closed && !input.signal?.aborted) return { status: "waited", batchId: run.batchId, attemptId: run.attemptId, exception: registration.exception, at: new Date(now()).toISOString() };
+        throw error;
+      } finally { helpers.delete(helper); input.signal?.removeEventListener("abort", onAbort); }
+    },
     close: async () => { if (closed) return; closed = true; ownerState = "closed-unresolved-owner-retains-children"; lifetime.abort(new Error("NATIVE_CONTROLLER_CLOSED"));
       const failures: unknown[] = []; for (const off of unregs.splice(0)) { try { off(); } catch (error) { failures.push(error); } }
       await serial.catch(() => undefined);

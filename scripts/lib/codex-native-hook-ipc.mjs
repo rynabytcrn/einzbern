@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Local transport for a caller-owned live controller. This does not create a Codex client.
-import { chmod, lstat } from "node:fs/promises";
+import { chmod, lstat, realpath } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
-import { dirname, isAbsolute } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 const MAX_BYTES = 1_048_576;
 const DEFAULT_TIMEOUT_MS = 900_000;
@@ -12,9 +12,9 @@ function requireTimeout(timeoutMs) {
 }
 
 async function requirePrivateDirectory(socketPath) {
-  if (typeof socketPath !== "string" || !isAbsolute(socketPath)) throw new Error("CODEX_NATIVE_IPC_PATH_INVALID");
+  if (typeof socketPath !== "string" || !isAbsolute(socketPath) || socketPath.includes("\0") || resolve(socketPath) !== socketPath) throw new Error("CODEX_NATIVE_IPC_PATH_INVALID");
   const directory = await lstat(dirname(socketPath));
-  if (!directory.isDirectory() || directory.isSymbolicLink() || (directory.mode & 0o077) !== 0 ||
+  if (await realpath(dirname(socketPath)) !== dirname(socketPath) || !directory.isDirectory() || directory.isSymbolicLink() || (directory.mode & 0o077) !== 0 ||
       (typeof process.getuid === "function" && directory.uid !== process.getuid())) throw new Error("CODEX_NATIVE_IPC_DIRECTORY_NOT_PRIVATE");
 }
 

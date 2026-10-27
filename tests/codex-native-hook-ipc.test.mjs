@@ -2,7 +2,7 @@
 // Real local transport and installed-launcher fixtures; not native Codex acceptance.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, copyFile, lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -12,7 +12,7 @@ import { createCodexNativeHookBridge, requestCodexNativeHookDecision, waitCodexN
 const root = resolve(import.meta.dirname, "..");
 
 async function fixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), "en-ipc-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "en-ipc-")));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const calls = [];
   const controller = { capability: "ready", async handleSubagentStop({ payload }) {
@@ -76,7 +76,7 @@ test("the normal installed launcher reaches the owner controller through its iso
 
 
 test("bridge helper is separate from stop and disconnect aborts owned work", async t => {
-  const directory = await mkdtemp(join(tmpdir(), "en-helper-")); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "en-helper-"))); t.after(() => rm(directory, { recursive: true, force: true }));
   let stopped = 0, waited = 0, aborted = false;
   const controller = { capability: "ready", handleSubagentStop: async () => { stopped++; return { matched: false, decision: "allow" }; }, waitCollector: async ({ payload, signal }) => {
     waited++; if (payload.hang) return new Promise((_resolve, reject) => signal.addEventListener("abort", () => { aborted = true; reject(signal.reason); }, { once: true }));
@@ -91,7 +91,7 @@ test("bridge helper is separate from stop and disconnect aborts owned work", asy
 
 
 test("normal versioned helper CLI invokes helper route without a stop callback", async t => {
-  const directory = await mkdtemp(join(tmpdir(), "en-helper-cli-")); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "en-helper-cli-"))); t.after(() => rm(directory, { recursive: true, force: true }));
   let stops = 0, waits = 0;
   const controller = { capability: "ready", handleSubagentStop: async () => { stops++; return { matched: false, decision: "allow" }; }, waitCollector: async ({ payload }) => { assert.equal(payload.attemptId, "fixture"); waits++; return { status: "waited" }; } };
   const bridge = await createCodexNativeHookBridge({ controller, socketPath: join(directory, "h"), timeoutMs: 2000 }); t.after(() => bridge.close());

@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 3.4.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 3.4.0.
+
 ### Codex native collection
 
 - Add an opt-in isolated Codex native controller and private hook bridge through

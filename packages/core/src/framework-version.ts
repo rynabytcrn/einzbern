@@ -1,3 +1,3 @@
 // SPDX-License-Identifier: Apache-2.0
 // Dependency-free release identity, also re-exported by the public barrel.
-export const FRAMEWORK_VERSION = "3.3.1" as const;
+export const FRAMEWORK_VERSION = "3.4.0" as const;

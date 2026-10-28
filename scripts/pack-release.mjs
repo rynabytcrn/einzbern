@@ -23,6 +23,7 @@
 //                               same builds register, unregister and repoint use, once each
 //   skill/mana-orchestrate/     the skill as skill-render writes it for this version
 //   specs/                      explicit public CLI payload/evidence contracts
+//   docs/codex-native-controller.md  the installed Skill's opt-in native-controller contract
 //   README*.md, CHANGELOG.md, LICENSE, NOTICE, THIRD_PARTY_NOTICES.txt
 //   manifest.json               einzbern.release-manifest.v1: version, nodeFloor, installTreeDigest, files
 //
@@ -36,7 +37,7 @@
 // Prints {"ok":true,"reasonCode":"RELEASE_PACKED",...} on stdout, or a reason code and its details
 // on stderr with exit code 1.
 
-import { SPECIFICATIONS, verifySkillSpecifications } from "./lib/release-package-inputs.mjs";
+import { CONTRACT_DOCUMENTS, SPECIFICATIONS, verifySkillSpecifications } from "./lib/release-package-inputs.mjs";
 
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -248,6 +249,7 @@ async function packRelease({ version: requested, out }) {
     });
     if (JSON.parse(rendered).reasonCode !== "SKILL_RENDERED") fail("PACK_INTERNAL_ERROR", "skill-render did not render the skill");
     for (const specification of SPECIFICATIONS) await copyStaged(tree, `specs/${specification}`, join(repositoryRoot, "specs", specification));
+    for (const document of CONTRACT_DOCUMENTS) await copyStaged(tree, document, join(repositoryRoot, document));
     await verifySkillSpecifications(tree, `skill/${BRAND.helper.id}`);
     const documents = [...(await readdir(repositoryRoot)).filter((file) => README.test(file)).sort(), ...DOCUMENTS];
     for (const file of documents) await copyStaged(tree, file, join(repositoryRoot, file));

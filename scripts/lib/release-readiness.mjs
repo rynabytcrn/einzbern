@@ -4,9 +4,9 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { SPECIFICATIONS, verifySkillSpecifications } from "./release-package-inputs.mjs";
+import { CONTRACT_DOCUMENTS, SPECIFICATIONS, verifySkillSpecifications } from "./release-package-inputs.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const moduleAt = (root, path) => import(pathToFileURL(join(root, path)).href);
@@ -95,6 +95,11 @@ export async function checkReleaseReadiness({ engineRoot, helperRoot, version, r
       command(engineRoot, [join(engineRoot, "scripts/einzbern.mjs"), "skill-render", "--out", join(tree, "skill/mana-orchestrate"), "--version", version], env);
       await mkdir(join(tree, "specs"));
       for (const name of SPECIFICATIONS) await cp(join(engineRoot, "specs", name), join(tree, "specs", name));
+      for (const document of CONTRACT_DOCUMENTS) {
+        const target = join(tree, document);
+        await mkdir(dirname(target), { recursive: true });
+        await cp(join(engineRoot, document), target);
+      }
       await verifySkillSpecifications(tree, "skill/mana-orchestrate");
       return { tree };
     });

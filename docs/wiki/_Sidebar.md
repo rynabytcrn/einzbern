@@ -17,6 +17,7 @@
 ## 发行说明
 
 - [各版本发行说明](Release-Notes.md)
+- [Einzbern 3.4.0](Release-Notes-3.4.0.md)
 - [Einzbern 3.3.1](Release-Notes-3.3.1.md)
 - [Einzbern 3.3.0](Release-Notes-3.3.0.md)
 - [Einzbern 3.2.0](Release-Notes-3.2.0.md)

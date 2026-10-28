@@ -179,19 +179,21 @@ test("Codex SubagentStop release carries both the versioned route and its core e
 });
 
 test("605: every contract referenced by the shipped Skill resolves to manifest-verified archive bytes", async () => {
-  const { entries } = await packedRelease();
+  const { entries, tree } = await packedRelease();
   const files = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry.bytes]));
   const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
   const references = new Set();
   for (const [path, bytes] of files) {
     if (!path.startsWith("skill/mana-orchestrate/") || !path.endsWith(".md")) continue;
-    for (const [reference] of bytes.toString("utf8").matchAll(/\bspecs\/[A-Za-z0-9._/-]+\.md\b/gu)) references.add(reference);
+    for (const [reference] of bytes.toString("utf8").matchAll(/\b(?:specs|docs)\/[A-Za-z0-9._/-]+\.md\b/gu)) references.add(reference);
   }
+  assert.ok(references.has("docs/codex-native-controller.md"));
   assert.ok(references.has("specs/context-v1.md"));
   assert.ok(references.has("specs/work-content-v1.md"));
   for (const reference of references) {
     assert.ok(files.has(reference), reference);
     assert.deepEqual(files.get(reference), await readFile(join(repositoryRoot, reference)), reference);
+    assert.deepEqual(await readFile(join(tree, reference)), files.get(reference), `${reference}: readable after unpacking`);
     assert.equal(manifest.files.find((entry) => entry.path === reference)?.sha256, sha256(files.get(reference)), reference);
   }
 });
@@ -199,10 +201,13 @@ test("605: every contract referenced by the shipped Skill resolves to manifest-v
 test("605: a packaging-list omission is refused from the actual Skill reference before any archive is written", async () => {
   const source = await readFile(packScript, "utf8");
   const inputs = await readFile(join(repositoryRoot, "scripts/lib/release-package-inputs.mjs"), "utf8");
-  for (const specification of ["context-v1.md", "work-content-v1.md"]) {
+  for (const reference of ["specs/context-v1.md", "specs/work-content-v1.md", "docs/codex-native-controller.md"]) {
+    const specification = reference.split("/").at(-1);
     const copy = join(base, `missing-${specification}`);
     await mkdir(join(copy, "scripts/lib"), { recursive: true });
-    const mutated = inputs.replace(`, "${specification}"`, "");
+    const mutated = reference.startsWith("specs/")
+      ? inputs.replace(`, "${specification}"`, "")
+      : inputs.replace(`"${reference}"`, "");
     assert.notEqual(mutated, inputs);
     await writeFile(join(copy, "scripts/pack-release.mjs"), source);
     await writeFile(join(copy, "scripts/lib/release-package-inputs.mjs"), mutated);
@@ -212,13 +217,13 @@ test("605: a packaging-list omission is refused from the actual Skill reference 
     for (const name of await readdir(join(repositoryRoot, "scripts"))) {
       if (name !== "pack-release.mjs" && name !== "lib") await symlink(join(repositoryRoot, "scripts", name), join(copy, "scripts", name));
     }
-    for (const name of ["package.json", "packages", "dist", "portal", "specs"]) await symlink(join(repositoryRoot, name), join(copy, name));
+    for (const name of ["package.json", "packages", "dist", "portal", "specs", "docs"]) await symlink(join(repositoryRoot, name), join(copy, name));
     const out = join(copy, "out");
     const run = node([join(copy, "scripts/pack-release.mjs"), "--out", out]);
     assert.equal(run.status, 1, safeDiagnostic(run.stderr));
     const refusal = JSON.parse(lastLine(run.stderr));
     assert.equal(refusal.reasonCode, "PACK_SKILL_SPEC_MISSING");
-    assert.equal(refusal.reference, `specs/${specification}`);
+    assert.equal(refusal.reference, reference);
     assert.equal(refusal.source, "skill/mana-orchestrate/SKILL.md");
     assert.equal(existsSync(out), false, "the refusal does not leave a publishable archive");
   }
@@ -307,7 +312,7 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "scripts/library-catalog-worker.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
     "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
-    ...SPECIFICATIONS.map(name => `specs/${name}`),
+    ...SPECIFICATIONS.map(name => `specs/${name}`), "docs/codex-native-controller.md",
     ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "manifest.json",
   ];
   assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());

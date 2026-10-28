@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -64,5 +64,32 @@ test("607-R2: preflight and pack share the closed Skill specification contract",
     await verifySkillSpecifications(root, "skill/mana-orchestrate");
     await writeFile(skill, "Read specs/../outside.md.\n");
     await assert.rejects(verifySkillSpecifications(root, "skill/mana-orchestrate"), { reasonCode: "PACK_SKILL_SPEC_INVALID" });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+
+test("Skill docs contracts require canonical paths and readable regular packaged files", async () => {
+  const root = await fixture();
+  try {
+    await mkdir(join(root, "skill/mana-orchestrate"), { recursive: true });
+    await mkdir(join(root, "docs"));
+    const skill = join(root, "skill/mana-orchestrate/SKILL.md");
+    const reference = "docs/codex-native-controller.md";
+    const contract = join(root, reference);
+    await writeFile(skill, `Read ${reference}.\n`);
+    await assert.rejects(verifySkillSpecifications(root, "skill/mana-orchestrate"), { reasonCode: "PACK_SKILL_SPEC_MISSING", details: { source: "skill/mana-orchestrate/SKILL.md", reference } });
+    await writeFile(contract, "# Public contract\n");
+    await verifySkillSpecifications(root, "skill/mana-orchestrate");
+    for (const invalid of ["docs/../outside.md", "docs/./contract.md", "docs//contract.md"]) {
+      await writeFile(skill, `Read ${invalid}.\n`);
+      await assert.rejects(verifySkillSpecifications(root, "skill/mana-orchestrate"), { reasonCode: "PACK_SKILL_SPEC_INVALID" });
+    }
+    await writeFile(skill, `Read ${reference}.\n`);
+    await rm(contract);
+    await mkdir(contract);
+    await assert.rejects(verifySkillSpecifications(root, "skill/mana-orchestrate"), { reasonCode: "PACK_SKILL_SPEC_MISSING" });
+    await rm(contract, { recursive: true });
+    await symlink(skill, contract);
+    await assert.rejects(verifySkillSpecifications(root, "skill/mana-orchestrate"), { reasonCode: "PACK_TREE_INVALID" });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

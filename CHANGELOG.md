@@ -5,6 +5,74 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Codex native collection
+
+- Add an opt-in isolated Codex native controller and private hook bridge through
+  the normal versioned hook entry, with parent tool schemas available before
+  initialization and an explicit public admission input for setup.
+- Bind the dedicated collector to its fixed batch, native agent, attempt, turn
+  and session. Read fresh native state, preserve failed, cancelled and unknown
+  outcomes, and return raw facts and result locations once.
+- Keep waits outside SubagentStop in the same live collector, with bounded
+  queries, transport settlement, controls and shutdown. Preserve unresolved child
+  responsibility and reject unsafe, substituted or unverified artifacts.
+- Require actual capability and trust observations before adding the Codex event.
+  Default Desktop callback, automatic command trust, old-version upgrade and
+  rollback, other-user isolation and complete comparative total cost remain
+  separately unverified. Non-Codex and dot targets receive no Codex hook.
+
+### Recoverable configuration backups
+
+- Preserve explicitly reserved in-tree configuration backups during output reset,
+  stale-artifact cleanup, retention and release verification. Validate their
+  ownership and placement without treating arbitrary directories as backups.
+- Keep backup inventory, restoration and retention evidence distinct from a
+  general source archive or permission to enable a new backup policy.
+
+### Shared submission and dot context
+
+- Continue reading verified, byte-unchanged legacy knowledge members during
+  shared submission while enforcing strict portable paths on new or changed
+  output. Preserve the original inventory and full destination replay checks.
+- Recover task-specific Mana, enabled rules, work, decisions and prior successful
+  paths before reporting an infrastructure blocker. Preserve real denials and
+  unknown outcomes, bounded recovery and the existing shared-completion evidence.
+- Render the dot recovery guidance from its authoritative bilingual source and
+  fetch its detail on demand, without adding a patrol context payload or service.
+
+### CI and release verification
+
+- Reuse batched immutable Git reads and reviewed input graphs for conservative
+  CI impact planning. Keep exact source, run and attempt bindings, complete test
+  rosters and full verification whenever selection evidence is incomplete.
+- Initialize the pinned pnpm cache during the explicit online acquisition step.
+  Keep verification offline, preserve bootstrap boundaries and retain failed
+  attempts rather than relabeling them as successful.
+- Check source audits, generated documents, target artifacts, Skill references
+  and helper bytes before expensive release gates. Bind coordinated multi-Story
+  runs and completion consumers to the complete release trees and declarations.
+- Load native library catalogs through an isolated Node-only worker while
+  retaining the existing Atelier catalog interface.
+
+### Complete installed navigation
+
+- Ship `docs/codex-native-controller.md` with the normal engine archive and
+  manifest so the generated Mana navigation resolves after installation.
+- Validate both `specs/` and `docs/` references, reject omitted or noncanonical
+  contracts and nonregular entries, and verify readable bytes after unpacking.
+- Regenerate Mana from the fixed engine source with an explicit render version,
+  preserving the isolated opt-in and Desktop-unverified qualification.
+
+### Compatibility and rollout boundaries
+
+- Release Einzbern and Mana Orchestrate together with compatible existing library
+  reads and settings. Publishing or updating does not enable production work
+  content policy, raise the shared-library floor, install dot rules or update
+  another device.
+- Keep source, fixture, isolated native observations and default-host acceptance
+  separate. A package, health check or completed publication does not establish
+  unmeasured host support, cloud synchronization or total-cost improvement.
+
 ## 3.3.1
 
 Einzbern and Mana Orchestrate ship in lockstep at 3.3.1.

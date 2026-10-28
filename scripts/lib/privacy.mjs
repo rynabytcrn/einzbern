@@ -179,6 +179,11 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
 // Release 3.3.1: retain the exact reviewed compiled names.js line and origin for
 // these three versioned members. Final package bytes are checked before publication;
 // this classification does not exempt other members, values or additional content.
+// Release 3.4.0: the failed P8 diagnostic package was byte-reviewed.
+// Archive sha256 62e22062995cb6635676285cd1ba102bc5d111438711f103753233f9f75af8a3;
+// these four members, including the new library catalog worker, each contain the
+// unchanged compiled names.js owner line once. Only the exact labels are added;
+// the reviewed value, whole-line digest and source origin remain pinned.
 const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
@@ -225,6 +230,10 @@ const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-3.3.1.tar.gz/einzbern-3.3.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-3.3.1.tar.gz/einzbern-3.3.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-3.3.1.tar.gz/einzbern-3.3.1/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.4.0.tar.gz/einzbern-3.4.0/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.4.0.tar.gz/einzbern-3.4.0/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.4.0.tar.gz/einzbern-3.4.0/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-3.4.0.tar.gz/einzbern-3.4.0/scripts/library-catalog-worker.mjs", "dist/build/packages/core/src/names.js"],
 ]);
 const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
   [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [

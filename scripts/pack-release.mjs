@@ -171,7 +171,7 @@ async function bundleAtelier(stage, coreBuild) {
   await writeStaged(root, "portal/portal.mjs", portal.replace(BUNDLED_CLI_DECLARATION, `const BUNDLED_CLI = join(portalRoot, ${JSON.stringify(ATELIER_CLI)});`));
   await copyStaged(root, "portal/locale-contract.mjs", join(repositoryRoot, "portal", "locale-contract.mjs"));
   await copyStaged(root, "scripts/lib/runtime-capacity.mjs", join(repositoryRoot, "scripts", "lib", "runtime-capacity.mjs"));
-  for (const name of ["memory-budget.mjs", "memory-worker-check.mjs"]) await copyStaged(root, `scripts/lib/${name}`, join(repositoryRoot, "scripts", "lib", name));
+  for (const name of ["memory-budget.mjs", "memory-worker-check.mjs", "storage-location.mjs"]) await copyStaged(root, `scripts/lib/${name}`, join(repositoryRoot, "scripts", "lib", name));
   await writeStaged(root, "scripts/lib/names.mjs", names.replace(NAMES_SOURCE_SPECIFIER, NAMES_BUILD_SPECIFIER));
   await writeStaged(root, "scripts/lib/registry-lock.mjs", stagedRegistryLock);
   const gateRunBridge = await readFile(join(repositoryRoot, "scripts/lib/gate-run.mjs"), "utf8");
@@ -236,7 +236,7 @@ async function packRelease({ version: requested, out }) {
     const tree = join(stage, name);
     await writeStaged(tree, "scripts/einzbern.mjs", (await bundleEntry(join(repositoryRoot, "scripts", "einzbern.mjs"))).code);
     await writeStaged(tree, "scripts/einzbern-hook.mjs", (await bundleEntry(join(repositoryRoot, "scripts", "einzbern-hook.mjs"))).code);
-    for (const name of ["memory-budget.mjs", "memory-worker-check.mjs"]) await copyStaged(tree, `scripts/lib/${name}`, join(repositoryRoot, "scripts", "lib", name));
+    for (const name of ["memory-budget.mjs", "memory-worker-check.mjs", "storage-location.mjs"]) await copyStaged(tree, `scripts/lib/${name}`, join(repositoryRoot, "scripts", "lib", name));
     await copyStaged(tree, "launchers/einzbern.mjs", join(repositoryRoot, "scripts", "einzbern-launcher.mjs"));
     await copyStaged(tree, "launchers/hook.mjs", join(repositoryRoot, "scripts", "einzbern-hook-launcher.mjs"));
     const atelier = BRAND.portal.id;

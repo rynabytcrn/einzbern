@@ -313,7 +313,7 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
     ...SPECIFICATIONS.map(name => `specs/${name}`), "docs/codex-native-controller.md", "docs/design/memory-admission.md",
-    "scripts/lib/memory-budget.mjs", "scripts/lib/memory-worker-check.mjs",
+    "scripts/lib/memory-budget.mjs", "scripts/lib/memory-worker-check.mjs", "scripts/lib/storage-location.mjs",
     ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "manifest.json",
   ];
   assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());
@@ -852,7 +852,7 @@ test("607-R2: shared Skill validation refuses a package whose manifest could sti
 test("memory admission ships the actual worker preload closure and validated device preference", async () => {
   const { entries, tree } = await packedRelease();
   const files = new Map(entries.map(entry => [entry.path.slice(RELEASE.length + 1), entry.bytes]));
-  for (const file of ["scripts/lib/memory-budget.mjs", "scripts/lib/memory-worker-check.mjs", "docs/design/memory-admission.md"]) assert.ok(files.has(file), file);
+  for (const file of ["scripts/lib/memory-budget.mjs", "scripts/lib/memory-worker-check.mjs", "scripts/lib/storage-location.mjs", "docs/design/memory-admission.md"]) assert.ok(files.has(file), file);
   const home = join(base, "memory-policy-device"); await mkdir(home);
   const env = { ...process.env, EINZBERN_HOME: home }; delete env.EINZBERN_MEMORY_LEASE;
   const cli = join(tree, "scripts/einzbern.mjs");

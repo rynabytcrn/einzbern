@@ -37,3 +37,5 @@ export function memoryWorkerCheck(env?: NodeJS.ProcessEnv): void;
 export function acquireMemoryChild(command: string, env?: NodeJS.ProcessEnv): Promise<MemoryLease | null>;
 
 export function memoryGateCommand(command: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): readonly string[];
+
+export function resolveMemoryDirectory(deviceHome: string | undefined, directory: string): string;

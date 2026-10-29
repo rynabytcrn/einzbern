@@ -3,6 +3,7 @@ import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
@@ -171,4 +172,82 @@ test("real task entry reports resource refusal rather than an internal or assert
   assert.equal(result.status, 1, result.stderr); assert.equal(result.stdout, "");
   const receipt = JSON.parse(result.stderr.trim());
   assert.ok(["MEMORY_BUDGET_INSUFFICIENT", "MEMORY_PRESSURE_HIGH", "MEMORY_SAMPLE_UNAVAILABLE"].includes(receipt.reasonCode), result.stderr);
+});
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+const moduleUrl = new URL("../scripts/lib/memory-budget.mjs", import.meta.url).href;
+const heavyUrl = new URL("../scripts/lib/heavy-runs.mjs", import.meta.url).href;
+const storageUrl = new URL("../dist/build/packages/core/src/storage-configure.js", import.meta.url).href;
+const gatesPlanUrl = new URL("../dist/build/packages/core/src/gates-plan.js", import.meta.url).href;
+const gatesRunUrl = new URL("../dist/build/packages/core/src/gates-run.js", import.meta.url).href;
+
+async function isolatedAdapterFixture(t, source) {
+  const directory = await mkdtemp(join(tmpdir(), "memory-adapter-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const home = join(directory, "device"); await mkdir(home);
+  const telemetry = join(directory, "telemetry.mjs");
+  // Explicit synthetic capacity/pressure only; real process identities and real commands.
+  await writeFile(telemetry, `import fs from 'node:fs';import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';
+const read=fs.readFileSync,exec=cp.execFileSync;
+fs.readFileSync=function(p,...a){if(p==='/proc/pressure/memory')return 'full avg10=0.00 avg60=0.00 avg300=0.00 total=0\\n';if(typeof p==='string'&&/^\\/proc\\/\\d+\\/smaps_rollup$/u.test(p))return 'Private_Clean: 0 kB\\nPrivate_Dirty: 0 kB\\n';return read.call(this,p,...a)};
+cp.execFileSync=function(p,a,...o){if(p==='/usr/bin/memory_pressure'&&a?.length===1&&a[0]==='-Q')return 'System-wide memory free percentage: 75%\\n';return exec.call(this,p,a,...o)};
+process.availableMemory=()=>12*1024**3;process.constrainedMemory=()=>16*1024**3;syncBuiltinESMExports();`);
+  await writeFile(join(home, "machine-settings.json"), JSON.stringify({ schemaVersion: "tcrn.machine-settings.v1", values: { "execution.memoryPolicy": JSON.stringify({ enabled: true, reserveMiB: 0, budgetMiB: 4096, fixedMiB: 128, workerMiB: 256, maxWorkers: 2 }) } }));
+  const prelude = `import assert from 'node:assert/strict';import {mkdir,readFile,writeFile,symlink,unlink,realpath,chmod} from 'node:fs/promises';import {join} from 'node:path';
+const root=${JSON.stringify(root)},directory=${JSON.stringify(directory)},home=${JSON.stringify(home)};
+const m=await import(${JSON.stringify(moduleUrl)}),h=await import(${JSON.stringify(heavyUrl)});`;
+  const env = { ...process.env, EINZBERN_HOME: home, COREPACK_ENABLE_NETWORK: "0", npm_config_verify_deps_before_run: "false" };
+  delete env.EINZBERN_MEMORY_LEASE; delete env.EINZBERN_HEAVY_SLOT; delete env.EINZBERN_HEAVY_LOCK_DIR;
+  const child = spawnSync(process.execPath, ["--import", telemetry, "--input-type=module", "-e", prelude + source], { cwd: root, env, encoding: "utf8", timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
+  assert.equal(child.status, 0, child.stderr + child.stdout);
+  return child.stdout;
+}
+
+test("official runtime relocation shares canonical count, memory and inherited domains", async t => {
+  await isolatedAdapterFixture(t, `
+const {configureStorageLocation}=await import(${JSON.stringify(storageUrl)});
+const library=join(directory,'library'),runtime=join(directory,'runtime');await mkdir(library);await mkdir(join(home,'locks'));
+await configureStorageLocation(home,library,runtime,'2026-10-29T18:00:00Z','minutes:000000000000000000000001#D1',true);
+const env={EINZBERN_HOME:home};const slot=await h.acquireHeavySlot({command:'test',env,timeoutMs:0});
+const canonical=await realpath(join(runtime,'locks'));assert.equal(slot.path,join(canonical,'heavy.lock'));assert.equal(slot.memory.directory,canonical);assert.equal(JSON.parse(env.EINZBERN_MEMORY_LEASE).directory,canonical);assert.ok(env.EINZBERN_HEAVY_SLOT.endsWith(slot.path));
+const child=await h.acquireHeavySlot({command:'child',env:{...env},timeoutMs:0});assert.equal(child.inherited,true);assert.equal(child.memory.directory,canonical);child.release();slot.release();
+assert.deepEqual(JSON.parse(await readFile(join(canonical,'memory-budget.json'),'utf8')).leases,[]);
+await unlink(join(home,'locks'));const wrong=join(directory,'wrong');await mkdir(wrong);await symlink(wrong,join(home,'locks'),'dir');
+await assert.rejects(h.acquireHeavySlot({command:'test',env:{EINZBERN_HOME:home},timeoutMs:0}),e=>e.reasonCode==='MEMORY_DOMAIN_INVALID');
+`);
+});
+
+test("unregistered forwarding, explicit linked overrides and unsafe resource directories refuse", async t => {
+  await isolatedAdapterFixture(t, `
+const target=join(directory,'target');await mkdir(target);await symlink(target,join(home,'locks'),'dir');
+await assert.rejects(h.acquireHeavySlot({command:'test',env:{EINZBERN_HOME:home},timeoutMs:0}),e=>e.reasonCode==='MEMORY_DOMAIN_INVALID');
+const alias=join(directory,'alias');await symlink(target,alias,'dir');
+await assert.rejects(h.acquireHeavySlot({command:'test',env:{EINZBERN_HOME:home,EINZBERN_HEAVY_LOCK_DIR:alias},timeoutMs:0}),e=>e.reasonCode==='MEMORY_DOMAIN_INVALID');
+await chmod(target,0o777);await assert.rejects(m.acquireMemoryBudget({deviceHome:home,directory:target,command:'test',env:{}}),e=>e.reasonCode==='MEMORY_DOMAIN_INVALID');
+`);
+});
+
+test("closed adapters admit pinned Corepack and all existing managed task scripts, not arbitrary forms", async t => {
+  await isolatedAdapterFixture(t, `
+const env={};const lease=await m.acquireMemoryBudget({deviceHome:home,directory:join(home,'locks'),command:'gates-run',env});
+try {
+const scripts=['archive','build','clean','format','format:check','lint','release:preflight','sbom','test','typecheck','verify:no-sibling-dependency','verify:offline','verify:p1','verify:p8','verify:privacy','verify:links','verify:retrieval-eval','verify:portal','portal:test','release'];
+for(const script of scripts)for(const prefix of [['pnpm'],['corepack','pnpm@11.3.0']]){const command=[...prefix,'run','--silent',script];assert.deepEqual(m.memoryGateCommand(command,root,env),command)}
+for(const command of [['corepack','pnpm','run','build'],['corepack','pnpm@11.2.0','run','build'],['corepack','yarn@4.0.0','build'],['pnpm','--dir','other','run','build'],['pnpm','run','build','--extra'],['pnpm','exec','node','other.mjs'],['pnpm','run','portal'],['pnpm','run','run','build']])assert.throws(()=>m.memoryGateCommand(command,root,env),e=>e.reasonCode==='MEMORY_EXECUTOR_UNSUPPORTED');
+assert.throws(()=>m.memoryGateCommand(['corepack','pnpm@11.3.0','run','build'],directory,env),e=>e.reasonCode==='MEMORY_EXECUTOR_UNSUPPORTED');
+} finally {lease.release()}
+`);
+});
+
+test("actual planGates and runGates execute pinned Corepack format gate with enabled admission", async t => {
+  const output = await isolatedAdapterFixture(t, `
+const {planGates}=await import(${JSON.stringify(gatesPlanUrl)}),{runGates}=await import(${JSON.stringify(gatesRunUrl)});
+const env={...process.env};const lease=await m.acquireMemoryBudget({deviceHome:home,directory:join(home,'locks'),command:'gates-run',env});
+try {
+const plan=await planGates({projectRoot:root,release:true,gates:[{name:'engine:format',root:'.',command:['corepack','pnpm@11.3.0','run','--silent','format:check'],covers:['**'],required:true,enabled:true,releaseOnly:false}]});
+const run=await runGates(plan,{libraryId:'workspace:'+ '1'.repeat(24),at:'2026-10-29T18:00:00Z',deviceHome:home,env});
+assert.deepEqual(run.run.reds,[]);assert.equal(run.run.gates.length,1);assert.equal(run.run.gates[0].ok,true,JSON.stringify(run));assert.equal(run.run.gates[0].exitCode,0);console.log(JSON.stringify(run));
+} finally {lease.release()}
+`);
+  assert.ok(output.includes("engine:format"));
 });

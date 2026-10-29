@@ -128,3 +128,18 @@ nested reservations, uncertain release, and real Node worker concurrency with
 explicit synthetic platform telemetry in isolated subprocesses. Synthetic telemetry
 is not a claim of native macOS or Linux PSI availability. Real environment support
 must be reported separately; this development sandbox does not expose Linux PSI.
+
+## Registered runtime locations and gate entry forms
+
+Default lock directories follow the same registered storage-location pointer as the
+engine. A formal migration may leave a device-home forwarding link; admission
+checks that it names the registered runtime locks directory, then shares its
+canonical path between the heavy count, memory state and inherited references.
+Unregistered forwarding, linked overrides, mismatched targets and unsafe directory
+ownership or writable modes are refused.
+
+The closed package-runner adapter accepts the project-pinned Corepack pnpm entry
+as well as bare pnpm, with optional silent run syntax. Existing package scripts
+are admitted only when their declaration names an already instrumented engine
+entry point. Wrong pins, other project roots, executable/directory overrides,
+extra script arguments and arbitrary scripts remain unsupported.

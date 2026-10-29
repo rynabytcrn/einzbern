@@ -647,6 +647,8 @@ async function build() {
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/config-backup-reservation.mjs", configBackupReservation);
   // TCRN-CROSS-SUB-484: the heavy-run semaphore, which the CLI's gates-run and the machine settings
   // catalog import by relative path, as they import runtime-capacity.mjs.
+  const storageLocation = await readSourceFile(resolve(repositoryRoot, "scripts/lib/storage-location.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/storage-location.mjs", storageLocation);
   const memoryBudget = await readSourceFile(resolve(repositoryRoot, "scripts/lib/memory-budget.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/memory-budget.mjs", memoryBudget);
   const memoryWorkerCheck = await readSourceFile(resolve(repositoryRoot, "scripts/lib/memory-worker-check.mjs"));

@@ -29,7 +29,7 @@
 // exists or after it went stale. The engine imports it by relative path, as it imports
 // runtime-capacity.mjs, and the build copies it to dist/build/scripts/lib.
 
-import { acquireMemoryBudget } from "./memory-budget.mjs";
+import { acquireMemoryBudget, readMemoryPolicy, resolveMemoryDirectory } from "./memory-budget.mjs";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
@@ -285,7 +285,9 @@ async function acquireCountSlot({ command, timeoutMs, env = process.env, home = 
     return Object.freeze({ held: false, inherited: true, slot: null, path: inherited.path, token: inherited.token, release() {} });
   }
   const limit = maxConcurrentHeavyRuns(env, home);
-  const directory = heavyLockDirectory(env, home);
+  const requestedDirectory = heavyLockDirectory(env, home);
+  const deviceHome = deviceDirectory(env, home);
+  const directory = readMemoryPolicy(deviceHome)?.enabled ? resolveMemoryDirectory(deviceHome, requestedDirectory) : requestedDirectory;
   mkdirSync(directory, { recursive: true });
   const token = randomBytes(16).toString("hex");
   const content = `${JSON.stringify({ schemaVersion: LOCK_SCHEMA_VERSION, pid: process.pid, token, hostname: hostname(), createdAt: new Date().toISOString(), command })}\n`;

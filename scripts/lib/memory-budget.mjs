@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Device-local admission. Estimates are budgets, not an OS memory limit or an OOM guarantee.
 import { randomBytes } from "node:crypto";
-import { closeSync, constants, existsSync, fsyncSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fsyncSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { availableParallelism, hostname, totalmem } from "node:os";
 import { basename, isAbsolute, join, resolve, dirname } from "node:path";
+
+import { readStorageLocation } from "./storage-location.mjs";
 
 export const MEMORY_POLICY_SETTING = "execution.memoryPolicy";
 export const MEMORY_LEASE_VARIABLE = "EINZBERN_MEMORY_LEASE";
@@ -110,6 +112,31 @@ function writeAtomic(path, value) {
   try { writeFileSync(fd, `${JSON.stringify(value)}\n`); fsyncSync(fd); } finally { closeSync(fd); }
   renameSync(temp, path);
 }
+/** Only the registered default locks forwarding may resolve through a link. */
+export function resolveMemoryDirectory(deviceHome, directory) {
+  if (!isAbsolute(directory)) fail("MEMORY_DOMAIN_INVALID");
+  let target = resolve(directory);
+  if (deviceHome && target === resolve(deviceHome, "locks")) {
+    let location;
+    try {
+      let pointer;
+      try { pointer = lstatSync(join(deviceHome, "storage-location.json")); } catch (error) { if (error.code !== "ENOENT") throw error; }
+      if (pointer && (!pointer.isFile() || pointer.isSymbolicLink() || pointer.nlink !== 1 || (pointer.mode & 0o022) !== 0 || (typeof process.getuid === "function" && pointer.uid !== process.getuid()))) fail("MEMORY_DOMAIN_INVALID");
+      location = readStorageLocation(deviceHome);
+    } catch { fail("MEMORY_DOMAIN_INVALID"); }
+    if (location) {
+      target = resolve(location.runtime, "locks");
+      let forwarding;
+      try { forwarding = lstatSync(directory); } catch (error) { if (error.code !== "ENOENT") throw error; }
+      if (forwarding && (!forwarding.isSymbolicLink() || realpathSync(directory) !== realpathSync(target))) fail("MEMORY_DOMAIN_INVALID");
+    }
+  }
+  mkdirSync(target, { recursive: true, mode: 0o700 });
+  const metadata = lstatSync(target);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink() || (metadata.mode & 0o022) !== 0 || (typeof process.getuid === "function" && metadata.uid !== process.getuid())) fail("MEMORY_DOMAIN_INVALID");
+  return realpathSync(target);
+}
+
 function stateTransaction(directory, fn) {
   if (!isAbsolute(directory)) fail("MEMORY_DOMAIN_INVALID");
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -207,6 +234,7 @@ export async function acquireMemoryBudget({ deviceHome, directory, command, env 
   const inherited = leaseReference(env);
   const localPolicy = inherited ? null : readMemoryPolicy(deviceHome);
   if (!inherited && !localPolicy?.enabled) return null;
+  if (!inherited) directory = resolveMemoryDirectory(deviceHome, directory);
   if (inherited && inherited.directory !== directory) fail("MEMORY_DOMAIN_MISMATCH");
   const token = randomBytes(16).toString("hex");
   const started = Date.now();
@@ -333,9 +361,24 @@ export function memoryGateCommand(command, cwd, env = process.env) {
   if (root.endsWith("/dist/build")) root = resolve(root, "../..");
   const allowed = ["task.mjs", "verify-portal.mjs", "portal-tests.mjs", "release.mjs"].map(name => join(root, "scripts", name));
   if (["node", "node.exe"].includes(basename(program)) && args[0] && allowed.includes(resolve(cwd, args[0]))) return command;
-  if (["pnpm", "pnpm.cjs", "pnpm.exe"].includes(basename(program)) && resolve(cwd) === root) {
-    const words = args.filter(arg => !["--silent", "run"].includes(arg));
-    if (words.length === 1 && ["test", "build", "typecheck", "lint", "verify:p1", "verify:portal", "portal:test"].includes(words[0])) return command;
+  if (resolve(cwd) === root) {
+    const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    let invocation = args;
+    const executable = basename(program);
+    if (["corepack", "corepack.cmd", "corepack.exe"].includes(executable)) {
+      if (!/^pnpm@\d+\.\d+\.\d+$/u.test(args[0] ?? "") || args[0] !== packageJson.packageManager) fail("MEMORY_EXECUTOR_UNSUPPORTED");
+      invocation = args.slice(1);
+    } else if (!["pnpm", "pnpm.cjs", "pnpm.exe"].includes(executable)) fail("MEMORY_EXECUTOR_UNSUPPORTED");
+    // Exact run grammar: no directory/prefix/exec/shell options or script arguments.
+    const words = [...invocation];
+    if (words[0] === "--silent") words.shift();
+    if (words[0] === "run") words.shift();
+    if (words[0] === "--silent") words.shift();
+    if (words.length === 1) {
+      const script = packageJson.scripts?.[words[0]];
+      const match = typeof script === "string" ? /^node (scripts\/[a-z-]+\.mjs)(?: ([a-z][a-z0-9-]*))?$/u.exec(script) : null;
+      if (match && allowed.includes(resolve(root, match[1]))) return command;
+    }
   }
   fail("MEMORY_EXECUTOR_UNSUPPORTED", { remedy: "Use an instrumented engine runner or the direct Node test adapter; arbitrary commands require an explicit adapter." });
 }

@@ -1022,7 +1022,7 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   expectedDocuments["docs/wiki/Home.md"] = sorted([...expectedDocuments["docs/wiki/Home.md"], ...names("inc238-markdown-link-gate")]);
   const privacy = names(`bootstrap bundle ci-artifact-transport ci-baseline-evidence ci-bootstrap ci-bootstrap-prerequisites ci-evidence-retention ci-git-source-blobs ci-impact-plan ci-selective-runner ci-test-roster
     config-backup-format configuration-contract cross-repo-privacy dependency-materialization dependency-policy dispatch-admission-evidence final-gate-plan final-gate-plan-batch-verify
-    heavy-runs inc263-closeout inc275-mcp-absent local-command-byte-fidelity native-tool-evidence no-sibling-dependency node-floor offline-boundary
+    heavy-runs inc263-closeout inc275-mcp-absent local-command-byte-fidelity memory-budget native-tool-evidence no-sibling-dependency node-floor offline-boundary
     operational-audit-boundaries otel-privacy-guard output-session-lifecycle p1-all-legs p1-roster p8-sbom-receipt-boundary p8-workflow-rc pack-release platform-doctor
     privacy-boundary privacy-git-metadata privacy-normalization project-chain-model push-gate-p1-coverage readme-render release-lockstep release-readiness release-tag-gate
     release-tooling-audit-boundaries release-trust render-helper-docs review-evidence runtime-input-contract skill-install-bootstrap skill-render skill-render-cli

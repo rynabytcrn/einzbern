@@ -14,6 +14,7 @@ const executorDigest = bytes => createHash("sha256").update(bytes).digest("hex")
 export function createMemoryExecutorContract(root) {
   const files = Object.fromEntries(EXECUTOR_FILES.map(path => [path, executorDigest(readFileSync(join(root, path)))]));
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  if (pkg.name !== "einzbern" || !/^pnpm@\d+\.\d+\.\d+$/u.test(pkg.packageManager ?? "")) throw new Error("MEMORY_EXECUTOR_UNSUPPORTED");
-  return { schemaVersion: EXECUTOR_SCHEMA, packageManager: pkg.packageManager, files };
+  // A build can serve a policy-disabled fixture. Unsupported package identities stay
+  // unadmittable at runtime, without making ordinary builds depend on policy opt-in.
+  return { schemaVersion: EXECUTOR_SCHEMA, packageManager: pkg.packageManager ?? null, files };
 }

@@ -1,5 +1,5 @@
 {
-  "version": 47,
+  "version": 48,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1811,7 +1811,7 @@
     "scripts/lib/local-command.mjs": "781a8387aa6c439217593dd0cab93cb4437fb5109b797b8f10be3b1cb93858d0",
     "scripts/lib/memory-budget.d.mts": "38ccfd48000366f00e86acaa3b6a7c71eacee08cbe6d96e31f713e74a3b2a30a",
     "scripts/lib/memory-budget.mjs": "4844313400340f884c5e4697c83d76c94271dd985c6f4ef6d948ffd5494315bd",
-    "scripts/lib/memory-executor-contract.mjs": "ebe2f45d4d8fae4db518f8f2a782e15451883e12fe8d19fa53ea8ef09e77d042",
+    "scripts/lib/memory-executor-contract.mjs": "5af80c7dd973cd06071f57f4cba584fde9edec2e442da963d378de405fb86241",
     "scripts/lib/memory-worker-check.mjs": "3e94968ba11b5582da309c433c9e824ca77e55d32bfb041656db81e531e23506",
     "scripts/lib/names.mjs": "12b7838f5edaf792fb2bfee3688328d50b3ba8b896f7bf1d960addc9e50c7b3f",
     "scripts/lib/p8-workflow-rc.mjs": "f34e3006756daf413e32f6a98b6008a06d6cbbf4271565363c6cd925bf4ce4bc",
@@ -1885,7 +1885,7 @@
     "scripts/templates/helper/create-skill-archive.mjs": "c7c45eaaa16aa9b31e87a4fdbb7302eae49bcccb1e7fa109ed49246fb644223d",
     "scripts/test-controller-bootstrap.mjs": "4c1fbcc397396bacc6c5a6d7acf70fabd49270b59737a36c38a7c52d9ffa3907",
     "scripts/test-controller-child-bootstrap.mjs": "abb25c05f2da234389a616843369be48af81aadb68b5f95ad03a8004f2a4c8c8",
-    "scripts/test-controller-child-policy.mjs": "e2a37f6bcc9b574e8fc09b4cf85b4ce0309242aafb743424ef782bcacc5ad48a",
+    "scripts/test-controller-child-policy.mjs": "d1773d0cd30cfbf91e85df526d923719f4b40ec912f93e8210e287d8c93dc3fa",
     "scripts/test-controller-reaper.mjs": "65991dbe6cbda636f28cd3c02b35c014ea8439ab862c094d3465aa90fbd8ed49",
     "scripts/test-file-progress-reporter.mjs": "d267121b200dbaf3c92132ce1d1bf462eb7fe3366ed3249b5f36bc40b33f727b",
     "scripts/test-wiring-proof.mjs": "90ec2e31b723a068c86c0e0c838a50ad45ba6e0161da6cef854d9e2dc81e2cd2",

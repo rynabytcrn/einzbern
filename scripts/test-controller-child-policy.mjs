@@ -7,10 +7,9 @@
 // process group until it is gone.
 
 import childProcess from "node:child_process";
-import { memoryPackageTask } from "./lib/memory-budget.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import { closeSync, fsyncSync, lstatSync, openSync, readFileSync, readdirSync, unlinkSync, writeSync } from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -94,13 +93,22 @@ function environmentWithoutPolicy(environment) {
   return updated;
 }
 
+const requirePolicyDependency = createRequire(import.meta.url);
+function managedPackageTask(arguments_, cwd) {
+  if (typeof arguments_[0] !== "string" || !/(?:^|[\\/])(?:corepack(?:\.cmd|\.exe)?|pnpm(?:\.cjs|\.exe)?)$/u.test(arguments_[0]) || !Array.isArray(arguments_[1])) return false;
+  // Restricted CLI children need only this builtin-only policy. Load the executor
+  // verifier only for an actual package-manager dispatch, never at preload time.
+  try { return requirePolicyDependency("./lib/memory-budget.mjs").memoryPackageTask([arguments_[0], ...arguments_[1]], cwd)?.entry === "scripts/task.mjs"; }
+  catch { return false; }
+}
+
 function propagatePolicyToNodeChild(name, arguments_) {
   const takesCommandLine = name === "exec" || name === "execSync";
   const index = optionsIndex(name, arguments_);
   const options = index === undefined ? {} : object(arguments_[index]) ?? {};
   // The same verified task entry may be reached through its exact pinned package runner.
   // Its own task controller remains responsible; arbitrary package scripts keep the policy.
-  const packageTask = Array.isArray(arguments_[1]) && memoryPackageTask([arguments_[0], ...arguments_[1]], options.cwd ?? process.cwd())?.entry === "scripts/task.mjs";
+  const packageTask = managedPackageTask(arguments_, options.cwd ?? process.cwd());
   if (name !== "fork" && !takesCommandLine && !isNodeExecutable(arguments_[0]) && !packageTask) return arguments_;
   const environment = object(options.env) ?? process.env;
   const updatedOptions = {

@@ -312,7 +312,8 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "scripts/library-catalog-worker.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
     "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
-    ...SPECIFICATIONS.map(name => `specs/${name}`), "docs/codex-native-controller.md",
+    ...SPECIFICATIONS.map(name => `specs/${name}`), "docs/codex-native-controller.md", "docs/design/memory-admission.md",
+    "scripts/lib/memory-budget.mjs", "scripts/lib/memory-worker-check.mjs",
     ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "manifest.json",
   ];
   assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());
@@ -846,4 +847,21 @@ test("607-R2: shared Skill validation refuses a package whose manifest could sti
   await mkdir(join(tree, "skill", BRAND.helper.id), { recursive: true });
   await writeFile(join(tree, "skill", BRAND.helper.id, "SKILL.md"), "Read specs/work-content-v1.md.\n");
   await assert.rejects(verifySkillSpecifications(tree, `skill/${BRAND.helper.id}`), { reasonCode: "PACK_SKILL_SPEC_MISSING" });
+});
+
+test("memory admission ships the actual worker preload closure and validated device preference", async () => {
+  const { entries, tree } = await packedRelease();
+  const files = new Map(entries.map(entry => [entry.path.slice(RELEASE.length + 1), entry.bytes]));
+  for (const file of ["scripts/lib/memory-budget.mjs", "scripts/lib/memory-worker-check.mjs", "docs/design/memory-admission.md"]) assert.ok(files.has(file), file);
+  const home = join(base, "memory-policy-device"); await mkdir(home);
+  const env = { ...process.env, EINZBERN_HOME: home }; delete env.EINZBERN_MEMORY_LEASE;
+  const cli = join(tree, "scripts/einzbern.mjs");
+  const value = JSON.stringify({ enabled: true, maxWorkers: 2 });
+  const written = node([cli, "machine-settings-set", "--home", home, "--key", "execution.memoryPolicy", "--value", value, "--at", "2026-10-29T00:00:00Z"], { env });
+  assert.equal(written.status, 0, written.stderr);
+  const catalog = node([cli, "machine-settings-catalog", "--home", home], { env });
+  assert.equal(catalog.status, 0, catalog.stderr);
+  assert.equal(JSON.parse(catalog.stdout).settings.find(row => row.key === "execution.memoryPolicy").currentValue, value);
+  const preload = node(["--import", join(tree, "scripts/lib/memory-worker-check.mjs"), "--eval", "process.stdout.write('preload-ready')"], { env });
+  assert.equal(preload.status, 0, preload.stderr); assert.equal(preload.stdout, "preload-ready");
 });

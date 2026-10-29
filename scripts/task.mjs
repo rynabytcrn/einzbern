@@ -646,6 +646,10 @@ async function build() {
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/config-backup-reservation.mjs", configBackupReservation);
   // TCRN-CROSS-SUB-484: the heavy-run semaphore, which the CLI's gates-run and the machine settings
   // catalog import by relative path, as they import runtime-capacity.mjs.
+  const memoryBudget = await readSourceFile(resolve(repositoryRoot, "scripts/lib/memory-budget.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/memory-budget.mjs", memoryBudget);
+  const memoryWorkerCheck = await readSourceFile(resolve(repositoryRoot, "scripts/lib/memory-worker-check.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/memory-worker-check.mjs", memoryWorkerCheck);
   const heavyRuns = await readSourceFile(resolve(repositoryRoot, "scripts/lib/heavy-runs.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/heavy-runs.mjs", heavyRuns);
   const dispatchConfigPath = resolve(repositoryRoot, "packages/core/src/dispatch-config.ts");
@@ -696,7 +700,7 @@ async function runTests({ p8Only = false, extraEnvironment = {}, ciPlan } = {}) 
   }
   return success(
     p8Only ? "P8_WORKFLOW_RC_TESTS_VERIFIED" : ciPlan?.coverage === "selective" ? "TESTS_SELECTED_VERIFIED" : "TESTS_VERIFIED",
-    { tests, result: "passed", progress: controller.progress, ...(ciPlan ? { coverage: ciPlan.coverage, planDigest: ciPlan.planDigest, argv: coreTestArgv(tests) } : {}) },
+    { tests, result: "passed", progress: controller.progress, ...(controller.progress.lastProgress?.memoryAdmission ? { memoryAdmission: controller.progress.lastProgress.memoryAdmission } : {}), ...(ciPlan ? { coverage: ciPlan.coverage, planDigest: ciPlan.planDigest, argv: coreTestArgv(tests) } : {}) },
   );
 }
 
@@ -1643,6 +1647,8 @@ let heavySlot = null;
 try {
   if (HEAVY_COMMANDS.has(command)) heavySlot = await acquireHeavySlot({ command });
   const result = await withExclusiveOutputSession(repositoryRoot, async () => invoke(command));
+  heavySlot?.release();
+  heavySlot = null;
   process.stdout.write(`${JSON.stringify({ ok: true, command, ...result })}\n`);
 } catch (error) {
   const details = error?.details && typeof error.details === "object" && !Array.isArray(error.details) ? error.details : {};
@@ -1654,5 +1660,8 @@ try {
   }
   process.exitCode = 1;
 } finally {
-  heavySlot?.release();
+  try { heavySlot?.release(); } catch (error) {
+    process.stderr.write(`${JSON.stringify({ ok: false, command, reasonCode: error.reasonCode ?? "MEMORY_RELEASE_UNCONFIRMED", phase: "resource-release" })}\n`);
+    process.exitCode = 1;
+  }
 }

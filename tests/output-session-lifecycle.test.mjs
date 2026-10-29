@@ -3132,7 +3132,7 @@ test("the real command-five test path rejects detached inherited-pipe descendant
   const rejected = await taskEntrypointFixture(context, holderSource);
   const rejectedBootstrapPath = resolve(rejected, "scripts/test-controller-bootstrap.mjs");
   const fixedBootstrap = await readFile(rejectedBootstrapPath, "utf8");
-  const rejectedSpawn = `testController = spawn(process.execPath, ["--import", childPolicyImport, ...testArguments], {\n    stdio: ["ignore", stdoutFile.fd, stderrFile.fd],\n    env: controllerEnvironment,\n  });`;
+  const rejectedSpawn = `testController = spawn(process.execPath, ["--import", childPolicyImport, ...memoryTestArguments(testArguments)], {\n    stdio: ["ignore", stdoutFile.fd, stderrFile.fd],\n    env: controllerEnvironment,\n  });`;
   assert.equal(fixedBootstrap.split(rejectedSpawn).length, 2, "controller spawn fixture boundary");
   const rejectedBootstrap = fixedBootstrap.replace(rejectedSpawn, `testController = spawn(process.execPath, testArguments, {\n    stdio: "inherit",\n    env: { ...controllerEnvironment, NODE_OPTIONS: "" },\n  });`);
   await writeFile(rejectedBootstrapPath, rejectedBootstrap, { mode: 0o600 });

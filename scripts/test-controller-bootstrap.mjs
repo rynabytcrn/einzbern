@@ -5,6 +5,7 @@
 // starts `node --test`.  If its task parent dies while the group is unbound,
 // it exits before any test controller or worker can be created.
 
+import { acquireMemoryChild, memoryTestArguments } from "./lib/memory-budget.mjs";
 import { spawn } from "node:child_process";
 import { lstat, mkdir, mkdtemp, open, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -140,6 +141,7 @@ const reaper = spawn(process.execPath, [reaperPath, String(process.pid), String(
   stdio: ["ignore", "ignore", "ignore", "ipc"],
 });
 let testController;
+let memoryWorkers;
 let controllerResult;
 let cleanupErrors = [];
 let outputFilesClosed = false;
@@ -263,11 +265,14 @@ try {
     TCRN_TEST_CONTROLLER_REAPER_PID: String(reaper.pid),
   };
   if (coverageDirectory) controllerEnvironment.NODE_V8_COVERAGE = coverageDirectory;
-  testController = spawn(process.execPath, ["--import", childPolicyImport, ...testArguments], {
+  memoryWorkers = await acquireMemoryChild("node:test-controller");
+  // The child environment was assembled before the new leaf envelope was acquired.
+  if (process.env.EINZBERN_MEMORY_LEASE) controllerEnvironment.EINZBERN_MEMORY_LEASE = process.env.EINZBERN_MEMORY_LEASE;
+  testController = spawn(process.execPath, ["--import", childPolicyImport, ...memoryTestArguments(testArguments)], {
     stdio: ["ignore", stdoutFile.fd, stderrFile.fd],
     env: controllerEnvironment,
   });
-  await appendProgressIfConfigured(progressPath, "controller-started", { pid: testController.pid, processGroup: process.pid, reaperPid: reaper.pid, coverageDirectory: coverageDirectory ?? null });
+  await appendProgressIfConfigured(progressPath, "controller-started", { pid: testController.pid, processGroup: process.pid, reaperPid: reaper.pid, coverageDirectory: coverageDirectory ?? null, ...(memoryWorkers ? { memoryAdmission: { workers: memoryWorkers.workers, reservedBytes: memoryWorkers.bytes } } : {}) });
   controllerResult = await new Promise((resolveResult, rejectResult) => {
     testController.once("error", rejectResult);
     testController.once("exit", (code, signal) => resolveResult({ code, signal }));
@@ -301,6 +306,7 @@ try {
     coverageDirectory: coverageDirectory ?? null,
     writerQuiescent: cleanupErrors.length === 0,
     cleanupErrors,
+    ...(memoryWorkers ? { memoryAdmission: { workers: memoryWorkers.workers, reservedBytes: memoryWorkers.bytes } } : {}),
   });
   if (cleanupErrors.length > 0) {
     const cleanupFailure = new Error(JSON.stringify({
@@ -358,4 +364,7 @@ try {
   const wrapped = new Error(JSON.stringify(evidence));
   wrapped.code = error?.code ?? "TEST_CONTROLLER_FAILED";
   throw wrapped;
+} finally {
+  try { memoryWorkers?.release(); }
+  catch (error) { process.stderr.write(`${JSON.stringify({ reasonCode: error.reasonCode ?? "MEMORY_RELEASE_UNCONFIRMED" })}\n`); process.exitCode = 1; }
 }

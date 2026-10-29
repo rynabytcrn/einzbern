@@ -27,6 +27,7 @@ import { ConfigBackupReservationError } from "./lib/config-backup-reservation.mj
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
 import { DependencyGraphError, validateFrozenDependencyGraph } from "./lib/dependency-graph.mjs";
 import { validateVendoredRuntimeInventory, VENDORED_RUNTIME_NOTICES, VENDORED_RUNTIME_SOURCE } from "./lib/vendored-runtime.mjs";
+import { createMemoryExecutorContract } from "./lib/memory-executor-contract.mjs";
 import { MemoryBudgetError } from "./lib/memory-budget.mjs";
 import { HeavyRunsError, acquireHeavySlot } from "./lib/heavy-runs.mjs";
 import {
@@ -647,6 +648,7 @@ async function build() {
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/config-backup-reservation.mjs", configBackupReservation);
   // TCRN-CROSS-SUB-484: the heavy-run semaphore, which the CLI's gates-run and the machine settings
   // catalog import by relative path, as they import runtime-capacity.mjs.
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/memory-executors.json", `${JSON.stringify(createMemoryExecutorContract(repositoryRoot))}\n`);
   const storageLocation = await readSourceFile(resolve(repositoryRoot, "scripts/lib/storage-location.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/storage-location.mjs", storageLocation);
   const memoryBudget = await readSourceFile(resolve(repositoryRoot, "scripts/lib/memory-budget.mjs"));

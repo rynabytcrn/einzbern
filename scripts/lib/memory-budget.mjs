@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Device-local admission. Estimates are budgets, not an OS memory limit or an OOM guarantee.
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { closeSync, constants, existsSync, fsyncSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -350,35 +350,71 @@ export async function acquireMemoryChild(command, env = process.env) {
   return acquireMemoryBudget({ directory: parent.directory, command, env });
 }
 
-/** Closed first-version gate adapters. Unknown tools cannot silently ignore worker limits. */
+const EXECUTOR_SCHEMA = "einzbern.memory-executors.v1";
+const executorDigest = bytes => createHash("sha256").update(bytes).digest("hex");
+function moduleRoot() {
+  let root = resolve(dirname(fileURLToPath(import.meta.url)), import.meta.url.endsWith("/memory-budget.mjs") ? "../.." : "..");
+  if (root.endsWith("/dist/build")) root = resolve(root, "../..");
+  return root;
+}
+function verifiedExecutorProject(cwd) {
+  const ownRoot = moduleRoot();
+  const packaged = existsSync(join(ownRoot, "manifest.json"));
+  const metadataPath = join(ownRoot, packaged ? "scripts/lib/memory-executors.json" : "dist/build/scripts/lib/memory-executors.json");
+  // The build/pack producer freezes identities; runtime reads only its generated contract.
+  let contract;
+  if (packaged) {
+    const bytes = readFileSync(metadataPath);
+    const manifest = JSON.parse(readFileSync(join(ownRoot, "manifest.json"), "utf8"));
+    const member = manifest.schemaVersion === "einzbern.release-manifest.v1" && manifest.files?.find(row => row.path === "scripts/lib/memory-executors.json");
+    if (member?.size !== bytes.length || member.sha256 !== executorDigest(bytes)) fail("MEMORY_EXECUTOR_UNSUPPORTED");
+    contract = JSON.parse(bytes.toString("utf8"));
+  } else contract = JSON.parse(readFileSync(metadataPath, "utf8"));
+  if (contract?.schemaVersion !== EXECUTOR_SCHEMA || !/^pnpm@\d+\.\d+\.\d+$/u.test(contract.packageManager ?? "") || !contract.files || Array.isArray(contract.files) || Object.keys(contract.files).length !== 11) fail("MEMORY_EXECUTOR_UNSUPPORTED");
+  const projectRoot = realpathSync(cwd);
+  for (const path of Object.keys(contract.files)) {
+    if (isAbsolute(path) || path.includes("\\") || path.split("/").some(part => part === ".." || part === "." || part === "") || !/^[a-f0-9]{64}$/u.test(contract.files[path] ?? "")) fail("MEMORY_EXECUTOR_UNSUPPORTED");
+    const target = join(projectRoot, path), metadata = lstatSync(target);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || realpathSync(target) !== target || executorDigest(readFileSync(target)) !== contract.files[path]) fail("MEMORY_EXECUTOR_UNSUPPORTED");
+  }
+  const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"));
+  if (pkg.name !== "einzbern" || pkg.packageManager !== contract.packageManager) fail("MEMORY_EXECUTOR_UNSUPPORTED");
+  return pkg;
+}
+/** Shared closed classifier, also used by the controller's existing managed-task exception. */
+export function memoryPackageTask(command, cwd) {
+  try {
+    const [program, ...args] = command, executable = basename(program);
+    if (!["corepack", "corepack.cmd", "corepack.exe", "pnpm", "pnpm.cjs", "pnpm.exe"].includes(executable)) return null;
+    const pkg = verifiedExecutorProject(cwd);
+    let invocation = args;
+    if (["corepack", "corepack.cmd", "corepack.exe"].includes(executable)) {
+      if (args[0] !== pkg.packageManager) return null;
+      invocation = args.slice(1);
+    }
+    const words = [...invocation];
+    if (words[0] === "--silent") words.shift();
+    if (words[0] === "run") words.shift();
+    if (words[0] === "--silent") words.shift();
+    if (words.length !== 1) return null;
+    const script = pkg.scripts?.[words[0]];
+    const match = typeof script === "string" ? /^node (scripts\/(?:task|verify-portal|portal-tests|release)\.mjs)(?: ([a-z][a-z0-9-]*))?$/u.exec(script) : null;
+    return match ? { entry: match[1], args: match[2] ? [match[2]] : [] } : null;
+  } catch { return null; }
+}
+
+/** cwd is the gate runner's resolved target root, not the installation's module root. */
 export function memoryGateCommand(command, cwd, env = process.env) {
   if (!leaseReference(env)) return command;
   memoryPhase(env);
   const [program, ...args] = command;
   if (["node", "node.exe"].includes(basename(program)) && args.includes("--test")) return [program, ...memoryTestArguments(args, env)];
-  // Only this engine's instrumented entry points, not similarly named scripts in other projects.
-  let root = resolve(dirname(fileURLToPath(import.meta.url)), import.meta.url.endsWith("/memory-budget.mjs") ? "../.." : "..");
-  if (root.endsWith("/dist/build")) root = resolve(root, "../..");
-  const allowed = ["task.mjs", "verify-portal.mjs", "portal-tests.mjs", "release.mjs"].map(name => join(root, "scripts", name));
-  if (["node", "node.exe"].includes(basename(program)) && args[0] && allowed.includes(resolve(cwd, args[0]))) return command;
-  if (resolve(cwd) === root) {
-    const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-    let invocation = args;
-    const executable = basename(program);
-    if (["corepack", "corepack.cmd", "corepack.exe"].includes(executable)) {
-      if (!/^pnpm@\d+\.\d+\.\d+$/u.test(args[0] ?? "") || args[0] !== packageJson.packageManager) fail("MEMORY_EXECUTOR_UNSUPPORTED");
-      invocation = args.slice(1);
-    } else if (!["pnpm", "pnpm.cjs", "pnpm.exe"].includes(executable)) fail("MEMORY_EXECUTOR_UNSUPPORTED");
-    // Exact run grammar: no directory/prefix/exec/shell options or script arguments.
-    const words = [...invocation];
-    if (words[0] === "--silent") words.shift();
-    if (words[0] === "run") words.shift();
-    if (words[0] === "--silent") words.shift();
-    if (words.length === 1) {
-      const script = packageJson.scripts?.[words[0]];
-      const match = typeof script === "string" ? /^node (scripts\/[a-z-]+\.mjs)(?: ([a-z][a-z0-9-]*))?$/u.exec(script) : null;
-      if (match && allowed.includes(resolve(root, match[1]))) return command;
-    }
-  }
-  fail("MEMORY_EXECUTOR_UNSUPPORTED", { remedy: "Use an instrumented engine runner or the direct Node test adapter; arbitrary commands require an explicit adapter." });
+  try {
+    if (["node", "node.exe"].includes(basename(program))) {
+      verifiedExecutorProject(cwd);
+      const allowed = ["task.mjs", "verify-portal.mjs", "portal-tests.mjs", "release.mjs"].map(name => join(resolve(cwd), "scripts", name));
+      if (args[0] && allowed.includes(resolve(cwd, args[0]))) return command;
+    } else if (memoryPackageTask(command, cwd)) return command;
+  } catch { /* An absent, mismatched or unsafe executor remains unsupported. */ }
+  fail("MEMORY_EXECUTOR_UNSUPPORTED", { remedy: "Use the resolved project's verified instrumented executor closure or the direct Node test adapter." });
 }

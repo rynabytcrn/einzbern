@@ -193,10 +193,10 @@ fs.readFileSync=function(p,...a){if(p==='/proc/pressure/memory')return 'full avg
 cp.execFileSync=function(p,a,...o){if(p==='/usr/bin/memory_pressure'&&a?.length===1&&a[0]==='-Q')return 'System-wide memory free percentage: 75%\\n';return exec.call(this,p,a,...o)};
 process.availableMemory=()=>12*1024**3;process.constrainedMemory=()=>16*1024**3;syncBuiltinESMExports();`);
   await writeFile(join(home, "machine-settings.json"), JSON.stringify({ schemaVersion: "tcrn.machine-settings.v1", values: { "execution.memoryPolicy": JSON.stringify({ enabled: true, reserveMiB: 0, budgetMiB: 4096, fixedMiB: 128, workerMiB: 256, maxWorkers: 2 }) } }));
-  const prelude = `import assert from 'node:assert/strict';import {mkdir,readFile,writeFile,symlink,unlink,realpath,chmod} from 'node:fs/promises';import {join} from 'node:path';
+  const prelude = `import assert from 'node:assert/strict';import {execFileSync} from 'node:child_process';import {mkdir,readFile,writeFile,symlink,unlink,realpath,chmod,cp} from 'node:fs/promises';import {join} from 'node:path';
 const root=${JSON.stringify(root)},directory=${JSON.stringify(directory)},home=${JSON.stringify(home)};
 const m=await import(${JSON.stringify(moduleUrl)}),h=await import(${JSON.stringify(heavyUrl)});`;
-  const env = { ...process.env, EINZBERN_HOME: home, COREPACK_ENABLE_NETWORK: "0", npm_config_verify_deps_before_run: "false" };
+  const env = { ...process.env, EINZBERN_HOME: home, COREPACK_ENABLE_NETWORK: "0", pnpm_config_verify_deps_before_run: "false" };
   delete env.EINZBERN_MEMORY_LEASE; delete env.EINZBERN_HEAVY_SLOT; delete env.EINZBERN_HEAVY_LOCK_DIR;
   const child = spawnSync(process.execPath, ["--import", telemetry, "--input-type=module", "-e", prelude + source], { cwd: root, env, encoding: "utf8", timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
   assert.equal(child.status, 0, child.stderr + child.stdout);
@@ -229,13 +229,12 @@ await chmod(target,0o777);await assert.rejects(m.acquireMemoryBudget({deviceHome
 
 test("closed adapters admit pinned Corepack and all existing managed task scripts, not arbitrary forms", async t => {
   await isolatedAdapterFixture(t, `
-const env={};const lease=await m.acquireMemoryBudget({deviceHome:home,directory:join(home,'locks'),command:'gates-run',env});
-try {
+
 const scripts=['archive','build','clean','format','format:check','lint','release:preflight','sbom','test','typecheck','verify:no-sibling-dependency','verify:offline','verify:p1','verify:p8','verify:privacy','verify:links','verify:retrieval-eval','verify:portal','portal:test','release'];
-for(const script of scripts)for(const prefix of [['pnpm'],['corepack','pnpm@11.3.0']]){const command=[...prefix,'run','--silent',script];assert.deepEqual(m.memoryGateCommand(command,root,env),command)}
-for(const command of [['corepack','pnpm','run','build'],['corepack','pnpm@11.2.0','run','build'],['corepack','yarn@4.0.0','build'],['pnpm','--dir','other','run','build'],['pnpm','run','build','--extra'],['pnpm','exec','node','other.mjs'],['pnpm','run','portal'],['pnpm','run','run','build']])assert.throws(()=>m.memoryGateCommand(command,root,env),e=>e.reasonCode==='MEMORY_EXECUTOR_UNSUPPORTED');
-assert.throws(()=>m.memoryGateCommand(['corepack','pnpm@11.3.0','run','build'],directory,env),e=>e.reasonCode==='MEMORY_EXECUTOR_UNSUPPORTED');
-} finally {lease.release()}
+for(const script of scripts)for(const prefix of [['pnpm'],['corepack','pnpm@11.3.0']]){const command=[...prefix,'run','--silent',script];assert.ok(m.memoryPackageTask(command,root),JSON.stringify(command))}
+for(const command of [['corepack','pnpm','run','build'],['corepack','pnpm@11.2.0','run','build'],['corepack','yarn@4.0.0','build'],['pnpm','--dir','other','run','build'],['pnpm','run','build','--extra'],['pnpm','exec','node','other.mjs'],['pnpm','run','portal'],['pnpm','run','run','build']])assert.equal(m.memoryPackageTask(command,root),null);
+assert.equal(m.memoryPackageTask(['corepack','pnpm@11.3.0','run','build'],directory),null);
+
 `);
 });
 
@@ -244,9 +243,9 @@ test("actual planGates and runGates execute pinned Corepack format gate with ena
 const {planGates}=await import(${JSON.stringify(gatesPlanUrl)}),{runGates}=await import(${JSON.stringify(gatesRunUrl)});
 const env={...process.env};const lease=await m.acquireMemoryBudget({deviceHome:home,directory:join(home,'locks'),command:'gates-run',env});
 try {
-const plan=await planGates({projectRoot:root,release:true,gates:[{name:'engine:format',root:'.',command:['corepack','pnpm@11.3.0','run','--silent','format:check'],covers:['**'],required:true,enabled:true,releaseOnly:false}]});
+const target=join(directory,'project');await cp(root,target,{recursive:true,filter:p=>!['.git','dist'].some(n=>p===join(root,n)||p.startsWith(join(root,n)+'/'))});execFileSync('git',['init','-q',target],{stdio:['ignore','pipe','pipe']});const plan=await planGates({projectRoot:target,release:true,gates:[{name:'engine:format',root:'.',command:['corepack','pnpm@11.3.0','run','--silent','format:check'],covers:['**'],required:true,enabled:true,releaseOnly:false}]});
 const run=await runGates(plan,{libraryId:'workspace:'+ '1'.repeat(24),at:'2026-10-29T18:00:00Z',deviceHome:home,env});
-assert.deepEqual(run.run.reds,[]);assert.equal(run.run.gates.length,1);assert.equal(run.run.gates[0].ok,true,JSON.stringify(run));assert.equal(run.run.gates[0].exitCode,0);console.log(JSON.stringify(run));
+const diagnostic=await readFile(join(home,'cache','workspace-'+ '1'.repeat(24),'gate-runs',run.run.gates[0].outputFile),'utf8');assert.deepEqual(run.run.reds,[],JSON.stringify(run)+diagnostic);assert.equal(run.run.gates.length,1);assert.equal(run.run.gates[0].ok,true,JSON.stringify(run));assert.equal(run.run.gates[0].exitCode,0);console.log(JSON.stringify(run));
 } finally {lease.release()}
 `);
   assert.ok(output.includes("engine:format"));

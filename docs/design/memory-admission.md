@@ -143,3 +143,22 @@ as well as bare pnpm, with optional silent run syntax. Existing package scripts
 are admitted only when their declaration names an already instrumented engine
 entry point. Wrong pins, other project roots, executable/directory overrides,
 extra script arguments and arbitrary scripts remain unsupported.
+
+
+### Distributed executor identity
+
+A gate's working directory is the target resolved by the normal gate planner, not
+an engine installation path. The source build freezes the instrumented executor
+closure as generated metadata; the release ships `scripts/lib/memory-executors.json`
+and binds its bytes in the release manifest. Both the external module and CLI
+bundle consume that metadata. The target package declaration and the enumerated
+runner/admission files must match its SHA-256 identities before a package or direct
+engine runner is admitted. A same-named script, unrelated directory, changed runner
+or missing/corrupt metadata is not sufficient. This is a closed compatibility and
+integrity check, not a new authorization source or an OS memory sandbox.
+
+Under the test controller, a verified pinned package invocation of the existing
+managed task entry follows the same nested-task policy boundary as direct Node.
+Other package scripts retain the inherited-stdio/detached-process restrictions.
+A distributed CLI gate caller is recognized only at its manifest-covered entry;
+the normal registered child-process group and private-pipe handling still applies.

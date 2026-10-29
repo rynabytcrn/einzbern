@@ -111,7 +111,7 @@ async function createRepos(name) {
   await initRepo(engineRoot);
   await initRepo(helperRoot);
 
-  await writeText(engineRoot, "package.json", `${JSON.stringify({ name: "einzbern", version: OLD_VERSION, private: true, type: "module" }, null, 2)}\n`);
+  await writeText(engineRoot, "package.json", `${JSON.stringify({ name: "einzbern", version: OLD_VERSION, private: true, type: "module", packageManager: JSON.parse(await readFile(join(REPOSITORY_ROOT, "package.json"), "utf8")).packageManager }, null, 2)}\n`);
   for (const packageName of ["cli", "core", "protocol"]) {
     await writeText(engineRoot, `packages/${packageName}/package.json`, `${JSON.stringify({ name: `@einzbern/${packageName}`, version: OLD_VERSION, private: true }, null, 2)}\n`);
   }

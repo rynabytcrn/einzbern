@@ -37,6 +37,7 @@
 // Prints {"ok":true,"reasonCode":"RELEASE_PACKED",...} on stdout, or a reason code and its details
 // on stderr with exit code 1.
 
+import { createMemoryExecutorContract } from "./lib/memory-executor-contract.mjs";
 import { CONTRACT_DOCUMENTS, SPECIFICATIONS, verifySkillSpecifications } from "./lib/release-package-inputs.mjs";
 
 import { createHash, randomBytes } from "node:crypto";
@@ -172,6 +173,7 @@ async function bundleAtelier(stage, coreBuild) {
   await copyStaged(root, "portal/locale-contract.mjs", join(repositoryRoot, "portal", "locale-contract.mjs"));
   await copyStaged(root, "scripts/lib/runtime-capacity.mjs", join(repositoryRoot, "scripts", "lib", "runtime-capacity.mjs"));
   for (const name of ["memory-budget.mjs", "memory-worker-check.mjs", "storage-location.mjs"]) await copyStaged(root, `scripts/lib/${name}`, join(repositoryRoot, "scripts", "lib", name));
+  await writeStaged(root, "scripts/lib/memory-executors.json", `${JSON.stringify(createMemoryExecutorContract(repositoryRoot))}\n`);
   await writeStaged(root, "scripts/lib/names.mjs", names.replace(NAMES_SOURCE_SPECIFIER, NAMES_BUILD_SPECIFIER));
   await writeStaged(root, "scripts/lib/registry-lock.mjs", stagedRegistryLock);
   const gateRunBridge = await readFile(join(repositoryRoot, "scripts/lib/gate-run.mjs"), "utf8");
@@ -237,6 +239,7 @@ async function packRelease({ version: requested, out }) {
     await writeStaged(tree, "scripts/einzbern.mjs", (await bundleEntry(join(repositoryRoot, "scripts", "einzbern.mjs"))).code);
     await writeStaged(tree, "scripts/einzbern-hook.mjs", (await bundleEntry(join(repositoryRoot, "scripts", "einzbern-hook.mjs"))).code);
     for (const name of ["memory-budget.mjs", "memory-worker-check.mjs", "storage-location.mjs"]) await copyStaged(tree, `scripts/lib/${name}`, join(repositoryRoot, "scripts", "lib", name));
+    await writeStaged(tree, "scripts/lib/memory-executors.json", `${JSON.stringify(createMemoryExecutorContract(repositoryRoot))}\n`);
     await copyStaged(tree, "launchers/einzbern.mjs", join(repositoryRoot, "scripts", "einzbern-launcher.mjs"));
     await copyStaged(tree, "launchers/hook.mjs", join(repositoryRoot, "scripts", "einzbern-hook-launcher.mjs"));
     const atelier = BRAND.portal.id;

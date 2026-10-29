@@ -39,3 +39,5 @@ export function acquireMemoryChild(command: string, env?: NodeJS.ProcessEnv): Pr
 export function memoryGateCommand(command: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): readonly string[];
 
 export function resolveMemoryDirectory(deviceHome: string | undefined, directory: string): string;
+
+export function memoryPackageTask(command: readonly string[], cwd: string): { entry: string; args: string[] } | null;

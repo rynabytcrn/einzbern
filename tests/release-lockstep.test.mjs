@@ -121,7 +121,7 @@ async function createRepos(name) {
   for (const directory of ["scripts", "portal", "skill"]) {
     await cp(join(REPOSITORY_ROOT, directory), join(engineRoot, directory), { recursive: true });
   }
-  for (const path of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "packages/core/src/names.ts", "docs/codex-native-controller.md", ...SPECIFICATIONS.map(name => `specs/${name}`)]) {
+  for (const path of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "packages/core/src/names.ts", "docs/codex-native-controller.md", "docs/design/memory-admission.md", ...SPECIFICATIONS.map(name => `specs/${name}`)]) {
     await writeText(engineRoot, path, await readFile(join(REPOSITORY_ROOT, path), "utf8"));
   }
   await writeText(engineRoot, "packages/core/src/framework-version.ts", await readFile(join(REPOSITORY_ROOT, "packages/core/src/framework-version.ts"), "utf8"));

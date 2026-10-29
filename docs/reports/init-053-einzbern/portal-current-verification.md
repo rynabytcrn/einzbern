@@ -45,8 +45,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/locales.js",
-      "bytes": 284983,
-      "sha256": "140a5a2bf331b0bc8a48cfcaff9be59782c3e7ccc6a4470470bff2176c602bc7"
+      "bytes": 286397,
+      "sha256": "ebb6a1cccda64bfe05ca999d467b359d49666a1502167dd2612bbe8704453db0"
     },
     {
       "path": "portal/portal.mjs",
@@ -120,8 +120,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "scripts/portal-tests.mjs",
-      "bytes": 987,
-      "sha256": "6728e4a61bfc2fc3f3d1536d4d639eb2c25ce1fc2aa614bc79bbb69eb1386502"
+      "bytes": 1330,
+      "sha256": "d3b80140b253506033f58437408b8eb3e75ba6e8605ccdd38467df99bbb40d9b"
     },
     {
       "path": "scripts/lib/test-roster.mjs",
@@ -155,8 +155,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "scripts/verify-portal.mjs",
-      "bytes": 4849,
-      "sha256": "d431fcbc8fc997755a7963057fa8e777dda35b0ddd206aab6258515c56741007"
+      "bytes": 5090,
+      "sha256": "afd72223cfc63fea9e171f9d7fa568f5b507994e0754cfd2038b1d1f6b55de1c"
     },
     {
       "path": "scripts/verbatim-evidence-meta-proof.mjs",
@@ -216,9 +216,9 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
         "leg": "key-coverage",
         "ok": true,
         "reasonCode": "EVERY_KEY_TRANSLATED",
-        "keyCount": 684,
+        "keyCount": 686,
         "localeCount": 5,
-        "expectedStrings": 3420,
+        "expectedStrings": 3430,
         "gaps": []
       },
       {

@@ -1007,7 +1007,7 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   const sorted = (files) => [...new Set(files)].sort();
   const integrity = names("ci-artifact-transport ci-baseline-evidence ci-bootstrap ci-bootstrap-prerequisites ci-evidence-retention ci-git-source-blobs ci-impact-plan ci-selective-runner ci-test-roster");
   const common = names(`bootstrap bundle config-backup-format configuration-contract dependency-materialization dependency-policy
-    dispatch-admission-evidence final-gate-plan final-gate-plan-batch-verify heavy-runs inc263-closeout inc275-mcp-absent
+    dispatch-admission-evidence final-gate-plan final-gate-plan-batch-verify heavy-runs inc263-closeout inc275-mcp-absent memory-budget
     native-tool-evidence no-sibling-dependency node-floor offline-boundary operational-audit-boundaries output-session-lifecycle
     p1-all-legs p1-roster p8-sbom-receipt-boundary p8-workflow-rc pack-release platform-doctor privacy-boundary project-chain-model
     push-gate-p1-coverage readme-render release-lockstep release-readiness release-tag-gate release-tooling-audit-boundaries release-trust

@@ -162,3 +162,13 @@ test("profile worker requests cannot raise the device cap and nested profiles re
   const child = await acquireMemoryBudget({ ...options, command: "child", env: { ...options.env } });
   assert.equal(child.workers, 1); child.release(); root.release();
 });
+
+test("real task entry reports resource refusal rather than an internal or assertion failure", async t => {
+  const options = await fixture(t, policy({ budgetMiB: 1, fixedMiB: 1, workerMiB: 1 }));
+  const env = { ...process.env, EINZBERN_HOME: options.deviceHome, EINZBERN_HEAVY_LOCK_DIR: options.directory };
+  delete env.EINZBERN_HEAVY_SLOT; delete env.EINZBERN_MEMORY_LEASE;
+  const result = spawnSync(process.execPath, [new URL("../scripts/task.mjs", import.meta.url).pathname, "test"], { env, encoding: "utf8", timeout: 10_000 });
+  assert.equal(result.status, 1, result.stderr); assert.equal(result.stdout, "");
+  const receipt = JSON.parse(result.stderr.trim());
+  assert.ok(["MEMORY_BUDGET_INSUFFICIENT", "MEMORY_PRESSURE_HIGH", "MEMORY_SAMPLE_UNAVAILABLE"].includes(receipt.reasonCode), result.stderr);
+});

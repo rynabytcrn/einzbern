@@ -27,6 +27,7 @@ import { ConfigBackupReservationError } from "./lib/config-backup-reservation.mj
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
 import { DependencyGraphError, validateFrozenDependencyGraph } from "./lib/dependency-graph.mjs";
 import { validateVendoredRuntimeInventory, VENDORED_RUNTIME_NOTICES, VENDORED_RUNTIME_SOURCE } from "./lib/vendored-runtime.mjs";
+import { MemoryBudgetError } from "./lib/memory-budget.mjs";
 import { HeavyRunsError, acquireHeavySlot } from "./lib/heavy-runs.mjs";
 import {
   aggregatePrivacySurface,
@@ -1597,7 +1598,7 @@ const handlers = {
 };
 
 function errorReason(error) {
-  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ConfigBackupReservationError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError || error instanceof HeavyRunsError) {
+  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ConfigBackupReservationError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError || error instanceof HeavyRunsError || error instanceof MemoryBudgetError) {
     return error.reasonCode;
   }
   return "TASK_INTERNAL_ERROR";

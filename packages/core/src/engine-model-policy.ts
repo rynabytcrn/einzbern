@@ -13,7 +13,7 @@ import { deviceHome, engineModelPolicyLockPath, engineModelPolicyPath } from "./
 import { withFileLock } from "./file-lock.js";
 import { assertActorId } from "./actor-attestation.js";
 import { MODELS_ESCALATION_THRESHOLD_MAX, resolveModelsTier, validateModelsEscalationCeiling } from "./models-escalation.js";
-import { validateModelsCategory } from "./models-category.js";
+import { defaultModelsCategory, validateModelsCategory } from "./models-category.js";
 import { validateModelsTiers } from "./models-tiers.js";
 import type { ModelsCategories } from "./models-category.js";
 import type { ModelsTiers } from "./models-tiers.js";
@@ -97,6 +97,9 @@ export interface EngineModelPolicyCatalog {
   readonly selectedHost?: string;
   readonly selectedPolicy?: EngineModelPolicyEntry | null;
   readonly selectedStatus?: "configured" | "unconfigured";
+  /** Proposed host-local defaults, never a saved policy or authorization. */
+  readonly onboarding?: EngineModelPolicyConfig;
+  readonly peerReadiness?: CodexPeerReadiness;
 }
 
 const HOST_ID = /^[a-z][a-z0-9._-]*$/u;
@@ -178,6 +181,57 @@ export function validateEngineModelPolicy(hostValue: unknown, value: unknown): E
     ...(quota === undefined ? {} : { quota }),
     escalation: Object.freeze({ enabled: escalation.enabled, threshold: escalation.threshold, ceiling }),
   });
+}
+
+/** INIT-076: additive onboarding draft, offered on fresh installs and subsequent repairs.
+ * Existing groups, custom categories, quota and escalation remain untouched. Saving the draft
+ * still goes through the normal actor/Owner-decision/CAS write path; reading never writes it.
+ */
+export function engineModelPolicyOnboarding(hostValue: string, policy?: EngineModelPolicyConfig | null): EngineModelPolicyConfig {
+  const host = hostId(hostValue);
+  const current = policy == null ? null : validateEngineModelPolicy(host, { categories: policy.categories, tiers: policy.tiers, escalation: policy.escalation, ...(policy.quota === undefined ? {} : { quota: policy.quota }) });
+  const categories = [...(current?.categories ?? [])];
+  const tiers = [...(current?.tiers ?? [])];
+  const nextOrder = (rows: readonly { readonly order: number }[]): number => {
+    const maximum = rows.reduce((max, row) => Math.max(max, row.order), 0);
+    if (maximum <= Number.MAX_SAFE_INTEGER - 10) return maximum + 10;
+    const used = new Set(rows.map(row => row.order));
+    let next = 1; while (used.has(next)) next += 1;
+    return next;
+  };
+  for (const category of defaultModelsCategory()) {
+    if (!categories.some(row => row.id === category.id)) categories.push({ ...category, order: nextOrder(categories) });
+    if (!tiers.some(row => row.category === category.id)) tiers.push({ order: nextOrder(tiers), category: category.id, runner: host, model: "", effort: "", note: "" });
+  }
+  return validateEngineModelPolicy(host, {
+    categories, tiers,
+    escalation: current?.escalation ?? { enabled: false, threshold: 2, ceiling: "main" },
+    ...(current?.quota === undefined ? {} : { quota: current.quota }),
+  });
+}
+
+export interface CodexPeerReadiness {
+  readonly applicable: boolean;
+  readonly ready: boolean;
+  readonly missingCategories: readonly string[];
+  readonly invalidCeiling: string | null;
+}
+
+/** Configuration readiness only, not host availability, execution permission or a live test.
+ * Unknown/non-Codex hosts never acquire Codex behavior. Ordinary host use is not gated here.
+ */
+export function codexPeerReadiness(hostValue: string, policy?: EngineModelPolicyConfig | null): CodexPeerReadiness {
+  const host = hostId(hostValue);
+  if (host !== "codex") return Object.freeze({ applicable: false, ready: false, missingCategories: Object.freeze([]), invalidCeiling: null });
+  const current = policy == null ? null : validateEngineModelPolicy(host, { categories: policy.categories, tiers: policy.tiers, escalation: policy.escalation, ...(policy.quota === undefined ? {} : { quota: policy.quota }) });
+  const usable = (category: string, ceiling = false): boolean => {
+    const rows = (current?.tiers ?? []).filter(row => row.category === category).sort((a, b) => a.order - b.order);
+    const row = ceiling ? rows[0] : rows.at(-1);
+    return row !== undefined && row.runner === host && row.model.trim() !== "" && row.effort.trim() !== "";
+  };
+  const missingCategories = ["main", "economy"].filter(category => !usable(category));
+  const invalidCeiling = current?.escalation.enabled && !usable(current.escalation.ceiling, true) ? current.escalation.ceiling : null;
+  return Object.freeze({ applicable: true, ready: missingCategories.length === 0 && invalidCeiling === null, missingCategories: Object.freeze(missingCategories), invalidCeiling });
 }
 
 function emptyFile(): EngineModelPolicyFile {
@@ -280,6 +334,8 @@ export function engineModelPolicyCatalogFromSnapshot(
       selectedHost: host,
       selectedPolicy: hasSelectedHost ? file.hosts[host] : null,
       selectedStatus: hasSelectedHost ? "configured" as const : "unconfigured" as const,
+      onboarding: engineModelPolicyOnboarding(host, hasSelectedHost ? file.hosts[host] : null),
+      peerReadiness: codexPeerReadiness(host, hasSelectedHost ? file.hosts[host] : null),
     }),
   });
 }
@@ -379,6 +435,12 @@ export function resolveEngineExecutionPolicyFromSnapshot(
   const policy = Object.hasOwn(file.hosts, host) ? file.hosts[host] : undefined;
   if (policy === undefined) {
     fail("ENGINE_MODEL_POLICY_UNAVAILABLE", `No device engine policy is configured for host ${host}; project model settings are not a fallback`, { host });
+  }
+  if (policy.escalation.enabled) {
+    const ceiling = [...policy.tiers].sort((a, b) => a.order - b.order).find(row => row.category === policy.escalation.ceiling);
+    if (ceiling === undefined || ceiling.model.trim() === "" || ceiling.effort.trim() === "") {
+      fail("ENGINE_MODEL_POLICY_UNAVAILABLE", "An unconfigured model group cannot be an enabled escalation ceiling", { host, category: policy.escalation.ceiling });
+    }
   }
   const resolution = resolveModelsTier({ ...policy, category: input.category, rejections: input.rejections });
   if (resolution.record.model.trim() === "" || resolution.record.effort.trim() === "") {

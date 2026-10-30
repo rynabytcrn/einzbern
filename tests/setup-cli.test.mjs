@@ -63,7 +63,6 @@ async function engineTree(base) {
   await copyFile(join(repositoryRoot, "scripts/einzbern.mjs"), join(tree, "scripts/einzbern.mjs"));
   await copyFile(join(repositoryRoot, "scripts/einzbern-hook.mjs"), join(tree, "scripts/einzbern-hook.mjs"));
   await mkdir(join(tree, "scripts/lib"), { recursive: true });
-  await copyFile(join(repositoryRoot, "scripts/lib/codex-native-hook-ipc.mjs"), join(tree, "scripts/lib/codex-native-hook-ipc.mjs"));
   await copyFile(join(repositoryRoot, "scripts/policy/knowledge-provenance.json"), join(tree, "scripts/policy/knowledge-provenance.json"));
   await cp(join(repositoryRoot, "dist/build"), join(tree, "dist/build"), { recursive: true });
   await mkdir(join(tree, "launchers"));
@@ -422,7 +421,7 @@ test("setup CLI reads explicit synthetic Codex observations through normal fresh
   assert.equal(applied.selfCheck.hookReasonCode, null, JSON.stringify(applied.selfCheck));
   assert.equal(applied.selfCheck.hookError, null);
   const hooksPath = join(f.home, ".codex", "hooks.json");
-  assert.equal(JSON.parse(await readFile(hooksPath, "utf8")).hooks.SubagentStop.length, 1);
+  assert.equal(JSON.parse(await readFile(hooksPath, "utf8")).hooks.SubagentStop, undefined);
   assert.deepEqual((await setup(f, "repair", "--codex-admission", path, "--yes", "true")).written, []);
   await assert.rejects(setup(f, "repair", "--codex-admission", "relative.json"), { reasonCode: "CLI_ARGUMENT_MALFORMED" });
   await writeFile(path, JSON.stringify({ ...admission, enableHooksAuthorized: true }));
@@ -430,16 +429,16 @@ test("setup CLI reads explicit synthetic Codex observations through normal fresh
   await assert.rejects(setup(f, "fresh", "--execution-target", "chatgpt-dot", "--codex-admission", path), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
   await writeFile(path, JSON.stringify({ ...admission, state: "unsupported", subagentStop: false, trust: "restricted" }));
   assert.equal((await setup(f, "repair", "--codex-admission", path)).codexAdmission.state, "unsupported");
-  // Existing stop remains pending explicit resolution; unsupported never removes it.
-  assert.equal(JSON.parse(await readFile(hooksPath, "utf8")).hooks.SubagentStop.length, 1);
+  // Admission cannot revive a retired collector hook.
+  assert.equal(JSON.parse(await readFile(hooksPath, "utf8")).hooks.SubagentStop, undefined);
 });
 
 test("setup self-check retains the actual failure detail of an unbundled launcher entry", async t => {
   const f = await fixture(t);
   await setup(f, "fresh", "--artifacts", f.library, "--yes", "true");
-  const ipc = join(f.deviceHome, "engine", FRAMEWORK_VERSION, "scripts/lib/codex-native-hook-ipc.mjs");
-  await rm(ipc);
+  const entry = join(f.deviceHome, "engine", FRAMEWORK_VERSION, "scripts/einzbern-hook.mjs");
+  await rm(entry);
   const applied = await setup(f, "repair", "--yes", "true");
   assert.equal(applied.selfCheck.hookReasonCode, "HOOK_LAUNCH_FAILED");
-  assert.match(applied.selfCheck.hookError, /codex-native-hook-ipc/u);
+  assert.match(applied.selfCheck.hookError, /einzbern-hook/u);
 });

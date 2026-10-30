@@ -322,7 +322,14 @@ test("INIT068 R21: common privacy principle covers authorized identity/minimizat
 });
 
 
-test("INIT076: Codex collector supplement preserves governance rounds without extending to dot", () => {
+test("INIT076: Codex peer contract is category-neutral and host-isolated", () => {
   const body = builtInRule("batch").body.en;
-  for (const phrase of ["not other hosts or dot", "exactly one", "economy-tier collector", "exempt from the harness worker cap", "Reserve a real host slot", "capability-unavailable", "application attempt", "no-progress", "Parent receipt acknowledgement is not an exit prerequisite", "/goal or /loop", "legitimate M governance rounds", "never repurpose".replace("never", "Never")]) assert.ok(body.includes(phrase), phrase);
+  for (const phrase of ["not other hosts or dot", "independent main-category", "economy-category coordinator", "directly dispatches fresh workers", "main and economy", "flagship model group may remain unconfigured", "single-conversation coordination", "no collector cap exemption", "application attempt", "no-progress", "Unknown delivery", "/goal or /loop", "legitimate M governance rounds", "current Owner decision defines the testing scope"]) assert.ok(body.includes(phrase), phrase);
+  for (const phrase of ["exactly one fresh, independent, dedicated", "Only this exact collector role is exempt", "waitForCodexNativeCollector", "gpt-6-luna", "gpt-6.1-sol"]) assert.equal(body.includes(phrase), false, phrase);
+});
+
+// Stable installed rules do not preserve one delivery's changing validation status.
+test("Codex installed rules contain no one-off overnight acceptance claim", () => {
+  assert.equal(builtInRule("batch").body.zh.includes("Owner 已验证"), false);
+  assert.equal(builtInRule("batch").body.en.includes("already verified sustained"), false);
 });

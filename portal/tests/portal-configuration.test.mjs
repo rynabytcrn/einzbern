@@ -159,6 +159,14 @@ test("INIT-056 SUB-539: Atelier model-policy API reads the engine source and wri
   const initial = await request(url, "/api/model-policy?host=codex", readOptions(boot.token));
   assert.equal(initial.response.status, 200);
   assert.equal(initial.body.selectedStatus, "unconfigured");
+  assert.equal(initial.body.selectedPolicy, null);
+  assert.deepEqual(initial.body.onboarding.categories.map(row => row.id), ["flagship", "main", "economy"]);
+  assert.ok(initial.body.onboarding.tiers.every(row => row.model === "" && row.effort === ""));
+  assert.deepEqual(initial.body.peerReadiness.missingCategories, ["main", "economy"]);
+  assert.equal(initial.body.peerReadiness.ready, false);
+  const reread = await request(url, "/api/model-policy?host=codex", readOptions(boot.token));
+  assert.equal(reread.body.storeRevision, initial.body.storeRevision, "onboarding reads never save a policy");
+
 
   const writeScope = { libraryId: boot.library.libraryId, libraryPath: boot.library.libraryPath };
   const wrong = await request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy, decidedIn: `minutes:${"d".repeat(24)}#D1`, ...writeScope }));
@@ -177,6 +185,36 @@ test("INIT-056 SUB-539: Atelier model-policy API reads the engine source and wri
   assert.equal(saved.body.reasonCode, "ENGINE_MODEL_POLICY_WRITE_COMMITTED");
   assert.equal(saved.body.readback.selectedHost, "codex");
   assert.equal(saved.body.readback.selectedPolicy.tiers[0].model, "gpt-6-luna");
+  assert.deepEqual(saved.body.readback.peerReadiness.missingCategories, ["main"]);
+  assert.equal(saved.body.readback.peerReadiness.ready, false, "an economy binding cannot replace main");
+  const complete = {
+    categories: [{ order: 20, id: "main", name: "Main", description: "Owner order" }, { order: 40, id: "economy", name: "Economy", description: "" }],
+    tiers: [{ order: 30, category: "main", runner: "codex", model: "main-model", effort: "high", note: "Owner tier" }, { order: 60, category: "economy", runner: "codex", model: "economy-model", effort: "low", note: "" }],
+    escalation: { enabled: true, threshold: 2, ceiling: "main" },
+  };
+  const set = async (next) => request(url, "/api/model-policy", writeOptions(boot.token, "POST", { host: "codex", policy: next, decidedIn: `${minutesId}#D1`, ...writeScope }));
+  const configured = await set(complete);
+  assert.equal(configured.response.status, 200);
+  const catalog = configured.body.readback;
+  assert.equal(catalog.peerReadiness.ready, true, "main/economy suffice without any flagship binding");
+  assert.deepEqual(catalog.onboarding.categories.slice(0, 2), complete.categories, "repair preserves existing category order and values");
+  assert.deepEqual(catalog.onboarding.tiers.slice(0, 2), complete.tiers, "repair preserves existing tiers");
+  assert.equal(catalog.onboarding.categories[2].id, "flagship");
+  assert.equal(catalog.onboarding.tiers[2].model, "");
+  assert.deepEqual(catalog.onboarding.escalation, complete.escalation, "offered flagship does not silently become the escalation ceiling");
+  const offered = await set(catalog.onboarding);
+  assert.equal(offered.response.status, 200);
+  assert.equal(offered.body.readback.peerReadiness.ready, true, "explicitly saving an unbound optional flagship remains ready");
+  const invalidCeiling = await set({ ...catalog.onboarding, escalation: { ...complete.escalation, ceiling: "flagship" } });
+  assert.equal(invalidCeiling.response.status, 200);
+  assert.equal(invalidCeiling.body.readback.peerReadiness.ready, false);
+  assert.equal(invalidCeiling.body.readback.peerReadiness.invalidCeiling, "flagship", "empty flagship cannot count as a usable escalation ceiling");
+  for (const host of ["claude-code", "dsh", "dot"]) {
+    const other = await request(url, `/api/model-policy?host=${host}`, readOptions(boot.token));
+    assert.equal(other.response.status, 200);
+    assert.equal(other.body.peerReadiness.applicable, false, `${host} does not acquire Codex peer requirements`);
+  }
+
 });
 
 

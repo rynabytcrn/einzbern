@@ -301,7 +301,8 @@ async function install(options) {
       const probe = spawnSync(process.execPath, [join(tree, ...ENGINE_ENTRY), "commands"], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
       let commands = [];
       try { const result = JSON.parse(probe.stdout); commands = Array.isArray(result.commands) ? result.commands : []; } catch { /* mismatch is reported below */ }
-      const missing = ["execution-host-prepare", "execution-host-record", "execution-host-evidence"].filter(name => !commands.some(command => command.name === name));
+      const required = ["execution-host-prepare", "execution-host-record", "execution-host-evidence", ...(skill.includes("`execution-codex-peer-record`") ? ["execution-codex-peer-record", "execution-codex-peer-evidence"] : [])];
+      const missing = required.filter(name => !commands.some(command => command.name === name));
       if (probe.status !== 0 || missing.length) fail("INSTALL_SKILL_ENGINE_MISMATCH", "The archive's generated Skill and engine commands do not match", { missing });
     }
     const updated = engineUpdate(tree, release, options.home, at);

@@ -802,7 +802,10 @@ function policySwitchControls(page, selector) {
   const change = (node, value, kind = "change") => { node.value = value; node.dispatchEvent(new page.window.Event(kind, { bubbles: true })); };
   const recovered = () => {
     for (const name of ["host", "decision", "undo"]) assert.equal(control(name)?.disabled, false, `${selector}: ${name} recovers without navigation`);
-    assert.equal(control("save")?.disabled, true, `${selector}: pristine Save remains disabled`);
+    const offeredOnboarding = view().querySelector('[data-engine-model-policy-status="unconfigured"]') !== null
+      && view().querySelector('[data-engine-model-policy-onboarding]') !== null;
+    const writePending = control("save")?.getAttribute("aria-busy") === "true";
+    assert.equal(control("save")?.disabled, writePending || !offeredOnboarding, `${selector}: only unsaved onboarding enables Save; configured pristine and pending writes remain disabled`);
   };
   return { view, control, change, recovered };
 }

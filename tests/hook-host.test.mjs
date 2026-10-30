@@ -125,7 +125,7 @@ test("BL34 scope: DSH subagent navigation remains pointer-only even with a match
   assert.doesNotMatch(answer.hookSpecificOutput.additionalContext, /HOOK-STORY/u);
 });
 
-test("Codex-only SubagentStop returns an empty response for unassociated work and does not answer for other hosts", async (context) => {
+test("retired SubagentStop is inert for all hosts including legacy marker payloads", async (context) => {
   const { directory, library } = await registeredProject(context);
   const { runHookEvent } = await import(pathToFileURL(join(repositoryRoot, "scripts/einzbern-hook.mjs")).href);
   const previous = { host: process.env.EINZBERN_HOST, home: process.env.EINZBERN_HOME, claude: process.env.CLAUDE_PROJECT_DIR };
@@ -138,14 +138,12 @@ test("Codex-only SubagentStop returns an empty response for unassociated work an
   await mkdir(process.env.EINZBERN_HOME, { recursive: true });
   process.env.EINZBERN_HOST = "codex";
   const unassociated = await runHookEvent({ event: "subagent-stop", payload: { last_assistant_message: "ordinary final" }, libraryPath: library, cwd: directory });
-  assert.equal(unassociated, "{}\n");
+  assert.equal(unassociated, null);
   const logPath = join(process.env.EINZBERN_HOME, "log", "hook.ndjson");
   assert.equal(await readFile(logPath, "utf8").catch(() => null), null, "ordinary final adds no hook message or diagnostic");
   const unavailable = await runHookEvent({ event: "subagent-stop", payload: { agent_id: "self-claimed", last_assistant_message: "EINZBERN_SUBAGENT_STOP_V1 {}" }, libraryPath: library, cwd: directory });
-  assert.equal(unavailable, "{}\n", "a marker cannot block or bind a collector");
-  const diagnostic = JSON.parse((await readFile(logPath, "utf8")).trim());
-  assert.equal(diagnostic.reasonCode, "CODEX_STOP_CAPABILITY_UNAVAILABLE");
-  assert.equal(diagnostic.event, "SubagentStop");
+  assert.equal(unavailable, null, "a marker cannot revive a retired collector");
+  assert.equal(await readFile(logPath, "utf8").catch(() => null), null);
   process.env.EINZBERN_HOST = "claude-code";
   assert.equal(await runHookEvent({ event: "subagent-stop", payload: {}, libraryPath: library, cwd: directory }), null);
   process.env.EINZBERN_HOST = "dsh";

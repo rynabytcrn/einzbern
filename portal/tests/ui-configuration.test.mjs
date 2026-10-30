@@ -478,6 +478,14 @@ if (!MUTATION) test("540 SUB-508: a coordination library's Rules page names and 
 // INIT-056 R5: this exercises the actual browser state rather than matching policy tokens in HTML. It
 // covers an initially empty engine host, every policy field, governed failure and success receipts,
 // five locale renderings, refresh preservation, write de-duplication, post-send edits, and Undo.
+const clearPolicyOnboardingDraft = (document) => {
+  const view = () => document.querySelector("#engine-model-policy-view");
+  document.querySelector('[data-page-target="engine-model-policy"]').click();
+  for (const kind of ["tiers", "categories"]) {
+    while (view().querySelector(`[data-engine-policy-remove="${kind}"]`)) view().querySelector(`[data-engine-policy-remove="${kind}"]`).click();
+  }
+};
+
 test("INIT-056 R5: the engine-host editor creates a complete policy and retains real drafts across receipts, locale, and refresh", async () => {
   const fixture = await scratch("tcrn-init056-r5-policy-ui-");
   const meeting = await cli([
@@ -502,6 +510,7 @@ test("INIT-056 R5: the engine-host editor creates a complete policy and retains 
 
     document.querySelector('[data-page-target="engine-model-policy"]').click();
     assert.ok(view().querySelector('[data-engine-model-policy-status="unconfigured"]'), "an unconfigured host gives a first-policy state");
+    clearPolicyOnboardingDraft(document);
     view().querySelector('[data-engine-policy-add="categories"]').click();
     await waitFor(() => document.activeElement === field("categories", 0, "id"), "the first category id to receive focus");
     type(field("categories", 0, "order"), "10");
@@ -580,6 +589,7 @@ test("INIT-056 R5: the engine-host editor creates a complete policy and retains 
     document.querySelector('[data-page-target="engine-model-policy"]').click();
     await waitFor(() => field("tiers", 0, "note")?.value === "kept through locale and refresh", "the draft through a shared refresh");
 
+    type(view().querySelector("[data-engine-model-policy-decision]"), decision);
     type(field("tiers", 0, "note"), "sent draft");
     page.hold((path) => path === "/api/model-policy");
     const postBefore = page.requests.filter((path) => path === "/api/model-policy").length;
@@ -604,6 +614,8 @@ if (!MUTATION) test("INIT-056 ordinary editor roundtrip keeps quota, all policy 
   const fixture = await scratch("tcrn-init056-policy-roundtrip-");
   const meeting = await cli(["minutes-record", "--workspace", fixture.workspace, "--at", nextAt(), "--project-id", fixture.projectId, "--external-key", "POLICY-ROUNDTRIP", "--title", "Policy roundtrip", "--summary", "Fixture owner policy decision", "--decisions", "Set models.engine-policy for the Codex host.", "--decided-by", "owner:governance", "--actor", "agent:test"], fixture.deviceEnv);
   const policy = { categories: [{ order: 10, id: "main", name: "Main", description: "Everyday work" }], tiers: [{ order: 10, category: "main", runner: "codex", model: "gpt-6.1-sol", effort: "max", note: "original" }], escalation: { enabled: true, threshold: 2, ceiling: "main" }, quota: { fiveHourParallelOffPercent: 70, fiveHourWaitPercent: 85, weeklyParallelOffPercent: 90, weeklyWaitPercent: null } };
+  policy.categories.push({ order: 20, id: "economy", name: "Economy", description: "" }, { order: 30, id: "flagship", name: "Flagship", description: "" });
+  policy.tiers.push({ order: 20, category: "economy", runner: "codex", model: "economy-model", effort: "low", note: "" }, { order: 30, category: "flagship", runner: "codex", model: "", effort: "", note: "" });
   await cli(["engine-model-policy-set", "--workspace", fixture.workspace, "--host", "codex", "--policy", JSON.stringify(policy), "--at", nextAt(), "--actor", "agent:test", "--decided-in", `${meeting.id}#D1`], fixture.deviceEnv);
   const page = await loadExecutedDom(fixture);
   try {
@@ -627,7 +639,7 @@ if (!MUTATION) test("INIT-056 ordinary editor roundtrip keeps quota, all policy 
     const stored = (await cli(["engine-model-policy-catalog", "--host", "codex"], fixture.deviceEnv)).selectedPolicy;
     assert.deepEqual(stored.quota, policy.quota, "editing another field preserves every quota threshold");
     assert.deepEqual(stored.categories, policy.categories);
-    assert.deepEqual(stored.tiers, [{ ...policy.tiers[0], note: "updated" }]);
+    assert.deepEqual(stored.tiers, [{ ...policy.tiers[0], note: "updated" }, ...policy.tiers.slice(1)]);
     assert.deepEqual(stored.escalation, policy.escalation);
     assert.equal(view().querySelector('[data-engine-model-policy-save]').disabled, true);
   } finally { await closePage(page, fixture); }
@@ -1128,6 +1140,7 @@ if (!MUTATION) {
     const page = await preparePage();
     try {
       const { document, window } = page;
+      clearPolicyOnboardingDraft(document);
       const categoryTable = () => document.querySelector('[data-collection-table="engine-model-policy-categories"]');
       const tierTable = () => document.querySelector('[data-collection-table="engine-model-policy-tiers"]');
       const columns = (table) => [...table.querySelectorAll("[data-collection-column]")].map((column) => column.dataset.collectionColumn);
@@ -1173,6 +1186,7 @@ if (!MUTATION) {
     const page = await preparePage();
     try {
       const { document, window } = page;
+      clearPolicyOnboardingDraft(document);
       const legacyBefore = await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv);
       const legacyTiers = legacyBefore.settings.find((entry) => entry.key === "models.tiers").currentValue;
       const view = () => document.querySelector("#engine-model-policy-view");
@@ -1196,7 +1210,9 @@ if (!MUTATION) {
       assert.equal(view().querySelectorAll('[data-engine-policy-remove="tiers"]').length, 1, "a draft row can be removed before save");
       assert.equal(document.querySelector('[data-cli-action="settings-set"][data-collection-save="models.tiers"]'), null, "tiers have no legacy collection writer");
       view().querySelector('[data-engine-model-policy-undo]').click();
-      assert.equal(view().querySelectorAll('[data-collection-row]').length, 0, "Undo returns an unconfigured host to its empty draft");
+      assert.equal(view().querySelectorAll('[data-collection-row]').length, 6, "Undo restores the three offered categories and three unbound tiers without saving");
+      assert.equal(input("tiers", 0, "model").value, "");
+      assert.equal((await cli(["engine-model-policy-catalog", "--host", "codex"], page.deviceEnv)).selectedStatus, "unconfigured", "Undo never creates a stored policy");
       const legacyAfter = await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv);
       assert.equal(legacyAfter.settings.find((entry) => entry.key === "models.tiers").currentValue, legacyTiers, "draft and Undo leave historical project data untouched");
     } finally { await page.cleanup(); }
@@ -1211,6 +1227,7 @@ if (!MUTATION) {
     const page = await preparePage();
     try {
       const { document, window } = page;
+      clearPolicyOnboardingDraft(document);
       const view = () => document.querySelector("#engine-model-policy-view");
       const input = (kind, index, field) => view().querySelector('[data-engine-policy-kind="' + kind + '"][data-engine-policy-index="' + index + '"][data-engine-policy-field="' + field + '"]');
       const write = (node, value, event = "input") => { node.value = value; node.dispatchEvent(new window.Event(event, { bubbles: true })); };
@@ -1244,7 +1261,7 @@ if (!MUTATION) {
 
   // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6): an unconfigured engine host can create
   // its first policy category; there is no project-table precondition or invented delete endpoint.
-  test("SUB-409 (STORY-508 R6): an empty engine host guides the reader to its first policy category", async () => {
+  test("SUB-409 (STORY-508 R6): an unconfigured engine host offers read-only onboarding until an authorized save", async () => {
     const page = await preparePage();
     try {
       const { document } = page;
@@ -1254,19 +1271,30 @@ if (!MUTATION) {
       const tierTable = () => view().querySelector('[data-collection-table="engine-model-policy-tiers"]');
       for (const table of [categoryTable(), tierTable()]) {
         assert.ok(table.querySelector('[data-collection-column="order"]'), "an empty policy table retains its order column");
-        assert.ok(table.querySelector("[data-collection-empty] .tcrn-state-surface__description")?.textContent.trim(), "an empty policy table explains its next action");
+        assert.equal(table.querySelectorAll("[data-collection-row]").length, 3, "onboarding offers three editable draft rows");
       }
-      assert.ok(categoryTable().querySelector('[data-engine-policy-add="categories"]'), "an empty host offers its first category action");
-      assert.equal(tierTable().querySelector('[data-engine-policy-add="tiers"]')?.disabled, true, "a tier waits for an actual host-policy category");
+      assert.ok(view().querySelector('[data-engine-policy-add="categories"]'), "an empty host offers its first category action");
+      assert.equal(view().querySelector('[data-engine-policy-add="tiers"]')?.disabled, false, "offered categories enable in-memory tier editing");
+      const catalogBefore = await cli(["engine-model-policy-catalog", "--host", "codex"], page.deviceEnv);
+      assert.equal(catalogBefore.selectedStatus, "unconfigured");
+      assert.equal(catalogBefore.selectedPolicy, null);
+      assert.deepEqual([...categoryTable().querySelectorAll('[data-engine-policy-field="id"]')].map(node => node.value), ["flagship", "main", "economy"]);
+      assert.ok([...tierTable().querySelectorAll('[data-engine-policy-field="model"], [data-engine-policy-field="effort"]')].every(node => node.value === ""), "onboarding invents no model bindings");
+      assert.equal(view().querySelector('[data-engine-model-policy-decision]').value, "", "a draft invents no Owner authorization");
+      assert.deepEqual(catalogBefore.peerReadiness.missingCategories, ["main", "economy"], "main and economy are required; flagship is optional");
+      assert.ok(view().querySelector('[data-codex-peer-readiness="not-ready"]'));
       for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
         document.querySelector('[data-locale-option="' + locale + '"]').click();
-        const guide = categoryTable().querySelector("[data-collection-empty]");
+        const guide = view().querySelector("[data-engine-model-policy-onboarding]");
         assert.ok(guide.textContent.trim() && !guide.textContent.includes("modelPolicy."), locale + " translates the first-policy guide");
       }
       document.querySelector('[data-locale-option="en"]').click();
-      categoryTable().querySelector('[data-engine-policy-add="categories"]').click();
-      assert.equal(tierTable().querySelector('[data-engine-policy-add="tiers"]')?.disabled, false, "the first category unlocks an in-memory tier draft");
+      view().querySelector('[data-engine-policy-add="categories"]').click();
+      assert.equal(view().querySelector('[data-engine-policy-add="tiers"]')?.disabled, false, "the first category unlocks an in-memory tier draft");
       assert.equal(document.querySelector('[data-cli-action="engine-model-policy-remove"]'), null, "the UI invents no policy-delete API");
+      const catalogAfter = await cli(["engine-model-policy-catalog", "--host", "codex"], page.deviceEnv);
+      assert.equal(catalogAfter.storeRevision, catalogBefore.storeRevision, "reading and editing drafts do not write configuration");
+      assert.equal(catalogAfter.selectedPolicy, null);
     } finally { await page.cleanup(); }
   });
 }

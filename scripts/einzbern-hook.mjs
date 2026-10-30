@@ -9,8 +9,7 @@
 // build (dist/build); a release carries it as one file (TCRN-CROSS-STORY-481).
 // BL-34: SubagentStart recalls from the native agent_type and includes navigation before work.
 // SessionStart remains a navigation-only fallback. BL-35 adds the narrowly bounded Read guard.
-// Codex SubagentStop delegates to an explicitly connected caller-owned controller. Without
-// that connection it cannot query host task state. It never sends parent messages.
+// INIT-076: Codex peer coordination uses host-native conversation operations, never a stop hook.
 // TCRN-CROSS-SUB-483 (TCRN-CROSS-STORY-529, MIN-257 D6): every prompt recalled here also leaves
 // one line in log/hook.ndjson in the device directory, naming why it got what it got, so a prompt
 // that was answered can be told from one that got nothing and from a hook that never ran. The line
@@ -25,15 +24,8 @@
 
 import { appendFileSync, mkdirSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
-import { requestCodexNativeHookDecision, waitCodexNativeCollector } from "./lib/codex-native-hook-ipc.mjs";
-
-// The owning temporary app-server host can use these exports from the versioned hook entry.
-export { codexNativeDynamicToolSpecs, createCodexNativeController } from "../dist/build/packages/core/src/index.js";
-export { createCodexNativeHookBridge, waitCodexNativeCollector } from "./lib/codex-native-hook-ipc.mjs";
-
 // Held equal to scripts/einzbern-hook-launcher.mjs (LOG_DIRECTORY, LOG_FILE, LOG_SCHEMA_VERSION).
 const LOG_DIRECTORY = "log";
 const LOG_FILE = "hook.ndjson";
@@ -68,7 +60,7 @@ function noteRecall(device, event, cwd, reasonCode, host) {
  * entry the launcher matched and `cwd` the directory it matched from (the payload's cwd, or this
  * process's, when left out). Returns the text for stdout, or null when the hook prints nothing.
  */
-export async function runHookEvent({ event, payload, libraryPath, cwd, nativeController } = {}) {
+export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   // TCRN-CROSS-STORY-481 R2, R4: the stable launcher refuses older Node.js before it imports this
   // file. Keep this guard for direct callers too: a hook answers nothing, and the CLI is where the
   // floor is reported (ENGINE_NODE_TOO_OLD).
@@ -81,23 +73,8 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, nativeCon
   const name = hookEventName(event);
   // Read once, for the recall and for its log line alike.
   const host = hookHost(process.env);
-  if (name === "SubagentStop") {
-    if (host !== "codex") return null;
-    try {
-      const { handleCodexSubagentStop } = await import("../dist/build/packages/core/src/index.js");
-      const socketPath = process.env.EINZBERN_CODEX_NATIVE_HOOK_SOCKET;
-      const result = !nativeController && socketPath
-        ? await requestCodexNativeHookDecision({ socketPath, payload: body })
-        : await handleCodexSubagentStop({ payload: body, deviceHome: deviceHome(process.env), nativeController });
-      if (result.reasonCode) noteRecall(deviceHome(process.env), name, cwd, result.reasonCode, host);
-      if (result.decision !== "block") return "{}\n";
-      return `${JSON.stringify({ decision: "block", reason: result.reason })}\n`;
-    } catch (error) {
-      // No manufactured successful packet after a connected owner transport failed.
-      // The native owner retains unresolved children; ordinary unconnected calls above stay inert.
-      throw new Error(`CODEX_NATIVE_OWNER_OUTCOME_UNRESOLVED: ${String(error?.message ?? error)}`, { cause: error });
-    }
-  }
+  // Stale owned SubagentStop commands are inert until normal setup retires them.
+  if (event === "subagent-stop") return null;
   // DSH retains its existing navigation contract; its next feature batch is separate.
   if (name === "SubagentStart" && host === "dsh") return `${navigationPointerAnswer(host, name).output}\n`;
   switch (name) {
@@ -162,13 +139,4 @@ export function readGuardAnswer(payload, cwd, host) {
     // An unreadable path, invalid input or filesystem exception must never block a tool.
     return null;
   }
-}
-
-// Normal versioned product helper entry, deliberately outside runHookEvent/SubagentStop.
-if (process.argv[2] === "collector-wait" && process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  try {
-    if (process.env.EINZBERN_HOST !== "codex") throw new Error("CODEX_NATIVE_HELPER_HOST_REFUSED");
-    const result = await waitCodexNativeCollector({ socketPath: process.env.EINZBERN_CODEX_NATIVE_HOOK_SOCKET, payload: JSON.parse(process.argv[3] ?? "null") });
-    process.stdout.write(`${JSON.stringify(result)}\n`);
-  } catch (error) { process.stderr.write(`${String(error?.message ?? error)}\n`); process.exitCode = 1; }
 }

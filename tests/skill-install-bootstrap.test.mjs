@@ -216,6 +216,6 @@ test("INIT065 normal candidate archive installs matching Skill and discoverable 
   const commands = spawnSync(process.execPath, [join(installed, "scripts/einzbern.mjs"), "commands"], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: device } });
   assert.equal(commands.status, 0, commands.stderr);
   const names = JSON.parse(commands.stdout).commands.map(c => c.name);
-  for (const name of ["execution-host-prepare", "execution-host-record", "execution-host-evidence"]) assert.ok(names.includes(name));
+  for (const name of ["execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"]) assert.ok(names.includes(name));
   // This verifies the normal installation artifact, not an actual model's new-session reading.
 });

@@ -13,6 +13,31 @@ The catalogue identifies the policy source and preserves project `models.*` valu
 read-only compatibility inputs with their recorded source. A project value does not override a
 configured device policy. No write to the engine policy changes a project event or its old value.
 
+## Codex peer-mode onboarding (INIT076)
+
+Installation guidance and the selected-host model editor offer stable categories
+`main` (主力), `economy` (经济), and `flagship` (旗舰). These are category defaults,
+not default actual models or proof of a configured group. The initial store remains
+unconfigured until an authorized policy write through the existing governed setter;
+no invented actor, decision, model or effort is saved by onboarding.
+
+Codex independent peer coordination requires usable main and economy groups in
+that device's Codex host partition. A category row alone does not satisfy readiness:
+the group must resolve actual configured model/effort tuples under the existing
+resolver and capability checks. Offer flagship in the same guidance but allow its
+model group to remain empty; an empty optional group must not be selected as a
+worker model or active escalation ceiling. Plans refer to categories, while dispatch
+retains resolved tuples, policy origin and actual host acceptance separately.
+
+Default-category supplementation on update/repair is idempotent and preserves
+existing model choices, custom categories, escalation settings and other hosts.
+Do not silently save a draft or override a user's policy; unresolved readiness is
+reported, not repaired with a guessed model. This readiness requirement gates only
+explicit Codex peer mode, not general policy storage or Claude Code/DSH's existing
+single-conversation coordination. Dot is independent. Unknown host must not activate
+Codex mode. Missing required groups never trigger a project-policy or collector
+fallback. The coordination contract is in `docs/codex-native-controller.md`.
+
 ## File schema
 
 The closed file shape is:
@@ -30,7 +55,7 @@ The closed file shape is:
         { "id": "economy", "name": "Economy", "description": "", "order": 30 }
       ],
       "tiers": [
-        { "order": 10, "category": "economy", "runner": "codex", "model": "gpt-6-luna", "effort": "max", "note": "" }
+        { "order": 10, "category": "economy", "runner": "codex", "model": "<owner-selected-model>", "effort": "max", "note": "" }
       ],
       "escalation": { "enabled": true, "threshold": 1, "ceiling": "main" },
       "digest": "<sha256 of the canonical policy fields>",
@@ -104,8 +129,8 @@ old host's save unavailable while its replacement reads; switching libraries cle
 library's drafts. A valid host id is an engine contract value, so per-host drafts and pending
 writes use own-entry maps rather than prototype-keyed objects.
 
-An unconfigured host can start with an empty category table. The editor can create the first
-category and then complete every policy field: category `order`, `id`, `name`, and `description`;
+An unconfigured host is offered the stable `main`, `economy`, and `flagship` category
+template without fabricating a persisted model policy. The editor can complete every policy field: category `order`, `id`, `name`, and `description`;
 tier `order`, `category`, `runner`, `model`, `effort`, and `note`; and escalation `enabled`,
 `threshold`, and `ceiling`. Reset / undo discards an unsubmitted draft only; it never invents a
 policy-delete operation.
@@ -140,14 +165,10 @@ configuration artifact, and does not alter a host application's default model.
 Resolution starts at the selected category's largest-order tier, moves toward smaller orders
 once per threshold rejections, and stops at the ceiling category's smallest-order tier.
 All tiers remain within the requested host. Disabled escalation returns the base tier.
-For a configured Codex table with flagship Astra, main Sol/max, and economy ordered
-Sol/low, Terra/max, Terra/medium, Luna/max, threshold 2 and ceiling main yield:
-
-- Returns 0–1: gpt-6-luna/max.
-- Returns 2–3: gpt-5.6-terra/medium.
-- Returns 4–5: gpt-5.6-terra/max.
-- Returns 6–7: gpt-6.1-sol/low.
-- Returns 8 onward: gpt-6.1-sol/max; no automatic Astra.
+For example, a supplied economy group with four ordered tiers and a main ceiling,
+with rejection threshold 2, selects successive economy tiers for rejections 0–1,
+2–3, 4–5 and 6–7, then the main ceiling from 8 onward. Actual model and effort
+values come solely from that policy; flagship is not an automatic escalation.
 
 This describes a supplied policy, not an installed default or hardcoded fallback. Missing
 hosts, blank selected model/effort, and a selected tuple absent from caller-supplied

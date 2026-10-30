@@ -35,17 +35,17 @@ const CODEX_EVENTS = new Set([
 const RETIRED_EVENTS = ["SessionStart", "PostToolUse", "Stop"];
 const DEVICE = Object.freeze({ darwin: "/srv/einzbern/device", linux: "/srv/einzbern/device", win32: "D:\\Einzbern\\device" });
 
-test("INC-220, 477-R1: common hooks stay shared and Codex alone renders the collector stop", () => {
+test("INC-220, 477-R1: common hooks stay shared and Codex does not reinstall a collector stop", () => {
   // TCRN-CROSS-STORY-548 R1: DSH runs the hook too, but only these two keep a hook file.
   assert.deepEqual([...HOST_HOOK_HOSTS], ["claude-code", "codex", "dsh"]);
   assert.deepEqual([...HOST_HOOK_FILE_HOSTS], ["claude-code", "codex"]);
   assert.deepEqual(Object.keys(HOST_HOOK_EVENTS), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
-  assert.deepEqual(CODEX_HOOK_EVENTS, { SubagentStop: "subagent-stop" });
+  assert.deepEqual(CODEX_HOOK_EVENTS, {});
   for (const [platform, deviceHome] of Object.entries(DEVICE)) {
     const [claude, codex] = HOST_HOOK_FILE_HOSTS.map((host) => planHostHooks({ host, scope: "user", deviceHome, platform }));
     assert.deepEqual(Object.keys(claude.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
-    assert.deepEqual(Object.keys(codex.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse", "SubagentStop"]);
-    assert.equal(codex.groups.SubagentStop[0].hooks[0].command, `node "${codex.launcher}" subagent-stop`);
+    assert.deepEqual(Object.keys(codex.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
+    assert.equal(codex.groups.SubagentStop, undefined);
     for (const event of ["UserPromptSubmit", "SubagentStart", "PreToolUse"]) {
       assert.equal(claude.groups[event].length, 1);
       assert.equal(claude.groups[event][0].hooks.length, 1);
@@ -62,7 +62,7 @@ test("477-R3: none of the retired events is rendered, and no hook names a checko
     for (const host of HOST_HOOK_FILE_HOSTS) {
       const expected = planHostHooks({ host, scope: "project", deviceHome, platform });
       for (const event of RETIRED_EVENTS) assert.equal(Object.hasOwn(expected.groups, event), false, `${platform}/${host}: no ${event}`);
-      assert.equal(Object.hasOwn(expected.groups, "SubagentStop"), host === "codex", `${platform}/${host}: Codex-only SubagentStop`);
+      assert.equal(Object.hasOwn(expected.groups, "SubagentStop"), false, `${platform}/${host}: Codex-only SubagentStop`);
       const [hook] = expected.groups.UserPromptSubmit[0].hooks;
       assert.equal(hook.type, "command", "only type:command runs on Codex");
       assert.equal(hook.command, `node "${expected.launcher}" user-prompt-submit`);
@@ -75,11 +75,11 @@ test("477-R3: none of the retired events is rendered, and no hook names a checko
   }
 });
 
-test("477-R1: Codex stop is additive and the shared host-file contract remains intact", () => {
+test("477-R1: Codex stop is retired and the shared host-file contract remains intact", () => {
   const [claude, codex] = HOST_HOOK_FILE_HOSTS.map((host) => planHostHooks({ host, scope: "user", deviceHome: DEVICE.linux, platform: "linux" }));
   assert.deepEqual([claude.hooksFile, codex.hooksFile], [".claude/settings.json", ".codex/hooks.json"]);
   assert.deepEqual(Object.keys(mergeHostHooks(null, claude).document.hooks), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
-  assert.deepEqual(Object.keys(mergeHostHooks(null, codex).document.hooks), ["UserPromptSubmit", "SubagentStart", "PreToolUse", "SubagentStop"]);
+  assert.deepEqual(Object.keys(mergeHostHooks(null, codex).document.hooks), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
 });
 
 test("477-R3: the old harness's hooks are recognised wherever they ran from, and nothing else is", () => {

@@ -2520,6 +2520,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson(result));
     const receipt = result as Readonly<Record<string, JsonValue>>;
     if (command === "execution-host-prepare" && receipt.attempt === null) fail("HOST_PREPARATION_NOT_EXECUTABLE", "Only this action is not executable; inspect decision, not a claimed host rejection");
+    if (command === "execution-codex-peer-record" && receipt.reasonCode === "CODEX_PEER_RECORD_INVALID") fail("CODEX_PEER_RECORD_INVALID", "Raw invalid peer material retained; see problems");
     if (command === "execution-host-record" && (receipt.validation as Readonly<Record<string, JsonValue>>)?.status !== "valid") fail("HOST_RECORD_INVALID", "Raw invalid material retained; see problems");
     // New host-record exit 0 means valid recording, NOT execution completion or acceptance.
     if (command === "execution-native-prepare" && (receipt.targetDispatchAdmitted !== true || receipt.attempt === null)) fail("NATIVE_PREPARATION_REFUSED", "Preparation retained; target is not dispatch-admitted");

@@ -5465,7 +5465,7 @@ const BOOT = __PORTAL_BOOT__;
   const modelPolicyHosts = () => {
     const hosts = state.modelPolicy?.hosts;
     const configured = hosts !== null && typeof hosts === "object" ? Object.keys(hosts).filter((host) => Object.hasOwn(hosts, host)) : [];
-    return [...new Set(["codex", ...configured])].sort();
+    return [...new Set(["codex", "claude-code", "dsh", ...configured])].sort();
   };
   const modelPolicyDrafts = () => state.modelPolicyDrafts instanceof Map ? state.modelPolicyDrafts : (state.modelPolicyDrafts = new Map());
   const modelPolicyWrites = () => state.modelPolicyWrites instanceof Map ? state.modelPolicyWrites : (state.modelPolicyWrites = new Map());
@@ -5494,7 +5494,11 @@ const BOOT = __PORTAL_BOOT__;
     const drafts = modelPolicyDrafts();
     if (!drafts.has(host)) {
       const entry = policyEntryFor(host);
-      drafts.set(host, { policy: copyPolicy(entry), decidedIn: entry?.decidedIn ?? "", dirty: false, version: 0, failure: null });
+      const template = state.modelPolicy?.selectedHost === host ? state.modelPolicy.onboarding : null;
+      const policy = copyPolicy(template ?? entry);
+      const supplemented = template != null && JSON.stringify(policy) !== JSON.stringify(copyPolicy(entry));
+      // Templates are drafts only. New/missing groups require an explicit audited save.
+      drafts.set(host, { policy, decidedIn: supplemented ? "" : entry?.decidedIn ?? "", dirty: supplemented, version: 0, failure: null });
     }
     return drafts.get(host);
   };
@@ -5525,7 +5529,11 @@ const BOOT = __PORTAL_BOOT__;
     return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(draft.policy.categories.map((category) => String(category.id ?? "")), "models.category")} data-setting-choice-source="engine-model-policy.categories"><label class="tcrn-setting-choice__select-label"><span class="tcrn-sr-only">${esc(t("modelTiers.category"))}</span><select class="tcrn-select" aria-label="${esc(t("modelTiers.category"))}" data-engine-policy-field="category" data-engine-policy-kind="tiers" data-engine-policy-index="${index}">${options.join("")}</select></label></div>`;
   };
   const modelPolicyTables = (host, draft, sections = ["categories", "tiers", "escalation", "quota"]) => {
-    const output = [];
+    const output = [`<p class="tcrn-text" data-engine-model-policy-onboarding>${esc(t("modelPolicy.onboarding"))}</p>`];
+    if (host === "codex") {
+      const readiness = state.modelPolicy?.selectedHost === host ? state.modelPolicy.peerReadiness : null;
+      output.push(`<p class="tcrn-text" data-codex-peer-readiness="${readiness?.ready === true ? "ready" : "not-ready"}">${esc(t(readiness?.ready === true ? "modelPolicy.peerReady" : "modelPolicy.peerNotReady"))}</p>`);
+    }
     if (sections.includes("categories")) {
       const columns = [
         { field: "order", label: t("collection.order"), render: (row, _invalid, index) => policyInput("categories", index, "order", t("collection.order"), row.order, "number") },
@@ -5553,7 +5561,11 @@ const BOOT = __PORTAL_BOOT__;
     if (sections.includes("escalation")) {
       const ceiling = String(draft.policy.escalation.ceiling ?? "");
       const categories = draft.policy.categories;
-      const options = categories.map((category) => `<option value="${esc(category.id ?? "")}"${String(category.id ?? "") === ceiling ? " selected" : ""}>${esc(category.name || category.id || t("modelPolicy.unselectedCategory"))}</option>`);
+      const options = categories.map((category) => {
+        const first = draft.policy.tiers.filter(row => row.category === category.id).sort((a, b) => a.order - b.order)[0];
+        const usable = first?.runner === host && String(first?.model ?? "").trim() !== "" && String(first?.effort ?? "").trim() !== "";
+        return `<option value="${esc(category.id ?? "")}"${String(category.id ?? "") === ceiling ? " selected" : ""}${usable ? "" : " disabled"}>${esc(category.name || category.id || t("modelPolicy.unselectedCategory"))}</option>`;
+      });
       if (!categories.some((category) => String(category.id ?? "") === ceiling)) options.unshift(`<option value="${esc(ceiling)}" selected>${esc(ceiling || t("modelPolicy.unselectedCategory"))}</option>`);
       output.push(`<section class="tcrn-surface" data-engine-model-policy-section="escalation"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h3>${esc(t("modelTiers.escalationTitle"))}</h3><p class="tcrn-text">${esc(t("modelPolicy.engineHostSource", { host }))}</p></div></div><div class="tcrn-grid tcrn-grid--3"><label class="tcrn-switch" data-switch-state="${draft.policy.escalation.enabled ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-engine-policy-escalation="enabled" ${draft.policy.escalation.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("setting.models.escalation.enabled.label"))}</span></label><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("setting.models.escalation.threshold.label"))}</span><input class="tcrn-input tcrn-number-input" type="number" min="1" step="1" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" aria-label="${esc(t("setting.models.escalation.threshold.label"))}" data-engine-policy-escalation="threshold" value="${esc(draft.policy.escalation.threshold)}"></label><div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(categories.map((category) => String(category.id ?? "")), "models.escalation.ceiling")} data-setting-choice-source="engine-model-policy.categories"><label class="tcrn-setting-choice__select-label"><span class="tcrn-field__label">${esc(t("setting.models.escalation.ceiling.label"))}</span><select class="tcrn-select" aria-label="${esc(t("setting.models.escalation.ceiling.label"))}" data-engine-policy-escalation="ceiling" ${categories.length === 0 ? "disabled" : ""}>${options.join("")}</select></label></div></div></section>`);
     }

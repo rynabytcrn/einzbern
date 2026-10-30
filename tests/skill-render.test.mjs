@@ -94,7 +94,7 @@ test("479-AC1: every verb the navigation table names is a verb of the current co
     ["recall", "rule-list"],
     ["work-draft"],
     ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    ["execution-host-prepare", "execution-host-record", "execution-host-evidence"],
+    ["execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
     ["shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"],
     ["config-backup-plan", "config-backup-create", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
     ["work-transition", "work-annotate"],
@@ -307,6 +307,7 @@ test("INIT065 generated normal Skill directs each native host to matching versio
   assert.ok(!markdown.includes("stop its dispatch"));
   assert.equal(checkHostSkillCompatibility(markdown, catalogNames).compatible, true);
   assert.deepEqual(checkHostSkillCompatibility(markdown, catalogNames.filter(name => name !== "execution-host-record")).missing, ["execution-host-record"]);
+  assert.deepEqual(checkHostSkillCompatibility(markdown, catalogNames.filter(name => !name.startsWith("execution-codex-peer-"))).missing, ["execution-codex-peer-record", "execution-codex-peer-evidence"]);
   assert.equal(checkHostSkillCompatibility("Historical skill", []).protocol, "legacy");
 });
 
@@ -338,10 +339,11 @@ test("dot blocker recovery is an on-demand E-owned workflow, not a patrol contex
   assert.equal(body.includes("## Context recovery before infrastructure blockers"), false, "details are fetched only when relevant");
 });
 
-test("Codex isolated helper navigation retains opt-in and Desktop qualification within ordinary budget", () => {
+test("Codex peer navigation replaces collector helper within ordinary budget", () => {
   const body = render();
   assert.ok(body.includes("docs/codex-native-controller.md"));
-  assert.ok(body.includes("isolated opt-in/same-live helper"));
-  assert.ok(body.includes("Desktop unverified"));
+  assert.ok(body.includes("Codex only: independent main/economy peers, no collector"));
+  assert.ok(body.includes("Other hosts keep their workflow"));
+  assert.equal(body.includes("isolated opt-in/same-live helper"), false);
   assert.ok(Buffer.byteLength(body) < 6000);
 });

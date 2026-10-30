@@ -70,17 +70,17 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Draft by work type",
     verbs: ["work-draft"],
-    action: "Types/defects, inherited constraints, sources/missing fields: `specs/work-content-v1.md`. One native content, not a second acceptance copy.",
+    action: "Types/defects, inherited constraints and source gaps: `specs/work-content-v1.md`. One native content, not a second acceptance copy.",
   },
   {
     moment: "Need the full text",
     verbs: ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Read whole work/minutes and each target's `handoff`; a native host dispatch passes that object for that target, gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. Segments/digests: `specs/context-v1.md`; never omit critical clauses. Legacy `--execution-request`: `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute; retain stdout, stderr and exit code. Evidence is not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
+    action: "Read whole work/minutes and each target's `handoff`; a native host dispatch passes that object for that target, gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. `specs/context-v1.md`: segments/digests; retain critical clauses. Legacy `--execution-request`: `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute; retain stdout, stderr and exit code. Evidence is not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
     moment: "Native dispatch (Codex, Claude, dot)",
-    verbs: ["execution-host-prepare", "execution-host-record", "execution-host-evidence"],
-    action: "Authorized tools, normal prompt reports. No runtime adapter or optional telemetry prerequisite. Existing class fallback authority applies unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[]: no binding; check scope/permission. Audit: machine-assemble inputs, never hand-fill JSON; raw returns/reports via `--binding`/`--prior`, actual status names/attempt association. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; saving needs authority. `specs/host-fallback-v1.md`. Codex: `docs/codex-native-controller.md` for isolated opt-in/same-live helper; Desktop unverified.",
+    verbs: ["execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
+    action: "Authorized tools; normal prompt reports. No runtime adapter or optional telemetry prerequisite. Existing class fallback authority unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[]: no binding; scope/permission. machine-assemble inputs, never hand-fill JSON; raw returns/reports, actual status/attempt association, `--binding`/`--prior`. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; authorized saves. `specs/host-fallback-v1.md`. Codex only: independent main/economy peers, no collector. `docs/codex-native-controller.md`. Other hosts keep their workflow.",
   },
   {
     moment: "Shared submission",
@@ -95,7 +95,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Work is done",
     verbs: ["work-transition", "work-annotate"],
-    action: "Use actual actor/readback. Pending is not complete. Compare original source, behavior and assertions: structure is not semantic acceptance. Dot/local consumption separately; unavailable remains unverified.",
+    action: "Actual actor/readback. Pending is not complete. Compare original source, behavior and assertions; structure is not semantic acceptance. Dot/local consumption separately; unavailable remains unverified.",
   },
   {
     moment: "A decision is made",
@@ -180,7 +180,7 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     "## Install-type tasks",
     "",
-    "For install, restore, update, repair, rollback, migration, uninstall or health check, read `references/` (`install.md`, `restore.md`, `update.md`, `migrate.md`, `uninstall.md`, `doctor.md`); dot: install; never load them for any other work.",
+    "Install/restore/update/repair/rollback/migrate/uninstall/doctor: read `references/` (`install.md`, `restore.md`, `update.md`, `migrate.md`, `uninstall.md`, `doctor.md`); dot: install; never load them for any other work.",
     "",
   ];
   const markdown = lines.join("\n");
@@ -195,6 +195,7 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
 export const HOST_SKILL_PROTOCOL_MARKER = "Execution protocol: tcrn.host-execution-request.v1.";
 export function checkHostSkillCompatibility(markdown: string, commandNames: readonly string[]): { readonly compatible: boolean; readonly missing: readonly string[]; readonly protocol: "host-native-v1" | "legacy" } {
   if (!markdown.includes(HOST_SKILL_PROTOCOL_MARKER)) return { compatible: true, missing: [], protocol: "legacy" };
-  const missing = ["execution-host-prepare", "execution-host-record", "execution-host-evidence"].filter(name => !commandNames.includes(name));
+  const required = ["execution-host-prepare", "execution-host-record", "execution-host-evidence", ...(markdown.includes("`execution-codex-peer-record`") ? ["execution-codex-peer-record", "execution-codex-peer-evidence"] : [])];
+  const missing = required.filter(name => !commandNames.includes(name));
   return { compatible: missing.length === 0, missing, protocol: "host-native-v1" };
 }

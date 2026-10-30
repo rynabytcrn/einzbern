@@ -23,7 +23,7 @@
 //                               same builds register, unregister and repoint use, once each
 //   skill/mana-orchestrate/     the skill as skill-render writes it for this version
 //   specs/                      explicit public CLI payload/evidence contracts
-//   docs/codex-native-controller.md  the installed Skill's opt-in native-controller contract
+//   docs/codex-native-controller.md  the installed Skill's Codex-only peer-conversation contract
 //   README*.md, CHANGELOG.md, LICENSE, NOTICE, THIRD_PARTY_NOTICES.txt
 //   manifest.json               einzbern.release-manifest.v1: version, nodeFloor, installTreeDigest, files
 //

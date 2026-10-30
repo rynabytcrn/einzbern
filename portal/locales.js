@@ -4,6 +4,9 @@
 
 window.PORTAL_LOCALES = {
   "en": {
+    "modelPolicy.onboarding": "Defaults are offered per host: main and economy need model/effort bindings for Codex peer coordination; flagship is optional. These drafts are not saved configuration. Choose actual models and save with an Owner decision, or defer onboarding. Other hosts retain their existing workflow.",
+    "modelPolicy.peerReady": "Saved Codex main/economy bindings are configured. Host availability and execution permission are checked separately.",
+    "modelPolicy.peerNotReady": "Codex peer coordination is not configured: save usable main/economy bindings and an enabled ceiling, if any. Ordinary installation and other hosts are unaffected.",
     "setting.work.contentPolicy.label": "Typed work content policy",
     "setting.work.contentPolicy.description": "Project-scoped JSON policy specifying admitted templates by work type, scope and in-flight work. Enablement requires an Owner decision and verified rollout readiness; this setting does not install or upgrade the engine.",
     "workContent.templateReceipt": "Admitted template receipt (JSON, optional with an enabled project default; this does not admit a template)",
@@ -704,6 +707,9 @@ window.PORTAL_LOCALES = {
     "reason.PORTAL_GATE_RELEASE_REASON_REQUIRED": "A release needs a reason. Write why the gate is released, then release it again."
   },
   "zh-CN": {
+    "modelPolicy.onboarding": "按宿主引导默认分组：Codex 双对话协调需要配置 main（主力）和 economy（经济）的模型与推理档位；flagship（旗舰）可暂不配置。这些仅是未保存草案，请选择实际模型并附 Owner 决定保存，也可稍后配置。其他宿主保持原协调方式。",
+    "modelPolicy.peerReady": "已保存的 Codex 主力／经济分组已配置；宿主实际可用性和执行权限仍须分别核对。",
+    "modelPolicy.peerNotReady": "Codex 双对话协调尚未就绪：需保存可用的主力／经济绑定及启用时的升档上限；不影响普通安装和其他宿主。",
     "setting.work.contentPolicy.label": "类型化工单内容策略",
     "setting.work.contentPolicy.description": "项目级 JSON 策略，指定各工单类型的已准入模板、适用范围及进行中的工单。启用须有 Owner 决定并通过上线就绪核验；此设置不会安装或升级引擎。",
     "workContent.templateReceipt": "已准入模板回执（JSON，项目已启用默认值时可留空；此处不执行模板准入）",
@@ -1404,6 +1410,9 @@ window.PORTAL_LOCALES = {
     "reason.PORTAL_GATE_RELEASE_REASON_REQUIRED": "放行需要原因。写明放行原因后再放行。"
   },
   "ja": {
+    "modelPolicy.onboarding": "ホストごとに main・economy・flagship を案内します。Codex の二会話調整には main と economy のモデル・推論設定が必要です。flagship は任意です。草案は未保存であり、Owner の決定を付けて保存するか後で設定してください。他のホストの方式は変わりません。",
+    "modelPolicy.peerReady": "保存済み Codex の main/economy は設定済みです。ホストの利用可能性と実行権限は別途確認します。",
+    "modelPolicy.peerNotReady": "Codex の二会話調整には main/economy と、有効な場合の上限の設定が必要です。通常の導入と他ホストには影響しません。",
     "setting.work.contentPolicy.label": "型付き作業内容のポリシー",
     "setting.work.contentPolicy.description": "作業種別ごとの承認済みテンプレート、適用範囲、進行中の作業を指定するプロジェクト単位の JSON ポリシーです。有効化には Owner の決定と導入準備の検証が必要です。エンジンのインストールや更新は行いません。",
     "workContent.templateReceipt": "承認済みテンプレートのレシート（JSON、有効な既定値があれば省略可。ここでは承認しません）",
@@ -2104,6 +2113,9 @@ window.PORTAL_LOCALES = {
     "reason.PORTAL_GATE_RELEASE_REASON_REQUIRED": "解除には理由が必要です。理由を書いてから、もう一度解除してください。"
   },
   "ko": {
+    "modelPolicy.onboarding": "호스트별 main, economy, flagship 기본 그룹을 안내합니다. Codex 두 대화 조정에는 main과 economy의 모델/추론 설정이 필요하며 flagship은 선택 사항입니다. 초안은 저장되지 않았습니다. Owner 결정과 함께 저장하거나 나중에 설정하세요. 다른 호스트 방식은 유지됩니다.",
+    "modelPolicy.peerReady": "저장된 Codex main/economy 바인딩이 구성되었습니다. 호스트 가용성과 실행 권한은 별도로 확인합니다.",
+    "modelPolicy.peerNotReady": "Codex 두 대화 조정을 위해 main/economy와 활성화된 경우 상한을 설정해야 합니다. 일반 설치와 다른 호스트는 영향받지 않습니다.",
     "setting.work.contentPolicy.label": "유형별 작업 내용 정책",
     "setting.work.contentPolicy.description": "작업 유형별 승인된 템플릿, 적용 범위 및 진행 중인 작업을 지정하는 프로젝트 단위 JSON 정책입니다. 활성화에는 Owner 결정과 검증된 도입 준비 상태가 필요하며, 엔진을 설치하거나 업데이트하지 않습니다.",
     "workContent.templateReceipt": "승인된 템플릿 영수증 (JSON, 프로젝트 기본값 활성화 시 선택 사항. 여기서 템플릿을 승인하지 않습니다)",
@@ -2804,6 +2816,9 @@ window.PORTAL_LOCALES = {
     "reason.PORTAL_GATE_RELEASE_REASON_REQUIRED": "해제에는 이유가 필요합니다. 이유를 적은 뒤 다시 해제하세요."
   },
   "fr": {
+    "modelPolicy.onboarding": "Les groupes main, economy et flagship sont proposés par hôte. La coordination Codex à deux conversations exige les modèles et efforts main/economy ; flagship reste facultatif. Ces brouillons ne sont pas enregistrés : choisissez les modèles et une décision Owner, ou configurez-les plus tard. Les autres hôtes restent inchangés.",
+    "modelPolicy.peerReady": "Les liaisons Codex main/economy enregistrées sont configurées. La disponibilité et les autorisations doivent être vérifiées séparément.",
+    "modelPolicy.peerNotReady": "La coordination Codex exige des liaisons main/economy et un plafond configuré si activé. L’installation ordinaire et les autres hôtes restent disponibles.",
     "setting.work.contentPolicy.label": "Politique de contenu typé des travaux",
     "setting.work.contentPolicy.description": "Politique JSON propre au projet définissant les modèles admis par type de travail, le périmètre et les travaux en cours. Son activation exige une décision Owner et une préparation au déploiement vérifiée ; ce réglage n’installe ni ne met à jour le moteur.",
     "workContent.templateReceipt": "Reçu du modèle admis (JSON, facultatif si une valeur par défaut est activée ; aucune admission ici)",

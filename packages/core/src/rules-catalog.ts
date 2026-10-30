@@ -140,15 +140,19 @@ const BATCH_ZH = `## 批量处理原则 v3
 3. 主代理减少往返。不回复纯确认，不催问普通进度；收到需要决策或行动的信息时直接处理。普通状态消息不触发额外的全体状态查询或重复汇报。
 4. 等待避免空轮询。使用宿主支持的完成通知与阻塞等待；连续没有新状态时延长查询间隔，遵守宿主等待上限和用户中断要求；有独立可做的工作时继续该工作。
 
-### Codex 专用收集契约（其他宿主与 dot 不适用）
+### Codex 独立双对话契约（其他宿主与 dot 不适用）
 
-明确采用多子代理编排的 Codex 每个已派出批段必须且只能有一个全新、独立专用经济档 collector，一代理一个有界包；不复用普通实施/验收代理，不跨批常驻，不复用已结束 worker。仅精确 collector 角色豁免 harness 工作代理 cap；先预留真实宿主槽位，工作并发仍受 execution.maxConcurrentSubagents 与硬容量约束。不够则减工作并发或分批，连一工作加一收集也容不下则报告阻塞，不能省略收集者或回退主对话轮询。
+仅在明确选定 Codex 宿主的多子代理编排中使用独立的主力主决策对话与经济协调对话；不是父子收集代理。主决策对话负责批目标、阶段边界、判断及下一批授权；经济协调对话直接派出全新工作子代理，按任务类型的类别与既有退回阈值升档，直接等待并读取其原生结果。工作子代理不主动向父对话发消息，保留原生 final；安全和硬阻塞通过宿主支持的结果/中断路径处理。协调者不是只读收集者，也不另派收集者。Claude Code、DSH 仍由单主对话协调子代理并使用原生完成通知；dot 策略不变。
 
-父会话用受支持的真实派工回执固定角色、batchId、agentId、attempt 与成员范围；名称、marker、自述、首个退出事件或本地 JSON 都不证明授权。hook 只在已证明可用的同宿主绑定、状态、等待与原生回传能力下约束该精确角色；缺口明确报告 capability-unavailable，只停依赖路径，不假装完成。非收集代理不增加消息、不额外阻止退出，保留原生 final，不承诺压制宿主通知。
+角色只使用 main（主力）、economy（经济）与可选 flagship（旗舰）类别，不绑定具体模型。安装引导提供这三个稳定分类；所选设备宿主策略必须配置可解析的 main 与 economy 模型组才可启用本模式，flagship 模型组可跳过。空组不是可用模型或升档上限，不编造模型、effort、决定来源或宿主支持；更新/修复幂等补缺，保留用户模型、自定义分类及其他宿主。按实际策略版本解析并保留派工回执。
 
-collector 只收集/去重原始事实、原始结果与位置，不总结、分析、验收、实施、集成、跑正式门或增派代理。每次退出前以受支持接口新鲜查询固定成员；unknown、过期、未来、重放、错批/错 attempt 与查询失败不算终态。未齐只通过受支持同步 hook 继续同一尚未结束 collector，合理间隔、有截止、有预算，不能 Stop→block 忙循环。期限、查询失败上限、预算耗尽、暂停、取消、安全、权限和无进展均明确异常退出；终结未知前不派第二收集者。
+派工前固定 batchId、application attempt、两个独立对话标识及成员范围；每个工作子代理由真实派工回执绑定 agentId、任务包与 attempt。不得凭名称、marker、自述或本地文件冒充原生授权。工作并发同时遵守 execution.maxConcurrentSubagents、设备/项目限制与真实宿主硬容量；没有 collector cap 豁免或预留收集槽。容量不足则减并发或分批，不能绕限。
 
-全部确认终态（保留 failed 与 cancelled_confirmed）后一次原始事实经原生 final 返回并自然退出；父会话确认收件不是退出前置条件。分别核实退出、原生交付、真正空闲父会话恢复与资源释放，不能用文件或模拟测试替代。主会话不得用 /goal 或 /loop 主动等待子代理，保留既有用户目标、自动化及 M 正常治理轮次；本限制不取消有实质工作的后续轮。
+主决策对话交付批段后停止空闲轮询，不用 /goal 或 /loop 主动等待；经济协调对话使用宿主支持的有界等待直接读取固定成员结果，遵守间隔、截止、失败次数、预算及用户中断。保留 failed、cancelled_confirmed 与 unknown；陈旧、未来、错批、错 attempt、漂移及查询失败不算完成。禁止专用收集子代理、SubagentStop 保活、collector-wait 或旧收集机制 fallback。旧引擎 owned hook 仅在核实归属后退役，保留用户修改及无关 hook。
+
+协调者按同批同 attempt 去重，全部成员确认终态后向主决策对话交付一次批报告；失败不伪装成功。中断、期限、权限、安全、预算耗尽与无进展明确报告剩余责任。恢复时先核对既有派工、原生状态与已交付回执，结果未知先查证，不重复派工、不重放已确认交付、不复活已结束 worker；迟到结果保留但不得推进另一 attempt。交付未知不得盲目重发或启动下一批。缺能力只停依赖路径，不能换收集者回退。
+
+源码/自动化回归与真实宿主验收分别记录；具体测试范围和验收责任遵循当前 Owner 决定，不以文档或模拟冒称候选真实宿主已验收。不创建 daemon、不读取私有会话数据库、不虚构 RPC。保留既有用户目标、自动化及 M 正常治理轮次；本限制不取消有实质工作的后续轮。
 `;
 
 // Translated when this module was written, clause 7 with the Owner's revision (INIT-053 R40),
@@ -177,15 +181,19 @@ A cycle in which fixing one red result turns up another is itself a sign that th
 3. The main agent reduces round trips. Do not reply with pure acknowledgments or ask for ordinary progress. Act directly on information that needs a decision or action. Ordinary status messages do not trigger extra queries of every agent's status or repeated reports.
 4. Avoid empty polling while waiting. Use completion notifications and blocking waits supported by the host. Lengthen query intervals when there is repeatedly no new state, respect the host's wait limit and user interruption requirements, and continue independent work when it is available.
 
-### Codex dedicated collection contract (not other hosts or dot)
+### Codex independent peer-conversation contract (not other hosts or dot)
 
-For Codex explicitly using multi-subagent orchestration, each dispatched stage must have exactly one fresh, independent, dedicated economy-tier collector for one bounded package. Never repurpose an implementation/review agent, keep a collector across batches, or reuse an ended worker. Only this exact collector role is exempt from the harness worker cap. Reserve a real host slot first; workers still obey execution.maxConcurrentSubagents and hard capacity. Reduce worker concurrency or split stages when needed. If even one worker plus one collector cannot fit, report a blocker; never omit the collector or fall back to main-thread polling.
+Only explicitly selected Codex multi-subagent orchestration uses an independent main-category decision conversation and economy-category coordinator conversation, not a parent/collector pair. The main conversation owns batch goals, stage boundaries, judgment and next-batch authorization. The economy coordinator directly dispatches fresh workers according to task categories and existing rejection-escalation thresholds, waits for them and reads their native results. Workers do not proactively message their parent; retain native final and use supported result/interruption paths for safety and hard blockers. The coordinator is not a read-only collector and dispatches no collector. Claude Code and DSH retain single-conversation coordination and native completion notifications; dot policy is unchanged.
 
-The parent fixes role, batchId, agentId, application attempt and member scope using supported actual dispatch receipts. A name, marker, self-report, first stop event or local JSON is not authorization. Enforce only with proven same-host binding, state, waiting and native return capabilities; explicitly report capability-unavailable and stop only the dependent path, never claim completion. Ordinary agents receive no additional hook message or exit block and retain their native final; suppression of host notifications is not promised.
+Roles use main, economy and optional flagship categories, never concrete model bindings. Installation guidance offers all three stable categories. This mode requires usable main and economy model groups in the selected device-host policy; the flagship model group may remain unconfigured. Empty groups are neither usable models nor escalation ceilings. Never invent a model, effort, decision provenance or host support. Update/repair supplements missing defaults idempotently while preserving user models, custom categories and other hosts. Resolve the actual policy revision and retain dispatch receipts.
 
-The collector only gathers/deduplicates raw facts, raw results and locations, with no summary, analysis, acceptance, implementation, integration, formal gates or further dispatch. Before exit, freshly query the fixed members using supported interfaces. Unknown, stale, future, replayed, wrong-batch/wrong-attempt observations and query failure are not terminal. While pending, a supported synchronous hook continues only the same still-live collector with bounded intervals, deadline and budget, never a Stop-to-block busy loop. Deadline, query-failure limit, budget exhaustion, pause, cancellation, safety, permission and no-progress exits are explicit exceptions. Do not dispatch a second collector while termination is unknown.
+Before dispatch, fix batchId, application attempt, both independent conversation identities and member scope. Bind each worker's agentId, package and attempt from actual dispatch receipts, not names, markers, self-reports or local files posing as native authority. Worker concurrency obeys execution.maxConcurrentSubagents, device/project limits and actual hard host capacity. There is no collector cap exemption or reserved collector slot. Reduce concurrency or split stages when capacity is insufficient; never bypass the limit.
 
-Once all members have confirmed terminal facts (preserving failed and cancelled_confirmed), return raw facts once through native final and exit naturally. Parent receipt acknowledgement is not an exit prerequisite. Independently verify exit, native delivery, genuinely idle parent resumption and resource release; neither files nor simulation tests prove these. The main thread must not use /goal or /loop to actively wait for subagents. Preserve existing user goals, automations and legitimate M governance rounds; this restriction does not cancel later rounds with substantive work.
+After handing off a stage, the main conversation stops idle polling and must not use /goal or /loop to actively wait. The economy coordinator directly reads fixed members using supported bounded waits, respecting intervals, deadline, query-failure limits, budget and user interruption. Preserve failed, cancelled_confirmed and unknown outcomes. Stale, future, wrong-batch/wrong-attempt or drifted observations and query failures do not establish completion. No dedicated collector subagent, SubagentStop keepalive, collector-wait helper or old collection fallback remains. Retire old engine-owned hooks only after ownership verification; preserve user edits and unrelated hooks.
+
+Deduplicate within the exact batch/attempt and hand back one batch report after all members have confirmed terminal outcomes; failure is not success. Interruption, deadline, permission, safety, exhausted budget and no-progress exceptions retain outstanding ownership. On recovery reconcile existing dispatch, native state and delivery receipts first: unknown is investigated, not duplicate dispatch, replay of confirmed delivery or revival of ended workers. Retain late results without advancing another attempt. Unknown delivery permits neither blind resend nor the next batch. Missing capability stops only the dependent path, with no collector fallback.
+
+Record source/automated regression separately from native-host acceptance. The current Owner decision defines the testing scope and acceptance responsibility; documentation and fixtures do not prove native acceptance of a candidate. No daemon, private session database or invented RPC is introduced. Preserve existing user goals, automations and legitimate M governance rounds with substantive work.
 `;
 
 const UNATTENDED_COMMANDS_ZH = `## 无人值守指令原则 v2

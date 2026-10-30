@@ -109,13 +109,9 @@ test("configuration backup and restore identify authority inputs, not projection
 });
 
 
-test("runtime dictionary binds native socket and setup observations to their invocation owners", () => {
+test("runtime dictionary retires collector socket and preserves legacy setup observations", () => {
   const entries = configurationContract(COMMAND_CATALOG).runtimeInputs.entries;
-  const socket = entries.find(entry => entry.name === "EINZBERN_CODEX_NATIVE_HOOK_SOCKET");
-  assert.equal(socket.classification, "internal-transient");
-  assert.equal(socket.persistence, "invocation");
-  assert.match(socket.owner, /owning live/u);
-  assert.match(socket.sharing, /never persisted/u);
+  assert.equal(entries.some(entry => entry.name === "EINZBERN_CODEX_NATIVE_HOOK_SOCKET"), false);
   const admission = entries.find(entry => entry.key === "cli:setup:codex-admission");
   assert.equal(admission.classification, "internal-transient");
   assert.equal(admission.persistence, "invocation");

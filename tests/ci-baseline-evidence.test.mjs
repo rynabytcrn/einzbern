@@ -425,22 +425,18 @@ seal=root/("package-smoke-"+p["head"]+"-1")/"package-seal.json";value=json.loads
   });
 }
 
-for (const nativeIpcMutation of [
-  { replace: ["const socket = createConnection(socketPath);", 'const socket = createConnection(443, "example.invalid");'] },
-  { replace: ["await requirePrivateDirectory(socketPath);", "// private validation removed"] },
-  { append: 'createConnection("relative.sock");' },
-  { replace: ["await requirePrivateDirectory(socketPath);\n  const stat = await lstat(socketPath);", "const stat = await lstat(socketPath);"], rebindDigest: true },
-  { replace: ["await requirePrivateDirectory(socketPath);\n  if (controller?.capability", "if (controller?.capability"], rebindDigest: true },
-  { replace: ["const socket = createConnection(socketPath);", 'const socket = createConnection(443, "example.invalid");'], rebindDigest: true },
-  { append: 'createConnection("relative.sock");', rebindDigest: true },
-  { append: "const alias = createConnection;", rebindDigest: true },
+for (const nativeNetworkSource of [
+  'import { createConnection } from "node:net"; createConnection(443, "example.invalid");',
+  'import { createConnection } from "node:net"; createConnection("relative.sock");',
+  'import { createConnection } from "node:net"; const alias = createConnection; alias(443, "example.invalid");',
+  'import * as transport from "node:net"; transport.createConnection("relative.sock");',
 ]) {
-  test("native Unix source classification rejects changed call/validation sites", async t => {
-    const fixture = await createOfflineScannerFixture(t, { nativeIpcMutation });
+  test("retired native transport has no source-classification exemption", async t => {
+    const fixture = await createOfflineScannerFixture(t, { nativeNetworkSource });
     const run = runFixtureTask(fixture, ["offline"]);
     assert.equal(run.status, 1, run.stdout || run.stderr);
     const report = JSON.parse(run.stderr.trim().split("\n").at(-1));
     assert.equal(report.reasonCode, "OFFLINE_BOUNDARY_FINDINGS");
-    assert.ok(report.error.includes("NETWORK_MODULE:scripts/lib/codex-native-hook-ipc.mjs"));
+    assert.ok(report.error.includes("NETWORK_MODULE:scripts/unexpected-native-network.mjs"));
   });
 }

@@ -62,7 +62,6 @@ async function engineTree(base) {
   await copyFile(join(repositoryRoot, "scripts/einzbern.mjs"), join(tree, "scripts/einzbern.mjs"));
   await copyFile(join(repositoryRoot, "scripts/einzbern-hook.mjs"), join(tree, "scripts/einzbern-hook.mjs"));
   await mkdir(join(tree, "scripts", "lib"), { recursive: true });
-  await copyFile(join(repositoryRoot, "scripts/lib/codex-native-hook-ipc.mjs"), join(tree, "scripts/lib/codex-native-hook-ipc.mjs"));
   await copyFile(join(repositoryRoot, "scripts/policy/knowledge-provenance.json"), join(tree, "scripts/policy/knowledge-provenance.json"));
   await cp(join(repositoryRoot, "dist/build"), join(tree, "dist/build"), { recursive: true });
   await mkdir(join(tree, "launchers"));
@@ -648,12 +647,19 @@ for (const state of ["supported", "unsupported", "unknown"]) {
     const planned = await plan(f, {}, { codexAdmission });
     assert.deepEqual(planned.blockers, []);
     assert.deepEqual(planned.codexAdmission, codexAdmission);
+    assert.deepEqual(planned.modelPolicyOnboarding.defaultCategories, ["flagship", "main", "economy"]);
+    assert.deepEqual(planned.modelPolicyOnboarding.codexPeerRequiredCategories, ["main", "economy"]);
+    assert.deepEqual(planned.modelPolicyOnboarding.optionalModelCategories, ["flagship"]);
+    assert.equal(planned.modelPolicyOnboarding.hostSelection, "explicit");
+    assert.equal(planned.modelPolicyOnboarding.persistence, "explicit-actor-and-owner-decision");
     const applied = await applySetup(planned);
+    assert.deepEqual(applied.modelPolicyOnboarding, planned.modelPolicyOnboarding);
+    await assert.rejects(readFile(join(f.deviceHome, "engine-model-policy.json")), { code: "ENOENT" });
     assert.deepEqual(applied.codexAdmission, codexAdmission);
     assertSelfCheckGreen(applied);
     for (const host of ["codex", "claude"]) {
       const document = JSON.parse(await readFile(join(f.home, `.${host}`, host === "codex" ? "hooks.json" : "settings.json"), "utf8"));
-      assert.equal(Object.hasOwn(document.hooks, "SubagentStop"), host === "codex" && state === "supported");
+      assert.equal(Object.hasOwn(document.hooks, "SubagentStop"), false);
     }
     const again = await plan(f, {}, { codexAdmission });
     assert.deepEqual(again.writes, []);

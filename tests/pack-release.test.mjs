@@ -168,14 +168,17 @@ test("CFG-B02 packaged CLI creates and inventories retained in-tree backups with
   }
 });
 
-test("Codex SubagentStop release carries both the versioned route and its core evaluator", async () => {
+test("Codex peer receipt commands are packaged without the retired collector runtime", async () => {
   const { entries } = await packedRelease();
   const files = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry.bytes]));
-  assert.ok(files.has("scripts/einzbern-hook.mjs"), "the versioned hook entry is packaged");
-  assert.equal(files.has("dist/build/packages/core/src/codex-subagent-stop.js"), false, "release hook is self-contained, not a source-tree import");
-  assert.ok(files.has("specs/engine-hook-events-v2.md"), "installed capability boundary and collector contract are readable");
-  assert.match(files.get("scripts/einzbern-hook.mjs").toString("utf8"), /codex-subagent-stop\.js/u);
-  assert.match(files.get("scripts/einzbern-hook.mjs").toString("utf8"), /CODEX_STOP_CAPABILITY_UNAVAILABLE/u);
+  assert.ok(files.has("scripts/einzbern-hook.mjs"), "ordinary versioned hooks remain packaged");
+  assert.equal(files.has("dist/build/packages/core/src/codex-subagent-stop.js"), false);
+  assert.equal(files.has("scripts/lib/codex-native-hook-ipc.mjs"), false);
+  assert.ok(files.has("specs/engine-hook-events-v2.md"), "owned hook retirement contract remains readable");
+  const hook = files.get("scripts/einzbern-hook.mjs").toString("utf8");
+  for (const retired of ["CODEX_STOP_CAPABILITY_UNAVAILABLE", "EINZBERN_CODEX_NATIVE_HOOK_SOCKET", "runCodexCollectorWait"]) assert.equal(hook.includes(retired), false, retired);
+  const cli = files.get("scripts/einzbern.mjs").toString("utf8");
+  for (const entry of ["execution-codex-peer-record", "execution-codex-peer-evidence", "tcrn.codex-peer-batch.v1"]) assert.ok(cli.includes(entry), entry);
 });
 
 test("605: every contract referenced by the shipped Skill resolves to manifest-verified archive bytes", async () => {

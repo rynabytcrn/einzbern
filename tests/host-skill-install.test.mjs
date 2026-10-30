@@ -35,3 +35,13 @@ test("T16 installed user-edited Skill is visible and preserved by normal setup p
   await planWiring(recorder, { projectRoot: f.root, home, deviceHome, library: null, cloud: false, navigation: "none", deviceNavigation: null, engine: { skillDigest: (await computeInstallTreeDigest(source)).sha256, launchers: [] }, steps: new Set(["skill-copies"]) });
   assert.ok(recorder.blockers.some(b => b.reasonCode === "SETUP_SKILL_USER_EDITED")); assert.equal(await readFile(edited, "utf8"), "User custom instructions, do not discard\n");
 });
+
+test("peer-aware Skill rejects an older same-version engine without peer receipt commands", async t => {
+  const peerSkill = `${HOST_SKILL_PROTOCOL_MARKER}\nUse \`execution-codex-peer-record\` and \`execution-codex-peer-evidence\`.\n`;
+  const missing = await fixture(t, peerSkill, names);
+  assert.equal(missing.result.directory, null);
+  assert.equal(missing.recorder.blockers[0].reasonCode, "SETUP_SKILL_ENGINE_MISMATCH");
+  const ready = await fixture(t, peerSkill, [...names, "execution-codex-peer-record", "execution-codex-peer-evidence"]);
+  assert.equal(ready.result.directory, ready.root);
+  assert.deepEqual(ready.recorder.blockers, []);
+});

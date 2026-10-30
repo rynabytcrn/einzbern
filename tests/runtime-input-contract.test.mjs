@@ -91,7 +91,7 @@ test("catalog adapter preserves all operational flag metadata and lifecycle fiel
   assert.equal(admission.sharing, "never a shared or global setting; input file retained by its caller");
   assert.equal(admission.export, "local plan/receipt only; no raw observation promoted to shared configuration");
   assert.deepEqual(admission.consumer, ["packages/cli/src/index.ts setup handler", "packages/core/src/setup.ts planSetup/applySetup", "packages/core/src/setup-fresh.ts planWiring/applyWiring", "packages/core/src/host-hooks.ts planHostHooks"]);
-  assert.match(admission.defaultDescription, /unknown; new native stop entry omitted/u);
+  assert.match(admission.defaultDescription, /legacy observation unknown; retired stop entry is never installed/u);
   assert.match(admission.validation, /No version range or flag implies support/u);
   assert.match(admission.effect, /Does not grant trust, enable hooks=false, change non-Codex events or enroll a native controller/u);
   for (const command of ["setup", "engine-update", "engine-rollback", "device-clean"]) {
@@ -364,12 +364,6 @@ test("full-core controller defaults and caps at 900000ms while P8 and explicit s
   assert.ok(text.includes('return runTests();'));
 });
 
-test("native IPC environment is invocation-local integration, never shared configuration", () => {
-  const input = byKey.get("env:EINZBERN_CODEX_NATIVE_HOOK_SOCKET");
-  assert.equal(input.classification, "internal-transient");
-  assert.equal(input.persistence, "invocation");
-  assert.equal(input.visibility, "integration");
-  assert.match(input.validation, /same UID/u);
-  assert.match(input.sharing, /never persisted/u);
-  assert.match(input.effect, /does not create a client/u);
+test("retired Codex collector socket is not a runtime input", () => {
+  assert.equal(byKey.has("env:EINZBERN_CODEX_NATIVE_HOOK_SOCKET"), false);
 });

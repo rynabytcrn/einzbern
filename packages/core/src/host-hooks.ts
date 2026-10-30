@@ -4,7 +4,7 @@
 // guard. Each host file runs the stable device launcher, never a checkout or platform script.
 // SessionStart is added only when agents.navigation is declined. SubagentStart always carries
 // navigation and recalls against the host's documented agent_type (not a fabricated task field).
-// SubagentStop is a Codex-only bounded collector hook. SSH and control-tree hooks remain retired.
+// Codex SubagentStop, SSH and control-tree hooks are retired. No peer coordination hook is installed.
 // DSH keeps its separate plugin contract.
 // Engine updates change engine/current without rewriting host command paths.
 //
@@ -93,9 +93,7 @@ export const HOST_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze(
 });
 // Codex-only events are deliberately separate from the common table: rendering one must never
 // add a native event to Claude Code or DSH.
-export const CODEX_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze({
-  SubagentStop: "subagent-stop",
-});
+export const CODEX_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze({});
 // TCRN-CROSS-STORY-478 R4, AC5: the pointer hooks of a device whose agents.navigation is declined,
 // with their launcher words. SubagentStart also recalls and is always installed.
 export const HOST_HOOK_POINTER_EVENTS: Readonly<Record<string, string>> = Object.freeze({
@@ -248,7 +246,6 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   if (install) {
     const events = [...new Set([
       ...Object.keys(HOST_HOOK_EVENTS),
-      ...(host === "codex" && admission.state === "supported" ? Object.keys(CODEX_HOOK_EVENTS) : []),
       ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : []),
     ])];
     for (const event of events) {
@@ -343,12 +340,27 @@ export interface HostHooksMerge {
 // One event's groups with ours taken out and the wanted groups put where the first of ours was
 // (at the end when there was none), so that rendering again leaves the list as it is. null when
 // the event holds nothing of ours and nothing is wanted in it.
-function mergeEvent(event: string, groups: readonly unknown[], wanted: readonly HostHookGroup[], removed: RemovedHook[], preserveNativeStop = false): unknown[] | null {
-  const owns = (hook: unknown): boolean => isOurs(hook) && !(preserveNativeStop && isEinzbernHookCommand(commandOf(hook) ?? ""));
+function mergeEvent(event: string, groups: readonly unknown[], wanted: readonly HostHookGroup[], removed: RemovedHook[], retireNativeStop = false): unknown[] | null {
   const kept: unknown[] = [];
   const ours: unknown[] = [];
   let insertAt: number | null = null;
   for (const group of groups) {
+    // Retirement consumes only the exact generated default, never a user-modified hook,
+    // unrelated stop command, matcher or other group metadata. Unknown ownership stays intact.
+    const owns = (hook: unknown): boolean => {
+      if (!retireNativeStop) return isOurs(hook);
+      const command = commandOf(hook);
+      if (command === null || !isObject(group)) return false;
+      const around = { ...group }; delete around.hooks;
+      if (stableJson(around) !== "{}") return false;
+      if (isLegacyHookCommand(command)) {
+        const timeout = isObject(hook) && Object.hasOwn(hook, "timeout")
+          ? { timeout: /knowledge-(?:inject|capture)-hook\.mjs/u.test(command) ? 30 : 10 } : {};
+        return stableJson(hook) === stableJson({ type: "command", command, ...timeout });
+      }
+      return isEinzbernHookCommand(command) && command.endsWith(" subagent-stop")
+        && stableJson(hook) === stableJson({ type: "command", command });
+    };
     const hooks: readonly unknown[] | null = isObject(group) && Array.isArray(group.hooks) ? group.hooks : null;
     if (!isObject(group) || hooks === null || !hooks.some(owns)) {
       kept.push(group);
@@ -414,14 +426,14 @@ export function mergeHostHooks(existing: unknown, expected: HostHooksExpectation
   let touched = false;
   const events = [...Object.keys(hooks), ...Object.keys(expected.groups).filter((event) => !Object.hasOwn(hooks, event))];
   for (const event of events) {
-    const preserveNativeStop = event === "SubagentStop" && expected.host === "codex" && expected.install && expected.codexAdmission.state !== "supported";
+    const retireNativeStop = event === "SubagentStop" && expected.host === "codex";
     const current = hooks[event];
     const wanted = expected.groups[event] ?? [];
     if (current !== undefined && !Array.isArray(current)) {
       if (wanted.length > 0) unsupported(file, `hooks.${event} is not a list`);
       continue;
     }
-    const next = mergeEvent(event, current ?? [], wanted, removedHooks, preserveNativeStop);
+    const next = mergeEvent(event, current ?? [], wanted, removedHooks, retireNativeStop);
     if (next === null) continue;
     touched = true;
     // An event left with nothing but ours goes with it; the hooks object itself stays, if empty.

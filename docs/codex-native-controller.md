@@ -1,127 +1,168 @@
-# Opt-in isolated Codex native controller
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+# Codex independent conversation coordination
 
-Default Desktop callback, installation, wake and unload remain unverified. This API is
-only for an expressly authorized isolated Unix native host. It neither enables wake nor
-changes a live Desktop/control tree. Non-Codex and dot do not receive this hook.
+## Current contract and scope
 
-Import `codexNativeDynamicToolSpecs`, `createCodexNativeController`, `createCodexNativeHookBridge` and
-`waitCodexNativeCollector` from the normal **versioned** `scripts/einzbern-hook.mjs`
-entry after the approved build (or from its normally bundled installed entry).
-The helper is reachable through the existing static import graph; no sidecar copy,
-private session reader, daemon or independently installed helper is required.
+INIT076's 2026-10-30 Owner revision replaces the former native collector
+controller/bridge contract. This filename remains for existing references; the
+old SubagentStop/collector-wait design is superseded history, not an alternate
+mode. Historical work records, commits and failure evidence remain intact.
 
-The owning initialized app-server client supplies `call(method, params, {signal})`
-and `registerDynamicTool(spec, {signal})`. They must actually support cancellation
-and finite settlement. `transport` must carry `abort: "supported"`, `rpcTimeoutMs`,
-`hookTimeoutMs` and the real `evidenceRef`. Unknown support disables this dependent
-route. The RPC bound must be shorter than the actual hook timeout; the selected
-transport permits at most 900000ms and helper intervals at most 890000ms. These
-are transport limits, not extra query/stop budgets or a guessed Codex version range.
-A nonconforming client can leave a native operation unsettled: `responsibility()`
-reports it, and the owning client must dispose/query it. Timeout is never a native
-cancellation acknowledgement. `now()` is the one clock seam for deterministic tests.
+Only an explicitly selected **Codex** host uses this contract. Unknown host is
+not Codex admission. Claude Code and DSH keep their existing single main
+conversation coordinating workers with native completion notifications. Dot
+policy and generic collection/conference behavior are unchanged.
 
-Pass the unchanged fixed `run`, private owned `runtimeDirectory` (0700), approved
-`wakeOnAgentMessagesApproved`, and absolute normal installed `helperEntry` path.
-The host itself must have the separately approved native wake configuration.
-Before `thread/start`, call the pure `codexNativeDynamicToolSpecs(maxAgents)` and
-pass each definition as `{ type: "function", ...definition }` in `dynamicTools`.
-After the server returns the real parent thread ID, create this controller with that
-ID/session and connect `registerDynamicTool` to the matching owner handler table.
-Only then start the parent turn. This avoids inventing a parent ID to obtain schemas.
-The two exported definitions are also the definitions the controller registers.
+## Roles and model policy
 
-Register real server-origin `item/tool/call` requests, preserving the actual request
-ID and `params.threadId`, `params.callId`, `params.turnId`, tool and arguments.
-Invoke only that registered handler with `{ threadId, callId, arguments }` and answer
-the original server request with `{ success: true, contentItems: [{ type: "inputText",
-text: JSON.stringify(result) }] }`; a handler/transport error needs an explicit failed
-response and owner handoff. A direct fabricated handler call is not native evidence.
-No turn starts until both owner handlers and the private bridge are ready. The parent calls `einzbern_register_native_batch` once after
-dispatch with exact task names and one collector targeting every fixed worker.
-Registration is serialized and an attempted registration cannot be reenrolled. A
-bounded failed result reaches the actual owner, retaining all unresolved dispatched
-children even when identities could not be resolved. Ordinary/unregistered stops
-remain untouched. Tool arguments or artifact files alone never confer role authority.
+- **Main decision conversation (`main`)**: sets the bounded batch, package goals,
+  dependencies and acceptance responsibilities; decides on the returned batch and
+  authorizes the next stage. After handoff it stops idle polling. It does not use
+  `/goal` or `/loop` merely to wait; substantive governance rounds remain valid.
+- **Independent coordinator conversation (`economy`)**: directly dispatches fresh
+  workers, waits for and reads their native results, reconciles the batch and
+  reports it once to main. It is not a child collector, read-only summarizer, or
+  extra collection tier. Package implementation/acceptance responsibilities do
+  not silently transfer to the coordinator.
+- **Workers**: one bounded package each, task-category model routing and existing
+  rejection-threshold escalation. They do not proactively message their parent;
+  retain native final output and supported safety/interruption/result paths.
 
-Create the bridge in the owning process with a private socket directory and supply
-`EINZBERN_CODEX_NATIVE_HOOK_SOCKET` only to that isolated host. The normal launcher
-reaches its versioned entry. A running-member stop returns promptly with an instruction:
+Resolve actual models/effort from the selected device-host policy, retaining its
+revision/digest and actual dispatch receipt. Never embed concrete vendor models
+in the plan or generated contract. Onboarding offers `main`, `economy`, and
+`flagship`; usable main/economy groups are required for this mode. Flagship's
+model group is optional, and an empty group is neither a usable model nor a valid
+selected escalation ceiling. Missing required groups stop this mode, not other
+hosts or unrelated operations. See `specs/engine-model-policy-v1.md`.
 
+## Batch identity, waiting and recovery
+
+This is an orchestration contract over supported host operations, not a new RPC,
+daemon or private session database. No particular transport method or exported
+controller API is required by this document. Preserve these facts in ordinary
+owned run evidence and reconcile them with actual native receipts:
+
+1. Before dispatch, freeze batchId, application attempt, the two independent
+   conversation identities, package/member scope and policy origin. Bind worker
+   agentId/attempt to real dispatch receipts; names, markers and self-reports are
+   not authorization. Native turn IDs do not replace application attempts.
+2. Enforce worker caps, device/project limits and actual available host capacity.
+   There is no collector exemption or reserved collection slot. Reduce parallelism
+   or split a stage when necessary; never count a missing usage observation as
+   spare capacity or bypass a refusal.
+3. The coordinator uses supported bounded waits, respecting wait limits, deadline,
+   failure budget, no-progress boundary and user interruption. Read exact members'
+   raw status/results. Preserve completed, failed, cancelled_confirmed, pending
+   and unknown. Stale/future observations, query failures, identity drift and
+   wrong batch/attempt cannot establish completion or cancellation.
+4. Deduplicate observations and delivery within batch/attempt. Once all members
+   are confirmed terminal, send one batch report containing results, evidence and
+   failures through the supported independent-conversation channel. Completion of
+   every worker is not success of every package. Keep delivery state separate from
+   execution, acceptance and resource release.
+5. On interruption/restart, reconcile existing dispatch and native state before
+   any action. Reuse the same logical batch/attempt evidence; do not respawn a
+   worker because a local acknowledgement is missing. Confirmed delivered reports
+   are not replayed. Unknown delivery is queried, never blindly resent or treated
+   as permission for the next batch. Late results stay attached to their original
+   attempt and cannot advance a replacement batch. Ended workers are not revived.
+6. Deadline, pause/cancel, permission/safety refusal, budget exhaustion, no progress
+   and missing capability produce explicit exceptional facts and outstanding
+   ownership, not fabricated success or cancellation. Stop only dependent work.
+   There is no collector fallback, Stop-to-block loop or helper keepalive.
+
+Main resumes for the delivered batch decision and, where authorized, hands off the
+next batch. A missing or uncertain host result remains uncertain; source code and
+local evidence files do not manufacture native delivery or released resources.
+
+## Supported batch receipt commands
+
+The coordinator records native preparation/response history through the existing
+`execution-host-prepare`, `execution-host-record` and `execution-host-evidence`
+commands. For batch recovery, use:
+
+`execution-codex-peer-record --workspace <library> --manifest <manifest.json> --records <native-records.json> --capacity <capacity.json> [--delivery <delivery.json>] [--prior <latest-receipt.json>] --output <new-private-file>`
+
+The manifest is `tcrn.codex-peer-manifest.v1`, with explicit `host: "codex"`,
+`batchId`, `attemptId`, current `workId`/`workRevision`, and device `policyDigest`.
+Its `main` and `coordinator` each contain the actual `conversationId`, native
+identity `sourceRef`, original `raw` response and `conversationPointer` into that
+response. The pointed identities must match their declarations and must differ. Fixed `members` contain their actual
+preparation `attemptId`, `workId`, `workRevision`, and observed `conversationId`
+(or null while unknown). `records` is an array of retained
+`tcrn.host-native-record.v1` worker records, not invented status summaries.
+`capacity` contains the observed nonnegative `active` count (null when unknown)
+and positive `limit`; it is an observation, not an exemption or a scheduler.
+
+The CLI reads current work revisions and device model policy itself, then captures
+`observationCutoff` directly from its real clock (no input timestamp or override
+flag). Every retained worker/delivery event and preparation request time must be
+at or before this cutoff, compared at strict timestamp precision; preparation
+evaluation and reported selection/usage observation times are checked too. Future evidence
+is refused into a separate invalid artifact retaining the raw inputs and prior;
+it cannot establish completion or release responsibility. Keep the last valid
+receipt. Resume captures a fresh cutoff and refuses clock rollback below the prior
+cutoff; reconcile the clock/input instead of discarding history. This is a local
+observation bound, not provider clock synchronization or authentication. Its
+`tcrn.codex-peer-batch.v1` output includes requested main/economy model intent,
+readiness, outstanding occupancy, blocked reasons and report eligibility. These
+are recomputed from evidence; no supplied field can declare successful execution.
+The output is a new private file using the existing dispatch-artifact writer,
+outside device/authoritative library roots. Resume with the retained latest
+`--prior`; immutable membership, policy/work drift and native conflicts prevent
+silently treating a changed batch as its predecessor.
+
+A report attempt is retained with `--delivery`: its existing host-native `record`,
+`recipientPointer` and `correlationPointer` into the actual send arguments,
+`batchId` and `batchAttemptId`. The native preparation must have action
+`coordination`; tool names remain host-defined. The pointed recipient must match
+main. The correlation pointer addresses an ordinary text argument (for example
+`/message` or `/prompt`), whose first line must be exactly:
+
+```text
+Einzbern-Codex-Peer-Manifest-SHA256: <lowercase canonical manifest SHA256>
 ```
-node '<normal versioned entry>' collector-wait '<JSON identity>'
-```
 
-The **same live collector** executes that helper outside SubagentStop using its
-ordinary command tool and inherited isolated socket. The bridge validates its exact
-batch/attempt/collector/turn/session and fresh native pinned turn, waits until the
-persisted next-query time or deadline, then settles. No child dynamic-tool inheritance
-is assumed. The hook never sleeps. Early stop callbacks return the same helper
-instruction without spending query-failure budget. Paths/JSON are shell-quoted as
-literal arguments; the helper does not enroll from those arguments. Local account
-socket access is not hostile same-UID attestation.
+Include the terminating LF, then the readable batch result. The normal
+`execution-codex-peer-record` output supplies `reportPrefix` for machine assembly
+before native send preparation; it is not a send permit. The equivalent core
+helper is `codexPeerReportPrefix(manifest)` using `canonicalSha256(manifest)`.
+Machine-assemble the text and pointers from the actual supported tool arguments;
+do not ask users to hand-fill evidence JSON or add invented metadata fields to a
+host tool. The digest binds the entire immutable manifest, including batch and
+application attempt, peers, members, work revision and policy. It is **correlation
+only**, never authority, enrollment or proof of provider authenticity. A marker
+elsewhere in the body, an old batch marker or a wrapper relabel is not a match.
+Keep the original prepared send arguments and native response unchanged.
 
-All constituent native reads retain acquisition/completion times and are rechecked
-against the current clock after asynchronous work. Pages, progress, repeated cursors,
-duplicate/empty pages, bytes, each RPC and whole hook callbacks are bounded. Successful
-internal reads do not consume stop/format/query-failure budgets. Parent-only
-`einzbern_control_native_batch` signals pause, user cancel, budget, safety or permission.
-Failed/systemError, confirmed interrupted cancellation, pending and unknown remain
-distinct. Final allow rechecks registration receipt, dispatch identity, pinned native
-turns, controls, worker status/error/final items and artifact hash. Parent receipt is
-never required before collector exit.
+Not attempted, unknown, confirmed and failed are distinct. Once a delivery attempt exists it is not
+eligible for blind resend; query that attempt and add its actual response.
+`execution-codex-peer-evidence --from-file <receipt.json>` recomputes the saved
+receipt against its stored observation cutoff without consulting replay wall time
+or dispatching anything. A fresh recording may have a new cutoff/digest even when
+its deduplicated native history is unchanged. It does not refresh native state. These
+commands do not send messages or enforce global exactly-once delivery across
+independent files; the coordinator must retain and resume the latest receipt.
 
-Artifacts are complete **canonical structured native turn content**, not transport
-frames. Exclusive no-follow creation, owner/type/mode/link checks and digest readback
-reject unsafe preexisting artifacts, including writable equal-byte files. Private
-content-addressed runtime evidence retains registration, read timing, progress,
-exceptions and handoff dispositions. It is evidence, never enrollment authority.
-The owning caller retains it until downstream acceptance/audit retention permits
-cleanup. Unsupported restart/recovery cannot replay a final, reenroll an attempt or
-start a second collector; native history must resolve the old attempt first.
+## Installation and compatibility
 
-Four malformed formatting responses produce an auditable `failed-final-unresolved`
-handoff preserving the actual failed final. That allow permits native exit; it does
-not verify arbitrary text or release children. Authenticated query/control exceptions
-similarly retain explicit unknown facts and owner responsibility. A verified packet,
-failed final, exception handoff, collector exit, native return, idle-parent wake,
-actual unload and resource release are separate facts. This controller does not
-archive active workers or claim native release. The owner handles subsequent real
-unload/handoff through its supported client and retains all active children.
+Normal setup/update/repair retires only proven engine-owned legacy collector hook
+entries. Preserve user-edited and unrelated hooks and report unresolved ownership.
+No SubagentStop registration, collector-wait helper or optional collector remains
+an active path. User-selected models and custom categories are preserved; default
+category supplementation is idempotent and cannot alter another host's policy.
+Model onboarding does not silently persist model choices or fake Owner provenance.
 
-Close the bridge, close the controller, then dispose the owned client. Bridge close
-aborts its connection-owned in-flight work and waits for handlers; controller close
-aborts its operations, rejects later direct callbacks, unregisters tools and drains
-serialized work. Socket disposal alone never releases native children. Connected
-transport failures surface an explicit error instead of a fabricated `{}` completion.
+## Evidence and PR acceptance
 
-The normal public `planSetup({ ..., codexAdmission })` route carries the checked
-`CodexHookAdmission` through its closed mode input, fresh/update/repair/restore/migrate
-wiring, `applySetup` and local readback receipt. The CLI exposes the same route as
-`setup --codex-admission <absolute JSON file>`; the normal setup planner validates
-that file's closed record, rather than treating a flag or a version string as support.
-The record has exactly `state`, `version`, `evidenceRef`, `subagentStop` and `trust`.
-Only explicit `state: "supported"`, a nonempty observed version and source evidence
-reference, boolean `subagentStop: true` and `trust: "permitted"` add the Codex event.
-The owning client must obtain those facts from its actual qualified native version,
-capability and trust observations, and retain their source referenced by `evidenceRef`.
-Unknown observations must be reported as unknown. This declaration is not independent
-authentication, does not grant native UI trust and does not prove acceptance. Synthetic
-fixtures use explicitly synthetic references; their support state is never production proof.
-Each invocation supplies current observations; no shared/global admission setting,
-registry inference or automatic version allowlist is introduced. No Codex admission
-is accepted for dot or uninstall, and Claude/DSH receive no Codex event.
+Source/fixture regressions verify category routing, explicit host isolation,
+receipt reconciliation and legacy owned-hook retirement. They do not certify
+native scheduling, waiting or message delivery. Record source checks, upstream
+CI and Owner native acceptance separately. Follow the current Owner decision for
+the native review scope; a fixture is not a reason to repeat an already accepted
+capability experiment or to invent a new delivery prerequisite.
 
-Installation plans accept `CodexHookAdmission` with state, observed version, source
-evidence and actual trust/capability. Missing evidence stays unknown; unsupported or
-restricted hosts do not gain a new SubagentStop entry. Existing entries are preserved
-pending explicit resolution. Other installation/event tasks continue. `hooks=false`
-requires explicit `enableHooksAuthorized` plan authority to change. Owned matcher,
-timeout/group/settings edits conflict instead of being dropped; unrelated hooks and
-native trust states are retained. Apply verifies installed bytes and every rollback's
-original bytes/absence, retaining the primary error and backup references. These source
-contracts and synthetic fixtures do not establish actual native support or acceptance.
-
-The collector helper authenticates/snapshots the immutable attempt under serialization, then releases shared state before its timer. Signal and clock context belongs to the operation; an unrelated stop can complete while the helper is outstanding, and an authenticated control settles that helper. Accepted safety/pause/cancel/budget/permission remains the primary cause through query, transport, artifact and deadline errors. Secondary errors and unknown member facts retain owner responsibility; no error fabricates native release.
-
-Changed session/turn callbacks never enroll or replay the frozen attempt. Identity faults are recorded for the owner; repeated faults (query-failure bound), elapsed deadline or an already ended attempt allow only an explicit outside-attempt fault handoff. This does not mark the original attempt ended, cancel children or certify a final return. Physical installer and default Desktop support remain separately unverified.
+Keep a particular run's results and acceptance waivers in its work/PR record, not
+in installed stable rules. PR push and Ready for Review do not authorize merge,
+release or live installation.

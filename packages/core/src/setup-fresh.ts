@@ -1,3 +1,4 @@
+import { SETUP_MODEL_POLICY_ONBOARDING } from "./setup.js";
 import { spawnSync } from "node:child_process";
 import { HOST_SKILL_PROTOCOL_MARKER, checkHostSkillCompatibility } from "./skill-render.js";
 import { defaultSharedLibraryPath, readStorageLocation, sharedRuntimePath } from "./storage-location.js";
@@ -953,6 +954,7 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
     schemaVersion: SETUP_APPLIED_SCHEMA_VERSION,
     reasonCode: "SETUP_APPLIED",
     mode: plan.mode,
+    ...(plan.mode === "uninstall" ? {} : { modelPolicyOnboarding: SETUP_MODEL_POLICY_ONBOARDING }),
     ...(plan.codexAdmission === undefined ? {} : { codexAdmission: structuredClone(plan.codexAdmission) }),
     at,
     engineVersion: FRAMEWORK_VERSION,

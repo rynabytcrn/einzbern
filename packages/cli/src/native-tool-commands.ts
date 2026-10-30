@@ -1,3 +1,6 @@
+import { recordCodexPeerBatch, normalizeCodexPeerBatch } from "../../core/src/codex-peer-batch.js";
+import type { CodexPeerBatchInput } from "../../core/src/codex-peer-batch.js";
+import { readEngineModelPolicyFile } from "../../core/src/engine-model-policy.js";
 import { validateHostExecutionRequest } from "../../core/src/execution-fallback.js";
 import { prepareHostNativeDispatch } from "../../core/src/dispatch-workflow.js";
 import { recordHostNativeEvents, normalizeHostNativeRecord } from "../../core/src/native-tool-evidence.js";
@@ -19,6 +22,8 @@ import type { WorkspaceState, WorkspaceWriteLockOptions } from "../../core/src/w
 
 const flag = (name: string, required: boolean, valueKind = "path", valueShape?: string): RuntimeCommandFlag => ({ name, required, valueKind: valueKind === "path" ? "string" : valueKind, ...(valueShape === undefined ? {} : { valueShape }) });
 export const NATIVE_TOOL_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.freeze([
+  { name: "execution-codex-peer-record", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("manifest", true), flag("records", true), flag("capacity", true), flag("delivery", false), flag("prior", false), flag("output", true)] },
+  { name: "execution-codex-peer-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
   { name: "execution-host-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "HostExecutionRequest v1 JSON"), flag("arguments", true, "path", "{selection, argumentsValue} actual request JSON"), flag("output", true)] },
   { name: "execution-host-record", availability: "cli", mutates: true, flags: [flag("binding", true), flag("events", false, "path", "HostNativeEvent array; absent preserves pending"), flag("prior", false), flag("output", true)] },
   { name: "execution-host-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
@@ -45,6 +50,24 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
   const catalog = NATIVE_TOOL_COMMAND_CATALOG.find(entry => entry.name === command); if (!catalog) return null;
   for (const key of Object.keys(values)) if (!catalog.flags.some(entry => entry.name === key)) throw new Error(`unsupported --${key}`);
   for (const f of catalog.flags) if (f.required && !values[f.name]?.trim()) throw new Error(`--${f.name} is required`);
+  if (command === "execution-codex-peer-evidence") return json(normalizeCodexPeerBatch(await input(values["from-file"]!)));
+  if (command === "execution-codex-peer-record") {
+    const workspace = await context.resolveWorkspace(values.workspace!);
+    const manifest = await input(values.manifest!) as CodexPeerBatchInput["manifest"];
+    const records = await input(values.records!) as CodexPeerBatchInput["records"];
+    const capacity = await input(values.capacity!) as CodexPeerBatchInput["capacity"];
+    const delivery = values.delivery === undefined ? undefined : await input(values.delivery!) as CodexPeerBatchInput["delivery"];
+    const prior = values.prior === undefined ? undefined : await input(values.prior);
+    const policy = await readEngineModelPolicyFile(context.home);
+    const referenced = new Set([manifest?.workId, ...(Array.isArray(manifest?.members) ? manifest.members.map(member => member?.workId) : [])]);
+    const workRevisions = workspace.state.work.filter(row => !row.tombstone && referenced.has(row.id)).map(row => ({ id: row.id, revision: row.revision }));
+    let result: unknown;
+    const observationCutoff = new Date().toISOString();
+    try { result = recordCodexPeerBatch({ observationCutoff, manifest, records, capacity, policy, workRevisions, ...(delivery === undefined ? {} : { delivery }), ...(prior === undefined ? {} : { prior }) }); }
+    catch (error) { result = { reasonCode: "CODEX_PEER_RECORD_INVALID", observationCutoff, manifest, records, capacity, ...(delivery === undefined ? {} : { delivery }), ...(prior === undefined ? {} : { prior }), validation: { status: "invalid" }, problems: [String(error)] }; }
+    await writeDispatchArtifact(values.output!, result, [workspace.root], context.home);
+    return json(result);
+  }
   if (command === "execution-host-prepare") {
     const workspace = await context.resolveWorkspace(values.workspace!);
     const request = validateHostExecutionRequest(await input(values.request!));

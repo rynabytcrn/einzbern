@@ -216,7 +216,7 @@ export function assertOfflineUnixFixturePathBudget(directory) {
   return { directory, sunPathBytes: offlineUnixFixtureLayout.sunPathBytes, terminatorBytes: 1, paths };
 }
 
-export async function createOfflineScannerFixture(context, { unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null, nativeIpcMutation = null } = {}) {
+export async function createOfflineScannerFixture(context, { unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null, nativeNetworkSource = null } = {}) {
   const parent = await realpath(tmpdir());
   assertOfflineUnixFixturePathBudget(join(parent, `${offlineUnixFixtureLayout.scannerPrefix}${offlineUnixFixtureLayout.suffix}`, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
   const temporaryRoot = await realpath(await mkdtemp(join(parent, offlineUnixFixtureLayout.scannerPrefix)));
@@ -230,21 +230,14 @@ export async function createOfflineScannerFixture(context, { unexpectedSource = 
       await mkdir(dirname(join(root, path)), { recursive: true });
       await cp(join(componentSourceRoot, path), join(root, path));
     }
-    for (const [path, mutation] of [["scripts/lib/codex-native-hook-ipc.mjs", nativeIpcMutation], ["scripts/ci/baseline-evidence.mjs", baselineMutation], [harnessMutation ? `portal/tests/${harnessMutation.file}` : "", harnessMutation]]) {
+    for (const [path, mutation] of [["scripts/ci/baseline-evidence.mjs", baselineMutation], [harnessMutation ? `portal/tests/${harnessMutation.file}` : "", harnessMutation]]) {
       if (!mutation) continue;
       const source = await readFile(join(root, path), "utf8");
       const updated = mutation.replace ? source.replace(...mutation.replace) : `${source}\n${mutation.append}\n`;
       assert.notEqual(updated, source, "scanner mutation must change its intended source site");
       await writeFile(join(root, path), updated);
-      if (path === "scripts/lib/codex-native-hook-ipc.mjs" && mutation.rebindDigest) {
-        // Adversarial fixture only: even a matching replacement digest cannot
-        // exempt an undeclared call, alias or missing request/server validation.
-        const policyPath = join(root, "scripts/policy/offline-loopback-harness.json");
-        const policy = JSON.parse(await readFile(policyPath, "utf8"));
-        policy[path].sourceSha256 = createHash("sha256").update(updated).digest("hex");
-        await writeFile(policyPath, JSON.stringify(policy));
-      }
     }
+    if (nativeNetworkSource) await writeFile(join(root, "scripts/unexpected-native-network.mjs"), nativeNetworkSource);
     await mkdir(join(root, "node_modules"));
     for (const dependency of ["ajv", "typescript"]) await symlink(await realpath(join(componentSourceRoot, "node_modules", dependency)), join(root, "node_modules", dependency), "dir");
     const unexpectedRequest = ["await f", 'etch("https://example.invalid");\n'].join("");

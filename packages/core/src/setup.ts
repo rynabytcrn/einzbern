@@ -391,7 +391,19 @@ export async function detectSetupContext(input: { readonly projectRoot: string; 
 
 // ---- Plans and their apply ----
 
+/** Guidance only: no model choice or audited policy write is implicit in installation. */
+export const SETUP_MODEL_POLICY_ONBOARDING = Object.freeze({
+  hostSelection: "explicit" as const,
+  defaultCategories: Object.freeze(["flagship", "main", "economy"]),
+  codexPeerRequiredCategories: Object.freeze(["main", "economy"]),
+  optionalModelCategories: Object.freeze(["flagship"]),
+  catalogCommand: "engine-model-policy-catalog --host <host>",
+  saveCommand: "engine-model-policy-set",
+  persistence: "explicit-actor-and-owner-decision" as const,
+});
+
 export interface SetupPlan {
+  readonly modelPolicyOnboarding?: typeof SETUP_MODEL_POLICY_ONBOARDING;
   readonly codexAdmission?: CodexHookAdmission;
   readonly schemaVersion: typeof SETUP_PLAN_SCHEMA_VERSION;
   readonly reasonCode: "SETUP_PLAN_READY";
@@ -511,6 +523,7 @@ export interface SetupColumns {
 }
 
 export interface SetupApplied {
+  readonly modelPolicyOnboarding?: typeof SETUP_MODEL_POLICY_ONBOARDING;
   readonly codexAdmission?: CodexHookAdmission;
   readonly executionTarget?: SetupExecutionTarget;
   readonly dot?: DotAgentsApplied;
@@ -1037,6 +1050,7 @@ export async function planSetup(options: SetupOptions): Promise<SetupPlan> {
     ...(codexAdmission === undefined ? {} : { codexAdmission }),
     ...planned,
     warnings: planned.warnings ?? [],
+    ...(mode === "uninstall" ? {} : { modelPolicyOnboarding: SETUP_MODEL_POLICY_ONBOARDING }),
   };
 }
 

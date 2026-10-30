@@ -333,6 +333,28 @@ never ask again for an answer the user already gave, and never guess an answer.
    registered here follows it only once it is repaired: when the answer changes, repair each
    other project `library-list` names with the same `--navigation` answer, as `update.md` says.
 
+## Model groups for the selected host
+
+Use the setup plan's `modelPolicyOnboarding` guidance and
+`engine-model-policy-catalog --host <actual-host>` to open that host's onboarding
+draft. Offer main (main decision model group), economy (batch coordination model
+group), and flagship. Flagship is optional; do not invent a model or effort for
+any group. Preserve existing and custom categories and configured tiers.
+
+For Codex's independent-conversation workflow, main and economy must each resolve
+to a usable group before that mode is ready. Ask the user to choose actual models,
+efforts and escalation policy together; a selected escalation ceiling also needs
+a usable tier. Save through the existing governed `engine-model-policy-set`
+entry (or its Atelier editor), with the actual actor and recorded Owner decision.
+Catalog/onboarding drafts are not persisted model selections. If the user defers
+configuration, state that Codex peer mode is not ready; ordinary installation and
+other hosts remain available. Do not manufacture a decision or silently migrate
+another host's groups. See `specs/engine-model-policy-v1.md`.
+
+Claude Code and DSH retain their single-conversation workflow. Codex-specific
+batch recovery uses `docs/codex-native-controller.md`; no collector or stop-hook
+activation is needed. Updates/repairs must preserve user-edited hooks and groups.
+
 ## Plan, final confirmation, apply
 
 1. Plan. Run `setup --mode fresh --project <dir> --at <UTC>`, with a flag for each answer already

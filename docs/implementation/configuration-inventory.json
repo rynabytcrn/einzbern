@@ -1099,38 +1099,6 @@
         "effect": "Subdivides a local reservation without raising agent or heavy-run caps. Not an OS memory limit."
       },
       {
-        "classification": "internal-transient",
-        "visibility": "integration",
-        "transport": "environment-string",
-        "defaultValue": null,
-        "owner": "owning live native app-server client",
-        "source": "process environment",
-        "persistence": "invocation",
-        "sensitivity": "local-path",
-        "pathBase": "absolute private filesystem socket",
-        "sharing": "never persisted in library, host/global settings or shared generated files",
-        "export": "no shared persistence; socket is removed when owning bridge closes",
-        "restart": "each explicit child invocation",
-        "editing": "dedicated invocation only; not a generic settings-editor field",
-        "consumption": "wired",
-        "key": "env:EINZBERN_CODEX_NATIVE_HOOK_SOCKET",
-        "kind": "environment",
-        "name": "EINZBERN_CODEX_NATIVE_HOOK_SOCKET",
-        "semanticType": "path",
-        "validation": "Absolute normalized filesystem Unix socket in a canonical private directory; no symlink, same UID, directory 0700 and socket 0600 (or stricter). Relative, abstract, shared and network destinations refuse.",
-        "defaultDescription": "absent: ordinary hook path, no native controller",
-        "precedence": [
-          "explicit invocation-local EINZBERN_CODEX_NATIVE_HOOK_SOCKET",
-          "no native controller"
-        ],
-        "scope": "one isolated native host invocation",
-        "consumer": [
-          "scripts/einzbern-hook.mjs SubagentStop/collector-wait",
-          "scripts/lib/codex-native-hook-ipc.mjs requestCodexNativeHookDecision"
-        ],
-        "effect": "Routes hook/helper frames to the already registered live owner; does not create a client, enroll members or authenticate hostile same-UID code."
-      },
-      {
         "classification": "startup-override",
         "visibility": "public",
         "transport": "environment-string",
@@ -2160,9 +2128,9 @@
         ],
         "semanticType": "path",
         "validation": "Absolute readable JSON file containing only CodexHookAdmission state/version/evidenceRef/subagentStop/trust. Supported requires explicit observed version, nonempty source evidence, true capability and permitted trust; malformed refuses. No version range or flag implies support.",
-        "defaultDescription": "absent: unknown; new native stop entry omitted",
+        "defaultDescription": "absent: legacy observation unknown; retired stop entry is never installed",
         "scope": "one traditional setup plan/apply",
-        "effect": "Carries qualified observation into fresh/update/repair/restore/migrate Codex wiring. Does not grant trust, enable hooks=false, change non-Codex events or enroll a native controller.",
+        "effect": "Retains a validated legacy observation in setup receipts; does not activate the retired collector path. Does not grant trust, enable hooks=false, change non-Codex events or enroll a native controller.",
         "flag": {
           "name": "codex-admission",
           "required": false,
@@ -5407,6 +5375,318 @@
         "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
         "editing": "dedicated invocation only; not a generic settings-editor field",
         "consumption": "wired",
+        "key": "cli:execution-codex-peer-evidence:from-file",
+        "kind": "cli-argument",
+        "name": "--from-file",
+        "command": "execution-codex-peer-evidence",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-evidence].flags[from-file]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-evidence --from-file",
+          "required; no inferred value"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "from-file",
+          "required": true,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "local-path",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:workspace",
+        "kind": "cli-argument",
+        "name": "--workspace",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[workspace]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --workspace",
+          "required; no inferred value"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "workspace",
+          "required": true,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:manifest",
+        "kind": "cli-argument",
+        "name": "--manifest",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[manifest]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --manifest",
+          "required; no inferred value"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "manifest",
+          "required": true,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:records",
+        "kind": "cli-argument",
+        "name": "--records",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[records]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --records",
+          "required; no inferred value"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "records",
+          "required": true,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:capacity",
+        "kind": "cli-argument",
+        "name": "--capacity",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[capacity]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --capacity",
+          "required; no inferred value"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "capacity",
+          "required": true,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:delivery",
+        "kind": "cli-argument",
+        "name": "--delivery",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[delivery]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --delivery",
+          "absent; no fabricated evidence, identity, approval or revision"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "absent; no fabricated evidence, identity, approval or revision",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "delivery",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:prior",
+        "kind": "cli-argument",
+        "name": "--prior",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[prior]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --prior",
+          "absent; no fabricated evidence, identity, approval or revision"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "absent; no fabricated evidence, identity, approval or revision",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "prior",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:output",
+        "kind": "cli-argument",
+        "name": "--output",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[output]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --output",
+          "required; no inferred value"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "output",
+          "required": true,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
         "key": "cli:execution-native-evidence:from-file",
         "kind": "cli-argument",
         "name": "--from-file",
@@ -7317,6 +7597,60 @@
             "name": "offset",
             "required": false,
             "valueKind": "integer"
+          }
+        ]
+      },
+      {
+        "name": "execution-codex-peer-evidence",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "from-file",
+            "required": true,
+            "valueKind": "string"
+          }
+        ]
+      },
+      {
+        "name": "execution-codex-peer-record",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "manifest",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "records",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "capacity",
+            "required": true,
+            "valueKind": "string"
+          },
+          {
+            "name": "delivery",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "prior",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "output",
+            "required": true,
+            "valueKind": "string"
           }
         ]
       },

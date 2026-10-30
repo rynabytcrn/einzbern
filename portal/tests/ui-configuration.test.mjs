@@ -627,9 +627,12 @@ if (!MUTATION) test("INIT-056 ordinary editor roundtrip keeps quota, all policy 
     assert.equal(view().querySelector('[data-engine-policy-quota="weeklyWaitPercent"]').value, "");
     note().value = "updated";
     note().dispatchEvent(new window.Event("input", { bubbles: true }));
+    const translations = await localeTable();
     for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
       document.querySelector(`[data-locale-option="${locale}"]`).click();
       assert.equal(note().value, "updated");
+      assert.equal(view().querySelector('[data-codex-peer-readiness="ready"]')?.textContent, translations[locale]["modelPolicy.peerReady"], locale + " translates saved peer readiness");
+      assert.equal(view().querySelector('[data-codex-peer-readiness="not-ready"]'), null);
       assert.ok(view().querySelector('select[data-engine-model-policy-host]').getAttribute("aria-label"));
       assert.ok(!view().textContent.includes("modelPolicy."));
       assert.ok(view().querySelector('[data-engine-policy-quota-enabled]').closest("label").textContent.trim());
@@ -1283,9 +1286,12 @@ if (!MUTATION) {
       assert.equal(view().querySelector('[data-engine-model-policy-decision]').value, "", "a draft invents no Owner authorization");
       assert.deepEqual(catalogBefore.peerReadiness.missingCategories, ["main", "economy"], "main and economy are required; flagship is optional");
       assert.ok(view().querySelector('[data-codex-peer-readiness="not-ready"]'));
+      const translations = await localeTable();
       for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
         document.querySelector('[data-locale-option="' + locale + '"]').click();
         const guide = view().querySelector("[data-engine-model-policy-onboarding]");
+        assert.equal(view().querySelector('[data-codex-peer-readiness="not-ready"]')?.textContent, translations[locale]["modelPolicy.peerNotReady"], locale + " translates missing peer configuration");
+        assert.equal(view().querySelector('[data-codex-peer-readiness="ready"]'), null);
         assert.ok(guide.textContent.trim() && !guide.textContent.includes("modelPolicy."), locale + " translates the first-policy guide");
       }
       document.querySelector('[data-locale-option="en"]').click();

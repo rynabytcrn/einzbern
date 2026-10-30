@@ -261,3 +261,151 @@ test("future delivery events and preparations cannot confirm or replace the reta
   const preparation = { ...preparationPayload, digest: canonicalSha256(preparationPayload) };
   assert.throws(() => recordCodexPeerBatch({ ...f.input, records, delivery: { ...delivery, record: recordHostNativeEvents(preparation, []) } }), /preparation is after observation cutoff/u);
 });
+
+// Exercise the public CLI as well as API replay: blocked receipts are valid evidence,
+// not CLI validation errors, and must retain their derived blocking facts on disk.
+async function peerCliRoundtrip(f, input, stem) {
+  const { writeFile, readFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { execFileSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const args = ["execution-codex-peer-record", "--workspace", f.workspace];
+  for (const key of ["manifest", "records", "capacity", "delivery", "prior"]) {
+    if (input[key] == null) continue;
+    const path = join(f.root, `${stem}-${key}.json`);
+    await writeFile(path, JSON.stringify(input[key]));
+    args.push(`--${key}`, path);
+  }
+  const output = join(f.root, `${stem}-output.json`);
+  args.push("--output", output);
+  const cli = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
+  const invoke = flags => JSON.parse(execFileSync(process.execPath, [cli, ...flags], {
+    encoding: "utf8", timeout: 30_000, env: { ...process.env, EINZBERN_HOME: f.home },
+  }));
+  const result = invoke(args);
+  assert.deepEqual(invoke(["execution-codex-peer-evidence", "--from-file", output]), result);
+  assert.deepEqual(JSON.parse(await readFile(output, "utf8")), result);
+  assert.deepEqual(normalizeCodexPeerBatch(result), result);
+  return result;
+}
+
+// Nanosecond offsets around a millisecond invocation, with no lossy Date.parse
+// comparison in the implementation. All synthetic times remain in the observed past.
+function nearSend(delivery, nanoseconds) {
+  const at = delivery.record.preparation.attempt.requestedAt;
+  const base = BigInt(Date.parse(at)) * 1_000_000n + BigInt(nanoseconds);
+  const seconds = base / 1_000_000_000n;
+  return new Date(Number(seconds * 1000n)).toISOString().slice(0, 19) + `.${String(base % 1_000_000_000n).padStart(9, "0")}Z`;
+}
+
+test("premature reports remain blocked through completion, prior recovery and direct CLI replay", async t => {
+  const f = await fixture(t);
+  const { setTimeout: delay } = await import("node:timers/promises");
+  await delay(2);
+  const delivery = await deliveryFor(f);
+  const runningEvent = { ...observed("running", "running-before-send"), at: nearSend(delivery, -1) };
+  delete runningEvent.terminal;
+  const running = recordHostNativeEvents(f.preparation, [runningEvent]);
+  await delay(2);
+  const completedEvent = { ...observed("completed", "completed-after-send"), at: nearSend(delivery, 1) };
+  const sent = { ...delivery, record: recordHostNativeEvents(delivery.record.preparation, [response("completed", "send-finished")]) };
+  const before = recordCodexPeerBatch({ ...f.input, records: [running], delivery: sent });
+  assert.ok(before.blockedReasons.includes("delivery-before-terminal-batch"));
+  const completed = recordHostNativeEvents(f.preparation, [completedEvent], running);
+  for (const [label, prior] of [["resumed", before], ["direct", undefined]]) {
+    const input = { ...f.input, records: [completed], delivery: sent, prior };
+    const after = recordCodexPeerBatch(input);
+    assert.equal(after.allTerminal, true);
+    assert.equal(after.occupancy, 0);
+    assert.equal(after.deliveryStatus, "confirmed", "transport success is not valid final-report association");
+    assert.ok(after.blockedReasons.includes("delivery-before-terminal-batch"));
+    assert.equal(after.reportEligible, false);
+    assert.deepEqual(normalizeCodexPeerBatch(after), after);
+    const cli = await peerCliRoundtrip(f, input, `early-${label}`);
+    assert.deepEqual(cli.blockedReasons, after.blockedReasons);
+    const recovered = recordCodexPeerBatch({ ...f.input, records: [], prior: cli });
+    assert.deepEqual(recovered.blockedReasons, after.blockedReasons);
+  }
+});
+
+test("report boundary is send invocation, uses strict nanosecond order, and requires identity then", async t => {
+  const f = await fixture(t);
+  const { setTimeout: delay } = await import("node:timers/promises");
+  await delay(2);
+  const delivery = await deliveryFor(f);
+  await delay(2);
+  const sent = { ...delivery, record: recordHostNativeEvents(delivery.record.preparation, [response("completed")]) };
+  for (const [label, offset, blocked] of [["before", -1, false], ["equal", 0, true], ["after", 1, true]]) {
+    const records = [recordHostNativeEvents(f.preparation, [{ ...observed("completed"), at: nearSend(delivery, offset) }])];
+    const input = { ...f.input, records, delivery: sent };
+    const result = recordCodexPeerBatch(input);
+    assert.equal(result.blockedReasons.includes("delivery-before-terminal-batch"), blocked, label);
+    assert.equal(result.allTerminal, true);
+    assert.equal(result.deliveryStatus, "confirmed");
+    const cli = await peerCliRoundtrip(f, input, `boundary-${label}`);
+    assert.deepEqual(cli.blockedReasons, result.blockedReasons);
+  }
+  const terminalWithoutId = { ...response("completed", "anonymous-terminal"), at: nearSend(delivery, -1) };
+  const lateIdentity = { ...observed("completed", "late-identity"), at: nearSend(delivery, 1) };
+  const unknownAtSend = recordCodexPeerBatch({ ...f.input, records: [recordHostNativeEvents(f.preparation, [terminalWithoutId, lateIdentity])], delivery: sent });
+  assert.equal(unknownAtSend.allTerminal, true);
+  assert.ok(unknownAtSend.blockedReasons.includes("delivery-before-terminal-batch"));
+  const priorUnknown = recordCodexPeerBatch({ ...f.input, records: [recordHostNativeEvents(f.preparation, [terminalWithoutId])], delivery: sent });
+  const resumed = recordCodexPeerBatch({ ...f.input, records: unknownAtSend.records, prior: priorUnknown });
+  assert.deepEqual(resumed.blockedReasons, unknownAtSend.blockedReasons);
+});
+
+test("unknown, drifted or ambiguous native identity never releases a fixed member", async t => {
+  const f = await fixture(t);
+  const manifest = { ...f.input.manifest, members: [{ ...f.input.manifest.members[0], conversationId: "fixture-worker" }] };
+  const cases = [
+    ["unknown", [response("completed")]],
+    ["drift", [observed("completed", "wrong-worker", "unrelated-conversation")]],
+    ["ambiguous", [observed("completed", "right-worker"), observed("completed", "wrong-worker", "unrelated-conversation")]],
+    ["main-reused", [observed("completed", "main-worker", manifest.main.conversationId)]],
+    ["coordinator-reused", [observed("completed", "coordinator-worker", manifest.coordinator.conversationId)]],
+  ];
+  for (const [label, events] of cases) {
+    const input = { ...f.input, manifest, records: [recordHostNativeEvents(f.preparation, events)] };
+    const result = recordCodexPeerBatch(input);
+    assert.equal(result.records[0].executionFinality, "confirmed", "native lifecycle evidence remains unchanged");
+    assert.equal(result.occupancy, 1, label);
+    assert.equal(result.allTerminal, false, label);
+    assert.equal(result.reportEligible, false, label);
+    const cli = await peerCliRoundtrip(f, input, `identity-${label}`);
+    assert.equal(cli.occupancy, 1, label);
+    assert.equal(cli.allTerminal, false, label);
+    assert.deepEqual(cli.blockedReasons, result.blockedReasons);
+  }
+});
+
+test("colliding identities retain both claimants regardless of record order and reserve missing fixed members", async t => {
+  const f = await fixture(t);
+  const second = await prepareHostNativeDispatch(f.state, f.request, { selection, argumentsValue: { prompt: "Second synthetic worker" } }, f.home);
+  const manifest = { ...f.input.manifest, members: [...f.input.manifest.members, { ...f.input.manifest.members[0], attemptId: second.attempt.id }] };
+  const firstRecord = recordHostNativeEvents(f.preparation, [observed("completed", "first")]);
+  const secondRecord = recordHostNativeEvents(second, [observed("completed", "second")]);
+  for (const [label, records] of [["forward", [firstRecord, secondRecord]], ["reverse", [secondRecord, firstRecord]]]) {
+    const input = { ...f.input, manifest, records };
+    const result = recordCodexPeerBatch(input);
+    assert.equal(result.occupancy, 2, label);
+    assert.equal(result.allTerminal, false, label);
+    for (const member of manifest.members) assert.ok(result.blockedReasons.includes(`native-identity-reused:${member.attemptId}`));
+    const cli = await peerCliRoundtrip(f, input, `collision-${label}`);
+    assert.equal(cli.occupancy, 2);
+    assert.equal(cli.allTerminal, false);
+  }
+  const reserved = { ...manifest, members: [manifest.members[0], { ...manifest.members[1], conversationId: "fixture-worker" }] };
+  const input = { ...f.input, manifest: reserved, records: [firstRecord] };
+  const missing = recordCodexPeerBatch(input);
+  assert.equal(missing.occupancy, 2);
+  assert.equal(missing.allTerminal, false);
+  assert.ok(missing.blockedReasons.includes(`native-identity-reused:${f.preparation.attempt.id}`));
+  const cli = await peerCliRoundtrip(f, input, "collision-missing-fixed");
+  assert.equal(cli.occupancy, 2);
+  assert.equal(cli.allTerminal, false);
+  const distinct = recordCodexPeerBatch({ ...f.input, manifest, records: [firstRecord, recordHostNativeEvents(second, [observed("failed", "different-worker", "second-worker")])] });
+  assert.equal(distinct.occupancy, 0);
+  assert.equal(distinct.allTerminal, true);
+  assert.equal(distinct.reportEligible, true);
+});

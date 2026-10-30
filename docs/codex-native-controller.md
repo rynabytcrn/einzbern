@@ -136,6 +136,26 @@ only**, never authority, enrollment or proof of provider authenticity. A marker
 elsewhere in the body, an old batch marker or a wrapper relabel is not a match.
 Keep the original prepared send arguments and native response unchanged.
 
+A worker releases batch occupancy and counts toward `allTerminal` only when its
+native terminal evidence has a unique, consistent identity matching its fixed
+member (when known). Main/coordinator and every fixed member identity remain
+reserved, including absent members. Colliding claims retain **both** workers;
+unknown, drifted or conflicting evidence retains responsibility.
+
+Final-report association uses the send preparation's retained `requestedAt` as a
+conservative request boundary, not authenticated transport time, send completion
+or receipt resume time. Every
+member must already have uniquely associated, conflict-free terminal evidence
+**strictly before** that instant. Equal timestamps do not establish ordering;
+retain finer actual timestamp precision when available, never invent it. Prepare
+the send only after terminal eligibility is established. A send prepared earlier
+may remain unproven even if actually invoked later; there is no timestamp override
+to waive this evidence gap. Later
+completion or identity observations cannot turn a premature report into a final
+report, including when recording directly without `--prior`. Such a receipt keeps
+`delivery-before-terminal-batch` even if workers are now terminal. Transport
+`deliveryStatus: confirmed` alone does not establish a valid final report.
+
 Not attempted, unknown, confirmed and failed are distinct. Once a delivery attempt exists it is not
 eligible for blind resend; query that attempt and add its actual response.
 `execution-codex-peer-evidence --from-file <receipt.json>` recomputes the saved

@@ -113,6 +113,38 @@ function codexRecord(value: unknown): HostNativeRecord {
   if (record.preparation.decision.request.capabilities.hostKind !== "codex") fail("non-Codex record cannot enable peer coordination");
   return record;
 }
+/** Resolve ownership symmetrically: a collision invalidates every claimant, not just
+ * the record encountered last. Fixed identities remain reserved even without a receipt. */
+function associatedMembers(manifest: CodexPeerManifest, records: readonly HostNativeRecord[], blockedReasons: string[]): Set<string> {
+  const owners = new Map<string, Set<string>>();
+  const reserve = (id: string, owner: string): void => {
+    const claims = owners.get(id) ?? new Set<string>();
+    claims.add(owner); owners.set(id, claims);
+  };
+  reserve(manifest.main.conversationId, "main");
+  reserve(manifest.coordinator.conversationId, "coordinator");
+  for (const member of manifest.members) if (member.conversationId !== null) reserve(member.conversationId, member.attemptId);
+  const observations = records.map(record => {
+    const attemptId = record.preparation.attempt!.id;
+    const ids = new Set(record.events.filter(event => event.providerId).map(event => {
+      const id = atPointer(event.raw, event.providerId!.pointer); nativeId(id); return String(id);
+    }));
+    for (const id of ids) reserve(id, attemptId);
+    return { record, attemptId, ids };
+  });
+  const associated = new Set<string>();
+  for (const { record, attemptId, ids } of observations) {
+    const member = manifest.members.find(row => row.attemptId === attemptId)!;
+    const drift = ids.size > 1 || (member.conversationId !== null && [...ids].some(id => id !== member.conversationId));
+    const reused = [...ids].some(id => owners.get(id)!.size > 1);
+    if (drift) blockedReasons.push(`native-identity-drift:${attemptId}`);
+    if (ids.size === 0) blockedReasons.push(`native-identity-unknown:${attemptId}`);
+    if (reused) blockedReasons.push(`native-identity-reused:${attemptId}`);
+    if (record.conflicts.length > 0) blockedReasons.push(`native-conflict:${attemptId}`);
+    if (ids.size === 1 && !drift && !reused && record.conflicts.length === 0) associated.add(attemptId);
+  }
+  return associated;
+}
 function derive(input: Omit<CodexPeerBatchInput, "prior">): CodexPeerBatch {
   const cutoff = dotInstant(input.observationCutoff, "observation cutoff");
   const manifest = manifestOf(input.manifest);
@@ -138,7 +170,6 @@ function derive(input: Omit<CodexPeerBatchInput, "prior">): CodexPeerBatch {
       if (workRevisions.find(row => row.id === item.workId)?.revision !== item.workRevision) blockedReasons.push(`work-revision-drift:${item.workId}`);
     }
   }
-  const identities = new Set([manifest.main.conversationId, manifest.coordinator.conversationId]);
   for (const record of records) {
     const attempt = record.preparation.attempt!;
     const member = manifest.members.find(row => row.attemptId === attempt.id);
@@ -146,17 +177,8 @@ function derive(input: Omit<CodexPeerBatchInput, "prior">): CodexPeerBatch {
     seen.add(attempt.id);
     const request = record.preparation.decision.request;
     if (request.workId !== member.workId || request.workRevision !== member.workRevision) fail("member work revision drift");
-    const observedIds = new Set(record.events.filter(event => event.providerId).map(event => {
-      const id = atPointer(event.raw, event.providerId!.pointer); nativeId(id); return String(id);
-    }));
-    if (observedIds.size > 1 || (member.conversationId !== null && [...observedIds].some(id => id !== member.conversationId))) blockedReasons.push(`native-identity-drift:${attempt.id}`);
-    if (observedIds.size === 0) blockedReasons.push(`native-identity-unknown:${attempt.id}`);
-    for (const id of observedIds) {
-      if (identities.has(id)) blockedReasons.push(`native-identity-reused:${attempt.id}`);
-      identities.add(id);
-    }
-    if (record.conflicts.length > 0) blockedReasons.push(`native-conflict:${attempt.id}`);
   }
+  const associated = associatedMembers(manifest, records, blockedReasons);
   for (const member of manifest.members) if (!seen.has(member.attemptId)) blockedReasons.push(`member-outcome-unknown:${member.attemptId}`);
   const readiness = codexPeerReadiness(manifest.host, policy.hosts.codex);
   if (!readiness.ready) blockedReasons.push("model-groups-not-ready");
@@ -167,10 +189,10 @@ function derive(input: Omit<CodexPeerBatchInput, "prior">): CodexPeerBatch {
     coordinator: resolveEngineExecutionPolicyFromSnapshot(policy, { host: "codex", category: "economy", rejections: 0 }).record,
   } : null;
   if (policy.hosts.codex?.digest !== manifest.policyDigest) blockedReasons.push("policy-drift");
-  const occupancy = manifest.members.length - records.filter(record => record.occupancy === "released").length;
+  const occupancy = manifest.members.length - records.filter(record => associated.has(record.preparation.attempt!.id) && record.occupancy === "released").length;
   if (capacity.active === null) blockedReasons.push("capacity-unknown");
   else if (Number(capacity.active) > Number(capacity.limit) || occupancy > Number(capacity.limit)) blockedReasons.push("capacity-exceeded");
-  const allTerminal = records.length === manifest.members.length && records.every(record => record.executionFinality === "confirmed");
+  const allTerminal = records.length === manifest.members.length && records.every(record => associated.has(record.preparation.attempt!.id) && record.executionFinality === "confirmed");
   let delivery: CodexPeerDelivery | null = null;
   let deliveryStatus: "not-attempted" | "unknown" | "confirmed" | "failed" = "not-attempted";
   if (input.delivery != null) {
@@ -185,7 +207,17 @@ function derive(input: Omit<CodexPeerBatchInput, "prior">): CodexPeerBatch {
     if (typeof text !== "string" || !text.startsWith(codexPeerReportPrefix(manifest))) fail("delivery text does not bind the immutable batch manifest");
     delivery = { record, recipientPointer: String(d.recipientPointer), correlationPointer: String(d.correlationPointer), batchId: manifest.batchId, batchAttemptId: manifest.attemptId };
     deliveryStatus = record.executionFinality !== "confirmed" ? "unknown" : record.execution === "completed" ? "confirmed" : "failed";
-    if (!allTerminal) blockedReasons.push("delivery-before-terminal-batch");
+    // A send completion is not the report boundary. requestedAt is the retained
+    // preparation/request boundary, not authenticated transport time. Only evidence
+    // strictly before it can support the report; equal times cannot establish order.
+    // Replaying the retained event prefix also prevents later identity/terminal facts
+    // from retroactively making an early report final (including input without prior).
+    const sentAt = dotInstant(attempt.requestedAt, "delivery requestedAt");
+    const beforeSend = records.filter(worker => dotInstant(worker.preparation.attempt!.requestedAt, "worker requestedAt") < sentAt)
+      .map(worker => recordHostNativeEvents(worker.preparation, worker.events.filter(event => dotInstant(event.at, "event at") < sentAt)));
+    const associatedBeforeSend = associatedMembers(manifest, beforeSend, []);
+    if (!allTerminal || beforeSend.length !== manifest.members.length || !beforeSend.every(worker =>
+      associatedBeforeSend.has(worker.preparation.attempt!.id) && worker.executionFinality === "confirmed")) blockedReasons.push("delivery-before-terminal-batch");
   }
   const payload = {
     schemaVersion: "tcrn.codex-peer-batch.v1" as const,

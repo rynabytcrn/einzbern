@@ -5532,7 +5532,7 @@ const BOOT = __PORTAL_BOOT__;
     const output = [`<p class="tcrn-text" data-engine-model-policy-onboarding>${esc(t("modelPolicy.onboarding"))}</p>`];
     if (host === "codex") {
       const readiness = state.modelPolicy?.selectedHost === host ? state.modelPolicy.peerReadiness : null;
-      output.push(`<p class="tcrn-text" data-codex-peer-readiness="${readiness?.ready === true ? "ready" : "not-ready"}">${esc(t(readiness?.ready === true ? "modelPolicy.peerReady" : "modelPolicy.peerNotReady"))}</p>`);
+      output.push(`<p class="tcrn-text" data-codex-peer-readiness="${readiness?.ready === true ? "ready" : "not-ready"}">${esc(readiness?.ready === true ? t("modelPolicy.peerReady") : t("modelPolicy.peerNotReady"))}</p>`);
     }
     if (sections.includes("categories")) {
       const columns = [

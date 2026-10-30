@@ -62,7 +62,7 @@
   },
   "tests/ci-light-evidence.test.mjs": {
     "note": "Exact-byte guard-negative test fixture, not a loopback server or network permission. The contiguous source requires pretransport guard/options assertions before blocked fetch, HTTP, socket and DNS probes. Extra calls, aliases, imports or changed assertions remain findings.",
-    "sourceSha256": "792723c8706151edf1ebe574a70852fa8e841a7aaa72b5f33c8580044e338550",
+    "sourceSha256": "42300190fe81932e825e55f47bc6c4ffb86f4cb38e47d94506bef829a63d4987",
     "requiredSource": [
       "  const probe = `\nimport assert from 'node:assert/strict';\nimport { get } from 'node:http';\nimport { Socket } from 'node:net';\nimport { lookup } from 'node:dns/promises';\n// These checks happen before any attempted transport: a missing preload cannot\n// accidentally turn a negative guard test into a real network request.\nassert.equal(globalThis.__TCRN_OFFLINE_GUARD__, true, 'PRETRANSPORT_GUARD_MISSING');\nassert.equal(process.env.COREPACK_ENABLE_NETWORK, '0');\nassert.equal(process.env.npm_config_offline, 'true');\nassert.equal(process.env.TCRN_OFFLINE_PROOF, '1');\nassert.equal(process.env.NODE_OPTIONS, ${JSON.stringify(`--import=${pathToFileURL(join(root, \"scripts/no-network.mjs\")).href}`)}, 'PRETRANSPORT_OPTIONS_CHANGED');\nawait assert.rejects(fetch('http://192.0.2.1/'), {code:'OFFLINE_NETWORK_BLOCKED'});\nassert.throws(() => get('http://192.0.2.1/'), {code:'OFFLINE_NETWORK_BLOCKED'});\nassert.throws(() => new Socket().connect(9, '192.0.2.1'), {code:'OFFLINE_NETWORK_BLOCKED'});\nawait assert.rejects(lookup('fixture.invalid'), {code:'OFFLINE_NETWORK_BLOCKED'});\nconsole.log('GUARDED_CHILD_BYTES');\n`;\n"
     ],

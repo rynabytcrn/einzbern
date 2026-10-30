@@ -260,8 +260,8 @@ import os
 cli_env=dict(os.environ)
 for key in ['PYTHONDONTWRITEBYTECODE','PYTHONPYCACHEPREFIX','GITHUB_STEP_SUMMARY']:
  cli_env.pop(key,None)
-def cli():
- run=subprocess.run([sys.executable,str(repo/'scripts/ci/aggregate-evidence.py'),'--mode','ci-light','--sha',sha,'--run-id','91','--attempt','2','--artifacts',str(bundle),'--repo',str(repo),'--job-result','success'],cwd=repo,env=cli_env,capture_output=True,text=True)
+def cli(verifier=repo):
+ run=subprocess.run([sys.executable,str(verifier/'scripts/ci/aggregate-evidence.py'),'--mode','ci-light','--sha',sha,'--run-id','91','--attempt','2','--artifacts',str(bundle),'--repo',str(verifier),'--job-result','success'],cwd=verifier,env=cli_env,capture_output=True,text=True)
  return run,json.loads(run.stdout)
 assert git('status','--porcelain=v1','--untracked-files=all')==''
 run,receipt=cli(); assert run.returncode==0,(run.stdout,run.stderr); assert receipt['reasonCode']=='CI_LIGHT_VERIFIED'
@@ -271,6 +271,23 @@ dirty=repo/'intentional-dirty-fixture'; dirty.write_text('not ignored')
 run,receipt=cli(); assert run.returncode!=0 and receipt['reasonCode']=='CI_LIGHT_INCOMPLETE'
 assert any('clean expected source' in item for item in receipt['failures'])
 dirty.unlink(); results.append({'case':'cli-dirty-source','refused':True})
+tracked=repo/'scripts/p1-sequence.mjs'; tracked_bytes=tracked.read_bytes()
+tracked.write_bytes(tracked_bytes+b'\n// intentional tracked fixture mutation\n')
+assert ' M scripts/p1-sequence.mjs' in subprocess.check_output(['git','-C',str(repo),'status','--porcelain=v1','--untracked-files=all'],text=True)
+run,receipt=cli(); assert run.returncode!=0 and receipt['reasonCode']=='CI_LIGHT_INCOMPLETE'
+assert any('clean expected source' in item for item in receipt['failures'])
+tracked.write_bytes(tracked_bytes); results.append({'case':'cli-tracked-dirty-source','refused':True})
+assert git('status','--porcelain=v1','--untracked-files=all')==''
+# Separate real committed verifier, not a forged producer SHA or dirty checkout.
+wrong_repo=root/'wrong-verifier'; shutil.copytree(repo,wrong_repo)
+subprocess.run(['git','-C',str(wrong_repo),'-c','user.name=Fixture','-c','user.email=fixture-identity','-c','commit.gpgsign=false','commit','--quiet','--allow-empty','-m','different verifier head'],check=True)
+assert subprocess.check_output(['git','-C',str(wrong_repo),'rev-parse','HEAD'],text=True).strip()!=sha
+assert subprocess.check_output(['git','-C',str(wrong_repo),'status','--porcelain=v1','--untracked-files=all'],text=True)==''
+run,receipt=cli(wrong_repo); assert run.returncode!=0 and receipt['reasonCode']=='CI_LIGHT_INCOMPLETE'
+assert any('clean expected source' in item for item in receipt['failures'])
+assert subprocess.check_output(['git','-C',str(wrong_repo),'status','--porcelain=v1','--untracked-files=all'],text=True)==''
+assert not list(wrong_repo.rglob('__pycache__'))
+results.append({'case':'cli-wrong-verifier-head','refused':True})
 seal_path=package/'package-seal.json'; seal_bytes=seal_path.read_bytes(); seal_path.unlink()
 run,receipt=cli(); assert run.returncode!=0 and receipt['reasonCode']=='CI_LIGHT_INCOMPLETE'
 seal_path.write_bytes(seal_bytes); results.append({'case':'cli-missing-seal','refused':True})
@@ -293,7 +310,7 @@ print(json.dumps(results))
   const child = spawnSync("python3", ["-B", "-c", program, aggregatePath, root], { encoding: "utf8", timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
   assert.equal(child.status, 0, child.stderr);
   const results = JSON.parse(child.stdout);
-  assert.equal(results.length, 29);
+  assert.equal(results.length, 31);
   assert.ok(results.every(row => row.refused));
 });
 

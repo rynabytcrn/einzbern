@@ -438,8 +438,9 @@ export function resolveEngineExecutionPolicyFromSnapshot(
   }
   if (policy.escalation.enabled) {
     const ceiling = [...policy.tiers].sort((a, b) => a.order - b.order).find(row => row.category === policy.escalation.ceiling);
-    if (ceiling === undefined || ceiling.model.trim() === "" || ceiling.effort.trim() === "") {
-      fail("ENGINE_MODEL_POLICY_UNAVAILABLE", "An unconfigured model group cannot be an enabled escalation ceiling", { host, category: policy.escalation.ceiling });
+    // Missing rows retain the resolver's MODELS_CATEGORY_EMPTY error and ceiling path.
+    if (ceiling !== undefined && (ceiling.model.trim() === "" || ceiling.effort.trim() === "")) {
+      fail("ENGINE_MODEL_POLICY_INVALID", "An unconfigured model group cannot be an enabled escalation ceiling", { path: "models.escalation.ceiling", host, category: policy.escalation.ceiling });
     }
   }
   const resolution = resolveModelsTier({ ...policy, category: input.category, rejections: input.rejections });

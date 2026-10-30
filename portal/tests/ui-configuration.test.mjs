@@ -1422,12 +1422,16 @@ if (!MUTATION) {
     try {
       const { document, window } = page;
       document.querySelector('[data-page-target="model-categories"]').click();
-      document.querySelector('[data-engine-policy-add="categories"]').click();
-      const categoryId = document.querySelector('[data-engine-policy-kind="categories"][data-engine-policy-index="0"][data-engine-policy-field="id"]');
-      categoryId.value = "main";
-      categoryId.dispatchEvent(new window.Event("input", { bubbles: true }));
+      const categoriesView = document.querySelector("#model-categories-view");
+      assert.equal(categoriesView.closest("[data-page]").hidden, false);
+      assert.equal(document.querySelector('[data-page="engine-model-policy"]').hidden, true, "the combined editor is a separate hidden projection, not a second visible category table");
+      assert.equal(categoriesView.querySelectorAll('[data-collection-table="engine-model-policy-categories"]').length, 1);
+      const categoryIds = [...categoriesView.querySelectorAll('[data-engine-policy-kind="categories"][data-engine-policy-field="id"]')].map((input) => input.value);
+      assert.deepEqual(categoryIds, ["flagship", "main", "economy"], "onboarding supplies the real category groups without adding or overwriting one");
       document.querySelector('[data-page-target="model-tiers"]').click();
-      const escalation = document.querySelector('[data-engine-model-policy-section="escalation"]');
+      const tiersView = document.querySelector("#model-tiers-view");
+      assert.equal(tiersView.closest("[data-page]").hidden, false);
+      const escalation = tiersView.querySelector('[data-engine-model-policy-section="escalation"]');
       assert.ok(escalation, "the engine policy tier page renders escalation with its host data");
       const enabled = escalation.querySelector('[data-engine-policy-escalation="enabled"]');
       const threshold = escalation.querySelector('[data-engine-policy-escalation="threshold"]');
@@ -1435,10 +1439,22 @@ if (!MUTATION) {
       assert.equal(enabled.getAttribute("role"), "switch");
       assert.equal(threshold.type, "number");
       assert.equal(ceiling.tagName, "SELECT");
-      assert.deepEqual([...ceiling.querySelectorAll("option")].map((option) => option.value), ["main"]);
+      assert.deepEqual([...ceiling.querySelectorAll("option")].map((option) => option.value), categoryIds);
       threshold.value = "3";
       threshold.dispatchEvent(new window.Event("input", { bubbles: true }));
-      assert.equal(document.querySelector('[data-engine-model-policy-save]')?.disabled, false, "an escalation edit makes the one governed host save available");
+      assert.equal(tiersView.querySelector('[data-engine-model-policy-save]')?.disabled, false, "an escalation edit makes the one governed host save available");
+      assert.equal(tiersView.querySelector('[data-engine-model-policy-save]')?.dataset.cliAction, "engine-model-policy-set");
+      const control = (name) => tiersView.querySelector(`[data-engine-policy-escalation="${name}"]`);
+      const wasEnabled = control("enabled").checked;
+      control("enabled").checked = !wasEnabled;
+      control("enabled").dispatchEvent(new window.Event("change", { bubbles: true }));
+      assert.equal(control("enabled").checked, !wasEnabled, "the switch updates the escalation draft");
+      for (const categoryId of categoryIds) {
+        control("ceiling").value = categoryId;
+        control("ceiling").dispatchEvent(new window.Event("change", { bubbles: true }));
+        assert.equal(control("ceiling").value, categoryId, "each prefilled group can be selected as the ceiling");
+      }
+      assert.equal(control("threshold").value, "3", "switch and category edits preserve the numeric threshold");
       document.querySelector('[data-page-target="settings"]').click();
       document.querySelector('[data-setting-group="models"]').click();
       assert.equal(document.querySelector('[data-setting-control="models.escalation.threshold"]'), null, "legacy escalation settings are not a second writable surface");

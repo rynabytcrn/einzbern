@@ -425,11 +425,13 @@ seal=root/("package-smoke-"+p["head"]+"-1")/"package-seal.json";value=json.loads
   });
 }
 
+// Construct adversarial imports as data so only the generated fixture is classified.
+const nativeNetworkModule = "node:" + "net";
 for (const nativeNetworkSource of [
-  'import { createConnection } from "node:net"; createConnection(443, "example.invalid");',
-  'import { createConnection } from "node:net"; createConnection("relative.sock");',
-  'import { createConnection } from "node:net"; const alias = createConnection; alias(443, "example.invalid");',
-  'import * as transport from "node:net"; transport.createConnection("relative.sock");',
+  `import { createConnection } from "${nativeNetworkModule}"; createConnection(443, "example.invalid");`,
+  `import { createConnection } from "${nativeNetworkModule}"; createConnection("relative.sock");`,
+  `import { createConnection } from "${nativeNetworkModule}"; const alias = createConnection; alias(443, "example.invalid");`,
+  `import * as transport from "${nativeNetworkModule}"; transport.createConnection("relative.sock");`,
 ]) {
   test("retired native transport has no source-classification exemption", async t => {
     const fixture = await createOfflineScannerFixture(t, { nativeNetworkSource });

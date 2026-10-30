@@ -1003,6 +1003,20 @@ test("552: recall tolerates absent economy in a valid host policy but execution 
       () => resolveEngineExecutionPolicy({ host: "codex", category: "economy", rejections: 0 })]) {
       await assert.rejects(read(), error => error.reasonCode === "MODELS_CATEGORY_EMPTY" && error.details.path === "models.escalation.ceiling");
     }
+    for (const blank of [{ model: "", effort: "" }, { model: "", effort: "low" }, { model: "fixture-model", effort: "" }]) {
+      const tiers = [{ ...tier("main"), order: 5, ...blank }, tier("economy")];
+      await install({ categories: [category("main", 10), category("economy", 20)], tiers,
+        escalation: { enabled: true, threshold: 2, ceiling: "main" } });
+      for (const read of [() => readRuntimeKnowledgeLanguagePolicy(settings, "codex"),
+        () => resolveEngineExecutionPolicy({ host: "codex", category: "economy", rejections: 0 })]) {
+        await assert.rejects(read(), error => error.reasonCode === "ENGINE_MODEL_POLICY_INVALID" && error.details.path === "models.escalation.ceiling",
+          "an enabled blank ceiling is invalid policy, not optional economy absence");
+      }
+      await install({ categories: [category("main", 10), category("economy", 20)], tiers,
+        escalation: { enabled: false, threshold: 2, ceiling: "main" } });
+      assert.equal((await readRuntimeKnowledgeLanguagePolicy(settings, "codex")).economyModel, "fixture-model");
+      assert.equal((await resolveEngineExecutionPolicy({ host: "codex", category: "economy", rejections: 0 })).record.model, "fixture-model");
+    }
     const path = engineModelPolicyPath(directory);
     const valid = JSON.parse(await readFile(path, "utf8"));
     const staleDigest = structuredClone(valid);

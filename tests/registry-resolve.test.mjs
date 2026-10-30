@@ -133,6 +133,7 @@ test("470-R1: a verb run without --workspace works on the library the current di
   const workspaceFlags = catalog.commands.flatMap((entry) => entry.flags.filter((flag) => flag.name === "workspace").map((flag) => [entry.name, flag.required]));
   assert.deepEqual(workspaceFlags.filter(([, isRequired]) => isRequired), [
     ["engine-model-policy-save", true],
+    ["execution-codex-peer-record", true],
     ["execution-host-prepare", true],
     ["execution-native-prepare", true],
     ["init", true],

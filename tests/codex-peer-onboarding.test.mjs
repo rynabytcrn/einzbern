@@ -86,7 +86,7 @@ test("catalog onboarding is read-only; supported saves preserve other hosts and 
   assert.deepEqual(catalog.onboarding.tiers, codex.hosts.codex.tiers);
   assert.equal(await readFile(join(home, "engine-model-policy.json"), "utf8"), bytes);
   const unavailable = await write("codex", { ...readyPolicy(), escalation: { enabled: true, threshold: 2, ceiling: "flagship" } });
-  assert.throws(() => resolveEngineExecutionPolicyFromSnapshot(unavailable, { host: "codex", category: "economy", rejections: 0, home }), error => error.reasonCode === "ENGINE_MODEL_POLICY_UNAVAILABLE");
+  assert.throws(() => resolveEngineExecutionPolicyFromSnapshot(unavailable, { host: "codex", category: "economy", rejections: 0, home }), error => error.reasonCode === "ENGINE_MODEL_POLICY_INVALID" && error.details.path === "models.escalation.ceiling");
 });
 
 test("readiness follows the resolver's actual base and ceiling rows, not any convenient usable tier", () => {

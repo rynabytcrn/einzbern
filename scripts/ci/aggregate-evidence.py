@@ -9,6 +9,11 @@ import os
 import re
 from pathlib import Path
 import subprocess
+import sys
+
+# The verifier must not dirty its expected-source checkout while loading helpers.
+# Keep the clean-source predicate strict; prevent import caches before any load.
+sys.dont_write_bytecode = True
 
 spec = importlib.util.spec_from_file_location("p1_evidence", Path(__file__).with_name("p1-evidence.py"))
 evidence_runner = importlib.util.module_from_spec(spec)

@@ -237,7 +237,7 @@ for mode in ['p1','pf2-h1','p1-core','p1-checks','p1-portal']:
 import subprocess
 repo=root/'verifier'; (repo/'scripts/ci').mkdir(parents=True)
 source=Path(sys.argv[1]).parents[2]
-for name in ['scripts/ci/light-roster.mjs','scripts/p1-sequence.mjs','scripts/no-network.mjs']:
+for name in ['scripts/ci/light-roster.mjs','scripts/ci/aggregate-evidence.py','scripts/ci/p1-evidence.py','scripts/p1-sequence.mjs','scripts/no-network.mjs']:
  shutil.copyfile(source/name,repo/name)
 def git(*args): return subprocess.check_output(['git','-C',str(repo),*args],stderr=subprocess.PIPE,text=True).strip()
 git('init','--quiet'); git('add','scripts')
@@ -254,6 +254,31 @@ for name,reason in [('install.json','INSTALL_ENGINE_READY'),('setup-plan.json','
  put(package/name,{'ok':True,'reasonCode':reason,**({'checks':[{'ok':True} for _ in range(8)]} if name=='doctor.json' else {}),**({'blockers':[]} if name=='setup-plan.json' else {}),**({'selfCheck':{'checks':[{'ok':True}]}} if name=='setup-applied.json' else {})})
 put(package/'package-seal.json',{'identity':{'head':sha,'tree':tree,'runId':'91','attempt':'2','rosterDigest':roster['rosterDigest']},'files':{p.name:{'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in package.iterdir()}})
 _,errors,_=a.validate_light_bundle(bundle,sha,'91','2',repo); assert errors==[],errors
+# Execute the actual CLI, without Python bytecode suppressors supplied by the caller.
+# The clean checkout has no ignore rule masking generated caches.
+import os
+cli_env=dict(os.environ)
+for key in ['PYTHONDONTWRITEBYTECODE','PYTHONPYCACHEPREFIX','GITHUB_STEP_SUMMARY']:
+ cli_env.pop(key,None)
+def cli():
+ run=subprocess.run([sys.executable,str(repo/'scripts/ci/aggregate-evidence.py'),'--mode','ci-light','--sha',sha,'--run-id','91','--attempt','2','--artifacts',str(bundle),'--repo',str(repo),'--job-result','success'],cwd=repo,env=cli_env,capture_output=True,text=True)
+ return run,json.loads(run.stdout)
+assert git('status','--porcelain=v1','--untracked-files=all')==''
+run,receipt=cli(); assert run.returncode==0,(run.stdout,run.stderr); assert receipt['reasonCode']=='CI_LIGHT_VERIFIED'
+assert git('status','--porcelain=v1','--untracked-files=all')==''
+assert not list(repo.rglob('__pycache__'))
+dirty=repo/'intentional-dirty-fixture'; dirty.write_text('not ignored')
+run,receipt=cli(); assert run.returncode!=0 and receipt['reasonCode']=='CI_LIGHT_INCOMPLETE'
+assert any('clean expected source' in item for item in receipt['failures'])
+dirty.unlink(); results.append({'case':'cli-dirty-source','refused':True})
+seal_path=package/'package-seal.json'; seal_bytes=seal_path.read_bytes(); seal_path.unlink()
+run,receipt=cli(); assert run.returncode!=0 and receipt['reasonCode']=='CI_LIGHT_INCOMPLETE'
+seal_path.write_bytes(seal_bytes); results.append({'case':'cli-missing-seal','refused':True})
+bad_seal=json.loads(seal_bytes); bad_seal['files']['doctor.json']['sha256']='0'*64; put(seal_path,bad_seal)
+run,receipt=cli(); assert run.returncode!=0 and receipt['reasonCode']=='CI_LIGHT_INCOMPLETE'
+seal_path.write_bytes(seal_bytes); results.append({'case':'cli-failed-seal','refused':True})
+assert git('status','--porcelain=v1','--untracked-files=all')==''
+assert not list(repo.rglob('__pycache__'))
 for name,patch in [('run',{'GITHUB_RUN_ID':'92'}),('attempt',{'GITHUB_RUN_ATTEMPT':'3'}),('job',{'GITHUB_JOB':'p1'})]:
  changed=copy.deepcopy(bound); changed['ciIdentity'].update(patch); seal(target,changed)
  _,errors,_=a.validate_light_bundle(bundle,sha,'91','2',repo); assert errors,name; results.append({'case':'bundle-'+name,'refused':True})
@@ -268,7 +293,7 @@ print(json.dumps(results))
   const child = spawnSync("python3", ["-B", "-c", program, aggregatePath, root], { encoding: "utf8", timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
   assert.equal(child.status, 0, child.stderr);
   const results = JSON.parse(child.stdout);
-  assert.equal(results.length, 26);
+  assert.equal(results.length, 29);
   assert.ok(results.every(row => row.refused));
 });
 

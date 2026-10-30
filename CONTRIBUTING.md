@@ -14,38 +14,38 @@ implicitly access the network.
    changes and regenerate affected proof artifacts once. Run the relevant focused
    checks and `pnpm privacy:staged` before making new content public. Preserve red
    evidence; do not turn a partial pass into acceptance or weaken a gate to publish.
-3. Commit and push the frozen candidate to a separate branch in the fork. Dispatch
-   `.github/workflows/ci.yml` there on that explicit branch with `mode=p1`.
-   Ordinary branch pushes do not automatically run this workflow. Verify that the
-   run's head SHA equals the candidate and wait for the full result and retained
-   evidence, including package/install smoke. Use the same pinned versions,
-   workflow, frozen dependencies, offline execution and full reachable-history
-   privacy scope as upstream CI. Never substitute H1 for P1.
-4. Only after the fork candidate passes, open the upstream PR. For an existing PR,
-   use a separate staging branch for the next complete batch; do not push each
-   intermediate fix to its PR branch. Update the PR branch to the verified candidate
-   without squashing, amending or otherwise changing its SHA afterward. Prefer a
-   fast-forward; any proposed history rewrite requires explicit authorization.
-5. Recheck the upstream base before handoff. If it moved, inspect the integration
-   difference and incorporate it into a candidate branch before the required
-   validation. Conflicts or changed inputs invalidate affected evidence. A green
-   fork run is not permission to skip upstream branch protection or its required
-   checks, and it does not prove a future merge commit has already been tested.
+3. Complete the relevant full local acceptance for the frozen candidate, retaining
+   actual failures and blockers. Commit and push the authorized candidate to a
+   separate branch in the contributor fork, then open or update the upstream PR.
+   Fork hosting remains the contribution route; fork CI is not a prerequisite and
+   is not re-enabled by this change. This does not prohibit separately authorized
+   optional fork CI. Do not import local JSON as evidence of cloud execution.
+4. For an existing PR, collect the next complete batch on a staging branch rather
+   than publishing each intermediate fix. Update its branch to the validated
+   candidate without changing its SHA afterward. Prefer a fast-forward; history
+   rewrites require explicit authorization. Inspect the upstream PR's actual
+   `ci-light` and `verify` results and retained bytes for that exact head.
+5. Recheck upstream before handoff. If it moved, inspect the integration difference
+   and incorporate it into a candidate before affected validation. Changed inputs
+   invalidate affected evidence. Local acceptance and limited CI do not replace
+   branch protection or prove an uncreated merge commit has already been tested.
 
-The PR P1 verification job deliberately checks the contributor head; its main run checks
-its actual merge result. All modes scan full HEAD-reachable privacy history, so PR
-runs cannot hide failures in their base history. Public hosting metadata is classified
-only under the scanner's explicit narrow rules; source, message payloads and private
-values remain scanned. Check the real main result after merging rather than assuming
+PR ci-light checks the contributor head; the main run checks its actual merge
+result. Both scan full HEAD-reachable privacy history, so PR runs cannot hide
+base-history failures. Public hosting metadata is classified only under the
+scanner's explicit narrow rules; source, message payloads and private values
+remain scanned. Check the real main result after merging rather than assuming
 that tree equality proves unchanged commit metadata.
 
-Do not add duplicate manual full trains around the same frozen candidate. Run a
-separate formal H1 or release gate only when the accepted scope requires its distinct
-contract; record its identity and do not relabel old evidence. `pnpm preflight` remains
-available for an explicitly required independent local preflight. It creates a separate
-clone, scrubs private environment and sibling-checkout variables, and collects P1 and
-lessons without fail-fast. Do not automatically run both local preflight and another
-local P1 before the fork CI merely because an earlier recipe listed both.
+Do not add gratuitous duplicate full trains around one frozen candidate. Complete
+required full local validation; `ci-light` is not its substitute. Run a separate
+formal H1 or release gate when the accepted scope requires that distinct contract,
+and bind every receipt to its actual candidate. `pnpm preflight` remains available
+for explicitly required independent local preflight: it creates a separate clone,
+scrubs private environment and sibling variables, and collects P1 and lessons
+without fail-fast. Do not automatically duplicate local preflight with local P1
+just because an old recipe listed both. Never turn partial or blocked evidence
+into readiness. See [CI coverage](docs/ci-verification.md).
 
 `pnpm verify:privacy` judges the checked-out HEAD-reachable public surface. The retired
 `verify:privacy:history` command is not an additional gate; retained historical tags

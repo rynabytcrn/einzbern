@@ -49,7 +49,8 @@
     "verify:privacy": "node scripts/task.mjs privacy",
     "privacy:staged": "node scripts/verify-staged-privacy.mjs",
     "verify:links": "node scripts/task.mjs links",
-    "verify:retrieval-eval": "node scripts/task.mjs retrieval-eval"
+    "verify:retrieval-eval": "node scripts/task.mjs retrieval-eval",
+    "ci:light": "node scripts/ci/light-runner.mjs"
   },
   "devDependencies": {
     "@types/node": "24.13.2",

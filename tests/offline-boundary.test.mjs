@@ -12,10 +12,11 @@ installNoNetworkGuard();
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import dgram from "node:dgram";
 import dns from "node:dns";
 import dnsPromises from "node:dns/promises";
-import { chmod, lstat, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -261,4 +262,52 @@ test("offline permits only canonical owned private filesystem Unix IPC", async t
   assert.equal((await lstat(socketPath)).isSocket(), true);
   await assert.rejects(fetch("https://example.invalid"), /OFFLINE_NETWORK_BLOCKED/u);
   refuses("TCP remains blocked", () => net.connect({ host: loopbackHost(), port: 9 }));
+});
+
+// Static source classification only: changed probes below are never imported or
+// executed. In particular, removing their guard must not attempt any transport.
+test("offline light guard declaration pins exact probes and rejects structural mutations", async t => {
+  const cases = [
+    { name: "missing guard", replace: ["assert.equal(globalThis.__TCRN_OFFLINE_GUARD__, true, 'PRETRANSPORT_GUARD_MISSING');", "/* required pretransport guard removed */"] },
+    { name: "replacement preload", replace: ['pathToFileURL(join(root, "scripts/no-network.mjs")).href', 'pathToFileURL(join(root, "scripts/empty-preload.mjs")).href'] },
+    { name: "changed options", replace: ["assert.equal(process.env.NODE_OPTIONS,", "assert.notEqual(process.env.NODE_OPTIONS,"] },
+    { name: "changed target", replace: ["http://192.0.2.1/", "http://198.51.100.1/"] },
+    { name: "extra fetch", append: 'await fetch("https://example.invalid");' },
+    { name: "extra module", append: 'import https from "node:https";' },
+    { name: "changed binding", replace: ["import { get } from 'node:http';", "import { get as alternateGet } from 'node:http';"] },
+    { name: "binding alias", append: 'const alternateGet = get;' },
+  ];
+  // Read the actual unchanged production classifier, not a reimplemented mock.
+  // Only this trusted function is evaluated; source-under-test stays inert text.
+  const classify = async root => {
+    const task = await readFile(join(root, "scripts/task.mjs"), "utf8");
+    const start = task.indexOf("function loopbackHarnessSites(content, declaration) {");
+    const end = task.indexOf("\nasync function verifyOfflineBoundary()", start);
+    assert.ok(start >= 0 && end > start, "production classifier delimiters changed");
+    return new Function("createHash", `return (${task.slice(start, end).trim()});`)(createHash);
+  };
+  const finding = (source, sites) => {
+    const calls = [...source.matchAll(/\bfetch\s*\(/gu)];
+    const modules = ["node:http", "node:https", "node:net", "node:tls", "node:dns", "node:dgram", "undici"];
+    return calls.some(call => !sites.fetchOffsets.has(call.index)) || modules.some(name =>
+      (source.includes(`"${name}"`) || source.includes(`'${name}'`)) && !sites.modules.has(name));
+  };
+  const baseline = await createOfflineScannerFixture(t);
+  const file = "tests/ci-light-evidence.test.mjs";
+  const original = await readFile(join(baseline.root, file), "utf8");
+  const policy = JSON.parse(await readFile(join(baseline.root, "scripts/policy/offline-loopback-harness.json"), "utf8"));
+  const classifier = await classify(baseline.root);
+  const sites = classifier(original, policy[file]);
+  assert.deepEqual([...sites.modules].sort(), ["node:dns/promises", "node:http", "node:net"]);
+  assert.equal(sites.fetchOffsets.size, 1);
+  assert.equal(finding(original, sites), false);
+  const stale = `${original}\n// changed source digest\n`;
+  assert.equal(finding(stale, classifier(stale, policy[file])), true, "stale hash must refuse even harmless source changes");
+  for (const mutation of cases) {
+    const fixture = await createOfflineScannerFixture(t, { lightGuardMutation: { ...mutation, rebindDigest: true } });
+    const changed = await readFile(join(fixture.root, file), "utf8");
+    const rebound = JSON.parse(await readFile(join(fixture.root, "scripts/policy/offline-loopback-harness.json"), "utf8"))[file];
+    assert.equal(rebound.sourceSha256, createHash("sha256").update(changed).digest("hex"));
+    assert.equal(finding(changed, classifier(changed, rebound)), true, mutation.name);
+  }
 });

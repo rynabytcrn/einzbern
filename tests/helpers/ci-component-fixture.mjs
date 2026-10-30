@@ -216,7 +216,7 @@ export function assertOfflineUnixFixturePathBudget(directory) {
   return { directory, sunPathBytes: offlineUnixFixtureLayout.sunPathBytes, terminatorBytes: 1, paths };
 }
 
-export async function createOfflineScannerFixture(context, { unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null, nativeNetworkSource = null } = {}) {
+export async function createOfflineScannerFixture(context, { unexpectedSource = false, extraInstallerFetch = false, baselineMutation = null, harnessMutation = null, nativeNetworkSource = null, lightGuardMutation = null } = {}) {
   const parent = await realpath(tmpdir());
   assertOfflineUnixFixturePathBudget(join(parent, `${offlineUnixFixtureLayout.scannerPrefix}${offlineUnixFixtureLayout.suffix}`, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
   const temporaryRoot = await realpath(await mkdtemp(join(parent, offlineUnixFixtureLayout.scannerPrefix)));
@@ -226,16 +226,24 @@ export async function createOfflineScannerFixture(context, { unexpectedSource = 
     const unixPathBudget = assertOfflineUnixFixturePathBudget(join(temporaryRoot, `${offlineUnixFixtureLayout.directoryPrefix}${offlineUnixFixtureLayout.suffix}`));
     await mkdir(join(root, ".git"), { recursive: true });
     await cp(join(componentSourceRoot, "scripts"), join(root, "scripts"), { recursive: true });
-    for (const path of ["skill/mana-orchestrate/scripts/install.mjs", "tests/offline-boundary.test.mjs", "tests/helpers/ci-component-fixture.mjs", "tests/helpers/heavy-slots.mjs", "package.json", ".npmrc", "portal/tests/ui-presence-support.mjs", "portal/tests/disposable-portal-fetch.test.mjs", "portal/tests/helpers/disposable-portal-fetch.mjs"]) {
+    for (const path of ["skill/mana-orchestrate/scripts/install.mjs", "tests/offline-boundary.test.mjs", "tests/ci-light-evidence.test.mjs", "tests/helpers/ci-component-fixture.mjs", "tests/helpers/heavy-slots.mjs", "package.json", ".npmrc", "portal/tests/ui-presence-support.mjs", "portal/tests/disposable-portal-fetch.test.mjs", "portal/tests/helpers/disposable-portal-fetch.mjs"]) {
       await mkdir(dirname(join(root, path)), { recursive: true });
       await cp(join(componentSourceRoot, path), join(root, path));
     }
-    for (const [path, mutation] of [["scripts/ci/baseline-evidence.mjs", baselineMutation], [harnessMutation ? `portal/tests/${harnessMutation.file}` : "", harnessMutation]]) {
+    for (const [path, mutation] of [["tests/ci-light-evidence.test.mjs", lightGuardMutation], ["scripts/ci/baseline-evidence.mjs", baselineMutation], [harnessMutation ? `portal/tests/${harnessMutation.file}` : "", harnessMutation]]) {
       if (!mutation) continue;
       const source = await readFile(join(root, path), "utf8");
       const updated = mutation.replace ? source.replace(...mutation.replace) : `${source}\n${mutation.append}\n`;
       assert.notEqual(updated, source, "scanner mutation must change its intended source site");
       await writeFile(join(root, path), updated);
+      if (path === "tests/ci-light-evidence.test.mjs" && mutation.rebindDigest) {
+        // Adversarial fixture only: even a matching replacement digest cannot
+        // exempt an undeclared call, alias or missing pretransport guard.
+        const policyPath = join(root, "scripts/policy/offline-loopback-harness.json");
+        const policy = JSON.parse(await readFile(policyPath, "utf8"));
+        policy[path].sourceSha256 = createHash("sha256").update(updated).digest("hex");
+        await writeFile(policyPath, JSON.stringify(policy));
+      }
     }
     if (nativeNetworkSource) await writeFile(join(root, "scripts/unexpected-native-network.mjs"), nativeNetworkSource);
     await mkdir(join(root, "node_modules"));

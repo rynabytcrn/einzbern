@@ -208,8 +208,9 @@ method/input reconciliation remain pending. Do not overwrite the historical snap
 summaries as regenerated inventories. Required U18 historical inputs and dry-run/actual-generation
 receipts must be complete before claiming PF-3 closure.
 
-The default CI observer described in `ci-p1-evidence.md` runs the existing single `verify:p1`
-train. It is independent P1 evidence. Only an explicitly selected `pf2-h1` run executes the
+The retained local wrapper described in `ci-p1-evidence.md` defaults to one `verify:p1`
+train and independent P1 evidence. Current hosted ci-light establishes neither full
+P1 nor H1/PF2/PF3; see [CI coverage](../ci-verification.md). Only an explicitly selected local `pf2-h1` run executes the
 literal H1 `script=test` command; its implementation or focused test pass is not an H1 receipt.
 Neither mode replaces PF-3's reuse of its specified PF-2 receipt. Actual upgrade/setup dry-run receipts and final
 package privacy evidence must also be bound to their exact candidate rather than inferred from

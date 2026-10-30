@@ -1,5 +1,15 @@
 # CI impact plan v1
 
+## Applicability: retained full/selective profile
+
+This v1 contract remains for full/selective planner, shard and evidence consumers,
+not the fixed routine [ci-light workflow](ci-light-v1.md). Historical receipts remain
+readable. Light never emits these success types and is ineligible as a full/selective
+baseline, release evidence or full-P1 coverage. `coverage=light` is not admitted to
+this schema. The full fallback and original local/P8/H1 semantics remain unchanged.
+
+## Full/selective contract
+
 The schema is `einzbern.ci-impact-plan.v1`. `scripts/ci/impact-plan.mjs create <file>`
 uses the checked-out contributor HEAD and GitHub event. `validate <file>` independently
 rederives it from local Git, event and rules; `validate-remote <file>` additionally
@@ -32,7 +42,7 @@ Classification accepts only audited modified paths for selection. Added, deleted
 renamed and copied records remain represented completely and force full. README and
 listed explanatory Wiki pages select documentation contracts. Privacy selects all
 privacy and audited consumer regressions. Portal selects the full Portal train plus
-root consumers. CI integrity tests always run. Union applies to mixed known changes;
+root consumers. Full/selective CI integrity tests always run. Union applies to mixed known changes;
 Core/CLI/protocol/shared/build/dependency/controller/policy/unknown changes force full.
 The first policy patch, manual P1 and release validation are full.
 
@@ -49,7 +59,7 @@ only through explicit `test --ci-plan`; default test/H1/P8 use their original ro
 Core's maximum remains 900000ms, P8's 600000ms. Selected Portal is all recursive tests
 and six existing steps, with build prerequisite and original isolation/output handling.
 
-Every `verify` rederives the plan, requires successful plan and selected jobs, and
+Every full/selective `verify` consumer rederives the plan, requires successful plan and selected jobs, and
 checks the exact downloaded artifact set, plan, raw receipts, source manifests, actual
 controller argv, SHA/tree/run/attempt and bytes. Missing, duplicated, extra, reordered,
 failed/cancelled/timed-out or forged N/A evidence is red. Full returns `CI_VERIFIED`;
@@ -58,7 +68,7 @@ must require full. PF2-H1 remains its separate literal Corepack invocation.
 
 The plan artifact includes deterministic binary payload and manifest under `transport/`.
 `transport-evidence.mjs create|verify <directory> <plan>` binds SHA/run/attempt/plan digest,
-rehashes bytes and rejects missing/extra/symlink files. The workflow requests pinned official action transfer of
+rehashes bytes and rejects missing/extra/symlink files. The retained full-profile workflow contract requests pinned official action transfer of
 the same-run bytes. Package smoke retains a manifest seal and all existing outcomes.
 Fixture verification is a component result, not actual hosted transport. Candidate
 remote transfer and any 3–5 minute speedup remain unknown until separately authorized

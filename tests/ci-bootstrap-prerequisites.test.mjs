@@ -137,42 +137,23 @@ test("real bootstrap CLI reads only consumed plans and fails closed without emit
   assert.equal(fixture.git("status", "--porcelain=v1"), "");
 });
 
-test("the existing online step uses the actual bootstrap decision and preserves genuine caches across private HOME", async (t) => {
+test("the light online step preserves genuine caches across private HOME without unnecessary Corepack acquisition", async (t) => {
   const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-  const jobEnvironment = workflow.match(/^  p1:\n[\s\S]*?^    env:\n([\s\S]*?)(?=^    steps:)/mu)?.[1];
-  assert.ok(jobEnvironment);
-  assert.doesNotMatch(jobEnvironment, /\$\{\{[^}]*\brunner\b/u, "runner is unavailable in jobs.p1.env; resolve the cache inside an existing step");
+  assert.match(workflow, /^  ci-light:/mu);
+  assert.doesNotMatch(workflow, /Acquire official pinned Corepack|corepack install/u);
   const installStep = workflow.match(/      - name: Acquire exact dependencies explicitly\n([\s\S]*?)(?=\n      - name:)/u)?.[1];
   assert.ok(installStep);
   assert.equal(/^        if:/mu.test(installStep), false, "every verification mode must initialize its cache before installing source dependencies");
   const stepRun = (body) => {
     const marker = "        run: |\n";
     assert.ok(body.includes(marker));
-    return body.slice(body.indexOf(marker) + marker.length).split("\n").map((line) => line.slice(10)).join("\n").trim();
+    const lines = body.slice(body.indexOf(marker) + marker.length).split("\n");
+    const end = lines.findIndex(line => line.trim() && !line.startsWith("          "));
+    return lines.slice(0, end < 0 ? lines.length : end).map(line => line.slice(10)).join("\n").trim();
   };
   const installRun = stepRun(installStep);
-  const step = workflow.match(/      - name: Acquire official pinned Corepack and its pnpm cache when consumed\n([\s\S]*?)(?=\n      # Use the same complete)/u)?.[1];
-  assert.ok(step);
-  assert.equal(/^        if:/mu.test(step), false, "the helper must also evaluate ordinary core consumption");
-  assert.match(step, /COREPACK_ENABLE_NETWORK: "1"/u);
-  assert.match(step, /COREPACK_HOME: \$\{\{ runner\.temp \}\}\/einzbern-bootstrap-/u);
-  assert.doesNotMatch(step.slice(0, step.indexOf("        run: |\n")), /^\s+pnpm_config_cache_dir:/mu, "Corepack preparation must inherit the cache initialized by the source install");
-  const installPosition = workflow.indexOf("- name: Acquire exact dependencies explicitly");
-  assert.ok(installPosition > 0 && installPosition < workflow.indexOf("- name: Acquire official pinned Corepack and its pnpm cache when consumed"));
-  const run = stepRun(step);
-  assert.ok(run.startsWith('corepack_required="$(node scripts/ci/bootstrap-prerequisites.mjs "$VERIFY_MODE" "$RUNNER_TEMP/impact/impact-plan.json")"\nif [ "$corepack_required" = true ]; then\n'));
-  assert.ok(run.endsWith("\nfi"));
-  for (const command of [
-    "npm install --global corepack@0.34.6 --force --ignore-scripts --no-audit --no-fund --no-update-notifier --prefer-online",
-    'test "$(corepack --version)" = "0.34.6"',
-    "corepack install --global pnpm@11.3.0",
-    'test "$(corepack pnpm@11.3.0 --version)" = "11.3.0"',
-  ]) assert.ok(run.includes(`\n  ${command}\n`), command);
-  assert.ok(run.includes("printf 'COREPACK_HOME=%s\\npnpm_config_cache_dir=%s\\nCOREPACK_ENABLE_NETWORK=0\\n' \"$COREPACK_HOME\" \"$pnpm_config_cache_dir\" >> \"$GITHUB_ENV\""));
-  assert.ok(workflow.indexOf(run.split("\n")[0].trim()) < workflow.indexOf("- name: Verify P1 offline"));
-  assert.equal((workflow.match(/npm install --global corepack@/gu) ?? []).length, 1);
   assert.match(workflow, /pnpm --dir "\$root\/build" install --offline --frozen-lockfile --ignore-scripts/u);
-  const offlineStep = workflow.match(/      - name: Verify P1 offline\n([\s\S]*?)(?=\n      - name:)/u)?.[1];
+  const offlineStep = workflow.match(/      - name: Verify fixed light profile offline\n([\s\S]*?)(?=\n      - name:)/u)?.[1];
   assert.ok(offlineStep);
   const offlineInstall = stepRun(offlineStep).split("\n").find((line) => line.startsWith("pnpm --dir "));
   assert.ok(offlineInstall);
@@ -193,8 +174,7 @@ fs.appendFileSync(process.env.BOOTSTRAP_TRACE, JSON.stringify({
 }) + "\\n");
 `, { mode: 0o755 });
   const cases = [
-    ["991", "1", "p1-core"], ["992", "1", "p1-core"], ["991", "2", "p1-core"],
-    ["991", "1", "p1-checks"], ["991", "1", "p1-portal"], ["991", "1", "p1"], ["991", "1", "pf2-h1"],
+    ["991", "1", "ci-light"], ["992", "1", "ci-light"], ["991", "2", "ci-light"],
   ];
   const cachePaths = new Set();
   for (const [index, [runId, attempt, mode]] of cases.entries()) {
@@ -237,5 +217,5 @@ fs.appendFileSync(process.env.BOOTSTRAP_TRACE, JSON.stringify({
     }, "the later offline/private-HOME consumer must inherit the same cache without another initialization");
     assert.equal(records().length, 2);
   }
-  assert.equal(cachePaths.size, cases.length, "run ID, attempt and matrix mode must keep the cache paths distinct");
+  assert.equal(cachePaths.size, cases.length, "run ID and attempt must keep the fixed light cache paths distinct");
 });

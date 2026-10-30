@@ -16,6 +16,9 @@ import { normalizeInvolvedProjects, involvedProjectsOf, assertStoredInvolvedProj
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
+import { types as utilTypes } from "node:util";
+import { compareWorkOrder } from "../../protocol/src/work-order.js";
+import { workBatchMemberCaptures, resolveWorkBatchMemberDelta } from "./work-batch-delta.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import type { Hash } from "node:crypto";
@@ -73,7 +76,7 @@ import { legacyControlDirectory, openLegacyWorkspace, replayLegacyWorkspace } fr
 import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
 // TCRN-CROSS-STORY-489 R4: used only inside functions; registry.ts imports nothing from this module.
 import { findMigratedEntry } from "./registry.js";
-import { recordClosureValidation, recordCollectionScan, recordExtensionClosureValidation, recordFullMaterialize, recordSnapshotMaterialize, recordTerminalGraphValidation } from "./workspace-perf-instrumentation.js";
+import { recordWriteCreateFullValidation, recordWriteCreateClosureValidation, recordWriteCreateTerminalValidation, recordClosureValidation, recordCollectionScan, recordExtensionClosureValidation, recordFullMaterialize, recordSnapshotMaterialize, recordTerminalGraphValidation } from "./workspace-perf-instrumentation.js";
 import {
   ACTOR_ATTESTATION_ENABLE_OPERATION,
   ActorAttestationError,
@@ -1040,7 +1043,7 @@ function sortExtensionRecords<T extends { readonly projectId: string; readonly i
 }
 
 // WSA-2: the ancestor closure of a work record — the record plus every ancestor
-// reachable by walking parentId, bounded by the frozen four-level hierarchy. A
+// reachable by walking parentId, including arbitrary historical Incident ancestry. A
 // missing link stops the walk (validateWorkGraph then fails REFERENTIAL_INTEGRITY
 // on the record whose parent is absent); a cycle stops after both endpoints are
 // collected (validateWorkGraph then fails GRAPH_CYCLE).
@@ -3711,7 +3714,7 @@ export async function appendEvents(
   if (buildDeltas.length === 0) {
     fail("WORKSPACE_INPUT_INVALID", "an append carries at least one event");
   }
-  return appendPlannedEvents(workspaceRootInput, () => buildDeltas, options, underLock);
+  return appendPlannedEvents(workspaceRootInput, () => buildDeltas, options, underLock, true);
 }
 
 // TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-498): the deltas an append builds, planned from the state it
@@ -3727,6 +3730,7 @@ async function appendPlannedEvents(
   plan: AppendPlan,
   options: WorkspaceMutationOptions,
   underLock?: (root: string, committed: WorkspaceState) => Promise<void>,
+  ordinaryAppend = false,
 ): Promise<WorkspaceState> {
   assertStrictInstant(options.occurredAt);
   const layout = await resolveLayout(workspaceRootInput);
@@ -3736,13 +3740,13 @@ async function appendPlannedEvents(
   // and by an append another writer outran OPTIMISTIC_APPEND_ATTEMPTS times.
   const underOneHold = (): Promise<WorkspaceState> => withWorkspaceWriteLock(layout.root, async (root) => {
     await options.insideWriteLockForTest?.();
-    const committed = await commitAppend(await prepareAppend(root, plan, options), options);
+    const committed = await commitAppend(await prepareAppend(root, plan, options, ordinaryAppend), options);
     await underLock?.(root, committed);
     return committed;
   });
   if (heldWriteLocks.getStore()?.has(layout.root) === true) return underOneHold();
   for (let attempt = 1; attempt <= OPTIMISTIC_APPEND_ATTEMPTS; attempt += 1) {
-    const prepared = await prepareAppend(layout.root, plan, options);
+    const prepared = await prepareAppend(layout.root, plan, options, ordinaryAppend);
     const committed = await withWorkspaceWriteLock(layout.root, async (root) => {
       await options.insideWriteLockForTest?.();
       if (!(await streamsUnchangedSince(prepared.library.root, prepared.read))) return null;
@@ -3871,13 +3875,14 @@ async function prepareAppend(
   root: string,
   plan: AppendPlan,
   options: WorkspaceMutationOptions,
+  ordinaryAppend = false,
 ): Promise<PreparedAppend> {
   const source = await readForAppend(root);
   const buildDeltas = plan(source.state);
   if (buildDeltas.length === 0) {
     fail("WORKSPACE_INPUT_INVALID", "an append carries at least one event");
   }
-  return buildAppend(source, buildDeltas, options);
+  return buildAppend(source, buildDeltas, options, ordinaryAppend);
 }
 
 // Build every delta against the state `source` holds and measure the result -- nothing is written.
@@ -3885,6 +3890,7 @@ async function buildAppend(
   source: LibraryReadForAppend,
   buildDeltas: readonly ((state: WorkspaceState) => MutationDelta)[],
   options: WorkspaceMutationOptions,
+  ordinaryAppend = false,
 ): Promise<PreparedAppend> {
   {
     const { library, read, state } = source;
@@ -3892,6 +3898,11 @@ async function buildAppend(
     const own = read.streams.find((stream) => stream.deviceId === device.deviceId)?.manifest ?? emptyStreamManifest(library, device);
     const clockBase = Math.max(own.clockHighWater, ...read.streams.map((stream) => stream.manifest?.clockHighWater ?? 0));
     const appended: EventRecord[] = [];
+    // Qualify after the last await, retaining the original aliases through commit.
+    // The bounded data/intrinsic guard excludes callbacks during this synchronous
+    // fold only; later lock waits still observe the original mutable payloads.
+    const creates = ordinaryAppend ? qualifyCreateBatch(buildDeltas, options) : null;
+    const createContext: CreateValidationContext | undefined = creates === null ? undefined : {};
     let current = state;
     for (const [memberIndex, buildDelta] of buildDeltas.entries()) {
       // STORY-300 slice 3: the member index and phase ride on a refusal, attached rather than
@@ -3900,7 +3911,12 @@ async function buildAppend(
       try {
       // Each member sees the state the members before it produced, which is what makes an
       // ordered batch express a dependency.
-      const delta = buildDelta(current);
+      const preparedCreate = creates?.[memberIndex];
+      const delta = preparedCreate === undefined
+        ? buildDelta(current)
+        : createWorkReducerDelta(current, preparedCreate.kind === "direct"
+          ? preparedCreate.input
+          : lookupCreateWorkInput(resolveWorkBatchMemberDelta(preparedCreate.member, preparedCreate.options.occurredAt, preparedCreate.options.actorId))!, createContext);
       source.merge.assertUnredirectedWrite(own.streamId, delta.payload);
       if (library.manifest.formatVersion < 3 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) && delta.payload.record.collection === "chain" && delta.payload.record.key === "identity" && delta.payload.record.projectId !== undefined) throw new FormatVersionError("LIBRARY_FORMAT_UNSUPPORTED", "scoped chain identities require format 3", { required: "3" });
       if (library.manifest.formatVersion < 2 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) &&
@@ -3947,6 +3963,10 @@ async function buildAppend(
         Object.assign(error as object, { memberIndex, memberPhase: phase });
         throw error;
       }
+    }
+    if (creates !== null) {
+      recordWriteCreateTerminalValidation(current.work.length);
+      current = { ...current, work: validateWorkGraph(current.work, templateRegistry(current.templates)) };
     }
     assertWorkspaceRecordCount(state.version + buildDeltas.length);
     // STORY-299: the view projection is measured before a byte is written, so a projection
@@ -4210,6 +4230,226 @@ function assertContentDecisions(state: WorkspaceState, record: WorkRecord, previ
   }
 }
 
+// INIT-080: provenance identifies fixed engine operations, never valid state.
+// Validity lives only in a fresh append attempt and is seeded by its first full check.
+type CreateWorkInput = Parameters<typeof createWorkDelta>[0];
+type WorkBuilder = (state: WorkspaceState) => MutationDelta;
+const createWorkInputs = new WeakMap<WorkBuilder, CreateWorkInput>();
+// New provenance bookkeeping must not invoke patched methods on legacy paths.
+const lookupCreateWorkInput = createWorkInputs.get.bind(createWorkInputs);
+const captureCreateWorkInput = createWorkInputs.set.bind(createWorkInputs);
+interface CreateValidationContext {
+  byId?: Map<string, WorkRecord>;
+}
+type PreparedCreate =
+  | { readonly kind: "direct"; readonly input: CreateWorkInput }
+  | { readonly kind: "batch"; readonly member: Readonly<Record<string, unknown>>; readonly options: Pick<WorkspaceMutationOptions, "occurredAt" | "actorId"> };
+
+const unsafeCreateQualification = Symbol("unsafe create qualification");
+// Capture reflection for new bookkeeping only. Original reducers/validators keep
+// their live built-in calls, including on fallback. These observations are a
+// bounded post-import compatibility guard, not a pristine/hostile-realm claim.
+const createOwnDescriptor = Object.getOwnPropertyDescriptor;
+const createOwnDescriptors = Object.getOwnPropertyDescriptors;
+const createOwnKeys = Reflect.ownKeys;
+const createPrototypeOf = Object.getPrototypeOf;
+const createIsProxy = utilTypes.isProxy;
+const createIsArray = Array.isArray;
+const createObjectPrototype = Object.prototype;
+const createArrayPrototype = Array.prototype;
+const createHashIdentity = createHash;
+const createUtilTypesIdentity = utilTypes;
+type CreateIntrinsicObservation = {
+  readonly owner: object;
+  readonly keys: readonly (string | symbol)[];
+  readonly descriptors: readonly (PropertyDescriptor | undefined)[];
+  readonly complete: boolean;
+};
+function observeCreateIntrinsic(owner: object, keys?: readonly (string | symbol)[]): CreateIntrinsicObservation {
+  const selected = keys ?? createOwnKeys(owner);
+  return { owner, keys: selected, descriptors: selected.map((key) => createOwnDescriptor(owner, key)), complete: keys === undefined };
+}
+const createArrayIteratorPrototype = createPrototypeOf([][Symbol.iterator]());
+// Buffer's length/buffer/byteOffset getters are inherited through two fixed
+// owners. Retain the actual owners rather than looking up mutable global names.
+const createBufferPrototype = Buffer.prototype;
+const createBufferArrayPrototype: object | null = createPrototypeOf(createBufferPrototype);
+const createBufferTypedPrototype: object | null = createBufferArrayPrototype === null ? null : createPrototypeOf(createBufferArrayPrototype);
+const createBufferChainSupported = createBufferArrayPrototype !== null && createBufferTypedPrototype !== null &&
+  createPrototypeOf(createBufferTypedPrototype) === createObjectPrototype;
+const createIntrinsicObservations: readonly CreateIntrinsicObservation[] = [
+  // Identity of live owners/constructors; never read a replaced global getter.
+  observeCreateIntrinsic(globalThis, ["Object", "Array", "String", "RegExp", "Map", "Set", "WeakMap", "WeakSet", "JSON", "Number", "BigInt", "Boolean", "Math", "Date", "Buffer", "Reflect"]),
+  observeCreateIntrinsic(Object.prototype),
+  observeCreateIntrinsic(Array.prototype),
+  observeCreateIntrinsic(String.prototype),
+  observeCreateIntrinsic(RegExp.prototype),
+  // map/slice and regex split reach these constructors' symbol species hooks.
+  observeCreateIntrinsic(Array),
+  observeCreateIntrinsic(RegExp),
+  observeCreateIntrinsic(createArrayIteratorPrototype),
+  observeCreateIntrinsic(createPrototypeOf(createArrayIteratorPrototype)),
+  observeCreateIntrinsic(createPrototypeOf(""[Symbol.iterator]())),
+  observeCreateIntrinsic(createPrototypeOf(new Map().values())),
+  observeCreateIntrinsic(createPrototypeOf(new Set().values())),
+  observeCreateIntrinsic(Map.prototype),
+  observeCreateIntrinsic(Set.prototype),
+  observeCreateIntrinsic(WeakSet.prototype),
+  observeCreateIntrinsic(WeakMap.prototype, ["get", "set"]),
+  observeCreateIntrinsic(Object, ["keys", "entries", "values", "fromEntries", "hasOwn", "freeze", "getPrototypeOf", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors"]),
+  observeCreateIntrinsic(Reflect, ["ownKeys"]),
+  observeCreateIntrinsic(JSON, ["stringify", "parse"]),
+  observeCreateIntrinsic(Number, ["isSafeInteger"]),
+  observeCreateIntrinsic(Math, ["floor", "max"]),
+  observeCreateIntrinsic(Date.prototype, ["toISOString"]),
+  observeCreateIntrinsic(Buffer, ["from", "byteLength", "compare"]),
+  // Summary truncation reaches subarray/toString and their Buffer dispatch.
+  observeCreateIntrinsic(createBufferPrototype),
+  ...(createBufferArrayPrototype === null ? [] : [observeCreateIntrinsic(createBufferArrayPrototype)]),
+  ...(createBufferTypedPrototype === null ? [] : [observeCreateIntrinsic(createBufferTypedPrototype)]),
+  observeCreateIntrinsic(createPrototypeOf(createHash("sha256")), ["update", "digest"]),
+  observeCreateIntrinsic(AsyncLocalStorage.prototype, ["getStore"]),
+  observeCreateIntrinsic(utilTypes, ["isProxy"]),
+];
+const createDescriptorFields = ["value", "get", "set", "writable", "enumerable", "configurable"] as const;
+function unchangedCreateIntrinsics(): boolean {
+  if (createHash !== createHashIdentity || utilTypes !== createUtilTypesIdentity) return false;
+  // Check exactly these three links: reparenting can change dispatch without
+  // changing any own descriptor. An unexpected initial chain stays legacy.
+  if (!createBufferChainSupported || createBufferArrayPrototype === null || createBufferTypedPrototype === null ||
+      createPrototypeOf(createBufferPrototype) !== createBufferArrayPrototype ||
+      createPrototypeOf(createBufferArrayPrototype) !== createBufferTypedPrototype ||
+      createPrototypeOf(createBufferTypedPrototype) !== createObjectPrototype) return false;
+  // No live array iteration/methods or reflection before this check completes.
+  for (let index = 0; index < createIntrinsicObservations.length; index += 1) {
+    const observation = createIntrinsicObservations[index]!;
+    if (observation.complete && createOwnKeys(observation.owner).length !== observation.keys.length) return false;
+    for (let keyIndex = 0; keyIndex < observation.keys.length; keyIndex += 1) {
+      const before = observation.descriptors[keyIndex];
+      const after = createOwnDescriptor(observation.owner, observation.keys[keyIndex]!);
+      if (before === undefined || after === undefined) {
+        if (before !== after) return false;
+        continue;
+      }
+      for (let fieldIndex = 0; fieldIndex < createDescriptorFields.length; fieldIndex += 1) {
+        const field = createDescriptorFields[fieldIndex]!;
+        // Descriptor objects inherit Object.prototype too: do not read absent
+        // fields through a caller-added inherited accessor during the guard.
+        if (createOwnDescriptor(before, field)?.value !== createOwnDescriptor(after, field)?.value) return false;
+      }
+    }
+  }
+  return true;
+}
+
+// This is eligibility, not admission. Do not serialize, invoke accessors/proxy
+// traps, normalize fields, freeze caller values, or turn uncertainty into errors.
+function qualifyCreateData(value: unknown, seen: Set<object>, budget: { remaining: number }, depth = 0): void {
+  if (--budget.remaining < 0 || depth > 64) throw unsafeCreateQualification;
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+    if (typeof value === "symbol") throw unsafeCreateQualification;
+    return; // Values, descriptors and aliases (including undefined/-0) stay intact.
+  }
+  if (typeof value === "function" || createIsProxy(value) || seen.has(value)) throw unsafeCreateQualification;
+  const array = createIsArray(value);
+  const prototype = createPrototypeOf(value);
+  if (array ? prototype !== createArrayPrototype : prototype !== createObjectPrototype && prototype !== null) throw unsafeCreateQualification;
+  const keys = createOwnKeys(value);
+  if (keys.length > budget.remaining) throw unsafeCreateQualification;
+  const descriptors = createOwnDescriptors(value);
+  if (array && keys.length !== (descriptors.length!.value as number) + 1) throw unsafeCreateQualification;
+  seen.add(value);
+  for (const key of keys) {
+    if (typeof key !== "string") throw unsafeCreateQualification;
+    const descriptor = descriptors[key]!;
+    if (array && key === "length") continue;
+    if (!("value" in descriptor) || !descriptor.enumerable ||
+        (array && (!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= (descriptors.length!.value as number)))) throw unsafeCreateQualification;
+    qualifyCreateData(descriptor.value, seen, budget, depth + 1);
+  }
+  seen.delete(value);
+}
+
+// Options are not copied: test/lock hooks run outside the synchronous
+// member loop and must not disable retry coverage. Inside it, only data reads are safe.
+function plainOptionsDescriptors(options: object): PropertyDescriptorMap | null {
+  if (createIsProxy(options) || createPrototypeOf(options) !== createObjectPrototype) return null;
+  const descriptors = createOwnDescriptors(options);
+  // Invalid coercible objects could run user code when constructing an actor error.
+  for (const key of ["actorId", "occurredAt"]) {
+    const descriptor = descriptors[key];
+    if (descriptor !== undefined && (typeof descriptor.value !== "string" && descriptor.value !== undefined)) return null;
+    if (descriptor === undefined && createOwnDescriptor(createObjectPrototype, key) !== undefined) return null;
+  }
+  for (const key of createOwnKeys(descriptors)) {
+    if (typeof key !== "string" || !("value" in descriptors[key]!) || !descriptors[key]!.enumerable) return null;
+  }
+  return descriptors;
+}
+
+function qualifyCreateBatch(builders: readonly WorkBuilder[], options: WorkspaceMutationOptions): readonly PreparedCreate[] | null {
+  // A singleton has no incremental benefit. Inspect only the ordinary array's
+  // own data length before any intrinsic-table, options, member or input work.
+  if (createIsProxy(builders) || !createIsArray(builders) || createPrototypeOf(builders) !== createArrayPrototype) return null;
+  const lengthDescriptor = createOwnDescriptor(builders, "length");
+  const length = lengthDescriptor === undefined ? undefined : createOwnDescriptor(lengthDescriptor, "value")?.value;
+  if (typeof length !== "number" || length < 2) return null;
+  if (!unchangedCreateIntrinsics() || plainOptionsDescriptors(options) === null) return null;
+  const descriptors = createOwnDescriptors(builders);
+  // Reject custom entries/iterator/index behavior without observing it.
+  if (createOwnKeys(descriptors).length !== length + 1) return null;
+  const prepared: PreparedCreate[] = [];
+  const budget = { remaining: 100_000 };
+  try {
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) return null;
+      const builder = descriptor.value as WorkBuilder;
+      const input = lookupCreateWorkInput(builder);
+      if (input !== undefined) {
+        qualifyCreateData(input, new Set(), budget);
+        prepared.push({ kind: "direct", input });
+        continue;
+      }
+      const captured = workBatchMemberCaptures(builder);
+      if (captured === undefined) return null;
+      const optionDescriptors = plainOptionsDescriptors(captured.options);
+      if (optionDescriptors === null) return null;
+      qualifyCreateData(captured.member, new Set(), budget);
+      if (captured.member.verb !== "work-create") return null;
+      prepared.push({ kind: "batch", member: captured.member, options: captured.options });
+    }
+    return prepared;
+  } catch (error) {
+    if (error === unsafeCreateQualification) return null;
+    throw error;
+  }
+}
+
+function validateCreatedWork(state: WorkspaceState, record: WorkRecord, context?: CreateValidationContext): readonly WorkRecord[] {
+  if (context?.byId === undefined || state.work.length + 1 > PROTOCOL_LIMITS.maxRecords) {
+    // Preserve legacy argument evaluation order, including direct invocation.
+    const combined = [...state.work, record];
+    recordWriteCreateFullValidation(combined.length);
+    const work = validateWorkGraph(combined, templateRegistry(state.templates));
+    if (context !== undefined) context.byId = new Map(work.map((entry) => [entry.id, entry]));
+    return work;
+  }
+  const closure = collectWorkClosure(context.byId, record);
+  recordWriteCreateClosureValidation(closure.length);
+  validateWorkGraph(closure, templateRegistry(state.templates)); // Keep write errors, not replay's translated errors.
+  let low = 0;
+  let high = state.work.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (compareWorkOrder(state.work[middle]!, record) <= 0) low = middle + 1;
+    else high = middle;
+  }
+  const work = [...state.work.slice(0, low), record, ...state.work.slice(low)];
+  context.byId.set(record.id, record);
+  return work;
+}
+
 // STORY-300 slice 3: createWork's delta, exposed so a batch can compose it. createWork
 // already did all its validation inside the closure, so unlike transitionWork nothing
 // moves -- this only gives the batch a handle on what the single verb already ran.
@@ -4234,7 +4474,9 @@ export function createWorkDelta(input: {
   readonly templateAdmission?: unknown;
   readonly occurredAt: string;
 }): (state: WorkspaceState) => MutationDelta {
-  return (state) => createWorkReducerDelta(state, input);
+  const builder = (state: WorkspaceState): MutationDelta => createWorkReducerDelta(state, input);
+  captureCreateWorkInput(builder, input);
+  return builder;
 }
 
 export async function createWork(workspaceRoot: string, input: {
@@ -4280,7 +4522,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
   readonly involvedProjects?: InvolvedProjects;
   readonly templateAdmission?: unknown;
   readonly occurredAt: string;
-}): MutationDelta {
+}, createContext?: CreateValidationContext): MutationDelta {
   // TCRN-CROSS-STORY-472 R1: refused on the write path only. Replay and validateWorkGraph keep
   // accepting the historical kinds, so every chain that holds one still reads.
   if (RETIRED_WORK_KINDS.includes(input.kind)) {
@@ -4383,7 +4625,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
     assertWorkContentAdmission(state, record, record.status === "planned" ? "draft" : record.status === "done" ? "done" : "start");
     validateBoundTemplateWork(record, state.templates);
     assertStoryCompletionAdmission(record, record.status);
-    const work = validateWorkGraph([...state.work, record], templateRegistry(state.templates));
+    const work = validateCreatedWork(state, record, createContext);
     return { payload: { operation: "work.created", record: workJsonFields(record) }, projects: state.projects, work };
   }
 }

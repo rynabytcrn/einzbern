@@ -7,6 +7,7 @@
 // while every slot is held, and frees it when the train ends, red steps included; the steps it
 // starts inherit the slot through EINZBERN_HEAVY_SLOT.
 
+import { memoryPhase, memoryTestArguments } from "./lib/memory-budget.mjs";
 import { spawnSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -43,7 +44,9 @@ try {
   const evidence = await createPortalEvidence(root);
   for (const [index, [executable, args]] of commands.entries()) {
     const started = performance.now();
-    const result = spawnSync(executable, args, {
+    memoryPhase();
+    const admittedArgs = executable === process.execPath && args.includes("--test") ? memoryTestArguments(args) : args;
+    const result = spawnSync(executable, admittedArgs, {
       cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
       env: { ...process.env, npm_config_offline: "true", EINZBERN_VERIFY_TIMINGS_DIR: join(evidence, "timings") },
     });
@@ -76,6 +79,7 @@ try {
   // home directory. Execution above still uses the real interpreter.
   const reportedName = (executable) => (executable === process.execPath ? "node" : executable);
   const ok = timings.length === commands.length && timings.every((step) => step.exitCode === 0);
+  slot.release();
   const receipt = { ok, reasonCode: ok ? "PORTAL_VERIFY_TRAIN_GREEN" : "PORTAL_VERIFY_TRAIN_RED", commands: commands.map(([executable, args]) => [reportedName(executable), ...args]), unverified, observations, timings };
   await writeFile(join(evidence, "receipt.json"), `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx" });
   if (ok) process.stdout.write(JSON.stringify(receipt) + "\n");

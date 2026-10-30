@@ -1,3 +1,4 @@
+import { MEMORY_LEASE_VARIABLE } from "../../../scripts/lib/memory-budget.mjs";
 import { readWorkContentImpact } from "../../core/src/work-requirements.js";
 import { workContent, workContentDraft, workContentMissing } from "../../core/src/work-content.js";
 import type { ContentWorkKind } from "../../core/src/work-content.js";
@@ -1194,6 +1195,7 @@ async function prepareGates(values: Readonly<Record<string, string>>, execute: b
     const env = options.env === undefined ? undefined : {
       ...options.env,
       [HEAVY_SLOT_VARIABLE]: `${execution.slot.token}:${execution.slot.path}`,
+      [MEMORY_LEASE_VARIABLE]: process.env[MEMORY_LEASE_VARIABLE],
     };
     return runGates(plan, env === undefined ? options : { ...options, env });
   };

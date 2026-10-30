@@ -1,3 +1,4 @@
+import { acquireMemoryChild, memoryGateCommand } from "../../../scripts/lib/memory-budget.mjs";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -389,7 +390,13 @@ export async function runGates(plan: GatesPlan, options: {
     const prior: GateRunPrior = { runId, gates: ended };
     const startedAt = new Date().toISOString();
     const started = performance.now();
-    const outcome = await runGateProcess(gate.command, cwd, timeoutMs, outputBytes, { ...environment, [GATE_RUN_PRIOR_VARIABLE]: canonicalJson(prior) });
+    const gateEnvironment = { ...environment, [GATE_RUN_PRIOR_VARIABLE]: canonicalJson(prior) };
+    const memory = gate.command.includes("--test") ? await acquireMemoryChild("gate:node-test", gateEnvironment) : null;
+    let outcome: GateProcess;
+    try {
+      const admittedCommand = memoryGateCommand(gate.command, cwd, gateEnvironment);
+      outcome = await runGateProcess(admittedCommand, cwd, timeoutMs, outputBytes, gateEnvironment);
+    } finally { memory?.release(); }
     const durationMs = Math.max(0, Math.round(performance.now() - started));
     const finishedAt = new Date().toISOString();
     const outputFile = `${runId}/${index + 1}-${gate.name.replace(/[^A-Za-z0-9._-]/gu, "_")}.log`;

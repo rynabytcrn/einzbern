@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -312,7 +312,8 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "scripts/library-catalog-worker.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
     "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
-    ...SPECIFICATIONS.map(name => `specs/${name}`), "docs/codex-native-controller.md",
+    ...SPECIFICATIONS.map(name => `specs/${name}`), "docs/codex-native-controller.md", "docs/design/memory-admission.md",
+    "scripts/lib/memory-budget.mjs", "scripts/lib/memory-worker-check.mjs", "scripts/lib/storage-location.mjs", "scripts/lib/memory-executors.json",
     ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "manifest.json",
   ];
   assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());
@@ -525,7 +526,7 @@ test("R45 U11: a registry-lock bridge whose lock or device-home re-export is not
       if (entry !== "registry-lock.mjs") await symlink(join(repositoryRoot, "scripts/lib", entry), join(copy, "scripts/lib", entry));
     }
     await writeFile(join(copy, "scripts/lib/registry-lock.mjs"), mutated);
-    for (const path of ["scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern-launcher.mjs", "scripts/einzbern-hook-launcher.mjs", "portal/portal.mjs", "dist", "packages", "package.json"]) {
+    for (const path of ["scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern-launcher.mjs", "scripts/einzbern-hook-launcher.mjs", "scripts/task.mjs", "scripts/verify-portal.mjs", "scripts/portal-tests.mjs", "scripts/release.mjs", "scripts/test-controller-bootstrap.mjs", "scripts/test-controller-child-policy.mjs", "portal/portal.mjs", "dist", "packages", "package.json"]) {
       await symlink(join(repositoryRoot, path), join(copy, path));
     }
     const out = join(copy, "out");
@@ -846,4 +847,73 @@ test("607-R2: shared Skill validation refuses a package whose manifest could sti
   await mkdir(join(tree, "skill", BRAND.helper.id), { recursive: true });
   await writeFile(join(tree, "skill", BRAND.helper.id, "SKILL.md"), "Read specs/work-content-v1.md.\n");
   await assert.rejects(verifySkillSpecifications(tree, `skill/${BRAND.helper.id}`), { reasonCode: "PACK_SKILL_SPEC_MISSING" });
+});
+
+test("memory admission ships the actual worker preload closure and validated device preference", async () => {
+  const { entries, tree } = await packedRelease();
+  const files = new Map(entries.map(entry => [entry.path.slice(RELEASE.length + 1), entry.bytes]));
+  for (const file of ["scripts/lib/memory-budget.mjs", "scripts/lib/memory-worker-check.mjs", "scripts/lib/storage-location.mjs", "scripts/lib/memory-executors.json", "docs/design/memory-admission.md"]) assert.ok(files.has(file), file);
+  const home = join(base, "memory-policy-device"); await mkdir(home);
+  const env = { ...process.env, EINZBERN_HOME: home }; delete env.EINZBERN_MEMORY_LEASE;
+  const cli = join(tree, "scripts/einzbern.mjs");
+  const value = JSON.stringify({ enabled: true, maxWorkers: 2 });
+  const written = node([cli, "machine-settings-set", "--home", home, "--key", "execution.memoryPolicy", "--value", value, "--at", "2026-10-29T00:00:00Z"], { env });
+  assert.equal(written.status, 0, written.stderr);
+  const catalog = node([cli, "machine-settings-catalog", "--home", home], { env });
+  assert.equal(catalog.status, 0, catalog.stderr);
+  assert.equal(JSON.parse(catalog.stdout).settings.find(row => row.key === "execution.memoryPolicy").currentValue, value);
+  const preload = node(["--import", join(tree, "scripts/lib/memory-worker-check.mjs"), "--eval", "process.stdout.write('preload-ready')"], { env });
+  assert.equal(preload.status, 0, preload.stderr); assert.equal(preload.stdout, "preload-ready");
+});
+
+
+test("packaged CLI executes the verified source project's memory-admitted gate, not the installation root", async () => {
+  const { tree, entries } = await packedRelease();
+  const isolated = await environment("memory-gates-distribution");
+  const project = join(isolated.root, "project"), library = join(isolated.root, "library");
+  await cp(repositoryRoot, project, { recursive: true, filter: path => ![".git", "dist"].some(name => path === join(repositoryRoot, name) || path.startsWith(`${join(repositoryRoot, name)}/`)) });
+  const initialized = spawnSync("git", ["init", "-q", project], { encoding: "utf8" });
+  assert.equal(initialized.status, 0, initialized.stderr);
+  const telemetry = join(isolated.root, "telemetry.mjs");
+  await writeFile(telemetry, `import fs from 'node:fs';import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';
+const read=fs.readFileSync,exec=cp.execFileSync;fs.readFileSync=function(p,...a){if(p==='/proc/pressure/memory')return 'full avg10=0.00 avg60=0.00 avg300=0.00 total=0\\n';if(typeof p==='string'&&/^\\/proc\\/\\d+\\/smaps_rollup$/u.test(p))return 'Private_Clean: 0 kB\\nPrivate_Dirty: 0 kB\\n';return read.call(this,p,...a)};
+cp.execFileSync=function(p,a,...o){if(p==='/usr/bin/memory_pressure'&&a?.length===1&&a[0]==='-Q')return 'System-wide memory free percentage: 75%\\n';return exec.call(this,p,a,...o)};process.availableMemory=()=>12*1024**3;process.constrainedMemory=()=>16*1024**3;syncBuiltinESMExports();`);
+  const env = { ...isolated.env, COREPACK_ENABLE_NETWORK: "0", pnpm_config_verify_deps_before_run: "false" };
+  delete env.EINZBERN_MEMORY_LEASE; delete env.EINZBERN_HEAVY_SLOT; delete env.EINZBERN_HEAVY_LOCK_DIR;
+  const entry = join(tree, "scripts/einzbern.mjs"), at = "2026-10-29T19:00:00Z";
+  const invoke = args => {
+    const result = node(["--import", telemetry, entry, ...args], { env, cwd: project, timeout: 90_000 });
+    assert.equal(result.status, 0, `${args[0]}: ${safeDiagnostic(result.stderr)}`);
+    return JSON.parse(result.stdout);
+  };
+  invoke(["init", "--workspace", library, "--project", project, "--at", at]);
+  const projectId = invoke(["project-create", "--workspace", library, "--external-key", "PACKED-MEMORY-GATES", "--name", "Isolated executor project", "--at", at]).record.id;
+  invoke(["library-register", "--library", library, "--project", project, "--project-id", projectId, "--at", at]);
+  invoke(["machine-settings-set", "--key", "execution.memoryPolicy", "--value", JSON.stringify({ enabled: true, reserveMiB: 0, fixedMiB: 128, workerMiB: 256, maxWorkers: 2 }), "--at", at]);
+  // Synthetic fixture authorization, never a production Owner decision.
+  const decision = invoke(["minutes-record", "--workspace", library, "--project-id", projectId, "--external-key", "MEMORY-GATE-MIN-1", "--title", "Synthetic gate fixture", "--summary", "Isolated package regression only", "--decided-by", "owner:governance", "--decisions", "Declare isolated gates format-package and format-direct for this synthetic test only", "--at", at]).id;
+  for (const [name, command] of [["format-package", ["corepack", "pnpm@11.3.0", "run", "--silent", "format:check"]], ["format-direct", ["node", "scripts/task.mjs", "format-check"]]]) {
+    invoke(["gates-config-set", "--workspace", library, "--project-id", projectId, "--name", name, "--root", ".", "--command", JSON.stringify(command), "--covers", "**", "--decided-in", `${decision}#D1`, "--at", at]);
+  }
+  const ran = invoke(["gates-run", "--workspace", library, "--project", project, "--project-id", projectId, "--release", "true", "--at", at]);
+  assert.equal(ran.reasonCode, "GATES_RUN_COMPLETED");
+  const result = ran.run ?? ran;
+  assert.deepEqual(result.reds, [], safeDiagnostic(JSON.stringify(ran)));
+  assert.equal(result.gates.length, 2);
+  assert.ok(result.gates.every(gate => gate.ok && gate.exitCode === 0));
+  const metadata = entries.find(row => row.path === `${RELEASE}/scripts/lib/memory-executors.json`);
+  assert.ok(metadata);
+  const contract = JSON.parse(metadata.bytes.toString("utf8"));
+  assert.equal(contract.schemaVersion, "einzbern.memory-executors.v1");
+  assert.equal(contract.files["package.json"], sha256(await readFile(join(project, "package.json"))));
+  // A same-named task without the matching instrumented closure never gains admission.
+  await writeFile(join(project, "scripts/task.mjs"), "process.exit(0);\n");
+  const refused = node(["--import", telemetry, entry, "gates-run", "--workspace", library, "--project", project, "--project-id", projectId, "--release", "true", "--at", at], { env, cwd: project });
+  assert.equal(refused.status, 1);
+  assert.ok(refused.stderr.includes("MEMORY_EXECUTOR_UNSUPPORTED"), safeDiagnostic(refused.stderr));
+  await rm(join(project, "scripts/task.mjs"));
+  await symlink(join(repositoryRoot, "scripts/task.mjs"), join(project, "scripts/task.mjs"));
+  const linked = node(["--import", telemetry, entry, "gates-run", "--workspace", library, "--project", project, "--project-id", projectId, "--release", "true", "--at", at], { env, cwd: project });
+  assert.equal(linked.status, 1);
+  assert.ok(linked.stderr.includes("MEMORY_EXECUTOR_UNSUPPORTED"), safeDiagnostic(linked.stderr));
 });

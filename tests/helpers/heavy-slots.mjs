@@ -7,6 +7,7 @@
 // that started the tests, which a run inside a test has no claim to. Both are replaced here for the
 // processes a test starts, and for the heavy runs it runs in this process, through runCli.
 
+import { MEMORY_LEASE_VARIABLE } from "../../scripts/lib/memory-budget.mjs";
 import { join } from "node:path";
 
 import { HEAVY_LOCK_DIRECTORY_VARIABLE, HEAVY_SLOT_VARIABLE } from "../../scripts/lib/heavy-runs.mjs";
@@ -23,6 +24,7 @@ export function heavyLockDirectoryUnder(base) {
 export function privateHeavyEnvironment(directory, env = process.env) {
   const isolated = { ...env, [HEAVY_LOCK_DIRECTORY_VARIABLE]: directory };
   delete isolated[HEAVY_SLOT_VARIABLE];
+  delete isolated[MEMORY_LEASE_VARIABLE];
   return isolated;
 }
 
@@ -33,12 +35,13 @@ export function privateHeavyEnvironment(directory, env = process.env) {
  * were, unless something has changed them since, which then puts back its own.
  */
 export function usePrivateHeavySlots(context, directory) {
-  const previous = { directory: process.env[HEAVY_LOCK_DIRECTORY_VARIABLE], slot: process.env[HEAVY_SLOT_VARIABLE] };
+  const previous = { directory: process.env[HEAVY_LOCK_DIRECTORY_VARIABLE], slot: process.env[HEAVY_SLOT_VARIABLE], memory: process.env[MEMORY_LEASE_VARIABLE] };
   process.env[HEAVY_LOCK_DIRECTORY_VARIABLE] = directory;
   delete process.env[HEAVY_SLOT_VARIABLE];
+  delete process.env[MEMORY_LEASE_VARIABLE];
   context.after(() => {
     if (process.env[HEAVY_LOCK_DIRECTORY_VARIABLE] !== directory || process.env[HEAVY_SLOT_VARIABLE] !== undefined) return;
-    for (const [name, value] of [[HEAVY_LOCK_DIRECTORY_VARIABLE, previous.directory], [HEAVY_SLOT_VARIABLE, previous.slot]]) {
+    for (const [name, value] of [[HEAVY_LOCK_DIRECTORY_VARIABLE, previous.directory], [HEAVY_SLOT_VARIABLE, previous.slot], [MEMORY_LEASE_VARIABLE, previous.memory]]) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }

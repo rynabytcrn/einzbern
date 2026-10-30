@@ -1,3 +1,4 @@
+import { MEMORY_POLICY_SETTING, parseMemoryPolicy } from "../../../scripts/lib/memory-budget.mjs";
 import { HEAVY_RUNS_DEFAULT, HEAVY_RUNS_MAX, HEAVY_RUNS_MIN, HEAVY_RUNS_SETTING } from "../../../scripts/lib/heavy-runs.mjs";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-281 — the machine settings layer.
@@ -46,6 +47,7 @@ export const AGENTS_NAVIGATION_CHOICES = Object.freeze(["written", "declined"] a
 export type AgentsNavigationChoice = typeof AGENTS_NAVIGATION_CHOICES[number];
 
 export const MACHINE_SETTING_KEYS = Object.freeze([
+  MEMORY_POLICY_SETTING,
   AGENTS_NAVIGATION_SETTING,
   "paths.artifacts",
   "paths.knowledgeArticles",
@@ -114,6 +116,8 @@ export interface MachineSettingsCatalogEntry {
 }
 
 export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = Object.freeze([
+  Object.freeze({ key: MEMORY_POLICY_SETTING, type: "string", controlType: "text", layer: "device", layerKind: MACHINE_SETTINGS_LAYER_KIND,
+    defaultValue: null, shape: "scalar", group: "execution", order: 8, appliesOn: "next-open", valueSource: "settings-catalog" }),
   // Local host integration only; shared AGENTS content follows project/library policy.
   Object.freeze({
     key: AGENTS_NAVIGATION_SETTING,
@@ -277,6 +281,9 @@ export function validateMachineSettingValue(key: MachineSettingKey, value: unkno
   }
   if (entry.type === "path" && (!isAbsolute(value) || value.trim() !== value || /[\0\r\n]/u.test(value))) {
     fail("MACHINE_SETTING_VALUE_INVALID", `${key} needs an absolute path`);
+  }
+  if (key === MEMORY_POLICY_SETTING) {
+    try { parseMemoryPolicy(value); } catch { fail("MACHINE_SETTING_VALUE_INVALID", "execution.memoryPolicy needs a valid closed memory policy JSON object"); }
   }
   return value;
 }
@@ -474,5 +481,6 @@ export async function readMachineSettingsCatalog(path: string = machineSettingsP
 
 /** Shared configuration backup deliberately excludes paths, identity and execution state. */
 export const CONFIG_BACKUP_MACHINE_KEYS = Object.freeze([
+  MEMORY_POLICY_SETTING,
   "portal.defaultLocale", "portal.defaultPartition", "portal.defaultTheme", "portal.port",
 ] as const);

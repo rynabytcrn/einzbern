@@ -7,10 +7,10 @@
 // process group until it is gone.
 
 import childProcess from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { closeSync, fsyncSync, lstatSync, openSync, readFileSync, readdirSync, unlinkSync, writeSync } from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
-import { resolve } from "node:path";
+import { createRequire, syncBuiltinESMExports } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -93,15 +93,27 @@ function environmentWithoutPolicy(environment) {
   return updated;
 }
 
+const requirePolicyDependency = createRequire(import.meta.url);
+function managedPackageTask(arguments_, cwd) {
+  if (typeof arguments_[0] !== "string" || !/(?:^|[\\/])(?:corepack(?:\.cmd|\.exe)?|pnpm(?:\.cjs|\.exe)?)$/u.test(arguments_[0]) || !Array.isArray(arguments_[1])) return false;
+  // Restricted CLI children need only this builtin-only policy. Load the executor
+  // verifier only for an actual package-manager dispatch, never at preload time.
+  try { return requirePolicyDependency("./lib/memory-budget.mjs").memoryPackageTask([arguments_[0], ...arguments_[1]], cwd)?.entry === "scripts/task.mjs"; }
+  catch { return false; }
+}
+
 function propagatePolicyToNodeChild(name, arguments_) {
   const takesCommandLine = name === "exec" || name === "execSync";
-  if (name !== "fork" && !takesCommandLine && !isNodeExecutable(arguments_[0])) return arguments_;
   const index = optionsIndex(name, arguments_);
   const options = index === undefined ? {} : object(arguments_[index]) ?? {};
+  // The same verified task entry may be reached through its exact pinned package runner.
+  // Its own task controller remains responsible; arbitrary package scripts keep the policy.
+  const packageTask = managedPackageTask(arguments_, options.cwd ?? process.cwd());
+  if (name !== "fork" && !takesCommandLine && !isNodeExecutable(arguments_[0]) && !packageTask) return arguments_;
   const environment = object(options.env) ?? process.env;
   const updatedOptions = {
     ...options,
-    env: taskEntrypointArguments(name, arguments_)
+    env: taskEntrypointArguments(name, arguments_) || packageTask
       ? environmentWithoutPolicy(environment)
       : { ...environment, NODE_OPTIONS: nodeOptionsWithPolicy(environment.NODE_OPTIONS) },
   };
@@ -143,7 +155,21 @@ function isGateRunnerSpawn(name, arguments_, options) {
   if (!Array.isArray(arguments_[1]) || arguments_[1].some((argument) => typeof argument !== "string")) return false;
   if (!Array.isArray(options.stdio) || options.stdio.length !== 3 ||
       options.stdio[0] !== "ignore" || options.stdio[1] !== "pipe" || options.stdio[2] !== "pipe") return false;
-  return /(?:^|[\\/])packages[\\/]core[\\/]src[\\/]gates-run\.(?:js|ts):\d+:\d+/u.test(new Error().stack ?? "");
+  const stack = new Error().stack ?? "";
+  if (/(?:^|[\\/])packages[\\/]core[\\/]src[\\/]gates-run\.(?:js|ts):\d+:\d+/u.test(stack)) return true;
+  // Distribution bundles keep the gate runner but not its original filesystem path.
+  // Admit only the actual manifest-covered CLI entry, never an arbitrary same-named probe.
+  const frame = /at runGateProcess \(([^\n()]+[\\/]scripts[\\/]einzbern\.mjs):\d+:\d+\)/u.exec(stack);
+  if (!frame) return false;
+  try {
+    const entry = frame[1].startsWith("file:") ? fileURLToPath(frame[1]) : resolve(frame[1]);
+    const metadata = lstatSync(entry);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) return false;
+    const manifest = JSON.parse(readFileSync(join(dirname(dirname(entry)), "manifest.json"), "utf8"));
+    const member = manifest.schemaVersion === "einzbern.release-manifest.v1" && manifest.files?.find(row => row.path === "scripts/einzbern.mjs");
+    const bytes = readFileSync(entry);
+    return member?.size === bytes.length && member.sha256 === createHash("sha256").update(bytes).digest("hex");
+  } catch { return false; }
 }
 
 function slotPaths(directory = registryDirectory) {

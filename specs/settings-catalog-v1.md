@@ -119,6 +119,7 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `execution` | `quota.weeklyWaitPercent` | project | scalar | 5 |
 | `execution` | `execution.maxConcurrentHeavyRuns` | device | scalar | 6 |
 | `execution` | `execution.maxConcurrentAgents` | device | scalar | 7 |
+| `execution` | `execution.memoryPolicy` | device | scalar | 8 |
 | `knowledge` | `artifact.language` | project | scalar | 1 |
 | `knowledge` | `knowledge.articlesPath` | project | scalar | 2 |
 | `knowledge` | `crest.userPath` | device | scalar | 4 |
@@ -685,3 +686,11 @@ target until `project-bindings-set` or `project-bindings-remove` with
 ## Typed work content policy (INIT-068)
 
 `work.contentPolicy` is one JSON policy object, a scalar in general/order22, not a table collection. It defaults to null and is not model-writable. It requires an explicit project, admitted type defaults and a valid Owner decision. See [work-content-v1](work-content-v1.md). Its source is the existing project settings event; generated views are not independent authority.
+
+## Opt-in device memory admission
+
+`execution.memoryPolicy` is a closed JSON device preference. It adds memory-budget
+admission to the heavy-run cap, never a replacement for agent caps or an OS limit.
+An unset policy preserves existing execution. See [memory admission](../docs/design/memory-admission.md)
+for fields, named workload estimates, resource-domain coordination, unknown-state
+refusal, worker adapters and the configuration-backup boundary.

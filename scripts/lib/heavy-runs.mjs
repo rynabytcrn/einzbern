@@ -29,6 +29,8 @@
 // exists or after it went stale. The engine imports it by relative path, as it imports
 // runtime-capacity.mjs, and the build copies it to dist/build/scripts/lib.
 
+import { acquireMemoryBudget, readMemoryPolicy, resolveMemoryDirectory } from "./memory-budget.mjs";
+import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { homedir, hostname } from "node:os";
@@ -275,7 +277,7 @@ function delay(milliseconds) {
  * every process started from here inherits it). `timeoutMs` bounds the wait (HEAVY_SLOT_TIMEOUT);
  * omitted, the run waits until a slot is free.
  */
-export async function acquireHeavySlot({ command, timeoutMs, env = process.env, home = homedir(), stderr = process.stderr, processAlive = defaultProcessAlive } = {}) {
+async function acquireCountSlot({ command, timeoutMs, env = process.env, home = homedir(), stderr = process.stderr, processAlive = defaultProcessAlive } = {}) {
   if (typeof command !== "string" || command.length === 0) fail("HEAVY_SLOT_OPTIONS_INVALID", "a heavy run names its command");
   if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0)) fail("HEAVY_SLOT_OPTIONS_INVALID", "timeoutMs must be a whole number of milliseconds");
   const inherited = inheritedSlot(env, processAlive);
@@ -283,7 +285,9 @@ export async function acquireHeavySlot({ command, timeoutMs, env = process.env, 
     return Object.freeze({ held: false, inherited: true, slot: null, path: inherited.path, token: inherited.token, release() {} });
   }
   const limit = maxConcurrentHeavyRuns(env, home);
-  const directory = heavyLockDirectory(env, home);
+  const requestedDirectory = heavyLockDirectory(env, home);
+  const deviceHome = deviceDirectory(env, home);
+  const directory = readMemoryPolicy(deviceHome)?.enabled ? resolveMemoryDirectory(deviceHome, requestedDirectory) : requestedDirectory;
   mkdirSync(directory, { recursive: true });
   const token = randomBytes(16).toString("hex");
   const content = `${JSON.stringify({ schemaVersion: LOCK_SCHEMA_VERSION, pid: process.pid, token, hostname: hostname(), createdAt: new Date().toISOString(), command })}\n`;
@@ -316,4 +320,16 @@ export async function acquireHeavySlot({ command, timeoutMs, env = process.env, 
     await delay(Math.min(wait + Math.floor(Math.random() * wait), deadline === undefined ? WAIT_CEILING_MS : deadline - Date.now()));
     wait = Math.min(wait * 2, WAIT_CEILING_MS);
   }
+}
+
+/** Memory admission is additional to, and cannot raise, the existing heavy-run cap. */
+export async function acquireHeavySlot(options = {}) {
+  const slot = await acquireCountSlot(options);
+  const env = options.env ?? process.env;
+  let memory;
+  try {
+    memory = await acquireMemoryBudget({ deviceHome: deviceDirectory(env, options.home), directory: dirname(slot.path), command: options.command, env, timeoutMs: options.timeoutMs ?? 0 });
+  } catch (error) { slot.release(); throw error; }
+  if (memory === null) return slot;
+  return Object.freeze({ ...slot, memory, release() { memory.release(); slot.release(); } });
 }

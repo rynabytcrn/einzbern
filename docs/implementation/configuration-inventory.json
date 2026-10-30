@@ -330,6 +330,25 @@
       "min": 1
     },
     {
+      "key": "execution.memoryPolicy",
+      "semanticType": "string",
+      "storageType": "string",
+      "controlType": "text",
+      "registeredScope": "device",
+      "scope": "device",
+      "owner": "device-user",
+      "schemaOwner": "installed-engine",
+      "source": "device machine-settings.json",
+      "storageSource": "device machine-settings.json",
+      "inheritance": "device declaration then consumer default",
+      "sharing": "device-local; not library synced",
+      "export": "local runtime only; no shared project export",
+      "consumer": "scripts/lib/memory-budget.mjs device safety policy and heavy-run admission",
+      "effect": "next-open",
+      "compatibility": "catalog default may differ from consumer fallback; no global precedence chain",
+      "defaultValue": null
+    },
+    {
       "key": "injection.perPromptBytes",
       "semanticType": "integer",
       "storageType": "string",
@@ -1047,6 +1066,38 @@
   "runtimeInputs": {
     "schemaVersion": "einzbern.runtime-input-contract.v1",
     "entries": [
+      {
+        "classification": "internal-transient",
+        "visibility": "internal",
+        "transport": "environment-string",
+        "defaultValue": null,
+        "owner": "parent memory budget holder",
+        "source": "process environment",
+        "persistence": "invocation",
+        "sensitivity": "transient-token",
+        "pathBase": "absolute local resource directory",
+        "sharing": "device-local; never a shared library declaration",
+        "export": "child invocation only; never backed up",
+        "restart": "next invocation; restart a long-running process to change its startup input",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "env:EINZBERN_MEMORY_LEASE",
+        "kind": "environment",
+        "name": "EINZBERN_MEMORY_LEASE",
+        "semanticType": "string",
+        "validation": "JSON token and absolute resource directory; state, host and observed owner process identity must match before reuse. Invalid inheritance refuses.",
+        "defaultDescription": "no inherited memory budget",
+        "precedence": [
+          "validated parent envelope",
+          "explicit device memory policy"
+        ],
+        "scope": "managed heavy-run process tree",
+        "consumer": [
+          "scripts/lib/memory-budget.mjs",
+          "scripts/test-controller-bootstrap.mjs"
+        ],
+        "effect": "Subdivides a local reservation without raising agent or heavy-run caps. Not an OS memory limit."
+      },
       {
         "classification": "internal-transient",
         "visibility": "integration",
@@ -11287,6 +11338,7 @@
         "scripts/einzbern-hook.mjs",
         "scripts/einzbern-hook-launcher.mjs",
         "scripts/lib/heavy-runs.mjs",
+        "scripts/lib/memory-budget.mjs",
         "scripts/lib/safe-io.mjs",
         "skill/mana-orchestrate/scripts/install.mjs"
       ],

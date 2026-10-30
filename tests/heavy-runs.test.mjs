@@ -395,7 +395,9 @@ test("SUB-484, SUB-493: the test command and verify-p1 take their slot before th
   const taking = source.indexOf("if (HEAVY_COMMANDS.has(command)) heavySlot = await acquireHeavySlot({ command });");
   const session = source.indexOf("const result = await withExclusiveOutputSession(repositoryRoot, async () => invoke(command));");
   assert.ok(commands > 0 && taking > commands && session > taking, "the slot is taken first, by the test command and by verify-p1");
-  assert.match(source, /\} finally \{\n {2}heavySlot\?\.release\(\);\n\}\n?$/u, "and let go however the command ends");
+  assert.match(source, /\} finally \{\n {2}try \{ heavySlot\?\.release\(\); \} catch/u, "release is still attempted however the command ends");
+  assert.ok(source.includes('phase: "resource-release"'), "uncertain resource cleanup is a failure, not silent success");
+  assert.ok(source.indexOf("heavySlot?.release();", session) < source.indexOf('process.stdout.write(`${JSON.stringify({ ok: true, command, ...result })}', session), "success is emitted only after resource release");
   assert.ok(source.includes('safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/heavy-runs.mjs", heavyRuns)'));
   assert.deepEqual(await readFile(join(repositoryRoot, "dist/build/scripts/lib/heavy-runs.mjs")), await readFile(join(repositoryRoot, "scripts/lib/heavy-runs.mjs")), "the build's copy is the source");
 });

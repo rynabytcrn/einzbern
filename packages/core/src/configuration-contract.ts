@@ -80,6 +80,7 @@ const CONSUMERS = Object.freeze({
   "execution.maxConcurrentAgents": "execution-policy.ts device agent concurrency cap",
   "agents.navigation": "host-render.ts; host-hooks.ts local navigation installation",
   "crest.userPath": "device-home.ts user crest path resolution",
+  "execution.memoryPolicy": "scripts/lib/memory-budget.mjs device safety policy and heavy-run admission",
   "execution.maxConcurrentHeavyRuns": "scripts/lib/heavy-runs.mjs slot acquisition",
   "portal.defaultLocale": "portal/index.html browser preference fallback",
   "portal.defaultPartition": "portal/portal.mjs initial library selection",

@@ -3132,7 +3132,7 @@ test("the real command-five test path rejects detached inherited-pipe descendant
   const rejected = await taskEntrypointFixture(context, holderSource);
   const rejectedBootstrapPath = resolve(rejected, "scripts/test-controller-bootstrap.mjs");
   const fixedBootstrap = await readFile(rejectedBootstrapPath, "utf8");
-  const rejectedSpawn = `testController = spawn(process.execPath, ["--import", childPolicyImport, ...testArguments], {\n    stdio: ["ignore", stdoutFile.fd, stderrFile.fd],\n    env: controllerEnvironment,\n  });`;
+  const rejectedSpawn = `testController = spawn(process.execPath, ["--import", childPolicyImport, ...memoryTestArguments(testArguments)], {\n    stdio: ["ignore", stdoutFile.fd, stderrFile.fd],\n    env: controllerEnvironment,\n  });`;
   assert.equal(fixedBootstrap.split(rejectedSpawn).length, 2, "controller spawn fixture boundary");
   const rejectedBootstrap = fixedBootstrap.replace(rejectedSpawn, `testController = spawn(process.execPath, testArguments, {\n    stdio: "inherit",\n    env: { ...controllerEnvironment, NODE_OPTIONS: "" },\n  });`);
   await writeFile(rejectedBootstrapPath, rejectedBootstrap, { mode: 0o600 });
@@ -3473,6 +3473,21 @@ test("the real gates-run child policy privately manages groups, registration rac
   assert.ok(Number.isSafeInteger(timeoutProbe.processGroup) && timeoutProbe.processGroup > 0);
   await waitForDeadProcessGroup(timeoutProbe.processGroup);
   await assertTaskResidueClean(root);
+});
+
+test("the controller child policy rejects bundle-shaped gate callers without matching manifest bytes", async context => {
+  const root = await fixture(context);
+  const entry = join(root, "scripts", "einzbern.mjs");
+  await mkdir(join(root, "scripts"), { recursive: true });
+  const source = `import {spawn} from 'node:child_process';function runGateProcess(){try{const child=spawn(process.execPath,['-e','process.exit(0)'],{detached:true,shell:false,stdio:['ignore','pipe','pipe']});child.on('close',()=>console.log('escaped'));}catch(error){console.log(error.code)}}runGateProcess();`;
+  await writeFile(entry, source);
+  const policy = new URL("../scripts/test-controller-child-policy.mjs", import.meta.url).href;
+  for (const manifest of [null, { schemaVersion: "einzbern.release-manifest.v1", files: [{ path: "scripts/einzbern.mjs", size: Buffer.byteLength(source), sha256: "0".repeat(64) }] }]) {
+    if (manifest) await writeFile(join(root, "manifest.json"), JSON.stringify(manifest));
+    const result = spawnSync(process.execPath, ["--import", policy, entry], { encoding: "utf8", timeout: 5000 });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "TEST_CONTROLLER_DETACHED_DESCENDANT_FORBIDDEN");
+  }
 });
 
 test("the controller child policy rejects detached escape through every supported child_process signature", () => {

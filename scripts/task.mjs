@@ -27,6 +27,8 @@ import { ConfigBackupReservationError } from "./lib/config-backup-reservation.mj
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
 import { DependencyGraphError, validateFrozenDependencyGraph } from "./lib/dependency-graph.mjs";
 import { validateVendoredRuntimeInventory, VENDORED_RUNTIME_NOTICES, VENDORED_RUNTIME_SOURCE } from "./lib/vendored-runtime.mjs";
+import { createMemoryExecutorContract } from "./lib/memory-executor-contract.mjs";
+import { MemoryBudgetError } from "./lib/memory-budget.mjs";
 import { HeavyRunsError, acquireHeavySlot } from "./lib/heavy-runs.mjs";
 import {
   aggregatePrivacySurface,
@@ -646,6 +648,13 @@ async function build() {
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/config-backup-reservation.mjs", configBackupReservation);
   // TCRN-CROSS-SUB-484: the heavy-run semaphore, which the CLI's gates-run and the machine settings
   // catalog import by relative path, as they import runtime-capacity.mjs.
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/memory-executors.json", `${JSON.stringify(createMemoryExecutorContract(repositoryRoot))}\n`);
+  const storageLocation = await readSourceFile(resolve(repositoryRoot, "scripts/lib/storage-location.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/storage-location.mjs", storageLocation);
+  const memoryBudget = await readSourceFile(resolve(repositoryRoot, "scripts/lib/memory-budget.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/memory-budget.mjs", memoryBudget);
+  const memoryWorkerCheck = await readSourceFile(resolve(repositoryRoot, "scripts/lib/memory-worker-check.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/memory-worker-check.mjs", memoryWorkerCheck);
   const heavyRuns = await readSourceFile(resolve(repositoryRoot, "scripts/lib/heavy-runs.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/heavy-runs.mjs", heavyRuns);
   const dispatchConfigPath = resolve(repositoryRoot, "packages/core/src/dispatch-config.ts");
@@ -696,7 +705,7 @@ async function runTests({ p8Only = false, extraEnvironment = {}, ciPlan } = {}) 
   }
   return success(
     p8Only ? "P8_WORKFLOW_RC_TESTS_VERIFIED" : ciPlan?.coverage === "selective" ? "TESTS_SELECTED_VERIFIED" : "TESTS_VERIFIED",
-    { tests, result: "passed", progress: controller.progress, ...(ciPlan ? { coverage: ciPlan.coverage, planDigest: ciPlan.planDigest, argv: coreTestArgv(tests) } : {}) },
+    { tests, result: "passed", progress: controller.progress, ...(controller.progress.lastProgress?.memoryAdmission ? { memoryAdmission: controller.progress.lastProgress.memoryAdmission } : {}), ...(ciPlan ? { coverage: ciPlan.coverage, planDigest: ciPlan.planDigest, argv: coreTestArgv(tests) } : {}) },
   );
 }
 
@@ -1593,7 +1602,7 @@ const handlers = {
 };
 
 function errorReason(error) {
-  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ConfigBackupReservationError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError || error instanceof HeavyRunsError) {
+  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ConfigBackupReservationError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError || error instanceof HeavyRunsError || error instanceof MemoryBudgetError) {
     return error.reasonCode;
   }
   return "TASK_INTERNAL_ERROR";
@@ -1643,6 +1652,8 @@ let heavySlot = null;
 try {
   if (HEAVY_COMMANDS.has(command)) heavySlot = await acquireHeavySlot({ command });
   const result = await withExclusiveOutputSession(repositoryRoot, async () => invoke(command));
+  heavySlot?.release();
+  heavySlot = null;
   process.stdout.write(`${JSON.stringify({ ok: true, command, ...result })}\n`);
 } catch (error) {
   const details = error?.details && typeof error.details === "object" && !Array.isArray(error.details) ? error.details : {};
@@ -1654,5 +1665,8 @@ try {
   }
   process.exitCode = 1;
 } finally {
-  heavySlot?.release();
+  try { heavySlot?.release(); } catch (error) {
+    process.stderr.write(`${JSON.stringify({ ok: false, command, reasonCode: error.reasonCode ?? "MEMORY_RELEASE_UNCONFIRMED", phase: "resource-release" })}\n`);
+    process.exitCode = 1;
+  }
 }

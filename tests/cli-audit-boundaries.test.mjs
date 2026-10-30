@@ -23,6 +23,8 @@ async function prepareFixture({ execute, reject = false, role = "coordination", 
     validateWorkspace: async () => state,
     chainIdentity: () => ({ role }),
     HEAVY_SLOT_VARIABLE: "EINZBERN_HEAVY_SLOT",
+    MEMORY_LEASE_VARIABLE: "EINZBERN_MEMORY_LEASE",
+    process: { env: { EINZBERN_MEMORY_LEASE: "fixture-memory-envelope" } },
     acquireHeavySlot: async () => { calls.push("acquire"); return { token: "fixture-token", path: "/fixture/slot", release: () => calls.push("release") }; },
     workGateTargets: async (_state, _values, run, executeRun) => {
       calls.push("prepare");
@@ -35,6 +37,7 @@ async function prepareFixture({ execute, reject = false, role = "coordination", 
     runGates: async (_plan, options) => {
       if (options.env !== undefined) {
         assert.equal(options.env.EINZBERN_HEAVY_SLOT, "fixture-token:/fixture/slot");
+        assert.equal(options.env.EINZBERN_MEMORY_LEASE, "fixture-memory-envelope");
         assert.equal(options.env.EINZBERN_PROJECT_CONTEXT, "fixture-context");
       }
       calls.push("execute");

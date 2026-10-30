@@ -4388,9 +4388,14 @@ function plainOptionsDescriptors(options: object): PropertyDescriptorMap | null 
 }
 
 function qualifyCreateBatch(builders: readonly WorkBuilder[], options: WorkspaceMutationOptions): readonly PreparedCreate[] | null {
-  if (!unchangedCreateIntrinsics() || createIsProxy(builders) || !createIsArray(builders) || createPrototypeOf(builders) !== createArrayPrototype || plainOptionsDescriptors(options) === null) return null;
+  // A singleton has no incremental benefit. Inspect only the ordinary array's
+  // own data length before any intrinsic-table, options, member or input work.
+  if (createIsProxy(builders) || !createIsArray(builders) || createPrototypeOf(builders) !== createArrayPrototype) return null;
+  const lengthDescriptor = createOwnDescriptor(builders, "length");
+  const length = lengthDescriptor === undefined ? undefined : createOwnDescriptor(lengthDescriptor, "value")?.value;
+  if (typeof length !== "number" || length < 2) return null;
+  if (!unchangedCreateIntrinsics() || plainOptionsDescriptors(options) === null) return null;
   const descriptors = createOwnDescriptors(builders);
-  const length = createOwnDescriptor(builders, "length")!.value as number;
   // Reject custom entries/iterator/index behavior without observing it.
   if (createOwnKeys(descriptors).length !== length + 1) return null;
   const prepared: PreparedCreate[] = [];

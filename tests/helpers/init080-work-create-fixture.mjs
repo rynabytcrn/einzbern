@@ -249,3 +249,73 @@ export async function correctiveProbe({ repo, mode, destination, source, keep = 
   else await fs.rm(base, { recursive: true, force: true });
   return result;
 }
+
+// Self-contained for isolated candidate tests and separate actual995 differential evidence.
+export async function singletonProbe({ repo, mode, destination, source, keep = false }) {
+  const fs = await import("node:fs/promises"), path = await import("node:path"), os = await import("node:os");
+  const assert = (await import("node:assert/strict")).default;
+  const api = await import(`${repo}/dist/build/packages/core/src/index.js`);
+  const perf = await import(`${repo}/dist/build/packages/core/src/workspace-perf-instrumentation.js`);
+  const { rootPortableIdentity } = await import(`${repo}/dist/build/packages/core/src/root-identity.js`);
+  const { canonicalSha256 } = await import(`${repo}/dist/build/packages/protocol/src/index.js`);
+  assert.equal(globalThis.__TCRN_OFFLINE_GUARD__, true);
+  const AT = "2026-10-01T00:00:00Z";
+  const base = await fs.mkdtemp(path.join(destination ?? os.tmpdir(), "init080-singleton-"));
+  const root = path.join(base, "library"), home = path.join(base, "device");
+  await fs.mkdir(home); process.env.EINZBERN_HOME = home;
+  await fs.writeFile(path.join(home, "device.json"), JSON.stringify({ createdAt: AT, deviceId: "d".repeat(32), displayName: "pinned", schemaVersion: "einzbern.device.v1" }) + "\n");
+  if (source) await fs.cp(source, root, { recursive: true });
+  else { await api.initializeLibrary({ root, createdAt: AT }); await api.createProject(root, { externalKey: "SINGLE-P", name: "Singleton", occurredAt: AT }); }
+  if (mode === "prepare") return { root, base };
+  const initial = await api.materializeWorkspaceFromGenesis(root);
+  const value = { projectId: initial.projects[0].id, externalKey: "SINGLE-A", kind: "Initiative", parentId: null, status: "planned", title: "Singleton", occurredAt: AT };
+  if (mode.endsWith("seeded")) for (let i = 0; i < 3; i += 1) await api.createWork(root, { ...value, externalKey: `SEED-${i}` });
+  if (mode.endsWith("actor")) await api.appendEvents(root, [(state) => ({ payload: { operation: api.ACTOR_ATTESTATION_ENABLE_OPERATION, record: api.buildActorAttestationEnableRecord() }, projects: state.projects, work: state.work })], { occurredAt: AT, actorId: "owner:fixture" });
+  const bytes = async () => {
+    const result = { "manifest.json": (await fs.readFile(path.join(root, "manifest.json"))).toString("base64") };
+    const walk = async (rel) => { for (const entry of (await fs.readdir(path.join(root, rel), { withFileTypes: true })).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) { const name = path.join(rel, entry.name); if (entry.isDirectory()) await walk(name); else result[name] = (await fs.readFile(path.join(root, name))).toString("base64"); } };
+    await walk("akasha"); return result;
+  };
+  const comparable = (state) => {
+    const result = structuredClone(state);
+    if (result.library) {
+      assert.equal(result.library.libraryRoot, root);
+      for (const descriptor of result.metadata.roots) if (descriptor.kind === "workspace") {
+        assert.equal(descriptor.path, root); assert.equal(descriptor.canonicalPath, root); assert.equal(descriptor.portableIdentity, rootPortableIdentity(root));
+        descriptor.path = "<same-fixture>"; descriptor.canonicalPath = "<same-fixture>"; descriptor.portableIdentity = "<same-fixture>";
+      }
+      result.library.libraryRoot = "<same-fixture>";
+    }
+    return result;
+  };
+  const before = await bytes(), trace = [];
+  if (mode.endsWith("invalid")) value.externalKey = "invalid key";
+  if (mode === "input-accessor") Object.defineProperty(value, "title", { enumerable: true, get() { trace.push("input:title"); return "Getter title"; } });
+  const options = { occurredAt: AT };
+  if (mode === "options-accessor") Object.defineProperty(options, "occurredAt", { enumerable: true, get() { trace.push("options:occurredAt"); return AT; } });
+  if (mode === "event") options.occurredAt = "invalid instant";
+  if (mode === "event-indexed") { let reads = 0; Object.defineProperty(options, "occurredAt", { enumerable: true, get() { reads += 1; trace.push(`event-at:${reads}`); return reads >= 3 ? "invalid instant" : AT; } }); }
+  const delta = api.createWorkDelta(value); let builders = [delta];
+  if (mode === "index-accessor") Object.defineProperty(builders, "0", { enumerable: true, get() { trace.push("index:0"); return delta; } });
+  if (mode === "proxy-array") builders = new Proxy(builders, { get(target, key, receiver) { trace.push(`get:${String(key)}`); return Reflect.get(target, key, receiver); }, ownKeys(target) { trace.push("ownKeys"); return Reflect.ownKeys(target); }, getOwnPropertyDescriptor(target, key) { trace.push(`descriptor:${String(key)}`); return Reflect.getOwnPropertyDescriptor(target, key); } });
+  if (mode === "custom-entries") builders.entries = function* () { trace.push("entries"); yield [0, delta]; };
+  if (mode === "custom-prototype") Object.setPrototypeOf(builders, Object.create(Array.prototype));
+  if (mode === "empty") builders = [];
+  const measured = await perf.withWorkspacePerfInstrumentation(async () => {
+    try {
+      const state = mode.startsWith("batch")
+        ? await api.applyWorkBatch(root, { schemaVersion: "tcrn.work-batch.v1", members: mode === "batch-empty" ? [] : [{ ...value, verb: "work-create" }] }, options)
+        : mode.startsWith("public") ? await api.createWork(root, value) : await api.appendEvents(root, builders, options);
+      return { ok: true, state: comparable(state) };
+    } catch (error) {
+      if (error.name === "AssertionError") throw error;
+      return { ok: false, error: { name: error.name, reasonCode: error.reasonCode, message: error.message, memberIndex: error.memberIndex, memberPhase: error.memberPhase, details: error.details } };
+    }
+  });
+  const after = await bytes(), replay = comparable(await api.materializeWorkspaceFromGenesis(root));
+  if (measured.result.ok) assert.deepEqual(measured.result.state, replay, "complete successful state equals genesis replay");
+  else assert.deepEqual(after, before, "refusal leaves authoritative bytes unchanged");
+  const result = { mode, base, outcome: measured.result, trace, metrics: measured.metrics, replay, digest: canonicalSha256(replay), authoritativeBytes: after, atomicBytesUnchanged: JSON.stringify(before) === JSON.stringify(after) };
+  if (keep) await fs.writeFile(path.join(base, "result.json"), JSON.stringify(result, null, 2)); else await fs.rm(base, { recursive: true, force: true });
+  return result;
+}

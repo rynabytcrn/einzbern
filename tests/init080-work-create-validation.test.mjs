@@ -15,7 +15,7 @@ import { createWorkBatchMemberDelta } from "../dist/build/packages/core/src/work
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { appendHistoricalAttestationEnable, appendHistoricalWorkCreate, cliProcess } from "./helpers/workspace-fixture.mjs";
-import { AT, input, wrap, append, pair, fastCounts, legacyCounts, correctiveProbe } from "./helpers/init080-work-create-fixture.mjs";
+import { AT, input, wrap, append, pair, fastCounts, legacyCounts, correctiveProbe, singletonProbe } from "./helpers/init080-work-create-fixture.mjs";
 
 const workId = (key) => deriveStableId("work", key);
 const member = (projectId, externalKey, patch = {}) => ({ verb: "work-create", projectId, externalKey, kind: "Initiative", parentId: null, status: "planned", title: externalKey, ...patch });
@@ -400,4 +400,41 @@ for (const mode of ["length", "length-batch", "buffer", "byteOffset", "shadow", 
   assert.equal(result.metrics.writeCreateFullValidation, 2);
   assert.equal(result.metrics.writeCreateClosureValidation, 0);
   assert.equal(result.metrics.writeCreateTerminalValidation, 0);
+});
+
+
+for (const mode of ["owned", "owned-seeded", "batch", "batch-seeded", "public", "public-seeded", "empty", "batch-empty", "index-accessor", "proxy-array", "custom-entries", "custom-prototype", "input-accessor", "options-accessor", "invalid", "actor", "event", "event-indexed", "batch-invalid", "batch-actor"]) test(`INIT080 singleton ${mode} retains original single-validation behavior`, async () => {
+  const repo = fileURLToPath(new URL("..", import.meta.url));
+  const script = `(${singletonProbe.toString()})(${JSON.stringify({ repo, mode })}).then((result) => process.stdout.write(JSON.stringify(result)));`;
+  const guard = fileURLToPath(new URL("../scripts/no-network.mjs", import.meta.url));
+  const { stdout } = await promisify(execFile)(process.execPath, ["--max-old-space-size=2048", "--import", guard, "--input-type=module", "-e", script], { maxBuffer: 16 * 1024 * 1024, timeout: 60_000, env: process.env });
+  const result = JSON.parse(stdout);
+  const fails = ["empty", "batch-empty", "invalid", "actor", "event", "event-indexed", "batch-invalid", "batch-actor"].includes(mode);
+  assert.equal(result.outcome.ok, !fails);
+  assert.equal(result.metrics.writeCreateClosureValidation, 0);
+  assert.equal(result.metrics.writeCreateTerminalValidation, 0);
+  if (!fails) { legacyCounts(result.metrics, 1, mode.endsWith("seeded") ? 3 : 0); assert.deepEqual(result.outcome.state, result.replay); }
+  else {
+    assert.equal(result.atomicBytesUnchanged, true);
+    if (mode === "batch-empty") {
+      assert.deepEqual(result.outcome.error, { name: "WorkspaceError", reasonCode: "WORK_BATCH_MALFORMED", message: "a batch carries at least one member" });
+    } else if (mode === "event") {
+      assert.deepEqual(result.outcome.error, { name: "ProtocolError", reasonCode: "TIMESTAMP_INVALID", message: "invalid instant" });
+    } else if (mode.startsWith("batch")) {
+      assert.equal(result.outcome.error.reasonCode, "WORK_BATCH_REFUSED");
+      const error = JSON.parse(result.outcome.error.message);
+      if (mode !== "batch-empty") { assert.equal(error.failed.index, 0); assert.equal(error.failed.phase, mode.endsWith("actor") ? "actor" : "delta"); assert.deepEqual(error.notEvaluated, []); }
+    } else if (mode !== "empty") {
+      assert.equal(result.outcome.error.memberIndex, 0);
+      assert.equal(result.outcome.error.memberPhase, mode === "actor" ? "actor" : mode === "event-indexed" ? "event" : "delta");
+    }
+  }
+  const expectedTrace = {
+    "index-accessor": ["index:0"],
+    "proxy-array": ["get:length", "get:length", "get:entries", "get:length", "get:0", "get:length", "get:length"],
+    "custom-entries": ["entries"], "input-accessor": ["input:title"],
+    "options-accessor": ["options:occurredAt", "options:occurredAt", "options:occurredAt"],
+    "event-indexed": ["event-at:1", "event-at:2", "event-at:3"],
+  };
+  assert.deepEqual(result.trace, expectedTrace[mode] ?? [], "exact observable call sequence matches actual995");
 });

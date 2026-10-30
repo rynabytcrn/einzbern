@@ -15,16 +15,20 @@ interface Captures {
   readonly options: WorkBatchOptions;
 }
 const captures = new WeakMap<Builder, Captures>();
+// New metadata must be inert even when the actual write takes the legacy path.
+const lookupCaptures = captures.get.bind(captures);
+const recordCaptures = captures.set.bind(captures);
+const freezeCaptures = Object.freeze;
 
 export function createWorkBatchMemberDelta(member: Readonly<Record<string, unknown>>, options: WorkBatchOptions): Builder {
   const builder: Builder = (state) => resolveWorkBatchMemberDelta(member, options.occurredAt, options.actorId)(state);
   // Freeze our metadata only, never the caller-owned member/options.
-  captures.set(builder, Object.freeze({ member, options }));
+  recordCaptures(builder, freezeCaptures({ member, options }));
   return builder;
 }
 
 export function workBatchMemberCaptures(builder: Builder): Captures | undefined {
-  return captures.get(builder);
+  return lookupCaptures(builder);
 }
 
 export function isNonEmptyString(value: unknown): value is string {

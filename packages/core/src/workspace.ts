@@ -3898,9 +3898,10 @@ async function buildAppend(
     const own = read.streams.find((stream) => stream.deviceId === device.deviceId)?.manifest ?? emptyStreamManifest(library, device);
     const clockBase = Math.max(own.clockHighWater, ...read.streams.map((stream) => stream.manifest?.clockHighWater ?? 0));
     const appended: EventRecord[] = [];
-    // Snapshot only after the last await. No arbitrary builder or caller callback
-    // can observe this attempt's state between eligibility and terminal validation.
-    const creates = ordinaryAppend ? snapshotCreateBatch(buildDeltas, options) : null;
+    // Qualify after the last await, retaining the original aliases through commit.
+    // The bounded data/intrinsic guard excludes callbacks during this synchronous
+    // fold only; later lock waits still observe the original mutable payloads.
+    const creates = ordinaryAppend ? qualifyCreateBatch(buildDeltas, options) : null;
     const createContext: CreateValidationContext | undefined = creates === null ? undefined : {};
     let current = state;
     for (const [memberIndex, buildDelta] of buildDeltas.entries()) {
@@ -3915,7 +3916,7 @@ async function buildAppend(
         ? buildDelta(current)
         : createWorkReducerDelta(current, preparedCreate.kind === "direct"
           ? preparedCreate.input
-          : createWorkInputs.get(resolveWorkBatchMemberDelta(preparedCreate.member, preparedCreate.occurredAt, preparedCreate.actorId))!, createContext);
+          : lookupCreateWorkInput(resolveWorkBatchMemberDelta(preparedCreate.member, preparedCreate.options.occurredAt, preparedCreate.options.actorId))!, createContext);
       source.merge.assertUnredirectedWrite(own.streamId, delta.payload);
       if (library.manifest.formatVersion < 3 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) && delta.payload.record.collection === "chain" && delta.payload.record.key === "identity" && delta.payload.record.projectId !== undefined) throw new FormatVersionError("LIBRARY_FORMAT_UNSUPPORTED", "scoped chain identities require format 3", { required: "3" });
       if (library.manifest.formatVersion < 2 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) &&
@@ -4234,31 +4235,93 @@ function assertContentDecisions(state: WorkspaceState, record: WorkRecord, previ
 type CreateWorkInput = Parameters<typeof createWorkDelta>[0];
 type WorkBuilder = (state: WorkspaceState) => MutationDelta;
 const createWorkInputs = new WeakMap<WorkBuilder, CreateWorkInput>();
+// New provenance bookkeeping must not invoke patched methods on legacy paths.
+const lookupCreateWorkInput = createWorkInputs.get.bind(createWorkInputs);
+const captureCreateWorkInput = createWorkInputs.set.bind(createWorkInputs);
 interface CreateValidationContext {
   byId?: Map<string, WorkRecord>;
 }
 type PreparedCreate =
   | { readonly kind: "direct"; readonly input: CreateWorkInput }
-  | { readonly kind: "batch"; readonly member: Readonly<Record<string, unknown>>; readonly occurredAt: string; readonly actorId: string | undefined };
+  | { readonly kind: "batch"; readonly member: Readonly<Record<string, unknown>>; readonly options: Pick<WorkspaceMutationOptions, "occurredAt" | "actorId"> };
 
-const unsafeCreateSnapshot = Symbol("unsafe create snapshot");
-// A changed intrinsic prototype can supply inherited accessors/iteration callbacks
-// even to otherwise plain data. Such callers keep the legacy path as well.
-const createDataPrototypes = [Object.prototype, Array.prototype].map((prototype) => ({
-  prototype, descriptors: Object.getOwnPropertyDescriptors(prototype),
-}));
-function unchangedCreateDataPrototypes(): boolean {
-  for (let index = 0; index < createDataPrototypes.length; index += 1) {
-    const { prototype, descriptors } = createDataPrototypes[index]!;
-    const current = Object.getOwnPropertyDescriptors(prototype);
-    const keys = Reflect.ownKeys(current);
-    if (keys.length !== Reflect.ownKeys(descriptors).length) return false;
-    for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
-      const key = keys[keyIndex]!;
-      const before = Object.getOwnPropertyDescriptor(descriptors, key)?.value as PropertyDescriptor | undefined;
-      const after = Object.getOwnPropertyDescriptor(current, key)!.value as PropertyDescriptor;
-      if (before === undefined || before.value !== after.value || before.get !== after.get || before.set !== after.set ||
-          before.enumerable !== after.enumerable || before.configurable !== after.configurable || before.writable !== after.writable) return false;
+const unsafeCreateQualification = Symbol("unsafe create qualification");
+// Capture reflection for new bookkeeping only. Original reducers/validators keep
+// their live built-in calls, including on fallback. These observations are a
+// bounded post-import compatibility guard, not a pristine/hostile-realm claim.
+const createOwnDescriptor = Object.getOwnPropertyDescriptor;
+const createOwnDescriptors = Object.getOwnPropertyDescriptors;
+const createOwnKeys = Reflect.ownKeys;
+const createPrototypeOf = Object.getPrototypeOf;
+const createIsProxy = utilTypes.isProxy;
+const createIsArray = Array.isArray;
+const createObjectPrototype = Object.prototype;
+const createArrayPrototype = Array.prototype;
+const createHashIdentity = createHash;
+const createUtilTypesIdentity = utilTypes;
+type CreateIntrinsicObservation = {
+  readonly owner: object;
+  readonly keys: readonly (string | symbol)[];
+  readonly descriptors: readonly (PropertyDescriptor | undefined)[];
+  readonly complete: boolean;
+};
+function observeCreateIntrinsic(owner: object, keys?: readonly (string | symbol)[]): CreateIntrinsicObservation {
+  const selected = keys ?? createOwnKeys(owner);
+  return { owner, keys: selected, descriptors: selected.map((key) => createOwnDescriptor(owner, key)), complete: keys === undefined };
+}
+const createArrayIteratorPrototype = createPrototypeOf([][Symbol.iterator]());
+const createIntrinsicObservations: readonly CreateIntrinsicObservation[] = [
+  // Identity of live owners/constructors; never read a replaced global getter.
+  observeCreateIntrinsic(globalThis, ["Object", "Array", "String", "RegExp", "Map", "Set", "WeakMap", "WeakSet", "JSON", "Number", "BigInt", "Boolean", "Math", "Date", "Buffer", "Reflect"]),
+  observeCreateIntrinsic(Object.prototype),
+  observeCreateIntrinsic(Array.prototype),
+  observeCreateIntrinsic(String.prototype),
+  observeCreateIntrinsic(RegExp.prototype),
+  // map/slice and regex split reach these constructors' symbol species hooks.
+  observeCreateIntrinsic(Array),
+  observeCreateIntrinsic(RegExp),
+  observeCreateIntrinsic(createArrayIteratorPrototype),
+  observeCreateIntrinsic(createPrototypeOf(createArrayIteratorPrototype)),
+  observeCreateIntrinsic(createPrototypeOf(""[Symbol.iterator]())),
+  observeCreateIntrinsic(createPrototypeOf(new Map().values())),
+  observeCreateIntrinsic(createPrototypeOf(new Set().values())),
+  observeCreateIntrinsic(Map.prototype),
+  observeCreateIntrinsic(Set.prototype),
+  observeCreateIntrinsic(WeakSet.prototype),
+  observeCreateIntrinsic(WeakMap.prototype, ["get", "set"]),
+  observeCreateIntrinsic(Object, ["keys", "entries", "values", "fromEntries", "hasOwn", "freeze", "getPrototypeOf", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors"]),
+  observeCreateIntrinsic(Reflect, ["ownKeys"]),
+  observeCreateIntrinsic(JSON, ["stringify", "parse"]),
+  observeCreateIntrinsic(Number, ["isSafeInteger"]),
+  observeCreateIntrinsic(Math, ["floor", "max"]),
+  observeCreateIntrinsic(Date.prototype, ["toISOString"]),
+  observeCreateIntrinsic(Buffer, ["from", "byteLength", "compare"]),
+  // Summary truncation reaches subarray/toString and their Buffer dispatch.
+  observeCreateIntrinsic(Buffer.prototype),
+  observeCreateIntrinsic(createPrototypeOf(createHash("sha256")), ["update", "digest"]),
+  observeCreateIntrinsic(AsyncLocalStorage.prototype, ["getStore"]),
+  observeCreateIntrinsic(utilTypes, ["isProxy"]),
+];
+const createDescriptorFields = ["value", "get", "set", "writable", "enumerable", "configurable"] as const;
+function unchangedCreateIntrinsics(): boolean {
+  if (createHash !== createHashIdentity || utilTypes !== createUtilTypesIdentity) return false;
+  // No live array iteration/methods or reflection before this check completes.
+  for (let index = 0; index < createIntrinsicObservations.length; index += 1) {
+    const observation = createIntrinsicObservations[index]!;
+    if (observation.complete && createOwnKeys(observation.owner).length !== observation.keys.length) return false;
+    for (let keyIndex = 0; keyIndex < observation.keys.length; keyIndex += 1) {
+      const before = observation.descriptors[keyIndex];
+      const after = createOwnDescriptor(observation.owner, observation.keys[keyIndex]!);
+      if (before === undefined || after === undefined) {
+        if (before !== after) return false;
+        continue;
+      }
+      for (let fieldIndex = 0; fieldIndex < createDescriptorFields.length; fieldIndex += 1) {
+        const field = createDescriptorFields[fieldIndex]!;
+        // Descriptor objects inherit Object.prototype too: do not read absent
+        // fields through a caller-added inherited accessor during the guard.
+        if (createOwnDescriptor(before, field)?.value !== createOwnDescriptor(after, field)?.value) return false;
+      }
     }
   }
   return true;
@@ -4266,58 +4329,55 @@ function unchangedCreateDataPrototypes(): boolean {
 
 // This is eligibility, not admission. Do not serialize, invoke accessors/proxy
 // traps, normalize fields, freeze caller values, or turn uncertainty into errors.
-function snapshotCreateData(value: unknown, seen: Set<object>, budget: { remaining: number }, depth = 0): unknown {
-  if (--budget.remaining < 0 || depth > 64) throw unsafeCreateSnapshot;
+function qualifyCreateData(value: unknown, seen: Set<object>, budget: { remaining: number }, depth = 0): void {
+  if (--budget.remaining < 0 || depth > 64) throw unsafeCreateQualification;
   if (value === null || (typeof value !== "object" && typeof value !== "function")) {
-    if (typeof value === "symbol") throw unsafeCreateSnapshot;
-    return value; // In particular undefined and -0 keep their original meaning.
+    if (typeof value === "symbol") throw unsafeCreateQualification;
+    return; // Values, descriptors and aliases (including undefined/-0) stay intact.
   }
-  if (typeof value === "function" || utilTypes.isProxy(value) || seen.has(value)) throw unsafeCreateSnapshot;
-  const array = Array.isArray(value);
-  const prototype = Object.getPrototypeOf(value);
-  if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) throw unsafeCreateSnapshot;
-  const keys = Reflect.ownKeys(value);
-  if (keys.length > budget.remaining) throw unsafeCreateSnapshot;
-  const descriptors = Object.getOwnPropertyDescriptors(value);
-  const result: Record<string, unknown> | unknown[] = array ? [] : Object.create(prototype) as Record<string, unknown>;
-  if (array && keys.length !== (descriptors.length!.value as number) + 1) throw unsafeCreateSnapshot;
+  if (typeof value === "function" || createIsProxy(value) || seen.has(value)) throw unsafeCreateQualification;
+  const array = createIsArray(value);
+  const prototype = createPrototypeOf(value);
+  if (array ? prototype !== createArrayPrototype : prototype !== createObjectPrototype && prototype !== null) throw unsafeCreateQualification;
+  const keys = createOwnKeys(value);
+  if (keys.length > budget.remaining) throw unsafeCreateQualification;
+  const descriptors = createOwnDescriptors(value);
+  if (array && keys.length !== (descriptors.length!.value as number) + 1) throw unsafeCreateQualification;
   seen.add(value);
   for (const key of keys) {
-    if (typeof key !== "string") throw unsafeCreateSnapshot;
+    if (typeof key !== "string") throw unsafeCreateQualification;
     const descriptor = descriptors[key]!;
     if (array && key === "length") continue;
     if (!("value" in descriptor) || !descriptor.enumerable ||
-        (array && (!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= (descriptors.length!.value as number)))) throw unsafeCreateSnapshot;
-    const copy = snapshotCreateData(descriptor.value, seen, budget, depth + 1);
-    Object.defineProperty(result, key, { value: copy, enumerable: true, writable: true, configurable: true });
+        (array && (!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= (descriptors.length!.value as number)))) throw unsafeCreateQualification;
+    qualifyCreateData(descriptor.value, seen, budget, depth + 1);
   }
   seen.delete(value);
-  return result;
 }
 
-// Options are not cloned wholesale: test/lock hooks run outside the synchronous
+// Options are not copied: test/lock hooks run outside the synchronous
 // member loop and must not disable retry coverage. Inside it, only data reads are safe.
 function plainOptionsDescriptors(options: object): PropertyDescriptorMap | null {
-  if (utilTypes.isProxy(options) || Object.getPrototypeOf(options) !== Object.prototype) return null;
-  const descriptors = Object.getOwnPropertyDescriptors(options);
+  if (createIsProxy(options) || createPrototypeOf(options) !== createObjectPrototype) return null;
+  const descriptors = createOwnDescriptors(options);
   // Invalid coercible objects could run user code when constructing an actor error.
   for (const key of ["actorId", "occurredAt"]) {
     const descriptor = descriptors[key];
     if (descriptor !== undefined && (typeof descriptor.value !== "string" && descriptor.value !== undefined)) return null;
-    if (descriptor === undefined && Object.hasOwn(Object.prototype, key)) return null;
+    if (descriptor === undefined && createOwnDescriptor(createObjectPrototype, key) !== undefined) return null;
   }
-  for (const key of Reflect.ownKeys(descriptors)) {
+  for (const key of createOwnKeys(descriptors)) {
     if (typeof key !== "string" || !("value" in descriptors[key]!) || !descriptors[key]!.enumerable) return null;
   }
   return descriptors;
 }
 
-function snapshotCreateBatch(builders: readonly WorkBuilder[], options: WorkspaceMutationOptions): readonly PreparedCreate[] | null {
-  if (!unchangedCreateDataPrototypes() || utilTypes.isProxy(builders) || !Array.isArray(builders) || Object.getPrototypeOf(builders) !== Array.prototype || plainOptionsDescriptors(options) === null) return null;
-  const descriptors = Object.getOwnPropertyDescriptors(builders);
-  const length = Object.getOwnPropertyDescriptor(builders, "length")!.value as number;
+function qualifyCreateBatch(builders: readonly WorkBuilder[], options: WorkspaceMutationOptions): readonly PreparedCreate[] | null {
+  if (!unchangedCreateIntrinsics() || createIsProxy(builders) || !createIsArray(builders) || createPrototypeOf(builders) !== createArrayPrototype || plainOptionsDescriptors(options) === null) return null;
+  const descriptors = createOwnDescriptors(builders);
+  const length = createOwnDescriptor(builders, "length")!.value as number;
   // Reject custom entries/iterator/index behavior without observing it.
-  if (Reflect.ownKeys(descriptors).length !== length + 1) return null;
+  if (createOwnKeys(descriptors).length !== length + 1) return null;
   const prepared: PreparedCreate[] = [];
   const budget = { remaining: 100_000 };
   try {
@@ -4325,24 +4385,23 @@ function snapshotCreateBatch(builders: readonly WorkBuilder[], options: Workspac
       const descriptor = descriptors[String(index)];
       if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) return null;
       const builder = descriptor.value as WorkBuilder;
-      const input = createWorkInputs.get(builder);
+      const input = lookupCreateWorkInput(builder);
       if (input !== undefined) {
-        prepared.push({ kind: "direct", input: snapshotCreateData(input, new Set(), budget) as CreateWorkInput });
+        qualifyCreateData(input, new Set(), budget);
+        prepared.push({ kind: "direct", input });
         continue;
       }
       const captured = workBatchMemberCaptures(builder);
       if (captured === undefined) return null;
       const optionDescriptors = plainOptionsDescriptors(captured.options);
       if (optionDescriptors === null) return null;
-      const member = snapshotCreateData(captured.member, new Set(), budget) as Readonly<Record<string, unknown>>;
-      if (member.verb !== "work-create") return null;
-      const occurredAt = snapshotCreateData(optionDescriptors.occurredAt?.value, new Set(), budget) as string;
-      const actorId = snapshotCreateData(optionDescriptors.actorId?.value, new Set(), budget) as string | undefined;
-      prepared.push({ kind: "batch", member, occurredAt, actorId });
+      qualifyCreateData(captured.member, new Set(), budget);
+      if (captured.member.verb !== "work-create") return null;
+      prepared.push({ kind: "batch", member: captured.member, options: captured.options });
     }
     return prepared;
   } catch (error) {
-    if (error === unsafeCreateSnapshot) return null;
+    if (error === unsafeCreateQualification) return null;
     throw error;
   }
 }
@@ -4396,7 +4455,7 @@ export function createWorkDelta(input: {
   readonly occurredAt: string;
 }): (state: WorkspaceState) => MutationDelta {
   const builder = (state: WorkspaceState): MutationDelta => createWorkReducerDelta(state, input);
-  createWorkInputs.set(builder, input);
+  captureCreateWorkInput(builder, input);
   return builder;
 }
 

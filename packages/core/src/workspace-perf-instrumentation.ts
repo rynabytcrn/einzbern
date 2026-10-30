@@ -42,6 +42,9 @@ export interface WorkspacePerfMetrics {
 }
 
 const store = new AsyncLocalStorage<WorkspacePerfMetrics>();
+// Only the newly added write counters use this captured getter: they must not
+// introduce calls to a patched getStore on fallback. Historical counters stay live.
+const writeCreateMetrics = store.getStore.bind(store);
 
 export async function withWorkspacePerfInstrumentation<T>(operation: () => Promise<T>): Promise<{ readonly result: T; readonly metrics: WorkspacePerfMetrics }> {
   const metrics: WorkspacePerfMetrics = {
@@ -108,7 +111,7 @@ export function recordCollectionScan(recordsVisited: number): void {
 }
 
 export function recordWriteCreateFullValidation(recordsVisited: number): void {
-  const metrics = store.getStore();
+  const metrics = writeCreateMetrics();
   if (metrics) {
     metrics.writeCreateFullValidation += 1;
     metrics.writeCreateFullRecordsVisited += recordsVisited;
@@ -116,7 +119,7 @@ export function recordWriteCreateFullValidation(recordsVisited: number): void {
 }
 
 export function recordWriteCreateClosureValidation(recordsVisited: number): void {
-  const metrics = store.getStore();
+  const metrics = writeCreateMetrics();
   if (metrics) {
     metrics.writeCreateClosureValidation += 1;
     metrics.writeCreateClosureRecordsVisited += recordsVisited;
@@ -124,7 +127,7 @@ export function recordWriteCreateClosureValidation(recordsVisited: number): void
 }
 
 export function recordWriteCreateTerminalValidation(recordsVisited: number): void {
-  const metrics = store.getStore();
+  const metrics = writeCreateMetrics();
   if (metrics) {
     metrics.writeCreateTerminalValidation += 1;
     metrics.writeCreateTerminalRecordsVisited += recordsVisited;

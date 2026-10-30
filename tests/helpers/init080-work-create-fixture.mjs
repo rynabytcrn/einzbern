@@ -102,3 +102,118 @@ export function legacyCounts(metrics, n, initial = 0) {
   assert.equal(metrics.writeCreateClosureValidation, 0);
   assert.equal(metrics.writeCreateTerminalValidation, 0);
 }
+
+export async function correctiveProbe({ repo, mode, destination, source, keep = false }) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const crypto = await import("node:crypto");
+  const { AsyncLocalStorage } = await import("node:async_hooks");
+  const assert = (await import("node:assert/strict")).default;
+  const AT = "2026-10-01T00:00:00Z";
+  assert.equal(globalThis.__TCRN_OFFLINE_GUARD__, true);
+  const base = await fs.mkdtemp(path.join(destination ?? os.tmpdir(), "init080-correction-"));
+  const home = path.join(base, "device"), root = path.join(base, "library");
+  await fs.mkdir(home);
+  await fs.writeFile(path.join(home, "device.json"), JSON.stringify({ createdAt: AT, deviceId: "d".repeat(32), displayName: "pinned", schemaVersion: "einzbern.device.v1" }) + "\n");
+  process.env.EINZBERN_HOME = home;
+  const api = await import(`${repo}/dist/build/packages/core/src/index.js`);
+  const workspace = await import(`${repo}/dist/build/packages/core/src/workspace.js`);
+  const protocol = await import(`${repo}/dist/build/packages/protocol/src/index.js`);
+  const perf = await import(`${repo}/dist/build/packages/core/src/workspace-perf-instrumentation.js`);
+  if (source) await fs.cp(source, root, { recursive: true });
+  else {
+    await api.initializeLibrary({ root, createdAt: AT });
+    await api.createProject(root, { externalKey: "PROBE-P", name: "Probe", occurredAt: AT });
+    await api.admitTemplateInWorkspace(root, { template: api.defaultWorkContentTemplate("Initiative"), ownerId: "owner:fixture", occurredAt: AT });
+  }
+  if (mode === "prepare") return { root, base };
+  if (mode === "boolean") await api.admitTemplateInWorkspace(root, { template: { schemaVersion: "tcrn.template.v1", id: "probe.boolean", version: 1, appliesTo: ["Initiative"], headings: ["Goal", "Acceptance Criteria", "References"], acceptanceHeadings: ["Acceptance Criteria"], referenceHeadings: ["References"], couplings: [] }, ownerId: "owner:fixture", occurredAt: AT });
+  const state = await api.materializeWorkspaceFromGenesis(root);
+  const values = ["PROBE-A", "PROBE-B"].map((externalKey) => ({ projectId: state.projects[0].id, externalKey, kind: "Initiative", parentId: null, status: "planned", title: "original", occurredAt: AT }));
+  const typed = ["lock-alias", "deferred-alias", "shared-alias", "lock-wait", "typed-success", "freeze"].includes(mode);
+  if (typed) for (const value of values) { value.content = api.workContentDraft("Initiative"); value.templateAdmission = state.templates[0].receipt; }
+  if (mode === "boolean") for (const value of values) { value.templateAdmission = state.templates.find((entry) => entry.template.id === "probe.boolean").receipt; value.scope = "## Goal\nExercise references.\n## Acceptance Criteria\n- References validate.\n## References\nattachment:fixture"; }
+  if (mode === "shared-alias") values[1].content.details = values[0].content.details;
+  if (mode === "invalid-order") values[1].externalKey = "PROBE-A";
+  const bytes = async () => {
+    const out = { "manifest.json": (await fs.readFile(path.join(root, "manifest.json"))).toString("base64") };
+    const walk = async (relative) => { for (const entry of (await fs.readdir(path.join(root, relative), { withFileTypes: true })).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) { const name = path.join(relative, entry.name); if (entry.isDirectory()) await walk(name); else out[name] = (await fs.readFile(path.join(root, name))).toString("base64"); } };
+    await walk("akasha"); return out;
+  };
+  const before = await bytes(); let callbacks = 0, hookCalls = 0, wasPendingAtMutation = null;
+  const restore = [];
+  const replace = (owner, key, replacement) => { const descriptor = Object.getOwnPropertyDescriptor(owner, key); Object.defineProperty(owner, key, { ...descriptor, value: replacement }); restore.push(() => Object.defineProperty(owner, key, descriptor)); };
+  const mutate = () => { callbacks += 1; values[1].title = "mutated during first member"; };
+  const originalString = String;
+  const recordA = (value) => value !== null && typeof value === "object" && value.externalKey === "PROBE-A";
+  if (mode === "string-intrinsic") { const original = String.prototype.toUpperCase; replace(String.prototype, "toUpperCase", function (...args) { if (originalString(this) === "PROBE-A") mutate(); return Reflect.apply(original, this, args); }); }
+  if (mode === "regexp") { const original = RegExp.prototype.exec; replace(RegExp.prototype, "exec", function (...args) { if (args[0] === "PROBE-A") mutate(); return Reflect.apply(original, this, args); }); }
+  if (mode === "reflection") { const original = Object.keys; replace(Object, "keys", function (...args) { if (recordA(args[0])) mutate(); return Reflect.apply(original, this, args); }); }
+  if (mode === "iterator") { const owner = Object.getPrototypeOf([][Symbol.iterator]()); const original = owner.next; replace(owner, "next", function (...args) { const value = Reflect.apply(original, this, args); if (recordA(value.value)) mutate(); return value; }); }
+  if (mode === "map") { const original = Map.prototype.get; replace(Map.prototype, "get", function (...args) { if (args[0] === "Initiative") mutate(); return Reflect.apply(original, this, args); }); }
+  if (mode === "weakset") { const original = WeakSet.prototype.add; replace(WeakSet.prototype, "add", function (...args) { if (recordA(args[0])) mutate(); return Reflect.apply(original, this, args); }); }
+  if (mode === "json") { const original = JSON.stringify; replace(JSON, "stringify", function (...args) { if (args[0] === "PROBE-A") mutate(); return Reflect.apply(original, this, args); }); }
+  if (mode === "number") { const original = Number.isSafeInteger; replace(Number, "isSafeInteger", function (...args) { if (args[0] === 1) callbacks += 1; return Reflect.apply(original, this, args); }); }
+  if (mode === "date") { const original = Date.prototype.toISOString; replace(Date.prototype, "toISOString", function (...args) { callbacks += 1; return Reflect.apply(original, this, args); }); }
+  if (mode === "buffer") { const original = Buffer.byteLength; replace(Buffer, "byteLength", function (...args) { if (typeof args[0] === "string" && args[0].includes("PROBE-A")) mutate(); return Reflect.apply(original, this, args); }); }
+  if (mode === "hash") { const owner = Object.getPrototypeOf(crypto.createHash("sha256")); const original = owner.update; replace(owner, "update", function (...args) { if (typeof args[0] === "string" && args[0].includes("PROBE-A")) mutate(); return Reflect.apply(original, this, args); }); }
+  if (mode === "freeze") { const original = Object.freeze; replace(Object, "freeze", function (...args) { callbacks += 1; return Reflect.apply(original, this, args); }); }
+  if (mode === "store") { const original = AsyncLocalStorage.prototype.getStore; replace(AsyncLocalStorage.prototype, "getStore", function (...args) { callbacks += 1; return Reflect.apply(original, this, args); }); }
+  if (mode === "boolean") { const original = Boolean; const replacement = function (...args) { callbacks += 1; return Reflect.apply(original, this, args); }; replacement.prototype = original.prototype; Object.setPrototypeOf(replacement, original); replace(globalThis, "Boolean", replacement); }
+  if (mode === "string-owner") { const original = String; const replacement = function (...args) { callbacks += 1; return Reflect.apply(original, this, args); }; replacement.prototype = original.prototype; Object.setPrototypeOf(replacement, original); replace(globalThis, "String", replacement); }
+  const options = { occurredAt: AT };
+  if (["lock-alias", "deferred-alias", "shared-alias"].includes(mode)) options.insideWriteLockForTest = async () => { hookCalls += 1; values[0].content.details.boundary = "mutated after preparation"; };
+  let outcome, metrics, lockMetrics; let preparationObservation = null;
+  try {
+    const measured = await perf.withWorkspacePerfInstrumentation(async () => {
+      try {
+        let result;
+        const invoke = () => mode === "deferred-alias" || mode === "typed-success"
+          ? api.applyWorkBatch(root, { schemaVersion: "tcrn.work-batch.v1", members: values.map((value) => ({ ...value, verb: "work-create" })) }, options)
+          : api.appendEvents(root, values.map(api.createWorkDelta), options);
+        if (mode === "lock-wait") {
+          let ready, release;
+          const entered = new Promise((resolve) => { ready = resolve; });
+          const unlocked = new Promise((resolve) => { release = resolve; });
+          const holder = workspace.withWorkspaceWriteLock(root, async () => { ready(); await unlocked; });
+          await entered; let settled = false;
+          // Return the pending promise as data, not as the instrumentation operation's
+          // result: the child retains its AsyncLocalStorage context and metrics stay live.
+          const observed = await perf.withWorkspacePerfInstrumentation(async () => ({ pending: invoke() }));
+          lockMetrics = observed.metrics;
+          const pending = observed.result.pending;
+          pending.then(() => { settled = true; }, () => { settled = true; });
+          let observationError;
+          try {
+            if (Object.hasOwn(lockMetrics, "writeCreateTerminalValidation")) {
+              const deadline = Date.now() + 10_000;
+              while (lockMetrics.writeCreateTerminalValidation < 1) {
+                assert.ok(Date.now() < deadline, "terminal validation was not observed before the fixture deadline");
+                await new Promise((resolve) => setTimeout(resolve, 5));
+              }
+              preparationObservation = "live-terminal-counter";
+            } else {
+              // Historical995 has no write counter. Its separate external observation is
+              // explicitly timing-limited; a different outcome remains a real failure.
+              await new Promise((resolve) => setTimeout(resolve, 300));
+              preparationObservation = "historical-timed-wait-no-write-counter";
+            }
+            wasPendingAtMutation = !settled;
+            values[0].content.details.boundary = "mutated after preparation";
+          } catch (error) { observationError = error; }
+          finally { release(); await holder; }
+          if (observationError) { await pending.catch(() => {}); throw observationError; }
+          result = await pending;
+        } else result = await invoke();
+        return { ok: true, work: result.work, events: result.events.map((event) => ({ occurredAt: event.occurredAt, payload: event.payload })) };
+      } catch (error) { return { ok: false, error: { name: error.name, reasonCode: error.reasonCode, message: error.message, memberIndex: error.memberIndex, memberPhase: error.memberPhase } }; }
+    });
+    outcome = measured.result; metrics = lockMetrics ?? measured.metrics;
+  } finally { for (const reset of restore.reverse()) reset(); }
+  const after = await bytes(); const replay = await api.materializeWorkspaceFromGenesis(root);
+  const result = { mode, repo, base, callbacks, hookCalls, wasPendingAtMutation, preparationObservation, outcome, metrics, atomicBytesUnchanged: JSON.stringify(before) === JSON.stringify(after), authoritativeBytes: after, replay: { work: replay.work, events: replay.events.map((event) => ({ occurredAt: event.occurredAt, payload: event.payload })) }, workDigest: protocol.canonicalSha256(replay.work) };
+  if (keep) { await fs.writeFile(path.join(base, "before.json"), JSON.stringify(before, null, 2)); await fs.writeFile(path.join(base, "after.json"), JSON.stringify(after, null, 2)); await fs.writeFile(path.join(base, "result.json"), JSON.stringify(result, null, 2)); }
+  else await fs.rm(base, { recursive: true, force: true });
+  return result;
+}

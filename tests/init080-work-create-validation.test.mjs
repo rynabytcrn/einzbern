@@ -6,13 +6,16 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { appendEvents, applyWorkBatch, createProject, createWork, createWorkDelta, admitTemplateInWorkspace, defaultWorkContentTemplate, workContentDraft, materializeWorkspaceFromGenesis } from "../dist/build/packages/core/src/index.js";
 import { appendPlannedWrite } from "../dist/build/packages/core/src/workspace.js";
 import { createWorkBatchMemberDelta } from "../dist/build/packages/core/src/work-batch-delta.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { appendHistoricalAttestationEnable, appendHistoricalWorkCreate, cliProcess } from "./helpers/workspace-fixture.mjs";
-import { AT, input, wrap, append, pair, fastCounts, legacyCounts } from "./helpers/init080-work-create-fixture.mjs";
+import { AT, input, wrap, append, pair, fastCounts, legacyCounts, correctiveProbe } from "./helpers/init080-work-create-fixture.mjs";
 
 const workId = (key) => deriveStableId("work", key);
 const member = (projectId, externalKey, patch = {}) => ({ verb: "work-create", projectId, externalKey, kind: "Initiative", parentId: null, status: "planned", title: externalKey, ...patch });
@@ -325,4 +328,40 @@ test("INIT080 throwing input getter is neither pre-read nor blamed on a later me
     return append(fx, [input(fx.projectId, "GETTER-OK"), bad, input(fx.projectId, "LATER", { kind: "Incident" })]);
   });
   assert.equal(fast.ok, false); assert.equal(fast.error.memberIndex, 1); assert.equal(fast.error.message, "fixture getter refusal"); assert.deepEqual(fast.trace, ["throwing title"]); assert.equal(fast.metrics.writeCreateClosureValidation, 0);
+});
+
+
+// Each modified-intrinsic fixture is a separate process. The parent runner and other
+// tests never observe the patch; the child restores every descriptor before replay.
+async function isolatedCorrection(mode) {
+  const repo = fileURLToPath(new URL("..", import.meta.url));
+  const guard = fileURLToPath(new URL("../scripts/no-network.mjs", import.meta.url));
+  const script = `(${correctiveProbe.toString()})(${JSON.stringify({ repo, mode })}).then((result) => process.stdout.write(JSON.stringify(result)));`;
+  const { stdout } = await promisify(execFile)(process.execPath, ["--max-old-space-size=2048", "--import", guard, "--input-type=module", "-e", script], { maxBuffer: 16 * 1024 * 1024, timeout: 60_000, env: process.env });
+  return JSON.parse(stdout);
+}
+
+for (const mode of ["lock-alias", "deferred-alias", "shared-alias", "lock-wait"]) test(`INIT080 retained typed aliases preserve stream refusal: ${mode}`, async () => {
+  const result = await isolatedCorrection(mode);
+  assert.equal(result.outcome.ok, false);
+  assert.deepEqual(result.outcome.error, { name: "AkashaError", reasonCode: "AKASHA_INPUT_INVALID", message: "event at sequence 3 does not continue the stream (payloadHash)" });
+  assert.equal(result.atomicBytesUnchanged, true);
+  assert.deepEqual(result.replay.work, []);
+  fastCounts(result.metrics, 2);
+  assert.equal(result.metrics.writeCreateClosureRecordsVisited, 1);
+  if (mode === "lock-wait") { assert.equal(result.hookCalls, 0); assert.equal(result.wasPendingAtMutation, true); assert.equal(result.preparationObservation, "live-terminal-counter"); }
+  else assert.equal(result.hookCalls, 1);
+});
+
+for (const mode of ["string-intrinsic", "regexp", "reflection", "iterator", "map", "weakset", "json", "number", "date", "buffer", "hash", "freeze", "store", "boolean", "string-owner"]) test(`INIT080 relevant intrinsic ${mode} retains original calls through fallback`, async () => {
+  const result = await isolatedCorrection(mode);
+  assert.equal(result.outcome.ok, true);
+  assert.deepEqual(result.outcome.work, result.replay.work);
+  assert.deepEqual(result.outcome.events, result.replay.events);
+  assert.ok(result.callbacks > 0, "the representative patched operation was actually reached");
+  legacyCounts(result.metrics, 2);
+  if (mode === "string-intrinsic") {
+    assert.equal(result.callbacks, 4, "the unchanged995 exact probe calls toUpperCase four times for PROBE-A");
+    assert.equal(result.replay.work.find((record) => record.externalKey === "PROBE-B").title, "mutated during first member");
+  }
 });

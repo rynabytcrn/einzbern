@@ -16,6 +16,9 @@ import { normalizeInvolvedProjects, involvedProjectsOf, assertStoredInvolvedProj
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
+import { types as utilTypes } from "node:util";
+import { compareWorkOrder } from "../../protocol/src/work-order.js";
+import { workBatchMemberCaptures, resolveWorkBatchMemberDelta } from "./work-batch-delta.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import type { Hash } from "node:crypto";
@@ -73,7 +76,7 @@ import { legacyControlDirectory, openLegacyWorkspace, replayLegacyWorkspace } fr
 import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
 // TCRN-CROSS-STORY-489 R4: used only inside functions; registry.ts imports nothing from this module.
 import { findMigratedEntry } from "./registry.js";
-import { recordClosureValidation, recordCollectionScan, recordExtensionClosureValidation, recordFullMaterialize, recordSnapshotMaterialize, recordTerminalGraphValidation } from "./workspace-perf-instrumentation.js";
+import { recordWriteCreateFullValidation, recordWriteCreateClosureValidation, recordWriteCreateTerminalValidation, recordClosureValidation, recordCollectionScan, recordExtensionClosureValidation, recordFullMaterialize, recordSnapshotMaterialize, recordTerminalGraphValidation } from "./workspace-perf-instrumentation.js";
 import {
   ACTOR_ATTESTATION_ENABLE_OPERATION,
   ActorAttestationError,
@@ -1040,7 +1043,7 @@ function sortExtensionRecords<T extends { readonly projectId: string; readonly i
 }
 
 // WSA-2: the ancestor closure of a work record — the record plus every ancestor
-// reachable by walking parentId, bounded by the frozen four-level hierarchy. A
+// reachable by walking parentId, including arbitrary historical Incident ancestry. A
 // missing link stops the walk (validateWorkGraph then fails REFERENTIAL_INTEGRITY
 // on the record whose parent is absent); a cycle stops after both endpoints are
 // collected (validateWorkGraph then fails GRAPH_CYCLE).
@@ -3711,7 +3714,7 @@ export async function appendEvents(
   if (buildDeltas.length === 0) {
     fail("WORKSPACE_INPUT_INVALID", "an append carries at least one event");
   }
-  return appendPlannedEvents(workspaceRootInput, () => buildDeltas, options, underLock);
+  return appendPlannedEvents(workspaceRootInput, () => buildDeltas, options, underLock, true);
 }
 
 // TCRN-CROSS-STORY-538 (TCRN-CROSS-SUB-498): the deltas an append builds, planned from the state it
@@ -3727,6 +3730,7 @@ async function appendPlannedEvents(
   plan: AppendPlan,
   options: WorkspaceMutationOptions,
   underLock?: (root: string, committed: WorkspaceState) => Promise<void>,
+  ordinaryAppend = false,
 ): Promise<WorkspaceState> {
   assertStrictInstant(options.occurredAt);
   const layout = await resolveLayout(workspaceRootInput);
@@ -3736,13 +3740,13 @@ async function appendPlannedEvents(
   // and by an append another writer outran OPTIMISTIC_APPEND_ATTEMPTS times.
   const underOneHold = (): Promise<WorkspaceState> => withWorkspaceWriteLock(layout.root, async (root) => {
     await options.insideWriteLockForTest?.();
-    const committed = await commitAppend(await prepareAppend(root, plan, options), options);
+    const committed = await commitAppend(await prepareAppend(root, plan, options, ordinaryAppend), options);
     await underLock?.(root, committed);
     return committed;
   });
   if (heldWriteLocks.getStore()?.has(layout.root) === true) return underOneHold();
   for (let attempt = 1; attempt <= OPTIMISTIC_APPEND_ATTEMPTS; attempt += 1) {
-    const prepared = await prepareAppend(layout.root, plan, options);
+    const prepared = await prepareAppend(layout.root, plan, options, ordinaryAppend);
     const committed = await withWorkspaceWriteLock(layout.root, async (root) => {
       await options.insideWriteLockForTest?.();
       if (!(await streamsUnchangedSince(prepared.library.root, prepared.read))) return null;
@@ -3871,13 +3875,14 @@ async function prepareAppend(
   root: string,
   plan: AppendPlan,
   options: WorkspaceMutationOptions,
+  ordinaryAppend = false,
 ): Promise<PreparedAppend> {
   const source = await readForAppend(root);
   const buildDeltas = plan(source.state);
   if (buildDeltas.length === 0) {
     fail("WORKSPACE_INPUT_INVALID", "an append carries at least one event");
   }
-  return buildAppend(source, buildDeltas, options);
+  return buildAppend(source, buildDeltas, options, ordinaryAppend);
 }
 
 // Build every delta against the state `source` holds and measure the result -- nothing is written.
@@ -3885,6 +3890,7 @@ async function buildAppend(
   source: LibraryReadForAppend,
   buildDeltas: readonly ((state: WorkspaceState) => MutationDelta)[],
   options: WorkspaceMutationOptions,
+  ordinaryAppend = false,
 ): Promise<PreparedAppend> {
   {
     const { library, read, state } = source;
@@ -3892,6 +3898,10 @@ async function buildAppend(
     const own = read.streams.find((stream) => stream.deviceId === device.deviceId)?.manifest ?? emptyStreamManifest(library, device);
     const clockBase = Math.max(own.clockHighWater, ...read.streams.map((stream) => stream.manifest?.clockHighWater ?? 0));
     const appended: EventRecord[] = [];
+    // Snapshot only after the last await. No arbitrary builder or caller callback
+    // can observe this attempt's state between eligibility and terminal validation.
+    const creates = ordinaryAppend ? snapshotCreateBatch(buildDeltas, options) : null;
+    const createContext: CreateValidationContext | undefined = creates === null ? undefined : {};
     let current = state;
     for (const [memberIndex, buildDelta] of buildDeltas.entries()) {
       // STORY-300 slice 3: the member index and phase ride on a refusal, attached rather than
@@ -3900,7 +3910,12 @@ async function buildAppend(
       try {
       // Each member sees the state the members before it produced, which is what makes an
       // ordered batch express a dependency.
-      const delta = buildDelta(current);
+      const preparedCreate = creates?.[memberIndex];
+      const delta = preparedCreate === undefined
+        ? buildDelta(current)
+        : createWorkReducerDelta(current, preparedCreate.kind === "direct"
+          ? preparedCreate.input
+          : createWorkInputs.get(resolveWorkBatchMemberDelta(preparedCreate.member, preparedCreate.occurredAt, preparedCreate.actorId))!, createContext);
       source.merge.assertUnredirectedWrite(own.streamId, delta.payload);
       if (library.manifest.formatVersion < 3 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) && delta.payload.record.collection === "chain" && delta.payload.record.key === "identity" && delta.payload.record.projectId !== undefined) throw new FormatVersionError("LIBRARY_FORMAT_UNSUPPORTED", "scoped chain identities require format 3", { required: "3" });
       if (library.manifest.formatVersion < 2 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) &&
@@ -3947,6 +3962,10 @@ async function buildAppend(
         Object.assign(error as object, { memberIndex, memberPhase: phase });
         throw error;
       }
+    }
+    if (creates !== null) {
+      recordWriteCreateTerminalValidation(current.work.length);
+      current = { ...current, work: validateWorkGraph(current.work, templateRegistry(current.templates)) };
     }
     assertWorkspaceRecordCount(state.version + buildDeltas.length);
     // STORY-299: the view projection is measured before a byte is written, so a projection
@@ -4210,6 +4229,148 @@ function assertContentDecisions(state: WorkspaceState, record: WorkRecord, previ
   }
 }
 
+// INIT-080: provenance identifies fixed engine operations, never valid state.
+// Validity lives only in a fresh append attempt and is seeded by its first full check.
+type CreateWorkInput = Parameters<typeof createWorkDelta>[0];
+type WorkBuilder = (state: WorkspaceState) => MutationDelta;
+const createWorkInputs = new WeakMap<WorkBuilder, CreateWorkInput>();
+interface CreateValidationContext {
+  byId?: Map<string, WorkRecord>;
+}
+type PreparedCreate =
+  | { readonly kind: "direct"; readonly input: CreateWorkInput }
+  | { readonly kind: "batch"; readonly member: Readonly<Record<string, unknown>>; readonly occurredAt: string; readonly actorId: string | undefined };
+
+const unsafeCreateSnapshot = Symbol("unsafe create snapshot");
+// A changed intrinsic prototype can supply inherited accessors/iteration callbacks
+// even to otherwise plain data. Such callers keep the legacy path as well.
+const createDataPrototypes = [Object.prototype, Array.prototype].map((prototype) => ({
+  prototype, descriptors: Object.getOwnPropertyDescriptors(prototype),
+}));
+function unchangedCreateDataPrototypes(): boolean {
+  for (let index = 0; index < createDataPrototypes.length; index += 1) {
+    const { prototype, descriptors } = createDataPrototypes[index]!;
+    const current = Object.getOwnPropertyDescriptors(prototype);
+    const keys = Reflect.ownKeys(current);
+    if (keys.length !== Reflect.ownKeys(descriptors).length) return false;
+    for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
+      const key = keys[keyIndex]!;
+      const before = Object.getOwnPropertyDescriptor(descriptors, key)?.value as PropertyDescriptor | undefined;
+      const after = Object.getOwnPropertyDescriptor(current, key)!.value as PropertyDescriptor;
+      if (before === undefined || before.value !== after.value || before.get !== after.get || before.set !== after.set ||
+          before.enumerable !== after.enumerable || before.configurable !== after.configurable || before.writable !== after.writable) return false;
+    }
+  }
+  return true;
+}
+
+// This is eligibility, not admission. Do not serialize, invoke accessors/proxy
+// traps, normalize fields, freeze caller values, or turn uncertainty into errors.
+function snapshotCreateData(value: unknown, seen: Set<object>, budget: { remaining: number }, depth = 0): unknown {
+  if (--budget.remaining < 0 || depth > 64) throw unsafeCreateSnapshot;
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+    if (typeof value === "symbol") throw unsafeCreateSnapshot;
+    return value; // In particular undefined and -0 keep their original meaning.
+  }
+  if (typeof value === "function" || utilTypes.isProxy(value) || seen.has(value)) throw unsafeCreateSnapshot;
+  const array = Array.isArray(value);
+  const prototype = Object.getPrototypeOf(value);
+  if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) throw unsafeCreateSnapshot;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length > budget.remaining) throw unsafeCreateSnapshot;
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const result: Record<string, unknown> | unknown[] = array ? [] : Object.create(prototype) as Record<string, unknown>;
+  if (array && keys.length !== (descriptors.length!.value as number) + 1) throw unsafeCreateSnapshot;
+  seen.add(value);
+  for (const key of keys) {
+    if (typeof key !== "string") throw unsafeCreateSnapshot;
+    const descriptor = descriptors[key]!;
+    if (array && key === "length") continue;
+    if (!("value" in descriptor) || !descriptor.enumerable ||
+        (array && (!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= (descriptors.length!.value as number)))) throw unsafeCreateSnapshot;
+    const copy = snapshotCreateData(descriptor.value, seen, budget, depth + 1);
+    Object.defineProperty(result, key, { value: copy, enumerable: true, writable: true, configurable: true });
+  }
+  seen.delete(value);
+  return result;
+}
+
+// Options are not cloned wholesale: test/lock hooks run outside the synchronous
+// member loop and must not disable retry coverage. Inside it, only data reads are safe.
+function plainOptionsDescriptors(options: object): PropertyDescriptorMap | null {
+  if (utilTypes.isProxy(options) || Object.getPrototypeOf(options) !== Object.prototype) return null;
+  const descriptors = Object.getOwnPropertyDescriptors(options);
+  // Invalid coercible objects could run user code when constructing an actor error.
+  for (const key of ["actorId", "occurredAt"]) {
+    const descriptor = descriptors[key];
+    if (descriptor !== undefined && (typeof descriptor.value !== "string" && descriptor.value !== undefined)) return null;
+    if (descriptor === undefined && Object.hasOwn(Object.prototype, key)) return null;
+  }
+  for (const key of Reflect.ownKeys(descriptors)) {
+    if (typeof key !== "string" || !("value" in descriptors[key]!) || !descriptors[key]!.enumerable) return null;
+  }
+  return descriptors;
+}
+
+function snapshotCreateBatch(builders: readonly WorkBuilder[], options: WorkspaceMutationOptions): readonly PreparedCreate[] | null {
+  if (!unchangedCreateDataPrototypes() || utilTypes.isProxy(builders) || !Array.isArray(builders) || Object.getPrototypeOf(builders) !== Array.prototype || plainOptionsDescriptors(options) === null) return null;
+  const descriptors = Object.getOwnPropertyDescriptors(builders);
+  const length = Object.getOwnPropertyDescriptor(builders, "length")!.value as number;
+  // Reject custom entries/iterator/index behavior without observing it.
+  if (Reflect.ownKeys(descriptors).length !== length + 1) return null;
+  const prepared: PreparedCreate[] = [];
+  const budget = { remaining: 100_000 };
+  try {
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) return null;
+      const builder = descriptor.value as WorkBuilder;
+      const input = createWorkInputs.get(builder);
+      if (input !== undefined) {
+        prepared.push({ kind: "direct", input: snapshotCreateData(input, new Set(), budget) as CreateWorkInput });
+        continue;
+      }
+      const captured = workBatchMemberCaptures(builder);
+      if (captured === undefined) return null;
+      const optionDescriptors = plainOptionsDescriptors(captured.options);
+      if (optionDescriptors === null) return null;
+      const member = snapshotCreateData(captured.member, new Set(), budget) as Readonly<Record<string, unknown>>;
+      if (member.verb !== "work-create") return null;
+      const occurredAt = snapshotCreateData(optionDescriptors.occurredAt?.value, new Set(), budget) as string;
+      const actorId = snapshotCreateData(optionDescriptors.actorId?.value, new Set(), budget) as string | undefined;
+      prepared.push({ kind: "batch", member, occurredAt, actorId });
+    }
+    return prepared;
+  } catch (error) {
+    if (error === unsafeCreateSnapshot) return null;
+    throw error;
+  }
+}
+
+function validateCreatedWork(state: WorkspaceState, record: WorkRecord, context?: CreateValidationContext): readonly WorkRecord[] {
+  if (context?.byId === undefined || state.work.length + 1 > PROTOCOL_LIMITS.maxRecords) {
+    // Preserve legacy argument evaluation order, including direct invocation.
+    const combined = [...state.work, record];
+    recordWriteCreateFullValidation(combined.length);
+    const work = validateWorkGraph(combined, templateRegistry(state.templates));
+    if (context !== undefined) context.byId = new Map(work.map((entry) => [entry.id, entry]));
+    return work;
+  }
+  const closure = collectWorkClosure(context.byId, record);
+  recordWriteCreateClosureValidation(closure.length);
+  validateWorkGraph(closure, templateRegistry(state.templates)); // Keep write errors, not replay's translated errors.
+  let low = 0;
+  let high = state.work.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (compareWorkOrder(state.work[middle]!, record) <= 0) low = middle + 1;
+    else high = middle;
+  }
+  const work = [...state.work.slice(0, low), record, ...state.work.slice(low)];
+  context.byId.set(record.id, record);
+  return work;
+}
+
 // STORY-300 slice 3: createWork's delta, exposed so a batch can compose it. createWork
 // already did all its validation inside the closure, so unlike transitionWork nothing
 // moves -- this only gives the batch a handle on what the single verb already ran.
@@ -4234,7 +4395,9 @@ export function createWorkDelta(input: {
   readonly templateAdmission?: unknown;
   readonly occurredAt: string;
 }): (state: WorkspaceState) => MutationDelta {
-  return (state) => createWorkReducerDelta(state, input);
+  const builder = (state: WorkspaceState): MutationDelta => createWorkReducerDelta(state, input);
+  createWorkInputs.set(builder, input);
+  return builder;
 }
 
 export async function createWork(workspaceRoot: string, input: {
@@ -4280,7 +4443,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
   readonly involvedProjects?: InvolvedProjects;
   readonly templateAdmission?: unknown;
   readonly occurredAt: string;
-}): MutationDelta {
+}, createContext?: CreateValidationContext): MutationDelta {
   // TCRN-CROSS-STORY-472 R1: refused on the write path only. Replay and validateWorkGraph keep
   // accepting the historical kinds, so every chain that holds one still reads.
   if (RETIRED_WORK_KINDS.includes(input.kind)) {
@@ -4383,7 +4546,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
     assertWorkContentAdmission(state, record, record.status === "planned" ? "draft" : record.status === "done" ? "done" : "start");
     validateBoundTemplateWork(record, state.templates);
     assertStoryCompletionAdmission(record, record.status);
-    const work = validateWorkGraph([...state.work, record], templateRegistry(state.templates));
+    const work = validateCreatedWork(state, record, createContext);
     return { payload: { operation: "work.created", record: workJsonFields(record) }, projects: state.projects, work };
   }
 }

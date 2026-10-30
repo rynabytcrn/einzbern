@@ -8,6 +8,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
 // replay/validation operations so the O(delta) engine properties (WSA-1/WSA-2) are
 // proven by closed-form equality, not by wall-clock timing.
 export interface WorkspacePerfMetrics {
+  // INIT-080 write-create calls, independent of all replay counters below.
+  writeCreateFullValidation: number;
+  writeCreateFullRecordsVisited: number;
+  writeCreateClosureValidation: number;
+  writeCreateClosureRecordsVisited: number;
+  writeCreateTerminalValidation: number;
+  writeCreateTerminalRecordsVisited: number;
   // Full event-log replays (materialize invocations).
   fullMaterialize: number;
   // Snapshot-backed tail replays. A snapshot load is not a full event-log replay.
@@ -38,6 +45,12 @@ const store = new AsyncLocalStorage<WorkspacePerfMetrics>();
 
 export async function withWorkspacePerfInstrumentation<T>(operation: () => Promise<T>): Promise<{ readonly result: T; readonly metrics: WorkspacePerfMetrics }> {
   const metrics: WorkspacePerfMetrics = {
+    writeCreateFullValidation: 0,
+    writeCreateFullRecordsVisited: 0,
+    writeCreateClosureValidation: 0,
+    writeCreateClosureRecordsVisited: 0,
+    writeCreateTerminalValidation: 0,
+    writeCreateTerminalRecordsVisited: 0,
     fullMaterialize: 0,
     snapshotMaterialize: 0,
     terminalGraphValidation: 0,
@@ -91,5 +104,29 @@ export function recordCollectionScan(recordsVisited: number): void {
   if (metrics) {
     metrics.collectionScan += 1;
     metrics.collectionScanRecordsVisited += recordsVisited;
+  }
+}
+
+export function recordWriteCreateFullValidation(recordsVisited: number): void {
+  const metrics = store.getStore();
+  if (metrics) {
+    metrics.writeCreateFullValidation += 1;
+    metrics.writeCreateFullRecordsVisited += recordsVisited;
+  }
+}
+
+export function recordWriteCreateClosureValidation(recordsVisited: number): void {
+  const metrics = store.getStore();
+  if (metrics) {
+    metrics.writeCreateClosureValidation += 1;
+    metrics.writeCreateClosureRecordsVisited += recordsVisited;
+  }
+}
+
+export function recordWriteCreateTerminalValidation(recordsVisited: number): void {
+  const metrics = store.getStore();
+  if (metrics) {
+    metrics.writeCreateTerminalValidation += 1;
+    metrics.writeCreateTerminalRecordsVisited += recordsVisited;
   }
 }

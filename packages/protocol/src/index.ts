@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { compareWorkOrder } from "./work-order.js";
 import { createHash } from "node:crypto";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 
@@ -846,18 +847,7 @@ export function validateWorkGraph(records: readonly WorkRecord[], registry: read
 }
 
 export function deterministicWorkOrder(records: readonly WorkRecord[]): readonly WorkRecord[] {
-  const rank = new Map<WorkKind, number>([
-    ["Initiative", 0], ["Epic", 1], ["Story", 2], ["Subtask", 3],
-    ["Review", 4], ["Incident", 5], ["Release", 6], ["Knowledge", 7],
-  ]);
-  return [...records].sort((left, right) => {
-    const project = compareCanonicalText(left.projectId, right.projectId);
-    if (project !== 0) {
-      return project;
-    }
-    const kind = (rank.get(left.kind) ?? 99) - (rank.get(right.kind) ?? 99);
-    return kind === 0 ? compareCanonicalText(left.id, right.id) : kind;
-  });
+  return [...records].sort(compareWorkOrder);
 }
 
 const transitions: Readonly<Record<WorkStatus, readonly WorkStatus[]>> = Object.freeze({

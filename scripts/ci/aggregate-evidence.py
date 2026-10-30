@@ -6,6 +6,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 
@@ -120,7 +121,8 @@ def validate_package(directory, plan):
     # Verify every retained package byte after download, as well as the actual
     # installer/setup/doctor outcomes. The producer seals only after smoke succeeds.
     seal = json.loads((directory / "package-seal.json").read_text())
-    expected_identity = {key: plan[key] for key in ("head", "runId", "attempt", "planDigest")}
+    identity_keys = ("head", "tree", "runId", "attempt", "rosterDigest") if plan.get("profile") == "ci-light" else ("head", "runId", "attempt", "planDigest")
+    expected_identity = {key: plan[key] for key in identity_keys}
     if seal.get("identity") != expected_identity:
         raise ValueError("Package smoke identity mismatch")
     files = {path.relative_to(directory).as_posix(): path for path in directory.rglob("*") if path.is_file() and path.name != "package-seal.json"}
@@ -141,6 +143,14 @@ def validate_package(directory, plan):
     doctor = json.loads((directory / "doctor.json").read_text())
     if doctor.get("ok") is not True or not doctor.get("checks") or not all(row.get("ok") for row in doctor["checks"]):
         raise ValueError("Installed doctor failed")
+    if plan.get("profile") == "ci-light":
+        if any(not path.is_file() or path.is_symlink() for path in directory.iterdir()):
+            raise ValueError("Package smoke must contain only curated regular files")
+        setup_plan = json.loads((directory / "setup-plan.json").read_text())
+        applied = json.loads((directory / "setup-applied.json").read_text())
+        checks = applied.get("selfCheck", {}).get("checks")
+        if setup_plan.get("blockers") != [] or not checks or any(row.get("ok") is not True for row in checks) or len(doctor["checks"]) != 8:
+            raise ValueError("Installed setup/doctor acceptance incomplete")
     archives = list(directory.glob("*.tar.gz"))
     if len(archives) != 1 or (directory / (archives[0].name + ".sha256")).read_text().split()[0] != hashlib.sha256(archives[0].read_bytes()).hexdigest():
         raise ValueError("Release archive digest mismatch")
@@ -220,6 +230,116 @@ def validate_bundle(root, sha, run_id, attempt, repo, remote=True):
     return plan, failures, records
 
 
+def validate_light_directory(directory, sha, roster):
+    """Replay the fixed light contract from retained raw bytes, not its green flag."""
+    meta, failures = validate_directory(directory, "ci-light", sha)
+    final = meta.get("finalLightReceipt", {})
+    if json.loads((directory / "light-roster.json").read_text()) != roster:
+        failures.append("Light roster differs from source-derived roster")
+    if json.loads((directory / "light.json").read_text()) != final:
+        failures.append("Retained light receipt differs from terminal output")
+    semantic = {key: value for key, value in roster.items() if key != "rosterDigest"}
+    if canonical_digest(semantic) != roster.get("rosterDigest") or final.get("rosterDigest") != roster.get("rosterDigest"):
+        failures.append("Light roster digest mismatch")
+    if final.get("schemaVersion") != "einzbern.ci-light-steps.v1" or final.get("notRunHere") != roster.get("notRunHere") or final.get("localValidationRequired") != "full":
+        failures.append("Light scope or local validation boundary mismatch")
+    expected_extra = {"light.json", "light-roster.json", "source-archive.tar"}
+    expected_extra.update(f"steps/{row['id']}{suffix}" for row in roster["steps"] for suffix in (".json", ".stdout", ".stderr"))
+    if set(meta.get("extraArtifacts", {})) != expected_extra:
+        failures.append("Missing or unexpected light raw artifacts")
+    expected_files = expected_extra | {"ci-light.meta.json", "ci-light.stdout", "ci-light.stderr", "receipt.json", "fixture-location.json", "source-before.json", "source-after.json"}
+    actual_files = set()
+    for path in directory.rglob("*"):
+        if path.is_symlink() or not (path.is_file() or path.is_dir()):
+            failures.append("Unsafe light artifact entry")
+        if path.is_dir() and path.relative_to(directory).as_posix() != "steps":
+            failures.append("Unexpected light artifact directory")
+        if path.is_file():
+            actual_files.add(path.relative_to(directory).as_posix())
+    if actual_files != expected_files:
+        failures.append("Light artifact file set mismatch")
+    steps = final.get("steps", [])
+    if [row.get("id") for row in steps] != [row["id"] for row in roster["steps"]]:
+        failures.append("Light steps missing, extra, duplicated or reordered")
+        return meta, failures
+    guard = next((row for row in meta.get("inputManifest", {}).get("files", []) if row.get("path") == "scripts/no-network.mjs"), {})
+    cwd = Path(meta["cwd"])
+    expected_guard = {"url": (cwd / "scripts/no-network.mjs").as_uri(), "sha256": guard.get("sha256")}
+    for row, step in zip(roster["steps"], steps):
+        prefix = f"steps/{row['id']}"
+        retained = json.loads((directory / (prefix + ".json")).read_text())
+        stdout = (directory / (prefix + ".stdout")).read_bytes()
+        stderr = (directory / (prefix + ".stderr")).read_bytes()
+        if retained != step or step.get("ok") is not True or step.get("problems") != [] or step.get("exitCode") != 0 or step.get("signal") is not None or step.get("status") != "executed":
+            failures.append(f"{prefix}: failed, cancelled or altered step")
+        if step.get("noNetwork") != expected_guard or not guard:
+            failures.append(f"{prefix}: official no-network preload mismatch")
+        command = step.get("command")
+        expected_command = ["node", *row["argv"]]
+        if command != expected_command:
+            # The existing memory policy may add only its bounded worker setting
+            # and official worker admission preload. No alternate executable.
+            valid_memory = (row["kind"] == "tap" and isinstance(command, list) and len(command) == len(expected_command) + 2
+                            and command[:2] == ["node", "--test"]
+                            and re.fullmatch(r"--test-concurrency=[1-9][0-9]*", command[2])
+                            and command[3] == "--import=" + (cwd / "scripts/lib/memory-worker-check.mjs").as_uri()
+                            and command[4:] == expected_command[2:])
+            if not valid_memory:
+                failures.append(f"{prefix}: executed argv differs from roster")
+        if any(not any(prior.get("id") == required and prior.get("ok") is True for prior in steps[:steps.index(step)]) for required in row["requires"]):
+            failures.append(f"{prefix}: prerequisite not passed before execution")
+        if row["kind"] == "receipt":
+            _, report = evidence_runner.final_receipt(stdout, stderr)
+            if report != step.get("report") or report.get("ok") is not True or report.get("reasonCode") not in row["expected"] or "injected" in report:
+                failures.append(f"{prefix}: raw task receipt mismatch")
+            if row["id"] == "privacy" and (report.get("privacyScope") != "HEAD-reachable" or report.get("archiveScanned") is not True or "historyBase" in report):
+                failures.append("Full HEAD history and source archive privacy missing")
+        elif row["kind"] == "tap":
+            totals = evidence_runner.parse_test_totals(stdout)
+            if totals != meta.get("testTotals"):
+                failures.append("Wrapper light test totals differ from retained raw output")
+            totals.pop("format")
+            if totals != step.get("testTotals") or totals["fail"] != 0 or totals["cancelled"] != 0:
+                failures.append("Light raw test totals mismatch or failed")
+        elif row["kind"] != "process":
+            failures.append("Unknown light step kind")
+    archive_bytes = (directory / "source-archive.tar").read_bytes()
+    archive = {"path": "dist/source/einzbern-source.tar", "bytes": len(archive_bytes), "sha256": hashlib.sha256(archive_bytes).hexdigest()}
+    archive_step = next(row for row in steps if row["id"] == "archive")
+    if final.get("sourceArchive") != archive or archive_step.get("report", {}).get("sha256") != archive["sha256"] or archive_step.get("report", {}).get("path") != archive["path"]:
+        failures.append("Source archive raw bytes or archive receipt mismatch")
+    return meta, failures
+
+
+def validate_light_bundle(root, sha, run_id, attempt, repo):
+    expected = {f"ci-light-evidence-{sha}-{attempt}", f"package-smoke-{sha}-{attempt}"}
+    failures, records = [], {}
+    if {path.name for path in root.iterdir()} != expected or any(path.is_symlink() or not path.is_dir() for path in root.iterdir()):
+        failures.append("Missing or extra light artifact directories")
+    # The verifier checkout is the expected source, not a producer-supplied plan.
+    verifier_identity = evidence_runner.identity(repo)
+    if verifier_identity["head"] != sha or verifier_identity["statusPorcelainAll"] != "":
+        raise ValueError("Verifier checkout is not the clean expected source")
+    roster = json.loads(subprocess.check_output(["node", str(repo / "scripts/ci/light-roster.mjs")], cwd=repo, text=True))
+    tree = subprocess.check_output(["git", "-C", str(repo), "rev-parse", sha + "^{tree}"], text=True).strip()
+    identity = {"profile": "ci-light", "head": sha, "tree": tree, "runId": run_id, "attempt": attempt, "rosterDigest": roster["rosterDigest"]}
+    try:
+        meta, errors = validate_light_directory(root / f"ci-light-evidence-{sha}-{attempt}", sha, roster)
+        failures.extend(errors)
+        records["ci-light"] = meta
+        if meta.get("ciIdentity") != {"GITHUB_RUN_ID": run_id, "GITHUB_RUN_ATTEMPT": attempt, "GITHUB_JOB": "ci-light"} or meta.get("input", {}).get("tree") != tree:
+            failures.append("Light source tree/run/attempt/job mismatch")
+        if sorted(meta.get("inputManifest", {}).get("files", []), key=lambda row: row["path"]) != git_source_files(repo, sha):
+            failures.append("Light source manifest bytes differ from Git")
+    except Exception as error:
+        failures.append(f"Light evidence: {error}")
+    try:
+        validate_package(root / f"package-smoke-{sha}-{attempt}", identity)
+    except Exception as error:
+        failures.append(f"Package smoke: {error}")
+    return roster, failures, records
+
+
 def finalize(result, records, plan=None):
     """One terminal JSON/summary path for full P1, selective P1 and literal H1."""
     print(json.dumps(result))
@@ -230,6 +350,8 @@ def finalize(result, records, plan=None):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
             coverage = result.get("coverage", "literal H1 (not P1)")
             stream.write(f"CI evidence: **{result['reasonCode']}** — coverage: **{coverage}**\n\n")
+            if result.get("profile") == "ci-light":
+                stream.write("Fixed light checks only; full local validation remains required. Not run here: " + cell(", ".join(result.get("notRunHere", []))) + ".\n\n")
             if plan is not None:
                 counts = {key: len(plan[key]) if isinstance(plan.get(key), list) else "unknown"
                           for key in ("tasks", "coreTests", "sourceCoreTests", "portalTests", "sourcePortalTests")}
@@ -265,10 +387,22 @@ def main():
     parser.add_argument("--repo", default=str(Path(__file__).resolve().parents[2]))
     parser.add_argument("--job-result")
     parser.add_argument("--plan-result")
-    parser.add_argument("--mode", choices=("p1", "pf2-h1"), default="p1")
+    parser.add_argument("--mode", choices=("p1", "pf2-h1", "ci-light"), default="p1")
     args = parser.parse_args()
     root = Path(args.baseline_artifacts or args.artifacts)
     failures, records = [], {}
+    if args.mode == "ci-light":
+        roster = {}
+        try:
+            if args.baseline_artifacts:
+                raise ValueError("Light evidence is not a full/selective baseline")
+            roster, failures, records = validate_light_bundle(root, args.sha, args.run_id, args.attempt, Path(args.repo))
+            if args.job_result != "success":
+                failures.append("Required ci-light job did not succeed")
+        except Exception as error:
+            failures.append(str(error))
+        result = {"ok": not failures, "reasonCode": "CI_LIGHT_VERIFIED" if not failures else "CI_LIGHT_INCOMPLETE", "profile": "ci-light", "coverage": "light", "head": args.sha, "notRunHere": roster.get("notRunHere", []), "localValidationRequired": "full", "failures": failures}
+        return finalize(result, records)
     if args.mode == "p1":
         try:
             plan, failures, records = validate_bundle(root, args.sha, args.run_id, args.attempt, Path(args.repo), remote=not bool(args.baseline_artifacts))

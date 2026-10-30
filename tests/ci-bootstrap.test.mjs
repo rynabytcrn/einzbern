@@ -24,23 +24,23 @@ test("CI acquires pinned pnpm online only after pinned Node and verifies it befo
   assert.match(workflow, /test "\$\(pnpm --version\)" = "11\.3\.0"/u);
 });
 
-test("CI retains explicit safe dependency acquisition and offline P1 execution", async () => {
+test("CI retains explicit safe dependency acquisition and offline light execution", async () => {
   const workflow = await readWorkflow();
   assert.match(workflow, /pnpm install --frozen-lockfile --ignore-scripts --config\.offline=false/u);
   assert.match(workflow, P1_STEP);
 });
 
 // Fork dispatch, pull requests and main scan identical full reachable history.
-const P1_STEP = /- name: Verify P1 offline\n        env:\n          EINZBERN_PRIVACY_HISTORY_BASE: ""\n        run: \|/u;
+const P1_STEP = /- name: Verify fixed light profile offline\n        env:\n          EINZBERN_PRIVACY_HISTORY_BASE: ""\n        run: \|/u;
 
 // TCRN-CROSS-STORY-359. The `ci` verb and its `verify:ci` name retired with the rest of
 // the ticket-numbered and subset gates, but three of its assertions had no second home:
 // minimal workflow permissions, the pull_request_target ban, and the portal remediation
-// step. They are relocated verbatim rather than dropped -- `pnpm test` runs this file and
-// is on the P1 roster, so the checks kept their position in the train.
+// step. Their safety properties remain checked here; the full Portal train now runs
+// through the unchanged local P1 entry, not the bounded hosted light profile.
 // TCRN-CROSS-MIN-280 D1: the portal remediation train runs once, as the `portal` leg of
 // `pnpm verify:p1`; the workflow no longer runs `pnpm verify:portal` as a second step.
-test("CI keeps minimal permissions, refuses pull_request_target, and runs the portal remediation train once, inside P1", async () => {
+test("CI keeps minimal permissions and leaves the full Portal train in the preserved local P1 entry", async () => {
   const workflow = await readWorkflow();
   assert.match(workflow, /^permissions:\n  contents: read\n  actions: read$/mu);
   assert.equal(workflow.includes("pull_request_target"), false);
@@ -95,35 +95,36 @@ test("release smoke verifies installed setup and doctor, not only unpacked CLI s
   assert.ok(workflow.includes('node "$installed" doctor --project'));
 });
 
-test("CI retains each P1 shard in an independent clone and always uploads its evidence", async () => {
+test("CI retains the light profile in an independent clone and always uploads its evidence", async () => {
   const workflow = await readWorkflow();
   assert.equal((workflow.match(/python3 "\$root\/build\/scripts\/ci\/p1-evidence\.py"/gu) ?? []).length, 1);
   assert.equal((workflow.match(/run: pnpm verify:p1/gu) ?? []).length, 0);
   assert.match(workflow, /git clone --no-hardlinks --no-checkout/u);
   assert.match(workflow, /pnpm --dir "\$root\/build" install --offline --frozen-lockfile --ignore-scripts/u);
   assert.match(workflow, /--tmp "\$root\/tmp" --device "\$root\/device"/u);
-  assert.match(workflow, /- name: Retain complete P1 evidence even on failure\n        if: always\(\)/u);
+  assert.match(workflow, /- name: Retain complete light evidence even on failure\n        if: always\(\)/u);
   assert.match(workflow, /if-no-files-found: error/u);
   assert.match(workflow, /retention-days: 14/u);
   assert.match(workflow, /overwrite: false/u);
-  assert.equal((workflow.match(/working-directory: \$\{\{ runner.temp \}\}\/einzbern-p1-/gu) ?? []).length, 1);
+  assert.equal((workflow.match(/working-directory: \$\{\{ runner.temp \}\}\/einzbern-light-/gu) ?? []).length, 1);
   assert.match(workflow, /EINZBERN_PRIVACY_HISTORY_BASE: ""/u);
   assert.match(workflow, /EINZBERN_PRIVACY_HISTORY_BASE: ""/u, "privacy must retain full history");
   assert.equal(/EINZBERN_PRIVACY_HISTORY_BASE:.*base\.sha/u.test(workflow), false, "impact base must never narrow privacy");
   assert.ok(workflow.includes('node "$build_root/skill/mana-orchestrate/scripts/install.mjs"'));
 });
 
-test("manual H1 is bounded, bootstraps official Corepack, and does not append P1 or smoke", async () => {
+test("hosted manual dispatch is light only while full P1 and H1 wrapper entrypoints remain explicit", async () => {
   const workflow = await readWorkflow();
-  assert.match(workflow, /workflow_dispatch:\n    inputs:\n      mode:/u);
-  assert.match(workflow, /options:\n          - p1\n          - pf2-h1/u);
-  assert.ok(workflow.includes("VERIFY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'p1' }}"));
-  assert.match(workflow, /corepack@0\.34\.6 --force --ignore-scripts --no-audit --no-fund/u);
-  assert.match(workflow, /corepack install --global pnpm@11\.3\.0/u);
-  assert.ok(workflow.indexOf('corepack install --global pnpm@11.3.0') < workflow.indexOf('--mode "$VERIFY_MODE"'));
-  assert.equal((workflow.match(/--mode "\$VERIFY_MODE"/gu) ?? []).length, 2);
-  assert.match(workflow, /Smoke the release archive unpacked without node_modules\n        if: env\.VERIFY_MODE == 'p1-checks'/u);
-  assert.equal(workflow.includes("\n  lessons:"), false, "S6 remains in the core test roster without a duplicate job");
+  assert.match(workflow, /workflow_dispatch:/u);
+  assert.doesNotMatch(workflow, /inputs:|VERIFY_MODE:|corepack install|pf2-h1/u);
+  assert.match(workflow, /--mode ci-light/u);
+  assert.equal(workflow.includes("\n  lessons:"), false);
+  const wrapper = await readFile(resolve(process.cwd(), "scripts/ci/p1-evidence.py"), "utf8");
+  assert.match(wrapper, /"p1", "pf2-h1", "p1-checks", "p1-core", "p1-portal", "ci-light"/u);
+  assert.match(wrapper, /corepack/u, "local H1's official Corepack dispatch is not deleted");
+  const pkg = JSON.parse(await readFile(resolve(process.cwd(), "package.json"), "utf8"));
+  assert.ok(pkg.scripts["verify:p1"]);
+  assert.ok(pkg.scripts["verify:portal"]);
 });
 
 test("ordinary smoke retains curated archive, digest manifest, source SHA and isolated install receipts", async () => {
@@ -132,39 +133,27 @@ test("ordinary smoke retains curated archive, digest manifest, source SHA and is
   assert.ok(workflow.includes('cp "$archive" "$archive.sha256" "$smoke/evidence/"'));
   assert.ok(workflow.includes('cp "$smoke/unpacked/einzbern-$version/manifest.json" "$smoke/evidence/manifest.json"'));
   assert.ok(workflow.includes('cd "$smoke/evidence"'));
-  assert.match(workflow, /Retain curated package and isolated install evidence\n        if: always\(\) && env\.VERIFY_MODE == 'p1-checks'/u);
+  assert.match(workflow, /Retain curated package and isolated install evidence\n        if: always\(\)/u);
   assert.match(workflow, /path: \$\{\{ runner.temp \}\}\/einzbern-release-smoke\/evidence\//u);
 });
 
 
-test("required verify waits for all shards and refuses incomplete same-SHA evidence", async () => {
+test("required verify waits for light and independently rereads same-SHA evidence", async () => {
   const workflow = await readWorkflow();
-  assert.match(workflow, /fail-fast: false/u);
-  assert.match(workflow, /fromJSON\(needs.plan.outputs.matrix\)/u, "matrix membership must come from the complete validated plan");
-  assert.match(workflow, /  verify:\n    if: always\(\)\n    needs: \[plan, p1\]/u);
-  assert.ok(workflow.includes("JOB_RESULT: ${{ needs.p1.result }}"));
-  assert.ok(workflow.includes("--attempt \"$GITHUB_RUN_ATTEMPT\" --job-result \"$JOB_RESULT\""));
+  assert.match(workflow, /  verify:\n    if: always\(\)\n    needs: \[ci-light\]/u);
+  assert.ok(workflow.includes("JOB_RESULT: ${{ needs.ci-light.result }}"));
+  assert.ok(workflow.includes('--attempt "$GITHUB_RUN_ATTEMPT" --job-result "$JOB_RESULT"'));
   assert.ok(workflow.includes("scripts/ci/aggregate-evidence.py"));
-});
-
-test("impact plan drives one matrix and independently rederived always verify with real pinned transport", async () => {
-  const workflow = await readWorkflow();
-  assert.match(workflow, /mode: \$\{\{ fromJSON\(needs.plan.outputs.matrix\) \}\}/u);
-  assert.match(workflow, /impact-plan\.mjs create/u);
-  assert.match(workflow, /transport-evidence\.mjs create/u);
-  assert.match(workflow, /PLAN_RESULT: \$\{\{ needs.plan.result \}\}/u);
-  assert.match(workflow, /--plan "\$RUNNER_TEMP\/impact\/impact-plan.json"/u);
+  assert.match(workflow, /--mode ci-light/u);
   assert.match(workflow, /fetch-depth: 0/u);
 });
 
-test("only plan and final verify opt into the guarded read-only baseline capability", async () => {
+test("routine light execution cannot dynamically omit checks using impact or baseline evidence", async () => {
   const workflow = await readWorkflow();
-  assert.equal((workflow.match(/EINZBERN_CI_BASELINE_ONLINE: read-only/gu) ?? []).length, 2);
-  const producer = workflow.indexOf("node scripts/ci/impact-plan.mjs create");
-  const verifier = workflow.indexOf("python3 scripts/ci/aggregate-evidence.py");
-  assert.ok(workflow.lastIndexOf("EINZBERN_CI_BASELINE_ONLINE: read-only", producer) > workflow.lastIndexOf("GH_TOKEN:", producer));
-  assert.ok(workflow.lastIndexOf("EINZBERN_CI_BASELINE_ONLINE: read-only", verifier) > workflow.lastIndexOf("GH_TOKEN:", verifier));
-  const p1Job = workflow.slice(workflow.indexOf("\n  p1:"), workflow.indexOf("\n  verify:"));
-  assert.equal(p1Job.includes("EINZBERN_CI_BASELINE_ONLINE"), false);
-  assert.match(p1Job, /EINZBERN_PRIVACY_HISTORY_BASE: ""/u);
+  assert.doesNotMatch(workflow, /impact-plan\.mjs|fromJSON\(needs\.plan|PLAN_RESULT:|EINZBERN_CI_BASELINE_ONLINE|GH_TOKEN:/u);
+  assert.doesNotMatch(workflow, /^  plan:|^  p1:|strategy:|matrix:/mu);
+  assert.match(workflow, /EINZBERN_PRIVACY_HISTORY_BASE: ""/u);
+  assert.match(workflow, /Seal current package smoke bytes/u);
+  assert.match(workflow, /rosterDigest: meta\.finalLightReceipt\.rosterDigest/u);
+  assert.match(workflow, /tree: meta\.input\.tree/u);
 });

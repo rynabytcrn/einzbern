@@ -365,3 +365,39 @@ for (const mode of ["string-intrinsic", "regexp", "reflection", "iterator", "map
     assert.equal(result.replay.work.find((record) => record.externalKey === "PROBE-B").title, "mutated during first member");
   }
 });
+
+
+for (const mode of ["length", "length-batch", "buffer", "byteOffset", "shadow", "reparent"]) test(`INIT080 inherited Buffer ${mode} preserves source-backed fallback`, async () => {
+  const result = await isolatedCorrection(`inherited-buffer-${mode}`);
+  if (mode === "buffer" || mode === "byteOffset") {
+    // WORK_SUMMARY_MAX_BYTES is Buffer.constants.MAX_LENGTH, not a small summary
+    // budget. Do not allocate billions of bytes to reach subarray. These descriptor
+    // changes prove conservative fallback without invoking either getter in the guard;
+    // length/shadow/reparent below exercise the actual reducer callback and refusal.
+    assert.equal(result.outcome.ok, true);
+    assert.equal(result.callbacks, 0);
+    assert.deepEqual(result.outcome.work, result.replay.work);
+    assert.deepEqual(result.outcome.events, result.replay.events);
+    legacyCounts(result.metrics, 2);
+    return;
+  }
+  assert.equal(result.outcome.ok, false);
+  assert.ok(result.callbacks > 0, "the source-backed inherited dispatch actually ran");
+  if (mode === "length-batch") {
+    assert.equal(result.outcome.error.reasonCode, "WORK_BATCH_REFUSED");
+    const refusal = JSON.parse(result.outcome.error.message);
+    assert.equal(refusal.stage, "apply");
+    assert.equal(refusal.failed.index, 1);
+    assert.equal(refusal.failed.phase, "delta");
+    assert.equal(refusal.failed.reasonCode, "CANONICAL_VALUE_INVALID");
+    assert.deepEqual(refusal.notEvaluated, [2]);
+  } else {
+    assert.deepEqual(result.outcome.error, { name: "ProtocolError", reasonCode: "CANONICAL_VALUE_INVALID", message: "Only plain JSON objects, arrays, strings, booleans, null, and safe integers are supported", memberIndex: 1, memberPhase: "delta" });
+  }
+  if (["length", "length-batch", "shadow", "reparent"].includes(mode)) assert.equal(result.callbacks, 1, "qualification must not invoke the inherited getter");
+  assert.equal(result.atomicBytesUnchanged, true);
+  assert.deepEqual(result.replay.work, []);
+  assert.equal(result.metrics.writeCreateFullValidation, 2);
+  assert.equal(result.metrics.writeCreateClosureValidation, 0);
+  assert.equal(result.metrics.writeCreateTerminalValidation, 0);
+});

@@ -156,7 +156,7 @@ test("guard bootstrap uses the current background module without initializing th
   const root = await mkdtemp(join(tmpdir(), "guard-bootstrap-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const source = fileURLToPath(new URL("..", import.meta.url));
-  const files = ["scripts/spawn-guard.mjs", "scripts/lib/runtime-capacity.mjs", "dist/build/packages/core/src/background-resource.js", "dist/build/packages/protocol/src/index.js", "dist/build/scripts/lib/runtime-capacity.mjs", "dist/build/scripts/lib/canonical-order.mjs"];
+  const files = ["scripts/spawn-guard.mjs", "scripts/lib/runtime-capacity.mjs", "dist/build/packages/core/src/background-resource.js", "dist/build/packages/protocol/src/index.js", "dist/build/packages/protocol/src/work-order.js", "dist/build/scripts/lib/runtime-capacity.mjs", "dist/build/scripts/lib/canonical-order.mjs"];
   for (const name of files) {
     await mkdir(resolve(root, name, ".."), { recursive: true });
     await copyFile(join(source, name), join(root, name));

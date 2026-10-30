@@ -4270,6 +4270,13 @@ function observeCreateIntrinsic(owner: object, keys?: readonly (string | symbol)
   return { owner, keys: selected, descriptors: selected.map((key) => createOwnDescriptor(owner, key)), complete: keys === undefined };
 }
 const createArrayIteratorPrototype = createPrototypeOf([][Symbol.iterator]());
+// Buffer's length/buffer/byteOffset getters are inherited through two fixed
+// owners. Retain the actual owners rather than looking up mutable global names.
+const createBufferPrototype = Buffer.prototype;
+const createBufferArrayPrototype: object | null = createPrototypeOf(createBufferPrototype);
+const createBufferTypedPrototype: object | null = createBufferArrayPrototype === null ? null : createPrototypeOf(createBufferArrayPrototype);
+const createBufferChainSupported = createBufferArrayPrototype !== null && createBufferTypedPrototype !== null &&
+  createPrototypeOf(createBufferTypedPrototype) === createObjectPrototype;
 const createIntrinsicObservations: readonly CreateIntrinsicObservation[] = [
   // Identity of live owners/constructors; never read a replaced global getter.
   observeCreateIntrinsic(globalThis, ["Object", "Array", "String", "RegExp", "Map", "Set", "WeakMap", "WeakSet", "JSON", "Number", "BigInt", "Boolean", "Math", "Date", "Buffer", "Reflect"]),
@@ -4297,7 +4304,9 @@ const createIntrinsicObservations: readonly CreateIntrinsicObservation[] = [
   observeCreateIntrinsic(Date.prototype, ["toISOString"]),
   observeCreateIntrinsic(Buffer, ["from", "byteLength", "compare"]),
   // Summary truncation reaches subarray/toString and their Buffer dispatch.
-  observeCreateIntrinsic(Buffer.prototype),
+  observeCreateIntrinsic(createBufferPrototype),
+  ...(createBufferArrayPrototype === null ? [] : [observeCreateIntrinsic(createBufferArrayPrototype)]),
+  ...(createBufferTypedPrototype === null ? [] : [observeCreateIntrinsic(createBufferTypedPrototype)]),
   observeCreateIntrinsic(createPrototypeOf(createHash("sha256")), ["update", "digest"]),
   observeCreateIntrinsic(AsyncLocalStorage.prototype, ["getStore"]),
   observeCreateIntrinsic(utilTypes, ["isProxy"]),
@@ -4305,6 +4314,12 @@ const createIntrinsicObservations: readonly CreateIntrinsicObservation[] = [
 const createDescriptorFields = ["value", "get", "set", "writable", "enumerable", "configurable"] as const;
 function unchangedCreateIntrinsics(): boolean {
   if (createHash !== createHashIdentity || utilTypes !== createUtilTypesIdentity) return false;
+  // Check exactly these three links: reparenting can change dispatch without
+  // changing any own descriptor. An unexpected initial chain stays legacy.
+  if (!createBufferChainSupported || createBufferArrayPrototype === null || createBufferTypedPrototype === null ||
+      createPrototypeOf(createBufferPrototype) !== createBufferArrayPrototype ||
+      createPrototypeOf(createBufferArrayPrototype) !== createBufferTypedPrototype ||
+      createPrototypeOf(createBufferTypedPrototype) !== createObjectPrototype) return false;
   // No live array iteration/methods or reflection before this check completes.
   for (let index = 0; index < createIntrinsicObservations.length; index += 1) {
     const observation = createIntrinsicObservations[index]!;

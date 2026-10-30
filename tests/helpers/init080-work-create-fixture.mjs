@@ -131,7 +131,8 @@ export async function correctiveProbe({ repo, mode, destination, source, keep = 
   if (mode === "boolean") await api.admitTemplateInWorkspace(root, { template: { schemaVersion: "tcrn.template.v1", id: "probe.boolean", version: 1, appliesTo: ["Initiative"], headings: ["Goal", "Acceptance Criteria", "References"], acceptanceHeadings: ["Acceptance Criteria"], referenceHeadings: ["References"], couplings: [] }, ownerId: "owner:fixture", occurredAt: AT });
   const state = await api.materializeWorkspaceFromGenesis(root);
   const values = ["PROBE-A", "PROBE-B"].map((externalKey) => ({ projectId: state.projects[0].id, externalKey, kind: "Initiative", parentId: null, status: "planned", title: "original", occurredAt: AT }));
-  const typed = ["lock-alias", "deferred-alias", "shared-alias", "lock-wait", "typed-success", "freeze"].includes(mode);
+  const inheritedBuffer = mode.startsWith("inherited-buffer-");
+  const typed = inheritedBuffer || ["lock-alias", "deferred-alias", "shared-alias", "lock-wait", "typed-success", "freeze"].includes(mode);
   if (typed) for (const value of values) { value.content = api.workContentDraft("Initiative"); value.templateAdmission = state.templates[0].receipt; }
   if (mode === "boolean") for (const value of values) { value.templateAdmission = state.templates.find((entry) => entry.template.id === "probe.boolean").receipt; value.scope = "## Goal\nExercise references.\n## Acceptance Criteria\n- References validate.\n## References\nattachment:fixture"; }
   if (mode === "shared-alias") values[1].content.details = values[0].content.details;
@@ -162,6 +163,37 @@ export async function correctiveProbe({ repo, mode, destination, source, keep = 
   if (mode === "store") { const original = AsyncLocalStorage.prototype.getStore; replace(AsyncLocalStorage.prototype, "getStore", function (...args) { callbacks += 1; return Reflect.apply(original, this, args); }); }
   if (mode === "boolean") { const original = Boolean; const replacement = function (...args) { callbacks += 1; return Reflect.apply(original, this, args); }; replacement.prototype = original.prototype; Object.setPrototypeOf(replacement, original); replace(globalThis, "Boolean", replacement); }
   if (mode === "string-owner") { const original = String; const replacement = function (...args) { callbacks += 1; return Reflect.apply(original, this, args); }; replacement.prototype = original.prototype; Object.setPrototypeOf(replacement, original); replace(globalThis, "String", replacement); }
+  if (inheritedBuffer) {
+    // Source boundary: truncateUtf8 reads length; Buffer.subarray reads buffer and
+    // byteOffset. Patch only the actual fixed Buffer prototype chain, in this child.
+    const intermediate = Object.getPrototypeOf(Buffer.prototype);
+    const owner = Object.getPrototypeOf(intermediate);
+    const key = mode.endsWith("byteOffset") ? "byteOffset" : mode.endsWith("buffer") ? "buffer" : "length";
+    const descriptor = Object.getOwnPropertyDescriptor(owner, key);
+    delete values[1].content; delete values[1].templateAdmission;
+    values[1].goal = key === "length" ? "E1TRIGGER" : "E1TRIGGER" + "x".repeat(512);
+    const replacement = { ...descriptor, get() {
+      const result = Reflect.apply(descriptor.get, this, []);
+      if (this[0] === 69 && this[1] === 49 && this[2] === 84) {
+        callbacks += 1; values[0].content.constraints.push(undefined);
+      }
+      return result;
+    } };
+    if (mode.endsWith("shadow")) {
+      const previous = Object.getOwnPropertyDescriptor(intermediate, key);
+      Object.defineProperty(intermediate, key, replacement);
+      restore.push(() => previous ? Object.defineProperty(intermediate, key, previous) : delete intermediate[key]);
+    } else if (mode.endsWith("reparent")) {
+      const inserted = Object.create(owner);
+      Object.defineProperty(inserted, key, replacement);
+      Object.setPrototypeOf(intermediate, inserted);
+      restore.push(() => Object.setPrototypeOf(intermediate, owner));
+    } else {
+      Object.defineProperty(owner, key, replacement);
+      restore.push(() => Object.defineProperty(owner, key, descriptor));
+    }
+    if (mode.endsWith("batch")) values.push({ ...values[1], externalKey: "PROBE-C", goal: "not evaluated" });
+  }
   const options = { occurredAt: AT };
   if (["lock-alias", "deferred-alias", "shared-alias"].includes(mode)) options.insideWriteLockForTest = async () => { hookCalls += 1; values[0].content.details.boundary = "mutated after preparation"; };
   let outcome, metrics, lockMetrics; let preparationObservation = null;
@@ -169,7 +201,7 @@ export async function correctiveProbe({ repo, mode, destination, source, keep = 
     const measured = await perf.withWorkspacePerfInstrumentation(async () => {
       try {
         let result;
-        const invoke = () => mode === "deferred-alias" || mode === "typed-success"
+        const invoke = () => mode === "deferred-alias" || mode === "typed-success" || mode === "inherited-buffer-length-batch"
           ? api.applyWorkBatch(root, { schemaVersion: "tcrn.work-batch.v1", members: values.map((value) => ({ ...value, verb: "work-create" })) }, options)
           : api.appendEvents(root, values.map(api.createWorkDelta), options);
         if (mode === "lock-wait") {

@@ -1,9 +1,21 @@
 # Independent P1 CI evidence
 
-The ordinary GitHub verification jobs execute the planned partition of the existing P1 roster once.
-It does not append another core or Portal run and does not change gate predicates, retries,
-timeouts or privacy admission. This is independent retained P1 evidence, **not** literal
-PF-2 H1 (`script=test`) or PF-3/U18 completion.
+This document retains the P1/H1 and plan-bound full/selective evidence contracts.
+They are not the routine hosted profile. Ordinary CI now uses distinct limited
+[ci-light](../../specs/ci-light-v1.md); see the [current guide](../ci-verification.md).
+Neither light nor independent P1 establishes literal PF-2 H1 or PF-3/U18 completion.
+
+## Explicit light mode
+
+The compatible Python wrapper accepts `--mode ci-light`, with schema
+`einzbern.ci-light-evidence.v1`, `coverage=light` and
+`CI_LIGHT_EVIDENCE_RETAINED` / `CI_LIGHT_EVIDENCE_REFUSED`. Its fixed source roster
+has fourteen ordered steps and eight explicitly named contract-test files. File
+counts are not individual test counts: raw TAP supplies the actual pass/fail,
+cancelled, skipped and todo totals. It retains no unexecuted full Core controller.
+The verifier independently replays raw step receipts, hashes and source identity
+and emits `CI_LIGHT_VERIFIED` only for that limited coverage. Full local validation
+is still required; light cannot become a full/selective baseline or P1 substitute.
 
 ## Execution boundary
 
@@ -16,13 +28,13 @@ into the generic runner.
 
 `python3 scripts/ci/p1-evidence.py` accepts explicit absolute `--repo`, `--evidence`, `--tmp`,
 `--device`, and `--node-bin` paths (the latter is the directory containing Node). It verifies the
-actual fixture location before starting P1: directory/ownership/realpath, no symlink component,
+actual fixture location before starting the selected command: directory/ownership/realpath, no symlink component,
 no `.git` ancestor, and Git repository discovery refusal. A failing preflight is a refusal, not
 permission to hide Git discovery or change the guard. The evidence directory must not exist.
 The cloud editing environment's enclosing Git directories therefore do not qualify; a clean
 GitHub runner must pass its own actual preflight rather than inherit an assumed exemption.
 
-The observer retains the outer stdout/stderr and the existing controller's full stdout/stderr
+For full Core modes, the observer retains outer stdout/stderr and the existing controller's full stdout/stderr
 through read-only file descriptors, including after ordinary controller cleanup. Metadata binds
 input/output repository identities, source manifests, actual command, tool versions, timings,
 stream bytes/hashes, exact observed counts and retention validation. Missing or ambiguous counts,
@@ -38,17 +50,18 @@ so fixtures must continue to use synthetic data and existing privacy checks stil
 
 ## Fork and merge verification scope
 
-Before creating or updating an upstream PR, run this workflow on the complete frozen
-candidate in the contributor fork with `workflow_dispatch` and `mode=p1`. Check the
-reported head SHA and full terminal evidence. A separate candidate branch avoids
-publishing intermediate fixes to an already-open PR. See [the contribution sequence](../../CONTRIBUTING.md#fork-first-batch-end-contribution-workflow).
+Before creating or updating an upstream PR, complete the relevant full local
+acceptance for its frozen candidate, preserve actual red/blocked evidence, and
+publish through the authorized contributor/fork route. Fork CI is not required
+or re-enabled by this change. Inspect the upstream PR's actual light result for
+that head; local JSON is not cloud execution. See [the contribution sequence](../../CONTRIBUTING.md#fork-first-batch-end-contribution-workflow).
 
-Fork dispatch, PR and main runs all explicitly clear `EINZBERN_PRIVACY_HISTORY_BASE`
-and scan full HEAD-reachable history. The PR P1 verification job still checks its contributor head, not a
-synthetic merge commit; a later main merge has additional identity/message metadata.
-Public-hosting metadata classification must remain narrowly structural and retain
-private payload detection. A previous candidate's green result is not proof of an
-uncreated merge, and upstream checks/permissions are not replaced by a fork receipt.
+Current light dispatch, PR and main runs clear `EINZBERN_PRIVACY_HISTORY_BASE`
+and scan full HEAD-reachable history after producing the source archive. PR checks
+the contributor head, not a synthetic merge; a later main merge adds identity and
+message metadata. Public-hosting classification remains narrowly structural with
+private payload detection. No candidate pass proves an uncreated merge or replaces
+upstream checks/permissions.
 
 ## Provenance and method limits
 
@@ -70,22 +83,16 @@ older CI summaries or this independent train as those missing receipts.
 
 `--mode pf2-h1` selects exactly one `corepack pnpm@11.3.0 -C <E> run test`.
 The default remains `--mode p1` and exactly one `verify:p1`. H1 never appends P1,
-Portal, packaging, or another core run. The workflow dispatch input is a bounded choice
-(`p1`, `pf2-h1`), defaults to P1, and is ignored for ordinary pull-request/push events.
-Dispatch `ci.yml` on the candidate branch in the fork with `mode=pf2-h1` only after that
-exact candidate's ordinary P1 finishes. The existing per-ref concurrency group cancels
-in-progress work, so do not dispatch H1 while candidate P1 is running. The selected ref's
-SHA is checked out directly; dispatch does not merge, tag, publish, or install on a live device.
-The manual workflow must exist on the dispatch repository's default branch to be discoverable
-by GitHub; if not, do not substitute a different source SHA or claim a dispatch occurred.
+Portal, packaging, or another core run. These are retained **local** modes;
+current `ci.yml` manual dispatch runs only ci-light, without P1/H1 choices. Former
+hosted dispatch instructions are historical, not a direction to activate fork CI.
 
-Before offline execution, the workflow explicitly acquires official `corepack@0.34.6`
-from npm (replacing package-manager shims only in the ephemeral runner), checks its version,
-and runs `corepack install --global pnpm@11.3.0`. This is a real bootstrap, not an assertion
-that an image cache exists. Dependency acquisition is frozen and disables lifecycle scripts;
-the build clone installs from that acquired store offline. The runner then verifies pinned
-Node 24.16.0, the actual PATH-resolved Corepack 0.34.6 (recording its realpath),
-and pnpm 11.3.0 with `COREPACK_ENABLE_NETWORK=0` before the one child.
+An explicitly authorized formal local H1 execution still needs actual official
+Corepack 0.34.6 and pnpm 11.3.0 acquisition, frozen dependencies with lifecycle
+scripts disabled, and the isolated build clone's offline install. The wrapper
+verifies pinned Node 24.16.0, PATH-resolved Corepack's version/realpath and pnpm with
+`COREPACK_ENABLE_NETWORK=0` before its single literal child. A cached-version claim
+or focused fixture test cannot replace acquisition or a formal H1 receipt.
 
 ### Adaptation matrix against the supplied originals
 
@@ -111,17 +118,22 @@ not formal H1 receipts and cannot establish the editing environment's fixture ad
 Even an actual retained H1 pass establishes only PF-2 H1, not whole PF-2, upgrade/setup dry-run,
 PF-3/U18 inventories, final privacy closure, or native host acceptance.
 
-## Curated ordinary P1 package evidence
+## Curated current light package evidence
 
-After ordinary P1, the existing isolated package smoke now retains a separate 14-day artifact:
+After ci-light, the existing isolated package smoke retains a separate 14-day artifact:
 archive and SHA-256 sidecar, release manifest (including install-tree digest), exact source HEAD,
 pack stdout, commands/init/status JSON, and install/setup-plan/setup-applied/doctor JSON.
 The always-upload step preserves partial failed smoke evidence too; an artifact alone is not a
 successful smoke receipt. Only this curated directory is uploaded, never HOME, device/library
 trees, credentials, or the complete runner filesystem. H1 skips this smoke and its upload.
-These Linux isolated receipts do not establish native/live acceptance or release publication.
+Its current seal binds HEAD, tree, run, attempt and light roster digest. These Linux
+isolated receipts do not establish native/live acceptance or release publication.
 
-## Plan-bound CI shards
+## Retained legacy/full-mode plan-bound CI shards
+
+The following contract is not the routine hosted light workflow. Light is rejected
+as a full/selective baseline or release/full-P1 success; original full-mode proof
+rules remain unchanged.
 
 The default local wrapper remains `--mode p1` and full `verify:p1`. Only explicit
 `p1-checks`, `p1-core`, `p1-portal` accept `--plan <absolute-file>`. The wrapper validates

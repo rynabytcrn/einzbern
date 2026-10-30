@@ -343,6 +343,8 @@ def final_receipt(stdout, stderr):
 def mode_config(mode):
     if mode == "p1":
         return dict(label="p1", script="verify:p1", expected="P1_VERIFIED", receiptKey="finalP1Receipt", controller=True)
+    if mode == "ci-light":
+        return dict(label="ci-light", script="ci:light", expected="CI_LIGHT_STEPS_VERIFIED", receiptKey="finalLightReceipt", controller=False)
     if mode == "pf2-h1":
         return dict(label="h1", script="test", expected="TESTS_VERIFIED", receiptKey="finalH1Receipt", controller=True)
     if mode in ("p1-checks", "p1-core", "p1-portal"):
@@ -408,6 +410,16 @@ def evaluate(meta):
             failures.append("Shard receipt names the wrong shard")
         if not meta.get("extraArtifacts") or "shard.json" not in meta["extraArtifacts"]:
             failures.append("Shard step evidence is missing")
+    if meta.get("mode") == "ci-light":
+        if meta.get("schemaVersion") != "einzbern.ci-light-evidence.v1" or meta.get("coverage") != "light" or final.get("coverage") != "light" or final.get("profile") != "ci-light":
+            failures.append("Light evidence cannot claim full P1 coverage")
+        if meta.get("environment", {}).get("EINZBERN_PRIVACY_HISTORY_BASE") != "":
+            failures.append("Light privacy requires complete history")
+        required = {"light.json", "light-roster.json", "source-archive.tar"}
+        if not required.issubset(meta.get("extraArtifacts", {})):
+            failures.append("Light step/archive evidence is missing")
+        if final.get("localValidationRequired") != "full" or not final.get("notRunHere"):
+            failures.append("Light exclusions/local validation responsibility missing")
     if "impactPlan" in meta:
         plan = meta["impactPlan"]
         if plan.get("head") != (incoming or {}).get("head") or plan.get("tree") != (incoming or {}).get("tree") or plan.get("runId") != meta.get("ciIdentity", {}).get("GITHUB_RUN_ID") or plan.get("attempt") != meta.get("ciIdentity", {}).get("GITHUB_RUN_ATTEMPT"):
@@ -435,7 +447,7 @@ def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ("repo", "evidence", "tmp", "device", "node-bin"):
         parser.add_argument(f"--{key}", required=True, help="absolute path; evidence must not exist")
-    parser.add_argument("--mode", choices=("p1", "pf2-h1", "p1-checks", "p1-core", "p1-portal"), default="p1")
+    parser.add_argument("--mode", choices=("p1", "pf2-h1", "p1-checks", "p1-core", "p1-portal", "ci-light"), default="p1")
     parser.add_argument("--plan", help="explicit CI plan path; forbidden for H1/default P1")
     return parser.parse_args()
 
@@ -459,19 +471,23 @@ def main():
         meta.update({"schemaVersion": "einzbern.pf2-h1-evidence.v1",
                      "scope": "PF-2 H1 only; not whole PF-2, dry-run, PF-3 or native acceptance",
                      "adaptation": "CLI paths; literal Corepack command; original process observations; fail-closed child, receipt and manifest verification added"})
+    if args.mode == "ci-light":
+        meta.update({"schemaVersion": "einzbern.ci-light-evidence.v1", "scope": "fixed lightweight CI; not full P1, H1, P8 or release acceptance", "coverage": "light", "testTotalsScope": "explicit light contract tests only", "adaptation": "separate limited profile; full local validation remains required"})
     env = dict(os.environ)
     env.update({"PATH": args.node_bin + os.pathsep + env.get("PATH", ""),
                 "TMPDIR": args.tmp, "COREPACK_ENABLE_NETWORK": "0",
                 "EINZBERN_TEST_DEVICE_ROOT": args.device,
                 "EINZBERN_HOME": str(Path(args.device) / "einzbern"), "TCRN_OFFLINE_PROOF": "1"})
-    if args.mode.startswith("p1-"):
+    if args.mode.startswith("p1-") or args.mode == "ci-light":
         env.update({"HOME": str(Path(args.device) / "home"),
                     "EINZBERN_CI_EVIDENCE_DIR": str(evidence),
                     "EINZBERN_PORTAL_EVIDENCE_DIR": str(evidence / "portal"),
                     "EINZBERN_PRIVACY_HISTORY_BASE": ""})
-        meta["schemaVersion"] = "einzbern.ci-shard-evidence.v1"
+        if args.mode != "ci-light":
+            meta["schemaVersion"] = "einzbern.ci-shard-evidence.v1"
         meta["ciIdentity"] = {key: os.environ.get(key) for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB")}
-        meta["testTotalsScope"] = "Portal functional tests" if args.mode == "p1-portal" else ("core controller" if config["controller"] else "not applicable")
+        if args.mode != "ci-light":
+            meta["testTotalsScope"] = "Portal functional tests" if args.mode == "p1-portal" else ("core controller" if config["controller"] else "not applicable")
     meta["environment"] = {key: env[key] for key in ENVIRONMENT_KEYS if key in env}
     repo = Path(args.repo)
     node = Path(args.node_bin) / "node"
@@ -493,7 +509,7 @@ def main():
                 raise Refusal(f"{name} fixture preflight refused; see fixture-location.json")
             if fixture["checks"]["entriesAtRecord"]:
                 raise Refusal(f"{name} fixture must be empty before the single run")
-        if args.mode.startswith("p1-"):
+        if args.mode.startswith("p1-") or args.mode == "ci-light":
             Path(env["HOME"]).mkdir()
         git_dir = repo / ".git"
         if git_dir.is_symlink() or not git_dir.is_dir():
@@ -574,6 +590,8 @@ def main():
                     meta["testTotals"] = parse_test_totals((evidence / f"{label}-controller.stdout").read_bytes())
                 elif args.mode == "p1-portal":
                     meta["testTotals"] = parse_test_totals((evidence / "portal" / "01.stdout").read_bytes())
+                elif args.mode == "ci-light":
+                    meta["testTotals"] = parse_test_totals((evidence / "steps" / "contracts.stdout").read_bytes())
             except Exception as error:
                 meta["errors"].append(f"Final controller totals: {error}")
             try:
@@ -583,12 +601,12 @@ def main():
                 meta["errors"].append(f"Final receipt: {error}")
     meta["outputMatchesInput"] = "input" in meta and meta.get("output") == meta["input"]
     meta["sourceManifestMatchesInput"] = "inputManifest" in meta and meta.get("outputManifest") == meta["inputManifest"]
-    if args.mode.startswith("p1-"):
+    if args.mode.startswith("p1-") or args.mode == "ci-light":
         meta["extraArtifacts"] = {}
         try:
             for path in sorted(evidence.rglob("*")):
                 name = path.relative_to(evidence).as_posix()
-                if path.is_file() and (name == "shard.json" or name.startswith(("steps/", "portal/"))):
+                if path.is_file() and (name in ("shard.json", "light.json", "light-roster.json", "source-archive.tar") or name.startswith(("steps/", "portal/"))):
                     meta["extraArtifacts"][name] = {**file_receipt(path), "file": name}
         except Exception as error:
             meta["errors"].append(f"Shard artifacts: {error}")
@@ -597,7 +615,7 @@ def main():
     meta["errors"].extend(artifact_failures)
     failures = evaluate(meta)
     status = wrapper_exit(meta.get("exitCode"), failures)
-    prefix = "PF2_H1" if args.mode == "pf2-h1" else "CI_P1"
+    prefix = "CI_LIGHT" if args.mode == "ci-light" else "PF2_H1" if args.mode == "pf2-h1" else "CI_P1"
     receipt = {"ok": status == 0, "reasonCode": prefix + ("_EVIDENCE_RETAINED" if status == 0 else "_EVIDENCE_REFUSED"),
                "evidence": str(evidence), "childExitCode": meta.get("exitCode"), "wrapperExitCode": status,
                "coreTestFileCount": meta.get("inputManifest", {}).get("coreTestFileCount"),

@@ -1,28 +1,40 @@
 # CI verification
 
-The complete P1 roster is defined by `scripts/p1-sequence.mjs`. The local
-`verify:p1` command remains serial. GitHub Actions uses an explicit impact plan to partition that roster:
+Ordinary pull requests, main pushes and manual dispatch run one fixed `ci-light`
+job followed by the strict same-source `verify` aggregate. The workflow retains its
+historical display name, **P1 verification**, for check-name compatibility; its
+current success is **`CI_LIGHT_VERIFIED`, `coverage=light`**, not full P1.
+See the distinct [light machine contract](../specs/ci-light-v1.md).
 
-| Job mode | Work | Isolated state |
-| --- | --- | --- |
-| `p1-checks` | Format, lint, types, build, archive, dependency boundary, offline, full-history privacy, links, retrieval; test wiring and package/install/setup/doctor smoke | Full clone, HOME, TMPDIR, device directory, dist |
-| `p1-core` | Exact planned core test files; complete roster for full coverage | Separate full clone and runtime directories |
-| `p1-portal` | Build prerequisite and complete Portal train | Separate full clone and runtime directories |
+The fixed roster is format, links, test wiring, lint, build (including its nested
+typecheck), the explicit bounded light contract tests, Portal current proof,
+design reconciliation and design proof, no-sibling dependency, offline boundary,
+retrieval evaluation, source archive, then full HEAD-reachable privacy. Direct
+Node tests preload the existing `scripts/no-network.mjs`; workers and ordinary
+Node descendants inherit that guard. Offline flags are not a substitute for it.
+Existing worker/memory admission remains in force. Package smoke separately packs,
+hashes, unpacks and invokes the actual archive and installed setup/doctor.
 
-The required `verify` job waits for every matrix member. It refuses missing,
-cancelled or failed jobs, mismatched source commits or run attempts, incomplete
-task coverage, changed source manifests, and missing or altered retained bytes.
-It does not infer success from whichever artifacts happened to upload. Package
-smoke remains part of the checks job's success condition.
+The aggregate requires successful jobs, exact HEAD/tree/run/attempt/roster digest,
+source manifests, ordered steps, raw streams and byte hashes, real TAP totals and
+package bytes/outcomes. Missing, altered, failed or cancelled evidence is red.
+Skipped and todo tests remain reported as such, not converted to passes.
 
-Manual `pf2-h1` runs remain a single explicit H1 invocation using pinned Corepack.
-They do not run P1 or package smoke and do not establish whole PF-2/PF-3 acceptance.
-The full Core controller limit is 15 minutes (900000ms); P8 remains 10 minutes (600000ms); incomplete tests remain red.
+Full Core, full Portal, full impact regressions, PF2-H1, P8 and release validation
+are `notRunHere`; full local acceptance remains separately required. Fixed light
+coverage does not expand on unknown changed paths and does not claim those paths
+are safe. There is no baseline lookup or impact selection on this hosted path.
+The local `verify:p1` and explicit wrapper `--mode pf2-h1` remain unchanged full
+contracts; hosted manual dispatch no longer selects P1/H1. Core's full controller
+cap remains 900000ms and P8's remains 600000ms; incomplete tests remain red.
 
-## Portal evidence and fixtures
+## Portal evidence and fixtures (local full validation)
 
-Each Portal invocation retains raw stdout, stderr, exit status and duration for
-every executed step. CI uploads these even after failure. The former seven-step
+Each local full Portal invocation retains raw stdout, stderr, exit status and
+duration for every executed step. The retained legacy full-mode tooling can upload
+these even after failure. Routine hosted light CI calls only bounded Portal proof,
+cross-repo privacy and design checks; it does not run the full functional/meta-replay
+train or infer its test count from the wiring registry. The former seven-step
 train now has six top-level steps: functional tests, current proof, cross-repo
 privacy test, design reconciliation, design proof, and evidence meta-proof.
 The removed standalone full evidence check was identical to the meta-proof's
@@ -67,7 +79,13 @@ Extra runner startup, checkout and prerequisite build cost still counts toward
 total compute. Queue time, execution time and end-to-end workflow time must be
 reported separately. Local measurements are not GitHub-hosted runner benchmarks.
 
-## Conservative impact planning
+## Retained legacy/full-mode tooling
+
+The sections below describe retained full/selective tooling, not the routine
+hosted light workflow. Its original proof rules and source audit remain intact;
+light evidence is never eligible as its full/selective baseline.
+
+### Conservative impact planning
 
 PRs use the cumulative merge-base of event base and contributor head, not the last
 commit. Main pushes use before/head. Complete NUL-separated Git status records
@@ -100,7 +118,7 @@ script, dependency or reader, even in one of those files, invalidates the old au
 After source integration, freeze the final reader and root-test maps together;
 refreshing hashes alone cannot account for a newly merged consumer.
 
-Every run retains all checks tasks, archive before full HEAD-reachable privacy,
+Every legacy/full-profile run retains all checks tasks, archive before full HEAD-reachable privacy,
 test wiring and isolated package/install/setup/doctor smoke. CI contract tests
 always run. `verify` independently rederives the current plan, validates the exact
 selected tasks and test argv, rehashes downloaded evidence and transport payload,
@@ -234,7 +252,7 @@ These cases do not establish hosted P1, an installed product or official action
 transfer. Implementation authors them without running tests; the parent batch
 records the actual validation results.
 
-The mandatory CI-integrity baseline suite registers the exact-site offline scanner
+The legacy/full-profile mandatory CI-integrity baseline suite registers the exact-site offline scanner
 positive and host/endpoint/context-guard, extra-request/import and unrelated-module
 mutations under the normal Core `TCRN_OFFLINE_PROOF=1` environment. Only the inner
 runtime-network proof is guarded against recursive scanner execution. No network

@@ -6,15 +6,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      mode:
-        description: Independent P1 or single formal PF-2 H1 (not whole PF-2/PF-3)
-        type: choice
-        options:
-          - p1
-          - pf2-h1
-        default: p1
-        required: true
 
 permissions:
   contents: read
@@ -25,50 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  plan:
-    runs-on: ubuntu-24.04
-    outputs:
-      matrix: ${{ steps.impact.outputs.matrix }}
-    steps:
-      - name: Checkout complete impact basis
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Install pinned Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24.16.0
-      - name: Derive complete impact and verified baseline
-        id: impact
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EINZBERN_CI_BASELINE_ONLINE: read-only
-        run: |
-          mkdir "$RUNNER_TEMP/impact"
-          node scripts/ci/impact-plan.mjs create "$RUNNER_TEMP/impact/impact-plan.json"
-          node scripts/ci/transport-evidence.mjs create "$RUNNER_TEMP/impact/transport" "$RUNNER_TEMP/impact/impact-plan.json"
-      - name: Upload this run's plan and transport bytes
-        if: always() && !(github.event_name == 'workflow_dispatch' && inputs.mode == 'pf2-h1')
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: plan-evidence-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/impact/
-          if-no-files-found: error
-          retention-days: 14
-          overwrite: false
-
-  p1:
-    needs: [plan]
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: ${{ fromJSON(needs.plan.outputs.matrix) }}
+  ci-light:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    env:
-      VERIFY_MODE: ${{ matrix.mode }}
     steps:
       - name: Checkout full clean history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -76,13 +26,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Download this run's exact impact plan
-        if: env.VERIFY_MODE != 'pf2-h1'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: plan-evidence-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/impact
 
       - name: Scope verification basis to the release ref
         run: |
@@ -121,35 +64,17 @@ jobs:
           NO_UPDATE_NOTIFIER: "1"
         run: |
           # Both required installs retain genuine verification records across private HOME.
-          export pnpm_config_cache_dir="$RUNNER_TEMP/einzbern-bootstrap-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${VERIFY_MODE}/pnpm"
+          export pnpm_config_cache_dir="$RUNNER_TEMP/einzbern-bootstrap-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ci-light/pnpm"
           printf 'pnpm_config_cache_dir=%s\n' "$pnpm_config_cache_dir" >> "$GITHUB_ENV"
           pnpm install --frozen-lockfile --ignore-scripts --config.offline=false
 
-      - name: Acquire official pinned Corepack and its pnpm cache when consumed
-        env:
-          npm_config_offline: "false"
-          npm_config_prefer_offline: "false"
-          COREPACK_ENABLE_NETWORK: "1"
-          COREPACK_HOME: ${{ runner.temp }}/einzbern-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.mode }}/corepack
-        run: |
-          corepack_required="$(node scripts/ci/bootstrap-prerequisites.mjs "$VERIFY_MODE" "$RUNNER_TEMP/impact/impact-plan.json")"
-          if [ "$corepack_required" = true ]; then
-            npm install --global corepack@0.34.6 --force --ignore-scripts --no-audit --no-fund --no-update-notifier --prefer-online
-            test "$(corepack --version)" = "0.34.6"
-            corepack install --global pnpm@11.3.0
-            test "$(corepack pnpm@11.3.0 --version)" = "11.3.0"
-            # Preserve genuine cache inputs across the offline runner's private HOME.
-            # Its existing frozen offline clone install records its own lockfile stat.
-            printf 'COREPACK_HOME=%s\npnpm_config_cache_dir=%s\nCOREPACK_ENABLE_NETWORK=0\n' "$COREPACK_HOME" "$pnpm_config_cache_dir" >> "$GITHUB_ENV"
-          fi
-
-      # Use the same complete HEAD-reachable privacy history for fork dispatch,
-      # pull requests and main. A PR must not hide a failing base-history finding.
-      - name: Verify P1 offline
+      # Light is a separate coverage claim, never full P1 or a baseline shortcut.
+      # Full HEAD history remains required until independently accepted optimization.
+      - name: Verify fixed light profile offline
         env:
           EINZBERN_PRIVACY_HISTORY_BASE: ""
         run: |
-          root="$RUNNER_TEMP/einzbern-p1-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${VERIFY_MODE}"
+          root="$RUNNER_TEMP/einzbern-light-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           mkdir "$root"
           mkdir "$root/tmp" "$root/device"
           git clone --no-hardlinks --no-checkout "$GITHUB_WORKSPACE" "$root/build"
@@ -166,39 +91,24 @@ jobs:
           git -C "$root/build" reflog expire --expire=now --all
           git -C "$root/build" gc --prune=now --quiet
           pnpm --dir "$root/build" install --offline --frozen-lockfile --ignore-scripts
-          plan_args=()
-          if [ "$VERIFY_MODE" != pf2-h1 ]; then
-            plan_args=(--plan "$RUNNER_TEMP/impact/impact-plan.json")
-          fi
           python3 "$root/build/scripts/ci/p1-evidence.py" \
             --repo "$root/build" --evidence "$root/evidence" \
             --tmp "$root/tmp" --device "$root/device" \
-            --node-bin "$(dirname "$(command -v node)")" --mode "$VERIFY_MODE" "${plan_args[@]}"
+            --node-bin "$(dirname "$(command -v node)")" --mode ci-light
 
-      - name: Retain complete P1 evidence even on failure
+      - name: Retain complete light evidence even on failure
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ env.VERIFY_MODE }}-evidence-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/einzbern-p1-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.mode }}/evidence/
+          name: ci-light-evidence-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/einzbern-light-${{ github.run_id }}-${{ github.run_attempt }}/evidence/
           if-no-files-found: error
           retention-days: 14
           overwrite: false
 
-      # Core and Portal have independent checkouts, outputs, HOME, device and TMPDIR.
-      # The checks shard owns archive -> full-history privacy, wiring and package smoke.
-      # S6 remains in tests/s6-lessons.test.mjs, executed once by the core roster.
-
-      # TCRN-CROSS-STORY-481 (TCRN-CROSS-SUB-331): a device installs the release archive, not this
-      # checkout. The archive is packed from a fresh build, checked against its .sha256 and unpacked
-      # under the runner's temporary directory, where no node_modules and no dist/build lie on any
-      # parent path, and the engine it carries runs with Node.js alone: its command catalog, then a
-      # temporary library created and read back by status. The commands run from a temporary
-      # directory with a temporary HOME and device directory, so no file of the checkout can stand
-      # in for one the archive must carry. Last in the job, so it hides none of the steps above.
+      # Pack, unpack and invoke the actual installed archive; no receipt-only smoke.
       - name: Smoke the release archive unpacked without node_modules
-        if: env.VERIFY_MODE == 'p1-checks'
-        working-directory: ${{ runner.temp }}/einzbern-p1-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.mode }}/build
+        working-directory: ${{ runner.temp }}/einzbern-light-${{ github.run_id }}-${{ github.run_attempt }}/build
         run: |
           build_root="$PWD"
           version="$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')"
@@ -265,14 +175,16 @@ jobs:
           '
 
       - name: Seal current package smoke bytes
-        if: env.VERIFY_MODE == 'p1-checks'
         run: |
-          node --input-type=module - "$RUNNER_TEMP/einzbern-release-smoke/evidence" "$RUNNER_TEMP/impact/impact-plan.json" <<'NODE'
+          node --input-type=module - "$RUNNER_TEMP/einzbern-release-smoke/evidence" "$RUNNER_TEMP/einzbern-light-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/evidence/ci-light.meta.json" <<'NODE'
           import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
           import { createHash } from 'node:crypto';
+          import assert from 'node:assert/strict';
           const [directory, path] = process.argv.slice(2);
-          const plan = JSON.parse(readFileSync(path));
-          const identity = Object.fromEntries(['head', 'runId', 'attempt', 'planDigest'].map(key => [key, plan[key]]));
+          const meta = JSON.parse(readFileSync(path));
+          assert.equal(meta.receipt.ok, true);
+          assert.equal(meta.coverage, 'light');
+          const identity = { head: meta.input.head, tree: meta.input.tree, runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT, rosterDigest: meta.finalLightReceipt.rosterDigest };
           const files = Object.fromEntries(readdirSync(directory).sort().map(name => {
             const bytes = readFileSync(`${directory}/${name}`);
             return [name, { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }];
@@ -281,7 +193,7 @@ jobs:
           NODE
 
       - name: Retain curated package and isolated install evidence
-        if: always() && env.VERIFY_MODE == 'p1-checks'
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package-smoke-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
@@ -290,11 +202,10 @@ jobs:
           retention-days: 14
           overwrite: false
 
-  # Keep the required check name stable. A missing/cancelled matrix leg cannot green
-  # this job: both the job result and same-SHA retained bytes are required.
+  # Preserve the required check identifier, but disclose its limited coverage.
   verify:
     if: always()
-    needs: [plan, p1]
+    needs: [ci-light]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -313,16 +224,12 @@ jobs:
         with:
           pattern: '*-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}'
           path: ${{ runner.temp }}/verification-evidence
-      - name: Require complete same-SHA passing evidence
+      - name: Require complete same-SHA light and package evidence
         env:
-          VERIFY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'p1' }}
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          JOB_RESULT: ${{ needs.p1.result }}
-          PLAN_RESULT: ${{ needs.plan.result }}
-          GH_TOKEN: ${{ github.token }}
-          EINZBERN_CI_BASELINE_ONLINE: read-only
+          JOB_RESULT: ${{ needs.ci-light.result }}
         run: |
           python3 scripts/ci/aggregate-evidence.py \
-            --artifacts "$RUNNER_TEMP/verification-evidence" --mode "$VERIFY_MODE" \
+            --artifacts "$RUNNER_TEMP/verification-evidence" --mode ci-light \
             --sha "$EXPECTED_SHA" --run-id "$GITHUB_RUN_ID" \
-            --attempt "$GITHUB_RUN_ATTEMPT" --job-result "$JOB_RESULT" --plan-result "$PLAN_RESULT"
+            --attempt "$GITHUB_RUN_ATTEMPT" --job-result "$JOB_RESULT"

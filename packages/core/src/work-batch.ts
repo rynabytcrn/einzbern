@@ -1,4 +1,3 @@
-import { normalizeInvolvedProjects } from "./involved-projects.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // STORY-300 slice 3: apply an ordered, heterogeneous sequence of work-record writes as
@@ -39,13 +38,10 @@ import type { JsonValue, WorkRecord } from "../../protocol/src/index.js";
 import {
   WorkspaceError,
   appendEvents,
-  createWorkDelta,
-  annotateWorkDelta,
-  transitionWorkDelta,
 } from "./workspace.js";
-import type { MutationDelta, WorkspaceState } from "./workspace.js";
+import type { WorkspaceState } from "./workspace.js";
 import { WorkLeaseError, assertWorkLeaseAdmits } from "./work-lease.js";
-import type { WorkRelationsInput } from "./work-relations.js";
+import { createWorkBatchMemberDelta, createdParentId, referencedId, isNonEmptyString } from "./work-batch-delta.js";
 
 export const WORK_BATCH_SCHEMA_VERSION = "tcrn.work-batch.v1" as const;
 export const WORK_BATCH_VERBS = Object.freeze(["work-create", "work-transition", "work-annotate"]);
@@ -68,29 +64,6 @@ export interface WorkBatchProblem {
 
 function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= PROTOCOL_LIMITS.maxStringLength;
-}
-
-// Resolving a reference by external key is what lets one member act on what an earlier
-// member created. `id` still wins when both are given, so an explicit id is never
-// silently replaced by a derivation.
-function referencedId(member: Readonly<Record<string, unknown>>): string | null {
-  if (isNonEmptyString(member.id)) return member.id;
-  if (isNonEmptyString(member.externalKey)) return deriveStableId("work", canonicalExternalKey(member.externalKey));
-  return null;
-}
-
-// The parent a work-create member puts the record it creates under: `parentId`, else the record
-// `parentExternalKey` derives, else none.
-function createdParentId(member: Readonly<Record<string, unknown>>): string | null {
-  return isNonEmptyString(member.parentId)
-    ? member.parentId
-    : isNonEmptyString(member.parentExternalKey)
-      ? deriveStableId("work", canonicalExternalKey(member.parentExternalKey))
-      : null;
 }
 
 // The shape of a member's relations: an object of the five known fields, each a list of strings.
@@ -183,74 +156,6 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
   return problems;
 }
 
-function relationsOf(member: Readonly<Record<string, unknown>>): { readonly relations?: WorkRelationsInput } {
-  return member.relations === undefined ? {} : { relations: member.relations as WorkRelationsInput };
-}
-
-// TCRN-CROSS-STORY-525: a member's gate names, passed through for the engine to judge.
-function gatesOf(member: Readonly<Record<string, unknown>>): { readonly gates?: readonly string[] } {
-  return member.gates === undefined ? {} : { gates: member.gates as readonly string[] };
-}
-
-// TCRN-CROSS-STORY-473 R2: a member's Story fields, passed through for the engine to judge.
-function storyFieldsOf(member: Readonly<Record<string, unknown>>): { readonly goal?: string; readonly acceptance?: string; readonly body?: string; readonly content?: unknown } {
-  return {
-    ...(member.goal === undefined ? {} : { goal: member.goal as string }),
-    ...(member.acceptance === undefined ? {} : { acceptance: member.acceptance as string }),
-    ...(member.body === undefined ? {} : { body: member.body as string }),
-    ...(member.content === undefined ? {} : { content: member.content }),
-  };
-}
-
-// TCRN-CROSS-STORY-528 (MIN-256; TCRN-CROSS-SUB-457): a transition or an annotation member writes as
-// the batch's actor, so another actor's lease refuses it as it refuses the single verb, and the
-// batch writes nothing.
-function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string, actorId: string | undefined): (state: WorkspaceState) => MutationDelta {
-  if (member.verb === "work-create") {
-    return createWorkDelta({
-      projectId: member.projectId as string,
-      externalKey: member.externalKey as string,
-      kind: member.kind as never,
-      parentId: createdParentId(member),
-      ...(member.status === undefined ? {} : { status: member.status as never }),
-      ...(member.scope === undefined ? {} : { scope: member.scope as string }),
-      ...(member.decidedBy === undefined ? {} : { decidedBy: member.decidedBy as readonly string[] }),
-      ...relationsOf(member),
-      ...(member.involvedProjects === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(member.involvedProjects) }),
-      ...storyFieldsOf(member),
-      ...gatesOf(member),
-      ...(member.templateAdmission === undefined ? {} : { templateAdmission: member.templateAdmission }),
-      title: member.title as string,
-      ...(member.summary === undefined ? {} : { summary: member.summary as string }),
-      occurredAt,
-    });
-  }
-  const id = referencedId(member) as string;
-  if (member.verb === "work-transition") {
-    return transitionWorkDelta({
-      id,
-      status: member.status as never,
-      ...(member.summary === undefined ? {} : { summary: member.summary as string }),
-      occurredAt,
-      ...(actorId === undefined ? {} : { actorId }),
-    });
-  }
-  return annotateWorkDelta({
-    id,
-    ...(member.expectedRevision === undefined ? {} : { expectedRevision: member.expectedRevision as number }),
-    ...(member.scope === undefined ? {} : { scope: member.scope as string }),
-    ...(member.decidedBy === undefined ? {} : { decidedBy: member.decidedBy as readonly string[] }),
-    ...(member.sprint === undefined ? {} : { sprint: member.sprint as never }),
-    ...relationsOf(member),
-      ...(member.involvedProjects === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(member.involvedProjects) }),
-    ...storyFieldsOf(member),
-    ...gatesOf(member),
-    ...(member.summary === undefined ? {} : { summary: member.summary as string }),
-    occurredAt,
-    ...(actorId === undefined ? {} : { actorId }),
-  });
-}
-
 export interface WorkBatchOptions {
   // TCRN-CROSS-STORY-467 R1: no expected version -- the engine applies the batch under its
   // write lock against the latest state.
@@ -281,8 +186,8 @@ export async function applyWorkBatch(
   }
   // Resolve member inputs inside its indexed delta, so normalization failures receive
   // the same attribution as state-dependent refusals from appendEvents.
-  const deltas = members.map((member) => (state: WorkspaceState) =>
-    deltaFor(member as Readonly<Record<string, unknown>>, options.occurredAt, options.actorId)(state));
+  const deltas = members.map((member) =>
+    createWorkBatchMemberDelta(member as Readonly<Record<string, unknown>>, options));
   try {
     return await appendEvents(workspaceRoot, deltas, options);
   } catch (error) {

@@ -562,3 +562,107 @@ test("remote metadata reservations cannot alias two transaction IDs onto one bac
   index.transactions.push(aliased); index.transactionIds.push(aliased.transactionId);
   assert.throws(() => validateConfigBackupGroupIndex(index), { reasonCode: "CONFIG_BACKUP_REMOTE_INVALID" });
 });
+
+async function deferredLocalRetirement(t, remoteReplacement = false) {
+  const f = await fixture(t, { ...fixturePolicy, activeLimit: 2, retentionDuration: 10000 });
+  const first = f.proposal("5", "dark", "2026-10-20T00:00:00Z"), next = f.proposal("6", "light", "2026-10-20T00:00:02Z");
+  if (!remoteReplacement) {
+    f.store.policy = { ...f.store.policy, maxPackageBytes: Math.max(first.bytes, next.bytes), maxTotalBytes: first.bytes + next.bytes };
+    const approved = validateConfigBackupRetentionPolicy(f.store.policy);
+    f.store.approval = { approved: true, policyDigest: approved.policyDigest, approvalEvidenceRef: f.store.policy.approvalEvidenceRef };
+  }
+  await createConfigBackup(f.store, first, first.manifest.createdAtUtc);
+  if (remoteReplacement) {
+    const prepared = await prepareConfigBackup(f.store, next, next.manifest.createdAtUtc);
+    const packageRoot = join(f.store.reservedRoot, "config-backup-staging", "device", f.store.binding.backupGroupId, prepared.index.transactions[0].directory);
+    const begin = { schemaVersion: "einzbern.config-backup-remote-begin.v1", backupId: next.manifest.backupId, locations: remoteLocations, replacement: await remotePackage(packageRoot, remoteLocations.stagingAreaId, "2026-10-20T00:00:03Z", "new"), original: null };
+    assert.equal((await commitConfigBackup(f.store, "2026-10-20T00:00:04Z", "begin", begin)).reason, "remote-commit-query-required");
+    const complete = { schemaVersion: "einzbern.config-backup-remote-complete.v1", backupId: next.manifest.backupId, beginDigest: remoteEvidenceDigest(begin), replacement: await remotePackage(packageRoot, remoteLocations.activeAreaId, "2026-10-20T00:00:08Z", "new"), original: null, retiredAt: null, promotedAt: "2026-10-20T00:00:07Z" };
+    assert.equal((await commitConfigBackup(f.store, "2026-10-20T00:00:09Z", "complete", complete)).status, "settled");
+  } else await createConfigBackup(f.store, next, next.manifest.createdAtUtc);
+  const retired = await retireConfigBackup(f.store, first.manifest.backupId, remoteReplacement ? "2026-10-20T00:00:09Z" : "2026-10-20T00:00:04Z");
+  assert.equal(retired.reason, "retirement-capacity-or-retention"); assert.equal(retired.index.transactions[0].bytes, 0); assert.equal(retired.index.transactions[0].remote, undefined);
+  const active = join(f.store.reservedRoot, "config-backups", "device", f.store.binding.backupGroupId), recovery = join(f.store.reservedRoot, "config-backup-recovery", "device", f.store.binding.backupGroupId);
+  return { ...f, first, next, retired, active, recovery };
+}
+test("official local retirement keeps its zero-allocation intent and resumes after retention expires", async t => {
+  for (const remoteReplacement of [false, true]) {
+    const f = await deferredLocalRetirement(t, remoteReplacement);
+    const completion = f.retired.index.active[1].remoteCompletion;
+    assert.equal(Boolean(completion), remoteReplacement);
+    const resumed = await resumeConfigBackup(f.store, "2026-10-20T00:00:11Z");
+    assert.equal(resumed.status, "settled", resumed.reason); assert.equal(resumed.index.transactions.length, 0);
+    assert.deepEqual(resumed.index.activeBackupIds, [f.next.manifest.backupId]); assert.deepEqual(resumed.index.recoverableBackupIds, [f.first.manifest.backupId]);
+    assert.deepEqual(resumed.index.active[0].remoteCompletion, completion);
+    assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:12Z")).status, "settled");
+  }
+});
+test("local zero-allocation retirement reconciles rename and recovery-index cuts with compact metadata intact", async t => {
+  for (const remoteReplacement of [false, true]) for (const cut of ["old-renamed", "recovery-indexed", "two-old-copies", "two-replacement-copies"]) {
+    const f = await deferredLocalRetirement(t, remoteReplacement), index = structuredClone(f.retired.index), old = index.active[0], replacement = index.active[1];
+    if (cut === "two-replacement-copies") await cp(join(f.active, replacement.directory), join(f.store.reservedRoot, "config-backup-staging", "device", f.store.binding.backupGroupId, replacement.directory), { recursive: true });
+    else if (cut === "two-old-copies") await cp(join(f.active, old.directory), join(f.recovery, old.directory), { recursive: true });
+    else await rename(join(f.active, old.directory), join(f.recovery, old.directory));
+    if (cut === "recovery-indexed") {
+      index.active.shift(); index.recoverable.push({ ...old, origin: "retired", recoverableUntil: "2026-10-21T00:00:11Z" });
+      index.activeBackupIds = index.active.map(p => p.backupId); index.recoverableBackupIds = [old.backupId];
+      await writeFile(join(f.active, "index.json"), configBackupCanonical(index));
+    }
+    const result = await resumeConfigBackup(f.store, "2026-10-20T00:00:11Z");
+    assert.equal(result.status, cut.startsWith("two-") ? "pending" : "settled", `${cut}: ${result.reason}`);
+    if (cut.startsWith("two-")) { assert.equal(result.index.transactions.length, 1); assert.equal(result.reason, cut === "two-old-copies" ? "retirement-conflict" : "publication-conflict"); }
+    else { assert.equal(result.index.transactions.length, 0); assert.deepEqual(result.index.active[0].remoteCompletion, replacement.remoteCompletion); }
+  }
+});
+test("zero payload exemption refuses fabricated retirement identity, phase, bytes, digest, directory and target", async t => {
+  for (const problem of ["transaction-id", "new-payload-phase", "nonzero-conflict", "digest", "directory", "missing-target", "same-target", "no-active-replacement", "failed-target"]) {
+    const f = await deferredLocalRetirement(t), index = structuredClone(f.retired.index), transaction = index.transactions[0];
+    if (problem === "transaction-id") transaction.transactionId = "9".repeat(32);
+    if (problem === "new-payload-phase") transaction.phase = "staging";
+    if (problem === "nonzero-conflict") transaction.bytes = 1;
+    if (problem === "digest") transaction.manifestDigest = "f".repeat(64);
+    if (problem === "directory") transaction.directory = `2026-10-19T00-00-00Z-${transaction.backupId}`;
+    if (problem === "missing-target") { transaction.transactionId = "9".repeat(32); transaction.retirementBackupId = transaction.transactionId; }
+    if (problem === "same-target") { transaction.transactionId = transaction.backupId; transaction.retirementBackupId = transaction.backupId; }
+    if (problem === "no-active-replacement") index.active.pop();
+    if (problem === "failed-target") index.active[0].origin = "failed-transaction";
+    index.transactionIds = index.transactions.map(p => p.transactionId); index.activeBackupIds = index.active.map(p => p.backupId);
+    await writeFile(join(f.active, "index.json"), configBackupCanonical(index));
+    const result = await resumeConfigBackup(f.store, "2026-10-20T00:00:11Z");
+    assert.equal(result.status, "stop-new-and-report", problem); assert.equal(result.reason, "remote-evidence-capacity", problem);
+    assert.equal(result.index.transactions.length, 1); assert.equal(result.index.recoverable.length, 0);
+  }
+});
+
+
+test("zero-allocation local retirement verifies real replacement and target bytes before releasing the intent", async t => {
+  for (const problem of ["missing-old", "corrupt-old", "old-record-digest", "replacement-record-bytes", "recovered-old-missing"]) {
+    const f = await deferredLocalRetirement(t), index = structuredClone(f.retired.index), old = index.active[0], replacement = index.active[1];
+    if (problem === "missing-old" || problem === "recovered-old-missing") await rm(join(f.active, old.directory), { recursive: true });
+    if (problem === "corrupt-old") await writeFile(join(f.active, old.directory, "manifest.json"), "{}");
+    if (problem === "old-record-digest") old.manifestDigest = "f".repeat(64);
+    if (problem === "replacement-record-bytes") replacement.bytes--;
+    if (problem === "recovered-old-missing") {
+      index.active.shift(); index.recoverable.push({ ...old, origin: "retired", recoverableUntil: "2026-10-21T00:00:11Z" });
+      index.activeBackupIds = [replacement.backupId]; index.recoverableBackupIds = [old.backupId];
+    }
+    await writeFile(join(f.active, "index.json"), configBackupCanonical(index));
+    const result = await resumeConfigBackup(f.store, "2026-10-20T00:00:11Z");
+    assert.equal(result.status, "pending", problem); assert.equal(result.reason, "CONFIG_BACKUP_STORED_PACKAGE_CHANGED", problem);
+    assert.equal(result.index.transactions.length, 1); assert.equal((await verifyConfigBackup(join(f.active, replacement.directory))).integrity, "verified");
+  }
+});
+
+test("new local or remote payload transactions cannot masquerade as zero-allocation retirement", async t => {
+  for (const remote of [false, true]) {
+    const f = await stagedFixture(t), index = structuredClone(f.prepared.index);
+    index.transactions[0].bytes = 0;
+    if (!remote) delete index.transactions[0].remote;
+    const before = await readFile(join(f.stagedRoot, "manifest.json"));
+    await writeFile(join(f.store.reservedRoot, "config-backups", "device", f.store.binding.backupGroupId, "index.json"), configBackupCanonical(index));
+    const result = await resumeConfigBackup(f.store, "2026-10-20T00:00:11Z");
+    assert.equal(result.status, "stop-new-and-report"); assert.equal(result.reason, "remote-evidence-capacity");
+    assert.equal(result.index.transactions.length, 1); assert.deepEqual(result.index.activeBackupIds, [f.first.manifest.backupId]);
+    assert.deepEqual(await readFile(join(f.stagedRoot, "manifest.json")), before);
+  }
+});

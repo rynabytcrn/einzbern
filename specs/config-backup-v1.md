@@ -426,7 +426,13 @@ pending. Loaded intents enforce the same bound, so complete cannot add unreserve
 metadata. A matching compact row during a local interrupted settlement is covered
 by its transaction reservation; after that transaction is removed its actual bytes
 count separately. Matching same-ID package records during settlement count physical
-package bytes once; inconsistent duplicates refuse. Stored historical compact
+package bytes once; inconsistent duplicates refuse. The existing local retire
+intent allocates zero new payload bytes only when its non-remote rotation-pending
+transactionId equals a distinct retirement target ID, its exact directory/digest
+bind an existing active replacement, and that target exists as active or retired
+recovery. Both existing packages remain charged, including any compact metadata;
+arbitrary zero-budget transactions are not exempt. Ordinary source/target conflict
+and byte verification still apply during reconciliation. Stored historical compact
 completion metadata continues to count actual canonical bytes toward maxTotalBytes. Raw request evidence has a 1 MiB structural limit. These are protocol
 bounds, not production retention defaults or approval.
 

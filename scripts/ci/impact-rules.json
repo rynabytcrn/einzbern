@@ -1,5 +1,5 @@
 {
-  "version": 58,
+  "version": 59,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1600,7 +1600,7 @@
     "packages/core/src/conference-execution.ts": "617975b49ce80cc2d6f639437094a4e0807956be82baa49fabd311d5611a2e81",
     "packages/core/src/conference.ts": "88da25785bca1dd7ee2a53edb1be032a60fefbe952ebb785a6d7d7c3b252c34a",
     "packages/core/src/config-backup-remote.ts": "db9b4f6b73fdb79cd3eed80a4c1a28a2670ab7f5e59ffaa86fe6f2fc06c53ef6",
-    "packages/core/src/config-backup-retention.ts": "b66cbfa63b5a027b627c2768b2cb836897f8eacb311ef35e5c380a55646658bf",
+    "packages/core/src/config-backup-retention.ts": "896b3ede2361636cf106f1bbcbb876c8e21ce7413637384ad52f293653d46ecc",
     "packages/core/src/config-backup.ts": "d45e8ceece9b5192033d51055cff382c2504be54aea89088c811acb0951370fd",
     "packages/core/src/config-proposals.ts": "4f8361968cd75b93d581b6fc2bac9b33484ed3d665ac9987173d8bae6dbadfd2",
     "packages/core/src/config-records.ts": "fe98a143dbd91ae200d07fef4d670087ec123693941dca5a715986db9ef3e95f",
@@ -1984,7 +1984,7 @@
     "tests/conference.test.mjs": "159aa57a7485c5c26cd1e1281fbd3f030c75ebc426a48b4d8919da3b93c0e7a1",
     "tests/config-backup-format.test.mjs": "e6c151e95c6e4e1904ddedd78d24a39ec8f23439abf7716d4529e721a51b3226",
     "tests/config-backup-output-preservation.test.mjs": "36c397f40aa5c939d5a8f78601e20ef629750afea6081074f82cbfd34b2db5d7",
-    "tests/config-backup-retention.test.mjs": "d221a7b946fe324a1cc179daa37eaffba60cdac38424687bcae52468a85e28fb",
+    "tests/config-backup-retention.test.mjs": "e7def715f56544c082fc9580b6ade80216ad1e070e7bf589bcc09052d4ec8844",
     "tests/config-backup.test.mjs": "a488422a2fa82c4679c86fa96441dca1f4a59428315ff954fa44730718ab6309",
     "tests/config-proposals-cli.test.mjs": "4d5db906c98c20b990d90e785af7277b6ddb46a3b7ee293b4027ff377abd0f4f",
     "tests/config-proposals.test.mjs": "886c6f602070801c1c8f10629bb2809dc08ef94d3c19c4faccb2c8797fe97746",

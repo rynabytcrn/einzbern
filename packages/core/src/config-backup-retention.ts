@@ -312,6 +312,18 @@ async function resumeUnderLock(store: ConfigBackupStore, paths: GroupPaths, init
   let index = initial; const policy = approvedPolicy(store).policy; assertBinding(index, store); await assertTracked(paths, index);
   if (!remoteCapacity(index, policy)) return pendingResult(paths, index, at, "stop-new-and-report", "remote-evidence-capacity");
   for (const transaction of [...index.transactions]) {
+    if (transaction.bytes === 0) {
+      // Capacity recognized an existing local retirement, not a new zero-budget payload.
+      // Verify its originals before any reconciliation; account for the supported rename cut.
+      const old = index.active.find(p => p.backupId === transaction.retirementBackupId);
+      let observed = index;
+      if (old) {
+        const activeOld = await exists(join(paths.active, old.directory)), recoveredOld = await exists(join(paths.recovery, old.directory));
+        if (activeOld && recoveredOld) return pendingResult(paths, index, at, "pending", "retirement-conflict");
+        if (!activeOld && recoveredOld) observed = { ...index, active: index.active.filter(p => p.backupId !== old.backupId), recoverable: [...index.recoverable, old] };
+      }
+      await verifyStoredPackages(paths, observed);
+    }
     if (transaction.remote && transaction.remote.phase !== "complete-validated") return { status: "pending", index, reason: transaction.remote.phase === "prepared" ? "remote-verification-required" : "remote-commit-query-required" };
     const source = join(paths.staging, transaction.directory); const target = join(paths.active, transaction.directory);
     const hasSource = await exists(source); const hasTarget = await exists(target);
@@ -362,10 +374,21 @@ function remoteMetadataBytes(index: ConfigBackupGroupIndex): number {
   // The reservation includes a matching compact row while its transaction still exists.
   return index.transactions.filter(t => t.remote !== undefined).length * CONFIG_BACKUP_REMOTE_METADATA_BYTES + [...index.active, ...index.recoverable].reduce((sum, p) => sum + (p.remoteCompletion === undefined || remoteIds.has(p.backupId) ? 0 : Buffer.byteLength(configBackupCanonical(p.remoteCompletion))), 0);
 }
+/** Official local retire records the existing replacement, with no new payload allocation. */
+function isLocalRetirementIntent(index: ConfigBackupGroupIndex, transaction: ConfigBackupTransaction): boolean {
+  if (transaction.remote !== undefined || transaction.bytes !== 0 || transaction.phase !== "rotation-pending" || transaction.retirementBackupId !== transaction.transactionId || transaction.backupId === transaction.transactionId) return false;
+  const replacement = index.active.find(p => p.backupId === transaction.backupId);
+  const target = index.active.find(p => p.backupId === transaction.retirementBackupId) ?? index.recoverable.find(p => p.backupId === transaction.retirementBackupId && p.origin === "retired");
+  return replacement !== undefined && replacement.origin !== "failed-transaction" && replacement.bytes > 0 && replacement.directory === transaction.directory && replacement.manifestDigest === transaction.manifestDigest && target !== undefined && target.origin !== "failed-transaction" && target.bytes > 0;
+}
 function remoteCapacity(index: ConfigBackupGroupIndex, policy: ConfigBackupRetentionPolicy): boolean {
   for (const transaction of index.transactions) if (transaction.remote) validateRemoteIntent(transaction.remote);
   const packages = new Map<string, { bytes: number; manifestDigest: string; directory: string }>();
   for (const row of [...index.active, ...index.recoverable, ...index.transactions]) {
+    if ("transactionId" in row && row.bytes === 0) {
+      if (!isLocalRetirementIntent(index, row)) return false;
+      continue; // Existing active replacement and active/recoverable target are already charged.
+    }
     const prior = packages.get(row.backupId);
     if (prior && (prior.bytes !== row.bytes || prior.manifestDigest !== row.manifestDigest || prior.directory !== row.directory)) return false;
     packages.set(row.backupId, row);

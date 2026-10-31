@@ -267,7 +267,8 @@ export async function createConfigBackup(store: ConfigBackupStore, plan: ConfigB
       const same = index.transactions.find(t => t.backupId === plan.manifest.backupId && t.remote !== undefined);
       if (publication === "remote-staged" && same) {
         const existing = await verifyConfigBackup(join(same.phase === "staging" ? paths.staging : paths.active, same.directory));
-        if (existing.manifest?.selectionDigest !== plan.manifest.selectionDigest || configBackupCanonical(existing.manifest?.sourceVersion ?? null) !== configBackupCanonical(plan.manifest.sourceVersion)) return pendingResult(paths, index, at, "pending", "prepared-content-mismatch");
+        if (existing.integrity !== "verified") return pendingResult(paths, index, at, "pending", "CONFIG_BACKUP_VERIFICATION_FAILED");
+        if (same.manifestDigest !== plan.manifest.manifestDigest || existing.manifest?.manifestDigest !== plan.manifest.manifestDigest || existing.manifest?.selectionDigest !== plan.manifest.selectionDigest || configBackupCanonical(existing.manifest?.sourceVersion ?? null) !== configBackupCanonical(plan.manifest.sourceVersion)) return pendingResult(paths, index, at, "pending", "prepared-content-mismatch");
         return { status: "pending", index, reason: same.remote?.phase === "prepared" ? "remote-verification-required" : "remote-commit-query-required" };
       }
       return pendingResult(paths, index, at, "pending", "resume-existing-transaction-first");

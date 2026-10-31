@@ -431,3 +431,23 @@ test("repair-staged validates all surviving bytes before filling holes and retai
     assert.equal(result.index.transactions[0].backupId, f.next.manifest.backupId); assert.equal(result.index.recoverable.length, 0);
   }
 });
+
+
+test("repeated remote prepare binds the exact original manifest and re-verifies surviving bytes", async t => {
+  for (const problem of ["different-manifest", "corrupt-member"]) {
+    const f = await stagedFixture(t);
+    const memberPath = join(f.stagedRoot, f.next.manifest.files[0].memberPath);
+    const plan = problem === "different-manifest" ? planConfigBackup({ projectRef: f.next.manifest.projectRef, backupGroupId: f.next.manifest.backupGroupId, hostname: f.next.manifest.hostnameLabel.display, at: "2026-10-20T00:00:03Z", sourceVersion: f.next.manifest.sourceVersion, backupId: f.next.manifest.backupId, payloads: f.next.members.map(m => m.payload) }) : f.next;
+    if (problem === "different-manifest") {
+      assert.equal(plan.manifest.selectionDigest, f.next.manifest.selectionDigest);
+      assert.deepEqual(plan.manifest.sourceVersion, f.next.manifest.sourceVersion);
+      assert.notEqual(plan.manifest.manifestDigest, f.next.manifest.manifestDigest);
+    }
+    if (problem === "corrupt-member") await writeFile(memberPath, "{}");
+    const before = await readFile(memberPath);
+    const result = await prepareConfigBackup(f.store, plan, "2026-10-20T00:00:04Z");
+    assert.equal(result.status, "pending"); assert.equal(result.reason, problem === "different-manifest" ? "prepared-content-mismatch" : "CONFIG_BACKUP_VERIFICATION_FAILED");
+    assert.equal(result.index.transactions.length, 1); assert.equal(result.index.transactions[0].manifestDigest, f.next.manifest.manifestDigest);
+    assert.deepEqual(result.index.activeBackupIds, [f.first.manifest.backupId]); assert.deepEqual(await readFile(memberPath), before);
+  }
+});

@@ -143,14 +143,14 @@ test("486-R4: render-readme writes the five root READMEs, and --check compares w
 });
 
 // MIN-337: current Ether naming is checked separately from the frozen STORY-495 evidence.
-// 2026-10-31: refresh only the current Chinese snapshot for the Owner-reviewed usage section;
+// 2026-10-31: refresh current snapshots for the Owner-reviewed usage section and translations;
 // the independent historical STORY-495 fixtures and their digests remain unchanged.
 const ETHER_TEMPLATE_SHA256 = {
   "README.md": "d38d62343d2ee4ffba72952378717655d2b086ac630ecd622135c9fc5edfbd79",
-  "README.en.md": "71afa4562afa40c2428b7817ea332ea7f2eb5682e442c01b07e84a55b35b585e",
-  "README.ja.md": "1d2e8856771c59aeee5939c1568e54dee25d4b449d6302279c2b0ac0aa855497",
-  "README.ko.md": "c445c90ea7cb99fd5d59a0c56d7cb5e23f8d252f70e14907b12603fcd14445f8",
-  "README.fr.md": "c15b1bf17404c70b404959969dee865b8b6cc6738ed57eff7c0f89cb3a2e7c8f"
+  "README.en.md": "390a1be7cc4eec053e74203093d5ab2c01589ed72ce7b887e1b1e013f83f290f",
+  "README.ja.md": "501ccdee74aef06503ddaaa79ac70c0dc6f2c7de217ab2b6757c0937b21ac214",
+  "README.ko.md": "27f8a0fc52f6ef6041ed783fd3ce2f5690d47d11f0abf5edcce5b473240284a8",
+  "README.fr.md": "1fa5d3dbfb80c744b019d43477fcd7aeae35fd9fc99d26313634c7b3932fcf89"
 };
 test("MIN-337: current README templates retain the Ether naming baseline", async () => {
   for (const name of NAMES) {

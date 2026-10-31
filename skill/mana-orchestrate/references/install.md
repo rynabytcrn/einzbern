@@ -253,10 +253,10 @@ on an unknown outcome. Default create retains its immediate local behavior and i
 not evidence of remote durability. No SDK, deployment or production rotation is
 performed by this guidance.
 
-The public backup verbs are `config-backup-plan`, `config-backup-create`, `config-backup-verify`,
+The public backup verbs are `config-backup-plan`, `config-backup-create`, `config-backup-prepare`, `config-backup-commit`, `config-backup-verify`,
 `config-backup-list`, `config-backup-resume`, `config-backup-retire`, `config-restore-plan` and
 `config-restore-apply`. Use their current `--help` and shipped `specs/config-backup-v1.md` for
-closed request envelopes. Plan/create/resume/retire/restore use `--request`, `--at`, optional
+closed request envelopes. Plan/create/prepare/commit/resume/retire/restore use `--request`, `--at`, optional
 `--workspace`, `--project`, `--project-id`, `--output`; write verbs also accept `--timeout-ms`.
 Verify uses `--package`; list uses optional `--root` and required `--at`. Restore additionally
 requires `--package`, `--actor`, optional `--decided-in`, and apply requires the exact reviewed

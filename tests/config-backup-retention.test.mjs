@@ -6,17 +6,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { configBackupDigest, verifyConfigBackup, configBackupCanonical, planConfigBackup, writeConfigBackupPackage } from "../dist/build/packages/core/src/config-backup.js";
-import { prepareConfigBackup, commitConfigBackup, createConfigBackup, evaluateConfigBackupEnablement, listConfigBackups, resumeConfigBackup, retireConfigBackup, validateConfigBackupRetentionPolicy } from "../dist/build/packages/core/src/config-backup-retention.js";
+import { prepareConfigBackup, commitConfigBackup, createConfigBackup, evaluateConfigBackupEnablement, listConfigBackups, resumeConfigBackup, retireConfigBackup, validateConfigBackupRetentionPolicy, validateConfigBackupGroupIndex } from "../dist/build/packages/core/src/config-backup-retention.js";
 import { CONFIG_BACKUP_RESERVATION_FILE, CONFIG_BACKUP_RESERVATION_TEXT } from "../scripts/lib/config-backup-reservation.mjs";
 import { runConfigBackupCommand } from "../dist/build/packages/cli/src/config-backup-commands.js";
 const ref = { libraryId: `workspace:${"1".repeat(24)}`, projectId: `project:${"2".repeat(24)}` };
 const version = { engineVersion: "3.1.0", engineCommit: null, engineCommitStatus: "unknown", artifactIdentity: { kind: "observed-artifact-identity", schemaVersion: "einzbern.install-tree-digest.v1", sha256: "3".repeat(64) }, templateVersions: ["rules-v1"] };
 const fixturePolicy = { schemaVersion: "einzbern.config-backup-retention.v1", activeLimit: 1, transactionLimit: 1, recoveryLimit: 2, maxPackageBytes: 65536, maxTotalBytes: 262144, retentionDuration: 1000, recoveryDuration: 86400000, noChangePolicy: "skip", atLimitAction: "stop-new-and-report", retirementMethod: "verified-recovery-move", approvalEvidenceRef: "fixture-only:retention-policy" };
-async function fixture(t) {
+async function fixture(t, policy = fixturePolicy) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-config-retention-"))); t.after(() => rm(root, { recursive: true, force: true }));
   const reserve = join(root, "reserve"); const project = join(root, "project"); await mkdir(reserve); await mkdir(project);
-  const approved = validateConfigBackupRetentionPolicy(fixturePolicy);
-  const store = { reservedRoot: reserve, localBindingRoot: join(root, "config-backup-bindings"), protectedRoots: [project], binding: { projectRef: ref, backupGroupId: "4".repeat(32), writerBindingRef: "fixture-only:writer", executionEnvironmentRef: "fixture-only:environment", hostname: "device" }, policy: fixturePolicy, approval: { approved: true, policyDigest: approved.policyDigest, approvalEvidenceRef: fixturePolicy.approvalEvidenceRef } };
+  const approved = validateConfigBackupRetentionPolicy(policy);
+  const store = { reservedRoot: reserve, localBindingRoot: join(root, "config-backup-bindings"), protectedRoots: [project], binding: { projectRef: ref, backupGroupId: "4".repeat(32), writerBindingRef: "fixture-only:writer", executionEnvironmentRef: "fixture-only:environment", hostname: "device" }, policy, approval: { approved: true, policyDigest: approved.policyDigest, approvalEvidenceRef: policy.approvalEvidenceRef } };
   return { root, store, proposal: (id, theme, at) => planConfigBackup({ projectRef: ref, backupId: id.repeat(32), backupGroupId: store.binding.backupGroupId, hostname: "device", sourceVersion: version, at, payloads: [{ kind: "device-preference", key: "portal.defaultTheme", value: theme, source: "device-declaration" }] }) };
 }
 test("CFG-B02/P01: retained project and generated subdirectories create and list the same verified groups", async t => {
@@ -256,7 +256,7 @@ test("C-PR29-01 every active-mapped transaction is audited for an extra staging 
   }
 });
 
-import { remoteEvidenceDigest } from "../dist/build/packages/core/src/config-backup-remote.js";
+import { remoteEvidenceDigest, remoteIntentLifecycleBytes, validateRemoteIntent } from "../dist/build/packages/core/src/config-backup-remote.js";
 
 // Staged-remote fixtures model caller observations; they do not authenticate a provider.
 const remoteLocations = { destinationRef: "fixture:remote", stagingAreaId: "transaction-area", activeAreaId: "active-area", recoveryAreaId: "recovery-area" };
@@ -266,8 +266,8 @@ async function remotePackage(root, areaId, time, idPrefix) {
   const files = await Promise.all(members.map(async (path, i) => { const bytes = await readFile(join(root, path)); return { path, id: `${idPrefix}-member-${i}`, parentId: path === "manifest.json" ? `${idPrefix}-package` : `${idPrefix}-members`, bytes: bytes.length, sha256: configBackupDigest(bytes), publishedAt: "2026-10-20T00:00:02Z", downloadedAt: time }; }));
   return { packageRoot: root, backupId: manifest.backupId, manifestDigest: manifest.manifestDigest, packageId: `${idPrefix}-package`, packageParentId: areaId, membersDirectory: { id: `${idPrefix}-members`, parentId: `${idPrefix}-package`, name: "members" }, areaId, files, verifiedAt: time, evidenceRef: `fixture:readback-${idPrefix}` };
 }
-async function stagedFixture(t) {
-  const f = await fixture(t), first = f.proposal("5", "dark", "2026-10-20T00:00:00Z");
+async function stagedFixture(t, policy = fixturePolicy) {
+  const f = await fixture(t, policy), first = f.proposal("5", "dark", "2026-10-20T00:00:00Z");
   const a = await createConfigBackup(f.store, first, first.manifest.createdAtUtc);
   const next = f.proposal("6", "light", "2026-10-20T00:00:02Z"), prepared = await prepareConfigBackup(f.store, next, next.manifest.createdAtUtc);
   const stagedRoot = join(f.store.reservedRoot, "config-backup-staging", "device", f.store.binding.backupGroupId, prepared.index.transactions[0].directory);
@@ -450,4 +450,115 @@ test("repeated remote prepare binds the exact original manifest and re-verifies 
     assert.equal(result.index.transactions.length, 1); assert.equal(result.index.transactions[0].manifestDigest, f.next.manifest.manifestDigest);
     assert.deepEqual(result.index.activeBackupIds, [f.first.manifest.backupId]); assert.deepEqual(await readFile(memberPath), before);
   }
+});
+
+async function boundedRemoteFixture(t) {
+  const probe = await fixture(t);
+  const bytes = probe.proposal("5", "dark", "2026-10-20T00:00:00Z").bytes + probe.proposal("6", "light", "2026-10-20T00:00:02Z").bytes;
+  return stagedFixture(t, { ...fixturePolicy, maxPackageBytes: 4096, maxTotalBytes: bytes + 4096 });
+}
+function remapRemoteFields(f, values) {
+  f.begin.locations = Object.fromEntries(["destinationRef", "stagingAreaId", "activeAreaId", "recoveryAreaId"].map((key, i) => [key, values[i]]));
+  for (const [name, n, beginArea, completeArea] of [["replacement", 4, 1, 2], ["original", 6, 2, 3]]) {
+    for (const [receipt, area] of [[f.begin[name], beginArea], [f.complete[name], completeArea]]) {
+      receipt.packageId = values[n]; receipt.packageParentId = values[area]; receipt.areaId = values[area];
+      receipt.membersDirectory = { id: values[n + 1], parentId: values[n], name: "members" };
+      for (const file of receipt.files) file.parentId = file.path === "manifest.json" ? values[n] : values[n + 1];
+    }
+  }
+  f.complete.beginDigest = remoteEvidenceDigest(f.begin);
+}
+const metadataBeginAt = "2026-10-20T00:00:04.123456789Z";
+const metadataCompleteAt = "2026-10-20T00:00:09.123456789Z";
+function projectedRemoteIntent(begin) {
+  const identity = receipt => ({ backupId: receipt.backupId, manifestDigest: receipt.manifestDigest, packageId: receipt.packageId, membersDirectoryId: receipt.membersDirectory.id, filesDigest: remoteEvidenceDigest(receipt.files.map(({ path, id, bytes, sha256 }) => ({ path, id, bytes, sha256 })).sort((a, b) => a.path < b.path ? -1 : 1)) });
+  return { phase: "commit-pending", beginDigest: remoteEvidenceDigest(begin), completeDigest: null, begunAt: metadataBeginAt, completedAt: null, locations: begin.locations, replacement: identity(begin.replacement), original: identity(begin.original) };
+}
+function exactMetadataBoundary(f, extra = 0) {
+  let values;
+  for (let n = 1; n < 255; n++) {
+    values = Array.from({ length: 8 }, (_, i) => "界".repeat(n) + i); remapRemoteFields(f, values);
+    const bytes = remoteIntentLifecycleBytes(projectedRemoteIntent(f.begin));
+    if (bytes > 4096) {
+      values = Array.from({ length: 8 }, (_, i) => "界".repeat(n - 1) + i); remapRemoteFields(f, values);
+      values[0] += "x".repeat(4096 - remoteIntentLifecycleBytes(projectedRemoteIntent(f.begin)) + extra);
+      remapRemoteFields(f, values); assert.equal(remoteIntentLifecycleBytes(projectedRemoteIntent(f.begin)), 4096 + extra); return;
+    }
+  }
+  assert.fail("fixture must find the canonical UTF-8 lifecycle boundary");
+}
+test("remote metadata reservation rejects UTF-8 and JSON escapes before begin without changing originals", async t => {
+  for (const shape of ["cjk", "emoji", "escaped", "lone-surrogate", "control", "one-byte-over"]) {
+    const f = await boundedRemoteFixture(t), before = await readFile(join(f.oldRoot, "manifest.json"));
+    const make = i => shape === "cjk" ? "界".repeat(255) + i : shape === "emoji" ? "😀".repeat(127) + i : shape === "escaped" ? '\\"'.repeat(127) + i : shape === "lone-surrogate" ? "\ud800".repeat(255) + i : "a\n" + i;
+    if (shape === "one-byte-over") exactMetadataBoundary(f, 1); else remapRemoteFields(f, Array.from({ length: 8 }, (_, i) => make(i)));
+    const result = await commitConfigBackup(f.store, metadataBeginAt, "begin", f.begin);
+    assert.equal(result.status, "pending"); assert.equal(result.reason, shape === "control" ? "CONFIG_BACKUP_INPUT_INVALID" : "CONFIG_BACKUP_REMOTE_METADATA_CAPACITY", shape);
+    assert.equal(result.index.transactions[0].remote.phase, "prepared"); assert.equal(result.index.transactions[0].backupId, f.next.manifest.backupId);
+    assert.deepEqual(await readFile(join(f.oldRoot, "manifest.json")), before); assert.deepEqual(result.index.activeBackupIds, [f.first.manifest.backupId]);
+  }
+});
+test("remote exact canonical metadata boundary reserves completion growth and maximal timestamp precision", async t => {
+  for (const shape of ["exact-boundary", "maximum-ascii-fields"]) {
+    const f = await boundedRemoteFixture(t);
+    if (shape === "exact-boundary") exactMetadataBoundary(f); else remapRemoteFields(f, Array.from({ length: 8 }, (_, i) => "a".repeat(255) + i));
+    if (shape === "maximum-ascii-fields") {
+      for (const [name, offset] of [["replacement", 0], ["original", 2]]) for (const receipt of [f.begin[name], f.complete[name]]) {
+        receipt.evidenceRef = "e".repeat(256);
+        receipt.files.forEach((file, i) => { file.id = "f".repeat(255) + (offset + i); });
+      }
+      f.complete.beginDigest = remoteEvidenceDigest(f.begin);
+    }
+    const begun = await commitConfigBackup(f.store, metadataBeginAt, "begin", f.begin); assert.equal(begun.reason, "remote-commit-query-required");
+    const completed = { ...begun.index.transactions[0].remote, phase: "complete-validated", completeDigest: remoteEvidenceDigest(f.complete), completedAt: metadataCompleteAt };
+    const compact = { beginDigest: completed.beginDigest, completeDigest: completed.completeDigest, completedAt: completed.completedAt };
+    const metadataBytes = Buffer.byteLength(configBackupCanonical(completed)) + Buffer.byteLength(configBackupCanonical(compact));
+    assert.ok(f.first.bytes + f.next.bytes + metadataBytes <= f.store.policy.maxTotalBytes);
+    if (shape === "exact-boundary") assert.equal(metadataBytes, 4096);
+    const settled = await commitConfigBackup(f.store, metadataCompleteAt, "complete", f.complete); assert.equal(settled.status, "settled", settled.reason);
+    assert.equal(settled.index.transactions.length, 0); assert.equal(settled.index.active[0].remoteCompletion.completedAt, metadataCompleteAt);
+  }
+});
+test("remote metadata exact limit survives all local completion cuts without double-counting the same package", async t => {
+  for (const cut of ["validated", "new-renamed", "active-indexed", "old-renamed", "recovery-indexed", "conflicting-duplicate", "conflicting-digest", "conflicting-completion", "two-physical-copies"]) {
+    const f = await boundedRemoteFixture(t); exactMetadataBoundary(f);
+    const begun = await commitConfigBackup(f.store, metadataBeginAt, "begin", f.begin), index = structuredClone(begun.index), tx = index.transactions[0];
+    tx.remote = { ...tx.remote, phase: "complete-validated", completeDigest: remoteEvidenceDigest(f.complete), completedAt: metadataCompleteAt };
+    const active = join(f.store.reservedRoot, "config-backups", "device", f.store.binding.backupGroupId), recovery = join(f.store.reservedRoot, "config-backup-recovery", "device", f.store.binding.backupGroupId);
+    if (cut !== "validated") await rename(f.stagedRoot, join(active, tx.directory));
+    if (!["validated", "new-renamed"].includes(cut)) {
+      index.active.push({ backupId: tx.backupId, directory: tx.directory, manifestDigest: tx.manifestDigest, selectionDigest: f.next.manifest.selectionDigest, bytes: tx.bytes, completedAt: metadataCompleteAt, recoverableUntil: null, origin: "created", remoteCompletion: { beginDigest: tx.remote.beginDigest, completeDigest: tx.remote.completeDigest, completedAt: tx.remote.completedAt } }); tx.phase = "committed";
+    }
+    if (["old-renamed", "recovery-indexed"].includes(cut)) { tx.phase = "rotation-pending"; await rename(f.oldRoot, join(recovery, index.active[0].directory)); }
+    if (cut === "recovery-indexed") { const old = index.active.shift(); index.recoverable.push({ ...old, origin: "retired", recoverableUntil: "2026-10-21T00:00:09Z" }); }
+    if (cut === "conflicting-duplicate") index.active.at(-1).bytes++;
+    if (cut === "conflicting-digest") index.active.at(-1).manifestDigest = "f".repeat(64);
+    if (cut === "conflicting-completion") index.active.at(-1).remoteCompletion.completeDigest = "f".repeat(64);
+    if (cut === "two-physical-copies") await cp(join(active, tx.directory), f.stagedRoot, { recursive: true });
+    index.activeBackupIds = index.active.map(p => p.backupId); index.recoverableBackupIds = index.recoverable.map(p => p.backupId);
+    await writeFile(join(active, "index.json"), configBackupCanonical(index));
+    if (cut.startsWith("conflicting-")) { await assert.rejects(resumeConfigBackup(f.store, "2026-10-20T00:00:10Z"), { reasonCode: "CONFIG_BACKUP_REMOTE_INVALID" }); continue; }
+    const result = await resumeConfigBackup(f.store, "2026-10-20T00:00:10Z");
+    assert.equal(result.status, cut === "two-physical-copies" ? "pending" : "settled", `${cut}: ${result.reason}`);
+    if (cut === "two-physical-copies") assert.equal(result.reason, "publication-conflict");
+  }
+});
+test("loaded oversized remote metadata rejects consistently rather than resuming an old malformed intent", async t => {
+  const f = await boundedRemoteFixture(t); remapRemoteFields(f, Array.from({ length: 8 }, (_, i) => "界".repeat(255) + i));
+  const remote = projectedRemoteIntent(f.begin);
+  for (const phase of ["commit-pending", "complete-validated"]) {
+    const intent = phase === "commit-pending" ? remote : { ...remote, phase, completeDigest: remoteEvidenceDigest(f.complete), completedAt: metadataCompleteAt };
+    assert.throws(() => validateRemoteIntent(intent), { reasonCode: "CONFIG_BACKUP_REMOTE_METADATA_CAPACITY" });
+    const index = structuredClone(f.prepared.index); index.transactions[0].remote = intent;
+    await writeFile(join(f.store.reservedRoot, "config-backups", "device", f.store.binding.backupGroupId, "index.json"), configBackupCanonical(index));
+    await assert.rejects(resumeConfigBackup(f.store, "2026-10-20T00:00:10Z"), { reasonCode: "CONFIG_BACKUP_REMOTE_METADATA_CAPACITY" });
+  }
+});
+
+
+test("remote metadata reservations cannot alias two transaction IDs onto one backup", async t => {
+  const f = await boundedRemoteFixture(t), begun = await commitConfigBackup(f.store, metadataBeginAt, "begin", f.begin);
+  const index = structuredClone(begun.index), aliased = { ...index.transactions[0], transactionId: "9".repeat(32) };
+  index.transactions.push(aliased); index.transactionIds.push(aliased.transactionId);
+  assert.throws(() => validateConfigBackupGroupIndex(index), { reasonCode: "CONFIG_BACKUP_REMOTE_INVALID" });
 });

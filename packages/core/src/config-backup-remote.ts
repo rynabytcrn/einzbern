@@ -16,6 +16,16 @@ export interface ConfigBackupRemoteIntent {
 }
 export interface ConfigBackupRemoteCompletion { readonly beginDigest: string; readonly completeDigest: string; readonly completedAt: string }
 export interface ConfigBackupRemoteLocations { readonly destinationRef: string; readonly stagingAreaId: string; readonly activeAreaId: string; readonly recoveryAreaId: string }
+export const CONFIG_BACKUP_REMOTE_METADATA_BYTES = 4096;
+/** Canonical UTF-8 worst case through complete-validated + coexisting compact row. */
+export function remoteIntentLifecycleBytes(remote: ConfigBackupRemoteIntent): number {
+  if (remote.phase === "prepared") return Buffer.byteLength(configBackupCanonical(remote));
+  // configBackupInstant accepts UTC only; protocol fractional precision is at most nine digits.
+  const completedAt = "9999-12-31T23:59:59.999999999Z", completeDigest = "f".repeat(64);
+  const completed = { ...remote, phase: "complete-validated", completeDigest, completedAt };
+  const compact = { beginDigest: remote.beginDigest, completeDigest, completedAt };
+  return Buffer.byteLength(configBackupCanonical(completed)) + Buffer.byteLength(configBackupCanonical(compact));
+}
 const digest = (value: unknown): string => { const text = configBackupString(value); if (!/^[a-f0-9]{64}$/u.test(text)) configBackupFail("CONFIG_BACKUP_REMOTE_INVALID"); return text; };
 const opaque = (value: unknown): string => { const text = configBackupString(value); if (text.length > 256) configBackupFail("CONFIG_BACKUP_REMOTE_INVALID"); return text; };
 export function validateRemoteLocations(value: unknown): ConfigBackupRemoteLocations {
@@ -40,7 +50,9 @@ export function validateRemoteIntent(value: unknown): ConfigBackupRemoteIntent {
     if (v.phase === "commit-pending") { if (v.completeDigest !== null || v.completedAt !== null) configBackupFail("CONFIG_BACKUP_REMOTE_INVALID"); }
     else { digest(v.completeDigest); configBackupInstant(v.completedAt); if (Date.parse(String(v.completedAt)) < Date.parse(String(v.begunAt))) configBackupFail("CONFIG_BACKUP_REMOTE_INVALID"); }
   } else configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
-  return v as unknown as ConfigBackupRemoteIntent;
+  const remote = v as unknown as ConfigBackupRemoteIntent;
+  if (remoteIntentLifecycleBytes(remote) > CONFIG_BACKUP_REMOTE_METADATA_BYTES) configBackupFail("CONFIG_BACKUP_REMOTE_METADATA_CAPACITY");
+  return remote;
 }
 export const preparedRemoteIntent = (): ConfigBackupRemoteIntent => ({ phase: "prepared", beginDigest: null, completeDigest: null, begunAt: null, completedAt: null, locations: null, replacement: null, original: null });
 

@@ -330,8 +330,8 @@ call a new plan with a new ID to replace an unresolved transaction. It writes
 and verifies the canonical package in staging, retains the old active unchanged,
 and returns pending with `remote-verification-required`. The transaction records
 `remote.phase=prepared`; ordinary resume cannot promote it. Duplicate preparation
-queries the same ID and compares selection and exact source version, never allocates
-a replacement. Different in-flight work remains pending.
+queries the same ID, requires verified bytes and the exact original manifestDigest,
+selection and source version, and never allocates a replacement. Different in-flight work remains pending.
 
 `config-backup-commit` takes `{store, mode, evidence}` with mode `begin` or `complete`
 and the normal request/at/output/timeout flags. These are mutating commands. They
@@ -417,9 +417,17 @@ Compact begin/complete digests and completedAt remain on the resulting stored
 package row; identical repeated complete is unchanged, and conflicting completion
 is pending. Records follow the existing bounded active/recovery lifecycle, with
 no append-only evidence history or sidecar directory. Each remote transaction
-reserves 4096 bytes of metadata capacity before staging, so complete has no
-unreserved evidence growth; stored compact completion metadata also counts toward
-maxTotalBytes. Raw request evidence has a 1 MiB structural limit. These are protocol
+reserves 4096 bytes of metadata capacity before staging. Before begin is persisted,
+the engine measures canonical UTF-8 bytes (including JSON escapes) of the worst-case
+complete-validated intent plus its coexisting compact completion row. Completion
+uses the maximum accepted UTC timestamp precision and digest lengths. Their sum
+must fit that reservation; oversized evidence leaves the same prepared transaction
+pending. Loaded intents enforce the same bound, so complete cannot add unreserved
+metadata. A matching compact row during a local interrupted settlement is covered
+by its transaction reservation; after that transaction is removed its actual bytes
+count separately. Matching same-ID package records during settlement count physical
+package bytes once; inconsistent duplicates refuse. Stored historical compact
+completion metadata continues to count actual canonical bytes toward maxTotalBytes. Raw request evidence has a 1 MiB structural limit. These are protocol
 bounds, not production retention defaults or approval.
 
 Existing v1 indexes without remote fields are unchanged. New optional closed

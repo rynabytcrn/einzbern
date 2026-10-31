@@ -317,8 +317,16 @@ This does not relax no-symlink reads or change resume/retirement authority.
 
 `config-backup-create` keeps its local immediate publication contract. It does not
 establish remote durability. Use `config-backup-prepare` when remote raw-byte
-verification must precede promotion and retirement. Its request is the same closed
-`{selection, store, backupId, expectedSelectionDigest}` envelope as create. It writes
+verification must precede promotion and retirement. Its closed request is `{selection, store, backupId, expectedSelectionDigest, plan}`.
+Plan is the complete original `config-backup-plan` result retained in this existing
+private request before any transaction writes. The CLI recomputes the plan from the
+actual selected declarations and running source identity, using the original plan's
+backupId and createdAtUtc, and requires exact canonical equality. No supplied
+sourceVersion or payload can override the real source. Future plan times refuse.
+The immutable timestamp remains the original snapshot-plan observation time;
+physical preparation/verification/commit times are separate. Plan accepts optional
+backupId to reproduce an explicitly retained ID; omitted IDs remain random. Do not
+call a new plan with a new ID to replace an unresolved transaction. It writes
 and verifies the canonical package in staging, retains the old active unchanged,
 and returns pending with `remote-verification-required`. The transaction records
 `remote.phase=prepared`; ordinary resume cannot promote it. Duplicate preparation
@@ -398,8 +406,10 @@ unknown because package receipts do not certify whole-store synchronization.
 Resume before complete validation returns pending without promotion. After complete
 validation, resume can reconcile interrupted local publication, rotation and index
 writes under the existing same-ID transaction. Both source and target present is
-ambiguous, never success. `recover-failed` may preserve a prepared, unpublished
-stage, but refuses a commit-pending/complete-validated remote transaction. Unknown
+ambiguous, never success. `recover-failed` refuses all remote-staged transactions, including prepared: a
+prepared marker does not prove uploads never started. There is no remote abort or
+authorization to delete remote bytes. Partial/unknown uploads retain same-ID query
+responsibility rather than being quarantined to admit a replacement. Unknown
 remote effects require querying the recorded IDs before submitting new evidence;
 missing response is not permission to create another backup.
 
@@ -419,3 +429,35 @@ or erase the fields; use a compatible reader. Immutable package format/sourceVer
 is unchanged. List continues to expose a pending transaction as discovered rather
 than claiming remote synchronization. Configuration packages are not whole-machine
 or account/identity recovery.
+
+
+### Same-ID incomplete local preparation repair
+
+`config-backup-resume` also accepts `{store, mode: "repair-staged", plan}`. The
+original plan is read from the persisted private prepare request, not lost process
+memory or a fresh selection. It must reproduce the exact original manifestDigest,
+backupId, group, sourceVersion, selection and reserved byte count. The mode applies
+only to remote prepared/staging transactions, never a commit-pending publication.
+It first inventories the existing package and verifies every existing expected
+file against the canonical plan. Extra files, changed/partial bytes, links, wrong
+plans or ambiguous active/recovery locations refuse before the first new write.
+Only missing directories/members/manifest are created, with create-new semantics;
+no original is overwritten or deleted. Repeated complete repair is idempotent.
+The official verifier runs after repair and the result remains pending remote
+verification, not active, synchronized or externally unpublished.
+
+Current source changes cannot silently replace missing historical values. Initial
+prepare rejects a plan that no longer equals current declarations/version; repair
+instead uses the exact already-bound original plan, even if current source has
+changed. The plan carries only the original validated whitelist payloads; it is
+private request/evidence content and must not be published with code. No durable
+plan sidecar or extra payload copy is added to the backup group, and repair cannot
+increase the existing transaction's package reservation. The caller preserves its
+existing private original request through settlement. This is not permission to
+accumulate unbounded plan snapshots outside the retention contract.
+
+Loss/corruption of that original request, conflicting partial files, changed
+approval/binding or an ambiguous external commit remains pending with the original
+failure. This version cannot fabricate lost values or overwrite conflicting bytes.
+It offers deterministic missing-file recovery, not automatic recovery from every
+possible corruption; preserve those cases for a separately supported recovery path.

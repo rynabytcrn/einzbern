@@ -288,7 +288,7 @@ test("remote staged prepare and default resume never rotate; complete is explici
   assert.equal(begun.index.transactions[0].remote.phase, "commit-pending"); assert.equal(begun.index.active.length, 1); assert.equal(begun.index.recoverable.length, 0);
   assert.equal((await commitConfigBackup(f.store, "2026-10-20T00:00:04Z", "begin", f.begin)).index.revision, begun.index.revision);
   assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:05Z")).reason, "remote-commit-query-required");
-  assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:05Z", "recover-failed")).reason, "resume-publication-first");
+  assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:05Z", "recover-failed")).reason, "remote-commit-query-required");
   assert.deepEqual(await readFile(join(f.oldRoot, "manifest.json")), before);
   const done = await commitConfigBackup(f.store, "2026-10-20T00:00:09Z", "complete", f.complete);
   assert.equal(done.status, "settled", done.reason); assert.deepEqual(done.index.activeBackupIds, [f.next.manifest.backupId]); assert.deepEqual(done.index.recoverableBackupIds, [f.first.manifest.backupId]); assert.equal(done.index.syncStatus, "unknown");
@@ -380,4 +380,54 @@ test("remote CLI ownership and closed envelopes do not allow forged approval or 
   await writeFile(request, JSON.stringify({ store: { reservedRoot: f.store.reservedRoot, binding: f.store.binding, policy: fixturePolicy }, mode: "begin", evidence: {}, approved: true }));
   await assert.rejects(runConfigBackupCommand("config-backup-commit", { request, at: "2026-10-20T00:00:04Z" }, { resolveSource: async () => ({ projectRef: ref }) }), { reasonCode: "CONFIG_BACKUP_FIELD_UNKNOWN" });
   await assert.rejects(runConfigBackupCommand("config-backup-prepare", { request, at: "2026-10-20T00:00:04Z", "skip-verification": "true" }, {}), { reasonCode: "CLI_ARGUMENT_MALFORMED" });
+});
+
+test("remote prepared upload may be partial or unknown: recover-failed preserves same-ID responsibility", async t => {
+  const f = await stagedFixture(t);
+  const before = await readFile(join(f.stagedRoot, "manifest.json"));
+  const recovery = await resumeConfigBackup(f.store, "2026-10-20T00:00:03Z", "recover-failed");
+  assert.equal(recovery.status, "pending"); assert.equal(recovery.reason, "remote-commit-query-required");
+  assert.equal(recovery.index.transactions[0].backupId, f.next.manifest.backupId);
+  assert.equal(recovery.index.transactions[0].remote.phase, "prepared"); assert.equal(recovery.index.recoverable.length, 0);
+  assert.deepEqual(await readFile(join(f.stagedRoot, "manifest.json")), before);
+  const other = f.proposal("8", "dark", "2026-10-20T00:00:04Z");
+  const blocked = await prepareConfigBackup(f.store, other, other.manifest.createdAtUtc);
+  assert.equal(blocked.status, "pending"); assert.equal(blocked.index.transactions[0].backupId, f.next.manifest.backupId);
+});
+test("repair-staged reconstructs missing bytes from persisted original plan, never a new snapshot", async t => {
+  for (const cut of ["manifest-missing", "member-missing", "members-directory-missing", "package-directory-missing"]) {
+    const f = await stagedFixture(t), savedPlan = join(f.root, "original-plan.json");
+    await writeFile(savedPlan, configBackupCanonical(f.next), { mode: 0o600 });
+    if (cut === "package-directory-missing") await rm(f.stagedRoot, { recursive: true });
+    else if (cut === "members-directory-missing") await rm(join(f.stagedRoot, "members"), { recursive: true });
+    else await rm(join(f.stagedRoot, cut === "manifest-missing" ? "manifest.json" : f.next.manifest.files[0].memberPath));
+    assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:03Z", "recover-failed")).reason, "remote-commit-query-required");
+    const originalPlan = JSON.parse(await readFile(savedPlan, "utf8"));
+    const result = await resumeConfigBackup(f.store, "2026-10-20T00:00:04Z", "repair-staged", originalPlan);
+    assert.equal(result.status, "pending", cut); assert.equal(result.reason, "remote-verification-required", cut);
+    assert.equal(result.index.transactions[0].backupId, f.next.manifest.backupId); assert.deepEqual(result.index.activeBackupIds, [f.first.manifest.backupId]);
+    const verified = await verifyConfigBackup(f.stagedRoot); assert.equal(verified.integrity, "verified"); assert.deepEqual(verified.manifest, f.next.manifest);
+    const again = await resumeConfigBackup(f.store, "2026-10-20T00:00:05Z", "repair-staged", originalPlan); assert.equal(again.index.revision, result.index.revision);
+  }
+});
+test("repair-staged validates all surviving bytes before filling holes and retains conflicts", async t => {
+  for (const problem of ["changed-member", "extra-file", "symlink", "changed-plan", "lost-plan", "commit-pending"]) {
+    const f = await stagedFixture(t); await rm(join(f.stagedRoot, "manifest.json"));
+    const memberPath = join(f.stagedRoot, f.next.manifest.files[0].memberPath);
+    if (problem === "changed-member") await writeFile(memberPath, "{}");
+    if (problem === "extra-file") await writeFile(join(f.stagedRoot, "unexpected.json"), "{}");
+    if (problem === "symlink") { await rm(memberPath); await symlink(join(f.begin.replacement.packageRoot, f.next.manifest.files[0].memberPath), memberPath); }
+    let plan = f.next;
+    if (problem === "changed-plan") plan = f.proposal("6", "dark", f.next.manifest.createdAtUtc);
+    if (problem === "lost-plan") plan = undefined;
+    if (problem === "commit-pending") {
+      // Restore the manifest just for begin; remove it after the intent is durable.
+      await writeFile(join(f.stagedRoot, "manifest.json"), configBackupCanonical(f.next.manifest));
+      await commitConfigBackup(f.store, "2026-10-20T00:00:04Z", "begin", f.begin); await rm(join(f.stagedRoot, "manifest.json"));
+    }
+    const result = await resumeConfigBackup(f.store, "2026-10-20T00:00:05Z", "repair-staged", plan);
+    assert.equal(result.status, "pending", problem); assert.notEqual(result.reason, "remote-verification-required", problem);
+    await assert.rejects(readFile(join(f.stagedRoot, "manifest.json")), { code: "ENOENT" });
+    assert.equal(result.index.transactions[0].backupId, f.next.manifest.backupId); assert.equal(result.index.recoverable.length, 0);
+  }
 });

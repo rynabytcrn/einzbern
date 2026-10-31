@@ -348,3 +348,31 @@ export async function writeConfigBackupPackage(packageRoot: string, plan: Config
   await writeConfigBackupNewFile(packageRoot, "manifest.json", configBackupCanonical(plan.manifest));
   return verifyConfigBackup(packageRoot);
 }
+
+/** Complete only missing immutable bytes; validate every existing entry before the first write. */
+export async function repairConfigBackupPackage(packageRoot: string, plan: ConfigBackupPlan): Promise<ConfigBackupVerification> {
+  const reproduced = planConfigBackup({ projectRef: plan.manifest.projectRef, backupGroupId: plan.manifest.backupGroupId, hostname: plan.manifest.hostnameLabel.display, at: plan.manifest.createdAtUtc, sourceVersion: plan.manifest.sourceVersion, backupId: plan.manifest.backupId, payloads: plan.members.map(member => member.payload) });
+  if (configBackupCanonical(reproduced) !== configBackupCanonical(plan) || plan.excluded.length) configBackupFail("CONFIG_BACKUP_PLAN_INVALID");
+  await assertConfigBackupDirectory(dirname(packageRoot));
+  const expected = [...plan.members.map(member => ({ path: member.descriptor.memberPath, text: configBackupCanonical(member.payload) })), { path: "manifest.json", text: configBackupCanonical(plan.manifest) }];
+  const present = new Set<string>();
+  const exists = async (path: string): Promise<boolean> => { try { await lstat(path); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; } };
+  if (await exists(packageRoot)) {
+    await assertConfigBackupDirectory(packageRoot);
+    for (const name of await readdir(packageRoot)) {
+      if (name === "members") {
+        await assertConfigBackupDirectory(join(packageRoot, name));
+        for (const child of await readdir(join(packageRoot, name))) if (!expected.some(entry => entry.path === `members/${child}`)) configBackupFail("CONFIG_BACKUP_UNEXPECTED_MEMBER");
+      } else if (name !== "manifest.json") configBackupFail("CONFIG_BACKUP_UNEXPECTED_MEMBER");
+    }
+    for (const entry of expected) {
+      if (!(await exists(join(packageRoot, entry.path)))) continue;
+      if (!(await readConfigBackupFile(packageRoot, entry.path)).equals(Buffer.from(entry.text))) configBackupFail("CONFIG_BACKUP_REPAIR_CONFLICT");
+      present.add(entry.path);
+    }
+  }
+  const ensureDirectory = async (path: string): Promise<void> => { try { await mkdir(path, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; } await assertConfigBackupDirectory(path); };
+  await ensureDirectory(packageRoot); await ensureDirectory(join(packageRoot, "members"));
+  for (const entry of expected) if (!present.has(entry.path)) await writeConfigBackupNewFile(packageRoot, entry.path, entry.text);
+  return verifyConfigBackup(packageRoot);
+}

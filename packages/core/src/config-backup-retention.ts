@@ -7,7 +7,7 @@ import {
   CONFIG_BACKUP_RESERVED_ROOTS, assertConfigBackupDirectory, assertConfigBackupReservedRoot,
   configBackupCanonical, configBackupDigest, configBackupFail, configBackupId, configBackupInstant,
   configBackupObject, configBackupProjectRef, configBackupString, readConfigBackupFile,
-  safeConfigBackupHostname, validateConfigBackupManifest, validateConfigBackupPayload, verifyConfigBackup, writeConfigBackupNewFile, writeConfigBackupPackage, reserveConfigBackupRoot,
+  repairConfigBackupPackage, safeConfigBackupHostname, validateConfigBackupManifest, validateConfigBackupPayload, verifyConfigBackup, writeConfigBackupNewFile, writeConfigBackupPackage, reserveConfigBackupRoot,
 } from "./config-backup.js";
 import type { ConfigBackupManifest, ConfigBackupPlan, ConfigBackupProjectRef, ConfigBackupRetainedContainer } from "./config-backup.js";
 
@@ -423,7 +423,22 @@ export async function commitConfigBackup(store: ConfigBackupStore, at: string, m
   }, { command: "einzbern config-backup-commit", ...(store.lockTimeoutMs === undefined ? {} : { timeoutMs: store.lockTimeoutMs }) });
 }
 
-export async function resumeConfigBackup(store: ConfigBackupStore, at: string, mode: "resume" | "recover-failed" = "resume"): Promise<ConfigBackupOperationResult> {
+async function repairRemoteStagedTransaction(store: ConfigBackupStore, paths: GroupPaths, index: ConfigBackupGroupIndex, at: string, plan: ConfigBackupPlan | undefined): Promise<ConfigBackupOperationResult> {
+  if (!plan) configBackupFail("CONFIG_BACKUP_REPAIR_PLAN_REQUIRED");
+  validateConfigBackupManifest(plan.manifest);
+  const transaction = index.transactions.find(t => t.backupId === plan.manifest.backupId);
+  if (!transaction?.remote || transaction.remote.phase !== "prepared" || transaction.phase !== "staging") return pendingResult(paths, index, at, "pending", "remote-commit-query-required");
+  if (transaction.manifestDigest !== plan.manifest.manifestDigest || transaction.bytes !== plan.bytes || plan.manifest.backupGroupId !== index.backupGroupId || configBackupCanonical(plan.manifest.projectRef) !== configBackupCanonical(index.projectRef)) configBackupFail("CONFIG_BACKUP_REPAIR_PLAN_MISMATCH");
+  if (await exists(join(paths.active, transaction.directory)) || await exists(join(paths.recovery, transaction.directory))) return pendingResult(paths, index, at, "pending", "publication-conflict");
+  if (!remoteCapacity(index, approvedPolicy(store).policy)) return pendingResult(paths, index, at, "stop-new-and-report", "remote-evidence-capacity");
+  await verifyStoredPackages(paths, index);
+  const verified = await repairConfigBackupPackage(join(paths.staging, transaction.directory), plan);
+  if (verified.integrity !== "verified" || verified.manifest?.manifestDigest !== transaction.manifestDigest) configBackupFail("CONFIG_BACKUP_VERIFICATION_FAILED");
+  const updated = index.lastError === null ? index : await saveIndex(paths, changed(index, at, { lastError: null }));
+  return { status: "pending", index: updated, reason: "remote-verification-required" };
+}
+
+export async function resumeConfigBackup(store: ConfigBackupStore, at: string, mode: "resume" | "recover-failed" | "repair-staged" = "resume", repairPlan?: ConfigBackupPlan): Promise<ConfigBackupOperationResult> {
   configBackupInstant(at); approvedPolicy(store); await assertConfigBackupReservedRoot(store.reservedRoot, store.protectedRoots, store.retainedContainerRoots); const paths = groupPaths(store);
   await reserveConfigBackupRoot(store.reservedRoot);
   await assertConfigBackupDirectory(paths.active);
@@ -431,6 +446,8 @@ export async function resumeConfigBackup(store: ConfigBackupStore, at: string, m
     const index = await readIndex(paths); if (!index) configBackupFail("CONFIG_BACKUP_GROUP_UNBOUND");
     await assertLocalBinding(store, false); assertBinding(index, store); await assertTracked(paths, index);
     try {
+      if (mode === "repair-staged") return await repairRemoteStagedTransaction(store, paths, index, at, repairPlan);
+      if (repairPlan !== undefined) configBackupFail("CONFIG_BACKUP_REPAIR_PLAN_UNEXPECTED");
       if (mode === "recover-failed") return await recoverFailedTransaction(store, paths, index, at);
       return await resumeUnderLock(store, paths, index, at);
     } catch (error) {
@@ -445,7 +462,8 @@ async function recoverFailedTransaction(store: ConfigBackupStore, paths: GroupPa
   const policy = approvedPolicy(store).policy;
   for (const transaction of index.transactions) {
     // A committed/unknown publication is reconciled by resume, not recast as a failed backup.
-    if (transaction.phase !== "staging" || (transaction.remote && transaction.remote.phase !== "prepared") || await exists(join(paths.active, transaction.directory))) return pendingResult(paths, index, at, "pending", "resume-publication-first");
+    if (transaction.remote !== undefined) return pendingResult(paths, index, at, "pending", "remote-commit-query-required");
+    if (transaction.phase !== "staging" || await exists(join(paths.active, transaction.directory))) return pendingResult(paths, index, at, "pending", "resume-publication-first");
     if (index.recoverable.length >= policy.recoveryLimit) return pendingResult(paths, index, at, "stop-new-and-report", "recovery-limit");
     const source = join(paths.staging, transaction.directory); const target = join(paths.recovery, transaction.directory);
     const hasSource = await exists(source); const hasTarget = await exists(target);

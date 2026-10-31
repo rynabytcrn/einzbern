@@ -175,9 +175,23 @@ test("CFG-B02 packaged CLI creates and inventories retained in-tree backups with
       invoke(["machine-settings-set", "--key", "portal.defaultTheme", "--value", "light", "--at", at]);
       await writeFile(request, JSON.stringify({ selection, backupGroupId: item.store.binding.backupGroupId, hostname: item.store.binding.hostname }));
       const next = invoke(["config-backup-plan", ...target, "--request", request]);
-      await writeFile(request, JSON.stringify({ selection, store: item.store, backupId: next.manifest.backupId, expectedSelectionDigest: next.manifest.selectionDigest }));
+      await writeFile(request, JSON.stringify({ selection, backupGroupId: item.store.binding.backupGroupId, hostname: item.store.binding.hostname, backupId: next.manifest.backupId }));
+      assert.deepEqual(invoke(["config-backup-plan", ...target, "--request", request]), next, "same explicit ID and original observation time reproduce the official plan");
+      await writeFile(request, JSON.stringify({ selection, store: item.store, backupId: next.manifest.backupId, expectedSelectionDigest: next.manifest.selectionDigest, plan: next }));
       const prepared = invoke(["config-backup-prepare", ...target, "--request", request]);
       assert.equal(prepared.status, "pending"); assert.deepEqual(prepared.index.activeBackupIds, receipt.index.activeBackupIds);
+      // A later invocation loses the prepare return but retains its original private request.
+      const originalRequest = JSON.parse(await readFile(request, "utf8"));
+      const stageDirectory = `${next.manifest.createdAtUtc.replace(/[:.]/gu, "-")}-${next.manifest.backupId}`;
+      const stageRoot = join(item.root, "config-backup-staging", "fixture-device", item.store.binding.backupGroupId, stageDirectory);
+      await rm(join(stageRoot, "manifest.json")); await rm(join(stageRoot, next.manifest.files[0].memberPath));
+      invoke(["machine-settings-set", "--key", "portal.defaultTheme", "--value", "dark", "--at", at]);
+      const stale = call(["config-backup-prepare", ...target, "--request", request]);
+      assert.equal(stale.status, 1); assert.equal(JSON.parse(lastLine(stale.stderr)).reasonCode, "CONFIG_BACKUP_PLAN_CHANGED");
+      await writeFile(request, JSON.stringify({ store: item.store, mode: "repair-staged", plan: originalRequest.plan }));
+      const repaired = invoke(["config-backup-resume", ...target, "--request", request]);
+      assert.equal(repaired.reason, "remote-verification-required"); assert.equal(repaired.index.transactions[0].backupId, originalRequest.plan.manifest.backupId);
+      assert.deepEqual(invoke(["config-backup-verify", "--package", stageRoot]).manifest, originalRequest.plan.manifest);
       const raw = join(isolated.root, "downloaded-staged-package");
       await cp(join(item.root, "config-backup-staging", "fixture-device", item.store.binding.backupGroupId, prepared.index.transactions[0].directory), raw, { recursive: true });
       const checked = invoke(["config-backup-verify", "--package", raw]); assert.equal(checked.integrity, "verified");

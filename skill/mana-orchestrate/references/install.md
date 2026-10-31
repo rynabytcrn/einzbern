@@ -236,6 +236,18 @@ backup operation, restoration and external publication keep their own approval b
 
 ### Configuration backup and shared submission boundaries
 
+Remote-before-rotation workflows use `config-backup-prepare` with the create envelope,
+then `config-backup-commit` mode `begin` after uploading to the transaction area and
+verifying downloaded original bytes. Begin records intent only. The caller performs
+and reads back remote old-active-to-recovery, then new-transaction-to-active, before
+commit mode `complete` can settle local rotation. Read the exact evidence envelopes
+and same-ID recovery contract in `specs/config-backup-v1.md`; supplied observations
+are correlated, not authenticated. Ordinary resume cannot bypass this barrier.
+Do not hand-edit syncStatus, manufacture remote receipts or allocate another backup
+on an unknown outcome. Default create retains its immediate local behavior and is
+not evidence of remote durability. No SDK, deployment or production rotation is
+performed by this guidance.
+
 The public backup verbs are `config-backup-plan`, `config-backup-create`, `config-backup-verify`,
 `config-backup-list`, `config-backup-resume`, `config-backup-retire`, `config-restore-plan` and
 `config-restore-apply`. Use their current `--help` and shipped `specs/config-backup-v1.md` for

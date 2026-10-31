@@ -168,7 +168,7 @@ const CLI_ENTRIES: readonly RuntimeInputEntry[] = Object.freeze([
 
 // Bounded invocation metadata consumes the caller's real package catalog; it never
 // creates a second parser, imports the CLI into core or invents operational defaults.
-const DOT_COMMANDS = new Set(["execution-codex-peer-record", "execution-codex-peer-evidence", "config-backup-plan", "config-backup-create", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply", "execution-native-prepare", "execution-native-record", "execution-native-evidence", "shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"]);
+const DOT_COMMANDS = new Set(["execution-codex-peer-record", "execution-codex-peer-evidence", "config-backup-plan", "config-backup-create", "config-backup-prepare", "config-backup-commit", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply", "execution-native-prepare", "execution-native-record", "execution-native-evidence", "shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"]);
 function dotInvocationEntries(commands: readonly RuntimeCommandCatalogEntry[]): RuntimeInputEntry[] {
   return commands.filter(command => DOT_COMMANDS.has(command.name)).flatMap(command => command.flags.map(flag => {
     const backup = command.name.startsWith("config-");

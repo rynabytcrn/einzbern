@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // CFG-B03/B04/P01. Synthetic policy values below are fixture-only, not product defaults.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile, readdir, symlink } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile, readdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { configBackupCanonical, planConfigBackup, writeConfigBackupPackage } from "../dist/build/packages/core/src/config-backup.js";
-import { createConfigBackup, evaluateConfigBackupEnablement, listConfigBackups, resumeConfigBackup, retireConfigBackup, validateConfigBackupRetentionPolicy } from "../dist/build/packages/core/src/config-backup-retention.js";
+import { configBackupDigest, verifyConfigBackup, configBackupCanonical, planConfigBackup, writeConfigBackupPackage } from "../dist/build/packages/core/src/config-backup.js";
+import { prepareConfigBackup, commitConfigBackup, createConfigBackup, evaluateConfigBackupEnablement, listConfigBackups, resumeConfigBackup, retireConfigBackup, validateConfigBackupRetentionPolicy } from "../dist/build/packages/core/src/config-backup-retention.js";
 import { CONFIG_BACKUP_RESERVATION_FILE, CONFIG_BACKUP_RESERVATION_TEXT } from "../scripts/lib/config-backup-reservation.mjs";
 import { runConfigBackupCommand } from "../dist/build/packages/cli/src/config-backup-commands.js";
 const ref = { libraryId: `workspace:${"1".repeat(24)}`, projectId: `project:${"2".repeat(24)}` };
@@ -254,4 +254,130 @@ test("C-PR29-01 every active-mapped transaction is audited for an extra staging 
     assert.equal(await readFile(f.indexPath, "utf8"), before, "list does not settle or repair an ambiguous transaction");
     assert.equal(JSON.parse(await readFile(join(staging, "manifest.json"), "utf8")).backupId, transaction.backupId, "list does not remove the extra package");
   }
+});
+
+import { remoteEvidenceDigest } from "../dist/build/packages/core/src/config-backup-remote.js";
+
+// Staged-remote fixtures model caller observations; they do not authenticate a provider.
+const remoteLocations = { destinationRef: "fixture:remote", stagingAreaId: "transaction-area", activeAreaId: "active-area", recoveryAreaId: "recovery-area" };
+async function remotePackage(root, areaId, time, idPrefix) {
+  const verified = await verifyConfigBackup(root), manifest = verified.manifest;
+  const members = [...manifest.files.map(f => f.memberPath), "manifest.json"];
+  const files = await Promise.all(members.map(async (path, i) => { const bytes = await readFile(join(root, path)); return { path, id: `${idPrefix}-member-${i}`, parentId: path === "manifest.json" ? `${idPrefix}-package` : `${idPrefix}-members`, bytes: bytes.length, sha256: configBackupDigest(bytes), publishedAt: "2026-10-20T00:00:02Z", downloadedAt: time }; }));
+  return { packageRoot: root, backupId: manifest.backupId, manifestDigest: manifest.manifestDigest, packageId: `${idPrefix}-package`, packageParentId: areaId, membersDirectory: { id: `${idPrefix}-members`, parentId: `${idPrefix}-package`, name: "members" }, areaId, files, verifiedAt: time, evidenceRef: `fixture:readback-${idPrefix}` };
+}
+async function stagedFixture(t) {
+  const f = await fixture(t), first = f.proposal("5", "dark", "2026-10-20T00:00:00Z");
+  const a = await createConfigBackup(f.store, first, first.manifest.createdAtUtc);
+  const next = f.proposal("6", "light", "2026-10-20T00:00:02Z"), prepared = await prepareConfigBackup(f.store, next, next.manifest.createdAtUtc);
+  const stagedRoot = join(f.store.reservedRoot, "config-backup-staging", "device", f.store.binding.backupGroupId, prepared.index.transactions[0].directory);
+  const oldRoot = join(f.store.reservedRoot, "config-backups", "device", f.store.binding.backupGroupId, a.index.active[0].directory);
+  const downloads = join(f.root, "raw-downloads"); await mkdir(downloads); await cp(stagedRoot, join(downloads, "new"), { recursive: true }); await cp(oldRoot, join(downloads, "old"), { recursive: true });
+  const begin = { schemaVersion: "einzbern.config-backup-remote-begin.v1", backupId: next.manifest.backupId, locations: remoteLocations, replacement: await remotePackage(join(downloads, "new"), remoteLocations.stagingAreaId, "2026-10-20T00:00:03Z", "new"), original: await remotePackage(join(downloads, "old"), remoteLocations.activeAreaId, "2026-10-20T00:00:03Z", "old") };
+  const complete = { schemaVersion: "einzbern.config-backup-remote-complete.v1", backupId: next.manifest.backupId, beginDigest: remoteEvidenceDigest(begin), replacement: await remotePackage(join(downloads, "new"), remoteLocations.activeAreaId, "2026-10-20T00:00:08Z", "new"), original: await remotePackage(join(downloads, "old"), remoteLocations.recoveryAreaId, "2026-10-20T00:00:06Z", "old"), retiredAt: "2026-10-20T00:00:05Z", promotedAt: "2026-10-20T00:00:07Z" };
+  return { ...f, first, next, prepared, begin, complete, oldRoot, stagedRoot };
+}
+test("remote staged prepare and default resume never rotate; complete is explicit and idempotent", async t => {
+  const f = await stagedFixture(t), before = await readFile(join(f.oldRoot, "manifest.json"));
+  assert.equal(f.prepared.status, "pending"); assert.equal(f.prepared.reason, "remote-verification-required");
+  assert.deepEqual(f.prepared.index.activeBackupIds, [f.first.manifest.backupId]); assert.equal(f.prepared.index.recoverable.length, 0);
+  assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:03Z")).reason, "remote-verification-required");
+  assert.equal((await prepareConfigBackup(f.store, f.next, "2026-10-20T00:00:03Z")).index.transactions.length, 1);
+  assert.equal((await commitConfigBackup(f.store, "2026-10-20T00:00:03Z", "complete", f.complete)).reason, "CONFIG_BACKUP_REMOTE_BEGIN_REQUIRED");
+  const begun = await commitConfigBackup(f.store, "2026-10-20T00:00:04Z", "begin", f.begin);
+  assert.equal(begun.index.transactions[0].remote.phase, "commit-pending"); assert.equal(begun.index.active.length, 1); assert.equal(begun.index.recoverable.length, 0);
+  assert.equal((await commitConfigBackup(f.store, "2026-10-20T00:00:04Z", "begin", f.begin)).index.revision, begun.index.revision);
+  assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:05Z")).reason, "remote-commit-query-required");
+  assert.equal((await resumeConfigBackup(f.store, "2026-10-20T00:00:05Z", "recover-failed")).reason, "resume-publication-first");
+  assert.deepEqual(await readFile(join(f.oldRoot, "manifest.json")), before);
+  const done = await commitConfigBackup(f.store, "2026-10-20T00:00:09Z", "complete", f.complete);
+  assert.equal(done.status, "settled", done.reason); assert.deepEqual(done.index.activeBackupIds, [f.next.manifest.backupId]); assert.deepEqual(done.index.recoverableBackupIds, [f.first.manifest.backupId]); assert.equal(done.index.syncStatus, "unknown");
+  const again = await commitConfigBackup(f.store, "2026-10-20T00:00:10Z", "complete", f.complete); assert.equal(again.status, "unchanged"); assert.equal(again.index.revision, done.index.revision);
+  const changed = structuredClone(f.complete); changed.promotedAt = "2026-10-20T00:00:06Z";
+  assert.equal((await commitConfigBackup(f.store, "2026-10-20T00:00:10Z", "complete", changed)).status, "pending");
+});
+test("remote stage receipts reject malformed association, inventory and ordering without rotation", async t => {
+  const changes = [
+    x => { x.replacement.packageParentId = remoteLocations.activeAreaId; },
+    x => { x.replacement.membersDirectory.parentId = "wrong-package"; },
+    x => { x.replacement.membersDirectory.id = x.replacement.packageId; },
+    x => { x.replacement.membersDirectory.name = "other"; },
+    x => { x.replacement.files[0].id = x.replacement.membersDirectory.id; },
+    x => { x.replacement.files[0].id = remoteLocations.activeAreaId; },
+    x => { x.replacement.files[0].parentId = x.replacement.packageId; },
+    x => { x.replacement.files[1].parentId = x.replacement.membersDirectory.id; },
+    x => { x.replacement.files.pop(); },
+    x => { x.replacement.files[0].id = x.replacement.files[1].id; },
+    x => { x.replacement.files[0].parentId = "wrong"; },
+    x => { x.replacement.files[0].bytes += 1; },
+    x => { x.replacement.files[0].sha256 = "0".repeat(64); },
+    x => { x.replacement.files[0].path = "../manifest.json"; },
+    x => { x.replacement.files[0].downloadedAt = "2026-10-19T00:00:00Z"; },
+    x => { x.replacement.files[0].publishedAt = "2026-10-20T00:00:03Z"; },
+    x => { x.replacement.areaId = remoteLocations.activeAreaId; },
+    x => { x.replacement.integrity = "verified"; },
+    x => { x.replacement.backupId = "9".repeat(32); },
+    x => { x.locations.activeAreaId = x.locations.stagingAreaId; },
+    x => { x.original = null; },
+  ];
+  for (const change of changes) {
+    const f = await stagedFixture(t), value = structuredClone(f.begin); change(value);
+    const r = await commitConfigBackup(f.store, "2026-10-20T00:00:04Z", "begin", value);
+    assert.equal(r.status, "pending"); assert.equal(r.index.transactions[0].remote.phase, "prepared"); assert.deepEqual(r.index.activeBackupIds, [f.first.manifest.backupId]);
+  }
+});
+test("remote complete requires stable remote member IDs and verified recovery before promotion", async t => {
+  for (const change of [x => { x.replacement.files[0].id = "replacement-id"; }, x => { x.original.areaId = remoteLocations.activeAreaId; }, x => { x.promotedAt = "2026-10-20T00:00:05Z"; }, x => { x.beginDigest = "0".repeat(64); }, x => { x.replacement.verifiedAt = "2026-10-20T00:00:06Z"; }]) {
+    const f = await stagedFixture(t); await commitConfigBackup(f.store, "2026-10-20T00:00:04Z", "begin", f.begin);
+    const value = structuredClone(f.complete); change(value);
+    const r = await commitConfigBackup(f.store, "2026-10-20T00:00:09Z", "complete", value);
+    assert.equal(r.status, "pending"); assert.equal(r.index.transactions[0].remote.phase, "commit-pending"); assert.equal(r.index.recoverable.length, 0);
+  }
+});
+test("remote downloaded bytes are independently verified; local stage cannot stand in for changed downloads", async t => {
+  const f = await stagedFixture(t); const path = join(f.begin.replacement.packageRoot, f.begin.replacement.files[0].path);
+  await writeFile(path, "{}");
+  const r = await commitConfigBackup(f.store, "2026-10-20T00:00:04Z", "begin", f.begin);
+  assert.equal(r.status, "pending"); assert.equal(r.index.transactions[0].remote.phase, "prepared"); assert.equal(r.index.active[0].backupId, f.first.manifest.backupId);
+});
+
+test("remote validated completion resumes deterministic local interruption cuts with the same ID", async t => {
+  for (const cut of ["validated", "new-renamed", "active-indexed", "old-renamed", "recovery-indexed"]) {
+    const f = await stagedFixture(t), begun = await commitConfigBackup(f.store, "2026-10-20T00:00:04Z", "begin", f.begin);
+    // Explicit isolated state-cut fixture, not a claim that a real provider action occurred.
+    const index = structuredClone(begun.index), tx = index.transactions[0];
+    tx.remote = { ...tx.remote, phase: "complete-validated", completeDigest: remoteEvidenceDigest(f.complete), completedAt: "2026-10-20T00:00:09Z" };
+    const active = join(f.store.reservedRoot, "config-backups", "device", f.store.binding.backupGroupId);
+    const recovery = join(f.store.reservedRoot, "config-backup-recovery", "device", f.store.binding.backupGroupId);
+    if (cut !== "validated") await rename(f.stagedRoot, join(active, tx.directory));
+    if (["active-indexed", "old-renamed", "recovery-indexed"].includes(cut)) {
+      index.active.push({ backupId: tx.backupId, directory: tx.directory, manifestDigest: tx.manifestDigest, selectionDigest: f.next.manifest.selectionDigest, bytes: tx.bytes, completedAt: "2026-10-20T00:00:09Z", recoverableUntil: null, origin: "created", remoteCompletion: { beginDigest: tx.remote.beginDigest, completeDigest: tx.remote.completeDigest, completedAt: tx.remote.completedAt } });
+      tx.phase = "committed";
+    }
+    if (["old-renamed", "recovery-indexed"].includes(cut)) { tx.phase = "rotation-pending"; await rename(f.oldRoot, join(recovery, index.active[0].directory)); }
+    if (cut === "recovery-indexed") { const old = index.active.shift(); index.recoverable.push({ ...old, origin: "retired", recoverableUntil: "2026-10-21T00:00:09Z" }); }
+    index.activeBackupIds = index.active.map(p => p.backupId); index.recoverableBackupIds = index.recoverable.map(p => p.backupId);
+    await writeFile(join(active, "index.json"), configBackupCanonical(index));
+    const r = await resumeConfigBackup(f.store, "2026-10-20T00:00:10Z");
+    assert.equal(r.status, "settled", `${cut}: ${r.reason}`); assert.deepEqual(r.index.activeBackupIds, [f.next.manifest.backupId]); assert.deepEqual(r.index.recoverableBackupIds, [f.first.manifest.backupId]); assert.equal(r.index.transactions.length, 0);
+    assert.equal((await commitConfigBackup(f.store, "2026-10-20T00:00:11Z", "complete", f.complete)).status, "unchanged");
+  }
+});
+test("remote metadata capacity is reserved before external work and first backup needs no invented original", async t => {
+  const f = await fixture(t), plan = f.proposal("6", "light", "2026-10-20T00:00:02Z");
+  const policy = { ...fixturePolicy, maxPackageBytes: plan.bytes, maxTotalBytes: plan.bytes + 4095 }; const approved = validateConfigBackupRetentionPolicy(policy);
+  const bounded = { ...f.store, policy, approval: { approved: true, policyDigest: approved.policyDigest, approvalEvidenceRef: policy.approvalEvidenceRef } };
+  const refused = await prepareConfigBackup(bounded, plan, plan.manifest.createdAtUtc); assert.equal(refused.status, "stop-new-and-report"); assert.equal(refused.index.transactions.length, 0);
+  const g = await fixture(t), p = g.proposal("7", "light", "2026-10-20T00:00:02Z"), prepared = await prepareConfigBackup(g.store, p, p.manifest.createdAtUtc);
+  const packageRoot = join(g.store.reservedRoot, "config-backup-staging", "device", g.store.binding.backupGroupId, prepared.index.transactions[0].directory);
+  const begin = { schemaVersion: "einzbern.config-backup-remote-begin.v1", backupId: p.manifest.backupId, locations: remoteLocations, replacement: await remotePackage(packageRoot, remoteLocations.stagingAreaId, "2026-10-20T00:00:03Z", "new"), original: null };
+  const begun = await commitConfigBackup(g.store, "2026-10-20T00:00:04Z", "begin", begin); assert.equal(begun.index.transactions[0].remote.phase, "commit-pending");
+  const complete = { schemaVersion: "einzbern.config-backup-remote-complete.v1", backupId: p.manifest.backupId, beginDigest: remoteEvidenceDigest(begin), replacement: await remotePackage(packageRoot, remoteLocations.activeAreaId, "2026-10-20T00:00:06Z", "new"), original: null, retiredAt: null, promotedAt: "2026-10-20T00:00:05Z" };
+  assert.equal((await commitConfigBackup(g.store, "2026-10-20T00:00:07Z", "complete", complete)).status, "settled");
+});
+test("remote CLI ownership and closed envelopes do not allow forged approval or unsafe new flags", async t => {
+  const f = await fixture(t), request = join(f.root, "remote-request.json");
+  await writeFile(request, JSON.stringify({ store: { reservedRoot: f.store.reservedRoot, binding: f.store.binding, policy: fixturePolicy }, mode: "begin", evidence: {}, approved: true }));
+  await assert.rejects(runConfigBackupCommand("config-backup-commit", { request, at: "2026-10-20T00:00:04Z" }, { resolveSource: async () => ({ projectRef: ref }) }), { reasonCode: "CONFIG_BACKUP_FIELD_UNKNOWN" });
+  await assert.rejects(runConfigBackupCommand("config-backup-prepare", { request, at: "2026-10-20T00:00:04Z", "skip-verification": "true" }, {}), { reasonCode: "CLI_ARGUMENT_MALFORMED" });
 });

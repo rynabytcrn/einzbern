@@ -220,8 +220,8 @@ The handler never imports CLI index and cannot execute arbitrary commands.
 Plan/create/resume/retire/restore take an existing private --request JSON file.
 --output, when supplied, is private create-new only. Verify takes --package; list
 accepts optional --root and requires --at. No root means not-scanned, not empty.
-Mutating commands are create/resume/retire/restore-apply; all other commands are reads.
-The eight closed command names are the ones declared in the module catalog.
+Mutating commands are create/prepare/commit/resume/retire/restore-apply; all other commands are reads.
+The ten closed command names are the ones declared in the module catalog.
 
 Portal exposes only GET /api/config-backups. It calls public config-backup-list with
 the explicit server startup --config-backup-root; browser requests cannot nominate
@@ -312,3 +312,110 @@ pending remains `discovered`, not `verified`. Missing/duplicate locations or bad
 bytes remain errors. After parsing and binding the index, later package errors
 retain its project, counts and phases; incomplete byte measurement stays null.
 This does not relax no-symlink reads or change resume/retirement authority.
+
+## Explicit remote-staged publication
+
+`config-backup-create` keeps its local immediate publication contract. It does not
+establish remote durability. Use `config-backup-prepare` when remote raw-byte
+verification must precede promotion and retirement. Its request is the same closed
+`{selection, store, backupId, expectedSelectionDigest}` envelope as create. It writes
+and verifies the canonical package in staging, retains the old active unchanged,
+and returns pending with `remote-verification-required`. The transaction records
+`remote.phase=prepared`; ordinary resume cannot promote it. Duplicate preparation
+queries the same ID and compares selection and exact source version, never allocates
+a replacement. Different in-flight work remains pending.
+
+`config-backup-commit` takes `{store, mode, evidence}` with mode `begin` or `complete`
+and the normal request/at/output/timeout flags. These are mutating commands. They
+reuse the existing policy and binding authority; evidence grants no authorization.
+There is no provider SDK, transfer, authenticated remote session, background job,
+new identity, distributed lock or synchronization claim in either command.
+
+### Evidence and trust boundary
+
+Begin evidence has the exact fields:
+
+- schemaVersion=`einzbern.config-backup-remote-begin.v1`;
+- backupId;
+- locations: `{destinationRef, stagingAreaId, activeAreaId, recoveryAreaId}`;
+- replacement: package observation in the transaction/staging area;
+- original: package observation for the eligible old active, or null when none.
+
+Area IDs must be distinct. Each package observation has exactly `packageRoot`
+(absolute local directory containing downloaded original bytes), `backupId`,
+`manifestDigest`, `packageId`, `packageParentId`, `membersDirectory`, `areaId`,
+`files`, `verifiedAt`, and `evidenceRef`. MembersDirectory is exactly
+`{id, parentId, name}` with name=`members` and parentId=packageId. PackageParentId
+must equal the expected concrete group-area parent ID (not merely an area label).
+Every file observation has `path`, `id`, `parentId`, `bytes`, `sha256`, `publishedAt`,
+and `downloadedAt`. Include each manifest member and `manifest.json` exactly once,
+without extra/duplicate paths or IDs. Manifest parentId equals packageId; each
+`members/<hash>.json` parentId equals membersDirectory.id. Package, members directory,
+file IDs and all area IDs must not alias; original and replacement IDs are disjoint.
+Names, sizes
+and hashes must match the downloaded bytes. The manifest must have been published
+no earlier than its members. Publication precedes download, download precedes
+verification, and all readbacks fall after the applicable transaction/action
+boundary and no later than the command's `at`.
+
+The engine runs `verifyConfigBackup` itself against packageRoot, verifying whitelist,
+manifest semantics, exact member set and byte integrity. It does not trust a supplied
+`integrity=verified` flag; that field is not accepted. IDs, destination, observations
+and their association are still caller-reported evidence, not provider authentication.
+A successful validation detects inconsistent evidence and bad bytes; it cannot
+prove an external action took place or distinguish an honestly downloaded file from
+a local copy. The authorized caller must retain actual tool returns and downloaded
+original bytes, not manufacture observations from desired state. Raw receipts remain
+caller-owned evidence, never automatic public or backup-package content.
+
+### Begin, remote action, complete
+
+Begin rechecks local originals/stage, approved policy, retention age and capacity,
+validates the fresh remote observations, then durably records `commit-pending`,
+`beginDigest`, `begunAt`, locations and compact package/file identity digests. It
+returns pending `remote-commit-query-required`, not transfer success. Identical
+begin is idempotent; a conflicting receipt cannot replace its intent.
+
+Only after this explicit intent may the authorized caller move the verified old
+remote active into the bounded recovery area and verify/read it back, then promote
+the verified remote transaction package into active and verify/read it back. If
+there is no original, promote only. Use the recorded package/member IDs; do not
+re-upload under new identities to conceal unknown outcomes. The engine does not
+perform these actions. A plan or receipt does not expand the caller's permissions.
+
+Complete evidence has exactly `schemaVersion`=
+`einzbern.config-backup-remote-complete.v1`, `backupId`, `beginDigest`, `replacement`,
+`original`, `retiredAt`, and `promotedAt`. Its package observations use the same
+shape, but replacement is now in active and original in recovery. RetiredAt is null
+only when no original exists. The old recovery readback/verification must precede
+new promotion; each new download is at or after its corresponding action. Actions
+cannot precede begunAt. Original and replacement package/members-directory/member identities and
+bytes must match begin. The engine re-verifies downloaded bytes and retained local
+originals/stage, records `complete-validated`, and only then permits local promotion,
+retirement and index settlement. No caller can set syncStatus to success; it stays
+unknown because package receipts do not certify whole-store synchronization.
+
+Resume before complete validation returns pending without promotion. After complete
+validation, resume can reconcile interrupted local publication, rotation and index
+writes under the existing same-ID transaction. Both source and target present is
+ambiguous, never success. `recover-failed` may preserve a prepared, unpublished
+stage, but refuses a commit-pending/complete-validated remote transaction. Unknown
+remote effects require querying the recorded IDs before submitting new evidence;
+missing response is not permission to create another backup.
+
+Compact begin/complete digests and completedAt remain on the resulting stored
+package row; identical repeated complete is unchanged, and conflicting completion
+is pending. Records follow the existing bounded active/recovery lifecycle, with
+no append-only evidence history or sidecar directory. Each remote transaction
+reserves 4096 bytes of metadata capacity before staging, so complete has no
+unreserved evidence growth; stored compact completion metadata also counts toward
+maxTotalBytes. Raw request evidence has a 1 MiB structural limit. These are protocol
+bounds, not production retention defaults or approval.
+
+Existing v1 indexes without remote fields are unchanged. New optional closed
+transaction `remote` and package `remoteCompletion` fields make old engines reject
+these new indexes rather than silently lose the barrier. Downgrade does not migrate
+or erase the fields; use a compatible reader. Immutable package format/sourceVersion
+is unchanged. List continues to expose a pending transaction as discovered rather
+than claiming remote synchronization. Configuration packages are not whole-machine
+or account/identity recovery.

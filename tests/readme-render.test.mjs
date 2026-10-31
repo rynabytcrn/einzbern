@@ -143,8 +143,10 @@ test("486-R4: render-readme writes the five root READMEs, and --check compares w
 });
 
 // MIN-337: current Ether naming is checked separately from the frozen STORY-495 evidence.
+// 2026-10-31: refresh only the current Chinese snapshot for the Owner-reviewed usage section;
+// the independent historical STORY-495 fixtures and their digests remain unchanged.
 const ETHER_TEMPLATE_SHA256 = {
-  "README.md": "fb726d92f89f108e095b8462959b4cf73fb775c06176934e29ed8c5ea57c67c0",
+  "README.md": "d38d62343d2ee4ffba72952378717655d2b086ac630ecd622135c9fc5edfbd79",
   "README.en.md": "71afa4562afa40c2428b7817ea332ea7f2eb5682e442c01b07e84a55b35b585e",
   "README.ja.md": "1d2e8856771c59aeee5939c1568e54dee25d4b449d6302279c2b0ac0aa855497",
   "README.ko.md": "c445c90ea7cb99fd5d59a0c56d7cb5e23f8d252f70e14907b12603fcd14445f8",

@@ -85,6 +85,21 @@
 
 无旗标。
 
+## `config-backup-commit`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--request` | 必填 | `string` | `Existing private JSON file; closed per-command configuration-backup envelope` |
+| `--at` | 必填 | `instant` |  |
+| `--output` | 可选 | `string` | `Private create-new JSON result; an existing output is never overwritten` |
+| `--timeout-ms` | 可选 | `integer` |  |
+
 ## `config-backup-create`
 
 - 可用范围：`cli`。
@@ -123,6 +138,21 @@
 | `--request` | 必填 | `string` | `Existing private JSON file; closed per-command configuration-backup envelope` |
 | `--at` | 必填 | `instant` |  |
 | `--output` | 可选 | `string` | `Private create-new JSON result; an existing output is never overwritten` |
+
+## `config-backup-prepare`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--project` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--request` | 必填 | `string` | `Existing private JSON file; closed per-command configuration-backup envelope` |
+| `--at` | 必填 | `instant` |  |
+| `--output` | 可选 | `string` | `Private create-new JSON result; an existing output is never overwritten` |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `config-backup-resume`
 

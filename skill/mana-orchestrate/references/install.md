@@ -236,10 +236,27 @@ backup operation, restoration and external publication keep their own approval b
 
 ### Configuration backup and shared submission boundaries
 
-The public backup verbs are `config-backup-plan`, `config-backup-create`, `config-backup-verify`,
+Remote-before-rotation workflows use `config-backup-prepare` with a persisted original
+plan plus the create selection/store/ID/digest fields,
+then `config-backup-commit` mode `begin` after uploading to the transaction area and
+verifying downloaded original bytes. Begin records intent only. The caller performs
+and reads back remote old-active-to-recovery, then new-transaction-to-active, before
+commit mode `complete` can settle local rotation. Read the exact evidence envelopes
+and same-ID recovery contract in `specs/config-backup-v1.md`; supplied observations
+are correlated, not authenticated. Ordinary resume cannot bypass this barrier. Keep the private original plan/request:
+`resume` mode `repair-staged` can fill only missing same-ID bytes after checking all
+survivors against that plan. It never overwrites conflicts or promotes. All remote
+transactions refuse ordinary `recover-failed`; prepared does not prove no upload.
+Lost original plans or conflicting bytes stay pending, not automatically repaired.
+Do not hand-edit syncStatus, manufacture remote receipts or allocate another backup
+on an unknown outcome. Default create retains its immediate local behavior and is
+not evidence of remote durability. No SDK, deployment or production rotation is
+performed by this guidance.
+
+The public backup verbs are `config-backup-plan`, `config-backup-create`, `config-backup-prepare`, `config-backup-commit`, `config-backup-verify`,
 `config-backup-list`, `config-backup-resume`, `config-backup-retire`, `config-restore-plan` and
 `config-restore-apply`. Use their current `--help` and shipped `specs/config-backup-v1.md` for
-closed request envelopes. Plan/create/resume/retire/restore use `--request`, `--at`, optional
+closed request envelopes. Plan/create/prepare/commit/resume/retire/restore use `--request`, `--at`, optional
 `--workspace`, `--project`, `--project-id`, `--output`; write verbs also accept `--timeout-ms`.
 Verify uses `--package`; list uses optional `--root` and required `--at`. Restore additionally
 requires `--package`, `--actor`, optional `--decided-in`, and apply requires the exact reviewed

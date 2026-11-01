@@ -7,9 +7,12 @@ import {
   CONFIG_BACKUP_RESERVED_ROOTS, assertConfigBackupDirectory, assertConfigBackupReservedRoot,
   configBackupCanonical, configBackupDigest, configBackupFail, configBackupId, configBackupInstant,
   configBackupObject, configBackupProjectRef, configBackupString, readConfigBackupFile,
-  safeConfigBackupHostname, validateConfigBackupManifest, validateConfigBackupPayload, verifyConfigBackup, writeConfigBackupNewFile, writeConfigBackupPackage, reserveConfigBackupRoot,
+  repairConfigBackupPackage, safeConfigBackupHostname, validateConfigBackupManifest, validateConfigBackupPayload, verifyConfigBackup, writeConfigBackupNewFile, writeConfigBackupPackage, reserveConfigBackupRoot,
 } from "./config-backup.js";
 import type { ConfigBackupManifest, ConfigBackupPlan, ConfigBackupProjectRef, ConfigBackupRetainedContainer } from "./config-backup.js";
+
+import { CONFIG_BACKUP_REMOTE_METADATA_BYTES, preparedRemoteIntent, remoteEvidenceDigest, remoteRequest, validateRemoteCompletion, validateRemoteIntent, validateRemoteLocations, verifyRemotePackage } from "./config-backup-remote.js";
+import type { ConfigBackupRemoteCompletion, ConfigBackupRemoteIntent } from "./config-backup-remote.js";
 
 export const CONFIG_BACKUP_RETENTION_VERSION = "einzbern.config-backup-retention.v1" as const;
 export const CONFIG_BACKUP_LOCAL_BINDING_DIRECTORY = "config-backup-bindings" as const;
@@ -68,6 +71,7 @@ export interface ConfigBackupGroupBinding {
 export interface ConfigBackupStoredPackage {
   readonly backupId: string; readonly directory: string; readonly manifestDigest: string;
   readonly selectionDigest: string; readonly bytes: number; readonly completedAt: string;
+  readonly remoteCompletion?: ConfigBackupRemoteCompletion;
   readonly recoverableUntil: string | null; readonly origin: "created" | "retired" | "failed-transaction";
 }
 export interface ConfigBackupTransaction {
@@ -75,6 +79,7 @@ export interface ConfigBackupTransaction {
   readonly manifestDigest: string; readonly bytes: number; readonly startedAt: string;
   readonly phase: "staging" | "verified" | "committed" | "rotation-pending";
   readonly retirementBackupId: string | null;
+  readonly remote?: ConfigBackupRemoteIntent;
 }
 export interface ConfigBackupGroupIndex {
   readonly schemaVersion: typeof CONFIG_BACKUP_INDEX_VERSION; readonly projectRef: ConfigBackupProjectRef;
@@ -145,8 +150,9 @@ async function preparePaths(store: ConfigBackupStore): Promise<GroupPaths> {
   return groupPaths(store);
 }
 function checkPackage(value: unknown): ConfigBackupStoredPackage {
-  const v = configBackupObject(value, ["backupId", "directory", "manifestDigest", "selectionDigest", "bytes", "completedAt", "recoverableUntil", "origin"]);
+  const v = configBackupObject(value, ["backupId", "directory", "manifestDigest", "selectionDigest", "bytes", "completedAt", "recoverableUntil", "origin", "remoteCompletion"]);
   configBackupId(v.backupId); configBackupInstant(v.completedAt);
+  if (v.remoteCompletion !== undefined) validateRemoteCompletion(v.remoteCompletion);
   if (v.recoverableUntil !== null) configBackupInstant(v.recoverableUntil);
   if (!Number.isSafeInteger(v.bytes) || (v.bytes as number) < 0 || !/^[a-f0-9]{64}$/u.test(String(v.manifestDigest)) || !/^[a-f0-9]{64}$/u.test(String(v.selectionDigest)) || !/^[0-9TZ-]+-[a-f0-9]{32}$/u.test(String(v.directory)) || !String(v.directory).endsWith(`-${String(v.backupId)}`) || !["created", "retired", "failed-transaction"].includes(String(v.origin))) configBackupFail("CONFIG_BACKUP_INDEX_INVALID");
   return v as unknown as ConfigBackupStoredPackage;
@@ -163,14 +169,26 @@ function validateIndexContents(v: Record<string, unknown>): ConfigBackupGroupInd
   if (!/^[a-f0-9]{64}$/u.test(String(v.policyDigest)) || (v.lastError !== null && typeof v.lastError !== "string")) configBackupFail("CONFIG_BACKUP_INDEX_INVALID");
   const active = (v.active as unknown[]).map(checkPackage); const recoverable = (v.recoverable as unknown[]).map(checkPackage);
   const transactions = (v.transactions as unknown[]).map(raw => {
-    const t = configBackupObject(raw, ["transactionId", "backupId", "directory", "manifestDigest", "bytes", "startedAt", "phase", "retirementBackupId"]);
+    const t = configBackupObject(raw, ["transactionId", "backupId", "directory", "manifestDigest", "bytes", "startedAt", "phase", "retirementBackupId", "remote"]);
     configBackupId(t.transactionId); configBackupId(t.backupId); configBackupInstant(t.startedAt);
+    if (t.remote !== undefined) {
+      if (t.transactionId !== t.backupId) configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
+      const remote = validateRemoteIntent(t.remote);
+      if (remote.phase !== "complete-validated" && t.phase !== "staging") configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
+      if (remote.phase !== "prepared" && (remote.replacement?.backupId !== t.backupId || remote.replacement?.manifestDigest !== t.manifestDigest || (remote.original?.backupId ?? null) !== t.retirementBackupId || Date.parse(remote.begunAt!) < Date.parse(String(t.startedAt)))) configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
+    }
     if (t.retirementBackupId !== null) configBackupId(t.retirementBackupId);
     if (!/^[0-9TZ-]+-[a-f0-9]{32}$/u.test(String(t.directory)) || !String(t.directory).endsWith(`-${String(t.backupId)}`) || !/^[a-f0-9]{64}$/u.test(String(t.manifestDigest)) || !Number.isSafeInteger(t.bytes) || (t.bytes as number) < 0 || !["staging", "verified", "committed", "rotation-pending"].includes(String(t.phase))) configBackupFail("CONFIG_BACKUP_INDEX_INVALID");
     return t as unknown as ConfigBackupTransaction;
   });
   for (const [ids, rows] of [[v.activeBackupIds, active.map(x => x.backupId)], [v.recoverableBackupIds, recoverable.map(x => x.backupId)], [v.transactionIds, transactions.map(x => x.transactionId)]] as const) if (configBackupCanonical(ids) !== configBackupCanonical(rows) || new Set(rows).size !== rows.length) configBackupFail("CONFIG_BACKUP_INDEX_INVALID");
   if (active.some(x => recoverable.some(y => x.backupId === y.backupId))) configBackupFail("CONFIG_BACKUP_INDEX_INVALID");
+  for (const transaction of transactions.filter(t => t.remote !== undefined)) {
+    for (const row of [...active, ...recoverable].filter(p => p.backupId === transaction.backupId)) {
+      const remote = transaction.remote!;
+      if (remote.phase !== "complete-validated" || row.bytes !== transaction.bytes || row.directory !== transaction.directory || row.manifestDigest !== transaction.manifestDigest || configBackupCanonical(row.remoteCompletion ?? null) !== configBackupCanonical({ beginDigest: remote.beginDigest, completeDigest: remote.completeDigest, completedAt: remote.completedAt })) configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
+    }
+  }
   return v as unknown as ConfigBackupGroupIndex;
 }
 async function readIndex(paths: GroupPaths): Promise<ConfigBackupGroupIndex | null> {
@@ -198,7 +216,7 @@ async function saveIndex(paths: GroupPaths, index: ConfigBackupGroupIndex): Prom
 }
 function changed(index: ConfigBackupGroupIndex, at: string, update: Partial<ConfigBackupGroupIndex>): ConfigBackupGroupIndex { return { ...index, ...update, revision: index.revision + 1, updatedAt: at }; }
 function stored(manifest: ConfigBackupManifest, transaction: ConfigBackupTransaction, at: string): ConfigBackupStoredPackage {
-  return { backupId: manifest.backupId, directory: transaction.directory, manifestDigest: manifest.manifestDigest, selectionDigest: manifest.selectionDigest, bytes: transaction.bytes, completedAt: at, recoverableUntil: null, origin: "created" };
+  return { ...(transaction.remote?.phase === "complete-validated" ? { remoteCompletion: { beginDigest: transaction.remote.beginDigest!, completeDigest: transaction.remote.completeDigest!, completedAt: transaction.remote.completedAt! } } : {}), backupId: manifest.backupId, directory: transaction.directory, manifestDigest: manifest.manifestDigest, selectionDigest: manifest.selectionDigest, bytes: transaction.bytes, completedAt: at, recoverableUntil: null, origin: "created" };
 }
 async function exists(path: string): Promise<boolean> { try { await lstat(path); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; } }
 async function assertTracked(paths: GroupPaths, index: ConfigBackupGroupIndex): Promise<void> {
@@ -229,7 +247,11 @@ async function pendingResult(paths: GroupPaths, index: ConfigBackupGroupIndex, a
   try { const saved = index.lastError === safe ? index : await saveIndex(paths, changed(index, at, { lastError: safe })); return { status, index: saved, reason: safe }; }
   catch { return { status: "pending", index, reason: `${safe}:error-persistence-unknown` }; }
 }
-export async function createConfigBackup(store: ConfigBackupStore, plan: ConfigBackupPlan, at: string): Promise<ConfigBackupOperationResult> {
+export async function prepareConfigBackup(store: ConfigBackupStore, plan: ConfigBackupPlan, at: string): Promise<ConfigBackupOperationResult> {
+  return createConfigBackup(store, plan, at, "remote-staged");
+}
+export async function createConfigBackup(store: ConfigBackupStore, plan: ConfigBackupPlan, at: string, publication: "local" | "remote-staged" = "local"): Promise<ConfigBackupOperationResult> {
+  if (publication !== "local" && publication !== "remote-staged") configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
   configBackupInstant(at); const validation = approvedPolicy(store); bindingValid(store.binding);
   validateConfigBackupManifest(plan.manifest);
   const plannedBytes = Buffer.byteLength(configBackupCanonical(plan.manifest)) + plan.manifest.files.reduce((sum, f) => sum + f.bytes, 0);
@@ -248,7 +270,16 @@ export async function createConfigBackup(store: ConfigBackupStore, plan: ConfigB
       index = await saveIndex(paths, { schemaVersion: CONFIG_BACKUP_INDEX_VERSION, ...store.binding, activeBackupIds: [], transactionIds: [], recoverableBackupIds: [], active: [], transactions: [], recoverable: [], policyRef: validation.policy.approvalEvidenceRef, policyDigest: validation.policyDigest, revision: 1, updatedAt: at, lastError: null, syncStatus: "unknown" });
     }
     await assertLocalBinding(store, false); assertBinding(index, store); await assertTracked(paths, index);
-    if (index.transactions.length) return pendingResult(paths, index, at, "pending", "resume-existing-transaction-first");
+    if (index.transactions.length) {
+      const same = index.transactions.find(t => t.backupId === plan.manifest.backupId && t.remote !== undefined);
+      if (publication === "remote-staged" && same) {
+        const existing = await verifyConfigBackup(join(same.phase === "staging" ? paths.staging : paths.active, same.directory));
+        if (existing.integrity !== "verified") return pendingResult(paths, index, at, "pending", "CONFIG_BACKUP_VERIFICATION_FAILED");
+        if (same.manifestDigest !== plan.manifest.manifestDigest || existing.manifest?.manifestDigest !== plan.manifest.manifestDigest || existing.manifest?.selectionDigest !== plan.manifest.selectionDigest || configBackupCanonical(existing.manifest?.sourceVersion ?? null) !== configBackupCanonical(plan.manifest.sourceVersion)) return pendingResult(paths, index, at, "pending", "prepared-content-mismatch");
+        return { status: "pending", index, reason: same.remote?.phase === "prepared" ? "remote-verification-required" : "remote-commit-query-required" };
+      }
+      return pendingResult(paths, index, at, "pending", "resume-existing-transaction-first");
+    }
     await verifyStoredPackages(paths, index);
     const policy = validation.policy;
     const previous = index.active.at(-1);
@@ -256,15 +287,17 @@ export async function createConfigBackup(store: ConfigBackupStore, plan: ConfigB
       const verified = await verifyConfigBackup(join(paths.active, previous.directory));
       if (verified.integrity === "verified" && verified.manifest !== null && verified.manifest.manifestDigest === previous.manifestDigest && configBackupCanonical(verified.manifest.sourceVersion) === configBackupCanonical(plan.manifest.sourceVersion)) return { status: "unchanged", index, reason: null };
     }
-    const total = [...index.active, ...index.recoverable].reduce((sum, p) => sum + p.bytes, 0);
+    const total = [...index.active, ...index.recoverable].reduce((sum, p) => sum + p.bytes, 0) + remoteMetadataBytes(index);
     const retirement = index.active.length >= policy.activeLimit ? index.active[0] ?? null : null;
     if (plan.bytes > policy.maxPackageBytes || total + plan.bytes > policy.maxTotalBytes || index.transactions.length >= policy.transactionLimit || index.recoverable.length >= policy.recoveryLimit || (retirement !== null && Date.parse(at) - Date.parse(retirement.completedAt) < policy.retentionDuration) || index.recoverable.some(p => p.recoverableUntil === null || Date.parse(p.recoverableUntil) <= Date.parse(at))) return pendingResult(paths, index, at, "stop-new-and-report", "retention-capacity-or-safe-exit-required");
-    const transaction: ConfigBackupTransaction = { transactionId: plan.manifest.backupId, backupId: plan.manifest.backupId, directory: `${plan.manifest.createdAtUtc.replace(/[:.]/gu, "-")}-${plan.manifest.backupId}`, manifestDigest: plan.manifest.manifestDigest, bytes: plan.bytes, startedAt: at, phase: "staging", retirementBackupId: retirement?.backupId ?? null };
+    const transaction: ConfigBackupTransaction = { transactionId: plan.manifest.backupId, backupId: plan.manifest.backupId, directory: `${plan.manifest.createdAtUtc.replace(/[:.]/gu, "-")}-${plan.manifest.backupId}`, manifestDigest: plan.manifest.manifestDigest, bytes: plan.bytes, startedAt: at, phase: "staging", retirementBackupId: retirement?.backupId ?? null, ...(publication === "remote-staged" ? { remote: preparedRemoteIntent() } : {}) };
     if (index.active.some(x => x.backupId === transaction.backupId) || index.recoverable.some(x => x.backupId === transaction.backupId)) configBackupFail("CONFIG_BACKUP_ID_REUSED");
+    if (!remoteCapacity({ ...index, transactions: [transaction] }, policy)) return pendingResult(paths, index, at, "stop-new-and-report", "remote-evidence-capacity");
     index = await saveIndex(paths, changed(index, at, { transactions: [transaction] }));
     try {
       const verified = await writeConfigBackupPackage(join(paths.staging, transaction.directory), plan);
       if (verified.integrity !== "verified") configBackupFail("CONFIG_BACKUP_VERIFICATION_FAILED");
+      if (publication === "remote-staged") return { status: "pending", index, reason: "remote-verification-required" };
       return await resumeUnderLock(store, paths, index, at);
     } catch (error) {
       // Keep the original active package and the same durable transaction. Never start another
@@ -277,7 +310,21 @@ export async function createConfigBackup(store: ConfigBackupStore, plan: ConfigB
 }
 async function resumeUnderLock(store: ConfigBackupStore, paths: GroupPaths, initial: ConfigBackupGroupIndex, at: string): Promise<ConfigBackupOperationResult> {
   let index = initial; const policy = approvedPolicy(store).policy; assertBinding(index, store); await assertTracked(paths, index);
+  if (!remoteCapacity(index, policy)) return pendingResult(paths, index, at, "stop-new-and-report", "remote-evidence-capacity");
   for (const transaction of [...index.transactions]) {
+    if (transaction.bytes === 0) {
+      // Capacity recognized an existing local retirement, not a new zero-budget payload.
+      // Verify its originals before any reconciliation; account for the supported rename cut.
+      const old = index.active.find(p => p.backupId === transaction.retirementBackupId);
+      let observed = index;
+      if (old) {
+        const activeOld = await exists(join(paths.active, old.directory)), recoveredOld = await exists(join(paths.recovery, old.directory));
+        if (activeOld && recoveredOld) return pendingResult(paths, index, at, "pending", "retirement-conflict");
+        if (!activeOld && recoveredOld) observed = { ...index, active: index.active.filter(p => p.backupId !== old.backupId), recoverable: [...index.recoverable, old] };
+      }
+      await verifyStoredPackages(paths, observed);
+    }
+    if (transaction.remote && transaction.remote.phase !== "complete-validated") return { status: "pending", index, reason: transaction.remote.phase === "prepared" ? "remote-verification-required" : "remote-commit-query-required" };
     const source = join(paths.staging, transaction.directory); const target = join(paths.active, transaction.directory);
     const hasSource = await exists(source); const hasTarget = await exists(target);
     if (hasSource && hasTarget) return pendingResult(paths, index, at, "pending", "publication-conflict");
@@ -321,7 +368,117 @@ async function retireUnderLock(paths: GroupPaths, index: ConfigBackupGroupIndex,
   const next = await saveIndex(paths, changed(index, at, { active: index.active.filter(p => p.backupId !== old.backupId), recoverable: [...index.recoverable, recovered] }));
   return { status: "settled", index: next, reason: null };
 }
-export async function resumeConfigBackup(store: ConfigBackupStore, at: string, mode: "resume" | "recover-failed" = "resume"): Promise<ConfigBackupOperationResult> {
+/** Only compact metadata is retained, on already bounded transaction/package rows. */
+function remoteMetadataBytes(index: ConfigBackupGroupIndex): number {
+  const remoteIds = new Set(index.transactions.filter(t => t.remote !== undefined).map(t => t.backupId));
+  // The reservation includes a matching compact row while its transaction still exists.
+  return index.transactions.filter(t => t.remote !== undefined).length * CONFIG_BACKUP_REMOTE_METADATA_BYTES + [...index.active, ...index.recoverable].reduce((sum, p) => sum + (p.remoteCompletion === undefined || remoteIds.has(p.backupId) ? 0 : Buffer.byteLength(configBackupCanonical(p.remoteCompletion))), 0);
+}
+/** Official local retire records the existing replacement, with no new payload allocation. */
+function isLocalRetirementIntent(index: ConfigBackupGroupIndex, transaction: ConfigBackupTransaction): boolean {
+  if (transaction.remote !== undefined || transaction.bytes !== 0 || transaction.phase !== "rotation-pending" || transaction.retirementBackupId !== transaction.transactionId || transaction.backupId === transaction.transactionId) return false;
+  const replacement = index.active.find(p => p.backupId === transaction.backupId);
+  const target = index.active.find(p => p.backupId === transaction.retirementBackupId) ?? index.recoverable.find(p => p.backupId === transaction.retirementBackupId && p.origin === "retired");
+  return replacement !== undefined && replacement.origin !== "failed-transaction" && replacement.bytes > 0 && replacement.directory === transaction.directory && replacement.manifestDigest === transaction.manifestDigest && target !== undefined && target.origin !== "failed-transaction" && target.bytes > 0;
+}
+function remoteCapacity(index: ConfigBackupGroupIndex, policy: ConfigBackupRetentionPolicy): boolean {
+  for (const transaction of index.transactions) if (transaction.remote) validateRemoteIntent(transaction.remote);
+  const packages = new Map<string, { bytes: number; manifestDigest: string; directory: string }>();
+  for (const row of [...index.active, ...index.recoverable, ...index.transactions]) {
+    if ("transactionId" in row && row.bytes === 0) {
+      if (!isLocalRetirementIntent(index, row)) return false;
+      continue; // Existing active replacement and active/recoverable target are already charged.
+    }
+    const prior = packages.get(row.backupId);
+    if (prior && (prior.bytes !== row.bytes || prior.manifestDigest !== row.manifestDigest || prior.directory !== row.directory)) return false;
+    packages.set(row.backupId, row);
+  }
+  return [...packages.values()].reduce((sum, p) => sum + p.bytes, 0) + remoteMetadataBytes(index) <= policy.maxTotalBytes;
+}
+/** begin records intent only; complete consumes external readbacks before any local rotation. */
+export async function commitConfigBackup(store: ConfigBackupStore, at: string, mode: "begin" | "complete", evidence: unknown): Promise<ConfigBackupOperationResult> {
+  configBackupInstant(at); if (mode !== "begin" && mode !== "complete") configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
+  const request = remoteRequest(evidence, mode), receiptDigest = remoteEvidenceDigest(request); const policy = approvedPolicy(store).policy;
+  await assertConfigBackupReservedRoot(store.reservedRoot, store.protectedRoots, store.retainedContainerRoots);
+  const paths = groupPaths(store); await assertConfigBackupDirectory(paths.active);
+  return withFileLock(join(paths.active, ".writer.lock"), async () => {
+    let index = await readIndex(paths); if (!index) configBackupFail("CONFIG_BACKUP_GROUP_UNBOUND");
+    await assertLocalBinding(store, false); assertBinding(index, store); await assertTracked(paths, index);
+    if (Date.parse(at) < Date.parse(index.updatedAt)) configBackupFail("CONFIG_BACKUP_REMOTE_ORDER");
+    const transaction = index.transactions.find(t => t.backupId === request.backupId);
+    if (!transaction) {
+      const completed = [...index.active, ...index.recoverable].find(p => p.backupId === request.backupId);
+      if (mode === "complete" && completed?.remoteCompletion?.completeDigest === receiptDigest && completed.remoteCompletion.beginDigest === request.beginDigest) {
+        await verifyStoredPackages(paths, index); return { status: "unchanged", index, reason: "remote-commit-already-settled" };
+      }
+      return pendingResult(paths, index, at, "pending", "remote-transaction-not-found");
+    }
+    if (!transaction.remote) return pendingResult(paths, index, at, "pending", "remote-transaction-required");
+    const current = transaction.remote;
+    try {
+      if (mode === "begin" && current.phase !== "prepared") {
+        if (current.beginDigest !== receiptDigest) configBackupFail("CONFIG_BACKUP_REMOTE_CONFLICT");
+        return { status: "pending", index, reason: "remote-commit-query-required" };
+      }
+      if (mode === "complete" && current.phase === "complete-validated") {
+        if (current.completeDigest !== receiptDigest) configBackupFail("CONFIG_BACKUP_REMOTE_CONFLICT");
+        return await resumeUnderLock(store, paths, index, at);
+      }
+      if (mode === "complete" && (current.phase !== "commit-pending" || request.beginDigest !== current.beginDigest)) configBackupFail("CONFIG_BACKUP_REMOTE_BEGIN_REQUIRED");
+      // Before accepting remote action evidence, the retained local originals and staged bytes
+      // must still be intact. Recovery of already validated local moves is handled above/resume.
+      await verifyStoredPackages(paths, index);
+      const staged = await verifyConfigBackup(join(paths.staging, transaction.directory));
+      if (await exists(join(paths.active, transaction.directory)) || staged.integrity !== "verified" || staged.manifest?.manifestDigest !== transaction.manifestDigest) configBackupFail("CONFIG_BACKUP_REMOTE_BYTES_INVALID");
+      const old = transaction.retirementBackupId === null ? null : index.active.find(p => p.backupId === transaction.retirementBackupId);
+      if (old === undefined) configBackupFail("CONFIG_BACKUP_REMOTE_ORIGINAL_MISSING");
+      if (!remoteCapacity(index, policy) || index.recoverable.some(p => p.recoverableUntil === null || Date.parse(p.recoverableUntil) <= Date.parse(at)) || (old && (index.recoverable.length >= policy.recoveryLimit || Date.parse(at) - Date.parse(old.completedAt) < policy.retentionDuration))) return pendingResult(paths, index, at, "stop-new-and-report", "retention-capacity-or-safe-exit-required");
+      const locations = mode === "begin" ? validateRemoteLocations(request.locations) : current.locations!;
+      let newBoundary = transaction.startedAt, oldBoundary = transaction.startedAt;
+      if (mode === "complete") {
+        newBoundary = configBackupInstant(request.promotedAt);
+        if (Date.parse(newBoundary) < Date.parse(current.begunAt!)) configBackupFail("CONFIG_BACKUP_REMOTE_ORDER");
+        if (old) { oldBoundary = configBackupInstant(request.retiredAt); if (Date.parse(oldBoundary) < Date.parse(current.begunAt!) || Date.parse(oldBoundary) > Date.parse(newBoundary)) configBackupFail("CONFIG_BACKUP_REMOTE_ORDER"); }
+        else if (request.retiredAt !== null) configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
+      }
+      const common = { backupGroupId: index.backupGroupId, projectRef: index.projectRef, areaIds: [locations.stagingAreaId, locations.activeAreaId, locations.recoveryAreaId], at };
+      const replacement = await verifyRemotePackage(request.replacement, { ...common, backupId: transaction.backupId, manifestDigest: transaction.manifestDigest, areaId: mode === "begin" ? locations.stagingAreaId : locations.activeAreaId, notBefore: newBoundary });
+      const original = old ? await verifyRemotePackage(request.original, { ...common, backupId: old.backupId, manifestDigest: old.manifestDigest, areaId: mode === "begin" ? locations.activeAreaId : locations.recoveryAreaId, notBefore: oldBoundary }) : null;
+      if (!old && request.original !== null) configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
+      if (original && original.objectIds.some(id => replacement.objectIds.includes(id))) configBackupFail("CONFIG_BACKUP_REMOTE_CONFLICT");
+      if (mode === "complete") {
+        if (configBackupCanonical(replacement.identity) !== configBackupCanonical(current.replacement) || configBackupCanonical(original?.identity ?? null) !== configBackupCanonical(current.original)) configBackupFail("CONFIG_BACKUP_REMOTE_CONFLICT");
+        if (original && Date.parse(original.verifiedAt) > Date.parse(newBoundary)) configBackupFail("CONFIG_BACKUP_REMOTE_ORDER");
+      }
+      const remote: ConfigBackupRemoteIntent = mode === "begin" ? { phase: "commit-pending", beginDigest: receiptDigest, completeDigest: null, begunAt: at, completedAt: null, locations, replacement: replacement.identity, original: original?.identity ?? null } : { ...current, phase: "complete-validated", completeDigest: receiptDigest, completedAt: at };
+      const candidate = changed(index, at, { transactions: index.transactions.map(t => t.transactionId === transaction.transactionId ? { ...t, remote } : t), lastError: null });
+      if (!remoteCapacity(candidate, policy)) return pendingResult(paths, index, at, "stop-new-and-report", "remote-evidence-capacity");
+      index = await saveIndex(paths, candidate);
+      if (mode === "begin") return { status: "pending", index, reason: "remote-commit-query-required" };
+      return await resumeUnderLock(store, paths, index, at);
+    } catch (error) {
+      try { index = (await readIndex(paths)) ?? index; assertBinding(index, store); } catch { return { status: "pending", index, reason: "CONFIG_BACKUP_ERROR_PERSISTENCE_UNKNOWN" }; }
+      return pendingResult(paths, index, at, "pending", error instanceof Error && "reasonCode" in error ? String(error.reasonCode) : "CONFIG_BACKUP_WRITE_UNKNOWN");
+    }
+  }, { command: "einzbern config-backup-commit", ...(store.lockTimeoutMs === undefined ? {} : { timeoutMs: store.lockTimeoutMs }) });
+}
+
+async function repairRemoteStagedTransaction(store: ConfigBackupStore, paths: GroupPaths, index: ConfigBackupGroupIndex, at: string, plan: ConfigBackupPlan | undefined): Promise<ConfigBackupOperationResult> {
+  if (!plan) configBackupFail("CONFIG_BACKUP_REPAIR_PLAN_REQUIRED");
+  validateConfigBackupManifest(plan.manifest);
+  const transaction = index.transactions.find(t => t.backupId === plan.manifest.backupId);
+  if (!transaction?.remote || transaction.remote.phase !== "prepared" || transaction.phase !== "staging") return pendingResult(paths, index, at, "pending", "remote-commit-query-required");
+  if (transaction.manifestDigest !== plan.manifest.manifestDigest || transaction.bytes !== plan.bytes || plan.manifest.backupGroupId !== index.backupGroupId || configBackupCanonical(plan.manifest.projectRef) !== configBackupCanonical(index.projectRef)) configBackupFail("CONFIG_BACKUP_REPAIR_PLAN_MISMATCH");
+  if (await exists(join(paths.active, transaction.directory)) || await exists(join(paths.recovery, transaction.directory))) return pendingResult(paths, index, at, "pending", "publication-conflict");
+  if (!remoteCapacity(index, approvedPolicy(store).policy)) return pendingResult(paths, index, at, "stop-new-and-report", "remote-evidence-capacity");
+  await verifyStoredPackages(paths, index);
+  const verified = await repairConfigBackupPackage(join(paths.staging, transaction.directory), plan);
+  if (verified.integrity !== "verified" || verified.manifest?.manifestDigest !== transaction.manifestDigest) configBackupFail("CONFIG_BACKUP_VERIFICATION_FAILED");
+  const updated = index.lastError === null ? index : await saveIndex(paths, changed(index, at, { lastError: null }));
+  return { status: "pending", index: updated, reason: "remote-verification-required" };
+}
+
+export async function resumeConfigBackup(store: ConfigBackupStore, at: string, mode: "resume" | "recover-failed" | "repair-staged" = "resume", repairPlan?: ConfigBackupPlan): Promise<ConfigBackupOperationResult> {
   configBackupInstant(at); approvedPolicy(store); await assertConfigBackupReservedRoot(store.reservedRoot, store.protectedRoots, store.retainedContainerRoots); const paths = groupPaths(store);
   await reserveConfigBackupRoot(store.reservedRoot);
   await assertConfigBackupDirectory(paths.active);
@@ -329,6 +486,8 @@ export async function resumeConfigBackup(store: ConfigBackupStore, at: string, m
     const index = await readIndex(paths); if (!index) configBackupFail("CONFIG_BACKUP_GROUP_UNBOUND");
     await assertLocalBinding(store, false); assertBinding(index, store); await assertTracked(paths, index);
     try {
+      if (mode === "repair-staged") return await repairRemoteStagedTransaction(store, paths, index, at, repairPlan);
+      if (repairPlan !== undefined) configBackupFail("CONFIG_BACKUP_REPAIR_PLAN_UNEXPECTED");
       if (mode === "recover-failed") return await recoverFailedTransaction(store, paths, index, at);
       return await resumeUnderLock(store, paths, index, at);
     } catch (error) {
@@ -343,6 +502,7 @@ async function recoverFailedTransaction(store: ConfigBackupStore, paths: GroupPa
   const policy = approvedPolicy(store).policy;
   for (const transaction of index.transactions) {
     // A committed/unknown publication is reconciled by resume, not recast as a failed backup.
+    if (transaction.remote !== undefined) return pendingResult(paths, index, at, "pending", "remote-commit-query-required");
     if (transaction.phase !== "staging" || await exists(join(paths.active, transaction.directory))) return pendingResult(paths, index, at, "pending", "resume-publication-first");
     if (index.recoverable.length >= policy.recoveryLimit) return pendingResult(paths, index, at, "stop-new-and-report", "recovery-limit");
     const source = join(paths.staging, transaction.directory); const target = join(paths.recovery, transaction.directory);
@@ -402,7 +562,7 @@ export interface ConfigBackupListGroup {
   readonly activeCount: number | null; readonly transactionCount: number | null; readonly recoverableCount: number | null;
   readonly bytes: number | null; readonly completedAt: string | null;
   readonly integrity: "verified" | "corrupt" | "unreadable" | "missing-index" | "discovered";
-  readonly transactionPhases: readonly ConfigBackupTransaction["phase"][] | null;
+  readonly transactionPhases: readonly (ConfigBackupTransaction["phase"] | ConfigBackupRemoteIntent["phase"])[] | null;
   readonly syncStatus: "unknown"; readonly error: string | null;
 }
 export interface ConfigBackupList {
@@ -454,7 +614,7 @@ export async function listConfigBackups(input: { readonly reservedRoot?: string;
             if (index.backupGroupId !== id || safeConfigBackupHostname(index.hostname) !== host) configBackupFail("CONFIG_BACKUP_GROUP_CONFLICT");
             // Parsed index ownership and transaction responsibility remain useful
             // even when a later package/location read is unavailable or corrupt.
-            row = { ...row, hostname: index.hostname, projectRef: index.projectRef, activeCount: index.active.length, transactionCount: index.transactions.length, recoverableCount: index.recoverable.length, transactionPhases: [...new Set(index.transactions.map(transaction => transaction.phase))], completedAt: index.active.map(p => p.completedAt).sort().at(-1) ?? null };
+            row = { ...row, hostname: index.hostname, projectRef: index.projectRef, activeCount: index.active.length, transactionCount: index.transactions.length, recoverableCount: index.recoverable.length, transactionPhases: [...new Set(index.transactions.map(transaction => transaction.remote?.phase ?? transaction.phase))], completedAt: index.active.map(p => p.completedAt).sort().at(-1) ?? null };
             await assertTracked(paths, index);
             let integrity: ConfigBackupListGroup["integrity"] = index.transactions.length ? "discovered" : "verified";
             let actualBytes = 0;

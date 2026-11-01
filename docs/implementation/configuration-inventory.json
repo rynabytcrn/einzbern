@@ -3410,6 +3410,281 @@
         "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
         "editing": "dedicated invocation only; not a generic settings-editor field",
         "consumption": "wired",
+        "key": "cli:config-backup-commit:workspace",
+        "kind": "cli-argument",
+        "name": "--workspace",
+        "command": "config-backup-commit",
+        "catalogReference": "COMMAND_CATALOG[config-backup-commit].flags[workspace]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-commit --workspace",
+          "actual unambiguous registry binding only; no new identity"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "actual unambiguous registry binding only; no new identity",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "workspace",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "local-path",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-commit:project",
+        "kind": "cli-argument",
+        "name": "--project",
+        "command": "config-backup-commit",
+        "catalogReference": "COMMAND_CATALOG[config-backup-commit].flags[project]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-commit --project",
+          "actual unambiguous registry binding only; no new identity"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "actual unambiguous registry binding only; no new identity",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "project",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "ordinary",
+        "pathBase": null,
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-commit:project-id",
+        "kind": "cli-argument",
+        "name": "--project-id",
+        "command": "config-backup-commit",
+        "catalogReference": "COMMAND_CATALOG[config-backup-commit].flags[project-id]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-commit --project-id",
+          "actual unambiguous registry binding only; no new identity"
+        ],
+        "semanticType": "string",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Owning typed validator remains authoritative.",
+        "defaultDescription": "actual unambiguous registry binding only; no new identity",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "project-id",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "explicit absolute path",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-commit:request",
+        "kind": "cli-argument",
+        "name": "--request",
+        "command": "config-backup-commit",
+        "catalogReference": "COMMAND_CATALOG[config-backup-commit].flags[request]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-commit --request",
+          "required; no inferred value"
+        ],
+        "semanticType": "path",
+        "validation": "Existing private JSON file; closed per-command configuration-backup envelope. Existing strict pair parser rejects unknown/duplicate flags. File/root paths must be absolute and normalized; create-new outputs never overwrite.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "request",
+          "required": true,
+          "valueKind": "string",
+          "valueShape": "Existing private JSON file; closed per-command configuration-backup envelope"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "ordinary",
+        "pathBase": null,
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-commit:at",
+        "kind": "cli-argument",
+        "name": "--at",
+        "command": "config-backup-commit",
+        "catalogReference": "COMMAND_CATALOG[config-backup-commit].flags[at]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-commit --at",
+          "required; no inferred value"
+        ],
+        "semanticType": "instant",
+        "validation": "instant. Existing strict pair parser rejects unknown/duplicate flags. Owning typed validator remains authoritative.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "at",
+          "required": true,
+          "valueKind": "instant"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "explicit absolute path",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-commit:output",
+        "kind": "cli-argument",
+        "name": "--output",
+        "command": "config-backup-commit",
+        "catalogReference": "COMMAND_CATALOG[config-backup-commit].flags[output]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-commit --output",
+          "absent: canonical CLI result only"
+        ],
+        "semanticType": "path",
+        "validation": "Private create-new JSON result; an existing output is never overwritten. Existing strict pair parser rejects unknown/duplicate flags. File/root paths must be absolute and normalized; create-new outputs never overwrite.",
+        "defaultDescription": "absent: canonical CLI result only",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "output",
+          "required": false,
+          "valueKind": "string",
+          "valueShape": "Private create-new JSON result; an existing output is never overwritten"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "ordinary",
+        "pathBase": null,
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-commit:timeout-ms",
+        "kind": "cli-argument",
+        "name": "--timeout-ms",
+        "command": "config-backup-commit",
+        "catalogReference": "COMMAND_CATALOG[config-backup-commit].flags[timeout-ms]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-commit --timeout-ms",
+          "existing local lock wait budget; not retention policy or capacity"
+        ],
+        "semanticType": "integer",
+        "validation": "integer. Existing strict pair parser rejects unknown/duplicate flags. Nonnegative safe integer lock wait only.",
+        "defaultDescription": "existing local lock wait budget; not retention policy or capacity",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "timeout-ms",
+          "required": false,
+          "valueKind": "integer"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "local-path",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
         "key": "cli:config-backup-create:workspace",
         "kind": "cli-argument",
         "name": "--workspace",
@@ -3982,6 +4257,281 @@
           "required": false,
           "valueKind": "string",
           "valueShape": "Private create-new JSON result; an existing output is never overwritten"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "local-path",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-prepare:workspace",
+        "kind": "cli-argument",
+        "name": "--workspace",
+        "command": "config-backup-prepare",
+        "catalogReference": "COMMAND_CATALOG[config-backup-prepare].flags[workspace]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-prepare --workspace",
+          "actual unambiguous registry binding only; no new identity"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "actual unambiguous registry binding only; no new identity",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "workspace",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "local-path",
+        "pathBase": "process cwd for relative path; owning consumer validates",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-prepare:project",
+        "kind": "cli-argument",
+        "name": "--project",
+        "command": "config-backup-prepare",
+        "catalogReference": "COMMAND_CATALOG[config-backup-prepare].flags[project]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-prepare --project",
+          "actual unambiguous registry binding only; no new identity"
+        ],
+        "semanticType": "path",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Resolved by the owning consumer; no guessed target or authority.",
+        "defaultDescription": "actual unambiguous registry binding only; no new identity",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "project",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "ordinary",
+        "pathBase": null,
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-prepare:project-id",
+        "kind": "cli-argument",
+        "name": "--project-id",
+        "command": "config-backup-prepare",
+        "catalogReference": "COMMAND_CATALOG[config-backup-prepare].flags[project-id]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-prepare --project-id",
+          "actual unambiguous registry binding only; no new identity"
+        ],
+        "semanticType": "string",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Owning typed validator remains authoritative.",
+        "defaultDescription": "actual unambiguous registry binding only; no new identity",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "project-id",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "explicit absolute path",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-prepare:request",
+        "kind": "cli-argument",
+        "name": "--request",
+        "command": "config-backup-prepare",
+        "catalogReference": "COMMAND_CATALOG[config-backup-prepare].flags[request]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-prepare --request",
+          "required; no inferred value"
+        ],
+        "semanticType": "path",
+        "validation": "Existing private JSON file; closed per-command configuration-backup envelope. Existing strict pair parser rejects unknown/duplicate flags. File/root paths must be absolute and normalized; create-new outputs never overwrite.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "request",
+          "required": true,
+          "valueKind": "string",
+          "valueShape": "Existing private JSON file; closed per-command configuration-backup envelope"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "ordinary",
+        "pathBase": null,
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-prepare:at",
+        "kind": "cli-argument",
+        "name": "--at",
+        "command": "config-backup-prepare",
+        "catalogReference": "COMMAND_CATALOG[config-backup-prepare].flags[at]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-prepare --at",
+          "required; no inferred value"
+        ],
+        "semanticType": "instant",
+        "validation": "instant. Existing strict pair parser rejects unknown/duplicate flags. Owning typed validator remains authoritative.",
+        "defaultDescription": "required; no inferred value",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "at",
+          "required": true,
+          "valueKind": "instant"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "context-may-contain-private-data",
+        "pathBase": "explicit absolute path",
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-prepare:output",
+        "kind": "cli-argument",
+        "name": "--output",
+        "command": "config-backup-prepare",
+        "catalogReference": "COMMAND_CATALOG[config-backup-prepare].flags[output]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-prepare --output",
+          "absent: canonical CLI result only"
+        ],
+        "semanticType": "path",
+        "validation": "Private create-new JSON result; an existing output is never overwritten. Existing strict pair parser rejects unknown/duplicate flags. File/root paths must be absolute and normalized; create-new outputs never overwrite.",
+        "defaultDescription": "absent: canonical CLI result only",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "output",
+          "required": false,
+          "valueKind": "string",
+          "valueShape": "Private create-new JSON result; an existing output is never overwritten"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "ordinary",
+        "pathBase": null,
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:config-backup-prepare:timeout-ms",
+        "kind": "cli-argument",
+        "name": "--timeout-ms",
+        "command": "config-backup-prepare",
+        "catalogReference": "COMMAND_CATALOG[config-backup-prepare].flags[timeout-ms]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/config-backup-commands.ts runConfigBackupCommand"
+        ],
+        "precedence": [
+          "explicit config-backup-prepare --timeout-ms",
+          "existing local lock wait budget; not retention policy or capacity"
+        ],
+        "semanticType": "integer",
+        "validation": "integer. Existing strict pair parser rejects unknown/duplicate flags. Nonnegative safe integer lock wait only.",
+        "defaultDescription": "existing local lock wait budget; not retention policy or capacity",
+        "scope": "one explicit registered source or reserved configuration-backup root",
+        "effect": "Uses explicit selection, reserved roots and exact approved policy. Backup/restore source version must come from two stable reads of the actual running package artifact; source/dist layouts and missing version binding refuse, and a request cannot supply it. Restore still requires per-key permission, unchanged plan and originals-first backup.",
+        "flag": {
+          "name": "timeout-ms",
+          "required": false,
+          "valueKind": "integer"
         }
       },
       {
@@ -6953,6 +7503,50 @@
         "flags": []
       },
       {
+        "name": "config-backup-commit",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "project",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "project-id",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "request",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Existing private JSON file; closed per-command configuration-backup envelope"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          },
+          {
+            "name": "output",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "Private create-new JSON result; an existing output is never overwritten"
+          },
+          {
+            "name": "timeout-ms",
+            "required": false,
+            "valueKind": "integer"
+          }
+        ]
+      },
+      {
         "name": "config-backup-create",
         "availability": "cli",
         "mutates": true,
@@ -7049,6 +7643,50 @@
             "required": false,
             "valueKind": "string",
             "valueShape": "Private create-new JSON result; an existing output is never overwritten"
+          }
+        ]
+      },
+      {
+        "name": "config-backup-prepare",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "workspace",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "project",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "project-id",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "request",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Existing private JSON file; closed per-command configuration-backup envelope"
+          },
+          {
+            "name": "at",
+            "required": true,
+            "valueKind": "instant"
+          },
+          {
+            "name": "output",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "Private create-new JSON result; an existing output is never overwritten"
+          },
+          {
+            "name": "timeout-ms",
+            "required": false,
+            "valueKind": "integer"
           }
         ]
       },

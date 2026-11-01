@@ -5,10 +5,10 @@ import type { RuntimeCommandCatalogEntry, RuntimeCommandFlag } from "../../core/
 import {
   collectConfigBackupPayloads, configBackupCanonical, configBackupFail, configBackupId,
   configBackupInstant, configBackupObject, configBackupString, planConfigBackup,
-  readConfigBackupFile, verifyConfigBackup, writeConfigBackupNewFile,
+  readConfigBackupFile, validateConfigBackupManifest, verifyConfigBackup, writeConfigBackupNewFile,
 } from "../../core/src/config-backup.js";
-import type { ConfigBackupSelection, ConfigBackupSource, ConfigBackupSourceVersion, ConfigBackupRetainedContainer } from "../../core/src/config-backup.js";
-import { createConfigBackup, listConfigBackups, resumeConfigBackup, retireConfigBackup } from "../../core/src/config-backup-retention.js";
+import type { ConfigBackupPlan, ConfigBackupSelection, ConfigBackupSource, ConfigBackupSourceVersion, ConfigBackupRetainedContainer } from "../../core/src/config-backup.js";
+import { commitConfigBackup, prepareConfigBackup, createConfigBackup, listConfigBackups, resumeConfigBackup, retireConfigBackup } from "../../core/src/config-backup-retention.js";
 import type { ConfigBackupGroupBinding, ConfigBackupPolicyApproval, ConfigBackupStore } from "../../core/src/config-backup-retention.js";
 import { applyConfigRestore, planConfigRestore } from "../../core/src/config-restore.js";
 import type { ConfigRestorePlan, ConfigRestoreTarget } from "../../core/src/config-restore.js";
@@ -19,6 +19,8 @@ const requestFlags = [flag("request", true, "string", "Existing private JSON fil
 export const CONFIG_BACKUP_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.freeze([
   { name: "config-backup-plan", availability: "cli", mutates: false, flags: [...targetFlags, ...requestFlags] },
   { name: "config-backup-create", availability: "cli", mutates: true, flags: [...targetFlags, ...requestFlags, flag("timeout-ms", false, "integer")] },
+  { name: "config-backup-prepare", availability: "cli", mutates: true, flags: [...targetFlags, ...requestFlags, flag("timeout-ms", false, "integer")] },
+  { name: "config-backup-commit", availability: "cli", mutates: true, flags: [...targetFlags, ...requestFlags, flag("timeout-ms", false, "integer")] },
   { name: "config-backup-verify", availability: "cli", mutates: false, flags: [flag("package", true)] },
   { name: "config-backup-list", availability: "cli", mutates: false, flags: [flag("root", false), flag("at", true, "instant")] },
   { name: "config-backup-resume", availability: "cli", mutates: true, flags: [...targetFlags, ...requestFlags, flag("timeout-ms", false, "integer")] },
@@ -78,18 +80,30 @@ export async function runConfigBackupCommand(command: string, values: Readonly<R
   if (command === "config-backup-list") return output(await listConfigBackups({ at, ...(values.root === undefined ? {} : { reservedRoot: absolute(values.root) }) }), undefined);
   const raw = await readRequest(values.request!); const source = await context.resolveSource(values);
   let result: unknown;
-  if (command === "config-backup-plan" || command === "config-backup-create") {
-    const request = configBackupObject(raw, command === "config-backup-create" ? ["selection", "store", "backupId", "expectedSelectionDigest"] : ["selection", "backupGroupId", "hostname"]);
-    const store = command === "config-backup-create" ? await storeFor(request.store, source, values, context) : null;
-    const plan = planConfigBackup({ projectRef: source.projectRef, backupGroupId: configBackupId(store?.binding.backupGroupId ?? request.backupGroupId), hostname: configBackupString(store?.binding.hostname ?? request.hostname), sourceVersion: await context.sourceVersion(), at, payloads: await collectConfigBackupPayloads(source, selection(request.selection)), ...(command === "config-backup-create" ? { backupId: configBackupId(request.backupId) } : {}) });
-    if (command === "config-backup-create") {
+  if (command === "config-backup-plan" || command === "config-backup-create" || command === "config-backup-prepare") {
+    const request = configBackupObject(raw, command === "config-backup-prepare" ? ["selection", "store", "backupId", "expectedSelectionDigest", "plan"] : command === "config-backup-create" ? ["selection", "store", "backupId", "expectedSelectionDigest"] : ["selection", "backupGroupId", "hostname", "backupId"]);
+    const originalPlan = command === "config-backup-prepare" ? configBackupObject(request.plan, ["schemaVersion", "manifest", "members", "excluded", "bytes", "integrity"]) : null;
+    const plannedAt = originalPlan ? validateConfigBackupManifest(originalPlan.manifest).createdAtUtc : at;
+    if (Date.parse(plannedAt) > Date.parse(at)) configBackupFail("CONFIG_BACKUP_PLAN_CHANGED");
+    const store = command !== "config-backup-plan" ? await storeFor(request.store, source, values, context) : null;
+    const plan = planConfigBackup({ projectRef: source.projectRef, backupGroupId: configBackupId(store?.binding.backupGroupId ?? request.backupGroupId), hostname: configBackupString(store?.binding.hostname ?? request.hostname), sourceVersion: await context.sourceVersion(), at: plannedAt, payloads: await collectConfigBackupPayloads(source, selection(request.selection)), ...(request.backupId === undefined && command === "config-backup-plan" ? {} : { backupId: configBackupId(request.backupId) }) });
+    if (originalPlan && configBackupCanonical(originalPlan) !== configBackupCanonical(plan)) configBackupFail("CONFIG_BACKUP_PLAN_CHANGED");
+    if (command !== "config-backup-plan") {
       if (plan.manifest.selectionDigest !== request.expectedSelectionDigest || plan.excluded.length) configBackupFail("CONFIG_BACKUP_SELECTION_CHANGED");
-      result = await createConfigBackup(store!, plan, at);
+      result = await (command === "config-backup-prepare" ? prepareConfigBackup : createConfigBackup)(store!, plan, at);
     } else result = plan;
+  } else if (command === "config-backup-commit") {
+    const request = configBackupObject(raw, ["store", "mode", "evidence"]);
+    if (request.mode !== "begin" && request.mode !== "complete") configBackupFail("CONFIG_BACKUP_REMOTE_INVALID");
+    result = await commitConfigBackup(await storeFor(request.store, source, values, context), at, request.mode, request.evidence);
   } else if (command === "config-backup-resume" || command === "config-backup-retire") {
-    const request = configBackupObject(raw, command === "config-backup-retire" ? ["store", "backupId"] : ["store", "mode"]);
+    const request = configBackupObject(raw, command === "config-backup-retire" ? ["store", "backupId"] : ["store", "mode", "plan"]);
     const store = await storeFor(request.store, source, values, context);
-    result = command === "config-backup-resume" ? await resumeConfigBackup(store, at, request.mode === undefined || request.mode === "resume" ? "resume" : request.mode === "recover-failed" ? "recover-failed" : configBackupFail("CONFIG_BACKUP_RESUME_MODE_INVALID")) : await retireConfigBackup(store, configBackupId(request.backupId), at);
+    if (command === "config-backup-resume") {
+      const mode = request.mode === undefined || request.mode === "resume" ? "resume" : request.mode === "recover-failed" ? "recover-failed" : request.mode === "repair-staged" ? "repair-staged" : configBackupFail("CONFIG_BACKUP_RESUME_MODE_INVALID");
+      if (mode !== "repair-staged" && request.plan !== undefined) configBackupFail("CONFIG_BACKUP_REPAIR_PLAN_UNEXPECTED");
+      result = await resumeConfigBackup(store, at, mode, request.plan as ConfigBackupPlan | undefined);
+    } else result = await retireConfigBackup(store, configBackupId(request.backupId), at);
   } else {
     const request = configBackupObject(raw, command === "config-restore-apply" ? ["originalsStore", "plan"] : ["originalsStore"]);
     const packageRoot = absolute(values.package); const verified = await verifyConfigBackup(packageRoot);

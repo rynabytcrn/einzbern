@@ -496,7 +496,7 @@ test("527 Q6: the proposal verbs are cataloged with their required flags, and no
 });
 
 test("529 GWT2 (TCRN-CROSS-SUB-480): every write that takes the library write lock takes an optional integer --timeout-ms", () => {
-  const lockWrites = ["dot-extension-source-set", "config-backup-create", "config-backup-resume", "config-backup-retire", "config-restore-apply", "shared-submit-advisory-write", "agents-render", "artifact-put", "chain-declare", "gates-config-propose", "gates-config-remove", "gates-config-set",
+  const lockWrites = ["dot-extension-source-set", "config-backup-create", "config-backup-prepare", "config-backup-commit", "config-backup-resume", "config-backup-retire", "config-restore-apply", "shared-submit-advisory-write", "agents-render", "artifact-put", "chain-declare", "gates-config-propose", "gates-config-remove", "gates-config-set",
     "knowledge-article-create", "knowledge-article-refresh", "knowledge-batch", "knowledge-bodies-migrate", "knowledge-capture",
     "knowledge-create", "knowledge-init", "knowledge-rebase", "knowledge-recover", "knowledge-remove", "knowledge-reverify",
     "minutes-record", "project-bindings-remove", "project-bindings-set", "project-create", "project-delete", "project-update",
@@ -532,7 +532,7 @@ test("machine dispatch catalog declares persistence and its complete supported f
 
 test("INIT062 package handlers preserve strict parser and explicit native workspace requirements", async () => {
   const names = COMMAND_CATALOG.filter(entry => /^(?:config-backup-|config-restore-|execution-native-|shared-submit-)/u.test(entry.name));
-  assert.equal(names.length, 15);
+  assert.equal(names.length, 17);
   for (const entry of names) {
     assert.ok(entry.flags.every(flag => flag.valueKind !== "path"), "paths retain the existing string transport schema");
     const help = await invoke([entry.name, "--help"]);
@@ -549,7 +549,7 @@ test("INIT062 new valueShape roster is closed and preserves the existing transpo
   const entries = COMMAND_CATALOG.filter(entry => entry.name === "setup" || /^(?:config-backup-|config-restore-|execution-native-|shared-submit-)/u.test(entry.name));
   const shaped = entries.flatMap(entry => entry.flags.filter(flag => flag.valueShape !== undefined && flag.name !== "decided-in").map(flag => `${entry.name}:${flag.name}`));
   assert.deepEqual(shaped, [
-    "config-backup-create:request", "config-backup-create:output", "config-backup-plan:request", "config-backup-plan:output", "config-backup-resume:request", "config-backup-resume:output", "config-backup-retire:request", "config-backup-retire:output",
+    "config-backup-commit:request", "config-backup-commit:output", "config-backup-create:request", "config-backup-create:output", "config-backup-plan:request", "config-backup-plan:output", "config-backup-prepare:request", "config-backup-prepare:output", "config-backup-resume:request", "config-backup-resume:output", "config-backup-retire:request", "config-backup-retire:output",
     "config-restore-apply:request", "config-restore-apply:output", "config-restore-apply:approved-plan-digest", "config-restore-plan:request", "config-restore-plan:output",
     "execution-native-prepare:request", "execution-native-prepare:tool-contract", "execution-native-prepare:arguments", "execution-native-prepare:retry-from", "execution-native-prepare:reconciliation", "execution-native-record:response", "execution-native-record:prior", "setup:codex-admission", "setup:execution-target", "setup:dot-input", "setup:approved-plan-digest",
   ]);

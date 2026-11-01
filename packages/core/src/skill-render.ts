@@ -89,8 +89,8 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   },
   {
     moment: "Configuration backup or restore",
-    verbs: ["config-backup-plan", "config-backup-create", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
-    action: "Allowlist only: no secrets, identity, runtime or generated projections. Preserve originals; supported setters/readback. Unapproved policy blocks creation/daily enablement. `specs/config-backup-v1.md`.",
+    verbs: ["config-backup-plan", "config-backup-create", "config-backup-prepare", "config-backup-commit", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
+    action: "Allowlist; approved retention. Remote prepare/readback/commit; same-ID recovery, not authentication. Local create unchanged. `specs/config-backup-v1.md`.",
   },
   {
     moment: "Work is done",

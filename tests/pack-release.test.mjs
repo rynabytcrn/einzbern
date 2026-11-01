@@ -170,6 +170,42 @@ test("CFG-B02 packaged CLI creates and inventories retained in-tree backups with
     assert.equal(listed.scanStatus, "scanned"); assert.equal(listed.groups.length, 1);
     assert.deepEqual(listed.groups[0].projectRef, projectRef); assert.equal(listed.groups[0].integrity, "verified");
     assert.equal(listed.groups[0].activeCount, 1); assert.equal(listed.groups[0].backupGroupId, item.store.binding.backupGroupId);
+    if (item.name === "project") {
+      // Real archive CLI and synthetic remote transport observations; no production store.
+      invoke(["machine-settings-set", "--key", "portal.defaultTheme", "--value", "light", "--at", at]);
+      await writeFile(request, JSON.stringify({ selection, backupGroupId: item.store.binding.backupGroupId, hostname: item.store.binding.hostname }));
+      const next = invoke(["config-backup-plan", ...target, "--request", request]);
+      await writeFile(request, JSON.stringify({ selection, backupGroupId: item.store.binding.backupGroupId, hostname: item.store.binding.hostname, backupId: next.manifest.backupId }));
+      assert.deepEqual(invoke(["config-backup-plan", ...target, "--request", request]), next, "same explicit ID and original observation time reproduce the official plan");
+      await writeFile(request, JSON.stringify({ selection, store: item.store, backupId: next.manifest.backupId, expectedSelectionDigest: next.manifest.selectionDigest, plan: next }));
+      const prepared = invoke(["config-backup-prepare", ...target, "--request", request]);
+      assert.equal(prepared.status, "pending"); assert.deepEqual(prepared.index.activeBackupIds, receipt.index.activeBackupIds);
+      // A later invocation loses the prepare return but retains its original private request.
+      const originalRequest = JSON.parse(await readFile(request, "utf8"));
+      const stageDirectory = `${next.manifest.createdAtUtc.replace(/[:.]/gu, "-")}-${next.manifest.backupId}`;
+      const stageRoot = join(item.root, "config-backup-staging", "fixture-device", item.store.binding.backupGroupId, stageDirectory);
+      await rm(join(stageRoot, "manifest.json")); await rm(join(stageRoot, next.manifest.files[0].memberPath));
+      invoke(["machine-settings-set", "--key", "portal.defaultTheme", "--value", "dark", "--at", at]);
+      const stale = call(["config-backup-prepare", ...target, "--request", request]);
+      assert.equal(stale.status, 1); assert.equal(JSON.parse(lastLine(stale.stderr)).reasonCode, "CONFIG_BACKUP_PLAN_CHANGED");
+      await writeFile(request, JSON.stringify({ store: item.store, mode: "repair-staged", plan: originalRequest.plan }));
+      const repaired = invoke(["config-backup-resume", ...target, "--request", request]);
+      assert.equal(repaired.reason, "remote-verification-required"); assert.equal(repaired.index.transactions[0].backupId, originalRequest.plan.manifest.backupId);
+      assert.deepEqual(invoke(["config-backup-verify", "--package", stageRoot]).manifest, originalRequest.plan.manifest);
+      const raw = join(isolated.root, "downloaded-staged-package");
+      await cp(join(item.root, "config-backup-staging", "fixture-device", item.store.binding.backupGroupId, prepared.index.transactions[0].directory), raw, { recursive: true });
+      const checked = invoke(["config-backup-verify", "--package", raw]); assert.equal(checked.integrity, "verified");
+      const observation = async (areaId, verifiedAt) => ({ packageRoot: raw, backupId: next.manifest.backupId, manifestDigest: checked.manifest.manifestDigest, packageId: "fixture-package", packageParentId: areaId, membersDirectory: { id: "fixture-members", parentId: "fixture-package", name: "members" }, areaId, evidenceRef: "fixture:raw-byte-readback", verifiedAt,
+        files: await Promise.all([...checked.manifest.files.map(f => f.memberPath), "manifest.json"].map(async (path, i) => { const bytes = await readFile(join(raw, path)); return { path, id: `fixture-file-${i}`, parentId: path === "manifest.json" ? "fixture-package" : "fixture-members", bytes: bytes.length, sha256: configBackupDigest(bytes), publishedAt: at, downloadedAt: verifiedAt }; })) });
+      const begin = { schemaVersion: "einzbern.config-backup-remote-begin.v1", backupId: next.manifest.backupId, locations: { destinationRef: "fixture:remote", stagingAreaId: "stage", activeAreaId: "active", recoveryAreaId: "recovery" }, replacement: await observation("stage", at), original: null };
+      await writeFile(request, JSON.stringify({ store: item.store, mode: "begin", evidence: begin }));
+      const begun = invoke(["config-backup-commit", ...target, "--request", request]); assert.equal(begun.index.transactions[0].remote.phase, "commit-pending");
+      const complete = { schemaVersion: "einzbern.config-backup-remote-complete.v1", backupId: next.manifest.backupId, beginDigest: configBackupDigest(configBackupCanonical(begin)), replacement: await observation("active", "2026-10-22T00:00:02Z"), original: null, retiredAt: null, promotedAt: "2026-10-22T00:00:01Z" };
+      await writeFile(request, JSON.stringify({ store: item.store, mode: "complete", evidence: complete }));
+      const settled = invoke(["config-backup-commit", "--project", project, "--project-id", projectId, "--at", "2026-10-22T00:00:03Z", "--request", request]);
+      assert.equal(settled.status, "settled"); assert.equal(settled.index.active.length, 2); assert.equal(settled.index.syncStatus, "unknown");
+    }
+
   }
 });
 

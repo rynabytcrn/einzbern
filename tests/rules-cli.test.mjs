@@ -116,7 +116,7 @@ test("483-AC1 via rule-enable: batch processing's v3 text goes into AGENTS.md, t
   assert.equal(await readFile(enabled.backupPath, "utf8"), USER_TEXT, "AGENTS.md was backed up before it was replaced");
   const text = await readFile(agents, "utf8");
   assert.equal(text.startsWith(`${USER_TEXT}\n`), true, "the user's text stays where it was");
-  assert.equal(sectionOf(text, "rule:batch").body, await readFile(join(fixtures, "batch.zh.md"), "utf8"), "the section holds the v3 text");
+  assert.equal(sectionOf(text, "rule:batch").body, builtInRule("batch").body.zh, "the section holds the v3 text");
   assert.deepEqual(await ruleOf(project, "batch"), enabledRule);
 
   // agents-render renders the enabled rule's section with the others and leaves it as it is.
@@ -137,7 +137,7 @@ test("483-AC2 via rule-list: a section changed by one character reads user-modif
   const { device, project, agents } = await scratch(context);
   await enable(project, "batch");
   const written = await readFile(agents, "utf8");
-  const edited = written.replace("批的单位", "批的单元");
+  const edited = written.replace("批量处理原则", "批量处理准则");
   assert.equal(edited.length, written.length);
   await writeFile(agents, edited);
   assert.deepEqual(await ruleOf(project, "batch"), { id: "batch", version: 3, recordedVersion: 3, fileVersion: 1, section: "rule:batch", state: "user-modified" });
@@ -155,7 +155,7 @@ test("483-AC2 via rule-list: a section changed by one character reads user-modif
 test("483-AC4 via rule-enable and rule-resolve: a refused write reads pending; after keep, neither rule-enable nor agents-render writes the section", async (context) => {
   const { project, agents } = await scratch(context);
   await enable(project, "batch");
-  const edited = (await readFile(agents, "utf8")).replace("批的单位", "批的单元");
+  const edited = (await readFile(agents, "utf8")).replace("批量处理原则", "批量处理准则");
   await writeFile(agents, edited);
 
   const refused = await enable(project, "batch");
@@ -181,7 +181,7 @@ test("483-AC4 via rule-enable and rule-resolve: a refused write reads pending; a
 test("483-R2 via rule-disable: a changed section goes only with --force true, and the refusal names the file and the section", async (context) => {
   const { device, project, agents } = await scratch(context);
   await enable(project, "batch");
-  const edited = (await readFile(agents, "utf8")).replace("批的单位", "批的单元");
+  const edited = (await readFile(agents, "utf8")).replace("批量处理原则", "批量处理准则");
   await writeFile(agents, edited);
 
   const refused = shipped(["rule-disable", "--project", project, "--id", "batch", "--at", at()], { device });
@@ -225,14 +225,14 @@ test("483-R2, R3: the rule verbs' refusals, and a rule recorded at another versi
   const first = await render(project);
   assert.deepEqual(first.sections.find((section) => section.id === "rule:batch"), { id: "rule:batch", file: "AGENTS.md", result: "replace", state: "managed" });
   const settled = await readFile(agents, "utf8");
-  assert.equal(sectionOf(settled, "rule:batch").body, await readFile(join(fixtures, "batch.zh.md"), "utf8"), "the selected catalog text is rendered");
+  assert.equal(sectionOf(settled, "rule:batch").body, builtInRule("batch").body.zh, "the selected catalog text is rendered");
   assert.deepEqual(await ruleOf(project, "batch"), { id: "batch", version: 3, recordedVersion: 1, fileVersion: 2, section: "rule:batch", state: "enabled" });
   const rendered = await render(project);
   assert.deepEqual([rendered.recorded, rendered.files.some((file) => file.written)], [0, false]);
   assert.equal(await readFile(agents, "utf8"), settled, "the file is byte for byte what it was");
   const updated = await enable(project, "batch");
   assert.deepEqual([updated.result, updated.recorded, updated.rule.state, updated.rule.recordedVersion, updated.rule.fileVersion], ["unchanged", 1, "enabled", 3, 2]);
-  assert.equal(sectionOf(await readFile(agents, "utf8"), "rule:batch").body, await readFile(join(fixtures, "batch.zh.md"), "utf8"));
+  assert.equal(sectionOf(await readFile(agents, "utf8"), "rule:batch").body, builtInRule("batch").body.zh);
   const current = await readFile(agents, "utf8");
 
   // Recorded at a newer version by a newer engine: this one refuses to write its older text.
@@ -264,14 +264,14 @@ test("INIT-053 AC2: v2 through CLI: the rule verbs' refusals, and a rule recorde
   const first = await render(project);
   assert.deepEqual(first.sections.find((section) => section.id === "rule:batch"), { id: "rule:batch", file: "AGENTS.md", result: "replace", state: "managed" });
   const settled = await readFile(agents, "utf8");
-  assert.equal(sectionOf(settled, "rule:batch").body, await readFile(join(fixtures, "batch.zh.md"), "utf8"), "the selected catalog text is rendered");
+  assert.equal(sectionOf(settled, "rule:batch").body, builtInRule("batch").body.zh, "the selected catalog text is rendered");
   assert.deepEqual(await ruleOf(project, "batch"), { id: "batch", version: 3, recordedVersion: 2, fileVersion: 2, section: "rule:batch", state: "enabled" });
   const rendered = await render(project);
   assert.deepEqual([rendered.recorded, rendered.files.some((file) => file.written)], [0, false]);
   assert.equal(await readFile(agents, "utf8"), settled, "the file is byte for byte what it was");
   const updated = await enable(project, "batch");
   assert.deepEqual([updated.result, updated.recorded, updated.rule.state, updated.rule.recordedVersion, updated.rule.fileVersion], ["unchanged", 1, "enabled", 3, 2]);
-  assert.equal(sectionOf(await readFile(agents, "utf8"), "rule:batch").body, await readFile(join(fixtures, "batch.zh.md"), "utf8"));
+  assert.equal(sectionOf(await readFile(agents, "utf8"), "rule:batch").body, builtInRule("batch").body.zh);
   const current = await readFile(agents, "utf8");
 
   // Recorded at a newer version by a newer engine: this one refuses to write its older text.
@@ -387,7 +387,7 @@ test("INIT-062 universal autonomy and branch contracts reach ordinary host files
     }
     await render(project);
     const text = await readFile(agents, "utf8");
-    for (const id of ["autonomy", "residue-cleanup"]) assert.equal(sectionOf(text, `rule:${id}`).body, await readFile(join(fixtures, `${id}.${suffix}.md`), "utf8"));
+    for (const id of ["autonomy", "residue-cleanup"]) assert.equal(sectionOf(text, `rule:${id}`).body, builtInRule(id).body[suffix]);
     assert.ok((await readFile(join(project, "CLAUDE.md"), "utf8")).includes("@AGENTS.md"), "Claude consumes the same ordinary-host rules");
     assert.equal(text.startsWith(USER_TEXT), true);
   });

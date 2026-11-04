@@ -44,7 +44,7 @@ import {
   setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
-import { CODEX_CONFIG_FILE, HOST_HOOK_FILES, isEinzbernHookCommand, isLegacyHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
+import { CODEX_CONFIG_FILE, HOST_HOOK_FILES, hostHookCommand, isEinzbernHookCommand, isLegacyHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 import { LEGACY_PORTAL_LAUNCHERS, LEGACY_TEMPLATE_DIRECTORIES } from "../dist/build/packages/core/src/migrate-cleanup.js";
 import { MIGRATION_MAPPING_SCHEMA_VERSION } from "../dist/build/packages/core/src/migrate-legacy.js";
 import { LEGACY_INERT_SETTINGS_KEY, LEGACY_INJECTION_STATE_DIRECTORY } from "../dist/build/packages/core/src/names.js";
@@ -413,7 +413,7 @@ test("489-AC1, AC2, AC3, AC4 (fixture): setup --mode migrate --yes true on a mac
   const userClaude = await readJson(join(m.home, CLAUDE));
   assert.deepEqual([userClaude.env, userClaude.permissions, userClaude.hooks.UserPromptSubmit[1]], [{ KEEP: "1" }, { deny: [] }, OTHER_PROMPT]);
   assert.deepEqual(await readJson(join(m.container, CLAUDE)), { env: { CONTAINER: "1" }, hooks: {}, permissions: { deny: [] } });
-  assert.deepEqual((await readJson(join(m.home, CODEX))).hooks.PreToolUse, [OTHER_TOOL, { hooks: [{ type: "command", command: `node "${join(m.device, "engine", "hook.mjs")}" pre-tool-use` }] }]);
+  assert.deepEqual((await readJson(join(m.home, CODEX))).hooks.PreToolUse, [OTHER_TOOL, { hooks: [{ type: "command", command: hostHookCommand(join(m.device, "engine", "hook.mjs"), "PreToolUse", m.home) }] }]);
   const config = await readFile(join(m.home, CODEX_CONFIG_FILE), "utf8");
   assert.match(config, /^\[features\]\nhooks = true\n/u);
   assert.equal(config.includes(join(m.container, CODEX)), false, "no trust state of a removed hook stays");

@@ -39,7 +39,7 @@ const PROCEDURE_FILES = { batch: "batch-execution-v1.md", "residue-cleanup": "re
 function proceduralRule(id) {
   const rule = builtInRule(id);
   if (!PROCEDURE_FILES[id]) return rule;
-  const text = readFileSync(resolve(fixtures, "../../../specs", PROCEDURE_FILES[id]), "utf8");
+  const text = readFileSync(resolve(import.meta.dirname, "..", "specs", PROCEDURE_FILES[id]), "utf8");
   const body = Object.fromEntries(LANGUAGES.map(language => {
     const heading = `## ${rule.title[language]} v${rule.version}\n`;
     const start = text.indexOf(heading);

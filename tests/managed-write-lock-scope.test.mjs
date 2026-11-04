@@ -197,7 +197,7 @@ test("538 GWT3: while another process holds the lock, rule-enable, rule-disable,
   // rule-resolve overwrites a section the user changed; the change is made before each hold.
   const userChange = async () => {
     const text = await readFile(paths.agents, "utf8");
-    await writeFile(paths.agents, text.replace(NAVIGATION_LINES[2], "Recall first, always."));
+    await writeFile(paths.agents, text.replace(NAVIGATION_LINES[0], "Recall first, always."));
     await write["agents-render"]();
   };
   const steps = [
@@ -211,7 +211,7 @@ test("538 GWT3: while another process holds the lock, rule-enable, rule-disable,
     }],
     ["rule-resolve", userChange, async ({ change }) => {
       assert.deepEqual([change.result, change.written, change.record.state], ["overwritten", true, "managed"]);
-      assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "navigation").body.includes(NAVIGATION_LINES[2]), true);
+      assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "navigation").body.includes(NAVIGATION_LINES[0]), true);
     }],
     ["variable sections", () => seedLegacyVariableSections({ libraryRoot: paths.root, projectRoot: paths.project, occurredAt: at(), ids: ["variables-custom"] }), async (result) => {
       assert.equal(result.written, true);
@@ -308,7 +308,7 @@ test("538 GWT3, 489: a write whose append fails after it wrote puts the files ba
   await unchanged("rule-disable", () => write["rule-disable"](failing));
   assert.notEqual(sectionOf(await readFile(paths.agents, "utf8"), `rule:${RULE}`), null, "the rule's section is back in the file");
   const text = await readFile(paths.agents, "utf8");
-  await writeFile(paths.agents, text.replace(NAVIGATION_LINES[2], "Recall first, always."));
+  await writeFile(paths.agents, text.replace(NAVIGATION_LINES[0], "Recall first, always."));
   await write["agents-render"]();
   await unchanged("rule-resolve", () => write["rule-resolve"](failing));
 

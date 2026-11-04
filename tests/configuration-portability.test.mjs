@@ -68,7 +68,7 @@ test("logical bindings resolve from this device, never from the library; absent 
     assert.throws(() => resolvePortablePath(root, "binding:paths.artifacts", device), { reasonCode: "MACHINE_SETTINGS_FILE_INVALID" });
   }
   await writeFile(join(device, "machine-settings.json"), JSON.stringify(machineFile({ "paths.artifacts": "relative" })));
-  assert.throws(() => resolvePortablePath(root, "binding:paths.artifacts", device), { reasonCode: "MACHINE_SETTING_VALUE_INVALID" });
+  assert.equal(resolvePortablePath(root, "binding:paths.artifacts", device), join(device, "relative"));
   assert.equal(MACHINE_SETTINGS_CATALOG.find((entry) => entry.key === "execution.maxConcurrentAgents").defaultValue, "8");
 });
 

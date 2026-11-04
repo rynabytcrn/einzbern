@@ -532,12 +532,13 @@ test("489-R2 (registry): an entry with migratedFrom reads beside one without, re
   await registerLibrary({ projectPath: m.container, libraryPath: other, registeredAt: at(), cloudHosted: false, gitRemote: null }, m.deviceHome);
   assert.equal(await findMigratedEntry(crossProject.root, m.deviceHome), null);
 
-  // An entry whose migratedFrom is not an absolute path is never written, and a registry holding
-  // one does not read.
-  await assert.rejects(registerLibrary({ projectPath: m.container, libraryPath: targets[0], registeredAt: at(), migratedFrom: "old/workspace" }, m.deviceHome),
+  // Relative migration provenance reads from the device record; empty provenance is refused.
+  await assert.rejects(registerLibrary({ projectPath: m.container, libraryPath: targets[0], registeredAt: at(), migratedFrom: "" }, m.deviceHome),
     { reasonCode: "LIBRARY_REGISTRY_INVALID" });
   const document = JSON.parse(await readFile(registryFile, "utf8"));
   await writeFile(registryFile, JSON.stringify({ ...document, entries: [{ ...document.entries[0], migratedFrom: "relative/path" }] }));
+  assert.equal((await readRegistry(m.deviceHome)).entries[0].migratedFrom, join(m.deviceHome, "relative/path"));
+  await writeFile(registryFile, JSON.stringify({ ...document, entries: [{ ...document.entries[0], migratedFrom: "" }] }));
   await assert.rejects(readRegistry(m.deviceHome), { reasonCode: "LIBRARY_REGISTRY_INVALID" });
 });
 

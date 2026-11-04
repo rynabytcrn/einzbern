@@ -8,7 +8,7 @@ import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
@@ -111,7 +111,7 @@ test("470-AC5: a library given through a symbolic link is created, registered an
   const registry = JSON.parse(await readFile(join(base, "device", "registry.json"), "utf8"));
   // init --project also created and registered this device's coordination library (EPIC-144 R2),
   // in the device directory and not cloud-hosted; the project's entry is the real library path.
-  const coordination = join(base, "device", "coordination-library");
-  assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.cloudHosted]), [[coordination, coordination, false], [project, realLibrary, true]]);
+  assert.equal(registry.schemaVersion, "einzbern.registry.v2");
+  assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.cloudHosted]), [["coordination-library", "coordination-library", false], [relative(join(base, "device"), project), relative(join(base, "device"), realLibrary), true]]);
   assert.equal((await cli(["library-resolve", "--cwd", project])).libraryPath, realLibrary);
 });

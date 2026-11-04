@@ -106,29 +106,33 @@ test("540 GWT5: a coordination library selected in Atelier shows the container's
   // The render is the engine's agents-render receipt for the container, not a pending binding.
   assert.deepEqual([variable.body.ok, variable.body.render.reasonCode, variable.body.render.projectPath], [true, "AGENTS_RENDERED", fixture.container], JSON.stringify(variable.body.render));
   text = await readFile(fixture.agents, "utf8");
-  assert.match(section(text, "variables-custom") ?? "", /\| sample \| string \| hello \| A sample \|/u, "the variable is rendered into the container's AGENTS.md");
+  assert.equal(section(text, "variables-custom"), null);
+  assert.equal(variable.body.readback.value, "hello", "the value is available through the configuration readback");
   events = await eventsSince(fixture, from);
   assert.deepEqual(events.filter((event) => event.record?.collection === "variable").map((event) => [event.record.key, event.surface]), [["sample", "atelier"]]);
 
   const changed = await request(fixture.url, "/api/variables", write("POST", { name: "sample", type: "string", value: "world", description: "A sample", exports: ["agents"] }));
   assert.equal(changed.response.status, 200, JSON.stringify(changed.body));
   text = await readFile(fixture.agents, "utf8");
-  assert.match(section(text, "variables-custom") ?? "", /\| sample \| string \| world \| A sample \|/u, "a changed variable renders the section again");
+  assert.equal(section(text, "variables-custom"), null);
+  assert.equal(changed.body.readback.value, "world");
 
-  // A setting the coordination library's system section shows renders the file again (W2B-P5).
-  assert.match(section(text, "variables-system") ?? "", /\| execution\.maxConcurrentSubagents \| 8 \|/u);
+  // Settings remain queryable without creating a system-variable snapshot.
+  assert.equal(section(text, "variables-system"), null);
   const setting = await request(fixture.url, "/api/settings", write("POST", { key: "execution.maxConcurrentSubagents", value: "3" }));
   assert.equal(setting.response.status, 200, JSON.stringify(setting.body));
   assert.deepEqual([setting.body.ok, setting.body.render?.reasonCode, setting.body.render?.projectPath], [true, "AGENTS_RENDERED", fixture.container], "the write is followed by a render of the container's AGENTS.md");
   text = await readFile(fixture.agents, "utf8");
-  assert.match(section(text, "variables-system") ?? "", /\| execution\.maxConcurrentSubagents \| 3 \|/u, "the system section shows the new limit");
+  assert.equal(section(text, "variables-system"), null);
+  assert.equal(setting.body.readback.currentValue, "3");
 
   // The artifact language picks the sections' language (Q4), so a change of it renders them again.
   const language = await request(fixture.url, "/api/settings", write("POST", { key: "artifact.language", value: "zh-CN" }));
   assert.equal(language.response.status, 200, JSON.stringify(language.body));
   assert.deepEqual([language.body.ok, language.body.render?.reasonCode], [true, "AGENTS_RENDERED"]);
   const translated = await readFile(fixture.agents, "utf8");
-  assert.notEqual(section(translated, "variables-system"), section(text, "variables-system"), "the system section is written again in the library's language");
+  assert.notEqual(section(translated, "rule:autonomy"), section(text, "rule:autonomy"), "the principle follows the configured language");
+  assert.equal(section(translated, "variables-system"), null);
 
   // The rule is switched off from the same page, and the file follows.
   const disabled = await request(fixture.url, "/api/rules/autonomy", write("POST", { action: "disable" }));

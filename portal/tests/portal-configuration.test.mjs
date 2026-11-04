@@ -269,7 +269,7 @@ test("rules routes expose state, enable a rule, judge a saved edit as user-modif
   assert.equal(batchOf(enabled.body).state, "enabled");
   const original = await readFile(agentsPath, "utf8");
   assert.match(original, /id=rule:batch/u);
-  const edited = original.replace("All open Stories", "All open stories");
+  const edited = original.replace("Batch Processing", "Batch processing");
   assert.equal([...edited].filter((character, index) => character !== [...original][index]).length, 1, "one character of the rule's text");
 
   // AC2: the save is judged: user-modified, the file is the bytes saved, and nothing is pending
@@ -307,7 +307,8 @@ test("rules routes expose state, enable a rule, judge a saved edit as user-modif
   assert.equal(again.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
   assert.deepEqual(again.body.render.pending, []);
   const settled = await readFile(agentsPath, "utf8");
-  assert.match(settled, /stage\.example\.com/u, "the engine still renders the sections it owns");
+  assert.doesNotMatch(settled, /stage\.example\.com/u);
+  assert.equal(again.body.readback.value, "stage.example.com", "configuration readback retains the saved value");
   assert.equal(managedSection(settled, "rule:batch").raw, managedSection(edited, "rule:batch").raw, "the kept section is the user's text");
   assert.equal(batchOf((await request(url, "/api/rules", readOptions(boot.token))).body).state, "user-modified");
 
@@ -639,10 +640,9 @@ test("SUB-410 (STORY-508 R7): the variable, rule and gate routes write an order 
   const malformed = await post("/api/variables", { name: "deploy.host", type: "string", value: "x", order: "0" });
   assert.equal(malformed.response.status, 409);
   assert.equal(malformed.body.reasonCode, "CLI_ARGUMENT_MALFORMED");
-  // The variable write rendered the system variables section too; its heading models.escalation names
-  // the family of the three escalation keys, so the Rules page's check does not count it as a claim.
+  // Variable writes preserve the Skill entry without emitting a host policy snapshot.
   const reconciled = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
-  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /execution-policy-resolve/u, "shared output names the runtime policy resolver instead of freezing a host choice");
+  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /Mana Orchestrate/u, "shared output routes configuration queries through the Skill");
   assert.deepEqual(reconciled.body.findings.filter((row) => row.key.startsWith("models.")), []);
 
   const rule = await post("/api/rules/batch", { action: "enable", order: 2 });

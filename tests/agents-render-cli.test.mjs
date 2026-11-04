@@ -130,7 +130,7 @@ test("478-AC1 via agents-render: a section changed by one character stays as it 
   assert.equal(await readFile(claude, "utf8"), renderSection({ id: "claude-import", rev: 1, body: "@AGENTS.md\n" }), "a new CLAUDE.md holds the import section alone");
 
   // The user changes one character of the navigation section; the system variables change in the library.
-  const edited = written.replace("Recall first:", "Recall frst:");
+  const edited = written.replace("Load and follow", "Load and folow");
   assert.equal(edited.length, written.length - 1);
   await writeFile(agents, edited);
   const settingsArgs = ["settings-set", "--workspace", library, "--key", "design.authority", "--value", "https://design.example.com/system", "--at", at()];
@@ -196,7 +196,7 @@ test("478-AC3 via the shipped entry: markers that do not parse refuse the whole 
 test("478-R3 via rule-resolve: after keep, agents-render never writes that section; overwrite then needs --force; unmanage leaves the text", async (context) => {
   const { device, project, projectId, agents } = await scratch(context);
   await render(project);
-  const edited = (await readFile(agents, "utf8")).replace("Recall first:", "Recall frst:");
+  const edited = (await readFile(agents, "utf8")).replace("Load and follow", "Load and folow");
   await writeFile(agents, edited);
   assert.deepEqual((await render(project)).pending, [{ id: "navigation", file: "AGENTS.md" }]);
 
@@ -226,7 +226,7 @@ test("478-R3 via rule-resolve: after keep, agents-render never writes that secti
   const unmanaged = await cli(["rule-resolve", "--project", project, "--section", "navigation", "--action", "unmanage", "--at", at()]);
   assert.deepEqual([unmanaged.result, unmanaged.state, unmanaged.written], ["unmanaged", "unmanaged", true]);
   const text = await readFile(agents, "utf8");
-  assert.deepEqual([text.includes("id=navigation"), text.includes(NAVIGATION_LINES[2])], [false, true]);
+  assert.deepEqual([text.includes("id=navigation"), text.includes(NAVIGATION_LINES[0])], [false, true]);
   const last = await render(project);
   assert.deepEqual(last.sections.find((section) => section.id === "navigation"), { id: "navigation", file: "AGENTS.md", result: "unchanged", state: "unmanaged" });
   assert.equal(last.files.some((file) => file.written), false);

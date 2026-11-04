@@ -221,8 +221,9 @@ export interface RegisterLibraryInput {
   readonly cloudHosted?: boolean;
   // The project's remote; when left out it is read from the project's working tree, if any.
   readonly gitRemote?: string | null;
-  // The old-layout workspace the library was migrated from (TCRN-CROSS-STORY-489 R2), an absolute
-  // path. Left out, an entry the project already has for the same library keeps its own.
+  // The old-layout workspace the library was migrated from (TCRN-CROSS-STORY-489 R2), resolved
+  // from the caller and persisted relative to the registry. Left out, an entry the project already
+  // has for the same library keeps its own.
   readonly migratedFrom?: string;
 }
 
@@ -231,7 +232,7 @@ export async function registerLibrary(input: RegisterLibraryInput, home?: string
   assertStrictInstant(input.registeredAt);
   if (input.migratedFrom !== undefined && !isMigratedFrom(input.migratedFrom)) {
     // The registry would not read again with such an entry, so it is never written.
-    fail("LIBRARY_REGISTRY_INVALID", "migratedFrom must be an absolute path", { field: "migratedFrom" });
+    fail("LIBRARY_REGISTRY_INVALID", "migratedFrom must be a nonempty path without NUL", { field: "migratedFrom" });
   }
   const projectPath = await real(input.projectPath);
   const library = await openLibrary(await real(input.libraryPath));

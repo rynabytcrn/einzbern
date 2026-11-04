@@ -554,7 +554,7 @@ test("INIT062 new valueShape roster is closed and preserves the existing transpo
     "execution-native-prepare:request", "execution-native-prepare:tool-contract", "execution-native-prepare:arguments", "execution-native-prepare:retry-from", "execution-native-prepare:reconciliation", "execution-native-record:response", "execution-native-record:prior", "setup:codex-admission", "setup:execution-target", "setup:dot-input", "setup:approved-plan-digest",
   ]);
   const setup = entries.find(entry => entry.name === "setup");
-  assert.deepEqual(setup.flags.filter(flag => flag.valueShape !== undefined).map(flag => flag.valueShape), ["absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override", "traditional | chatgpt-dot", "absolute path to JSON dot target options; required for chatgpt-dot", "saved preview dot.planDigest; required for dot apply"]);
+  assert.deepEqual(setup.flags.filter(flag => flag.valueShape !== undefined).map(flag => flag.valueShape), ["JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override", "traditional | chatgpt-dot", "path to JSON dot target options; required for chatgpt-dot", "saved preview dot.planDigest; required for dot apply"]);
   for (const entry of entries) for (const flag of entry.flags.filter(flag => flag.valueShape !== undefined)) assert.equal(flag.valueKind, "string");
 });
 

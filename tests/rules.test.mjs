@@ -110,7 +110,7 @@ test("483-R2: every rule is off until it is enabled, and listing the rules write
 
 test("483-AC1: enabling batch processing writes its v3 text into AGENTS.md as a managed section, and the rule reads enabled", async (context) => {
   const paths = await scratch(context);
-  const v3 = await readFile(join(fixtures, "batch.zh.md"), "utf8");
+  const v3 = builtInRule("batch").body.zh;
   assert.equal(v3.split("\n")[0], "## 批量处理原则 v3");
 
   const change = await enable(paths, "batch");
@@ -157,7 +157,7 @@ test("483-AC2: a section changed by one character reads user-modified; an editor
   await writeFile(paths.agents, resaved);
   assert.equal((await ruleOf(paths, "batch")).state, "enabled");
 
-  const edited = resaved.replace("批的单位", "批的单元");
+  const edited = resaved.replace("批量处理原则", "批量处理准则");
   assert.equal(edited.length, resaved.length);
   await writeFile(paths.agents, edited);
   const batch = await ruleOf(paths, "batch");
@@ -170,7 +170,7 @@ test("483-AC3: a newer version of a rule reads update-available and leaves the f
   const paths = await scratch(context);
   const catalog = await catalogWithBatchV1();
   const v1 = await readFile(join(fixtures, "batch-v1.zh.md"), "utf8");
-  const v3 = await readFile(join(fixtures, "batch.zh.md"), "utf8");
+  const v3 = builtInRule("batch").body.zh;
 
   // Enabled while the engine shipped batch processing v1.
   const first = await enable(paths, "batch", { catalog });
@@ -231,7 +231,7 @@ test("T15: rule-resolve overwrite records the version of the body it writes", as
   const paths = await scratch(context);
   const catalog = await catalogWithBatchV1();
   await enable(paths, "batch", { catalog });
-  const changed = (await readFile(paths.agents, "utf8")).replace("批的单位", "批的单元");
+  const changed = (await readFile(paths.agents, "utf8")).replace("批量处理原则", "批量处理准则");
   await writeFile(paths.agents, changed);
   assert.equal((await ruleOf(paths, "batch")).state, "user-modified");
   await registerLibrary({ projectPath: paths.project, projectId: paths.projectId, libraryPath: paths.library, registeredAt: at() });
@@ -239,7 +239,7 @@ test("T15: rule-resolve overwrite records the version of the body it writes", as
   const receipt = await cli(["rule-resolve", "--project", paths.project, "--section", "rule:batch", "--action", "overwrite", "--at", at()]);
   assert.deepEqual([receipt.reasonCode, receipt.result, receipt.state], ["MANAGED_SECTION_RESOLVED", "overwritten", "managed"]);
   const section = sectionOf(await readFile(paths.agents, "utf8"), "rule:batch");
-  const v3 = await readFile(join(fixtures, "batch.zh.md"), "utf8");
+  const v3 = builtInRule("batch").body.zh;
   assert.equal(section.body, v3, "the explicit overwrite writes the current engine text");
   assert.deepEqual(await sectionRecord(paths, "batch"), {
     file: "AGENTS.md", id: "rule:batch", rev: 2, digest: sectionDigest(v3), state: "managed",
@@ -268,7 +268,7 @@ test("T15: rule-resolve overwrite refuses to replace a newer recorded rule with 
 test("483-AC4: a write refused over the user's change waits; after keep the section is the user's and enabling never writes it again", async (context) => {
   const paths = await scratch(context);
   await enable(paths, "batch");
-  const edited = (await readFile(paths.agents, "utf8")).replace("批的单位", "批的单元");
+  const edited = (await readFile(paths.agents, "utf8")).replace("批量处理原则", "批量处理准则");
   await writeFile(paths.agents, edited);
   assert.equal((await ruleOf(paths, "batch")).state, "user-modified");
 
@@ -305,7 +305,7 @@ test("483-R2: disabling a rule the user changed needs force; an unchanged one go
   assert.notEqual(sectionOf(text, "rule:batch"), null, "the other rule's section stays");
   assert.equal(await readFile(off.backupPath, "utf8"), both, "the file is backed up as it was just before");
 
-  const edited = text.replace("批的单位", "批的单元");
+  const edited = text.replace("批量处理原则", "批量处理准则");
   await writeFile(paths.agents, edited);
   const refused = await refusal(() => disable(paths, "batch"));
   assert.deepEqual([refused.reasonCode, refused.details.section, refused.details.state], ["MANAGED_SECTION_FORCE_REQUIRED", "rule:batch", "user-modified"]);
@@ -433,7 +433,7 @@ test("508-R7: GIVEN rules with an order WHEN they are enabled and AGENTS.md is r
 test("508-R7: a section the user changed keeps its place and its text while the other rule sections are arranged around it", async (context) => {
   const paths = await scratch(context);
   for (const id of ["autonomy", "batch", "silent-reporting"]) await enable(paths, id);
-  const edited = (await readFile(paths.agents, "utf8")).replace("批的单位", "批的单元");
+  const edited = (await readFile(paths.agents, "utf8")).replace("批量处理原则", "批量处理准则");
   await writeFile(paths.agents, edited);
   const change = await enable(paths, "silent-reporting", { order: 1 });
   assert.deepEqual([change.result, change.written, change.recorded], ["unchanged", true, 1]);
@@ -537,7 +537,7 @@ test("489: a rule-enable whose records went in before the failure (a crash after
   assert.notDeepEqual(await libraryHead(paths), head, "the records went in");
   assert.deepEqual(await ruleRecord(paths, "batch"), { enabled: true, version: 3 });
   const text = await readFile(paths.agents, "utf8");
-  assert.equal(sectionOf(text, "rule:batch")?.body, await readFile(join(fixtures, "batch.zh.md"), "utf8"), "so the section stays where it was written");
+  assert.equal(sectionOf(text, "rule:batch")?.body, builtInRule("batch").body.zh, "so the section stays where it was written");
   assert.equal(text.startsWith(`${USER_TEXT}\n`), true, "and the user's text where it was");
   const again = await enable(paths, "batch");
   assert.deepEqual([again.result, again.written, again.recorded, again.status.state], ["unchanged", false, 0, "enabled"], "the file and the records agree");
@@ -556,7 +556,7 @@ test("489: a rule-disable whose records cannot be committed puts the section bac
   assert.equal(await backedUp(paths, both), true, "the backup the write made stays");
 
   // A section the user changed, disabled with force: the user's text comes back as the user left it.
-  const edited = Buffer.from((await readFile(paths.agents, "utf8")).replace("批的单位", "批的单元"));
+  const edited = Buffer.from((await readFile(paths.agents, "utf8")).replace("批量处理原则", "批量处理准则"));
   await writeFile(paths.agents, edited);
   const forced = await refusal(() => disable(paths, "batch", { force: true, ...OVER_BUDGET }));
   assert.equal(forced.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
@@ -587,7 +587,7 @@ test("489: rule-resolve's two calls each put back only what they wrote, and the 
   const paths = await scratch(context);
   await enable(paths, "autonomy");
   await enable(paths, "batch");
-  await writeFile(paths.agents, (await readFile(paths.agents, "utf8")).replace("批的单位", "批的单元"));
+  await writeFile(paths.agents, (await readFile(paths.agents, "utf8")).replace("批量处理原则", "批量处理准则"));
   assert.equal((await enable(paths, "batch")).status.state, "pending");
   // rule-resolve's first call, resolveAgentsSection, writes the engine's text and records it.
   const { change } = await resolveAgentsSection(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, id: "rule:batch", action: "overwrite", backupRoot: paths.backups, occurredAt: at() });
@@ -705,7 +705,7 @@ test("540 (MIN-259 D1): residue-cleanup and goal-writing are enabled with their 
     assert.equal(both.startsWith(`${USER_TEXT}\n`), true, "the user's text stays where it was");
     if (language === "zh-CN") {
       for (const id of ["residue-cleanup", "goal-writing"]) {
-        assert.equal(sectionOf(both, `rule:${id}`).body, await readFile(join(fixtures, `${id}.zh.md`), "utf8"), `${id}: the Owner's Chinese text`);
+        assert.equal(sectionOf(both, `rule:${id}`).body, builtInRule(id).body.zh, `${id}: the current Chinese principle`);
       }
     }
 

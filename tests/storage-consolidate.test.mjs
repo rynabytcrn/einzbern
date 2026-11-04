@@ -1,7 +1,8 @@
+import { isAbsolute } from "node:path";
 // SPDX-License-Identifier: Apache-2.0
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -118,4 +119,16 @@ test("malformed runtime receipt paths refuse without changing original or landed
   await assert.rejects(configureStorageLocation(f.home, f.from, target, at, decision, true, { forceCopyForTest: true }), /receipt path/);
   assert.equal(await readFile(join(f.runtime, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
   assert.equal(await readFile(join(target, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
+});
+
+
+test("storage repair converts intact legacy absolute forwarding links without moving data", async t => {
+  const f = await fixture(t), target = join(f.root, "Portable parent", "Ether", ".einzbern", f.device.deviceId);
+  await configureStorageLocation(f.home, f.from, target, at, decision, true);
+  const link = join(f.home, "cache");
+  await unlink(link); await symlink(join(target, "cache"), link, "dir");
+  assert.equal(isAbsolute(await readlink(link)), true);
+  await configureStorageLocation(f.home, f.from, target, at, decision, true);
+  assert.equal(isAbsolute(await readlink(link)), false);
+  assert.equal(await readFile(join(link, "gate-evidence.log"), "utf8"), "original evidence bytes");
 });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+import { randomUUID } from "node:crypto";
 import { loadPath, storePath } from "./stored-path.js";
-import { lstat, mkdir, readFile, readdir, realpath, symlink } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, readlink, realpath, rename, symlink, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
@@ -48,7 +49,7 @@ export async function configureStorageLocation(home: string, library: string, ru
         }
         const occupied = await lstat(destination).then(stat => { if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("STORAGE_UNSAFE_PATH"); return true; }, error => { if (error.code === "ENOENT") return false; throw error; });
         if (sourceStat === null) {
-          if (occupied && recorded !== null) await symlink(relative(dirname(source), destination), source, process.platform === "win32" ? "junction" : "dir");
+          if (occupied && recorded !== null) await symlink(relative(dirname(source), destination), source, "dir");
           continue;
         }
         if (!sourceStat.isDirectory()) throw new Error("STORAGE_UNSAFE_PATH");
@@ -56,11 +57,25 @@ export async function configureStorageLocation(home: string, library: string, ru
         if (occupied && !pendingCopy) throw new Error(`STORAGE_TARGET_NOT_EMPTY: ${destination}`);
         await transportRuntimeArea(home, source, destination, at, transportOptions);
         // Historical evidence paths keep resolving, without keeping a second data copy.
-        await symlink(relative(dirname(source), destination), source, process.platform === "win32" ? "junction" : "dir");
+        await symlink(relative(dirname(source), destination), source, "dir");
       }
     }
     const value: StorageLocation = { schemaVersion: "einzbern.storage-location.v2", library: resolve(library), runtime: target, at, decidedIn };
     await writeFileAtomic(join(home, "storage-location.json"), canonicalJson({ ...value, library: storePath(home, value.library), runtime: storePath(home, value.runtime) }));
+    // Refresh only engine forwarding links that still resolve to this configured runtime.
+    // A temporary sibling plus rename avoids an interval with no forwarding link.
+    for (const area of areas) {
+      const source = join(home, area), destination = join(target, area);
+      const stat = await lstat(source).catch(error => { if (error.code === "ENOENT") return null; throw error; });
+      if (!stat?.isSymbolicLink() || !isAbsolute(await readlink(source)) || await realpath(source) !== destination) continue;
+      const temporary = `${source}.portable-${randomUUID()}`;
+      try {
+        await symlink(relative(dirname(source), destination), temporary, "dir");
+        await rename(temporary, source);
+      } finally {
+        await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; });
+      }
+    }
     const { readRegistry } = await import("./registry.js");
     const { planWritableRoots, applyWritableRoots } = await import("./host-writable-roots.js");
     const hostWiring = [];

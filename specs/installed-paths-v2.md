@@ -22,7 +22,9 @@ arguments are observations, not portable configuration to copy into another inst
 Registry, Skill records, machine settings and shared-storage pointers write v2 formats.
 Readers accept legacy v1 records and resolve their absolute paths for compatibility; supported
 writes normalize them. Repair normalizes an intact legacy registry and Skill record even when
-its content and destinations did not otherwise change. Old engines that only understand v1
+its content and destinations did not otherwise change. Storage repair atomically replaces
+legacy absolute forwarding links only when they still resolve to the configured runtime;
+unrelated links and data are preserved. Old engines that only understand v1
 must be updated before consuming these device records; restoring an older engine also needs
 its matching device configuration backup. Shared event history is not rewritten.
 

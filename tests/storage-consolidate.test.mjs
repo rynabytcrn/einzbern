@@ -111,7 +111,9 @@ test("malformed runtime receipt paths refuse without changing original or landed
     forceCopyForTest: true, publicationStepForTest: phase => { if (phase === "verified") throw new Error("interrupted"); },
   }), /interrupted/);
   const path = runtimeTransportReceiptPath(f.home, join(f.runtime, "cache"), join(target, "cache"), at);
-  const receipt = JSON.parse(await readFile(path, "utf8")); receipt.entries[0].path = "../../outside";
+  const receipt = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(JSON.stringify(receipt).includes(f.root), false, "transport records use device-relative paths");
+  receipt.entries[0].path = "../../outside";
   await writeFile(path, JSON.stringify(receipt));
   await assert.rejects(configureStorageLocation(f.home, f.from, target, at, decision, true, { forceCopyForTest: true }), /receipt path/);
   assert.equal(await readFile(join(f.runtime, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");

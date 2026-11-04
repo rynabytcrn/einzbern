@@ -45,7 +45,7 @@ export function readMemoryPolicy(deviceHome) {
   let value;
   try { value = JSON.parse(readFileSync(path, "utf8")); }
   catch (error) { if (error.code === "ENOENT") return null; fail("MEMORY_POLICY_UNREADABLE"); }
-  if (value.schemaVersion !== "tcrn.machine-settings.v1" || !value.values || typeof value.values !== "object" || Array.isArray(value.values)) fail("MEMORY_POLICY_UNREADABLE");
+  if (!["tcrn.machine-settings.v1", "tcrn.machine-settings.v2"].includes(value.schemaVersion) || !value.values || typeof value.values !== "object" || Array.isArray(value.values)) fail("MEMORY_POLICY_UNREADABLE");
   return Object.hasOwn(value.values, MEMORY_POLICY_SETTING) ? parseMemoryPolicy(value.values[MEMORY_POLICY_SETTING]) : null;
 }
 

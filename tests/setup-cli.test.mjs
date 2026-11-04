@@ -1,3 +1,4 @@
+import { isEinzbernHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-480 AC1 to AC5, R5, R6 (TCRN-CROSS-SUB-327): the wizard through the CLI. setup
 // plans and writes nothing without --yes true, applies with it, and reports doctor's eight checks
@@ -13,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 
 import { renderWritableRoots } from "../scripts/host-render.mjs";
@@ -158,7 +159,7 @@ async function einzbernHooks(path) {
   for (const [event, groups] of Object.entries(document.hooks ?? {})) {
     for (const group of groups) {
       for (const hook of group.hooks ?? []) {
-        if (/^node "[^"]+[\\/]engine[\\/]hook\.mjs" [a-z-]+$/u.test(hook.command)) found.push([event, hook.command]);
+        if (isEinzbernHookCommand(hook.command)) found.push([event, hook.command]);
       }
     }
   }
@@ -201,7 +202,7 @@ test("480-AC1, AC2 through the CLI: setup plans without --yes and writes nothing
   assert.deepEqual(rows(applied.written), rows(planned.writes), "the summary lists what the plan said");
   assert.deepEqual(applied.warnings, []);
   assert.deepEqual(applied.library.path, f.library);
-  const coordinationId = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === f.project).libraryId;
+  const coordinationId = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => resolve(f.deviceHome, entry.projectPath) === f.project).libraryId;
   assert.deepEqual(applied.coordination, { libraryId: coordinationId, status: "registered", path: coordination });
   // The self-check: doctor's eight checks, and the hook run once as a host runs it.
   assertChecksGreen(applied.selfCheck.checks);
@@ -223,7 +224,7 @@ test("480-R5 through the CLI: after an apply the hook runs once with the project
   const f = await fixture(context);
   await setup(f, "fresh", "--yes", "true");
   // A library that knows the zebrafish: the prompt "zebrafish" now has a strong hit.
-  const projectId = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === f.project).projectId;
+  const projectId = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => resolve(f.deviceHome, entry.projectPath) === f.project).projectId;
   const idOf = async (key) => (await materializeWorkspace(f.library)).work.find((record) => record.externalKey === key).id;
   await createWork(f.library, { occurredAt: at(), projectId, externalKey: "ZOO-INIT", kind: "Initiative", parentId: null, title: "Aviary initiative", scope: "## Goal\nBuild the heron aviary." });
   await createWork(f.library, { occurredAt: at(), projectId, externalKey: "ZOO-EPIC", kind: "Epic", parentId: await idOf("ZOO-INIT"), title: "Wetland epic", goal: "Keep the flamingo pond." });
@@ -290,7 +291,7 @@ test("480-AC4, AC5 through the CLI: doctor answers eight green checks; uninstall
   const planned = await setup(f, "uninstall");
   assert.deepEqual(planned.questions.map((question) => [question.flag, question.default]), [["--managed-sections", "keep"]]);
   // Removing the project's registration retains the shared library and every byte it holds.
-  const retained = { libraryId: JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === f.project).libraryId, status: "retained", path: null };
+  const retained = { libraryId: JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => resolve(f.deviceHome, entry.projectPath) === f.project).libraryId, status: "retained", path: null };
   assert.deepEqual(planned.coordination, retained);
   const removed = await setup(f, "uninstall", "--managed-sections", "keep", "--yes", "true");
   assert.equal(removed.reasonCode, "SETUP_APPLIED");
@@ -379,6 +380,9 @@ test("dot CLI applies its independent receipt without spawning the traditional s
   const inputPath = join(root, "dot-input.json"); await writeFile(inputPath, JSON.stringify(input));
   const flags = ["setup", "--mode", "fresh", "--project", project, "--at", at(), "--execution-target", "chatgpt-dot", "--dot-input", inputPath];
   const plan = await cli(flags); assert.equal(plan.executionTarget, "chatgpt-dot");
+  await writeFile(inputPath, JSON.stringify({ ...input, binding: { ...input.binding, root: "project", agentsPath: "AGENTS.md", provenancePath: ".dot/provenance.json", backupRoot: ".dot/recovery" }, enginePath: "fixture-engine.mjs", manaSkillPath: "fixture-skill.md" }));
+  assert.equal((await cli(flags.map(value => value === inputPath ? relative(process.cwd(), inputPath) : value))).dot.planDigest, plan.dot.planDigest);
+  await writeFile(inputPath, JSON.stringify(input));
   await assert.rejects(readFile(input.binding.agentsPath), { code: "ENOENT" });
   await assert.rejects(cli([...flags, "--yes", "true"]), { reasonCode: "DOT_PLAN_STALE" });
   // The saved approved preview, not a newly calculated plan, authorizes the write.
@@ -399,7 +403,7 @@ test("dot CLI applies its independent receipt without spawning the traditional s
   const skipped = await cli(flags);
   assert.equal((await cli([...flags, "--yes", "true", "--approved-plan-digest", skipped.dot.planDigest])).reasonCode, "SETUP_DOT_SKIPPED");
   await assert.rejects(cli([...flags, "--cloud", "true"]), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
-  await assert.rejects(cli(flags.map(value => value === inputPath ? "relative.json" : value)), { reasonCode: "CLI_ARGUMENT_MALFORMED" });
+  await assert.rejects(cli(flags.map(value => value === inputPath ? "relative.json" : value)), { reasonCode: "SETUP_INPUT_INVALID" });
   await writeFile(inputPath, JSON.stringify({ ...input, at: "override" }));
   await assert.rejects(cli(flags), { reasonCode: "SETUP_INPUT_INVALID" });
   await writeFile(inputPath, JSON.stringify({ ...input, unknown: true }));
@@ -423,7 +427,7 @@ test("setup CLI reads explicit synthetic Codex observations through normal fresh
   const hooksPath = join(f.home, ".codex", "hooks.json");
   assert.equal(JSON.parse(await readFile(hooksPath, "utf8")).hooks.SubagentStop, undefined);
   assert.deepEqual((await setup(f, "repair", "--codex-admission", path, "--yes", "true")).written, []);
-  await assert.rejects(setup(f, "repair", "--codex-admission", "relative.json"), { reasonCode: "CLI_ARGUMENT_MALFORMED" });
+  await assert.rejects(setup(f, "repair", "--codex-admission", "relative.json"), { reasonCode: "SETUP_INPUT_INVALID" });
   await writeFile(path, JSON.stringify({ ...admission, enableHooksAuthorized: true }));
   await assert.rejects(setup(f, "repair", "--codex-admission", path), { reasonCode: "HOST_HOOKS_INPUT_INVALID" });
   await assert.rejects(setup(f, "fresh", "--execution-target", "chatgpt-dot", "--codex-admission", path), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });

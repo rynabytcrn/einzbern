@@ -65,7 +65,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall", "rule-list"],
-    action: "Run `recall --query \"<task>\"`. New/resumed/delegated sessions read AGENTS, Skill and work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults. Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`.",
+    action: "Use prompt recall if sufficient; otherwise run `recall --query \"<task>\"`. Read enabled rules, not catalog defaults; use applicable `specs/work-practices-v1.md` sections. New/resumed/delegated sessions read their own work; parent or patrol reads do not substitute. Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`.",
   },
 
   {
@@ -76,12 +76,12 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Need the full text",
     verbs: ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Read whole work/minutes; pass each target's `handoff` to native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. `specs/context-v1.md`: segments/digests; retain critical clauses. Legacy `--execution-request`: `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute; retain stdout, stderr and exit code. Evidence is not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
+    action: "Read whole work/minutes; pass each target's `handoff` to native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. `specs/context-v1.md`: segments/digests; retain critical clauses. Legacy `--execution-request`: `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute; retain stdout, stderr and exit code. Evidence is no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
     moment: "Native dispatch (Codex, Claude, dot)",
     verbs: ["execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
-    action: "Authorized tools; normal prompt reports. No runtime adapter or optional telemetry prerequisite. Existing class fallback authority unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[]: no binding; scope/permission. machine-assemble inputs, never hand-fill JSON; raw returns/reports, actual status/attempt association, `--binding`/`--prior`. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; authorized saves. `specs/host-fallback-v1.md`. Codex only: independent main/economy peers, no collector. `docs/codex-native-controller.md`. Other hosts keep their workflow.",
+    action: "Authorized tools; normal prompt reports. Existing class fallback authority unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[]: no binding; scope/permission. machine-assemble inputs, never hand-fill JSON; raw returns/reports, actual status/attempt association, `--binding`/`--prior`. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; authorized saves. `specs/host-fallback-v1.md`. Codex only: independent main/economy peers, no collector. `docs/codex-native-controller.md`. Other hosts keep their workflow.",
   },
   {
     moment: "Shared submission",
@@ -106,7 +106,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "A lesson is learned",
     verbs: ["knowledge-create", "knowledge-capture"],
-    action: "An INIT batch covers all pending Stories; preserve approved roles/stages. Capture at most five sourced lessons with `knowledge-capture`; read back. No dynamic progress in AGENTS.",
+    action: "Capture at most five new sourced lessons per approved batch; read back. Use stable project IDs and repository-relative evidence paths, not device paths. No progress in AGENTS.",
   },
   {
     moment: "Configuration / UI",

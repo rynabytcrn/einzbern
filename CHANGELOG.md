@@ -5,6 +5,21 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Principles and portable installation
+
+- Keep AGENTS limited to shared principles and one Mana Orchestrate entry. Move
+  procedures to scoped Skill references; remove generated configuration snapshots
+  without changing authoritative values or overwriting user edits.
+- Share current principles with independent dot targets. Fallback Hook text routes
+  through the Skill; available prompt recall is reused instead of requested twice.
+- Persist installed path bindings relative to declared bases, including hooks,
+  registry, Skill records, machine settings, host write roots and dot provenance.
+  Read legacy records and normalize supported writes. New v2 device formats require
+  current readers; older engines need their matching configuration backup.
+- Verify fresh and repeat installs, moved installations, installed CLI and Hook
+  execution, and user-edit protection. Keep knowledge references portable through
+  stable project identifiers and relative evidence locations.
+
 ## 4.1.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 4.1.0.

@@ -75,8 +75,7 @@ import {
   WRITABLE_ROOTS_FILES,
   WRITABLE_ROOTS_HOSTS,
   applyWritableRoots,
-  claudeWritableRoots,
-  codexWritableRoots,
+  portableWritableRoots,
   hostFileTrackedByGit,
   planWritableRoots,
   utcStamp,
@@ -88,7 +87,7 @@ import type { AgentsNavigationChoice } from "./machine-settings.js";
 import { managedSectionRecordsFor, parseManagedFile, planManagedWrite } from "./managed-sections.js";
 import type { ManagedWritePlan } from "./managed-sections.js";
 import { BRAND } from "./names.js";
-import { gitRemoteOf, normalizeGitRemote, readRegistry, registerLibrary } from "./registry.js";
+import { gitRemoteOf, normalizeGitRemote, readRegistry, registryPathsPortable, registerLibrary } from "./registry.js";
 import type { Registry } from "./registry.js";
 import { SETTINGS_CATALOG } from "./settings.js";
 import { SETUP_ACTOR, SETUP_APPLIED_SCHEMA_VERSION, SETUP_QUESTIONS, setupFail } from "./setup.js";
@@ -537,7 +536,7 @@ async function planRegistry(recorder: SetupRecorder, input: WiringPlanInput, lib
   const entry = registry.entries.find((candidate) => candidate.projectPath === input.projectRoot) ?? null;
   const current = entry !== null && entry.libraryPath === library.path && entry.cloudHosted === input.cloud && entry.gitRemote === remote &&
     (library.libraryId === null || entry.libraryId === library.libraryId);
-  if (!current) recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
+  if (!current || !await registryPathsPortable(input.deviceHome)) recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
 }
 
 async function planSkillCopies(recorder: SetupRecorder, digest: string, home: string, deviceHome: string): Promise<void> {
@@ -564,7 +563,7 @@ async function planSkillCopies(recorder: SetupRecorder, digest: string, home: st
   }
   const recorded = verification.reasonCode !== "SKILL_COPIES_NOT_RECORDED" && verification.reasonCode !== "SKILL_COPIES_RECORD_INVALID" &&
     verification.copies.every((copy) => copy.recorded === digest && copy.actual === digest);
-  if (!recorded) recorder.write("skill-copies", record, await entryKind(record) === null ? "create" : "update");
+  if (!recorded || !verification.portable) recorder.write("skill-copies", record, await entryKind(record) === null ? "create" : "update");
 }
 
 async function planLaunchers(recorder: SetupRecorder, launchers: EngineFiles["launchers"], deviceHome: string): Promise<void> {
@@ -590,7 +589,7 @@ async function planLaunchers(recorder: SetupRecorder, launchers: EngineFiles["la
 export async function planHooks(recorder: SetupRecorder, home: string, deviceHome: string, navigation: AgentsNavigationChoice | null, install = true, codexAdmission?: CodexHookAdmission, enableHooksAuthorized = false): Promise<void> {
   for (const host of HOST_HOOK_FILE_HOSTS) {
     const plan = await recorder.attempt("host-hooks", join(home, ...HOST_HOOK_FILES[host].split("/")),
-      async () => readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install, ...(codexAdmission ? { codexAdmission } : {}), enableHooksAuthorized }), { root: home, home }));
+      async () => readHostHooks(planHostHooks({ host, scope: "user", deviceHome, userHome: home, navigation, install, ...(codexAdmission ? { codexAdmission } : {}), enableHooksAuthorized }), { root: home, home }));
     if (plan === null) continue;
     for (const file of plan.files) {
       if (!file.changed || file.after === null) continue;
@@ -611,7 +610,7 @@ async function planRoots(recorder: SetupRecorder, projectRoot: string, libraryPa
     if (hostFileTrackedByGit(projectRoot, name)) recorder.warnTrackedByGit(name);
     const outcome = await recorder.attempt("writable-roots", path, async () => {
       const before = await readProjectHostFile(path, name);
-      const after = host === "claude-code" ? claudeWritableRoots(before, libraryPath) : codexWritableRoots(before, libraryPath);
+      const after = portableWritableRoots(before, host, projectRoot, libraryPath);
       return { before, changed: after !== before };
     });
     if (outcome === null || !outcome.changed) continue;
@@ -775,7 +774,7 @@ async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput, l
   const remote = normalizedRemote(projectRoot);
   const registryFile = registryPath(deviceHome);
   const entry = (await readRegistry(deviceHome)).entries.find((candidate) => candidate.projectPath === projectRoot) ?? null;
-  if (entry !== null && entry.projectId === input.configurationProjectId && entry.libraryPath === library.path && entry.libraryId === library.libraryId && entry.cloudHosted === input.cloud && entry.gitRemote === remote.normalized) return;
+  if (entry !== null && entry.projectId === input.configurationProjectId && entry.libraryPath === library.path && entry.libraryId === library.libraryId && entry.cloudHosted === input.cloud && entry.gitRemote === remote.normalized && await registryPathsPortable(deviceHome)) return;
   const kind = await entryKind(registryFile);
   await registerLibrary({ projectPath: projectRoot, libraryPath: library.path, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), registeredAt: at, cloudHosted: input.cloud, gitRemote: remote.raw }, deviceHome);
   recorder.write("registry", registryFile, kind === null ? "create" : "update");
@@ -833,7 +832,7 @@ export async function applyHooks(recorder: SetupRecorder, input: {
 }): Promise<void> {
   const { home, deviceHome, at, navigation } = input;
   for (const host of HOST_HOOK_FILE_HOSTS) {
-    const hooks = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install: input.install ?? true, ...(input.codexAdmission ? { codexAdmission: input.codexAdmission } : {}), enableHooksAuthorized: input.enableHooksAuthorized === true }), { root: home, home });
+    const hooks = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome, userHome: home, navigation, install: input.install ?? true, ...(input.codexAdmission ? { codexAdmission: input.codexAdmission } : {}), enableHooksAuthorized: input.enableHooksAuthorized === true }), { root: home, home });
     await applyHostHooks(hooks, { at, backupRoot: backupsPath(deviceHome) });
     for (const file of hooks.files) {
       if (!file.changed || file.after === null) continue;

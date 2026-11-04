@@ -107,7 +107,7 @@ export function hookProtocolOutput(host: HostHookHost, event: string, lines: rea
 }
 
 /**
- * A pointer hook's answer (TCRN-CROSS-STORY-478 R4): the three navigation lines as the
+ * A pointer hook's answer (TCRN-CROSS-STORY-478 R4): the Skill entry as the
  * additionalContext of `event`, SessionStart or SubagentStart. Nothing is retrieved and nothing is
  * read, so it is the same for every registered project.
  */

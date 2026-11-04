@@ -23,6 +23,7 @@ import {
   applyHostHooks,
   codexHookConfig,
   hookLauncherPath,
+  hostHookCommand,
   isEinzbernHookCommand,
   isLegacyDenyRule,
   isLegacyHookCommand,
@@ -32,7 +33,7 @@ import {
 } from "../dist/build/packages/core/src/host-hooks.js";
 // Explicit synthetic capability for preexisting renderer fixtures, never native admission evidence.
 const fixtureAdmission = { state: "supported", version: "fixture", evidenceRef: "synthetic-only", subagentStop: true, trust: "permitted" };
-const planHostHooks = input => rawPlanHostHooks({ codexAdmission: fixtureAdmission, enableHooksAuthorized: true, ...input });
+const planHostHooks = input => rawPlanHostHooks({ ...(input.platform === "win32" ? { userHome: "D:/" } : {}), codexAdmission: fixtureAdmission, enableHooksAuthorized: true, ...input });
 import {
   DIRECTORY,
   LEGACY_CONTAINER_DIRECTORY,
@@ -73,7 +74,7 @@ function hookCommands(document) {
 }
 
 function launcherCommand(device) {
-  return `node "${join(device, "engine", "hook.mjs")}" user-prompt-submit`;
+  return hostHookCommand(join(device, "engine", "hook.mjs"), "UserPromptSubmit");
 }
 
 // Other tools' hooks, which every render keeps.
@@ -295,24 +296,16 @@ test("477-AC1, AC4: after the move each host's user file holds one Einzbern User
   }
 });
 
-test("477-R5: the command is node, the quoted launcher path and one word, on macOS, Linux and Windows", async (t) => {
-  for (const platform of ["darwin", "linux"]) {
-    const expected = planHostHooks({ host: "claude-code", scope: "user", deviceHome: "/srv/einzbern device", platform });
-    assert.equal(expected.groups.UserPromptSubmit[0].hooks[0].command, 'node "/srv/einzbern device/engine/hook.mjs" user-prompt-submit');
-  }
-  for (const deviceHome of ["D:\\Einzbern\\device", "D:/Einzbern/device"]) {
-    const expected = planHostHooks({ host: "codex", scope: "user", deviceHome, platform: "win32" });
-    assert.equal(expected.groups.UserPromptSubmit[0].hooks[0].command, 'node "D:\\Einzbern\\device\\engine\\hook.mjs" user-prompt-submit');
-  }
+test("477-R5: portable commands resolve the home binding at runtime on each supported platform", async (t) => {
   for (const platform of ["darwin", "linux", "win32"]) {
-    const deviceHome = platform === "win32" ? "D:\\Einzbern\\device" : "/srv/einzbern/device";
+    const deviceHome = platform === "win32" ? "D:/Einzbern/device" : "/srv/einzbern/device";
     for (const host of ["claude-code", "codex"]) {
-      const [group] = planHostHooks({ host, scope: "user", deviceHome, platform }).groups.UserPromptSubmit;
-      const { command } = group.hooks[0];
-      assert.match(command, /^node "[^"$`%]+" user-prompt-submit$/u, `${platform}/${host}: one quoted path and a word`);
-      for (const shell of ["if [", "; fi", "&&", "||", "|", "${", "$(", "--container-root", "--host", "CLAUDE_PROJECT_DIR"]) {
-        assert.equal(command.includes(shell), false, `${platform}/${host}: no ${shell}`);
-      }
+      const command = planHostHooks({ host, scope: "user", deviceHome, platform }).groups.UserPromptSubmit[0].hooks[0].command;
+      assert.match(command, /^node -e ".*" user-prompt-submit$/u);
+      assert.ok(command.includes("process.env.EINZBERN_HOME"));
+      assert.ok(command.includes("homedir()"));
+      assert.equal(command.includes(`'${deviceHome}'`), false);
+      assert.equal(isEinzbernHookCommand(command), true);
     }
   }
 
@@ -338,11 +331,11 @@ test("477-R5: the command is node, the quoted launcher path and one word, on mac
     const device = join(base, "device dir 设备");
     const launcher = hookLauncherPath(device);
     await mkdir(join(launcher, ".."), { recursive: true });
-    await writeFile(launcher, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
+    await writeFile(launcher, 'export async function launch(argv) { return JSON.stringify(argv); }\n');
     const [group] = planHostHooks({ host: "claude-code", scope: "user", deviceHome: device }).groups.UserPromptSubmit;
     const { command } = group.hooks[0];
-    assert.equal(execFileSync("/bin/sh", ["-c", command], { encoding: "utf8" }), '["user-prompt-submit"]');
-    const viaShell = spawnSync(command, { shell: true, encoding: "utf8" });
+    assert.equal(execFileSync("/bin/sh", ["-c", command], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: device } }), '["user-prompt-submit"]');
+    const viaShell = spawnSync(command, { shell: true, encoding: "utf8", env: { ...process.env, EINZBERN_HOME: device } });
     assert.deepEqual([viaShell.status, viaShell.stdout], [0, '["user-prompt-submit"]']);
   }
 });
@@ -504,10 +497,10 @@ test("478-AC5, BL34/35: declined navigation adds SessionStart; subagent recall a
       const expected = planHostHooks({ host, scope: "user", deviceHome, platform, navigation: "declined" });
       const commands = Object.fromEntries(Object.entries(expected.groups).map(([event, groups]) => [event, groups.flatMap((group) => group.hooks.map((hook) => hook.command))]));
       const shared = {
-        UserPromptSubmit: [`node "${launcher}" user-prompt-submit`],
-        PreToolUse: [`node "${launcher}" pre-tool-use`],
-        SessionStart: [`node "${launcher}" session-start`],
-        SubagentStart: [`node "${launcher}" subagent-start`],
+        UserPromptSubmit: [hostHookCommand(launcher, "UserPromptSubmit", platform === "win32" ? "D:/" : undefined, platform)],
+        PreToolUse: [hostHookCommand(launcher, "PreToolUse", platform === "win32" ? "D:/" : undefined, platform)],
+        SessionStart: [hostHookCommand(launcher, "SessionStart", platform === "win32" ? "D:/" : undefined, platform)],
+        SubagentStart: [hostHookCommand(launcher, "SubagentStart", platform === "win32" ? "D:/" : undefined, platform)],
       };
       assert.deepEqual(commands, shared, `${platform}/${host}`);
       for (const [command] of Object.values(commands)) assert.equal(isEinzbernHookCommand(command), true, command);
@@ -518,7 +511,7 @@ test("478-AC5, BL34/35: declined navigation adds SessionStart; subagent recall a
   assert.equal(declined.applied.reasonCode, "HOST_HOOKS_WRITTEN");
   const settings = await readJson(join(home, CLAUDE));
   assert.deepEqual(Object.keys(settings.hooks).sort(), ["PreToolUse", "SessionStart", "SubagentStart", "UserPromptSubmit"]);
-  assert.equal(settings.hooks.SessionStart[0].hooks[0].command, `node "${hookLauncherPath(device)}" session-start`);
+  assert.equal(settings.hooks.SessionStart[0].hooks[0].command, hostHookCommand(hookLauncherPath(device), "SessionStart"));
   assert.equal((await render("claude-code", "user", home, home, device, { navigation: "declined" })).applied.reasonCode, "HOST_HOOKS_CURRENT", "rendering again writes nothing");
   const codex = await render("codex", "user", home, home, device, { navigation: "declined" });
   assert.equal(codex.applied.reasonCode, "HOST_HOOKS_WRITTEN");

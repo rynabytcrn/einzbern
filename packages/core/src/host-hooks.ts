@@ -141,6 +141,7 @@ export interface HostHooksRequest {
   readonly scope: HostHookScope;
   // The device directory the command names: an absolute path in the form of `platform`.
   readonly deviceHome: string;
+  readonly userHome?: string;
   // The operating system the command is written for; this machine's when left out (R5).
   readonly platform?: NodeJS.Platform;
   // false: no Einzbern hook in this file, only what is ours taken out of it (a container's
@@ -208,10 +209,15 @@ export function hookLauncherPath(deviceHome: string, platform: NodeJS.Platform =
 }
 
 /** The one line a host runs for `event`: node, the quoted launcher, and the event's word (R1). */
-export function hostHookCommand(launcher: string, event: string): string {
+export function hostHookCommand(launcher: string, event: string, userHome: string = homedir(), platform: NodeJS.Platform = process.platform): string {
   const word = Object.hasOwn(HOOK_EVENT_WORDS, event) ? HOOK_EVENT_WORDS[event] : undefined;
   if (word === undefined) fail("HOST_HOOKS_INPUT_INVALID", `${event} is not an event Einzbern hooks`, { event });
-  return `node "${launcher}" ${word}`;
+  const paths = platform === "win32" ? win32 : posix;
+  const device = paths.relative(userHome, paths.dirname(paths.dirname(launcher))).replaceAll("\\", "/") || ".";
+  if (paths.isAbsolute(device)) fail("HOST_HOOKS_PATH_UNSUPPORTED", "the device directory needs a relative home binding", { launcher });
+  const literal = device.replaceAll("'", "\\'");
+  const code = `/*einzbern-hook*/const p=require('node:path');const d=p.resolve(process.env.EINZBERN_HOME||p.resolve(require('node:os').homedir(),'${literal}'));process.env.EINZBERN_HOME=d;import(require('node:url').pathToFileURL(p.join(d,'engine/hook.mjs')).href).then(m=>m.launch(process.argv.slice(1),process.env)).then(s=>{if(s)process.stdout.write(s)}).catch(e=>process.stderr.write(JSON.stringify({ok:false,reasonCode:e.reasonCode||'HOOK_LAUNCH_FAILED',error:e.message})+'\\n'))`;
+  return `node -e "${code}" ${word}`;
 }
 
 /** What a host's hook file must carry for Einzbern. Reads and writes nothing. */
@@ -249,7 +255,7 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
       ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : []),
     ])];
     for (const event of events) {
-      groups[event] = [{ hooks: [{ type: "command", command: hostHookCommand(launcher, event) }] }];
+      groups[event] = [{ hooks: [{ type: "command", command: hostHookCommand(launcher, event, request.userHome, platform) }] }];
     }
   }
   return {
@@ -275,6 +281,7 @@ const LAUNCHER_COMMAND = /^node "([^"]+)" ([a-z]+(?:-[a-z]+)*)$/u;
 
 /** Whether a hook command runs Einzbern's launcher. */
 export function isEinzbernHookCommand(command: string): boolean {
+  if (/^node -e "\/\*einzbern-hook\*\/.*" (?:user-prompt-submit|subagent-start|pre-tool-use|session-start)$/u.test(command.trim())) return true;
   const match = LAUNCHER_COMMAND.exec(command.trim());
   if (match === null) return false;
   const segments = (match[1] ?? "").split(/[\\/]/u);

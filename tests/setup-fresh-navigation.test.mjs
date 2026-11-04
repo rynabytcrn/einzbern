@@ -137,7 +137,7 @@ test("fresh mode removes explicitly declined shared navigation, preserving user 
   const beforeEdit = await readFile(agentsPath, "utf8");
   const managedNavigation = parseManagedFile(beforeEdit, "AGENTS.md").sections.find((section) => section.id === "navigation");
   assert.ok(managedNavigation);
-  const editedText = beforeEdit.replace(managedNavigation.raw, managedNavigation.raw.replace("This project is managed by Einzbern.", "The team edited this navigation section."));
+  const editedText = beforeEdit.replace(managedNavigation.raw, managedNavigation.raw.replace("This workspace uses Einzbern.", "The team edited this navigation section."));
   await writeFile(agentsPath, editedText);
 
   await setSharedNavigation("declined");

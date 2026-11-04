@@ -181,9 +181,9 @@ test("S281 / 476-R5: crest.userPath is a device-level absolute path, stored as i
     assert.equal(await readUserCrestPath(device), join(base, "cloud"));
     assert.equal((await readMachineSettingsCatalog(path)).settings.find((setting) => setting.key === "crest.userPath")?.currentValue, join(base, "cloud"));
 
-    // A relative value is caught on read too, so the file cannot carry one past the set path.
+    // Persistent paths are relative to the settings file; runtime callers receive resolved paths.
     await writeFile(path, JSON.stringify({ schemaVersion: "tcrn.machine-settings.v1", layerKind: MACHINE_SETTINGS_LAYER_KIND, values: { "crest.userPath": "crest" }, updatedAt: at }), "utf8");
-    await reason(readMachineSettings(path), "MACHINE_SETTING_VALUE_INVALID");
+    assert.equal((await readMachineSettings(path)).values["crest.userPath"], join(device, "crest"));
   } finally { await rm(base, { recursive: true, force: true }); }
 });
 

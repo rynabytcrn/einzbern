@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // INIT062 original DOT-I01–I04/R01–R03. These are isolated sequential fixtures,
 // not real E4, provider authentication, host firing, races or lifecycle probes.
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -18,6 +19,8 @@ import { validateConfigBackupPayload } from "../dist/build/packages/core/src/con
 import { variableExportDecision } from "../dist/build/packages/core/src/variables.js";
 
 const at = "2026-10-20T00:00:00Z";
+const recoveryProcedures = readFileSync(resolve(import.meta.dirname, "../specs/dot-task-recovery-v1.md"), "utf8");
+const cleanupProcedures = readFileSync(resolve(import.meta.dirname, "../specs/resource-cleanup-v1.md"), "utf8");
 function source(language = "zh-CN", ids = BUILT_IN_RULES.map(rule => rule.id)) {
   return { engineVersion: "fixture-engine", engineCommit: "unavailable", engineSourceRef: "fixture:explicit-engine", language,
     enabledRules: BUILT_IN_RULES.filter(rule => ids.includes(rule.id)).map(rule => ({ id: rule.id, version: rule.version, bodyDigest: dotContentDigest(ruleBody(rule.id, language)), sourceReference: `fixture:rule-readback#${rule.id}` })) };
@@ -34,18 +37,15 @@ async function fixture(t) {
 const rejects = (operation, reasonCode) => assert.rejects(operation, error => error.reasonCode === reasonCode);
 const exists = async path => stat(path).then(() => true, error => { if (error.code === "ENOENT") return false; throw error; });
 
-test("DOT-R01/R02: complete independent template preserves governance, seven principles, batch and incremental semantics", () => {
-  const output = renderDotAgents(source());
-  assert.ok(output.startsWith(DOT_AGENTS_MARKER));
-  assert.equal(output.includes("<!-- einzbern:section"), false);
-  for (const rule of BUILT_IN_RULES) assert.ok(output.includes(`· ${rule.id}`), rule.id);
-  for (const text of [
-    "工单、纪要、知识卡及受治理配置的变更必须经兼容引擎的受支持入口执行，使用实际行动者作为 actor，并读回回执；不得直接编辑库文件或配置投影来代替引擎变更。",
-    "已批准的执行步骤、次序、分包和角色分工不得擅自增删、替换、拆并或改派；确需改变时，先说明具体差异、必要性、预期收益、新增时间、token 与维护成本、风险及替代方案，未知项如实保留，取得 Owner 明确同意后再执行；只停止受影响的改动，其他已授权工作继续。",
-    "一个 INIT 下全部待办 Story", "knowledge-capture", "不超过五条", "dot 仅在环境实际需要时取得完整副本", "不授予跨设备原子排他",
-  ]) assert.ok(output.includes(text), text);
-  for (const absent of ["fixture:project", "fixture-engine", at, "pending-resume", "selectedTuple="]) assert.equal(output.includes(absent), false);
-  assert.equal(renderDotAgents(source("en")).includes("All open Stories under one INIT"), true);
+test("DOT-R01/R02: independent target shares enabled principles and routes procedures through the Skill", () => {
+  for (const language of ["zh-CN", "en"]) {
+    const output = renderDotAgents(source(language));
+    assert.ok(output.startsWith(DOT_AGENTS_MARKER));
+    assert.equal(output.includes("<!-- einzbern:section"), false);
+    for (const rule of BUILT_IN_RULES) assert.ok(output.includes(ruleBody(rule.id, language)), rule.id);
+    assert.match(output, /Mana Orchestrate Skill/u);
+    assert.doesNotMatch(output, /knowledge-capture|lessons\.json|shared-submit-plan|fixture:project|pending-resume|selectedTuple=/u);
+  }
 });
 
 test("DOT-R01/R02: catalog is not enablement; only actual scoped enabled records enter provenance/render", () => {
@@ -53,7 +53,7 @@ test("DOT-R01/R02: catalog is not enablement; only actual scoped enabled records
   const enabledRules = dotEnabledRuleSources({ configRecords }, "zh-CN", "fixture:engine-read");
   assert.deepEqual(enabledRules.map(rule => rule.id), ["autonomy"]);
   const output = renderDotAgents({ ...source(), enabledRules });
-  assert.ok(output.includes("· autonomy")); assert.equal(output.includes("· batch"), false); assert.equal(output.includes("· incremental-update"), false);
+  assert.ok(output.includes(ruleBody("autonomy", "zh-CN"))); assert.equal(output.includes(ruleBody("batch", "zh-CN")), false); assert.equal(output.includes(ruleBody("incremental-update", "zh-CN")), false);
   assert.throws(() => dotEnabledRuleSources({ configRecords: [{ collection: "rule", key: "batch", value: { enabled: true, version: 2 } }] }, "en", "fixture:read"), error => error.reasonCode === "DOT_SOURCE_MISMATCH");
   assert.throws(() => renderDotAgents({ ...source(), enabledRules: [{ ...source().enabledRules[0], bodyDigest: "0".repeat(64) }] }), error => error.reasonCode === "DOT_SOURCE_MISMATCH");
 });
@@ -188,8 +188,9 @@ test("INIT-062 universal rule supplements are shared bilingual enabled-only dot 
       const selected = source(language, [id]);
       const output = renderDotAgents(selected);
       assert.equal(output.includes(AUTONOMY_AUTHORIZATION_BODY[suffix]), id === "autonomy");
-      assert.equal(output.includes(BRANCH_LIFECYCLE_BODY[suffix]), id === "residue-cleanup");
-      assert.equal(output.includes(suffix === "zh" ? "### Fork 贡献" : "### Fork contributions"), id === "residue-cleanup");
+      assert.equal(output.includes(BRANCH_LIFECYCLE_BODY[suffix]), false);
+      assert.ok(cleanupProcedures.includes(BRANCH_LIFECYCLE_BODY[suffix]));
+      assert.ok(output.includes(ruleBody(id, language)));
       const previous = await readFile(resolve(import.meta.dirname, "fixtures", "rules", `${id}-v1-rev1.${suffix}.md`), "utf8");
       assert.throws(() => renderDotAgents({ ...selected, enabledRules: [{ ...selected.enabledRules[0], bodyDigest: dotContentDigest(previous) }] }), error => error.reasonCode === "DOT_SOURCE_MISMATCH");
       assert.equal(renderDotAgents(selected), output, "same input is deterministic");
@@ -207,8 +208,8 @@ test("MIN358 dot principle is sourced and selectable; disabled autonomy does not
     const disabled = renderDotAgents(source(language, BUILT_IN_RULES.filter(rule => rule.id !== "autonomy").map(rule => rule.id)));
     assert.equal(disabled.includes(AUTONOMY_RESTRICTION_SCOPE_BODY[key]), false);
     assert.equal(disabled.includes(AUTONOMY_AUTHORIZATION_BODY[key]), false);
-    assert.ok(disabled.includes(key === "zh" ? "实际权限、安全要求" : "actual platform permissions"), "platform boundaries are not optional rule content");
-    assert.ok(disabled.includes(BRANCH_LIFECYCLE_BODY[key]), "other selected principles retain independent scope");
+    assert.ok(disabled.includes(key === "zh" ? "宿主能力和权限以实际会话为准" : "Actual sessions determine host capability and permission"), "platform boundaries are not optional rule content");
+    assert.ok(disabled.includes(ruleBody("residue-cleanup", language)), "other selected principles retain independent scope");
   }
 });
 
@@ -220,11 +221,11 @@ test("INIT068 authorized review completion: authorized review completion is dot-
   for (const [language, key] of [["zh-CN", "zh"], ["en", "en"], ["ja", "en"], ["ko", "en"], ["fr", "en"]]) {
     const enabled = renderDotAgents(source(language, ["autonomy"]));
     const disabled = renderDotAgents(source(language, BUILT_IN_RULES.filter(rule => rule.id !== "autonomy").map(rule => rule.id)));
-    for (const clause of clauses[key]) assert.ok(enabled.includes(clause), `${language}: ${clause}`);
-    assert.equal(enabled.split(clauses[key][0]).length - 1, 1);
+    for (const clause of clauses[key]) assert.ok(recoveryProcedures.includes(clause), `${language}: ${clause}`);
+    assert.equal(enabled.includes(clauses[key][0]), false, "procedures load on demand");
     assert.equal(disabled.includes(clauses[key][0]), false, "disabled autonomy grants no review-completion rule");
     for (const rule of BUILT_IN_RULES) assert.equal(rule.body[key].includes(clauses[key][0]), false, "generic hosts do not acquire the dot-only supplement");
-    assert.ok(enabled.includes(key === "zh" ? "已批准的执行步骤、次序、分包和角色分工不得擅自" : "prohibit changing approved steps, order, packages or roles"), "approved execution governance remains intact");
+    assert.ok(enabled.includes(ruleBody("autonomy", language)), "enabled autonomy remains authoritative");
   }
 });
 
@@ -356,12 +357,12 @@ test("INIT068 R20: enabled/disabled/versioned incremental source closes render a
   const enabledRules = dotEnabledRuleSources({ configRecords }, "en", "fixture:scoped-rule-readback");
   const request = { ...input, source: { ...source("en", []), enabledRules } };
   await applyDotAgents(await planDotAgents(request));
-  assert.ok((await readFile(input.binding.agentsPath, "utf8")).includes("· incremental-update"));
+  assert.ok((await readFile(input.binding.agentsPath, "utf8")).includes(ruleBody("incremental-update", "en")));
   configRecords[0].value.enabled = false;
   const disabled = { ...request, operation: "update", source: { ...request.source, enabledRules: dotEnabledRuleSources({ configRecords }, "en", "fixture:scoped-rule-readback") } };
   await applyDotAgents(await planDotAgents(disabled));
   const body = await readFile(input.binding.agentsPath, "utf8");
-  assert.equal(body.includes("· incremental-update"), false); assert.ok(body.includes("· autonomy"));
+  assert.equal(body.includes(ruleBody("incremental-update", "en")), false); assert.ok(body.includes(ruleBody("autonomy", "en")));
   assert.equal((await planDotAgents(disabled)).status, "unchanged");
   assert.deepEqual(dotEnabledRuleSources({ configRecords: [] }, "en", "fixture:missing"), []);
   for (const version of [0, 2]) assert.throws(() => dotEnabledRuleSources({ configRecords: [{ collection: "rule", key: "incremental-update", value: { enabled: true, version } }] }, "en", "fixture:version"), error => error.reasonCode === "DOT_SOURCE_MISMATCH");
@@ -392,8 +393,8 @@ test("dot context recovery is task-scoped, permission-bound and separate from cu
   for (const [language, key] of [["zh-CN", "zh"], ["en", "en"], ["ja", "en"], ["ko", "en"], ["fr", "en"]]) {
     for (const ids of [[], ["autonomy"]]) {
       const output = renderDotAgents(source(language, ids));
-      for (const clause of clauses[key]) assert.ok(output.includes(clause), `${language}: ${clause}`);
-      assert.equal(output.split(clauses[key][0]).length - 1, 1);
+      for (const clause of clauses[key]) assert.ok(recoveryProcedures.includes(clause), `${language}: ${clause}`);
+      assert.equal(output.includes(clauses[key][0]), false);
       assert.equal(output.includes("SubagentStop"), false, "dot discipline does not install the Codex-only collector");
     }
     for (const rule of BUILT_IN_RULES) assert.equal(rule.body[key].includes(clauses[key][0]), false, "traditional rule bodies stay unchanged");
@@ -405,10 +406,25 @@ test("dot context recovery survives fresh generation and missing-file repair wit
   const installed = await applyDotAgents(await planDotAgents(input));
   assert.equal(installed.status, "applied");
   const expected = renderDotAgents(input.source);
-  assert.ok(expected.includes("基础设施阻点前先恢复上下文"));
+  assert.ok(expected.includes("Mana Orchestrate Skill"));
+  assert.ok(recoveryProcedures.includes("基础设施阻点前先恢复上下文"));
   await rm(input.binding.agentsPath);
   const repaired = await applyDotAgents(await planDotAgents({ ...input, operation: "repair" }));
   assert.equal(repaired.status, "applied"); assert.equal(repaired.sessionRead, "not-verified");
   assert.equal(await readFile(input.binding.agentsPath, "utf8"), expected);
   assert.equal((await planDotAgents({ ...input, operation: "repair" })).status, "unchanged");
+});
+
+
+test("dot provenance survives relocation without embedding the installed root", async t => {
+  const input = await fixture(t);
+  await applyDotAgents(await planDotAgents(input));
+  const saved = await readFile(input.binding.provenancePath, "utf8");
+  assert.equal(saved.includes(input.binding.root), false);
+  assert.equal(JSON.parse(saved).targetPathBinding.root, ".");
+  const moved = `${input.binding.root}-moved`;
+  await rename(input.binding.root, moved);
+  t.after(() => rm(moved, { recursive: true, force: true }));
+  const next = { ...input, operation: "repair", enginePath: join(moved, "fixture-engine.mjs"), manaSkillPath: join(moved, "fixture-skill.md"), binding: { ...input.binding, root: moved, agentsPath: join(moved, "AGENTS.md"), provenancePath: join(moved, ".dot/provenance.json"), backupRoot: join(moved, ".dot/recovery") } };
+  assert.equal((await planDotAgents(next)).status, "unchanged");
 });

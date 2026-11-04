@@ -27,7 +27,7 @@ const idOf = (key) => deriveStableId("work", key);
 
 // The bytes the hook printed at faaa216a (before TCRN-CROSS-STORY-548), for both hosts.
 const SNAPSHOT_USER_PROMPT_SUBMIT = "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"[Story planned] Zebrafish tank · HOOK-STORY · work:7ff15c20d39135680e043cac · Wetland epic ‹ Aviary initiative\"}}\n";
-const SNAPSHOT_SESSION_START = "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"This project is managed by Einzbern.\\nLoad the Mana Orchestrate skill before you start work.\\nRecall first: run Einzbern's recall for the task before you plan or change anything.\"}}\n";
+const SNAPSHOT_SESSION_START = "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"This workspace uses Einzbern. Load and follow the Mana Orchestrate skill for applicable work.\"}}\n";
 
 test("548-R2: hookHost reads EINZBERN_HOST first and falls back on any value outside the host set", () => {
   const cases = [
@@ -107,7 +107,7 @@ test("BL34: native SubagentStart recalls by its documented agent_type before fir
     const payload = { hook_event_name: "SubagentStart", cwd: directory, agent_id: "agent-1", agent_type: "zebrafish" };
     const answer = JSON.parse(await runHookEvent({ event: "subagent-start", payload, libraryPath: library, cwd: directory }));
     assert.equal(answer.hookSpecificOutput.hookEventName, "SubagentStart");
-    assert.match(answer.hookSpecificOutput.additionalContext, /Recall first:/u);
+    assert.match(answer.hookSpecificOutput.additionalContext, /Load and follow the Mana Orchestrate skill/u);
     assert.match(answer.hookSpecificOutput.additionalContext, /Zebrafish tank · HOOK-STORY/u);
     const empty = JSON.parse(await runHookEvent({ event: "subagent-start", payload: { prompt: PROMPT }, libraryPath: library, cwd: directory }));
     assert.doesNotMatch(empty.hookSpecificOutput.additionalContext, /HOOK-STORY/u, "a made-up native prompt field is not treated as task evidence");
@@ -121,7 +121,7 @@ test("BL34 scope: DSH subagent navigation remains pointer-only even with a match
   const { runHookEvent } = await import(pathToFileURL(join(repositoryRoot, "scripts/einzbern-hook.mjs")).href);
   const answer = JSON.parse(await runHookEvent({ event: "subagent-start", payload: { agent_type: "zebrafish" }, libraryPath: library, cwd: directory }));
   assert.equal(answer.hookSpecificOutput.hookEventName, "SubagentStart");
-  assert.match(answer.hookSpecificOutput.additionalContext, /Recall first:/u);
+  assert.match(answer.hookSpecificOutput.additionalContext, /Load and follow the Mana Orchestrate skill/u);
   assert.doesNotMatch(answer.hookSpecificOutput.additionalContext, /HOOK-STORY/u);
 });
 

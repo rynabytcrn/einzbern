@@ -2135,7 +2135,7 @@
           "name": "codex-admission",
           "required": false,
           "valueKind": "string",
-          "valueShape": "absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override"
+          "valueShape": "JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override"
         }
       },
       {
@@ -2882,7 +2882,7 @@
           "name": "dot-input",
           "required": false,
           "valueKind": "string",
-          "valueShape": "absolute path to JSON dot target options; required for chatgpt-dot"
+          "valueShape": "path to JSON dot target options; required for chatgpt-dot"
         }
       },
       {
@@ -10963,7 +10963,7 @@
             "name": "codex-admission",
             "required": false,
             "valueKind": "string",
-            "valueShape": "absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override"
+            "valueShape": "JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override"
           },
           {
             "name": "execution-target",
@@ -10975,7 +10975,7 @@
             "name": "dot-input",
             "required": false,
             "valueKind": "string",
-            "valueShape": "absolute path to JSON dot target options; required for chatgpt-dot"
+            "valueShape": "path to JSON dot target options; required for chatgpt-dot"
           },
           {
             "name": "approved-plan-digest",

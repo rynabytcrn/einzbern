@@ -23,7 +23,7 @@ identity authentication or proof that code ran.
 `DotAgentsOptions` has a closed validator. `executionTarget`, supported
 `operation`, UTC `at`, `binding`, `source`, `enginePath`, `manaSkillPath` and
 `preInjection` are explicit. The binding contains one existing canonical `root`,
-its `AGENTS.md`, separate absolute `provenancePath` and `backupRoot` within it,
+its `AGENTS.md`, separate `provenancePath` and `backupRoot` within it,
 `projectReference` and `ownerId`. The caller selects these paths, not a filesystem
 search. Symlink components, traversal, mismatched roots, overlapping output and
 recovery paths, and metadata/recovery under repository control, governed,
@@ -45,22 +45,17 @@ validates every supplied rule version and canonical generic source-body SHA-256,
 orders them by the catalog and includes only those enabled rules in the
 independent template. No library configuration is changed.
 
-`dot-rules-template.v1` keeps stable governance and context/maintenance text plus
-the approved dot adaptations of enabled principles. When all seven historical
-rules are enabled, their complete approved Chinese adaptations remain. Both
-original governance clauses remain verbatim, including in the English template.
-English is used for other supported artifact languages, matching the existing
-rule catalog fallback. Dynamic project progress, task identity, counts, cursors,
-lease owners, timestamps and next actions are not interpolated into AGENTS.
+`dot-rules-template.v1` now renders the same enabled principle bodies as the
+ordinary catalog, with an independent target marker and one Skill entry. Concrete
+methods are loaded through `work-practices-v1.md`. Dot context recovery and
+review-completion procedures are in [dot-task-recovery-v1.md](dot-task-recovery-v1.md);
+load only the applicable section. Rules remain selectable and stable IDs/versions
+remain intact. Local history and task progress do not belong in AGENTS.
 
-`incremental-update` v1 is appended to the existing rule catalog without changing
-the original seven IDs, versions or texts. Its generic body uses an already
-verified synchronized directory directly. `INCREMENTAL_UPDATE_DOT_BODY` shares
-the principle source and adds only necessary copy/transport semantics. Both keep
-a complete baseline, supported engine mutations, one complete pre-submit
-refresh, supported replay/reapplication, serial handoff, destination readback,
-local mutex and advisory-not-lock semantics. Neither changes the INIT batch unit
-or governance. A code change is not release publication or project enablement.
+Owned provenance stores its binding relative to the target root, and its input
+digest uses that portable binding. The reader resolves it for the current target;
+legacy absolute bindings remain readable for supported updates. A moved target
+retains its identity without retaining the previous device path.
 
 ## Universal autonomy and branch-lifecycle clarification (INIT-062)
 
@@ -71,15 +66,14 @@ incremental-update addition described above. The original bodies remain in
 wording implements those instructions and is not presented as a verbatim quote.
 
 `AUTONOMY_AUTHORIZATION_BODY` and `BRANCH_LIFECYCLE_BODY` are shared Chinese/English
-source text consumed directly by the generic catalog and the independent dot
-adaptations. A model-authored “once” and general user assent do not impose an
+source text retained by the generic principle and scoped Skill procedures. A model-authored “once” and general user assent do not impose an
 execution-count cap. An explicit user-authored restriction still does. This grants
 no new permission, never overrides required per-action confirmation or material
 scope/risk changes, and preserves denial, uncertain-outcome and bounded-retry
 rules; it does not authorize unlimited external runs or publication.
 
-Branch lifecycle is clause 9 of the existing residue rule and a fork/baseline
-subsection of its dot adaptation, not an unconditional common instruction. New
+Branch lifecycle details are in `resource-cleanup-v1.md`, read only for an
+applicable cleanup task with the residue principle enabled. New
 batches, pre-push and post-merge checks use actual baseline/ref/worktree facts;
 only an authorized safe fast-forward is synchronized and read back. Retirement
 requires verified merge, no unique history outside the target, no active PR, CI,

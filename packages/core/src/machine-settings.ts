@@ -24,6 +24,7 @@ import { HEAVY_RUNS_DEFAULT, HEAVY_RUNS_MAX, HEAVY_RUNS_MIN, HEAVY_RUNS_SETTING 
 // not here: the portal reads browser-local preference first, this layer second, its
 // built-in fallback last. This module answers only "what does this machine say".
 
+import { loadPath, storePath } from "./stored-path.js";
 import { mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 
@@ -33,7 +34,7 @@ import { DEVICE_HOME_ENTRIES, USER_CREST_PATH_SETTING, deviceHome, userCrestPath
 import { DIRECTORY } from "./names.js";
 import type { SettingGroup, SettingShape } from "./settings.js";
 
-export const MACHINE_SETTINGS_VERSION = "tcrn.machine-settings.v1" as const;
+export const MACHINE_SETTINGS_VERSION = "tcrn.machine-settings.v2" as const;
 export const MACHINE_SETTINGS_LAYER_KIND = "machine_configuration" as const;
 export const MACHINE_SETTINGS_FILE_NAME = DEVICE_HOME_ENTRIES.machineSettings;
 /** The machine-level engine home, as declared by install-manifest item machine.workflow-engine. */
@@ -332,10 +333,10 @@ function assertUpdatedAt(value: unknown): asserts value is string {
   if (typeof value !== "string" || value.length === 0) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings need an updatedAt");
 }
 
-export function validateMachineSettingsFile(value: unknown): MachineSettingsFile {
+export function validateMachineSettingsFile(value: unknown, base?: string): MachineSettingsFile {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("MACHINE_SETTINGS_FILE_INVALID", "machine settings must be an object");
   const record = value as Record<string, unknown>;
-  if (record.schemaVersion !== MACHINE_SETTINGS_VERSION) fail("MACHINE_SETTINGS_FILE_INVALID", `machine settings schemaVersion must be ${MACHINE_SETTINGS_VERSION}`);
+  if (record.schemaVersion !== MACHINE_SETTINGS_VERSION && record.schemaVersion !== "tcrn.machine-settings.v1") fail("MACHINE_SETTINGS_FILE_INVALID", `machine settings schemaVersion must be ${MACHINE_SETTINGS_VERSION}`);
   if (record.layerKind !== MACHINE_SETTINGS_LAYER_KIND) fail("MACHINE_SETTINGS_FILE_INVALID", `machine settings layerKind must be ${MACHINE_SETTINGS_LAYER_KIND}`);
   assertUpdatedAt(record.updatedAt);
   const values = record.values;
@@ -343,7 +344,7 @@ export function validateMachineSettingsFile(value: unknown): MachineSettingsFile
   const validated: Record<string, string> = {};
   for (const [key, raw] of Object.entries(values as Record<string, unknown>)) {
     assertMachineSettingKey(key);
-    validated[key] = validateMachineSettingValue(key, raw);
+    validated[key] = validateMachineSettingValue(key, base !== undefined && BY_KEY.get(key)?.type === "path" && typeof raw === "string" ? loadPath(base, raw) : raw);
   }
   return Object.freeze({
     schemaVersion: MACHINE_SETTINGS_VERSION,
@@ -377,7 +378,7 @@ export async function readMachineSettings(path: string = machineSettingsPath()):
   }
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { fail("MACHINE_SETTINGS_FILE_INVALID", `${path} is not JSON`); }
-  return validateMachineSettingsFile(parsed);
+  return validateMachineSettingsFile(parsed, dirname(path));
 }
 
 /**
@@ -400,7 +401,7 @@ export async function readAgentsNavigation(device: string = deviceHome()): Promi
 
 async function write(path: string, file: MachineSettingsFile): Promise<MachineSettingsFile> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFileAtomic(path, `${canonicalJson(file)}\n`);
+  await writeFileAtomic(path, `${canonicalJson({ ...file, values: Object.fromEntries(Object.entries(file.values).map(([key, value]) => [key, BY_KEY.get(key as MachineSettingKey)?.type === "path" && typeof value === "string" ? storePath(dirname(path), value) : value])) })}\n`);
   return file;
 }
 

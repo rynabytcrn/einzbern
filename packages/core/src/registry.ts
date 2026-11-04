@@ -1,3 +1,4 @@
+import { loadPath, storePath } from "./stored-path.js";
 import { localProbeTimeout } from "./io-policy.js";
 import { materializeWorkspace } from "./workspace.js";
 import { chainIdentity } from "./chain-identity.js";
@@ -32,7 +33,7 @@ import { projectLineage } from "./project-scope.js";
 
 import { execFileSync } from "node:child_process";
 import { copyFile, lstat, mkdir, readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { assertStrictInstant, canonicalJson, parseStrictInstant } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
@@ -42,7 +43,7 @@ import { backupsPath, ensureDeviceDirectory, registryPath } from "./device-home.
 import { openLibrary } from "./ether-library.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 
-export const REGISTRY_SCHEMA_VERSION = "einzbern.registry.v1" as const;
+export const REGISTRY_SCHEMA_VERSION = "einzbern.registry.v2" as const;
 export const REGISTRY_REASON_CODES = Object.freeze([
   "LIBRARY_NOT_REGISTERED",
   "LIBRARY_REGISTRY_INVALID",
@@ -99,10 +100,10 @@ const ENTRY_FIELDS = ["cloudHosted", "gitRemote", "libraryId", "libraryPath", "p
 const MIGRATED_ENTRY_FIELDS = [...ENTRY_FIELDS, "migratedFrom"].sort();
 
 function isMigratedFrom(value: unknown): value is string {
-  return typeof value === "string" && value !== "" && !value.includes("\u0000") && isAbsolute(value);
+  return typeof value === "string" && value !== "" && !value.includes("\u0000");
 }
 
-function registryEntry(value: unknown, where: string): RegistryEntry {
+function registryEntry(value: unknown, where: string, base: string): RegistryEntry {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("LIBRARY_REGISTRY_INVALID", `${where} is not an object`);
   const record = value as Readonly<Record<string, unknown>>;
   const fields = Object.keys(record).filter((key) => key !== "projectId" && key !== "chainRole").sort().join("\u0000");
@@ -115,7 +116,7 @@ function registryEntry(value: unknown, where: string): RegistryEntry {
     (migratedFrom !== undefined && !isMigratedFrom(migratedFrom))) {
     fail("LIBRARY_REGISTRY_INVALID", `${where} types are invalid`);
   }
-  return { projectPath, gitRemote, libraryPath, libraryId, cloudHosted, registeredAt, ...(chainRole === undefined ? {} : { chainRole }), ...(typeof projectId === "string" ? { projectId } : {}), ...(migratedFrom === undefined ? {} : { migratedFrom }) };
+  return { projectPath: loadPath(base, projectPath), gitRemote, libraryPath: loadPath(base, libraryPath), libraryId, cloudHosted, registeredAt, ...(chainRole === undefined ? {} : { chainRole }), ...(typeof projectId === "string" ? { projectId } : {}), ...(migratedFrom === undefined ? {} : { migratedFrom: loadPath(base, migratedFrom) }) };
 }
 
 /** This device's registry; an absent file is an empty registry, a damaged one fails closed. */
@@ -135,18 +136,26 @@ export async function readRegistry(home?: string): Promise<Registry> {
     fail("LIBRARY_REGISTRY_INVALID", `${path} is not JSON`, { file: path });
   }
   if (value === null || typeof value !== "object" || Array.isArray(value) ||
-    (value as Readonly<Record<string, unknown>>).schemaVersion !== REGISTRY_SCHEMA_VERSION ||
+    !([REGISTRY_SCHEMA_VERSION, "einzbern.registry.v1"] as readonly unknown[]).includes((value as Readonly<Record<string, unknown>>).schemaVersion) ||
     !Array.isArray((value as Readonly<Record<string, unknown>>).entries)) {
     fail("LIBRARY_REGISTRY_INVALID", `${path} is not an ${REGISTRY_SCHEMA_VERSION} registry`, { file: path });
   }
-  const entries = ((value as { readonly entries: readonly unknown[] }).entries).map((entry, index) => registryEntry(entry, `${path} entries[${index}]`));
+  const entries = ((value as { readonly entries: readonly unknown[] }).entries).map((entry, index) => registryEntry(entry, `${path} entries[${index}]`, dirname(path)));
   return { schemaVersion: REGISTRY_SCHEMA_VERSION, entries };
+}
+
+/** Whether the existing record needs its legacy device paths normalized on repair. */
+export async function registryPathsPortable(home?: string): Promise<boolean> {
+  const path = registryPath(home);
+  const value = await readFile(path, "utf8").then(text => JSON.parse(text) as Registry, error => { if (error.code === "ENOENT") return null; throw error; });
+  if (value === null) return true;
+  return value.entries.every(entry => [entry.projectPath, entry.libraryPath, ...(entry.migratedFrom === undefined ? [] : [entry.migratedFrom])].every(path => storePath(dirname(registryPath(home)), loadPath(dirname(registryPath(home)), path)) === path));
 }
 
 async function writeRegistry(registry: Registry, home?: string): Promise<void> {
   const path = home === undefined ? registryPath() : registryPath(home);
   await ensureDeviceDirectory(dirname(path));
-  const entries = [...registry.entries].sort((left, right) => (left.projectPath < right.projectPath ? -1 : left.projectPath > right.projectPath ? 1 : 0));
+  const entries = [...registry.entries].sort((left, right) => (left.projectPath < right.projectPath ? -1 : left.projectPath > right.projectPath ? 1 : 0)).map(entry => ({ ...entry, projectPath: storePath(dirname(path), entry.projectPath), libraryPath: storePath(dirname(path), entry.libraryPath), ...(entry.migratedFrom === undefined ? {} : { migratedFrom: storePath(dirname(path), entry.migratedFrom) }) }));
   await writeFileAtomic(path, canonicalJson({ schemaVersion: REGISTRY_SCHEMA_VERSION, entries } as unknown as JsonValue));
 }
 

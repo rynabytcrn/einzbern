@@ -36,7 +36,7 @@ import {
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { DOT_AGENTS_MARKER } from "../dist/build/packages/core/src/dot-agents.js";
 import { builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
-import { HOST_HOOK_POINTER_EVENTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
+import { HOST_HOOK_POINTER_EVENTS, hostHookCommand, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { AGENTS_NAVIGATION_SETTING, MACHINE_SETTINGS_CATALOG, applyMachineSettingSet, readAgentsNavigation } from "../dist/build/packages/core/src/machine-settings.js";
 import { absolutePathLine, managedSectionRecordsFor, parseManagedFile, renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
 import { setVariable } from "../dist/build/packages/core/src/variables.js";
@@ -95,7 +95,7 @@ async function pendingProject(context) {
   const project = await renderedProject(context);
   const path = join(project.project, AGENTS_FILE);
   const written = await readFile(path, "utf8");
-  const edited = written.replace(NAVIGATION_LINES[2], EDITED_LINE);
+  const edited = written.replace(NAVIGATION_LINES[0], EDITED_LINE);
   assert.notEqual(edited, written);
   await writeFile(path, edited);
   const again = await renderAgentsSections(project.root, { projectRoot: project.project, navigation: "written", backupRoot: project.backups, occurredAt: at() });
@@ -149,13 +149,13 @@ test("478-R5: an import in a code block or a code span, or of another file, is n
   for (const id of ["navigation", "rule:autonomy", "variables-system", "variables-custom"]) assert.equal(managedSectionFile(id), AGENTS_FILE, id);
 });
 
-test("478-R4: the navigation section holds three lines and follows the shared project choice", async (context) => {
+test("478-R4: the navigation section holds one Skill entry and follows the shared project choice", async (context) => {
   const { base, project, backups } = await scratch(context);
-  assert.equal(NAVIGATION_LINES.length, 3);
+  assert.equal(NAVIGATION_LINES.length, 1);
   assert.equal(NAVIGATION_SECTION.body, `${NAVIGATION_LINES.join("\n")}\n`);
   assert.match(NAVIGATION_LINES[0], /Einzbern/u);
-  assert.match(NAVIGATION_LINES[1], /Mana Orchestrate/u);
-  assert.match(NAVIGATION_LINES[2], /recall/u);
+  assert.match(NAVIGATION_LINES[0], /Mana Orchestrate/u);
+  assert.doesNotMatch(NAVIGATION_SECTION.body, /recall|--query/u);
 
   const root = await library(base);
   await writeFile(join(project, CLAUDE_FILE), "@AGENTS.md\n");
@@ -191,8 +191,8 @@ test("478-AC5: declined adds SessionStart; prompt, subagent and read-guard hooks
     const declined = planHostHooks({ host, scope: "user", deviceHome, platform: "linux", navigation: "declined" });
     assert.deepEqual(Object.keys(declined.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse", "SessionStart"], host);
     assert.equal(declined.navigation, "declined");
-    assert.equal(declined.groups.SessionStart[0].hooks[0].command, 'node "/srv/einzbern/device/engine/hook.mjs" session-start');
-    assert.equal(declined.groups.SubagentStart[0].hooks[0].command, 'node "/srv/einzbern/device/engine/hook.mjs" subagent-start');
+    assert.equal(declined.groups.SessionStart[0].hooks[0].command, hostHookCommand("/srv/einzbern/device/engine/hook.mjs", "SessionStart"));
+    assert.equal(declined.groups.SubagentStart[0].hooks[0].command, hostHookCommand("/srv/einzbern/device/engine/hook.mjs", "SubagentStart"));
     for (const choice of ["written", null, undefined]) {
       const expected = planHostHooks({ host, scope: "user", deviceHome, platform: "linux", ...(choice === undefined ? {} : { navigation: choice }) });
       assert.deepEqual(Object.keys(expected.groups), ["UserPromptSubmit", "SubagentStart", "PreToolUse"], `${host}: ${choice}`);

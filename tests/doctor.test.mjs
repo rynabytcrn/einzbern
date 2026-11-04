@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import {
@@ -68,7 +68,7 @@ async function healthy(context, { traditional = true } = {}) {
   process.env.EINZBERN_HOME = deviceHome;
   await writeEngine(deviceHome, FRAMEWORK_VERSION);
   for (const host of traditional ? HOST_HOOK_FILE_HOSTS : []) {
-    await applyHostHooks(await readHostHooks(planHostHooks({ host, scope: "user", deviceHome }), { root: home, home }), { at: AT });
+    await applyHostHooks(await readHostHooks(planHostHooks({ host, scope: "user", deviceHome, userHome: home }), { root: home, home }), { at: AT });
   }
   const skill = join(base, "skill");
   await mkdir(join(skill, "references"), { recursive: true });
@@ -180,7 +180,7 @@ test("480-AC5: hooks-present is red for a host without its hook", async (context
 
 test("480-AC5: hooks-present is red for a host whose hook is in both scopes", async (context) => {
   const fixture = await healthy(context);
-  const plan = await readHostHooks(planHostHooks({ host: "codex", scope: "project", deviceHome: fixture.deviceHome }), { root: fixture.project, home: fixture.home });
+  const plan = await readHostHooks(planHostHooks({ host: "codex", scope: "project", deviceHome: fixture.deviceHome, userHome: fixture.home }), { root: fixture.project, home: fixture.home });
   await applyHostHooks(plan, { at: AT });
   assertOnlyRed(await doctor(fixture), "hooks-present", "HOOK_DUPLICATED");
 });
@@ -194,7 +194,7 @@ test("478-AC5: hooks-present accepts declined-navigation pointers and reports a 
     path: join(fixture.deviceHome, MACHINE_SETTINGS_FILE_NAME),
   });
   for (const host of HOST_HOOK_FILE_HOSTS) {
-    const plan = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome: fixture.deviceHome, navigation: "declined" }), { root: fixture.home, home: fixture.home });
+    const plan = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome: fixture.deviceHome, userHome: fixture.home, navigation: "declined" }), { root: fixture.home, home: fixture.home });
     await applyHostHooks(plan, { at: AT });
   }
 
@@ -309,7 +309,7 @@ test("541 GWT3: an entry whose library is gone is a hint of the registry check, 
   }]);
 
   // A red registry check keeps its own cause and lists the hint beside it.
-  await writeFile(join(fixture.deviceHome, "registry.json"), JSON.stringify({ schemaVersion: "einzbern.registry.v1", entries: JSON.parse(await readFile(join(fixture.deviceHome, "registry.json"), "utf8")).entries.filter((entry) => entry.projectPath !== fixture.project) }));
+  await writeFile(join(fixture.deviceHome, "registry.json"), JSON.stringify({ schemaVersion: "einzbern.registry.v1", entries: JSON.parse(await readFile(join(fixture.deviceHome, "registry.json"), "utf8")).entries.filter((entry) => resolve(fixture.deviceHome, entry.projectPath) !== fixture.project) }));
   const unregistered = await doctor(fixture);
   assertOnlyRed(unregistered, "registry", "LIBRARY_NOT_REGISTERED");
   assert.deepEqual(byCheck(unregistered, "registry").detail.hints.map((hint) => hint.projectPath), [other]);

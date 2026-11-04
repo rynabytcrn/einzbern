@@ -11,12 +11,13 @@ import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
-import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, delimiter, join, resolve } from "node:path";
+import { dirname, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 
+import { hostHookCommand, isEinzbernHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, readStorageLocation, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS, runDoctor } from "../dist/build/packages/core/src/doctor.js";
@@ -114,7 +115,7 @@ async function einzbernHooks(path) {
   for (const [event, groups] of Object.entries(document.hooks ?? {})) {
     for (const group of groups) {
       for (const hook of group.hooks ?? []) {
-        if (/^node "[^"]+[\\/]engine[\\/]hook\.mjs" [a-z-]+$/u.test(hook.command)) found.push([event, hook.command]);
+        if (isEinzbernHookCommand(hook.command)) found.push([event, hook.command]);
       }
     }
   }
@@ -282,24 +283,24 @@ test("480-AC1: the default answers install the library, the registry entry, both
   const coordination = join(dirname(f.deviceHome), "Ether");
   const coordinationId = chainIdentity(await materializeWorkspace(join(dirname(f.deviceHome), "Ether"))).coordinationLibraryId;
   assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.libraryId, entry.cloudHosted, entry.chainRole]),
-    [[f.project, join(dirname(f.deviceHome), "Ether"), applied.library.libraryId, false, "project"]]);
+    [[relative(f.deviceHome, f.project), relative(f.deviceHome, join(dirname(f.deviceHome), "Ether")), applied.library.libraryId, false, "project"]]);
   assert.deepEqual(applied.coordination, { libraryId: coordinationId, status: "registered", path: coordination });
   const state = await materializeWorkspace(join(dirname(f.deviceHome), "Ether"));
   assert.equal(state.settings.find((setting) => setting.key === "artifact.language")?.value, "en");
   for (const root of SKILL_COPY_ROOTS) assert.ok((await lstat(join(skillCopyPath(f.home, root), "SKILL.md"))).isFile(), root.host);
   const launcher = join(f.deviceHome, "engine", "hook.mjs");
   assert.deepEqual(await readFile(launcher), await readFile(join(repositoryRoot, "scripts/einzbern-hook-launcher.mjs")));
-  assert.deepEqual(await einzbernHooks(join(f.home, ".claude", "settings.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
-  assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
+  assert.deepEqual(await einzbernHooks(join(f.home, ".claude", "settings.json")), [["UserPromptSubmit", hostHookCommand(launcher, "UserPromptSubmit", f.home)], ["SubagentStart", hostHookCommand(launcher, "SubagentStart", f.home)], ["PreToolUse", hostHookCommand(launcher, "PreToolUse", f.home)]]);
+  assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), [["UserPromptSubmit", hostHookCommand(launcher, "UserPromptSubmit", f.home)], ["SubagentStart", hostHookCommand(launcher, "SubagentStart", f.home)], ["PreToolUse", hostHookCommand(launcher, "PreToolUse", f.home)]]);
   assert.match(await readFile(join(f.home, ".codex", "config.toml"), "utf8"), /^\[features\]\nhooks = true$/mu);
   const claude = await readFile(join(f.project, "CLAUDE.md"), "utf8");
   assert.match(claude, /<!-- einzbern:section id=claude-import rev=1 digest=[0-9a-f]{64} -->\n@AGENTS\.md\n<!-- einzbern:section-end id=claude-import -->/u);
   const agents = await readFile(join(f.project, "AGENTS.md"), "utf8");
-  assert.match(agents, /<!-- einzbern:section id=navigation rev=1 digest=[0-9a-f]{64} -->\nThis project is managed by Einzbern\./u);
+  assert.match(agents, /<!-- einzbern:section id=navigation rev=1 digest=[0-9a-f]{64} -->\nThis workspace uses Einzbern\./u);
   assert.equal(JSON.parse(await readFile(join(f.deviceHome, "machine-settings.json"), "utf8")).values["agents.navigation"], "written");
   // Nothing in the project names this machine's paths, and the project's own host settings are untouched.
   for (const file of ["AGENTS.md", "CLAUDE.md"]) assert.ok(!(await readFile(join(f.project, file), "utf8")).includes(f.base), file);
-  assert.ok((await readFile(join(f.project, ".claude/settings.local.json"), "utf8")).includes(applied.library.path));
+  assert.ok((await readFile(join(f.project, ".claude/settings.local.json"), "utf8")).includes(relative(f.project, applied.library.path)));
   assert.equal(await lstat(join(f.project, ".ether")).catch(() => null), null);
   assertSelfCheckGreen(applied);
 });
@@ -405,7 +406,7 @@ test("480-R5: every host file and project file is backed up before it is replace
   assert.equal(settings.theme, "dark");
   assert.deepEqual(settings.hooks.UserPromptSubmit.map((group) => group.hooks.map((hook) => hook.command)), [
     ["other-tool notify"],
-    [`node "${join(f.deviceHome, "engine", "hook.mjs")}" user-prompt-submit`],
+    [hostHookCommand(join(f.deviceHome, "engine", "hook.mjs"), "UserPromptSubmit", f.home)],
   ]);
   assert.match(await readFile(join(f.home, ".codex", "config.toml"), "utf8"), /^model = "other"$/mu);
   assert.ok((await readFile(join(f.project, "CLAUDE.md"), "utf8")).startsWith("# Project\n\nHouse rules.\n"));
@@ -425,8 +426,8 @@ test("480-R2: a library outside the project gets the project's host write roots;
   const applied = await applySetup(planned);
   assert.deepEqual(applied.warnings, []);
   assert.equal(applied.library.path, library);
-  assert.deepEqual(JSON.parse(await readFile(roots[0], "utf8")).permissions.additionalDirectories, [library]);
-  assert.ok((await readFile(roots[1], "utf8")).includes(JSON.stringify(library)));
+  assert.deepEqual(JSON.parse(await readFile(roots[0], "utf8")).permissions.additionalDirectories, [relative(f.project, library)]);
+  assert.ok((await readFile(roots[1], "utf8")).includes(JSON.stringify(relative(join(f.project, ".codex"), library))));
   // Device decline changes local hooks, not the shared project navigation declaration.
   assert.match(await readFile(join(f.project, "AGENTS.md"), "utf8"), /id=navigation /u);
   assert.equal(JSON.parse(await readFile(join(f.deviceHome, "machine-settings.json"), "utf8")).values["agents.navigation"], "declined");
@@ -485,7 +486,7 @@ test("385-R16: with the library outside the project, fresh and repair name each 
   assert.equal(applied.reasonCode, "SETUP_APPLIED");
   assert.deepEqual(applied.warnings, trackedWarnings(), "SETUP_APPLIED names the same files");
   // The wizard warns and leaves Git alone: both files name the library, stay staged as they were, and nothing is committed.
-  for (const file of HOST_FILES) assert.ok((await readFile(join(f.project, ...file.split("/")), "utf8")).includes(library), file);
+  for (const file of HOST_FILES) assert.ok((await readFile(join(f.project, ...file.split("/")), "utf8")).includes(relative(file.startsWith(".codex") ? join(f.project, ".codex") : f.project, library)), file);
   assert.equal(git(f.project, "status", "--porcelain", "--", ...HOST_FILES), HOST_FILES.map((file) => `AM ${file}\n`).join(""));
   assert.notEqual(spawnSync("git", ["-C", f.project, "rev-parse", "--verify", "--quiet", "HEAD"]).status, 0, "no commit was made");
   assertSelfCheckGreen(applied);
@@ -567,7 +568,7 @@ test("fresh defaults reuse one external library for different projects with sepa
   for (const root of [f.project, secondRoot]) assertSelfCheckGreen({ selfCheck: await check(root) });
   const document = join(f.project, "AGENTS.md");
   const original = await readFile(document, "utf8");
-  const changed = original.replace("Recall first:", "Recall frst:");
+  const changed = original.replace("Load and follow", "Owner edited");
   assert.notEqual(changed, original);
   await writeFile(document, changed);
   const edited = (await check(f.project)).find(entry => entry.check === "managed-sections");
@@ -684,4 +685,56 @@ test("public setup rejects malformed admission and cannot override a later hooks
   const denied = await plan(f, {}, { codexAdmission: planned.codexAdmission });
   assert.ok(denied.blockers.some(blocker => blocker.reasonCode === "HOST_HOOKS_FILE_UNSUPPORTED"));
   await assert.rejects(planSetup({ mode: "fresh", executionTarget: "chatgpt-dot", projectRoot: f.project, at: at(), codexAdmission: planned.codexAdmission }), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
+});
+
+
+test("fresh installation is portable: no device paths persist and a moved installation executes CLI and hooks", async (context) => {
+  const f = await fixture(context);
+  const installed = await applySetup(await plan(f));
+  assertSelfCheckGreen(installed);
+  const libraryId = installed.library.libraryId;
+  const seen = new Set();
+  async function inspect(root) {
+    if (seen.has(root)) return;
+    seen.add(root);
+    for (const entry of await readdir(root, { withFileTypes: true })) {
+      const file = join(root, entry.name);
+      if (entry.isSymbolicLink()) assert.equal(isAbsolute(await readlink(file)), false, file);
+      else if (entry.isDirectory()) await inspect(file);
+      else if (entry.isFile()) {
+        const bytes = await readFile(file, "utf8");
+        assert.equal(bytes.includes(f.base), false, `installation path leaked into ${relative(f.base, file)}`);
+        assert.equal(bytes.includes(repositoryRoot), false, `checkout path leaked into ${relative(f.base, file)}`);
+      }
+    }
+  }
+  await inspect(f.home); await inspect(f.deviceHome); await inspect(installed.library.path);
+  const agents = await readFile(join(f.project, "AGENTS.md"), "utf8");
+  assert.match(agents, /Load and follow the Mana Orchestrate skill/u);
+  assert.doesNotMatch(agents, /Recall first|--query|settings-catalog|variables-system|variables-custom/u);
+  const next = await plan(f);
+  assert.deepEqual(next.writes, [], "an identical install is a no-op");
+
+  const moved = `${f.base}-moved`;
+  await rename(f.base, moved);
+  context.after(() => rm(moved, { recursive: true, force: true }));
+  const atMoved = path => resolve(moved, relative(f.base, path));
+  const project = atMoved(f.project), home = atMoved(f.home), device = atMoved(f.deviceHome);
+  const env = { ...process.env, HOME: home, USERPROFILE: home, EINZBERN_HOME: device };
+  const launcher = join(device, "engine", "einzbern.mjs");
+  const resolved = spawnSync(process.execPath, [launcher, "library-resolve", "--cwd", project], { cwd: project, env, encoding: "utf8" });
+  assert.equal(resolved.status, 0, resolved.stderr);
+  assert.equal(JSON.parse(resolved.stdout).libraryId, libraryId);
+  assert.equal(JSON.parse(resolved.stdout).libraryPath, atMoved(installed.library.path));
+  const checked = spawnSync(process.execPath, [launcher, "doctor", "--project", project], { cwd: project, env, encoding: "utf8" });
+  assert.equal(checked.status, 0, checked.stderr + checked.stdout);
+  assert.equal(JSON.parse(checked.stdout).ok, true, checked.stdout);
+  assert.ok(JSON.parse(checked.stdout).checks.every(check => check.ok), checked.stdout);
+  const hook = JSON.parse(await readFile(join(home, ".codex/hooks.json"), "utf8")).hooks.SubagentStart[0].hooks[0].command;
+  delete env.EINZBERN_HOME;
+  const invoked = spawnSync(hook, { shell: true, cwd: project, env, input: JSON.stringify({ hook_event_name: "SubagentStart", cwd: project, agent_type: "portability" }), encoding: "utf8" });
+  assert.equal(invoked.status, 0, invoked.stderr);
+  assert.equal(invoked.stderr, "");
+  assert.match(JSON.parse(invoked.stdout).hookSpecificOutput.additionalContext, /Load and follow the Mana Orchestrate skill/u);
+  assert.doesNotMatch(invoked.stdout, /Recall first|--query/u);
 });

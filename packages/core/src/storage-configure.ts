@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+import { loadPath, storePath } from "./stored-path.js";
 import { lstat, mkdir, readFile, readdir, realpath, symlink } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { withFileLock } from "./file-lock.js";
@@ -21,17 +22,19 @@ export async function configureStorageLocation(home: string, library: string, ru
     const receiptPath = join(home, "storage-relocation.json");
     const expected = { from, to: target, library: resolve(library), decidedIn };
     let recorded = await readFile(receiptPath, "utf8").then(text => JSON.parse(text), error => { if (error.code === "ENOENT") return null; throw error; });
+    if (recorded !== null) recorded = { ...recorded, from: loadPath(home, recorded.from), to: loadPath(home, recorded.to), library: loadPath(home, recorded.library) };
     if (recorded !== null && canonicalJson(recorded) !== canonicalJson(expected) && from !== target) {
       if (previous === null || previous.runtime !== recorded.to || previous.decidedIn !== recorded.decidedIn) throw new Error("STORAGE_RECOVERY_REQUIRED");
       const archive = join(from, "backups", "storage-locations");
       await mkdir(archive, { recursive: true });
-      await writeFileAtomic(join(archive, `${at.replace(/[-:]/gu, "")}.json`), canonicalJson({ pointer: previous, receipt: recorded }));
+      await writeFileAtomic(join(archive, `${at.replace(/[-:]/gu, "")}.json`), canonicalJson({ pointer: { ...previous, library: storePath(home, previous.library), runtime: storePath(home, previous.runtime) }, receipt: { ...recorded, from: storePath(home, recorded.from), to: storePath(home, recorded.to), library: storePath(home, recorded.library) } }));
       recorded = null;
     }
     if (from !== target && recorded === null) {
-      await writeFileAtomic(receiptPath, canonicalJson(expected));
+      await writeFileAtomic(receiptPath, canonicalJson({ ...expected, from: storePath(home, from), to: storePath(home, target), library: storePath(home, library) }));
       recorded = expected;
     }
+    if (recorded !== null) await writeFileAtomic(receiptPath, canonicalJson({ ...recorded, from: storePath(home, recorded.from), to: storePath(home, recorded.to), library: storePath(home, recorded.library) }));
     await mkdir(target, { recursive: true });
     if (from !== target) {
       const locks = await readdir(join(from, "locks")).catch(error => { if (error.code === "ENOENT") return []; throw error; });
@@ -45,7 +48,7 @@ export async function configureStorageLocation(home: string, library: string, ru
         }
         const occupied = await lstat(destination).then(stat => { if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("STORAGE_UNSAFE_PATH"); return true; }, error => { if (error.code === "ENOENT") return false; throw error; });
         if (sourceStat === null) {
-          if (occupied && recorded !== null) await symlink(destination, source, process.platform === "win32" ? "junction" : "dir");
+          if (occupied && recorded !== null) await symlink(relative(dirname(source), destination), source, process.platform === "win32" ? "junction" : "dir");
           continue;
         }
         if (!sourceStat.isDirectory()) throw new Error("STORAGE_UNSAFE_PATH");
@@ -53,11 +56,11 @@ export async function configureStorageLocation(home: string, library: string, ru
         if (occupied && !pendingCopy) throw new Error(`STORAGE_TARGET_NOT_EMPTY: ${destination}`);
         await transportRuntimeArea(home, source, destination, at, transportOptions);
         // Historical evidence paths keep resolving, without keeping a second data copy.
-        await symlink(destination, source, process.platform === "win32" ? "junction" : "dir");
+        await symlink(relative(dirname(source), destination), source, process.platform === "win32" ? "junction" : "dir");
       }
     }
-    const value: StorageLocation = { schemaVersion: "einzbern.storage-location.v1", library: resolve(library), runtime: target, at, decidedIn };
-    await writeFileAtomic(join(home, "storage-location.json"), canonicalJson(value));
+    const value: StorageLocation = { schemaVersion: "einzbern.storage-location.v2", library: resolve(library), runtime: target, at, decidedIn };
+    await writeFileAtomic(join(home, "storage-location.json"), canonicalJson({ ...value, library: storePath(home, value.library), runtime: storePath(home, value.runtime) }));
     const { readRegistry } = await import("./registry.js");
     const { planWritableRoots, applyWritableRoots } = await import("./host-writable-roots.js");
     const hostWiring = [];

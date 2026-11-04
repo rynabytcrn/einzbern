@@ -126,11 +126,9 @@ export interface AgentsSection {
 /** CLAUDE.md's one section: the import of AGENTS.md, written only while CLAUDE.md does not import it (R5). */
 export const CLAUDE_IMPORT_SECTION: AgentsSection = Object.freeze({ id: "claude-import", file: CLAUDE_FILE, body: "@AGENTS.md\n" });
 
-/** The three navigation lines (R4): the navigation section's text, and what the pointer hooks print. */
+/** One Skill entry shared by managed navigation and fallback pointer hooks. */
 export const NAVIGATION_LINES: readonly string[] = Object.freeze([
-  `This project is managed by ${BRAND.engine.name}.`,
-  `Load the ${BRAND.helper.name} skill before you start work.`,
-  `Recall first: run ${BRAND.engine.name}'s recall for the task before you plan or change anything.`,
+  `This workspace uses ${BRAND.engine.name}. Load and follow the ${BRAND.helper.name} skill for applicable work.`,
 ]);
 
 /** AGENTS.md's navigation section, written only on a device whose agents.navigation is written. */

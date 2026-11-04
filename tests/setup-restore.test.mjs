@@ -1,3 +1,4 @@
+import { hostHookCommand, isEinzbernHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-480 R3, AC3 (TCRN-CROSS-SUB-324): setup --mode restore. A library passes eight
 // checks before anything is written, and the first that fails stops the restore with its own reason
@@ -156,7 +157,7 @@ async function einzbernHooks(path) {
   for (const [event, groups] of Object.entries(document.hooks ?? {})) {
     for (const group of groups) {
       for (const hook of group.hooks ?? []) {
-        if (/^node "[^"]+[\\/]engine[\\/]hook\.mjs" [a-z-]+$/u.test(hook.command)) found.push([event, hook.command]);
+        if (isEinzbernHookCommand(hook.command)) found.push([event, hook.command]);
       }
     }
   }
@@ -319,7 +320,7 @@ test("480-R3: each of the other seven checks stops the restore with its own reas
   // 8 sections: the navigation section was changed by hand after the library recorded it.
   const agents = join(f.project, "AGENTS.md");
   const original = await readFile(agents, "utf8");
-  await writeFile(agents, original.replace("This project is managed by Einzbern.", "This project is managed by hand."));
+  await writeFile(agents, original.replace("This workspace uses Einzbern. Load and follow the Mana Orchestrate skill for applicable work.", "This project is managed by hand."));
   const diverged = await refusedWithoutWrites({ restore: f.library }, "sections", "MANAGED_SECTION_PENDING");
   assert.equal(diverged.details.section, "AGENTS.md#navigation");
   await writeFile(agents, original);
@@ -388,17 +389,17 @@ test("480-R3: once all eight pass, the project is registered and wired from the 
   assert.notEqual(applied.deviceId, first.deviceId, "device b has an identity of its own");
   assert.equal((await computeInstallTreeDigest(library)).sha256, libraryDigest, "nothing was written into the library");
   const registry = JSON.parse(await readFile(join(f.b.deviceHome, "registry.json"), "utf8"));
-  assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.libraryId, entry.cloudHosted]),
+  assert.deepEqual(registry.entries.map((entry) => [resolve(f.b.deviceHome, entry.projectPath), resolve(f.b.deviceHome, entry.libraryPath), entry.libraryId, entry.cloudHosted]),
     [[f.project, library, first.library.libraryId, false]]);
   for (const root of SKILL_COPY_ROOTS) assert.ok((await lstat(join(skillCopyPath(f.b.home, root), "SKILL.md"))).isFile(), root.host);
   const launcher = join(f.b.deviceHome, "engine", "hook.mjs");
-  assert.deepEqual(await einzbernHooks(join(f.b.home, ".claude", "settings.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
-  assert.deepEqual(await einzbernHooks(join(f.b.home, ".codex", "hooks.json")), [["UserPromptSubmit", `node "${launcher}" user-prompt-submit`], ["SubagentStart", `node "${launcher}" subagent-start`], ["PreToolUse", `node "${launcher}" pre-tool-use`]]);
+  assert.deepEqual(await einzbernHooks(join(f.b.home, ".claude", "settings.json")), [["UserPromptSubmit", hostHookCommand(launcher, "UserPromptSubmit", f.b.home)], ["SubagentStart", hostHookCommand(launcher, "SubagentStart", f.b.home)], ["PreToolUse", hostHookCommand(launcher, "PreToolUse", f.b.home)]]);
+  assert.deepEqual(await einzbernHooks(join(f.b.home, ".codex", "hooks.json")), [["UserPromptSubmit", hostHookCommand(launcher, "UserPromptSubmit", f.b.home)], ["SubagentStart", hostHookCommand(launcher, "SubagentStart", f.b.home)], ["PreToolUse", hostHookCommand(launcher, "PreToolUse", f.b.home)]]);
 
   // Two columns: the project's settings and records that came back, and this device's own keys.
   const project = applied.columns.project;
   assert.deepEqual(project.settings.find((setting) => setting.key === "artifact.language"), { key: "artifact.language", value: "zh-CN" });
-  assert.ok(project.records.some((entry) => entry.collection === "managed-section" && entry.count >= 3), JSON.stringify(project.records));
+  assert.ok(project.records.some((entry) => entry.collection === "managed-section" && entry.count === 2), JSON.stringify(project.records));
   const device = new Map(applied.columns.device.map((entry) => [entry.key, entry]));
   assert.deepEqual(device.get("registry.cloudHosted"), { key: "registry.cloudHosted", value: "false", flag: "--cloud" });
   assert.deepEqual(device.get("agents.navigation"), { key: "agents.navigation", value: "written", flag: "--navigation" });

@@ -297,7 +297,7 @@ function einzbernHookCount(text: string | null): number {
 async function readScope(host: HostHookFileHost, scope: HostHookScope, root: string, context: DoctorContext): Promise<ScopeRead> {
   const location = { root, home: context.home };
   const navigation = scope === "user" ? await readAgentsNavigation(context.deviceHome) : null;
-  const request = { host, scope, deviceHome: context.deviceHome, platform: context.platform, navigation };
+  const request = { host, scope, deviceHome: context.deviceHome, userHome: context.home, platform: context.platform, navigation };
   const installed = await readHostHooks(planHostHooks(request), location);
   const bare = await readHostHooks(planHostHooks({ ...request, install: false }), location);
   return { count: einzbernHookCount(installed.files[0]?.before ?? null), installed, bare };

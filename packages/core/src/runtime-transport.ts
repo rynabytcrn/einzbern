@@ -5,6 +5,7 @@ import { copyFile, lstat, mkdir, readFile, readdir, readlink, rename, rmdir, sta
 import { dirname, isAbsolute, join } from "node:path";
 import { canonicalJson } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
+import { loadPath, storePath } from "./stored-path.js";
 import { writeFileAtomic } from "./atomic-file.js";
 
 interface Identity { readonly dev: string; readonly ino: string }
@@ -59,7 +60,8 @@ export function runtimeTransportReceiptPath(home: string, from: string, to: stri
 export async function transportRuntimeArea(home: string, from: string, to: string, at: string, options: RuntimeTransportOptions = {}): Promise<void> {
   const receiptPath = runtimeTransportReceiptPath(home, from, to, at);
   let receipt = await readFile(receiptPath, "utf8").then(text => JSON.parse(text) as Receipt, error => { if (error.code === "ENOENT") return null; throw error; });
-  if (receipt !== null) validateReceipt(receipt);
+  if (receipt !== null) { receipt = { ...receipt, from: loadPath(home, receipt.from), to: loadPath(home, receipt.to) }; validateReceipt(receipt); }
+  const save = (value: Receipt): Promise<void> => writeFileAtomic(receiptPath, json({ ...value, from: storePath(home, value.from), to: storePath(home, value.to) }));
   if (receipt === null) {
     if (await exists(to)) refuse(`runtime destination is occupied: ${to}`);
     if (!options.forceCopyForTest) {
@@ -68,10 +70,10 @@ export async function transportRuntimeArea(home: string, from: string, to: strin
     }
     receipt = { from, to, source: await identity(from), entries: await inventory(from), phase: "copying" };
     await mkdir(dirname(receiptPath), { recursive: true });
-    await writeFileAtomic(receiptPath, json(receipt));
+    await save(receipt);
     await mkdir(to);
     receipt = { ...receipt, target: await identity(to) };
-    await writeFileAtomic(receiptPath, json(receipt));
+    await save(receipt);
   }
   if (receipt.from !== from || receipt.to !== to || receipt.target === undefined || json(await identity(to)) !== json(receipt.target)) refuse("runtime transport receipt does not own the destination");
   const expected = new Map(receipt.entries.map(entry => [entry.path, entry]));
@@ -95,7 +97,7 @@ export async function transportRuntimeArea(home: string, from: string, to: strin
     }
     if (!identical(await inventory(from), receipt.entries) || !identical(await inventory(to), receipt.entries)) refuse("runtime copy does not match the original");
     receipt = { ...receipt, phase: "verified" };
-    await writeFileAtomic(receiptPath, json(receipt));
+    await save(receipt);
     await options.publicationStepForTest?.("verified");
   }
   if (!identical(await inventory(to), receipt.entries)) refuse("verified runtime destination changed");
@@ -115,5 +117,5 @@ export async function transportRuntimeArea(home: string, from: string, to: strin
     for (const entry of remaining.filter(entry => entry.kind === "directory").sort((a, b) => b.path.length - a.path.length)) await rmdir(join(from, entry.path));
     await rmdir(from);
   }
-  await writeFileAtomic(receiptPath, json({ ...receipt, phase: "complete" }));
+  await save({ ...receipt, phase: "complete" });
 }

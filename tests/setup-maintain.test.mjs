@@ -1,3 +1,4 @@
+import { isEinzbernHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-480 R4, AC4 and STORY-478 R6 (TCRN-CROSS-SUB-325): the modes for an installation
 // that already runs. An update installs a newer release from a local archive or its unpacked
@@ -165,7 +166,7 @@ async function einzbernHooks(path) {
   for (const [event, groups] of Object.entries(document.hooks ?? {})) {
     for (const group of groups) {
       for (const hook of group.hooks ?? []) {
-        if (/^node "[^"]+[\\/]engine[\\/]hook\.mjs" [a-z-]+$/u.test(hook.command)) found.push([event, hook.command]);
+        if (isEinzbernHookCommand(hook.command)) found.push([event, hook.command]);
       }
     }
   }
@@ -558,7 +559,7 @@ test("480-AC4: uninstall with --managed-sections remove takes the section marker
   const applied = await applySetup(planned);
   const [after, claudeAfter] = await Promise.all([readFile(agents, "utf8"), readFile(claude, "utf8")]);
   assert.doesNotMatch(after, /einzbern:section/u);
-  assert.match(after, /This project is managed by Einzbern\./u, "the text stays, the user's from now on");
+  assert.match(after, /This workspace uses Einzbern\./u, "the text stays, the user's from now on");
   assert.doesNotMatch(claudeAfter, /einzbern:section/u);
   assert.match(claudeAfter, /^@AGENTS\.md$/mu);
   const backups = join(applied.backupDir, "managed-sections");

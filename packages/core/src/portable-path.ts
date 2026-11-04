@@ -18,7 +18,7 @@ export function resolvePortablePath(root: string, value: string, home: string = 
   let file: unknown;
   try { file = JSON.parse(readFileSync(join(home, "machine-settings.json"), "utf8")); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  const path = file === undefined ? undefined : validateMachineSettingsFile(file).values[key!];
+  const path = file === undefined ? undefined : validateMachineSettingsFile(file, home).values[key!];
   if (typeof path !== "string" || !isAbsolute(path)) throw Object.assign(new Error(`${key} is not configured on this device`), { reasonCode: "PATH_BINDING_UNCONFIGURED", key });
   return resolve(path, ...suffix);
 }

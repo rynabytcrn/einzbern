@@ -1,3 +1,4 @@
+import { BRANCH_LIFECYCLE_BODY, ruleBody } from "../dist/build/packages/core/src/rules-catalog.js";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-481 R2, AC1: scripts/pack-release.mjs writes einzbern-<version>.tar.gz and its
 // .sha256. Two packs of one tree are the same bytes. Unpacked into a directory that holds nothing
@@ -47,6 +48,7 @@ const SOURCE_COREPACK_HOME = resolve(process.env.COREPACK_HOME ?? join(
 ));
 const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
 const SPECIFICATIONS = Object.freeze([
+  "installed-paths-v2.md", "work-practices-v1.md", "dot-task-recovery-v1.md", "batch-execution-v1.md", "resource-cleanup-v1.md", "unattended-execution-v1.md", "design-consumption-v1.md", "configuration-contract-v1.md", "settings-catalog-v1.md",
   "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
   "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md", "engine-hook-events-v2.md",
 ]);
@@ -853,7 +855,7 @@ test("INIT-062 packaged CLI distributes the universal rule revision to ordinary 
     invoke(["agents-render", "--project", project, "--at", at]);
     const generic = await readFile(join(project, "AGENTS.md"), "utf8");
     for (const id of ["autonomy", "residue-cleanup"]) {
-      const expected = await readFile(join(repositoryRoot, "tests/fixtures/rules", `${id}.${language === "zh-CN" ? "zh" : "en"}.md`), "utf8");
+      const expected = ruleBody(id, language);
       assert.ok(generic.includes(expected), `${id} ${language} reaches the ordinary-host AGENTS body`);
     }
     assert.ok((await readFile(join(project, "CLAUDE.md"), "utf8")).includes("@AGENTS.md"));
@@ -876,10 +878,10 @@ test("INIT-062 packaged CLI distributes the universal rule revision to ordinary 
     assert.equal(applied.dot.sessionRead, "not-verified");
     assert.deepEqual(applied.selfCheck, []);
     const independent = await readFile(join(dotRoot, "AGENTS.md"), "utf8");
-    const expectedFragments = language === "zh-CN"
-      ? ["模型自行添加的次数限制", "平台要求的逐次确认", "Fork 贡献、基线同步与分支收尾", "分支不再含目标中没有的独有提交", "本条不新增远端写入、合并、发布或永久删除权限"]
-      : ["count limit that the model itself inserted", "Platform-required confirmation for each action", "Fork contributions, baseline synchronization and branch retirement", "no unique commits absent from that target", "no new permission for remote writes, merges, publication or permanent deletion"];
-    for (const fragment of expectedFragments) assert.ok(independent.includes(fragment), `${language}: ${fragment}`);
+    for (const id of ["autonomy", "residue-cleanup"]) assert.ok(independent.includes(ruleBody(id, language)));
+    assert.match(independent, /Mana Orchestrate Skill/u);
+    const procedures = await readFile(join(tree, "specs/resource-cleanup-v1.md"), "utf8");
+    assert.ok(procedures.includes(BRANCH_LIFECYCLE_BODY.en.trim()));
     assert.equal(independent.includes("<!-- einzbern:section"), false, "dot remains an independent file, not generic sections");
     assert.equal(existsSync(join(dotRoot, "CLAUDE.md")), false, "dot does not install another host's bridge");
   }

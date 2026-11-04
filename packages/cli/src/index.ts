@@ -250,7 +250,7 @@ import type {
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { cp, lstat, mkdir, readdir, realpath, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ProtocolError, assertStrictInstant, canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
@@ -1857,7 +1857,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // --yes true it answers SETUP_PLAN_READY and writes nothing; with it, SETUP_APPLIED, whose
   // traditional self-check is doctor's eight checks and the hook run once. The dot target returns
   // only its independent file receipt; it never invokes a legacy hook.
-  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "codex-admission", required: false, valueKind: "string", valueShape: "absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override" }, { name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "absolute path to JSON dot target options; required for chatgpt-dot" }, { name: "approved-plan-digest", required: false, valueKind: "string", valueShape: "saved preview dot.planDigest; required for dot apply" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
+  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "codex-admission", required: false, valueKind: "string", valueShape: "JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override" }, { name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }, { name: "dot-input", required: false, valueKind: "string", valueShape: "path to JSON dot target options; required for chatgpt-dot" }, { name: "approved-plan-digest", required: false, valueKind: "string", valueShape: "saved preview dot.planDigest; required for dot apply" }, { name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   // TCRN-CROSS-STORY-479 R1: the skill directory this engine generates for its version, written
   // into a missing or empty --out; it runs only where the skill template sits beside the engine.
   { name: "skill-render", availability: "cli", mutates: true, flags: [{ name: "out", required: true, valueKind: "string" }, { name: "version", required: false, valueKind: "string" }] },
@@ -3012,8 +3012,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     let options = setupOptions(values);
     if (values["codex-admission"] !== undefined) {
       if (options.executionTarget === DOT_INSTALLATION_TARGET || options.mode === "uninstall") fail("SETUP_OPTION_NOT_APPLICABLE", "--codex-admission is for traditional installation wiring only");
-      const path = values["codex-admission"]!;
-      if (!isAbsolute(path)) fail("CLI_ARGUMENT_MALFORMED", "--codex-admission must name an absolute JSON path");
+      const path = resolve(values["codex-admission"]!);
       let observation: unknown;
       try { observation = JSON.parse(await readFile(path, "utf8")); }
       catch { fail("SETUP_INPUT_INVALID", "--codex-admission must name a readable Codex hook admission JSON observation"); }
@@ -3023,11 +3022,21 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     }
     if (options.executionTarget === DOT_INSTALLATION_TARGET) {
       required(values, ["dot-input"]);
-      if (!isAbsolute(values["dot-input"]!)) fail("CLI_ARGUMENT_MALFORMED", "--dot-input must name an absolute JSON path");
+      const inputBase = dirname(resolve(values["dot-input"]!));
       let dot: unknown;
       try { dot = JSON.parse(await readFile(values["dot-input"]!, "utf8")); }
       catch { fail("SETUP_INPUT_INVALID", "--dot-input must name a readable JSON options file"); }
       if (dot === null || typeof dot !== "object" || Array.isArray(dot) || ["executionTarget", "operation", "at"].some(key => Object.hasOwn(dot as object, key))) fail("SETUP_INPUT_INVALID", "dot-input contains only dot target options; target, mode and at come from CLI flags");
+      const relativeInput = dot as Record<string, unknown>;
+      const candidateBinding = relativeInput.binding;
+      if (candidateBinding !== null && typeof candidateBinding === "object" && !Array.isArray(candidateBinding)) {
+        const binding = candidateBinding as Record<string, unknown>;
+        if (typeof binding.root === "string") {
+          const root = resolve(inputBase, binding.root);
+          relativeInput.binding = { ...binding, root, ...Object.fromEntries(["agentsPath", "provenancePath", "backupRoot"].filter(key => typeof binding[key] === "string").map(key => [key, resolve(root, binding[key] as string)])) };
+        }
+      }
+      for (const key of ["enginePath", "manaSkillPath"]) if (typeof relativeInput[key] === "string") relativeInput[key] = resolve(inputBase, relativeInput[key] as string);
       options = { ...options, dot: dot as NonNullable<SetupOptions["dot"]> };
     } else if (values["dot-input"] !== undefined) fail("SETUP_OPTION_NOT_APPLICABLE", "--dot-input requires --execution-target chatgpt-dot");
     if (values["approved-plan-digest"] !== undefined && options.executionTarget !== DOT_INSTALLATION_TARGET) fail("SETUP_OPTION_NOT_APPLICABLE", "--approved-plan-digest requires --execution-target chatgpt-dot");

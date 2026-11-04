@@ -8,7 +8,7 @@ export const HEAVY_RUNS_REASON_CODES: readonly ["HEAVY_SLOT_OPTIONS_INVALID", "H
 export const DEVICE_DIRECTORY: ".einzbern";
 export const LOCKS_DIRECTORY: "locks";
 export const MACHINE_SETTINGS_FILE: "machine-settings.json";
-export const MACHINE_SETTINGS_SCHEMA_VERSION: "tcrn.machine-settings.v1";
+export const MACHINE_SETTINGS_SCHEMA_VERSION: "tcrn.machine-settings.v2";
 export const LOCK_SCHEMA_VERSION: "einzbern.file-lock.v1";
 
 export class HeavyRunsError extends Error {

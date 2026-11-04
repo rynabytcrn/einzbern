@@ -46,7 +46,7 @@ The `setup --dot-input` file is the closed input type
 
 | Field | Actual source and meaning |
 | --- | --- |
-| `binding` | Explicit normalized absolute `root`, `agentsPath`, `provenancePath`, `backupRoot`; bound `projectReference` and `ownerId`. All belong to this authorized target, not inferred from a filename. |
+| `binding` | Explicit `root` relative to the options file; `agentsPath`, `provenancePath`, `backupRoot` relative to that root; bound `projectReference` and `ownerId`. All belong to this authorized target, not inferred from a filename. |
 | `source` | `engineVersion`, `engineCommit` (`unavailable` when unknown), `engineSourceRef`, `language`, `enabledRules`. Each rule has `id`, `version`, `bodyDigest`, `sourceReference` from the current scoped engine readback. Catalog membership is not enablement. `source: null` is allowed only for skip or uninstall. |
 | `enginePath`, `manaSkillPath` | Explicit readable engine and Skill files, whose actual content digests are rechecked before apply. A path or claimed version alone is not authentication. |
 | `preInjection` | `apply` or `skip`; skip performs no target write and never silently writes elsewhere. |
@@ -69,7 +69,7 @@ any actually enabled `incremental-update` rule source. Registration of that eigh
 enable it. Dynamic work, counters, errors and schedule state never belong in AGENTS.
 
 Plan with `setup --mode fresh --execution-target chatgpt-dot --project <root> --at <UTC>
---dot-input <absolute private JSON file>`, without `--yes`. `--project` must match the bound root.
+--dot-input <private JSON file>`, without `--yes`. `--project` must match the bound root.
 The engine returns `SETUP_PLAN_READY`; inspect `dot.status`, changes, ownership, original/source
 hashes, backups, warnings and blockers, not only the top-level reason code. Keep pending user
 edits visible. Same inputs and content are a no-op; a changed original/source invalidates the old

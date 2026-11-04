@@ -141,7 +141,7 @@ test("470-R1: a verb run without --workspace works on the library the current di
     ["shared-submit-advisory-write", true],
   ]);
   const registry = JSON.parse(await readFile(join(base, "device", "registry.json"), "utf8"));
-  assert.equal(registry.schemaVersion, "einzbern.registry.v1");
+  assert.equal(registry.schemaVersion, "einzbern.registry.v2");
 });
 
 test("INIT-056: engine policy set resolves an omitted workspace through the registry and keeps refusal boundaries", async (context) => {

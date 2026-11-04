@@ -11,6 +11,7 @@ function packageInputFail(reasonCode, message, details = {}) {
 
 // Only public CLI contracts consumed by the installed helper, not the whole source specs tree.
 export const SPECIFICATIONS = Object.freeze([
+  "installed-paths-v2.md", "work-practices-v1.md", "dot-task-recovery-v1.md", "batch-execution-v1.md", "resource-cleanup-v1.md", "unattended-execution-v1.md", "design-consumption-v1.md", "configuration-contract-v1.md", "settings-catalog-v1.md",
   "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
   "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md", "engine-hook-events-v2.md",
 ]);

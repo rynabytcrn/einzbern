@@ -24,6 +24,7 @@
 // fixtures. Their current Chinese and English fixtures also contain agent-authored wording
 // implementing the Owner's universal authorization-count and branch-lifecycle instructions.
 
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -34,6 +35,27 @@ import { AUTONOMY_RESTRICTION_SCOPE_BODY, AUTONOMY_AUTHORIZATION_BODY, BRANCH_LI
 
 const fixtures = resolve(import.meta.dirname, "fixtures", "rules");
 const LANGUAGES = ["zh", "en"];
+const PROCEDURE_FILES = { batch: "batch-execution-v1.md", "residue-cleanup": "resource-cleanup-v1.md", "unattended-commands": "unattended-execution-v1.md", "design-authority": "design-consumption-v1.md" };
+function proceduralRule(id) {
+  const rule = builtInRule(id);
+  if (!PROCEDURE_FILES[id]) return rule;
+  const text = readFileSync(resolve(fixtures, "../../../specs", PROCEDURE_FILES[id]), "utf8");
+  const body = Object.fromEntries(LANGUAGES.map(language => {
+    const heading = `## ${rule.title[language]} v${rule.version}\n`;
+    const start = text.indexOf(heading);
+    assert.ok(start >= 0, `${id}: published procedure heading`);
+    const end = text.indexOf("\n## ", start + heading.length);
+    return [language, text.slice(start, end < 0 ? undefined : end).trimEnd() + "\n"];
+  }));
+  return { ...rule, body };
+}
+function portableProcedure(text) {
+  return text.replace("2. 命令里不 cd。一律绝对路径。对别的目录跑 git 用 git -C 那个目录。", "2. 通过宿主工作目录参数或 git -C 明确命令的基准目录。持久文件使用相对于已声明项目、设备或文档基准的路径，执行时再解析；生成物不得固化设备绝对路径。")
+    .replace("2. No cd in commands. Always use absolute paths. To run git against another directory, use git -C with that directory.", "2. Keep working directories explicit through the host working-directory option or git -C. Persist paths relative to their declared project, device or document base; resolve them only at execution. Do not bake a device path into generated files.")
+    .replace("与来源证据路径", "与来源证据引用（稳定项目标识和仓库相对路径）")
+    .replace("source evidence paths", "source evidence references (stable project identity plus repository-relative path)");
+}
+
 
 // A path from the filesystem root that goes through at least one directory, a path from a drive
 // letter, or a path from a home directory. A lone "/add-dir" is a host command a rule names, not
@@ -57,7 +79,7 @@ test("the engine ships nine built-in rules at their versions, batch processing a
     ["privacy-publication", 1],
   ]);
   assert.deepEqual([...BUILT_IN_RULE_IDS], BUILT_IN_RULES.map((rule) => rule.id));
-  assert.equal(builtInRule("batch")?.version, 3);
+  assert.equal(proceduralRule("batch")?.version, 3);
   assert.equal(builtInRule("batch-processing"), null);
   assert.ok(Object.isFrozen(BUILT_IN_RULES));
   for (const rule of BUILT_IN_RULES) {
@@ -96,14 +118,14 @@ test("every current Chinese body and the archived English contracts match their 
   // Historical bodies remain separately archived; current supplements have explicit fixtures.
   // The eighth source is asserted below without changing its contract.
   for (const rule of BUILT_IN_RULES.filter(rule => !["incremental-update", "privacy-publication"].includes(rule.id))) {
-    assert.equal(rule.body.zh, await readFile(join(fixtures, `${rule.id}.zh.md`), "utf8"), rule.id);
+    assert.equal(proceduralRule(rule.id).body.zh, portableProcedure(await readFile(join(fixtures, `${rule.id}.zh.md`), "utf8")), rule.id);
   }
-  assert.equal(builtInRule("design-authority")?.body.en, await readFile(join(fixtures, "design-authority.en.md"), "utf8"));
+  assert.equal(proceduralRule("design-authority")?.body.en, await readFile(join(fixtures, "design-authority.en.md"), "utf8"));
   assert.equal(builtInRule("silent-reporting")?.body.en, await readFile(join(fixtures, "silent-reporting.en.md"), "utf8"));
 });
 
 test("MIN291 D1: design authority is optional, but a configured conflict still stops dependent design work", () => {
-  const rule = builtInRule("design-authority");
+  const rule = proceduralRule("design-authority");
   assert.ok(rule);
   for (const [language, optional, conflict] of [
     ["zh", "设计权威是可选项", "已声明绑定冲突或无法解析时，停止依赖该权威的设计工作"],
@@ -214,7 +236,7 @@ const INC_225_CLAUSES = Object.freeze([
 
 test("540 (MIN-259 D1): residue-cleanup v1 preserves its eight historical clauses plus the branch supplement, and goal-writing stays unchanged", async () => {
   assert.deepEqual(BUILT_IN_RULE_IDS.slice(4, 7), ["design-authority", "residue-cleanup", "goal-writing"]);
-  const residue = builtInRule("residue-cleanup");
+  const residue = proceduralRule("residue-cleanup");
   const goal = builtInRule("goal-writing");
   assert.deepEqual([residue.version, { ...residue.title }], [1, { zh: "无效残余收尾原则", en: "Residue Cleanup Principle" }]);
   assert.deepEqual([goal.version, { ...goal.title }], [1, { zh: "目标书写契约", en: "Goal Writing Contract" }]);
@@ -239,7 +261,7 @@ test("540 (MIN-259 D1): residue-cleanup v1 preserves its eight historical clause
   for (const fragment of ["2026-10-05", "opens no planning round, subagent or acceptance gate", "`tmp`, `cache` or `test`", "`finally`", "`df`", "`du`"]) assert.ok(residue.body.en.includes(fragment), `residue-cleanup en: ${fragment}`);
   assert.deepEqual(goal.body.en.split("\n\n")[2].trimEnd().split("\n"), INC_225_CLAUSES, "goal-writing en: the three clauses are INC-225's English, as the Owner adopted it");
   assert.equal(goal.body.en.includes("This is the behaviour that reduced this instance's cost"), false, "the last sentence of INC-225 clause 3 is not carried");
-  assert.ok(goal.body.zh.includes("TCRN-CROSS-INC-225「FIX, TYPE LEVEL」") && goal.body.en.includes('TCRN-CROSS-INC-225 "FIX, TYPE LEVEL"'), "both name the Incident and its fix");
+  assert.doesNotMatch(goal.body.zh + goal.body.en, /TCRN-CROSS-INC-225/u, "local history is not a resident principle");
   for (const fragment of ["goal 只写可验证的工作终态", "可满足的退出分支", "言语行为条件"]) assert.ok(goal.body.zh.includes(fragment), `goal-writing zh: ${fragment}`);
 });
 
@@ -248,16 +270,16 @@ test("540 (MIN-259 D1): residue-cleanup v1 preserves its eight historical clause
 // empties the named trash directories under the session's scratch directory; each authorization
 // covers one report of their paths and sizes. Every other line is v1's, in both languages.
 test("541 trash authorization remains intact while empirical consolidation clarifies dialog and permission handling", async () => {
-  const rule = builtInRule("unattended-commands");
+  const rule = proceduralRule("unattended-commands");
   assert.equal(rule.version, 2);
-  assert.equal(rule.body.zh, await readFile(join(fixtures, "unattended-commands.zh.md"), "utf8"));
+  assert.equal(rule.body.zh, portableProcedure(await readFile(join(fixtures, "unattended-commands.zh.md"), "utf8")));
   for (const language of LANGUAGES) {
     const before = (await readFile(join(fixtures, `unattended-commands-v1.${language}.md`), "utf8")).split("\n");
     const after = rule.body[language].split("\n");
     assert.equal(after.length, before.length, `${language}: no line is added or taken away`);
     const clause1 = after.findIndex((line) => line.startsWith("1. "));
     const clause5 = after.findIndex((line) => line.startsWith("5. "));
-    assert.deepEqual(after.map((_, index) => index).filter((index) => after[index] !== before[index]), [0, 2, clause1, clause5], `${language}: only the heading, opening, trash authorization and dialog disposition change`);
+    assert.deepEqual(after.map((_, index) => index).filter((index) => after[index] !== before[index]), [0, 2, clause1, after.findIndex(line => line.startsWith("2. ")), clause5], `${language}: only the heading, opening, trash authorization, portable path handling and dialog disposition change`);
     assert.equal(after[0], before[0].replace(/ v1$/u, " v2"), `${language}: the heading names v2`);
     assert.ok(after[clause1].startsWith(before[clause1]) && after[clause1].length > before[clause1].length, `${language}: clause 1 keeps its v1 text and adds to its end`);
     const added = after[clause1].slice(before[clause1].length);
@@ -286,7 +308,7 @@ test("DOT-R01/R02 B5: incremental-update v1 distinguishes direct sync from neces
 test("INIT-062 universal supplements preserve v1 history, explicit user limits and safe branch retirement in both languages", async () => {
   for (const language of LANGUAGES) {
     for (const id of ["autonomy", "residue-cleanup"]) {
-      const rule = builtInRule(id);
+      const rule = proceduralRule(id);
       const previous = await readFile(join(fixtures, `${id}-v1-rev1.${language}.md`), "utf8");
       assert.equal(rule.version, 1);
       assert.equal(rule.body[language], await readFile(join(fixtures, `${id}.${language}.md`), "utf8"));
@@ -297,7 +319,7 @@ test("INIT-062 universal supplements preserve v1 history, explicit user limits a
     assert.ok(Object.isFrozen(AUTONOMY_AUTHORIZATION_BODY));
     assert.ok(Object.isFrozen(BRANCH_LIFECYCLE_BODY));
     assert.ok(builtInRule("autonomy").body[language].includes(AUTONOMY_AUTHORIZATION_BODY[language]));
-    assert.ok(builtInRule("residue-cleanup").body[language].includes(BRANCH_LIFECYCLE_BODY[language]));
+    assert.ok(proceduralRule("residue-cleanup").body[language].includes(BRANCH_LIFECYCLE_BODY[language]));
   }
   for (const text of ["模型自行拟定", "一般同意不等于明确施加", "只有用户在自己的指令中明确要求", "平台要求的逐次确认", "实质新增且相关的证据", "结果不明先读回核实", "无限重试、无限外部执行或发布许可"]) assert.ok(AUTONOMY_AUTHORIZATION_BODY.zh.includes(text), text);
   for (const text of ["model-authored plan", "General assent", "only when the user explicitly requests", "Platform-required confirmation for each action", "materially new and relevant evidence", "Read back an uncertain outcome", "unlimited retries, unlimited external execution or publication"]) assert.ok(AUTONOMY_AUTHORIZATION_BODY.en.includes(text), text);
@@ -327,13 +349,23 @@ test("INIT068 R21: common privacy principle covers authorized identity/minimizat
 
 
 test("INIT076: Codex peer contract is category-neutral and host-isolated", () => {
-  const body = builtInRule("batch").body.en;
+  const body = proceduralRule("batch").body.en;
   for (const phrase of ["not other hosts or dot", "independent main-category", "economy-category coordinator", "directly dispatches fresh workers", "main and economy", "flagship model group may remain unconfigured", "single-conversation coordination", "no collector cap exemption", "application attempt", "no-progress", "Unknown delivery", "/goal or /loop", "legitimate M governance rounds", "current Owner decision defines the testing scope"]) assert.ok(body.includes(phrase), phrase);
   for (const phrase of ["exactly one fresh, independent, dedicated", "Only this exact collector role is exempt", "waitForCodexNativeCollector", "gpt-6-luna", "gpt-6.1-sol"]) assert.equal(body.includes(phrase), false, phrase);
 });
 
 // Stable installed rules do not preserve one delivery's changing validation status.
 test("Codex installed rules contain no one-off overnight acceptance claim", () => {
-  assert.equal(builtInRule("batch").body.zh.includes("Owner 已验证"), false);
-  assert.equal(builtInRule("batch").body.en.includes("already verified sustained"), false);
+  assert.equal(proceduralRule("batch").body.zh.includes("Owner 已验证"), false);
+  assert.equal(proceduralRule("batch").body.en.includes("already verified sustained"), false);
+});
+
+
+test("resident principles leave concrete procedures to the Skill and keep installation text portable", () => {
+  for (const id of Object.keys(PROCEDURE_FILES)) {
+    for (const body of Object.values(builtInRule(id).body)) {
+      assert.doesNotMatch(body, /lessons\.json|knowledge-capture|git rm|trash-empty|\bmv\b|send_message|batchId/u, id);
+      assert.match(body, /Mana Orchestrate Skill/u, id);
+    }
+  }
 });

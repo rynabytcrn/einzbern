@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import fsPromises, { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 
 import { computeInstallTreeDigest } from "../dist/build/packages/core/src/install-tree-digest.js";
@@ -133,11 +133,11 @@ test("479-R4: skills.json records each copy's path and install-tree digest, and 
     skill: SKILL,
     installedAt: now,
     copies: [
-      { host: "claude", path: copyPath(home, ".claude/skills"), installTreeDigest: report.installTreeDigest },
-      { host: "codex", path: copyPath(home, ".agents/skills"), installTreeDigest: report.installTreeDigest },
+      { host: "claude", path: relative(device, copyPath(home, ".claude/skills")), installTreeDigest: report.installTreeDigest },
+      { host: "codex", path: relative(device, copyPath(home, ".agents/skills")), installTreeDigest: report.installTreeDigest },
     ],
   });
-  for (const copy of record.copies) assert.equal(await digestOf(copy.path), copy.installTreeDigest);
+  for (const copy of record.copies) assert.equal(await digestOf(resolve(device, copy.path)), copy.installTreeDigest);
 
   await writeFile(join(copyPath(home, ".claude/skills"), "references", "install.md"), "# install, edited\n");
   const drifted = await verifySkillCopies({ home, deviceHome: device });
@@ -391,4 +391,19 @@ test("479-R5: a backup is never overwritten: a taken backup path refuses the cle
 test("DOT-I01: the traditional skill-copy roots do not masquerade as dot installation", () => {
   assert.deepEqual(SKILL_COPY_ROOTS, [{ host: "claude", root: ".claude/skills" }, { host: "codex", root: ".agents/skills" }]);
   assert.equal(SKILL_COPY_ROOTS.some(entry => entry.host === "chatgpt-dot"), false);
+});
+
+
+test("same-content update migrates legacy absolute Skill records once", async context => {
+  const { home, device, source } = await scratch(context);
+  const first = await installSkillCopies({ source, home, deviceHome: device, now: at() });
+  const record = JSON.parse(await readFile(first.record, "utf8"));
+  record.schemaVersion = "einzbern.skill-copies.v1";
+  record.copies = record.copies.map(copy => ({ ...copy, path: resolve(device, copy.path) }));
+  await writeFile(first.record, JSON.stringify(record));
+  assert.equal((await verifySkillCopies({ home, deviceHome: device })).portable, false);
+  const migrated = await installSkillCopies({ source, home, deviceHome: device, now: at() });
+  assert.ok(migrated.copies.every(copy => copy.action === "reused"));
+  assert.equal((await verifySkillCopies({ home, deviceHome: device })).portable, true);
+  assert.equal((await installSkillCopies({ source, home, deviceHome: device, now: at() })).reasonCode, "SKILL_COPIES_CURRENT");
 });

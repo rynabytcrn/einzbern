@@ -55,7 +55,7 @@ export const HEAVY_RUNS_REASON_CODES = Object.freeze([
 export const DEVICE_DIRECTORY = ".einzbern";
 export const LOCKS_DIRECTORY = "locks";
 export const MACHINE_SETTINGS_FILE = "machine-settings.json";
-export const MACHINE_SETTINGS_SCHEMA_VERSION = "tcrn.machine-settings.v1";
+export const MACHINE_SETTINGS_SCHEMA_VERSION = "tcrn.machine-settings.v2";
 export const LOCK_SCHEMA_VERSION = "einzbern.file-lock.v1";
 
 const TOKEN = /^[a-f0-9]{32}$/u;
@@ -127,7 +127,7 @@ export function maxConcurrentHeavyRuns(env = process.env, home = homedir()) {
     fail("MACHINE_SETTINGS_FILE_INVALID", "the machine settings file is not JSON");
   }
   const values = file?.values;
-  if (file?.schemaVersion !== MACHINE_SETTINGS_SCHEMA_VERSION || values === null || typeof values !== "object" || Array.isArray(values)) {
+  if (![MACHINE_SETTINGS_SCHEMA_VERSION, "tcrn.machine-settings.v1"].includes(file?.schemaVersion) || values === null || typeof values !== "object" || Array.isArray(values)) {
     fail("MACHINE_SETTINGS_FILE_INVALID", `the machine settings file is not ${MACHINE_SETTINGS_SCHEMA_VERSION}`);
   }
   return Object.hasOwn(values, HEAVY_RUNS_SETTING) ? heavyRunsValue(values[HEAVY_RUNS_SETTING]) : HEAVY_RUNS_DEFAULT;

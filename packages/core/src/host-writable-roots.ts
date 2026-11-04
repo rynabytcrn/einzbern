@@ -1,3 +1,4 @@
+import { storePath } from "./stored-path.js";
 import { deviceHome } from "./device-home.js";
 import { readStorageLocation } from "./storage-location.js";
 import { localProbeTimeout } from "./io-policy.js";
@@ -9,9 +10,9 @@ import { localProbeTimeout } from "./io-policy.js";
 // Codex's `[sandbox_workspace_write] writable_roots` in <project>/.codex/config.toml. Everything
 // else in both files is kept. A library inside its project needs neither, and nothing is written.
 //
-// The library path is this machine's absolute path, so it only ever goes into these local host
-// files, never into anything the engine commits. A host file Git already tracks is still wired,
-// and the result says so (trackedByGit), because committing it would publish the path; the setup
+// Engine-owned paths are stored relative to the host-defined configuration base. Existing
+// unrelated host settings remain intact. A host file Git already tracks is still wired,
+// and the result says so (trackedByGit); the setup
 // wizard asks the same question (hostFileTrackedByGit) and names such a file in its plan and its
 // receipt (HOST_WRITABLE_ROOTS_TRACKED_BY_GIT, packages/core/src/setup-fresh.ts). Before a
 // file is replaced its original is copied into the device directory
@@ -447,6 +448,14 @@ export interface WritableRootsInput {
   readonly hosts?: readonly WritableRootsHost[];
 }
 
+/** Render only the engine-owned root using the host's documented relative-path base. */
+export function portableWritableRoots(current: string | null, host: WritableRootsHost, projectRoot: string, libraryPath: string, replacePaths: readonly string[] = []): string {
+  const base = host === "claude-code" ? projectRoot : dirname(join(projectRoot, WRITABLE_ROOTS_FILES[host]));
+  const portable = storePath(base, libraryPath);
+  const replace = [...replacePaths, libraryPath, ...replacePaths.map(value => storePath(base, value))];
+  return host === "claude-code" ? claudeWritableRoots(current, portable, replace) : codexWritableRoots(current, portable, replace);
+}
+
 /** What the project's host files must say for the library, read from both; nothing is written. */
 export async function planWritableRoots(input: WritableRootsInput): Promise<WritableRootsPlan> {
   const projectRoot = await projectDirectory(input.projectRoot);
@@ -456,9 +465,9 @@ export async function planWritableRoots(input: WritableRootsInput): Promise<Writ
   for (const host of input.hosts ?? WRITABLE_ROOTS_HOSTS) {
     const path = WRITABLE_ROOTS_FILES[host];
     const before = await readHostFile(join(projectRoot, path), path);
-    let after = host === "claude-code" ? claudeWritableRoots(before, libraryPath, input.replacePaths) : codexWritableRoots(before, libraryPath, input.replacePaths);
+    let after = portableWritableRoots(before, host, projectRoot, libraryPath, input.replacePaths);
     const runtime = readStorageLocation(deviceHome())?.runtime;
-    if (runtime !== undefined && !inside(libraryPath, runtime)) after = host === "claude-code" ? claudeWritableRoots(after, runtime) : codexWritableRoots(after, runtime);
+    if (runtime !== undefined && !inside(libraryPath, runtime)) after = portableWritableRoots(after, host, projectRoot, runtime);
     files.push({ host, path, before, after, changed: after !== before, trackedByGit: hostFileTrackedByGit(projectRoot, path) });
   }
   return { projectRoot, libraryPath, libraryInsideProject: false, files };

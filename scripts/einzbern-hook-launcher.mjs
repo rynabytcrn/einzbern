@@ -41,7 +41,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const HOOK_STDIN_MAX_BYTES = bufferConstants.MAX_LENGTH;
 const DEVICE_DIRECTORY = ".einzbern";
 const REGISTRY_FILE = "registry.json";
-const REGISTRY_SCHEMA_VERSION = "einzbern.registry.v1";
+const REGISTRY_SCHEMA_VERSION = "einzbern.registry.v2";
 const ENGINE_DIRECTORY = "engine";
 const CURRENT_FILE = "current";
 const CURRENT_SCHEMA_VERSION = "einzbern.engine-current.v1";
@@ -124,11 +124,11 @@ export function registryEntries(device) {
   } catch {
     throw new HookLaunchError("HOOK_REGISTRY_INVALID", "the registry is not JSON");
   }
-  if (value === null || typeof value !== "object" || value.schemaVersion !== REGISTRY_SCHEMA_VERSION || !Array.isArray(value.entries) ||
+  if (value === null || typeof value !== "object" || ![REGISTRY_SCHEMA_VERSION, "einzbern.registry.v1"].includes(value.schemaVersion) || !Array.isArray(value.entries) ||
     !value.entries.every(registryEntry)) {
     throw new HookLaunchError("HOOK_REGISTRY_INVALID", `the registry is not an ${REGISTRY_SCHEMA_VERSION} registry`);
   }
-  return value.entries;
+  return value.entries.map(entry => ({ ...entry, projectPath: resolve(device, entry.projectPath), libraryPath: resolve(device, entry.libraryPath) }));
 }
 
 /**
@@ -455,7 +455,7 @@ async function readInput() {
   return payload;
 }
 
-async function launch(argv, env) {
+export async function launch(argv, env) {
   if (!meetsNodeFloor(process.versions.node)) return null;
   const event = argv[0];
   if (typeof event !== "string" || event.length === 0) throw new HookLaunchError("HOOK_EVENT_MISSING", "the hook command names no event");

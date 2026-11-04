@@ -172,8 +172,8 @@ test("469: init creates a library, and projects, work, transitions, lists and sh
   assert.deepEqual(await readdir(join(library, "akasha")), [deviceId]);
   assert.deepEqual((await readdir(device)).sort(), ["cache", "device.json", "locks", "registry.json"]);
   const registry = JSON.parse(await readFile(join(device, "registry.json"), "utf8"));
-  assert.equal(registry.schemaVersion, "einzbern.registry.v1");
-  assert.deepEqual(registry.entries.map(({ projectPath, projectId: target, libraryPath, libraryId }) => ({ projectPath, projectId: target, libraryPath, libraryId })),
+  assert.equal(registry.schemaVersion, "einzbern.registry.v2");
+  assert.deepEqual(registry.entries.map(({ projectPath, projectId: target, libraryPath, libraryId }) => ({ projectPath: resolve(device, projectPath), projectId: target, libraryPath: resolve(device, libraryPath), libraryId })),
     [{ projectPath: project, projectId, libraryPath: library, libraryId: created.libraryId }], "registration records the explicit project's exact library binding");
   const validated = await as(device, ["chain-validate", "--workspace", library]);
   assert.deepEqual([validated.reasonCode, validated.layout, validated.headEventHash], ["CHAIN_VALIDATED", "library", status.headEventHash]);

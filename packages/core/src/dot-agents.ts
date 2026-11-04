@@ -411,7 +411,7 @@ export function renderDotAgents(sourceInput: DotRulesSource): string {
   if (source.extensions?.technicalReferences !== undefined) fail("DOT_SOURCE_VERIFICATION_REQUIRED", "pure rendering cannot verify typed references; use the explicit verified planner");
   return renderCheckedDotAgents(source);
 }
-function renderCheckedDotAgents(source: DotRulesSource, template: "current" | "before-context-recovery" | "before-review-completion" = "current"): string {
+function renderCheckedDotAgents(source: DotRulesSource, template: "current" | "before-principles-only" | "before-context-recovery" | "before-review-completion" = "current"): string {
   const zh = source.language === "zh-CN";
   const sections = source.enabledRules.map(rule => rule.id === "incremental-update"
     ? INCREMENTAL_UPDATE_DOT_BODY[zh ? "zh" : "en"]
@@ -419,7 +419,11 @@ function renderCheckedDotAgents(source: DotRulesSource, template: "current" | "b
     : (zh ? DOT_RULES_ZH : DOT_RULES_EN)[rule.id]! + (rule.id === "autonomy" && template !== "before-review-completion" ? `\n${DOT_AUTONOMY_REVIEW_COMPLETION[zh ? "zh" : "en"]}\n` : ""));
   const extension = source.extensions;
   const extra = extension === undefined ? "" : `\n## dot extensions · v${extension.version}\n\n${extension.rules.map(rule => `### ${rule.id}\n\n${rule.body}`).join("\n\n")}\n\n${extension.entries.map(path => `- Local entry: ${path}`).join("\n")}\n\nThese are restored source bytes, not automatic execution, permission, synchronization or host-read evidence.\n`;
-  return `${DOT_AGENTS_MARKER}\n${zh ? DOT_PREAMBLE_ZH : DOT_PREAMBLE_EN}\n${sections.join("\n")}\n${template === "current" ? DOT_CONTEXT_RECOVERY_BODY[zh ? "zh" : "en"] + "\n" : ""}${zh ? DOT_COMMON_ZH : DOT_COMMON_EN}${extra}`;
+  if (template === "current") {
+    const entry = zh ? "# Harness 原则\n\n加载并遵循 Mana Orchestrate Skill 的适用流程。AGENTS 只承载原则，配置、上下文恢复与操作步骤由 Skill 按需读取。\n\n本目标独立管理；宿主能力和权限以实际会话为准，不虚构模型选择、运行状态或验收。用户改动与所有权须保全，任务进度属于动态记录。" : "# Harness principles\n\nLoad and follow the Mana Orchestrate Skill for applicable work. AGENTS carries principles; the Skill owns configuration lookup, context recovery and procedures.\n\nThis target is independently managed. Actual sessions determine host capability and permission; never invent model choice, execution state or acceptance. Preserve user edits and ownership; task progress belongs in dynamic records.";
+    return `${DOT_AGENTS_MARKER}\n${entry}\n\n${source.enabledRules.map(rule => ruleBody(rule.id, source.language)).join("\n")}${extra}`;
+  }
+  return `${DOT_AGENTS_MARKER}\n${zh ? DOT_PREAMBLE_ZH : DOT_PREAMBLE_EN}\n${sections.join("\n")}\n${template === "before-principles-only" ? DOT_CONTEXT_RECOVERY_BODY[zh ? "zh" : "en"] + "\n" : ""}${zh ? DOT_COMMON_ZH : DOT_COMMON_EN}${extra}`;
 }
 
 // Refuse links at every existing component, including an explicit root reached through
@@ -454,19 +458,26 @@ async function readOptional(path: string): Promise<string | null> {
   }
 }
 const fileDigest = (body: string | null): string | "missing" => body === null ? "missing" : dotContentDigest(body);
-function provenanceText(value: DotRulesProvenance): string { return `${canonicalJson(value as unknown as JsonValue)}\n`; }
+function portableBinding(binding: DotTargetPathBinding): DotTargetPathBinding {
+  return { ...binding, root: ".", agentsPath: relative(binding.root, binding.agentsPath).split(sep).join("/"), provenancePath: relative(binding.root, binding.provenancePath).split(sep).join("/"), backupRoot: relative(binding.root, binding.backupRoot).split(sep).join("/") || "." };
+}
+function provenanceText(value: DotRulesProvenance): string {
+  return `${canonicalJson({ ...value, targetPathBinding: portableBinding(value.targetPathBinding), readbackRef: `${relative(value.targetPathBinding.root, value.targetPathBinding.agentsPath).split(sep).join("/")}#sha256=${value.outputDigest}` } as unknown as JsonValue)}\n`;
+}
 function readOwnedProvenance(body: string | null, binding: DotTargetPathBinding): DotRulesProvenance | null {
   if (body === null) return null;
   try {
     const row = object(JSON.parse(body), ["schemaVersion", "executionTarget", "projectReference", "templateVersion", "engineVersion", "engineCommit", "engineSourceRef", "language", "enabledRules", "extensions", "inputDigest", "outputDigest", "targetPathBinding", "originalDigest", "ownership", "generatedAt", "readbackRef"], "provenance");
     if (row.schemaVersion !== DOT_RULES_PROVENANCE_SCHEMA || row.executionTarget !== DOT_INSTALLATION_TARGET || row.templateVersion !== DOT_AGENTS_TEMPLATE_VERSION || row.projectReference !== binding.projectReference) return null;
+    const heldBinding = object(row.targetPathBinding, ["root", "agentsPath", "provenancePath", "backupRoot", "projectReference", "ownerId"], "targetPathBinding");
+    if (heldBinding.root === ".") row.targetPathBinding = { ...heldBinding, root: binding.root, agentsPath: resolve(binding.root, text(heldBinding.agentsPath, "agentsPath")), provenancePath: resolve(binding.root, text(heldBinding.provenancePath, "provenancePath")), backupRoot: resolve(binding.root, text(heldBinding.backupRoot, "backupRoot")) };
     if (hashObject(checkedBinding(row.targetPathBinding)) !== hashObject(binding)) return null;
     const ownership = object(row.ownership, ["kind", "ownerId", "retainedUserContent"], "ownership");
     if (ownership.kind !== "target-owned" || ownership.ownerId !== binding.ownerId || typeof ownership.retainedUserContent !== "boolean") return null;
     const source = checkedSource({ engineVersion: row.engineVersion, engineCommit: row.engineCommit, engineSourceRef: row.engineSourceRef, language: row.language, enabledRules: row.enabledRules, ...(row.extensions === undefined ? {} : { extensions: row.extensions }) });
     // Accept only the exact two retained prior templates as well as the current one.
     // Source/binding/input validation remains identical; actual user edits are checked below.
-    if (row.inputDigest !== sameSourceInput(source, binding) || (ownership.retainedUserContent === false && row.outputDigest !== dotContentDigest(renderCheckedDotAgents(source)) && row.outputDigest !== dotContentDigest(renderCheckedDotAgents(source, "before-context-recovery")) && row.outputDigest !== dotContentDigest(renderCheckedDotAgents(source, "before-review-completion")))) return null;
+    if ((row.inputDigest !== sameSourceInput(source, binding) && row.inputDigest !== hashObject({ templateVersion: DOT_AGENTS_TEMPLATE_VERSION, source, targetPathBinding: binding })) || (ownership.retainedUserContent === false && row.outputDigest !== dotContentDigest(renderCheckedDotAgents(source)) && row.outputDigest !== dotContentDigest(renderCheckedDotAgents(source, "before-principles-only")) && row.outputDigest !== dotContentDigest(renderCheckedDotAgents(source, "before-context-recovery")) && row.outputDigest !== dotContentDigest(renderCheckedDotAgents(source, "before-review-completion")))) return null;
     digest(row.inputDigest, "inputDigest"); digest(row.outputDigest, "outputDigest");
     if (row.originalDigest !== "missing") digest(row.originalDigest, "originalDigest");
     instant(row.generatedAt, "generatedAt"); text(row.readbackRef, "readbackRef");
@@ -484,7 +495,7 @@ async function writableParent(path: string): Promise<void> {
   }
 }
 function sameSourceInput(source: DotRulesSource, binding: DotTargetPathBinding): string {
-  return hashObject({ templateVersion: DOT_AGENTS_TEMPLATE_VERSION, source, targetPathBinding: binding });
+  return hashObject({ templateVersion: DOT_AGENTS_TEMPLATE_VERSION, source, targetPathBinding: portableBinding(binding) });
 }
 
 /** Read-only S1–S4 plan. A skip is zero writes, including recovery/provenance files. */

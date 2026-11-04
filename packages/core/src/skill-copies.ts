@@ -1,3 +1,4 @@
+import { loadPath, storePath } from "./stored-path.js";
 import { runtimeHome } from "./storage-location.js";
 // SPDX-License-Identifier: Apache-2.0
 import { renameRetryBudget } from "./io-policy.js";
@@ -32,7 +33,7 @@ import { InstallTreeError, computeInstallTreeDigest } from "./install-tree-diges
 import type { InstallTreeDigest } from "./install-tree-digest.js";
 import { BRAND, LEGACY_DEVICE_DIRECTORY, LEGACY_HELPER_NAME } from "./names.js";
 
-export const SKILL_COPIES_SCHEMA_VERSION = "einzbern.skill-copies.v1" as const;
+export const SKILL_COPIES_SCHEMA_VERSION = "einzbern.skill-copies.v2" as const;
 export const SKILL_COPIES_FILES = Object.freeze({
   // In the device directory.
   record: "skills.json",
@@ -198,7 +199,7 @@ async function moveEntry(from: string, to: string, reasonCode: SkillCopiesReason
 type LoadedRecord =
   | { readonly state: "missing" }
   | { readonly state: "invalid"; readonly detail: string }
-  | { readonly state: "valid"; readonly record: SkillCopiesRecord };
+  | { readonly state: "valid"; readonly portable: boolean; readonly record: SkillCopiesRecord };
 
 const RECORD_FIELDS = ["copies", "installedAt", "schemaVersion", "skill"];
 const COPY_FIELDS = ["host", "installTreeDigest", "path"];
@@ -221,7 +222,7 @@ function isStrictInstant(value: unknown): boolean {
 
 function validateRecord(value: unknown): SkillCopiesRecord | string {
   if (!exactFields(value, RECORD_FIELDS)) return "fields are not exact";
-  if (value.schemaVersion !== SKILL_COPIES_SCHEMA_VERSION) return `schemaVersion must be ${SKILL_COPIES_SCHEMA_VERSION}`;
+  if (value.schemaVersion !== SKILL_COPIES_SCHEMA_VERSION && value.schemaVersion !== "einzbern.skill-copies.v1") return `schemaVersion must be ${SKILL_COPIES_SCHEMA_VERSION}`;
   if (value.skill !== BRAND.helper.id) return `skill must be ${BRAND.helper.id}`;
   if (!isStrictInstant(value.installedAt)) return "installedAt must be a strict instant";
   if (!Array.isArray(value.copies)) return "copies must be an array";
@@ -231,7 +232,7 @@ function validateRecord(value: unknown): SkillCopiesRecord | string {
     const { host, path, installTreeDigest } = copy;
     if (typeof host !== "string" || !HOSTS.includes(host)) return "a copy names an unknown host";
     if (copies.some((seen) => seen.host === host)) return `host ${host} is recorded twice`;
-    if (typeof path !== "string" || !isAbsolute(path)) return "a copy's path must be absolute";
+    if (typeof path !== "string" || !path || /[\0\r\n]/u.test(path)) return "a copy's path must be a nonempty path";
     if (typeof installTreeDigest !== "string" || !DIGEST_PATTERN.test(installTreeDigest)) return "a copy's installTreeDigest must be 64 lowercase hexadecimal characters";
     copies.push({ host: host as SkillCopyHost, path, installTreeDigest });
   }
@@ -258,7 +259,7 @@ async function loadRecord(path: string): Promise<LoadedRecord> {
     return { state: "invalid", detail: "not JSON" };
   }
   const record = validateRecord(value);
-  return typeof record === "string" ? { state: "invalid", detail: record } : { state: "valid", record };
+  return typeof record === "string" ? { state: "invalid", detail: record } : { state: "valid", portable: record.copies.every(copy => !isAbsolute(copy.path)), record: { ...record, copies: record.copies.map(copy => ({ ...copy, path: loadPath(dirname(path), copy.path) })) } };
 }
 
 export interface InstallSkillCopiesInput {
@@ -404,11 +405,11 @@ export async function installSkillCopies(input: InstallSkillCopiesInput): Promis
     const recordPath = skillCopiesRecordPath(device);
     const previous = await loadRecord(recordPath);
     const recorded = previous.state === "valid" && canonicalJson(previous.record.copies) === canonicalJson(copies);
-    const current = recorded && planned.every((copy) => copy.action === "reused");
+    const current = recorded && previous.state === "valid" && previous.portable && planned.every((copy) => copy.action === "reused");
     if (!current) {
       const record: SkillCopiesRecord = { schemaVersion: SKILL_COPIES_SCHEMA_VERSION, skill: BRAND.helper.id, installedAt: input.now, copies };
       await ensureDeviceDirectory(device);
-      await writeFileAtomic(recordPath, canonicalJson(record));
+      await writeFileAtomic(recordPath, canonicalJson({ ...record, copies: record.copies.map(copy => ({ ...copy, path: storePath(device, copy.path) })) }));
     }
     return {
       reasonCode: current ? "SKILL_COPIES_CURRENT" : "SKILL_COPIES_INSTALLED",
@@ -440,6 +441,7 @@ export interface SkillCopyVerification {
 
 export interface SkillCopiesVerification {
   readonly ok: boolean;
+  readonly portable: boolean;
   // In this order of precedence: the record is missing or unreadable, a copy does not verify, a
   // legacy helper copy is still in a host's root.
   readonly reasonCode:
@@ -502,6 +504,7 @@ export async function verifySkillCopies(input: { readonly home?: string; readonl
   else if (legacyCopies.length > 0) reasonCode = "SKILL_COPIES_LEGACY_PRESENT";
   return {
     ok: reasonCode === "SKILL_COPIES_VERIFIED",
+    portable: loaded.state === "valid" && loaded.portable,
     reasonCode,
     record: recordPath,
     detail: loaded.state === "invalid" ? loaded.detail : null,

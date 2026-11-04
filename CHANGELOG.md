@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 4.1.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 4.1.0.
+
 ### Managed harness updates
 
 - Refresh existing registered instruction outputs when updating or rolling back

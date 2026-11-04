@@ -59,6 +59,45 @@ async function render(filePath, desired, records, backupRoot) {
 
 const results = (plan) => plan.sections.map((decision) => [decision.id, decision.result, decision.record.state]);
 
+test("retiring recorded variable sections preserves Owner text and rules, backs up the file and is idempotent", async (context) => {
+  const { project, backups } = await scratch(context);
+  const filePath = join(project, "AGENTS.md");
+  await writeFile(filePath, USER_TEXT);
+  const first = await render(filePath, [{ id: "rule:autonomy", body: RULE_V1 }, { id: "variables-system", body: "## System variables\nprivate-project-value\n" }, { id: "variables-custom", body: "## Custom variables\ncustom-value\n" }], [], backups);
+  const before = await readFile(filePath, "utf8");
+  const retired = ["variables-system", "variables-custom"];
+  const plan = await planManagedWrite({ filePath, desired: [{ id: "rule:autonomy", body: RULE_V1 }], records: first.records, retired });
+  const applied = await applyManagedWrite(plan, { now: at(), backupRoot: backups });
+  assert.equal(applied.written, true);
+  assert.equal(await readFile(applied.backupPath, "utf8"), before);
+  const after = await readFile(filePath, "utf8");
+  assert.deepEqual(parseManagedFile(after).sections.map(section => section.id), ["rule:autonomy"]);
+  assert.equal(parseManagedFile(after).sections[0].raw, parseManagedFile(before).sections[0].raw);
+  assert.equal(parseManagedFile(after).outside.join(""), parseManagedFile(before).outside.join(""));
+  assert.equal(after.includes("private-project-value"), false);
+  assert.deepEqual(plan.sections.filter(section => retired.includes(section.id)).map(section => [section.result, section.record.state]), [["removed", "removed"], ["removed", "removed"]]);
+  const again = await planManagedWrite({ filePath, desired: [{ id: "rule:autonomy", body: RULE_V1 }], records: plan.sections.map(section => section.record), retired });
+  assert.equal(again.write, false);
+  assert.equal(again.sections.some(section => section.recordChanged), false);
+});
+
+test("retirement never removes edited, user-owned, pending or unrecorded variable text", async (context) => {
+  const { project, backups } = await scratch(context);
+  const filePath = join(project, "AGENTS.md");
+  const body = "## Custom variables\nunique-user-data\n";
+  for (const mode of ["edited", "user-owned", "pending", "unrecorded"]) {
+    const raw = renderSection({ id: "variables-custom", rev: 1, body });
+    const text = mode === "edited" ? raw.replace("unique-user-data", "changed-user-data") : raw;
+    await writeFile(filePath, USER_TEXT + text);
+    const records = mode === "unrecorded" ? [] : [{ file: "AGENTS.md", id: "variables-custom", rev: 1, digest: sectionDigest(body), state: mode === "edited" ? "managed" : mode }];
+    const plan = await planManagedWrite({ filePath, desired: [], records, retired: ["variables-custom"] });
+    assert.equal(plan.write, false, mode);
+    assert.equal((await applyManagedWrite(plan, { now: at(), backupRoot: backups })).written, false);
+    assert.equal(await readFile(filePath, "utf8"), USER_TEXT + text, mode);
+    assert.equal(plan.sections[0].record.state, mode === "user-owned" ? "user-owned" : "pending");
+  }
+});
+
 async function refusal(operation) {
   try {
     await operation();

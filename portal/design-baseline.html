@@ -492,11 +492,11 @@ a { color: var(--tcrn-color-brand-primary); text-decoration: none; }
 
     <!-- ================= 自定义变量 ================= -->
     <div class="pagewrap" data-page="variables" hidden>
-      <div class="pagehead"><h2>自定义变量</h2><p class="sub">项目变量独立于系统设置，写入后更新 AGENTS.md 受管段。</p></div>
+      <div class="pagehead"><h2>自定义变量</h2><p class="sub">项目变量独立于系统设置，保留在引擎中按需查询。</p></div>
       <div class="pane">
         <div class="paneview">
           <div class="pv">
-            <div class="srow"><div><div class="nm">项目变量 <span class="keychip">variable-list · variable-set · variable-remove</span></div><div class="ds">敏感形态的值和说明会被拒绝；不安全的历史值不会渲染到 AGENTS.md。</div></div></div>
+            <div class="srow"><div><div class="nm">项目变量 <span class="keychip">variable-list · variable-set · variable-remove</span></div><div class="ds">敏感形态的值和说明会被拒绝；AGENTS.md 只承载原则，不复制变量。</div></div></div>
             <div class="plansec" data-cli="tcrn variable-set --name deploy.host --type string --value build.example.com">
               <div class="mrow"><strong>名称</strong><strong>类型</strong><strong>值</strong><strong>说明</strong><strong>操作</strong></div>
               <div class="mrow"><input class="t-in" value="deploy.host" /><select class="t-in"><option selected>string</option><option>number</option><option>boolean</option></select><input class="t-in" value="build.example.com" /><input class="t-in" value="Build endpoint" /><button class="btn secondary">保存</button><button class="btn danger">删除</button></div>

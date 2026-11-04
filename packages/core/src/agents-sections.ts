@@ -13,9 +13,9 @@ import { effectiveProjectState } from "./project-chain.js";
 // Mana Orchestrate and to recall first. Whether it is written is asked once, when Einzbern is
 // installed, and kept on the device (agents.navigation, machine-settings.ts). A device that
 // declined it gets two pointer hooks instead, on SessionStart and SubagentStart, which hand the
-// agent the same three lines (host-hooks.ts, hook-recall.ts). The variable sections of
-// variables-sections.ts are AGENTS.md's too, and so are the sections of the Command Spell rules a
-// project enabled (rules.ts).
+// agent the same three lines (host-hooks.ts, hook-recall.ts). Only enabled Command Spell principles
+// follow them. Configuration values are queried from the engine; old variable sections retire
+// through the same protected writer.
 //
 // A section the user changed waits (pending) until the user decides what becomes of it:
 // overwrite puts the engine's text back and records it as the new baseline; keep records the text
@@ -76,11 +76,7 @@ import { gitTopLevel, readRegistry, resolveLibrary } from "./registry.js";
 import type { ResolutionPath } from "./registry.js";
 import { BUILT_IN_RULES, builtInRule, ruleBody } from "./rules-catalog.js";
 import {
-  VARIABLES_CUSTOM_SECTION_ID,
-  VARIABLES_SYSTEM_SECTION_ID,
-  recordWithheldCustomVariablesAsPending,
-  renderCustomVariablesSection,
-  renderSystemVariablesSection,
+  RETIRED_VARIABLE_SECTION_IDS,
 } from "./variables-sections.js";
 import type { WithheldEntry } from "./variables-sections.js";
 import { compareRecordOrder } from "./variables.js";
@@ -628,14 +624,12 @@ function artifactLanguage(state: Pick<WorkspaceState, "settings">): string | nul
 
 /**
  * The engine's text for a section as the library now stands, or null when the engine writes no
- * section by that id: the import and navigation sections, the two variable sections, and a
+ * section by that id: the import and navigation sections and a
  * built-in rule's section in the project's artifact language.
  */
 export function engineSectionBody(state: Pick<WorkspaceState, "settings" | "configRecords">, id: string): string | null {
   if (id === CLAUDE_IMPORT_SECTION.id) return CLAUDE_IMPORT_SECTION.body;
   if (id === NAVIGATION_SECTION.id) return NAVIGATION_SECTION.body;
-  if (id === VARIABLES_SYSTEM_SECTION_ID) return renderSystemVariablesSection(state).body;
-  if (id === VARIABLES_CUSTOM_SECTION_ID) return renderCustomVariablesSection(state).body;
   if (id.startsWith(RULE_SECTION_PREFIX)) {
     const rule = builtInRule(id.slice(RULE_SECTION_PREFIX.length));
     return rule === null ? null : ruleBody(rule.id, artifactLanguage(state));
@@ -802,31 +796,27 @@ function enabledRuleSections(state: Pick<WorkspaceState, "settings" | "configRec
 
 /**
  * The sections the engine writes into AGENTS.md for a device whose navigation choice is
- * `navigation`: the navigation section on a device that chose written, the two variable sections,
- * and the section of every enabled rule supported by this engine.
+ * `navigation`: the navigation section on a device that chose written and the section of every
+ * enabled rule supported by this engine. Project details and configuration values are read on demand.
  */
 export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "configRecords">, _navigation: AgentsNavigationChoice | null): {
   readonly sections: readonly AgentsSection[];
   readonly withheld: readonly WithheldEntry[];
 } {
   if (state.settings.find(entry => entry.key === "agents.generation")?.value === "none") return { sections: [], withheld: [] };
-  const system = renderSystemVariablesSection(state);
-  const custom = renderCustomVariablesSection(state);
   return {
     sections: [
       ...((state.settings.find(entry => entry.key === "agents.sharedNavigation")?.value ?? "written") === "written" ? [NAVIGATION_SECTION] : []),
-      { id: system.id, file: AGENTS_FILE, body: system.body },
-      { id: custom.id, file: AGENTS_FILE, body: custom.body },
       ...enabledRuleSections(state),
     ],
-    withheld: [...system.withheld, ...custom.withheld],
+    withheld: [],
   };
 }
 
 /**
  * Render the engine's sections into a project's AGENTS.md and CLAUDE.md against the library's
  * records, and record each section record the render changed (R2, R4, R5). AGENTS.md gets the
- * variable sections, the sections of the rules the library has enabled, and the navigation
+ * sections of the rules the library has enabled and the navigation
  * section when this device's choice is written; CLAUDE.md
  * gets its import section unless it imports AGENTS.md already. Both files are planned before
  * either is written, so a file whose markers do not parse refuses the whole render. A section the
@@ -856,12 +846,13 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
       const agents = agentsFileSections(state, input.navigation);
       const plans = [
         // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.
-        recordWithheldCustomVariablesAsPending(orderRuleSections(await planManagedWrite({
+        orderRuleSections(await planManagedWrite({
           filePath: join(input.projectRoot, AGENTS_FILE),
           file: AGENTS_FILE,
           desired: agents.sections.map((section) => ({ id: section.id, body: section.body })),
           records: managedSectionRecordsFor(state, AGENTS_FILE),
-        }), ruleOrders(state)), state, renderCustomVariablesSection(state).withheld),
+          retired: RETIRED_VARIABLE_SECTION_IDS,
+        }), ruleOrders(state)),
         await planClaudeImport(input.projectRoot, managedSectionRecordsFor(state, CLAUDE_FILE)),
       ];
       const decisions = plans.flatMap((plan) => plan.sections.map((decision) => ({ plan, decision })));

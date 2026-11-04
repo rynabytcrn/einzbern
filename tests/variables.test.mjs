@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-484 R1, R2, AC1-AC3 (MIN-227 D12; TCRN-CROSS-SUB-340): custom variables and the
-// two variable sections of AGENTS.md. A variable is a configuration record of its own collection,
+// retired variable snapshots of AGENTS.md. A variable is a configuration record of its own collection,
 // not a setting, so settings-catalog never lists one; a value or description shaped like a
 // credential is refused when written. Device models/quota stay in runtime lookup guidance;
 // historical model records remain readable diagnostics. The custom section renders only
@@ -8,6 +8,7 @@
 // both are managed sections, and neither ever renders an absolute path.
 
 import "./helpers/device-home.mjs";
+import { seedLegacyVariableSections } from "./helpers/legacy-variable-sections.mjs";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -82,73 +83,55 @@ async function sections(fx) {
   return Object.fromEntries(parsed.sections.map((section) => [section.id, section.body]));
 }
 
-test("484-AC1: a new variable deploy.host is a row of the custom section and not a setting", async (context) => {
+test("principles-only: a new variable remains queryable without creating a resident snapshot", async (context) => {
   const fx = await project(context);
   await writeFile(fx.agents, OWNER_TEXT);
   await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", description: "Where a release deploys", occurredAt: at() });
+  const before = await materializeWorkspace(fx.library);
   const result = await write(fx);
-  assert.equal(result.written, true);
-  assert.deepEqual(result.sections.map((decision) => [decision.id, decision.result]), [[VARIABLES_SYSTEM_SECTION_ID, "create"], [VARIABLES_CUSTOM_SECTION_ID, "create"]]);
+  assert.equal(result.written, false);
+  assert.deepEqual(result.sections, []);
   assert.deepEqual(result.withheld, []);
-  const text = await readFile(fx.agents, "utf8");
-  assert.ok(text.startsWith(OWNER_TEXT), "the Owner's text outside the sections is kept");
-  const bodies = await sections(fx);
-  assert.match(bodies[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \| Where a release deploys \|$/mu);
+  assert.equal(await readFile(fx.agents, "utf8"), OWNER_TEXT);
   const catalog = await cli(["settings-catalog", "--workspace", fx.library]);
-  assert.equal(catalog.settings.some((entry) => entry.key === "deploy.host"), false, "a variable is not in the settings catalog");
+  assert.equal(catalog.settings.some(entry => entry.key === "deploy.host"), false);
   const state = await materializeWorkspace(fx.library);
   assert.deepEqual(listVariables(state), [{ name: "deploy.host", type: "string", value: "build.example.com", description: "Where a release deploys", exports: ["agents"] }]);
-  assert.deepEqual(managedSectionRecordsFor(state, "AGENTS.md").map((record) => [record.id, record.rev, record.state]),
-    [[VARIABLES_CUSTOM_SECTION_ID, 1, "managed"], [VARIABLES_SYSTEM_SECTION_ID, 1, "managed"]], "the library records both sections");
-
-  const version = state.version;
-  const again = await write(fx);
-  assert.equal(again.written, false, "a second render with nothing changed writes nothing");
-  assert.equal((await materializeWorkspace(fx.library)).version, version, "and records nothing");
+  assert.deepEqual(managedSectionRecordsFor(state, "AGENTS.md"), []);
+  assert.equal(state.version, before.version);
+  assert.equal((await write(fx)).written, false);
 });
 
-test("484-R2/T15: CLI writes render safely, pending sections are readable, and an explicit resolve can settle them", async (context) => {
+test("principles-only CLI writes preserve edited legacy snapshots and explicit unmanage settles them", async (context) => {
   const fx = await project(context);
   await writeFile(fx.agents, OWNER_TEXT);
   const projectId = (await createProject(fx.library, { externalKey: "VARIABLE-CLI-TARGET", name: "CLI target", occurredAt: at() })).projects[0].id;
   await registerLibrary({ projectPath: fx.root, libraryPath: fx.library, projectId, registeredAt: at() });
   const targetCli = argv => cli(argv.includes("--workspace") ? [...argv, "--project-id", projectId] : argv);
-
   const first = await asAtelier(() => targetCli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--at", at(), "--name", "deploy.host", "--type", "string", "--value", "build.example.com"]));
   assert.equal(first.variable.value, "build.example.com");
-  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu);
-
+  assert.equal(await readFile(fx.agents, "utf8"), OWNER_TEXT);
   await asAtelier(() => targetCli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "/srv/build"]));
-  assert.doesNotMatch((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /deploy\.path/u, "an absolute path stays out of the committed section");
-  const withheld = await targetCli(["variable-list", "--workspace", fx.library]);
-  assert.deepEqual(withheld.withheld, [{ name: "deploy.path", reason: "absolute-path" }]);
-  assert.deepEqual(withheld.pendingSections, [VARIABLES_CUSTOM_SECTION_ID], "the withheld variable remains a persistent pending item");
-  assert.equal(configRecord(scopedWorkspaceState(await materializeWorkspace(fx.library), projectId), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`).value.state, "pending");
-  await asAtelier(() => targetCli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "build/config"]));
-  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.path \| string \| build\/config \|  \|$/mu);
-  assert.deepEqual((await targetCli(["variable-list", "--workspace", fx.library])).pendingSections, [], "making the variable safe settles the pending state");
-
-  const beforeEdit = await readFile(fx.agents, "utf8");
-  const edited = beforeEdit.replace("build.example.com", "hand.example.com");
+  const listed = await targetCli(["variable-list", "--workspace", fx.library]);
+  assert.equal(listed.variables.find(variable => variable.name === "deploy.path").value, "/srv/build");
+  assert.deepEqual(listed.pendingSections, [], "a value with no resident export is not an edited section");
+  await seedLegacyVariableSections({ libraryRoot: fx.library, projectRoot: fx.root, projectId, occurredAt: at(), ids: [VARIABLES_CUSTOM_SECTION_ID] });
+  const edited = (await readFile(fx.agents, "utf8")).replace("build.example.com", "hand.example.com");
   await writeFile(fx.agents, edited);
   await asAtelier(() => targetCli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--at", at(), "--name", "deploy.port", "--type", "number", "--value", "8443"]));
-  assert.equal(await readFile(fx.agents, "utf8"), edited, "a variable write does not overwrite the user's changed managed section");
-
-  const pending = await targetCli(["variable-list", "--workspace", fx.library]);
-  assert.deepEqual(pending.pendingSections, [VARIABLES_CUSTOM_SECTION_ID]);
-  assert.deepEqual(pending.withheld, []);
-  assert.deepEqual(pending.variables.map((variable) => variable.name), ["deploy.host", "deploy.path", "deploy.port"]);
-
-  const resolved = await targetCli(["rule-resolve", "--project", fx.root, "--section", VARIABLES_CUSTOM_SECTION_ID, "--action", "overwrite", "--at", at()]);
-  assert.deepEqual([resolved.reasonCode, resolved.action, resolved.state], ["MANAGED_SECTION_RESOLVED", "overwrite", "managed"]);
+  assert.equal(await readFile(fx.agents, "utf8"), edited);
+  assert.deepEqual((await targetCli(["variable-list", "--workspace", fx.library])).pendingSections, [VARIABLES_CUSTOM_SECTION_ID]);
+  const resolved = await targetCli(["rule-resolve", "--project", fx.root, "--section", VARIABLES_CUSTOM_SECTION_ID, "--action", "unmanage", "--at", at()]);
+  assert.deepEqual([resolved.reasonCode, resolved.action, resolved.state], ["MANAGED_SECTION_RESOLVED", "unmanage", "unmanaged"]);
   const settled = await targetCli(["variable-list", "--workspace", fx.library]);
   assert.deepEqual(settled.pendingSections, []);
-  const body = (await sections(fx))[VARIABLES_CUSTOM_SECTION_ID];
-  assert.match(body, /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu);
-  assert.match(body, /^\| deploy\.port \| number \| 8443 \|  \|$/mu);
-
+  assert.deepEqual(settled.variables.map(variable => variable.name), ["deploy.host", "deploy.path", "deploy.port"]);
+  const preserved = await readFile(fx.agents, "utf8");
+  assert.match(preserved, /hand\.example\.com/u);
+  assert.doesNotMatch(preserved, /einzbern:section/u);
   await asAtelier(() => targetCli(["variable-remove", "--workspace", fx.library, "--at", at(), "--name", "deploy.host"]));
-  assert.doesNotMatch((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /deploy\.host/u);
+  assert.equal(await readFile(fx.agents, "utf8"), preserved);
+  assert.equal((await targetCli(["variable-list", "--workspace", fx.library])).variables.some(variable => variable.name === "deploy.host"), false);
 });
 
 test("484-AC2: a value shaped like a credential is refused, and nothing is recorded", async (context) => {
@@ -261,8 +244,7 @@ test("552: legacy model tables and escalation remain diagnostic inputs while des
   assert.match(body, /https:\/\/design.example\/system/u);
   assert.equal(absolutePathLine(body), null);
   await write(fx);
-  const text = await readFile(fx.agents, "utf8");
-  for (const path of [fx.library, fx.root, fx.backupRoot]) assert.equal(text.includes(path), false);
+  assert.equal(await bytesOrNull(fx.agents), null, "diagnostic formatting does not create an AGENTS file");
 });
 
 test("552: historical category paths and credential-shaped names remain readable but cannot leak into shared output", async (context) => {
@@ -276,21 +258,21 @@ test("552: historical category paths and credential-shaped names remain readable
   for (const shown of ["/opt/models", "sk-proj", "routine work"]) assert.equal(rendered.body.includes(shown), false);
 });
 
-test("508-R8: a changed design setting replaces the system section, and a system section the user edited is left as it is", async (context) => {
+test("principles-only: changed design settings remain native and an edited legacy snapshot stays pending", async (context) => {
   const fx = await project(context);
-  await write(fx);
   await setWorkspaceSetting(fx.library, { key: "design.buildProject", value: "build-three", occurredAt: at() });
-  const replaced = await write(fx);
-  assert.deepEqual(replaced.sections.map((decision) => [decision.id, decision.result, decision.record.rev]), [[VARIABLES_SYSTEM_SECTION_ID, "replace", 2], [VARIABLES_CUSTOM_SECTION_ID, "unchanged", 1]]);
-  assert.match((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], /build-three/u);
-  // The three digests no longer agree once the user edits the section, so the next change does not replace it.
+  assert.equal((await write(fx)).written, false);
+  assert.equal(await bytesOrNull(fx.agents), null);
+  await seedLegacyVariableSections({ libraryRoot: fx.library, projectRoot: fx.root, occurredAt: at(), ids: [VARIABLES_SYSTEM_SECTION_ID] });
   const edited = (await readFile(fx.agents, "utf8")).replace("build-three", "hand-nine");
   await writeFile(fx.agents, edited);
   await setWorkspaceSetting(fx.library, { key: "design.buildProject", value: "build-next", occurredAt: at() });
   const kept = await write(fx);
   assert.deepEqual(kept.pendingSections, [VARIABLES_SYSTEM_SECTION_ID]);
-  assert.equal(await readFile(fx.agents, "utf8"), edited, "the user's section stays as it is");
-  assert.equal(configRecord(await materializeWorkspace(fx.library), "managed-section", `AGENTS.md#${VARIABLES_SYSTEM_SECTION_ID}`).value.state, "pending");
+  assert.equal(await readFile(fx.agents, "utf8"), edited);
+  const state = await materializeWorkspace(fx.library);
+  assert.equal(configRecord(state, "managed-section", `AGENTS.md#${VARIABLES_SYSTEM_SECTION_ID}`).value.state, "pending");
+  assert.match(renderSystemVariablesSection(state).body, /build-next/u);
 });
 
 test("484-R1: variable names, types and values follow their rules, and a system setting's key is not a variable name", async (context) => {
@@ -314,22 +296,21 @@ test("484-R1: variable names, types and values follow their rules, and a system 
   assert.equal(listVariables(await materializeWorkspace(fx.library)).find(variable => variable.name === "a".repeat(65)).value.length, 1025);
 });
 
-test("484-R1: a variable is changed and removed; the next render follows, and removing it twice is refused", async (context) => {
+test("484-R1: variables change and remove through native records without creating AGENTS", async (context) => {
   const fx = await project(context);
   await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   await write(fx);
   await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "release.example.com", description: "Where a release deploys", occurredAt: at() });
-  const changed = await write(fx);
-  assert.deepEqual(changed.sections.map((decision) => [decision.id, decision.result, decision.record.rev]), [[VARIABLES_SYSTEM_SECTION_ID, "unchanged", 1], [VARIABLES_CUSTOM_SECTION_ID, "replace", 2]]);
-  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| release\.example\.com \| Where a release deploys \|$/mu);
+  assert.equal((await write(fx)).written, false);
+  assert.equal(listVariables(await materializeWorkspace(fx.library))[0].value, "release.example.com");
   await removeVariable(fx.library, { name: "deploy.host", occurredAt: at() });
   assert.deepEqual(listVariables(await materializeWorkspace(fx.library)), []);
   assert.equal((await refusal(() => removeVariable(fx.library, { name: "deploy.host", occurredAt: at() }))).reasonCode, "CONFIG_RECORD_NOT_FOUND");
-  await write(fx);
-  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\(none\)$/mu);
+  assert.equal((await write(fx)).written, false);
+  assert.equal(await bytesOrNull(fx.agents), null);
 });
 
-test("484-R2: a variable whose row would name an absolute path is withheld with its reason; the others are written", async (context) => {
+test("484-R2: a variable whose row would name an absolute path is withheld with its reason; historical formatting filters paths while native values stay queryable", async (context) => {
   const fx = await project(context);
   await setVariable(fx.library, { exports: ["agents"], name: "build.root", type: "string", value: "/srv/build/output", occurredAt: at() });
   await setVariable(fx.library, { exports: ["agents"], name: "build.share", type: "string", value: "C:\\builds", occurredAt: at() });
@@ -337,25 +318,23 @@ test("484-R2: a variable whose row would name an absolute path is withheld with 
   await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   const historical = await legacyState(fx, [["models.tiers", JSON.stringify([tierRecord(10, "economy", "codex-cli", "/opt/models/local", "low")])]]);
   assert.equal(renderSystemVariablesSection(historical).body.includes("/opt/models/local"), false);
-  const result = await write(fx);
+  const result = renderCustomVariablesSection(await materializeWorkspace(fx.library));
   assert.deepEqual(result.withheld, [
     { name: "build.note", reason: "absolute-path" },
     { name: "build.root", reason: "absolute-path" },
     { name: "build.share", reason: "absolute-path" },
   ]);
-  assert.deepEqual(result.pendingSections, [VARIABLES_CUSTOM_SECTION_ID]);
-  assert.equal(configRecord(await materializeWorkspace(fx.library), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`).value.state, "pending");
-  const text = await readFile(fx.agents, "utf8");
-  for (const path of ["/srv/build", "C:\\builds", "/var/cache", "/opt/models"]) assert.equal(text.includes(path), false, path);
-  const bodies = await sections(fx);
-  assert.match(bodies[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu, "an empty description is an empty cell");
-  assert.doesNotMatch(bodies[VARIABLES_SYSTEM_SECTION_ID], /\| models\./u);
+  const written = await write(fx);
+  assert.deepEqual([written.written, written.pendingSections, written.withheld], [false, [], []]);
+  assert.equal(await bytesOrNull(fx.agents), null);
+  assert.equal(listVariables(await materializeWorkspace(fx.library)).find(variable => variable.name === "build.root").value, "/srv/build/output");
+
 });
 
 test("484-R2: a section the user edited is left as it is and goes pending in the library", async (context) => {
   const fx = await project(context);
   await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
-  await write(fx);
+  await seedLegacyVariableSections({ libraryRoot: fx.library, projectRoot: fx.root, occurredAt: at(), ids: [VARIABLES_CUSTOM_SECTION_ID] });
   const text = await readFile(fx.agents, "utf8");
   const edited = text.replace("| deploy.host | string | build.example.com |", "| deploy.host | string | hand.example.com |");
   assert.notEqual(edited, text);
@@ -383,16 +362,16 @@ test("484-R1, R2: the variable collection checks a record's shape on every write
   assert.deepEqual(listVariables(state).map((variable) => variable.name), ["legacy.token"]);
   assert.deepEqual(state.library.rejectedEvents, []);
   // AGENTS.md is committed, so the render withholds that record too.
-  const result = await write(fx);
-  assert.deepEqual(result.withheld, [{ name: "legacy.token", reason: "secret-shaped" }]);
-  assert.equal((await readFile(fx.agents, "utf8")).includes("sk-recorded"), false);
+  assert.deepEqual(renderCustomVariablesSection(state).withheld, [{ name: "legacy.token", reason: "secret-shaped" }]);
+  assert.equal((await write(fx)).written, false);
+  assert.equal(await bytesOrNull(fx.agents), null);
 });
 
 // TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): a variable may hold an order, and the
 // custom section renders the variables with one first, by order, then the others by name.
-const customRows = async (fx) => (await sections(fx))[VARIABLES_CUSTOM_SECTION_ID].split("\n").filter((line) => /^\| [a-z]/u.test(line)).map((line) => line.split(" | ")[0].slice(2));
+const customRows = async (fx) => renderCustomVariablesSection(await materializeWorkspace(fx.library)).body.split("\n").filter((line) => /^\| [a-z]/u.test(line)).map((line) => line.split(" | ")[0].slice(2));
 
-test("508-R7: GIVEN variables with an order WHEN AGENTS.md is rendered THEN they come first, by order, and the rest by name", async (context) => {
+test("508-R7: variable ordering metadata and historical formatting remain stable without resident export", async (context) => {
   const fx = await project(context);
   await setVariable(fx.library, { exports: ["agents"], name: "alpha", type: "string", value: "a", occurredAt: at() });
   await setVariable(fx.library, { exports: ["agents"], name: "bravo", type: "string", value: "b", order: 2, occurredAt: at() });
@@ -408,14 +387,15 @@ test("508-R7: GIVEN variables with an order WHEN AGENTS.md is rendered THEN they
 
   await write(fx);
   assert.deepEqual(await customRows(fx), ["charlie", "bravo", "echo", "alpha", "delta"]);
-  const body = (await sections(fx))[VARIABLES_CUSTOM_SECTION_ID];
+  const body = renderCustomVariablesSection(await materializeWorkspace(fx.library)).body;
   assert.match(body, /^\| Name \| Type \| Value \| Description \|$/mu, "the order is not a column");
 
   // variable-set writes the whole record: set again without an order, the variable has none.
   await setVariable(fx.library, { exports: ["agents"], name: "charlie", type: "string", value: "c", occurredAt: at() });
   assert.equal(Object.hasOwn(configRecord(await materializeWorkspace(fx.library), "variable", "charlie").value, "order"), false);
   const moved = await write(fx);
-  assert.deepEqual(moved.sections.map((decision) => [decision.id, decision.result]), [[VARIABLES_SYSTEM_SECTION_ID, "unchanged"], [VARIABLES_CUSTOM_SECTION_ID, "replace"]]);
+  assert.equal(moved.written, false);
+  assert.equal(await bytesOrNull(fx.agents), null);
   assert.deepEqual(await customRows(fx), ["bravo", "echo", "alpha", "charlie", "delta"]);
 
   assert.equal(compareRecordOrder({ order: 1 }, {}), -1);
@@ -437,7 +417,7 @@ test("508-R7: a reorder is a change of the custom section, so a section the user
   const fx = await project(context);
   await setVariable(fx.library, { exports: ["agents"], name: "alpha", type: "string", value: "a", occurredAt: at() });
   await setVariable(fx.library, { exports: ["agents"], name: "bravo", type: "string", value: "b", occurredAt: at() });
-  await write(fx);
+  await seedLegacyVariableSections({ libraryRoot: fx.library, projectRoot: fx.root, occurredAt: at(), ids: [VARIABLES_CUSTOM_SECTION_ID] });
   const edited = (await readFile(fx.agents, "utf8")).replace("| alpha | string | a |", "| alpha | string | hand |");
   await writeFile(fx.agents, edited);
   await setVariable(fx.library, { exports: ["agents"], name: "bravo", type: "string", value: "b", order: 1, occurredAt: at() });
@@ -497,55 +477,46 @@ async function backedUp(fx, bytes) {
   return false;
 }
 
-test("489: a variable-section write whose records cannot be committed leaves AGENTS.md byte for byte, and takes away one it created", async (context) => {
+test("489: failed legacy retirement restores AGENTS bytes and records; a retry removes only snapshots", async (context) => {
   const fx = await project(context);
   await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
-  const head = await libraryHead(fx);
-  // No AGENTS.md: the file the render created is not there afterwards.
-  const created = await refusal(() => write(fx, OVER_BUDGET));
-  assert.equal(created.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED", "the error that stopped the commit is the one thrown");
-  assert.equal(await bytesOrNull(fx.agents), null, "the AGENTS.md the render created is taken away");
-  assert.deepEqual(await libraryHead(fx), head, "the library holds no new event");
-
-  // The Owner's AGENTS.md holds what it held, byte for byte, and the backup the write made stays.
+  const emptyHead = await libraryHead(fx);
+  assert.equal((await write(fx, OVER_BUDGET)).written, false, "no snapshot means no write or commit to refuse");
+  assert.equal(await bytesOrNull(fx.agents), null);
+  assert.deepEqual(await libraryHead(fx), emptyHead);
   await writeFile(fx.agents, OWNER_TEXT);
+  await seedLegacyVariableSections({ libraryRoot: fx.library, projectRoot: fx.root, occurredAt: at() });
   const original = await readFile(fx.agents);
+  const state = await materializeWorkspace(fx.library);
+  const records = managedSectionRecordsFor(state, "AGENTS.md");
+  const head = await libraryHead(fx);
   const refused = await refusal(() => write(fx, OVER_BUDGET));
   assert.equal(refused.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
-  assert.deepEqual(await readFile(fx.agents), original, "AGENTS.md holds what it held");
-  assert.deepEqual(await libraryHead(fx), head, "the library holds no new event");
-  assert.equal(await backedUp(fx, original), true, "the backup the write made stays");
-
-  // A replace that cannot be recorded leaves the sections as their records say, so the next render does not take them for the user's change.
-  await write(fx);
-  const written = await readFile(fx.agents);
-  const records = managedSectionRecordsFor(await materializeWorkspace(fx.library), "AGENTS.md");
-  await setVariable(fx.library, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
-  const recorded = await libraryHead(fx);
-  const again = await refusal(() => write(fx, OVER_BUDGET));
-  assert.equal(again.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
-  assert.deepEqual(await readFile(fx.agents), written, "AGENTS.md holds the sections the library records");
-  assert.deepEqual([managedSectionRecordsFor(await materializeWorkspace(fx.library), "AGENTS.md"), await libraryHead(fx)], [records, recorded], "the records and the library are as they were");
-
-  // The normal path is as it was: the same render, committed, replaces the custom section.
-  const replaced = await write(fx);
-  assert.deepEqual([replaced.written, replaced.pendingSections], [true, []], "no section waits for a change the user never made");
-  assert.equal(replaced.sections.find((decision) => decision.id === VARIABLES_CUSTOM_SECTION_ID).result, "replace");
-  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.port \| number \| 8443 \|  \|$/mu);
+  assert.deepEqual(await readFile(fx.agents), original);
+  assert.deepEqual(await libraryHead(fx), head);
+  assert.deepEqual(managedSectionRecordsFor(await materializeWorkspace(fx.library), "AGENTS.md"), records);
+  assert.equal(await backedUp(fx, original), true);
+  const retired = await write(fx);
+  assert.deepEqual([retired.written, retired.pendingSections], [true, []]);
+  assert.ok(retired.sections.every(decision => decision.result === "removed"));
+  assert.deepEqual(await sections(fx), {});
+  assert.equal((await readFile(fx.agents, "utf8")).trim(), OWNER_TEXT.trim());
+  assert.deepEqual(listVariables(await materializeWorkspace(fx.library)), listVariables(state));
 });
 
 test("489: a variable-section write whose records went in before the failure (a crash after the event commit) keeps AGENTS.md as written", async (context) => {
   const fx = await project(context);
   await writeFile(fx.agents, OWNER_TEXT);
   await setVariable(fx.library, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await seedLegacyVariableSections({ libraryRoot: fx.library, projectRoot: fx.root, occurredAt: at() });
   const head = await libraryHead(fx);
   const error = await refusal(() => write(fx, AFTER_COMMIT));
   assert.equal(error.reasonCode, "WORKSPACE_FAULT_INJECTED");
   assert.notDeepEqual(await libraryHead(fx), head, "the records went in");
   const state = await materializeWorkspace(fx.library);
-  assert.deepEqual(managedSectionRecordsFor(state, "AGENTS.md").map((record) => [record.id, record.state]), [[VARIABLES_CUSTOM_SECTION_ID, "managed"], [VARIABLES_SYSTEM_SECTION_ID, "managed"]]);
+  assert.deepEqual(managedSectionRecordsFor(state, "AGENTS.md").map((record) => [record.id, record.state]), [[VARIABLES_CUSTOM_SECTION_ID, "removed"], [VARIABLES_SYSTEM_SECTION_ID, "removed"]]);
   assert.equal((await readFile(fx.agents, "utf8")).startsWith(OWNER_TEXT), true);
-  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu, "so the sections stay where they were written");
+  assert.deepEqual(await sections(fx), {}, "committed retirement stays in the file");
   const again = await write(fx);
   assert.deepEqual([again.written, again.pendingSections], [false, []], "the file and the records agree");
   assert.equal((await materializeWorkspace(fx.library)).version, state.version, "and nothing more is recorded");
@@ -583,27 +554,21 @@ test("540-GWT2: a coordination library's system section lists its limits and the
   assert.ok(body.includes("| design.authority | (unconfigured) | default | false |"));
 });
 
-test("540-GWT2: a coordination library's sections are written into its container and follow a settings or variable change", async (context) => {
+test("principles-only coordination: settings and variable changes stay queryable without resident copies", async (context) => {
   const fx = await coordination(context);
   await writeFile(fx.agents, OWNER_TEXT);
-  await setWorkspaceSetting(fx.library, { key: "execution.maxConcurrentSubagents", value: "3", occurredAt: at() });
-  const written = await write(fx);
-  assert.equal(written.written, true);
-  let text = await readFile(fx.agents, "utf8");
-  assert.ok(text.startsWith(OWNER_TEXT));
-  assert.ok(text.includes("| execution.maxConcurrentSubagents | 3 |"));
-  assert.ok(text.includes("| execution.maxConcurrentSubagents | library | false |"), "its provenance is the library's own declaration");
-  for (const id of [VARIABLES_SYSTEM_SECTION_ID, VARIABLES_CUSTOM_SECTION_ID]) {
-    assert.equal(managedSectionRecordsFor(await materializeWorkspace(fx.library), "AGENTS.md").find((record) => record.id === id)?.state, "managed", id);
+  for (const value of ["3", "2"]) {
+    await setWorkspaceSetting(fx.library, { key: "execution.maxConcurrentSubagents", value, occurredAt: at() });
+    assert.equal((await write(fx)).written, false);
+    const catalog = await cli(["settings-catalog", "--workspace", fx.library]);
+    assert.equal(catalog.settings.find(setting => setting.key === "execution.maxConcurrentSubagents").currentValue, value);
+    assert.equal(await readFile(fx.agents, "utf8"), OWNER_TEXT);
   }
-  await setWorkspaceSetting(fx.library, { key: "execution.maxConcurrentSubagents", value: "2", occurredAt: at() });
-  await write(fx);
-  text = await readFile(fx.agents, "utf8");
-  assert.ok(text.includes("| execution.maxConcurrentSubagents | 2 |"), "the next render takes the change");
-  // A variable written through the CLI renders into the container, from the coordination library.
   const receipt = await asAtelier(() => cli(["variable-set", "--exports", "agents", "--workspace", fx.library, "--name", "release-train", "--type", "string", "--value", "weekly", "--at", at()]));
   assert.equal(receipt.reasonCode, "VARIABLE_WRITE_COMMITTED");
-  assert.ok((await readFile(fx.agents, "utf8")).includes("| release-train | string | weekly |"));
+  assert.equal((await cli(["variable-list", "--workspace", fx.library])).variables.find(variable => variable.name === "release-train").value, "weekly");
+  assert.equal(await readFile(fx.agents, "utf8"), OWNER_TEXT);
+  assert.deepEqual(managedSectionRecordsFor(await scoped(fx), "AGENTS.md"), []);
 });
 
 test("540-Q4: the variable sections follow artifact.language: Chinese for zh-CN, English otherwise", async (context) => {
@@ -647,7 +612,8 @@ test("configuration contract: new variables export nowhere, legacy absence still
   assert.deepEqual(rendered.withheld, [{ name: "handoff.note", reason: "not-exported" }, { name: "private.note", reason: "not-exported" }]);
   const result = await write(fx);
   assert.deepEqual(result.pendingSections, []);
-  assert.equal(configRecord(await materializeWorkspace(fx.library), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`).value.state, "managed");
+  assert.equal(configRecord(await materializeWorkspace(fx.library), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`), null);
+  assert.equal(await bytesOrNull(fx.agents), null);
 });
 
 test("configuration contract: invalid or duplicate exports are rejected without committing and replacement clears omitted exports", async (context) => {

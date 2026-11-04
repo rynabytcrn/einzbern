@@ -343,6 +343,8 @@ export async function planManagedWrite(input: {
   readonly file?: string;
   readonly desired: readonly { readonly id: string; readonly body: string }[];
   readonly records: readonly ManagedSectionRecord[];
+  // Retire only recorded, intact generated sections; user text keeps its protection.
+  readonly retired?: readonly string[];
 }): Promise<ManagedWritePlan> {
   const file = input.file ?? basename(input.filePath);
   if (!isRelativeFileName(file)) fail("MANAGED_SECTION_INPUT_INVALID", `${file} is not a file name relative to the project`, { file });
@@ -355,6 +357,10 @@ export async function planManagedWrite(input: {
       fail("MANAGED_SECTION_ABSOLUTE_PATH", `section ${section.id} would write an absolute path (its line ${line}); managed sections render none`, { file, id: section.id, line: String(line) });
     }
     desired.set(section.id, normalizeSectionBody(section.body));
+  }
+  const retired = new Set(input.retired ?? []);
+  for (const id of retired) {
+    if (!isManagedSectionId(id) || desired.has(id)) fail("MANAGED_SECTION_INPUT_INVALID", `section ${id} cannot be rendered and retired together`, { file, id });
   }
   const records = new Map(input.records.filter((record) => record.file === file).map((record) => [record.id, record]));
   const before = await readManagedFile(input.filePath, file);
@@ -387,6 +393,15 @@ export async function planManagedWrite(input: {
         decide(id, "refused-user-modified", { file, id, rev: record?.rev ?? section.rev, digest: record?.digest ?? section.digest, state: "pending" }, section.startLine);
         continue;
       }
+      if (retired.has(id)) {
+        if (record?.state !== "managed") {
+          decide(id, "refused-user-modified", { file, id, rev: record?.rev ?? section.rev, digest: record?.digest ?? section.digest, state: "pending" }, section.startLine);
+          continue;
+        }
+        rendered.set(id, "");
+        decide(id, "removed", { ...record, state: "removed" }, section.startLine);
+        continue;
+      }
       if (body === undefined || sectionDigest(body) === section.bodyDigest) {
         decide(id, "unchanged", { file, id, rev: section.rev, digest: section.digest, state: "managed" }, section.startLine);
         continue;
@@ -409,7 +424,7 @@ export async function planManagedWrite(input: {
     }
   }
 
-  const write = decisions.some((decision) => decision.result === "create" || decision.result === "replace");
+  const write = rendered.size > 0;
   let after: string | null = null;
   if (write) {
     let text = parsed === null ? "" : parsed.outside[0] ?? "";

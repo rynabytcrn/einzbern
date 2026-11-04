@@ -104,11 +104,11 @@ test("540-GWT1: a coordination library registered for its container writes and r
   assert.deepEqual(await recordOf(c.library, "rule:autonomy"), { file: "AGENTS.md", id: "rule:autonomy", rev: 1, digest: section.digest, state: "managed" });
   assert.equal((await listRules({ libraryRoot: c.library, projectRoot: c.root })).find((rule) => rule.id === "autonomy").state, "enabled");
 
-  // agents-render writes the variable sections beside it and records them.
+  // Coordination renders its selected principles without variable copies.
   const rendered = await renderAgentsSections(c.library, { projectRoot: c.root, navigation: null, backupRoot: c.backups, occurredAt: at() });
   assert.deepEqual(rendered.pending, []);
-  assert.deepEqual(rendered.sections.filter((entry) => entry.file === "AGENTS.md").map((entry) => [entry.id, entry.state]).sort(), [["rule:autonomy", "managed"], ["variables-custom", "managed"], ["variables-system", "managed"]]);
-  for (const id of ["variables-system", "variables-custom"]) assert.equal((await recordOf(c.library, id))?.state, "managed", id);
+  assert.deepEqual(rendered.sections.filter((entry) => entry.file === "AGENTS.md").map((entry) => [entry.id, entry.state]).sort(), [["rule:autonomy", "managed"]]);
+  for (const id of ["variables-system", "variables-custom"]) assert.equal(await recordOf(c.library, id), null, id);
 
   // A user's change to the section reads user-modified, as a project's does.
   const edited = (await readFile(c.agents, "utf8")).replace(section.body.split("\n")[2], "An edit of the Owner's.");
@@ -140,7 +140,8 @@ test("540-GWT1: the CLI resolves a coordination library's registered container t
   const rendered = await atelier(["agents-render", "--project", c.root, "--at", at()]);
   assert.equal(rendered.reasonCode, "AGENTS_RENDERED");
   assert.deepEqual(rendered.pending, []);
-  assert.ok(rendered.sections.some((section) => section.id === "variables-system" && section.state === "managed"));
+  assert.ok(rendered.sections.some(section => section.id === "rule:batch" && section.state === "managed"));
+  assert.equal(rendered.sections.some(section => section.id.startsWith("variables-")), false);
   const disabled = await atelier(["rule-disable", "--id", "batch", "--project", c.root, "--at", at()]);
   assert.deepEqual([disabled.reasonCode, disabled.written, disabled.outputBindingStatus, disabled.rule.state], ["RULE_DISABLED", true, "bound", "disabled"]);
   assert.equal(sectionOf(await readFile(c.agents, "utf8"), "rule:batch"), null);

@@ -67,6 +67,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
     verbs: ["recall", "rule-list"],
     action: "Run `recall --query \"<task>\"`. New/resumed/delegated sessions read AGENTS, Skill and work; parent or patrol reads do not substitute. Read enabled rules, not catalog defaults. Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`.",
   },
+
   {
     moment: "Draft by work type",
     verbs: ["work-draft"],
@@ -75,7 +76,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Need the full text",
     verbs: ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Read whole work/minutes and each target's `handoff`; a native host dispatch passes that object for that target, gates receive the same object as `EINZBERN_PROJECT_CONTEXT`. An unresolved target stops only the work that needs it. Coordination-only work requires no invented development target. `specs/context-v1.md`: segments/digests; retain critical clauses. Legacy `--execution-request`: `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute; retain stdout, stderr and exit code. Evidence is not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
+    action: "Read whole work/minutes; pass each target's `handoff` to native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. `specs/context-v1.md`: segments/digests; retain critical clauses. Legacy `--execution-request`: `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute; retain stdout, stderr and exit code. Evidence is not a reusable permit or a global scheduler. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
     moment: "Native dispatch (Codex, Claude, dot)",
@@ -108,9 +109,9 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
     action: "An INIT batch covers all pending Stories; preserve approved roles/stages. Capture at most five sourced lessons with `knowledge-capture`; read back. No dynamic progress in AGENTS.",
   },
   {
-    moment: "UI design",
-    verbs: ["settings-catalog"],
-    action: "Read optional `design.authority`; follow it, never invent it.",
+    moment: "Configuration / UI",
+    verbs: ["settings-catalog", "variable-list"],
+    action: "AGENTS: principles only. Read scoped config and optional `design.authority`: `specs/configuration-contract-v1.md`.",
   },
 ].map((entry) => Object.freeze({ ...entry, verbs: Object.freeze([...entry.verbs]) })));
 

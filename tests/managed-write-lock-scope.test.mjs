@@ -11,6 +11,7 @@
 // a library and a device directory.
 
 import "./helpers/device-home.mjs";
+import { seedLegacyVariableSections } from "./helpers/legacy-variable-sections.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -160,20 +161,16 @@ test("538 GWT3: while another process holds the library write lock for 3 seconds
 
   assert.deepEqual(rendered.sections.map((section) => [section.id, section.result]), [
     ["navigation", "create"],
-    ["variables-system", "create"],
-    ["variables-custom", "create"],
     ["claude-import", "create"],
   ]);
-  assert.equal(rendered.recorded, 4);
+  assert.equal(rendered.recorded, 2);
   const text = await readFile(paths.agents, "utf8");
   assert.ok(text.startsWith(USER_TEXT), "the user's text stays where it was");
-  assert.match(sectionOf(text, "variables-custom").body, /deploy\.host/u);
+  assert.equal(sectionOf(text, "variables-custom"), null);
   assert.notEqual(await textOrNull(paths.claude), null);
-  assert.equal((await libraryHead(paths.root)).version, before.version + 4, "the four records went in once");
+  assert.equal((await libraryHead(paths.root)).version, before.version + 2, "navigation and import were recorded once");
   assert.deepEqual((await records(paths.root)).map((record) => [record.id, record.state]).sort(), [
     ["navigation", "managed"],
-    ["variables-custom", "managed"],
-    ["variables-system", "managed"],
   ]);
 });
 
@@ -216,9 +213,10 @@ test("538 GWT3: while another process holds the lock, rule-enable, rule-disable,
       assert.deepEqual([change.result, change.written, change.record.state], ["overwritten", true, "managed"]);
       assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "navigation").body.includes(NAVIGATION_LINES[2]), true);
     }],
-    ["variable sections", () => setVariable(paths.root, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() }), async (result) => {
+    ["variable sections", () => seedLegacyVariableSections({ libraryRoot: paths.root, projectRoot: paths.project, occurredAt: at(), ids: ["variables-custom"] }), async (result) => {
       assert.equal(result.written, true);
-      assert.match(sectionOf(await readFile(paths.agents, "utf8"), "variables-custom").body, /deploy\.port/u);
+      assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "variables-custom"), null);
+      assert.equal(result.sections.find(section => section.id === "variables-custom").result, "removed");
     }],
   ];
   for (const [name, prepare, check] of steps) {
@@ -238,7 +236,8 @@ test("538 GWT3: AGENTS.md changed by another process after the plan sends the re
   const write = writers(paths);
   await write["agents-render"]();
   await setVariable(paths.root, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
-  // The user's change to the custom section, which the render planned to replace.
+  await seedLegacyVariableSections({ libraryRoot: paths.root, projectRoot: paths.project, occurredAt: at(), ids: ["variables-custom"] });
+  // The user edits the legacy section after the render has planned to retire it.
   const rendered = await readFile(paths.agents, "utf8");
   const custom = sectionOf(rendered, "variables-custom");
   const edited = rendered.replace(custom.raw, custom.raw.replace(custom.body, `${custom.body}A row the user added.\n`));
@@ -272,12 +271,12 @@ test("538 GWT3: a record another writer appended after the plan sends the render
     },
   });
   assert.equal(planned.length, 2, "the render read the library again once it found a stream moved");
-  assert.equal(result.sections.find((section) => section.id === "variables-custom").result, "replace", "the second plan saw the new variable");
+  assert.equal(result.state.configRecords.find(record => record.collection === "variable" && record.key === "deploy.port").value.value, "8443", "the second plan read the appended value");
   const text = await readFile(paths.agents, "utf8");
-  assert.match(sectionOf(text, "variables-custom").body, /deploy\.port/u);
-  assert.equal((await libraryHead(paths.root)).version, head.version + 2, "the other writer's record, then the render's");
-  const recorded = (await records(paths.root)).find((record) => record.id === "variables-custom");
-  assert.equal(recorded.digest, sectionOf(text, "variables-custom").digest, "the record holds the section the file holds");
+  assert.equal(sectionOf(text, "variables-custom"), null);
+  assert.equal((await libraryHead(paths.root)).version, head.version + 1, "only the other writer appends; configuration no longer changes AGENTS");
+  const recorded = (await records(paths.root)).find((record) => record.id === "navigation");
+  assert.equal(recorded.digest, sectionOf(text, "navigation").digest, "the record holds the section the file holds");
   const again = await write["agents-render"]();
   assert.deepEqual([again.recorded, again.files.some((file) => file.written), again.pending], [0, false, []], "the file and the records agree");
 });
@@ -302,6 +301,7 @@ test("538 GWT3, 489: a write whose append fails after it wrote puts the files ba
   assert.equal(await textOrNull(paths.claude), null, "the CLAUDE.md the render created is taken away");
   await write["agents-render"]();
   await setVariable(paths.root, { exports: ["agents"], name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  await seedLegacyVariableSections({ libraryRoot: paths.root, projectRoot: paths.project, occurredAt: at(), ids: ["variables-custom"] });
   await unchanged("variable sections", () => write["variable sections"](failing));
   await unchanged("rule-enable", () => write["rule-enable"](failing));
   await write["rule-enable"]();
@@ -315,6 +315,7 @@ test("538 GWT3, 489: a write whose append fails after it wrote puts the files ba
   // A refusal of the records themselves comes, as it came while the whole write held the lock, once
   // the file was written: the file goes back as it was read, and the backup the write made stays.
   await setVariable(paths.root, { exports: ["agents"], name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+  await seedLegacyVariableSections({ libraryRoot: paths.root, projectRoot: paths.project, occurredAt: at(), ids: ["variables-custom"] });
   await rm(paths.backups, { recursive: true, force: true });
   const before = await readFile(paths.agents, "utf8");
   const planned = [];

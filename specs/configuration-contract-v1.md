@@ -46,6 +46,23 @@ preferences and installed-engine state. These are not generic editable string se
 Configuration projections and AGENTS output are not authority; device credentials, identities,
 absolute path bindings, locks and account observations are not portable project declarations.
 
+AGENTS.md carries principles and minimal navigation only. Project inventories, local paths,
+migration history, procedures and system/custom variable values belong in native records,
+Skill references or local files, loaded only when the task needs them. Resolve the actual
+project/library with `library-resolve`, then read `settings-catalog --project-id <id>` and
+`variable-list --project-id <id>`; query the target subproject separately and preserve effective
+scope, inheritance and provenance. Read task/category constraints before planning or dispatch,
+and resolve device/host policy through `execution-policy-resolve` at dispatch time. Unconfigured
+and unverified remain explicit; directory position and old AGENTS snapshots supply no defaults.
+
+Rendering and configuration setters no longer create variable snapshots, including variables
+whose historical export metadata names `agents`. The metadata and native values are retained.
+Old `variables-system` and `variables-custom` sections are retired only when their body, marker
+and recorded digest agree and their recorded state is managed. Edited, unrecorded or pending
+sections require an explicit disposition; user-owned and unmanaged text stays untouched. The
+usual backup, lock/replan and file/record rollback contracts apply to retirement. Resolving an
+obsolete snapshot cannot regenerate it; keep or unmanage preserves its text for relocation.
+
 Registered setting descriptors are complemented by runtimeInputs: the supported environment,
 browser, startup and installation controls, with operational command flags adapted from the
 canonical CLI command catalog. See runtime-input-contract-v1.md for classifications and limits.

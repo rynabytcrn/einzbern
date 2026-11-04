@@ -641,27 +641,26 @@ managed-section records and their provenance; it does not inherit development
 configuration. Its managed prose root is the project root this device's
 registry holds for it outside every library, the container it coordinates
 (TCRN-CROSS-STORY-540, MIN-258 D3(c), which replaces MIN-245 D6): agents-render,
-rule-resolve, rule-enable, rule-disable and the variable sections write that
-root's AGENTS.md from the coordination library's own configuration and record
-each section, as they do for a project, and a rule's state is read from the
-file and the records. Any other root, or one within a library, is refused
+rule-resolve, rule-enable and rule-disable write that root's AGENTS.md with navigation
+and enabled principles and record each section, as they do for a project. A rule's state
+is read from the file and the records. Any other root, or one within a library, is refused
 (`MANAGED_SECTION_OUTPUT_UNREGISTERED`, `MANAGED_SECTION_OUTPUT_INSIDE_LIBRARY`).
-A coordination library this device registered no such root for has none: a
-rule change there records the rule alone, with `outputBindingStatus:
-"unconfigured"` in its receipt. A coordination library's system variable
-section lists `execution.maxConcurrentSubagents`, the four `quota.*` settings
-and the seven `design.*` bindings with their effective values and sources; it
-lists no `models.*`, which a coordination library does not have (MIN-243 D1).
-Both variable sections, for any library, follow `artifact.language`: `zh-CN`
-writes their headings, notes, table headers and placeholders in Chinese, any
-other value or none in English. Context readiness is reported
+A coordination library this device registered no such root for has none: a rule change
+there records the rule alone, with `outputBindingStatus: "unconfigured"` in its receipt.
+
+System and custom variable values are queried on demand through `settings-catalog` and
+`variable-list` for the actual target, with scope and source; they are no longer copied
+into AGENTS.md. Intact, recorded legacy variable sections are retired through the protected
+writer; edited, unrecorded, pending and user-owned text is preserved. Configuration values
+and export metadata remain intact. See `configuration-contract-v1.md` for the carrier and
+migration contract. Context readiness is reported
 separately for design declarations, model configuration, repository/build
 bindings, registered output, language and gates. Publication verification stays
 unverified until separately established. A gate operation requires its own
 registered root and declarations, not unrelated design/model readiness.
 
 A coordination library's `artifact.language` decides only the language of its
-managed sections and its variable sections. The write language policy of
+managed principles. The write language policy of
 TCRN-CROSS-STORY-364 does not apply to its knowledge writes (`knowledge-capture`,
 `knowledge-create`, the new cards of `knowledge-batch`, `knowledge-article-create`
 and `knowledge-article-refresh`): a coordination library has no `models.*`

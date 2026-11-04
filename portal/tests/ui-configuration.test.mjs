@@ -59,7 +59,7 @@ test("PR24 U3: failed write after Undo recovers a replacement draft without anot
 
 if (!MUTATION) {
 
-  test("TCRN-CROSS-SUB-342 variables page creates, updates, renames, and deletes with an AGENTS.md readback", async (t) => {
+  test("TCRN-CROSS-SUB-342 variables page creates, updates, renames, and deletes without an AGENTS.md snapshot", async (t) => {
     const page = await preparePage();
     // Failure-only, bounded observations for this exact lifecycle. Never retain
     // request bodies/headers, response payloads, raw DOM, paths outside this allowlist,
@@ -136,12 +136,12 @@ if (!MUTATION) {
       field(create, "type").value = "string";
       field(create, "value").value = "build.example.com";
       field(create, "description").value = "Build endpoint";
-      create.querySelector('[data-variable-export="agents"]').checked = true;
+      assert.equal(create.querySelector('[data-variable-export="agents"]').disabled, true, "legacy export metadata is read-only");
       let before = receiptText(page.document);
       page.document.querySelector("[data-variable-create]").click();
       await waitFor(() => receiptAdvanced(page.document, before)(), "the variable create receipt");
       await waitFor(() => Boolean(page.document.querySelector('[data-variable-row="deploy.host"]')), "the variable create readback");
-      assert.match(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host/u, "the successful write renders the variables section");
+      assert.doesNotMatch(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host|variables-custom/u, "the successful write keeps values out of resident instructions");
 
       phase = "update";
       let row = page.document.querySelector('[data-variable-row="deploy.host"]');
@@ -194,7 +194,7 @@ if (!MUTATION) {
       snapshot("after-rename-receipt");
       await waitFor(() => Boolean(page.document.querySelector('[data-variable-row="deploy.target"]')), "the variable rename readback");
       assert.equal(page.document.querySelector('[data-variable-row="deploy.host"]'), null);
-      assert.match(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u);
+      assert.doesNotMatch(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u, "renaming a native variable does not create a resident copy");
 
       phase = "delete";
       before = receiptText(page.document);
@@ -203,7 +203,7 @@ if (!MUTATION) {
       await waitFor(() => page.document.querySelector('[data-variable-row="deploy.target"]') === null, "the variable delete readback");
       const listed = await cli(["variable-list", "--workspace", page.workspace], page.deviceEnv);
       assert.deepEqual(listed.variables, []);
-      assert.doesNotMatch(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u, "deleting a variable removes its managed row");
+      assert.doesNotMatch(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u, "deleted native values have no resident copy");
     } catch (error) {
       originalFailure = error;
       try { snapshot("failure-before-cleanup"); t.diagnostic("SUB342_VARIABLE_LIFECYCLE " + JSON.stringify(trace)); }
@@ -1370,7 +1370,7 @@ if (!MUTATION) {
       type(document.querySelector('[data-variable-row="alpha"] [data-variable-field="order"]'), "2");
       assert.match(await act(document.querySelector('[data-variable-row="alpha"] [data-variable-save]')), /^✓v\d+$/u);
       assert.deepEqual(variableRows(), [["alpha", "2"], ["beta", "5"]]);
-      assert.ok((await agents()).indexOf("| alpha |") < (await agents()).indexOf("| beta |"), "the custom section follows the order");
+      assert.doesNotMatch(await agents(), /\| alpha \||\| beta \|/u, "display order remains queryable without resident rows");
       type(document.querySelector('[data-variable-row="beta"] [data-variable-field="order"]'), "");
       assert.match(await act(document.querySelector('[data-variable-row="beta"] [data-variable-save]')), /^✓v\d+$/u);
       const variables = (await cli(["variable-list", "--workspace", fixture.workspace], fixture.deviceEnv)).variables;

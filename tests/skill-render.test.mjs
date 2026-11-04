@@ -100,7 +100,7 @@ test("479-AC1: every verb the navigation table names is a verb of the current co
     ["work-transition", "work-annotate"],
     ["minutes-record"],
     ["knowledge-create", "knowledge-capture"],
-    ["settings-catalog"],
+    ["settings-catalog", "variable-list"],
   ]);
   for (const verb of skillNamedVerbs()) assert.ok(catalogNames.includes(verb), `${verb} is in COMMAND_CATALOG`);
   const rows = tableRows(render());
@@ -119,7 +119,7 @@ test("479-R1, 475-R4: the table records a decision as soon as it is judged one a
   assert.ok(decision !== undefined, "the decision row names minutes-record");
   assert.ok(decision[2].includes("As soon as you judge"), "the row records at the moment of judgement");
   assert.ok(decision[2].includes("已记 <minutes key> Dn"), "the row echoes the minutes key and decision number");
-  const design = rows.find(([, verbs]) => verbs === "`settings-catalog`");
+  const design = rows.find(([, verbs]) => verbs.includes("`settings-catalog`"));
   assert.ok(design[2].includes("`design.authority`"), "UI design reads design.authority first");
 });
 
@@ -127,7 +127,7 @@ test("479-R1, 475-R4: the table records a decision as soon as it is judged one a
 // the object gate processes receive, and an unresolved target stops only the work that needs it.
 test("U10: the full-text row passes each target's handoff to the native host dispatch, as gate processes receive it", () => {
   const fullText = tableRows(render()).find(([, verbs]) => verbs.includes("`work-project-context`"));
-  for (const phrase of ["`handoff`", "a native host dispatch passes that object for that target", "the same object as `EINZBERN_PROJECT_CONTEXT`", "stops only the work that needs it", "Coordination-only work requires no invented development target"]) {
+  for (const phrase of ["each target's `handoff`", "native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`)", "Unresolved targets stop dependent work only", "coordination-only work needs no development target"]) {
     assert.ok(fullText[2].includes(phrase), phrase);
   }
 });

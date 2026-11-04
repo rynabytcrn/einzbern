@@ -567,12 +567,12 @@ test("fresh defaults reuse one external library for different projects with sepa
   for (const root of [f.project, secondRoot]) assertSelfCheckGreen({ selfCheck: await check(root) });
   const document = join(f.project, "AGENTS.md");
   const original = await readFile(document, "utf8");
-  const changed = original.replace("### design.authority", "### owner.editedDesignAuthority");
+  const changed = original.replace("Recall first:", "Recall frst:");
   assert.notEqual(changed, original);
   await writeFile(document, changed);
   const edited = (await check(f.project)).find(entry => entry.check === "managed-sections");
   assert.equal(edited.ok, false);
-  assert.deepEqual(edited.detail.pending, ["AGENTS.md#variables-system"]);
+  assert.deepEqual(edited.detail.pending, ["AGENTS.md#navigation"]);
   assertSelfCheckGreen({ selfCheck: await check(secondRoot) });
 });
 

@@ -73,10 +73,15 @@ at all, and doctor does not report it.
 
 ## Managed harness content and preserved choices
 
-- AGENTS.md's navigation, enabled built-in rules and variable sections are harness components.
+- AGENTS.md's navigation and enabled built-in principles are harness components.
   The update refreshes existing registered outputs through the newly selected engine's managed
   writer, including same-version body corrections. Approval for the update covers that refresh;
   do not introduce a second approval for unchanged managed sections.
+- AGENTS.md does not carry project inventories, paths, migration history, procedures or
+  configuration values. Read task context through the Skill and relevant local files; query
+  `settings-catalog` and `variable-list` with the actual project or subproject scope. Updates
+  retire intact recorded legacy variable sections without changing the stored configuration.
+  Edited, user-owned and unmanaged text remains protected and is reported for a scoped decision.
 - Owner text outside section markers, locally edited or user-owned sections, removed markers,
   disabled rules, generation-disabled targets and independent dot targets retain their choices.
   No new per-project AGENTS.md is created where no managed output was registered. Missing outputs

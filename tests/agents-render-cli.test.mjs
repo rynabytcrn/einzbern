@@ -9,6 +9,7 @@
 // device directory.
 
 import "./helpers/device-home.mjs";
+import { seedLegacyVariableSections } from "./helpers/legacy-variable-sections.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -19,7 +20,8 @@ import test from "node:test";
 import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { NAVIGATION_LINES } from "../dist/build/packages/core/src/agents-sections.js";
-import { parseManagedFile, renderSection } from "../dist/build/packages/core/src/managed-sections.js";
+import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
+import { parseManagedFile, renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const ENTRY = join(repositoryRoot, "scripts/einzbern.mjs");
@@ -80,22 +82,48 @@ function sectionOf(text, id) {
 
 const render = (project) => cli(["agents-render", "--project", project, "--at", at()]);
 
-test("478-AC1 via agents-render: a section changed by one character stays as it is and goes pending, and an untouched one is updated", async (context) => {
+test("principles-only render retires legacy snapshots while scoped configuration remains queryable", async (context) => {
+  const { project, projectId, library, agents } = await scratch(context);
+  await withSurface(ATELIER_SURFACE, () => cli(["settings-set", "--workspace", library, "--project-id", projectId, "--key", "design.authority", "--value", "https://design.example.com/current", "--at", at()]));
+  await withSurface(ATELIER_SURFACE, () => cli(["variable-set", "--workspace", library, "--project-id", projectId, "--name", "task.category", "--type", "string", "--value", "main", "--exports", "agents", "--at", at()]));
+  const settingsBefore = await cli(["settings-catalog", "--workspace", library, "--project-id", projectId]);
+  const variablesBefore = await cli(["variable-list", "--workspace", library, "--project-id", projectId]);
+  const bodies = [["variables-system", "## System variables\nstale-design-value\n"], ["variables-custom", "## Custom variables\nstale-task-value\n"]];
+  await writeFile(agents, USER_TEXT + bodies.map(([id, body]) => renderSection({ id, rev: 1, body })).join("\n"));
+  for (const [id, body] of bodies) await setConfigRecord(library, { projectId, collection: "managed-section", key: `AGENTS.md#${id}`, value: { file: "AGENTS.md", id, rev: 1, digest: sectionDigest(body), state: "managed" }, occurredAt: at() });
+  const migrated = await render(project);
+  assert.deepEqual(migrated.sections.filter(section => section.id.startsWith("variables-")).map(section => [section.id, section.result]), bodies.map(([id]) => [id, "removed"]));
+  const after = await readFile(agents, "utf8");
+  assert.ok(after.startsWith(USER_TEXT));
+  assert.doesNotMatch(after, /stale-design-value|stale-task-value|variables-system|variables-custom/);
+  const settingsAfter = await cli(["settings-catalog", "--workspace", library, "--project-id", projectId]);
+  const variablesAfter = await cli(["variable-list", "--workspace", library, "--project-id", projectId]);
+  assert.deepEqual(settingsAfter.design, settingsBefore.design);
+  assert.deepEqual(variablesAfter.variables, variablesBefore.variables);
+  assert.equal(variablesAfter.variables.find(variable => variable.name === "task.category").value, "main");
+  const again = await render(project);
+  assert.equal(again.files.some(file => file.written), false);
+  assert.equal(again.recorded, 0);
+  await withSurface(ATELIER_SURFACE, () => cli(["variable-set", "--workspace", library, "--project-id", projectId, "--name", "task.category", "--type", "string", "--value", "economy", "--exports", "agents", "--at", at()]));
+  assert.equal(await readFile(agents, "utf8"), after, "configuration setters cannot reintroduce a snapshot");
+  assert.equal((await cli(["variable-list", "--workspace", library, "--project-id", projectId])).variables.find(variable => variable.name === "task.category").value, "economy");
+});
+
+test("478-AC1 via agents-render: a section changed by one character stays as it is and goes pending, and an intact legacy snapshot is retired", async (context) => {
   const { device, project, projectId, library, agents, claude } = await scratch(context);
   const first = await render(project);
   assert.equal(first.reasonCode, "AGENTS_RENDERED");
   assert.deepEqual(first.sections, [
     { id: "navigation", file: "AGENTS.md", result: "create", state: "managed" },
-    { id: "variables-system", file: "AGENTS.md", result: "create", state: "managed" },
-    { id: "variables-custom", file: "AGENTS.md", result: "create", state: "managed" },
     { id: "claude-import", file: "CLAUDE.md", result: "create", state: "managed" },
   ]);
-  assert.deepEqual([first.pending, first.recorded, first.projectPath, first.libraryPath], [[], 4, project, library]);
+  assert.deepEqual([first.pending, first.recorded, first.projectPath, first.libraryPath], [[], 2, project, library]);
   assert.deepEqual(first.navigation, { key: "agents.navigation", value: "written" });
-  assert.deepEqual([...first.ids].sort(), [`managed-section:${projectId}:AGENTS.md#navigation`, `managed-section:${projectId}:AGENTS.md#variables-custom`, `managed-section:${projectId}:AGENTS.md#variables-system`, `managed-section:${projectId}:CLAUDE.md#claude-import`]);
+  assert.deepEqual([...first.ids].sort(), [`managed-section:${projectId}:AGENTS.md#navigation`, `managed-section:${projectId}:CLAUDE.md#claude-import`]);
   assert.deepEqual(first.files.map((file) => [file.file, file.written, file.backupPath === null]), [["AGENTS.md", true, false], ["CLAUDE.md", true, true]]);
   assert.equal(first.backupDir.startsWith(join(device, "backups")), true, "the backup is in the device directory");
   assert.equal(await readFile(join(first.backupDir, "AGENTS.md"), "utf8"), USER_TEXT, "AGENTS.md was backed up before it was replaced");
+  await seedLegacyVariableSections({ libraryRoot: library, projectRoot: project, projectId, occurredAt: at(), ids: ["variables-custom"] });
   const written = await readFile(agents, "utf8");
   assert.equal(written.startsWith(`${USER_TEXT}\n`), true, "the user's text stays where it was");
   assert.equal(sectionOf(written, "navigation").body, `${NAVIGATION_LINES.join("\n")}\n`);
@@ -115,46 +143,17 @@ test("478-AC1 via agents-render: a section changed by one character stays as it 
   const next = await render(project);
   assert.deepEqual(next.sections, [
     { id: "navigation", file: "AGENTS.md", result: "refused-user-modified", state: "pending" },
-    { id: "variables-system", file: "AGENTS.md", result: "replace", state: "managed" },
-    { id: "variables-custom", file: "AGENTS.md", result: "unchanged", state: "managed" },
+    { id: "variables-custom", file: "AGENTS.md", result: "removed", state: "removed" },
     { id: "claude-import", file: "CLAUDE.md", result: "unchanged", state: "managed" },
   ]);
   assert.deepEqual(next.pending, [{ id: "navigation", file: "AGENTS.md" }]);
   const after = await readFile(agents, "utf8");
   assert.equal(sectionOf(after, "navigation").raw, sectionOf(edited, "navigation").raw, "the changed section is byte for byte what the user left");
-  const system = sectionOf(after, "variables-system");
-  assert.equal(system.rev, 2);
-  const designHeading = "### design.authority\n";
-  assert.equal(system.body.split(designHeading).length, 2, "the design contract appears exactly once");
-  assert.equal(system.body.slice(system.body.indexOf(designHeading)), [
-    "### design.authority",
-    "",
-    `Configuration target: ${projectId}.`,
-    "",
-    "Design bindings: unconfigured. Production publication: unverified. The offline engine validates declarations only; an authorized agent verifies repository and production evidence.",
-    "",
-    "| Setting | Declared value | Effective source | Inherited |",
-    "| --- | --- | --- | --- |",
-    "| design.authority | https://design.example.com/system | library | true |",
-    "| design.repository | (unconfigured) | default | false |",
-    "| design.pullRequestTarget | (unconfigured) | default | false |",
-    "| design.productionDocs | (unconfigured) | default | false |",
-    "| design.buildService | (unconfigured) | default | false |",
-    "| design.buildProject | (unconfigured) | default | false |",
-    "| design.consumedVersion | (unconfigured) | default | false |",
-    "",
-    "| System setting | Effective source | Inherited |",
-    "| --- | --- | --- |",
-    "| design.authority | library | true |",
-    "| design.repository | default | false |",
-    "| design.pullRequestTarget | default | false |",
-    "| design.productionDocs | default | false |",
-    "| design.buildService | default | false |",
-    "| design.buildProject | default | false |",
-    "| design.consumedVersion | default | false |",
-    "",
-  ].join("\n"), "the explicit target, all seven design bindings and every system source retain their exact contract");
-  assert.deepEqual(parseManagedFile(after).outside, parseManagedFile(edited).outside, "nothing outside the sections changed");
+  assert.equal(sectionOf(after, "variables-system"), null);
+  assert.equal(sectionOf(after, "variables-custom"), null);
+  const catalog = await cli(["settings-catalog", "--workspace", library, "--project-id", projectId]);
+  assert.equal(catalog.settings.find(entry => entry.key === "design.authority").currentValue, "https://design.example.com/system");
+  assert.equal(parseManagedFile(after).outside.join(""), parseManagedFile(edited).outside.join(""), "outside bytes survive retirement");
   assert.equal(await readFile(join(next.backupDir, "AGENTS.md"), "utf8"), edited);
 
   // status judges config/project.json on the records as well as the settings.
@@ -165,13 +164,13 @@ test("478-AC2 via agents-render: a section deleted with its markers is not put b
   const { project, projectId, agents } = await scratch(context);
   await render(project);
   const written = await readFile(agents, "utf8");
-  await writeFile(agents, written.replace(sectionOf(written, "variables-custom").raw, ""));
+  await writeFile(agents, written.replace(sectionOf(written, "navigation").raw, ""));
   const next = await render(project);
-  assert.deepEqual(next.sections.find((section) => section.id === "variables-custom"), { id: "variables-custom", file: "AGENTS.md", result: "removed", state: "removed" });
-  assert.deepEqual([next.recorded, next.ids, next.files.some((file) => file.written)], [1, [`managed-section:${projectId}:AGENTS.md#variables-custom`], false]);
-  assert.equal((await readFile(agents, "utf8")).includes("id=variables-custom"), false, "the removed section is not put back");
+  assert.deepEqual(next.sections.find((section) => section.id === "navigation"), { id: "navigation", file: "AGENTS.md", result: "removed", state: "removed" });
+  assert.deepEqual([next.recorded, next.ids, next.files.some((file) => file.written)], [1, [`managed-section:${projectId}:AGENTS.md#navigation`], false]);
+  assert.equal((await readFile(agents, "utf8")).includes("id=navigation"), false, "the removed section is not put back");
   const third = await render(project);
-  assert.deepEqual(third.sections.find((section) => section.id === "variables-custom"), { id: "variables-custom", file: "AGENTS.md", result: "removed", state: "removed" });
+  assert.deepEqual(third.sections.find((section) => section.id === "navigation"), { id: "navigation", file: "AGENTS.md", result: "removed", state: "removed" });
   assert.deepEqual([third.recorded, third.backupDir, third.files.some((file) => file.written)], [0, null, false]);
 });
 
@@ -224,12 +223,12 @@ test("478-R3 via rule-resolve: after keep, agents-render never writes that secti
   assert.deepEqual([overwritten.body, overwritten.rev], [`${NAVIGATION_LINES.join("\n")}\n`, 2]);
 
   // unmanage: the markers go, the text stays, and the section is never managed again.
-  const unmanaged = await cli(["rule-resolve", "--project", project, "--section", "variables-custom", "--action", "unmanage", "--at", at()]);
+  const unmanaged = await cli(["rule-resolve", "--project", project, "--section", "navigation", "--action", "unmanage", "--at", at()]);
   assert.deepEqual([unmanaged.result, unmanaged.state, unmanaged.written], ["unmanaged", "unmanaged", true]);
   const text = await readFile(agents, "utf8");
-  assert.deepEqual([text.includes("id=variables-custom"), text.includes("## Custom variables")], [false, true]);
+  assert.deepEqual([text.includes("id=navigation"), text.includes(NAVIGATION_LINES[2])], [false, true]);
   const last = await render(project);
-  assert.deepEqual(last.sections.find((section) => section.id === "variables-custom"), { id: "variables-custom", file: "AGENTS.md", result: "unchanged", state: "unmanaged" });
+  assert.deepEqual(last.sections.find((section) => section.id === "navigation"), { id: "navigation", file: "AGENTS.md", result: "unchanged", state: "unmanaged" });
   assert.equal(last.files.some((file) => file.written), false);
 });
 
@@ -238,7 +237,7 @@ test("478-R3, R4: the refusals of rule-resolve and agents-render, and a device t
   const unset = await render(join(project, "src"));
   assert.deepEqual(unset.navigation, { key: "agents.navigation", value: null });
   assert.equal(unset.projectPath, project, "--project names any directory of the project");
-  assert.deepEqual(unset.sections.map((section) => section.id), ["variables-system", "variables-custom", "claude-import"]);
+  assert.deepEqual(unset.sections.map((section) => section.id), ["claude-import"]);
   assert.equal(sectionOf(await readFile(agents, "utf8"), "navigation"), null);
 
   const action = await refusal(["rule-resolve", "--project", project, "--section", "variables-system", "--action", "replace", "--at", at()]);

@@ -514,7 +514,7 @@ test("SUB-409 (STORY-508 R5): the settings routes carry every row's shape, group
 
 
 
-test("STORY-484 variable routes write, read back and render safe values while withholding secrets", async (t) => {
+test("STORY-484 variable routes read back native values without resident snapshots and refuse secrets", async (t) => {
   const fixture = await scratch("tcrn-portal-variables-", "TCRN-PORTAL-VARIABLES");
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
@@ -529,14 +529,15 @@ test("STORY-484 variable routes write, read back and render safe values while wi
   assert.deepEqual(withoutSource(created.body.readback), { name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint", exports: ["agents"] });
   assert.deepEqual(created.body.variables, [created.body.readback]);
   assert.equal(created.body.render.reasonCode, "AGENTS_RENDERED");
-  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host.*build\.example\.com/u);
+  const resident = await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8");
+  assert.doesNotMatch(resident, /deploy\.host|build\.example\.com|variables-custom/u);
 
   const updated = await request(url, "/api/variables", writeOptions(boot.token, "POST", {
     name: "deploy.host", type: "string", value: "stage.example.com", description: "Staging endpoint", exports: ["agents"],
   }));
   assert.equal(updated.response.status, 200);
   assert.equal(updated.body.readback.value, "stage.example.com");
-  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host.*stage\.example\.com/u);
+  assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), resident, "native value updates do not rewrite resident instructions");
 
   const secret = "sk-proj-0123456789abcdef";
   const refused = await request(url, "/api/variables", writeOptions(boot.token, "POST", {

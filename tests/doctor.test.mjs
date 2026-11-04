@@ -381,7 +381,7 @@ test("540-GWT4: managed-sections checks a coordination library's registered root
   const sections = byCheck(results, "managed-sections").detail;
   assert.deepEqual(sections.pending, []);
   const listed = sections.sections.map((entry) => entry.section);
-  for (const key of ["AGENTS.md#navigation", "AGENTS.md#rule:autonomy", "AGENTS.md#variables-custom", "AGENTS.md#variables-system"]) assert.ok(listed.includes(key), `doctor lists ${key}`);
+  for (const key of ["AGENTS.md#navigation", "AGENTS.md#rule:autonomy"]) assert.ok(listed.includes(key), `doctor lists ${key}`);
   assert.ok(sections.sections.every((entry) => entry.state === "managed"));
 
   const path = join(fixture.project, "AGENTS.md");

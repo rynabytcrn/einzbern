@@ -5909,7 +5909,7 @@ const BOOT = __PORTAL_BOOT__;
     ${variableField("type", variable.type ?? "string")}
     ${variableField("value", variable.value ?? "")}
     ${variableField("description", variable.description ?? "")}
-    <span class="tcrn-table-shell__cell" role="cell" data-label="${esc(t("variables.exports"))}">${["agents", "handoff"].map((target) => `<label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-variable-export="${target}" ${(variable.exports ?? (isNew ? [] : ["agents"])).includes(target) ? "checked" : ""}><span class="tcrn-switch__label">${esc(target === "agents" ? t("variables.export.agents") : t("variables.export.handoff"))}</span></label>`).join("")}</span>
+    <span class="tcrn-table-shell__cell" role="cell" data-label="${esc(t("variables.exports"))}">${["agents", "handoff"].map((target) => `<label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-variable-export="${target}"${target === "agents" ? " disabled" : ""} ${(variable.exports ?? (isNew ? [] : ["agents"])).includes(target) ? "checked" : ""}><span class="tcrn-switch__label">${esc(target === "agents" ? t("variables.export.agents") : t("variables.export.handoff"))}</span></label>`).join("")}</span>
     <span class="tcrn-table-shell__cell" role="cell" data-label="${esc(t("variables.actions"))}">${isNew
       ? `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-variable-create data-cli-action="variable-set">${esc(t("variables.add"))}</button>`
       : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-variable-save data-cli-action="variable-set">${esc(t("config.save"))}</button> <button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-variable-delete data-cli-action="variable-remove"${variable.declaredHere === false ? " disabled" : ""}>${esc(t("config.reset"))}</button>`}</span>
@@ -6661,7 +6661,11 @@ const BOOT = __PORTAL_BOOT__;
     const select = $("#pending-section");
     select.innerHTML = pending.length ? pending.map((entry) => `<option value="${esc(entry.id)}" ${entry.id === state.pendingSection ? "selected" : ""}>${esc(entry.id)} · ${esc(entry.file)}</option>`).join("") : `<option value="">${esc(t("rule.pendingEmpty"))}</option>`;
     select.disabled = pending.length === 0;
-    $$('[data-pending-action]').forEach((button) => { button.disabled = pending.length === 0; });
+    $$('[data-pending-action]').forEach((button) => {
+      const retired = ["variables-system", "variables-custom"].includes(state.pendingSection) && button.dataset.pendingAction === "overwrite";
+      button.disabled = pending.length === 0 || retired;
+      button.title = retired ? t("variables.note") : "";
+    });
     $("#pending-open").textContent = `${t("rule.pendingTitle")} · ${pending.length}`;
   };
   // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R7): a rule's order places its section in AGENTS.md, and
@@ -7254,7 +7258,7 @@ const BOOT = __PORTAL_BOOT__;
   $("#agents-md").addEventListener("input", (event) => { state.agentsText = event.target.value; renderGutter(); });
   $("#agents-md").addEventListener("scroll", () => { $("#prose-gutter").scrollTop = $("#agents-md").scrollTop; });
   $("#pending-open").addEventListener("click", () => { $("#rules-pending").scrollIntoView({ block: "nearest" }); $("#pending-section").focus(); });
-  $("#pending-section").addEventListener("change", (event) => { state.pendingSection = event.target.value; });
+  $("#pending-section").addEventListener("change", (event) => { state.pendingSection = event.target.value; renderPending(); });
   $$('[data-pending-action]').forEach((button) => button.addEventListener("click", async () => {
     if (!state.pendingSection) return;
     const action = button.dataset.pendingAction;

@@ -3,10 +3,9 @@ import { effectiveProjectState } from "./project-chain.js";
 import { DESIGN_CONFIGURATION_KEYS, designConfiguration } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
-// Shared managed output contains project declarations and a runtime policy reference.
-// Device host model/quota values never become a portable project policy snapshot.
-// Historical variable records retain their AGENTS export contract; new declarations
-// require an explicit export target. Output remains a projection, never a read authority.
+// Configuration is read through settings-catalog and variable-list, never copied into AGENTS.md.
+// The pure legacy renderers remain available for inspecting older exports. Normal render/update
+// paths retire intact recorded variable sections and preserve user-owned or edited content.
 
 import { join } from "node:path";
 
@@ -29,6 +28,7 @@ import type { WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 export const VARIABLES_SECTIONS_FILE = "AGENTS.md" as const;
 export const VARIABLES_SYSTEM_SECTION_ID = "variables-system" as const;
 export const VARIABLES_CUSTOM_SECTION_ID = "variables-custom" as const;
+export const RETIRED_VARIABLE_SECTION_IDS: readonly string[] = Object.freeze([VARIABLES_SYSTEM_SECTION_ID, VARIABLES_CUSTOM_SECTION_ID]);
 const DESIGN_AUTHORITY_SETTING_KEY = "design.authority";
 // The system settings the system section renders, in the order it renders them, and the only ones it
 // ever renders.
@@ -310,10 +310,9 @@ export function recordWithheldCustomVariablesAsPending(plan: ManagedWritePlan, s
 }
 
 /**
- * Render both variable sections into the project's AGENTS.md through the managed-section writer,
- * then record in the library each section record the write changed. A section the user changed is
- * left as it is (pending); a custom section with a withheld variable is also recorded pending while
- * its safe rows are written. A section whose markers the user removed is not put back. When the
+ * Retire legacy variable sections through the managed-section writer after a configuration change.
+ * Never create AGENTS.md or emit current configuration values. User-modified, user-owned and
+ * unmanaged sections remain protected; removed markers are not put back. When the
  * records cannot be committed, AGENTS.md returns to what it held, and a file the write created is
  * taken away, before the error goes on (TCRN-CROSS-STORY-489; agents-sections.ts,
  * putBackUnrecorded). TCRN-CROSS-STORY-538 GWT3 (TCRN-CROSS-SUB-499): the library is read and
@@ -333,22 +332,20 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
       if (state.settings.find(entry => entry.key === "agents.generation")?.value === "none") {
         return { deltas: [], plan: { plan: null, recorded: 0, withheld: [] as WithheldEntry[] } };
       }
-      const system = renderSystemVariablesSection(state);
-      const custom = renderCustomVariablesSection(state);
-      const planned = await planManagedWrite({
+      const plan = await planManagedWrite({
         filePath: join(input.projectRoot, VARIABLES_SECTIONS_FILE),
         file: VARIABLES_SECTIONS_FILE,
-        desired: [system, custom].map((section) => ({ id: section.id, body: section.body })),
+        desired: [],
         records: managedSectionRecordsFor(state, VARIABLES_SECTIONS_FILE),
+        retired: RETIRED_VARIABLE_SECTION_IDS,
       });
-      const plan = recordWithheldCustomVariablesAsPending(planned, state, custom.withheld);
       const deltas = plan.sections.filter((decision) => decision.recordChanged).map((decision) => setConfigRecordDelta({
         ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }),
         collection: "managed-section",
         key: managedSectionRecordKey(VARIABLES_SECTIONS_FILE, decision.id),
         value: decision.record,
       }));
-      return { deltas, plan: { plan, recorded: deltas.length, withheld: [...system.withheld, ...custom.withheld] } };
+      return { deltas, plan: { plan, recorded: deltas.length, withheld: [] as WithheldEntry[] } };
     },
     unchanged: async ({ plan }) => plan === null || await filesAsPlanned([plan]),
     write: async (root, nativeState, { plan, recorded, withheld }, append) => {

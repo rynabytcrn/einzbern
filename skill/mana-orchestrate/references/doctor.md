@@ -104,7 +104,10 @@ inside the library, and do not copy this device's directory to another device.
 ### managed-sections
 
 The managed sections in the harness instruction files match their records, and enabled built-in
-rule bodies match the engine catalog in the configured language. Not ok:
+rule bodies match the engine catalog in the configured language. AGENTS holds principles and
+minimal navigation; configuration values are queried from `settings-catalog` and `variable-list`.
+Intact recorded legacy variable sections retire on render or update; modified text stays pending
+for a scoped decision. Retiring a projection does not remove the underlying configuration. Not ok:
 `DOCTOR_MANAGED_SECTIONS_MISMATCH`. A section changed by hand waits as pending
 (`MANAGED_SECTION_PENDING`, the sections listed in `detail.pending`): ask the user once whether to
 overwrite it, keep it, or stop managing it, and apply the choice with the managed-section verb that

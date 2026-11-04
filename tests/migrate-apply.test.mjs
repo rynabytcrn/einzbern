@@ -956,7 +956,7 @@ test("STORY-517 GWT1, GWT3 (fixture): a project partition with an old project re
   assert.deepEqual([language.currentValue, language.source.kind, language.source.projectId], ["zh-CN", "project", FIXTURE_PROJECT_ID]);
   assert.deepEqual(state.settings.filter((entry) => entry.key === "artifact.language").map((entry) => entry.projectId ?? null), [FIXTURE_PROJECT_ID]);
   const sections = state.configRecords.filter((entry) => entry.collection === "managed-section");
-  assert.deepEqual(sections.filter((entry) => entry.key.startsWith("AGENTS.md#")).map((entry) => entry.key).sort(), ["AGENTS.md#navigation", "AGENTS.md#variables-custom", "AGENTS.md#variables-system"]);
+  assert.deepEqual(sections.filter((entry) => entry.key.startsWith("AGENTS.md#")).map((entry) => entry.key).sort(), ["AGENTS.md#navigation"]);
   assert.deepEqual([...new Set(sections.map((entry) => entry.projectId))], [FIXTURE_PROJECT_ID], "every managed-section record names the old chain's project");
   // Every write after the old chain is signed by the setup actor.
   const written = (await readAllStreams(targets[1])).streams.flatMap((stream) => stream.events).slice(expected.events);
@@ -1002,7 +1002,7 @@ async function aosShaped(context) {
   assert.deepEqual(state.settings.filter((entry) => entry.projectId !== undefined).map((entry) => [entry.key, entry.projectId]), [["artifact.language", setupProjectId]]);
   // TCRN-AOS holds the three AGENTS.md records; the fixture's project also took CLAUDE.md's import record.
   const sectionKeys = state.configRecords.filter((entry) => entry.projectId === setupProjectId).map((entry) => `${entry.collection}:${entry.key}`).sort();
-  assert.deepEqual(sectionKeys, ["managed-section:AGENTS.md#navigation", "managed-section:AGENTS.md#variables-custom", "managed-section:AGENTS.md#variables-system", "managed-section:CLAUDE.md#claude-import"]);
+  assert.deepEqual(sectionKeys, ["managed-section:AGENTS.md#navigation", "managed-section:CLAUDE.md#claude-import"]);
   const fixed = await writeMapping(m, [roled[0], { ...roled[1], projectId: FIXTURE_PROJECT_ID }], join(m.base, "fixed.json"));
   const fix = (extra = []) => run(m, ["setup", "--mode", "migrate", "--project", alphaProject, "--mapping", fixed, "--language", "zh-CN", "--at", at(), ...extra]);
   const kept = (current) => ({ work: current.work.map((entry) => [entry.id, entry.projectId, entry.status, entry.revision, entry.tombstone]),
@@ -1041,7 +1041,7 @@ test("STORY-517 GWT2 (fixture, TCRN-AOS shape): the binding moves to the old pro
   assert.deepEqual(fixEvents.slice(-(2 + clean.sectionKeys.length)).map((event) => event.payload.operation),
     ["settings.removed", ...clean.sectionKeys.map(() => "config.record.removed"), "project.deleted"], "the retirement's own writes, last");
   assert.equal(receipt(run(clean.m, ["chain-validate", "--workspace", clean.target])).reasonCode, "CHAIN_VALIDATED");
-  for (const section of ["navigation", "variables-system", "variables-custom"]) {
+  for (const section of ["navigation"]) {
     assert.match(await readFile(join(clean.alphaProject, "AGENTS.md"), "utf8"), new RegExp(`<!-- einzbern:section id=${section} rev=\\d+ digest=`, "u"), section);
   }
   // The same mapping again: the binding is in place, nothing is written into a library or the registry.

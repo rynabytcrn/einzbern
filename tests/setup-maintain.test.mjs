@@ -643,13 +643,13 @@ test("coordination harness sections participate in repair and engine updates", a
   assertSelfCheckGreen(repaired);
   const doctor = repaired.selfCheck.find((entry) => entry.check === "managed-sections");
   assert.deepEqual(doctor.detail.pending, []);
-  assert.ok(doctor.detail.sections.some((entry) => entry.section === "AGENTS.md#variables-system" && entry.state === "managed"), "doctor lists the container's sections");
+  assert.ok(doctor.detail.sections.some((entry) => entry.section === "AGENTS.md#navigation" && entry.state === "managed"), "doctor lists the container's sections");
 
   const agents = await readFile(join(container, "AGENTS.md"), "utf8");
-  assert.ok(agents.includes("| execution.maxConcurrentSubagents |"), "the coordination library's own keys");
+  assert.doesNotMatch(agents, /execution\.maxConcurrentSubagents|variables-system|variables-custom/u, "configuration is queried on demand");
   assert.doesNotMatch(agents, /models\./u);
   const library = await materializeWorkspace(coordination);
-  const record = library.configRecords.find((entry) => entry.collection === "managed-section" && entry.key === "AGENTS.md#variables-system");
+  const record = library.configRecords.find((entry) => entry.collection === "managed-section" && entry.key === "AGENTS.md#navigation");
   assert.deepEqual([record?.projectId, record?.value.state], [undefined, "managed"], "recorded for the whole coordination library");
   assert.equal(library.projects.length, projectsBefore, "no setup project binding is made in a coordination library");
   assert.equal((await readRegistry(f.deviceHome)).entries.find((entry) => entry.projectPath === container)?.projectId, undefined);

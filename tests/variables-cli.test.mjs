@@ -72,7 +72,7 @@ const asAtelier = (operation) => withSurface(ATELIER_SURFACE, operation);
 const versionOf = async (workspace) => (await materializeWorkspace(workspace)).version;
 const lastLine = (text) => JSON.parse(text.trim().split("\n").at(-1));
 
-test("484-AC1 through the CLI: variable-set deploy.host is a variable, a row of the custom section and not a setting", async (context) => {
+test("484-AC1 through the CLI: variable-set deploy.host is a variable, queryable on demand and not a setting", async (context) => {
   const fx = await library(context);
   const receipt = await asAtelier(() => cli(["variable-set", "--exports", "agents", "--workspace", fx.workspace, "--at", at(), "--name", "deploy.host", "--type", "string",
     "--value", "build.example.com", "--description", "Where a release deploys"]));
@@ -91,12 +91,11 @@ test("484-AC1 through the CLI: variable-set deploy.host is a variable, a row of 
   const catalog = await asModel(() => cli(["settings-catalog", "--workspace", fx.workspace]));
   assert.equal(catalog.settings.some((entry) => entry.key === "deploy.host"), false, "a variable is not a setting");
 
-  // The CLI records the variable; the section writer puts it into AGENTS.md as a row of the custom section.
+  // Native values stay queryable, including old export metadata; setters do not create snapshots.
   const written = await writeVariablesSections(fx.workspace, { projectRoot: fx.root, backupRoot: join(fx.base, "backups"), occurredAt: at() });
-  assert.deepEqual([written.written, written.withheld], [true, []]);
-  const parsed = parseManagedFile(await readFile(join(fx.root, "AGENTS.md"), "utf8"), "AGENTS.md");
-  const custom = parsed.sections.find((section) => section.id === VARIABLES_CUSTOM_SECTION_ID);
-  assert.match(custom.body, /^\| deploy\.host \| string \| build\.example\.com \| Where a release deploys \|$/mu);
+  assert.deepEqual([written.written, written.withheld, written.sections], [false, [], []]);
+  await assert.rejects(readFile(join(fx.root, "AGENTS.md")), { code: "ENOENT" });
+
 });
 
 test("484-AC2 through the CLI: a credential-shaped value or description is refused, and nothing is recorded", async (context) => {
@@ -237,7 +236,7 @@ test("484-R1 through the CLI: variables are set, changed, listed by name with wh
 });
 
 // TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): variable-set --order.
-test("508-R7 through the CLI: variable-set --order records the order, the receipt and variable-list carry it, and the custom section follows it", async (context) => {
+test("508-R7 through the CLI: variable-set --order records the order, the receipt and variable-list carry it, without a resident snapshot", async (context) => {
   const fx = await library(context);
   assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === "variable-set").flags.find((flag) => flag.name === "order"), { name: "order", required: false, valueKind: "integer" });
   const set = (flags) => asAtelier(() => cli(["variable-set", "--exports", "agents", "--workspace", fx.workspace, "--at", at(), ...flags]));
@@ -251,8 +250,8 @@ test("508-R7 through the CLI: variable-set --order records the order, the receip
   assert.deepEqual(listed.variables.map((variable) => [variable.name, variable.order ?? null]), [["alpha", 20], ["bravo", 10], ["charlie", null]], "listed by name, each with its order");
 
   await writeVariablesSections(fx.workspace, { projectRoot: fx.root, backupRoot: join(fx.base, "backups"), occurredAt: at() });
-  const custom = parseManagedFile(await readFile(join(fx.root, "AGENTS.md"), "utf8"), "AGENTS.md").sections.find((section) => section.id === VARIABLES_CUSTOM_SECTION_ID);
-  assert.deepEqual(custom.body.split("\n").filter((line) => /^\| [a-z]/u.test(line)).map((line) => line.split(" | ")[0].slice(2)), ["bravo", "alpha", "charlie"]);
+  await assert.rejects(readFile(join(fx.root, "AGENTS.md")), { code: "ENOENT" });
+  assert.deepEqual((await cli(["variable-list", "--workspace", fx.workspace])).variables, listed.variables);
 
   const before = await versionOf(fx.workspace);
   for (const order of ["0", "-3", "1.5", "first"]) {

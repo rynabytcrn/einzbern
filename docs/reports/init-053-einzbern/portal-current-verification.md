@@ -40,13 +40,13 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "currentSources": [
     {
       "path": "portal/index.html",
-      "bytes": 500929,
-      "sha256": "61d823209602fd4697d9b9155596102acd79b59b6be9d846d53a1be3f70ccb2a"
+      "bytes": 501208,
+      "sha256": "f6850314dc120483c8fc7b04b6f8d51223a08fa4b13ec6f3630bea1066798890"
     },
     {
       "path": "portal/locales.js",
-      "bytes": 289937,
-      "sha256": "c4389f953db76c8233446c4b95028cbff85f4e55b2e288b59d6efda3ad9286da"
+      "bytes": 289479,
+      "sha256": "bba42a1d628d07c866c701b10a7eee3016c7e73a6f021686b238b3cc54baa339"
     },
     {
       "path": "portal/portal.mjs",
@@ -90,8 +90,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/portal-configuration.test.mjs",
-      "bytes": 57612,
-      "sha256": "17c535173b9508f31bcdc6b2d0d1df613ea8eaa995052e4336cd05293be0b880"
+      "bytes": 57626,
+      "sha256": "0e0252126ec4255e513f8d88e68677d8ce5ffe928930f3fc2d5bf147e21524ab"
     },
     {
       "path": "portal/tests/portal-library.test.mjs",
@@ -105,8 +105,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/ui-configuration.test.mjs",
-      "bytes": 123662,
-      "sha256": "137a6cac45209303f333abecfa8669842b185158943ca1186ee3bcf2ba7e74ea"
+      "bytes": 123815,
+      "sha256": "a3b375fdfc741514a1bb538e7d01f887a8b355c99fc7f0ab4347b2fce1bbab09"
     },
     {
       "path": "portal/tests/ui-library.test.mjs",
@@ -145,13 +145,13 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "packages/core/src/doctor.ts",
-      "bytes": 36286,
-      "sha256": "6b1efcda3ca63cd17c6ee46e701fb47800166488f477b3c58ef62deaf00fd2b2"
+      "bytes": 36310,
+      "sha256": "da49a0a8fadc91bd471618ed52460e1d780b4f998823aeb8c1cbf8812065f1ef"
     },
     {
       "path": "tests/doctor.test.mjs",
-      "bytes": 29211,
-      "sha256": "494cbb53f98f059a34418bca69dc6395166b561678a97c4e375318cd4bfc21d2"
+      "bytes": 29253,
+      "sha256": "e371dcf30e9b679287061164704a52c4c16bec79ff811a5ae1839d21a850f53a"
     },
     {
       "path": "scripts/verify-portal.mjs",

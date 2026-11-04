@@ -446,8 +446,9 @@ try {
 //     already carried every P1 leg (scripts/lib/push-gate-p1-coverage.mjs). The decision is made
 //     inside verify:p1's stage, so the time it takes is that stage's. The child's entry then names
 //     the run and the gate of each leg (coveredBy) in place of the child's output. When a run was
-//     handed but does not carry every leg, verify:p1 runs in full and its entry says why in
-//     p1Coverage. Run on its own, this gate has no run to read, and nothing changes.
+//     handed but lacks evidence, verify:p1 runs in full and its entry says why in
+//     p1Coverage. A matching red prerequisite already blocks this run: retain that result
+//     without restarting P1 or P8. Run on its own, this gate has no run to read.
 function realRepositoryRoot() {
   try {
     return realpathSync(repositoryRoot);
@@ -506,7 +507,7 @@ for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {
           readOutput: readGateOutput,
           injection: process.env.EINZBERN_P1_INJECT,
         });
-        if (p1Coverage?.covered === true) return null;
+        if (p1Coverage?.covered === true || p1Coverage?.legs.some(row => row.reasonCode === "P1_LEG_GATE_RED")) return null;
       }
       return timingProbe
         ? { ok: true, command: ["pnpm", "run", "--silent", script], cwd: repositoryRoot, exitCode: 0, signal: null, error: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), output: "" }
@@ -514,6 +515,26 @@ for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {
     },
   );
   if (result === null) {
+    if (p1Coverage.covered !== true) {
+      childExpectationsFailure = {
+        reasonCode: "P1_PRIOR_GATE_FAILED",
+        runId: p1Coverage.runId,
+        legs: p1Coverage.legs.filter(row => row.reasonCode === "P1_LEG_GATE_RED"),
+      };
+      childResults.push({
+        script,
+        command: ["pnpm", "run", "--silent", script],
+        cwd: repositoryRoot,
+        exit: { status: null, signal: null, error: null },
+        stdout: { path: null, bytes: 0, sha256: null },
+        stderr: { path: null, bytes: 0, sha256: null },
+        notStarted: true,
+        p1Coverage,
+        assessment: { ok: false, reasonCode: "P1_PRIOR_GATE_FAILED", findings: [childExpectationsFailure] },
+      });
+      fail(reasonCode, "a matching prerequisite already failed in this gate run; repair before rerunning", childExpectationsFailure);
+      continue;
+    }
     childResults.push(p1CoveredChildResult(script, p1Coverage));
     continue;
   }

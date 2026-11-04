@@ -3,7 +3,8 @@
 // verify:p1 out only when the gate run it is part of has carried every P1 leg -- a gate named for the
 // leg, in this repository, running the leg's own script, green, with its whole output and nothing the
 // zero-warning rule rejects -- and names the run and the gates in its receipt (GWT1). A run on its
-// own, or a run short of any one of those, runs verify:p1 in full (GWT2, GWT3). The decision is proved
+// own, or a run short of evidence, runs verify:p1 in full (GWT2, GWT3). A matching failed
+// prerequisite blocks the same run without restarting P1/P8. The decision is proved
 // on the pure function, and the push gate's wiring through its timing probe, which starts no child.
 // Every output file here is a temporary one.
 
@@ -244,7 +245,7 @@ test("SUB-493: a HEAVY_SLOT_WAITING line on verify:p1's stderr is judged no warn
 
 // The push gate's timing probe runs every stage and writes the real receipt but starts no child: what
 // it does with verify:p1 is what the real gate does.
-async function probePushGate(context, prior) {
+async function probePushGate(context, prior, expectedStatus = 0) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-push-gate-p1-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const env = { ...process.env, TCRN_PUSH_GATE_TIMING_PROBE: "1", TCRN_PUSH_GATE_TIMING_EVIDENCE_PATH: join(base, "timing.json"), TCRN_PUSH_GATE_PROGRESS_EVIDENCE_PATH: join(base, "progress.json") };
@@ -258,7 +259,7 @@ async function probePushGate(context, prior) {
     env[GATE_RUN_PRIOR_VARIABLE] = JSON.stringify({ runId: RUN_ID, gates: run.gates });
   }
   const probe = spawnSync(process.execPath, [join(REPO_ROOT, "scripts/push-gate.mjs")], { cwd: REPO_ROOT, encoding: "utf8", env });
-  assert.equal(probe.status, 0, `${probe.stdout ?? ""}${probe.stderr ?? ""}`);
+  assert.equal(probe.status, expectedStatus, `${probe.stdout ?? ""}${probe.stderr ?? ""}`);
   const receipt = JSON.parse(probe.stdout.trimEnd());
   const timing = JSON.parse(await readFile(join(base, "timing.json"), "utf8"));
   return { receipt, stages: timing.stages.map(({ name }) => name) };
@@ -290,4 +291,18 @@ test("537-GWT2 wiring: a run short of a leg, and the push gate on its own, run v
   const [own] = alone.receipt.childResults;
   assert.equal(own.notStarted, undefined, "verify:p1 ran");
   assert.equal(Object.hasOwn(own, "coveredBy") || Object.hasOwn(own, "p1Coverage"), false, "a push gate on its own has nothing to say about a run");
+});
+
+test("a failed prerequisite blocks the real push-gate process without restarting P1 or P8", async (context) => {
+  const { receipt } = await probePushGate(context, run => change(run, "test", { ok: false }), 1);
+  assert.equal(receipt.reasonCode, "PUSH_GATE_BLOCKED");
+  assert.equal(receipt.ok, false);
+  const [p1, p8] = receipt.childResults;
+  assert.equal(p1.notStarted, true);
+  assert.equal(p1.assessment.reasonCode, "P1_PRIOR_GATE_FAILED");
+  assert.equal(p1.assessment.findings[0].runId, RUN_ID);
+  assert.deepEqual(p1.assessment.findings[0].legs.map(row => row.leg), ["test"]);
+  assert.equal(Object.hasOwn(p1, "coveredBy"), false, "a failed gate never becomes passing coverage");
+  assert.equal(p8.notStarted, true);
+  assert.equal(p8.assessment.reasonCode, "CHILD_PREFLIGHT_BLOCKED");
 });

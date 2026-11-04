@@ -15,6 +15,8 @@ Versioning after the first accepted release.
 
 ### Principles and portable installation
 
+- Keep an observed failed prerequisite blocking its current gate run without
+  restarting P1 or P8 on the unchanged failure; missing evidence still runs the checks.
 - Keep AGENTS limited to shared principles and one Mana Orchestrate entry. Move
   procedures to scoped Skill references; remove generated configuration snapshots
   without changing authoritative values or overwriting user edits.

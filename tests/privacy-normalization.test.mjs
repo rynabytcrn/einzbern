@@ -7,9 +7,8 @@ import test from "node:test";
 
 test("privacy normalization terminates on the cloud-roots source and unmatched slash arrays", async () => {
   const cloudRoots = await readFile(new URL("./cloud-roots.test.mjs", import.meta.url), "utf8");
-  // The diagnosed source was 6,433 bytes; 470-AC5 now also expects the device's coordination library (EPIC-144 R2),
-  // 6,734 bytes. The array matchers before SUB-395 still do not terminate on this source, so it stays the regression input.
-  assert.equal(Buffer.byteLength(cloudRoots, "utf8"), 6734, "the unmodified scan input is the 6,734-byte cloud-roots source");
+  // Scan the current source verbatim. Its byte count is checked against the output below,
+  // not frozen as a contract for unrelated source edits.
 
   const repeatedSlashes = "\\".repeat(28);
   const unmatchedArray = `[${JSON.stringify(repeatedSlashes)},${JSON.stringify(repeatedSlashes)}]`;

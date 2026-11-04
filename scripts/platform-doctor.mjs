@@ -31,7 +31,7 @@ import { PROTOCOL_LIMITS } from "../dist/build/packages/protocol/src/index.js";
 // Which hook commands are Einzbern's launcher or a script of the old harness: the engine's own
 // answer, read from the module that renders and reconciles host hooks (scripts/host-render.mjs
 // imports it the same way).
-import { HOST_HOOK_FILES, isEinzbernHookCommand, isLegacyHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
+import { HOST_HOOK_FILES, HOST_HOOK_EVENTS, HOST_HOOK_POINTER_EVENTS, hostHookCommand, isEinzbernHookCommand, isLegacyHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 import { toPosixPath, walkFiles } from "./lib/files.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -840,7 +840,14 @@ async function launcherDeviceGaps(target, deviceEntries) {
 // The script a hook command runs with node: quoted or not, behind a `[ -f ]` guard or not.
 const NODE_HOOK_COMMAND = /^(?:if \[ -f "[^"]+" \]; then )?node\s+(?:"([^"]+)"|'([^']+)'|(\S+))/u;
 
-function nodeHookTarget(command, expand = (path) => path) {
+function nodeHookTarget(command, expand = (path) => path, userHome = homedir()) {
+  if (command.startsWith('node -e "/*einzbern-hook*/')) {
+    const binding = /homedir\(\),'((?:\\'|[^'])*)'\)\)/u.exec(command);
+    if (!binding) return undefined;
+    const target = resolve(userHome, binding[1].replaceAll("\\'", "'"), "engine/hook.mjs");
+    // Verify the complete generated command; never evaluate text from a settings file.
+    return Object.keys({ ...HOST_HOOK_EVENTS, ...HOST_HOOK_POINTER_EVENTS }).some(event => hostHookCommand(target, event, userHome) === command) ? target : undefined;
+  }
   const match = NODE_HOOK_COMMAND.exec(command.trim());
   if (!match) return undefined;
   return resolve(expand(match[1] ?? match[2] ?? match[3]));
@@ -867,7 +874,7 @@ async function readHookFile(path) {
  */
 async function inspectUserHooks(platformRoot, homeRoot, deviceEntries) {
   const expand = (path) => path.replaceAll("${CLAUDE_PROJECT_DIR}", platformRoot).replaceAll("${HOME}", homeRoot).replaceAll("$HOME", homeRoot);
-  const ours = (command) => (isEinzbernHookCommand(command) || isLegacyHookCommand(command) ? nodeHookTarget(command, expand) : null);
+  const ours = (command) => (isEinzbernHookCommand(command) || isLegacyHookCommand(command) ? nodeHookTarget(command, expand, homeRoot) : null);
   const user = {};
   for (const [host, file, notFile, invalid] of [
     ["claude", HOST_HOOK_FILES["claude-code"], "PLATFORM_HOOK_SETTINGS_NOT_FILE", "PLATFORM_HOOK_SETTINGS_INVALID"],
@@ -899,7 +906,7 @@ async function inspectUserHooks(platformRoot, homeRoot, deviceEntries) {
  * separate governed step, so a container with no hooks file has not failed anything — it
  * has not been activated. Saying so is different from saying it passed.
  */
-async function inspectCodexHooks(platformRoot, deviceEntries = null) {
+async function inspectCodexHooks(platformRoot, deviceEntries = null, homeRoot = homedir()) {
   const hooksPath = resolve(platformRoot, ".codex/hooks.json");
   const stats = await existingPath(hooksPath);
   if (!stats) return { state: "absent" };
@@ -912,6 +919,7 @@ async function inspectCodexHooks(platformRoot, deviceEntries = null) {
   }
   const commands = hookCommands(settings);
   const { failures, checked } = await hookTargetFailures(commands, (command) => {
+    if (command.startsWith('node -e "/*einzbern-hook*/')) return nodeHookTarget(command, undefined, homeRoot);
     const match = /^node\s+(?:"([^"]+)"|'([^']+)'|(\S+))/u.exec(command.trim());
     if (!match) return undefined;
     return resolve(match[1] ?? match[2] ?? match[3]);
@@ -933,13 +941,13 @@ function sourcedHookFailures(source, part) {
 
 // The container's Claude settings: the commands the old harness wrote with the project-dir
 // placeholder, in their one accepted shape, and the Einzbern launcher's command (R47-06).
-function containerClaudeTarget(platformRoot) {
+function containerClaudeTarget(platformRoot, homeRoot) {
   return (command) => {
     if (command.includes("${CLAUDE_PROJECT_DIR}")) {
       const match = /^(?:if \[ -f "[^"]+" \]; then )?node\s+"([^"]+)"(?:\s+--container-root\s+"[^"]+")?(?:\s+--host\s+claude)?(?:; fi)?$/u.exec(command.trim());
       return match ? resolve(match[1].replaceAll("${CLAUDE_PROJECT_DIR}", platformRoot)) : undefined;
     }
-    return isEinzbernHookCommand(command) ? nodeHookTarget(command) : null;
+    return isEinzbernHookCommand(command) ? nodeHookTarget(command, undefined, homeRoot) : null;
   };
 }
 
@@ -953,7 +961,7 @@ function containerClaudeTarget(platformRoot) {
  */
 async function inspectHookExecutability(platformRoot, homeRoot, manifest) {
   const deviceEntries = launcherDeviceEntries(manifest);
-  const codex = await inspectCodexHooks(platformRoot, deviceEntries);
+  const codex = await inspectCodexHooks(platformRoot, deviceEntries, homeRoot);
   const user = await inspectUserHooks(platformRoot, homeRoot, deviceEntries);
   const entry = manifest.items.find((candidate) => candidate.id === "container.claude-settings");
   if (!entry) return check("hooks", false, { reasonCode: "PLATFORM_MANIFEST_HOOK_SETTINGS_MISSING", codex, user });
@@ -968,7 +976,7 @@ async function inspectHookExecutability(platformRoot, homeRoot, manifest) {
     } catch (error) {
       return check("hooks", false, { reasonCode: "PLATFORM_HOOK_SETTINGS_INVALID", error: error?.message ?? "INVALID_JSON", codex, user });
     }
-    const { failures, checked, events } = await hookTargetFailures(hookCommands(settings), containerClaudeTarget(platformRoot), deviceEntries);
+    const { failures, checked, events } = await hookTargetFailures(hookCommands(settings), containerClaudeTarget(platformRoot, homeRoot), deviceEntries);
     claude = { state: failures.length === 0 ? "live" : "broken", checked, failures, events };
   }
   // A codex hooks file that exists and is broken is a finding of its own: activation

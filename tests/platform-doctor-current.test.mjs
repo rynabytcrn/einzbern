@@ -29,7 +29,7 @@ async function fixture(t) {
   await mkdir(root);
   for (const file of [join(scripts, "einzbern.mjs"), join(scripts, "einzbern-hook.mjs"), join(device, "engine", "einzbern.mjs"), join(device, "engine", "hook.mjs")]) await writeFile(file, "export {};\n");
   await writeFile(join(device, "engine", "current"), canonicalJson({ schemaVersion: "einzbern.engine-current.v1", version: FRAMEWORK_VERSION, previous: null, switchedAt: AT }));
-  for (const host of ["claude-code", "codex"]) await applyHostHooks(await readHostHooks(planHostHooks({ host, scope: "user", deviceHome: device }), { root: home, home }), { at: AT });
+  for (const host of ["claude-code", "codex"]) await applyHostHooks(await readHostHooks(planHostHooks({ host, scope: "user", deviceHome: device, userHome: home }), { root: home, home }), { at: AT });
   const skill = join(base, "skill");
   await mkdir(skill);
   await writeFile(join(skill, "SKILL.md"), "---\nname: mana-orchestrate\ndescription: fixture\n---\n");

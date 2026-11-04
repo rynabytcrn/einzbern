@@ -26,7 +26,7 @@ import { LEGACY_DEVICE_DIRECTORY, LEGACY_ENGINE_NAME, LEGACY_HOOK_SCRIPTS, LOCAL
 
 // Codex's documented event set. Every event the harness uses must be in it, and Codex's set is a
 // strict subset of Claude Code's, so membership here settles both directions.
-const planHostHooks = input => rawPlanHostHooks({ codexAdmission: { state: "supported", version: "fixture", evidenceRef: "synthetic event-contract fixture", subagentStop: true, trust: "permitted" }, ...input });
+const planHostHooks = input => rawPlanHostHooks({ userHome: input.platform === "win32" ? "D:\\User" : "/srv/user", codexAdmission: { state: "supported", version: "fixture", evidenceRef: "synthetic event-contract fixture", subagentStop: true, trust: "permitted" }, ...input });
 
 const CODEX_EVENTS = new Set([
   "PreToolUse", "PermissionRequest", "PostToolUse", "PreCompact", "PostCompact",
@@ -65,7 +65,8 @@ test("477-R3: none of the retired events is rendered, and no hook names a checko
       assert.equal(Object.hasOwn(expected.groups, "SubagentStop"), false, `${platform}/${host}: Codex-only SubagentStop`);
       const [hook] = expected.groups.UserPromptSubmit[0].hooks;
       assert.equal(hook.type, "command", "only type:command runs on Codex");
-      assert.equal(hook.command, `node "${expected.launcher}" user-prompt-submit`);
+      assert.ok(isEinzbernHookCommand(hook.command));
+      assert.equal(hook.command.includes(deviceHome), false, "persist no absolute device path");
       for (const part of ["${CLAUDE_PROJECT_DIR}", "--container-root", "--host", "scripts/", LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES.classificationFolder]) {
         assert.equal(hook.command.includes(part), false, `${platform}/${host}: the command does not name ${part}`);
       }

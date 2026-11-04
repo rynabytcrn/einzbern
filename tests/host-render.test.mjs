@@ -1,3 +1,4 @@
+import { hostHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-477 R1, R3, R5: host-render renders Einzbern's one hook into a host's own files,
 // at the user's level or a project's (packages/core/src/host-hooks.ts). The dispatch projection it
@@ -9,7 +10,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -47,7 +48,7 @@ function refusal(args, env) {
 }
 
 function oneHook(device) {
-  return Object.fromEntries([["UserPromptSubmit", "user-prompt-submit"], ["SubagentStart", "subagent-start"], ["PreToolUse", "pre-tool-use"]].map(([event, word]) => [event, [{ hooks: [{ type: "command", command: `node "${join(device, "engine", "hook.mjs")}" ${word}` }] }]]));
+  return Object.fromEntries([["UserPromptSubmit", "user-prompt-submit"], ["SubagentStart", "subagent-start"], ["PreToolUse", "pre-tool-use"]].map(([event]) => [event, [{ hooks: [{ type: "command", command: hostHookCommand(join(device, "engine", "hook.mjs"), event, join(dirname(device), "home")) }] }]]));
 }
 
 test("BL34/35: --scope user renders the exact host-specific engine hooks into the home directory", async (t) => {
@@ -119,10 +120,9 @@ test("477-R1, R3: --scope project renders the hook into the project and leaves t
   assert.deepEqual(JSON.parse(await readFile(join(device, "backups", "20260926T100000Z", "host-hooks", root, ".claude", "settings.json"), "utf8")), before);
 });
 
-test("477-R5: the rendering for Windows writes a quoted backslash path with nothing a shell would read", async (t) => {
+test("477-R5: a cross-volume Windows binding refuses instead of persisting an absolute fallback", async (t) => {
   const { home } = await machine(t, "einzbern-host-render-win32-");
-  const plan = await renderHostHooks({ host: "codex", scope: "user", home, device: "D:\\Einzbern\\device", platform: "win32", planOnly: true });
-  assert.equal(plan.command, 'node "D:\\Einzbern\\device\\engine\\hook.mjs" user-prompt-submit');
+  await assert.rejects(renderHostHooks({ host: "codex", scope: "user", home, device: "D:\\Einzbern\\device", platform: "win32", planOnly: true }), { reasonCode: "HOST_HOOKS_PATH_UNSUPPORTED" });
   assert.deepEqual(await readdir(home), []);
 });
 
@@ -178,10 +178,10 @@ test("TCRN-CROSS-STORY-470 R5, AC4: the writable-roots scope names a library out
     assert.deepEqual([again.reasonCode, again.wrote, again.backupDir], ["HOST_RENDER_ALREADY_CURRENT", false, null], `${host}: rendering again changes nothing`);
   }
   assert.deepEqual(JSON.parse(await readFile(join(project, ".claude", "settings.local.json"), "utf8")), {
-    permissions: { allow: ["Read(/**)"], additionalDirectories: [library] },
+    permissions: { allow: ["Read(/**)"], additionalDirectories: [relative(project, library)] },
     model: "user-model",
   });
-  assert.equal(await readFile(join(project, ".codex", "config.toml"), "utf8"), `[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(library)}]\n`);
+  assert.equal(await readFile(join(project, ".codex", "config.toml"), "utf8"), `[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(relative(join(project, ".codex"), library))}]\n`);
   // The Claude file existed and its original went to the device directory first.
   const backups = join(base, "device", "backups", "20260926T100000Z", "writable-roots");
   const [projectDigest] = await readdir(backups);
@@ -213,7 +213,7 @@ test("TCRN-CROSS-STORY-470 R5: the native CLI renders the writable-roots scope w
 
   const receipt = run(["--host", "claude-code", "--root", project, "--library", library], env);
   assert.deepEqual([receipt.reasonCode, receipt.scope, receipt.backupDir], ["HOST_RENDER_COMMITTED", "writable-roots", null]);
-  assert.deepEqual(JSON.parse(await readFile(join(project, ".claude", "settings.local.json"), "utf8")), { permissions: { additionalDirectories: [library] } });
+  assert.deepEqual(JSON.parse(await readFile(join(project, ".claude", "settings.local.json"), "utf8")), { permissions: { additionalDirectories: [relative(project, library)] } });
 
   // A library inside the project needs nothing.
   const own = join(project, ".ether");

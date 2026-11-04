@@ -179,6 +179,7 @@ function readTarget(target: HostTarget, input: MigrateCleanupInput, home: string
     host: target.host,
     scope: target.scope,
     deviceHome: input.deviceHome,
+    userHome: home,
     navigation: user ? input.navigation : null,
     install: user,
   });

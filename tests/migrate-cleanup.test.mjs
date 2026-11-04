@@ -1,3 +1,4 @@
+import { hostHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-489 R3, AC2 (fixture) (TCRN-CROSS-SUB-366; MIN-238 D4; STORY-479 R5): the cleanup
 // setup --mode migrate runs once the partitions are imported and registered. A temporary home and
@@ -292,7 +293,7 @@ function cleanupInput(m, extra = {}) {
 }
 
 function launcherCommand(device) {
-  return `node "${join(device, "engine", "hook.mjs")}" user-prompt-submit`;
+  return hostHookCommand(join(device, "engine", "hook.mjs"), "UserPromptSubmit", join(device, "..", "home"));
 }
 
 test("489-R3, AC2 (fixture): after the cleanup each host's user file holds one Einzbern UserPromptSubmit hook, the container's and a project's hold none of ours, and neither level keeps a deny rule", async (context) => {

@@ -59,7 +59,7 @@ export async function renderHostHooks({ host, scope, root = undefined, home = ho
   if (scope === "project") text(root, "root");
   else if (root !== undefined) failure("HOST_RENDER_SCOPE_CONFLICT", "--root names a project; the user scope renders into the home directory");
   const navigation = scope === "user" ? await readAgentsNavigation(device) : null;
-  const expectation = planHostHooks({ host, scope, deviceHome: device, platform, navigation });
+  const expectation = planHostHooks({ host, scope, deviceHome: device, userHome: home, platform, navigation });
   const plan = await readHostHooks(expectation, { root: scope === "user" ? home : root, home });
   const summary = {
     scope,

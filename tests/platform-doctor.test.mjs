@@ -238,7 +238,7 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
     // executability and teach nothing about coverage.
     const deviceHome = join(home, DIRECTORY.device);
     for (const host of HOST_HOOK_FILE_HOSTS) {
-      const expected = planHostHooks({ host, scope: "project", deviceHome });
+      const expected = planHostHooks({ host, scope: "project", deviceHome, userHome: home });
       await mkdir(join(expected.launcher, ".."), { recursive: true });
       await writeFile(expected.launcher, "export {}\n");
       await mkdir(join(root, expected.hooksFile, ".."), { recursive: true });
@@ -700,7 +700,7 @@ test("R47-06: the hook leg reads the user-level Claude and Codex files of the gi
     Stop: [{ hooks: [{ type: "command", command: `node "${join(fixture.home, "own", "notify.mjs")}"` }] }],
   } }));
   await mkdir(join(fixture.home, ".codex"), { recursive: true });
-  await writeFile(join(fixture.home, ".codex", "hooks.json"), JSON.stringify(mergeHostHooks(null, planHostHooks({ host: "codex", scope: "user", deviceHome: device })).document));
+  await writeFile(join(fixture.home, ".codex", "hooks.json"), JSON.stringify(mergeHostHooks(null, planHostHooks({ host: "codex", scope: "user", deviceHome: device, userHome: fixture.home })).document));
 
   const leg = hooks(await inspectInstallFixture(fixture));
   assert.equal(leg.ok, false);

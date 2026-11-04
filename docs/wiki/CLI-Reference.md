@@ -1393,9 +1393,9 @@
 
 | 旗标 | 必填 | 取值类型 | 写法 |
 | --- | --- | --- | --- |
-| `--codex-admission` | 可选 | `string` | `absolute JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override` |
+| `--codex-admission` | 可选 | `string` | `JSON path to the owning Codex client's observed Codex hook admission; no trust or feature override` |
 | `--execution-target` | 可选 | `string` | `traditional | chatgpt-dot` |
-| `--dot-input` | 可选 | `string` | `absolute path to JSON dot target options; required for chatgpt-dot` |
+| `--dot-input` | 可选 | `string` | `path to JSON dot target options; required for chatgpt-dot` |
 | `--approved-plan-digest` | 可选 | `string` | `saved preview dot.planDigest; required for dot apply` |
 | `--mode` | 必填 | `string` |  |
 | `--project` | 必填 | `string` |  |

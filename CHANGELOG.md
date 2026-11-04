@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 4.2.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 4.2.0.
+
 ### Dependency security
 
 - Upgrade the exact Ajv transitive dependency fast-uri from 3.1.8 to 3.1.9,

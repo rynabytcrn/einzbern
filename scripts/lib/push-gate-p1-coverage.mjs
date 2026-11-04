@@ -124,6 +124,24 @@ function legReceipt(line, leg) {
   return value.command === (leg.dispatchesThroughTask ? leg.task : undefined) ? value : null;
 }
 
+// Successful Core receipts name their test files in the roster and per-file progress.
+// Those typed labels can contain words such as "errors" without being diagnostics.
+// Project only known roster labels; messages and every other receipt field remain scanned.
+function diagnosticReceipt(receipt, leg) {
+  if (leg.task !== "test" || !Array.isArray(receipt.tests)
+    || receipt.tests.some((path) => typeof path !== "string" || !/^tests\/(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\.test\.mjs$/u.test(path))) return receipt;
+  const known = new Set(receipt.tests);
+  const view = { ...receipt, tests: receipt.tests.map(() => "[test file]") };
+  const evidence = receipt.progress?.diagnostics?.fileEvidence;
+  if (Array.isArray(evidence?.fileStates)) {
+    view.progress = { ...receipt.progress, diagnostics: { ...receipt.progress.diagnostics, fileEvidence: {
+      ...evidence,
+      fileStates: evidence.fileStates.map((state) => state && typeof state === "object" && known.has(state.file) ? { ...state, file: "[test file]" } : state),
+    } } };
+  }
+  return view;
+}
+
 /**
  * Judge one leg gate's output: exactly one terminal receipt of the leg, and nothing P1's zero-warning
  * rule rejects. Returns the leg reason: P1_LEG_COVERED, P1_LEG_OUTPUT_UNREADABLE,
@@ -144,7 +162,7 @@ export function judgeLegOutput(output, leg) {
   if (receipts.length !== 1) return "P1_LEG_RECEIPT_MISSING";
   const [{ index, receipt }] = receipts;
   // The leg's receipt takes the place P1's terminal receipt gives its legs.
-  const judged = lines.map((line, at) => (at === index ? JSON.stringify({ reasonCode: "P1_VERIFIED", legs: [receipt] }) : line));
+  const judged = lines.map((line, at) => (at === index ? JSON.stringify({ reasonCode: "P1_VERIFIED", legs: [diagnosticReceipt(receipt, leg)] }) : line));
   return hasWarningOrError(judged.join("\n"), "verify:p1") ? "P1_LEG_DIAGNOSTIC_PRESENT" : "P1_LEG_COVERED";
 }
 

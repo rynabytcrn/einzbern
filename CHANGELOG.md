@@ -20,6 +20,8 @@ Versioning after the first accepted release.
 
 ### Empirical acceptance principles
 
+- Reuse successful full Core results when test file names contain diagnostic
+  words, while preserving checks for actual errors and warnings.
 - Reconcile autonomy, batching, unattended commands, reporting and design
   authority around observed behavior, focused implementation self-checks and
   acceptance evidence. Preserve approved roles, release dependencies and criteria.

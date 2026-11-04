@@ -112,6 +112,23 @@ test("actual full-P1 reuse requires full Core terminal type and rejects relabele
   assert.equal(legRow(assess(selectedArgv), "test").reasonCode, "P1_LEG_COMMAND_MISMATCH");
 });
 
+test("successful Core file labels containing diagnostic words are reusable while actual diagnostics still refuse", () => {
+  const leg = P1_SEQUENCE.find((row) => row.task === "test");
+  const file = "tests/artifact-store-io-errors.test.mjs";
+  const receipt = { ...receiptFor(leg), tests: [file], progress: { status: "completed", errors: [], diagnostics: { fileEvidence: { fileStates: [{ file, state: "wrapper-returned" }] } } } };
+  const original = JSON.stringify(receipt);
+  assert.equal(judgeLegOutput(original, leg), "P1_LEG_COVERED");
+  const run = fullRun();
+  run.files.set(run.gates[P1_SEQUENCE.indexOf(leg)].outputFile, original + "\n");
+  assert.equal(assess(run).reasonCode, "P1_COVERED_BY_GATE_RUN");
+  assert.equal(JSON.stringify(receipt), original);
+  for (const bad of [
+    { ...receipt, progress: { ...receipt.progress, errors: [`error reading ${file}`] } },
+    { ...receipt, tests: [file, "warning: incomplete execution"] },
+    { ...receipt, progress: { diagnostics: { fileEvidence: { fileStates: [{ file: "tests/unknown-errors.test.mjs" }] } } } },
+  ]) assert.equal(judgeLegOutput(JSON.stringify(bad), leg), "P1_LEG_DIAGNOSTIC_PRESENT");
+});
+
 test("537-GWT2: a run short of a leg, or with a red, cut or diagnostic-bearing leg, is not carried; each says which leg and why", () => {
   const run = fullRun();
   const missing = { gates: run.gates.filter((gate) => gate.name !== "engine:links"), files: run.files };

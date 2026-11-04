@@ -945,11 +945,13 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
   readonly pending: readonly { readonly file: string; readonly id: string }[];
   readonly columns?: SetupColumns;
   readonly engineSwitch?: SetupEngineSwitched;
+  readonly managedUpdates?: SetupApplied["managedUpdates"];
+  readonly selfCheck?: SetupApplied["selfCheck"];
   // fresh, restore and uninstall (TCRN-CROSS-INIT-053 R46 I08).
   readonly coordination?: SetupCoordination | null;
 }): Promise<SetupApplied> {
   const { at, projectRoot, home, deviceHome } = plan;
-  const selfCheck = await runDoctor({ projectRoot, home, deviceHome });
+  const selfCheck = result.selfCheck ?? await runDoctor({ projectRoot, home, deviceHome });
   return {
     schemaVersion: SETUP_APPLIED_SCHEMA_VERSION,
     reasonCode: "SETUP_APPLIED",
@@ -971,6 +973,7 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
     warnings: recorder.warnings,
     ...(result.columns === undefined ? {} : { columns: result.columns }),
     ...(result.engineSwitch === undefined ? {} : { engineSwitch: result.engineSwitch }),
+    ...(result.managedUpdates === undefined ? {} : { managedUpdates: result.managedUpdates }),
     ...(result.coordination === undefined ? {} : { coordination: result.coordination }),
     selfCheck,
   };

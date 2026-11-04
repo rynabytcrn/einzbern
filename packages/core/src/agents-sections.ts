@@ -787,15 +787,15 @@ export function orderRuleSections(plan: ManagedWritePlan, orders: ReadonlyMap<st
 
 // The sections of the Command Spell rules the library has enabled (TCRN-CROSS-STORY-483, rules.ts),
 // in the rules' order (compareRules: catalog order while no rule holds an order) and in the
-// project's artifact language. A rule enabled at a version other than the one this engine ships is
-// left as the file holds it: an older engine does not write its text over a newer one, and a newer
-// version waits for rule-enable (update-available).
+// target's artifact language. Enabled built-ins follow the engine catalog; the section writer
+// preserves Owner text, local modifications, removed markers and unmanaged sections. An engine
+// too old to understand the version originally enabled still leaves that rule alone.
 function enabledRuleSections(state: Pick<WorkspaceState, "settings" | "configRecords">): readonly AgentsSection[] {
   const language = artifactLanguage(state);
   const compare = compareRules(ruleOrders(state));
   return BUILT_IN_RULES.flatMap((rule) => {
     const record = state.configRecords.find((entry) => entry.collection === "rule" && entry.key === rule.id)?.value;
-    if (record?.enabled !== true || record.version !== rule.version) return [];
+    if (record?.enabled !== true || typeof record.version !== "number" || record.version > rule.version) return [];
     return [{ id: `${RULE_SECTION_PREFIX}${rule.id}`, file: AGENTS_FILE, body: ruleBody(rule.id, language) }];
   }).sort((left, right) => compare(left.id.slice(RULE_SECTION_PREFIX.length), right.id.slice(RULE_SECTION_PREFIX.length)));
 }
@@ -803,7 +803,7 @@ function enabledRuleSections(state: Pick<WorkspaceState, "settings" | "configRec
 /**
  * The sections the engine writes into AGENTS.md for a device whose navigation choice is
  * `navigation`: the navigation section on a device that chose written, the two variable sections,
- * and the section of every rule the library has enabled at the version this engine ships.
+ * and the section of every enabled rule supported by this engine.
  */
 export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "configRecords">, _navigation: AgentsNavigationChoice | null): {
   readonly sections: readonly AgentsSection[];

@@ -103,7 +103,8 @@ inside the library, and do not copy this device's directory to another device.
 
 ### managed-sections
 
-The managed sections in the project's instruction files match their records. Not ok:
+The managed sections in the harness instruction files match their records, and enabled built-in
+rule bodies match the engine catalog in the configured language. Not ok:
 `DOCTOR_MANAGED_SECTIONS_MISMATCH`. A section changed by hand waits as pending
 (`MANAGED_SECTION_PENDING`, the sections listed in `detail.pending`): ask the user once whether to
 overwrite it, keep it, or stop managing it, and apply the choice with the managed-section verb that
@@ -127,7 +128,11 @@ coordinates, holds them in its own `AGENTS.md` and `CLAUDE.md`, and `doctor --pr
 root checks them against the coordination library's records: `detail.sections` lists every
 recorded section as `<file>#<section id>` with its state, and `detail.pending` the ones that wait.
 Pending sections are handled exactly as above. `setup --mode repair` on the container puts its
-sections back; `setup --mode update` writes no project file, the container included.
+sections back; `setup --mode update` refreshes existing registered harness outputs across this
+device with the selected engine. `MANAGED_SECTION_OUTDATED` and `detail.outdated` identify intact
+generated rules whose catalog text changed, even at the same rule version. Refresh them with
+`agents-render` as part of the authorized update or repair; do not misclassify them as Owner edits
+or require a separate per-rule approval. Pending and user-owned sections keep their protection.
 
 ### cloud-flag
 

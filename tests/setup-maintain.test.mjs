@@ -2,7 +2,7 @@
 // TCRN-CROSS-STORY-480 R4, AC4 and STORY-478 R6 (TCRN-CROSS-SUB-325): the modes for an installation
 // that already runs. An update installs a newer release from a local archive or its unpacked
 // directory, switches engine/current and lays the skill copies, the launchers and the hooks again
-// from it, one of each per host, and writes no managed section; a rollback goes back. A repair puts
+// from it, one of each per host, and refreshes managed harness sections; a rollback goes back. A repair puts
 // back what is missing and a second repair changes nothing. An uninstall takes the hooks, both skill
 // copies and the registry entry away, moves them into the backups, and leaves the library's tree as
 // it was. Every home, device directory and project here is a temporary directory.
@@ -18,7 +18,9 @@ import { gzipSync } from "node:zlib";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace, readRegistry, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, enableRule, materializeWorkspace, readRegistry, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
+import { resolveAgentsSection } from "../dist/build/packages/core/src/agents-sections.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
 import { MACHINE_SETTINGS_FILE_NAME } from "../dist/build/packages/core/src/machine-settings.js";
@@ -100,8 +102,9 @@ async function treeFiles(root, directory = root) {
  * The release of `version` as scripts/pack-release.mjs lays it out: the directory einzbern-<version>/
  * with its manifest, and einzbern-<version>.tar.gz with its .sha256 beside it.
  */
-async function releaseOf(base, version) {
+async function releaseOf(base, version, change = async () => {}) {
   const engine = await engineTree(base, version);
+  await change(engine.tree);
   const directory = join(base, "release", `einzbern-${version}`);
   await cp(engine.tree, directory, { recursive: true });
   const digest = await computeInstallTreeDigest(engine.tree);
@@ -215,7 +218,8 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
     ["skill-copies", agentsCopy, "update"],
     ["skill-copies", record, "update"],
   ];
-  assert.deepEqual(rows(planned.writes), expected, "the launchers and the hooks are already current; no managed section is planned");
+  assert.deepEqual(rows(planned.writes.filter(entry => !["managed-sections", "library"].includes(entry.step))), expected);
+  assert.equal(planned.managedUpdates.find(output => output.projectPath === f.project)?.status, "planned");
   const updated = await applySetup(planned);
   assert.deepEqual(rows(updated.written), expected);
   assert.deepEqual(updated.engineSwitch, {
@@ -233,7 +237,8 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   assert.deepEqual(await copyDigests(f), [release.skillDigest, release.skillDigest], "both copies are the new version's skill");
   assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
   assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
-  assert.deepEqual(await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file)))), sections, "478-R6: no managed section is written");
+  assert.deepEqual(await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file)))), sections, "identical catalog content remains byte-for-byte unchanged");
+  assert.equal(updated.managedUpdates.find(output => output.projectPath === f.project)?.status, "unchanged");
   assert.ok(await exists(join(staging, `einzbern-${NEWER}`, "scripts", "einzbern.mjs")), "the unpacked release stays in the device directory's trash");
   assertSelfCheckGreen(updated);
 
@@ -241,7 +246,7 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   const back = await plan(f, "update", { rollback: true });
   assert.deepEqual(back.blockers, []);
   assert.deepEqual(back.engineSwitch, { source: null, from: NEWER, to: FRAMEWORK_VERSION, installTreeDigest: null });
-  assert.deepEqual(rows(back.writes), [
+  assert.deepEqual(rows(back.writes.filter(entry => !["managed-sections", "library"].includes(entry.step))), [
     ["engine", pointer, "update"],
     ["skill-copies", claudeCopy, "update"],
     ["skill-copies", agentsCopy, "update"],
@@ -266,6 +271,70 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   assert.equal((await current(f)).version, NEWER);
   assert.deepEqual(await copyDigests(f), [release.skillDigest, release.skillDigest]);
   assertSelfCheckGreen(reused);
+});
+
+test("update uses the selected catalog across registered outputs and preserves Owner choices", async context => {
+  const f = await installed(context);
+  const secondProject = join(f.base, "second-project");
+  await mkdir(secondProject);
+  const second = { ...f, project: secondProject, library: join(secondProject, ".ether") };
+  await applySetup(await plan(second, "fresh", { answers: { artifacts: second.library } }));
+  const registry = await readRegistry(f.deviceHome);
+  const projectId = project => registry.entries.find(entry => entry.projectPath === project).projectId;
+  const enable = (target, id) => enableRule({ libraryRoot: target.library, projectRoot: target.project, configurationProjectId: projectId(target.project), id, occurredAt: at() });
+  for (const target of [f, second]) {
+    await setWorkspaceSetting(target.library, { configurationProjectId: projectId(target.project), key: "artifact.language", value: "zh-CN", occurredAt: at() });
+    await enable(target, "autonomy");
+    await writeFile(join(target.project, "AGENTS.md"), `# Owner text: ${target.project}\n\n${await readFile(join(target.project, "AGENTS.md"), "utf8")}`);
+  }
+  await enable(f, "batch");
+  await enable(f, "residue-cleanup");
+  const agents = join(f.project, "AGENTS.md");
+  await writeFile(agents, (await readFile(agents, "utf8")).replace(ruleBody("batch", "zh-CN"), "Owner's edited batch rule\n").replace(ruleBody("residue-cleanup", "zh-CN"), "Owner's kept cleanup rule\n"));
+  await resolveAgentsSection(f.library, { projectRoot: f.project, configurationProjectId: projectId(f.project), id: "rule:residue-cleanup", action: "keep", occurredAt: at() });
+  const before = new Map(await Promise.all([f, second].map(async target => [target.project, await readFile(join(target.project, "AGENTS.md"), "utf8")])));
+  const parsedBefore = parseManagedFile(before.get(f.project));
+  const release = await releaseOf(f.base, NEWER, async tree => {
+    const file = join(tree, "dist/build/packages/core/src/rules-catalog.js");
+    const text = await readFile(file, "utf8");
+    assert.ok(text.includes("## 自主运行原则 v1"));
+    await writeFile(file, text.replace("## 自主运行原则 v1", "## 自主运行原则 v1\n\nSelected release catalog fixture."));
+  });
+  const planned = await plan(f, "update", { archive: release.archive });
+  assert.deepEqual(planned.blockers, []);
+  assert.equal(await readFile(agents, "utf8"), before.get(f.project), "planning is read-only");
+  for (const target of [f, second]) assert.equal(planned.managedUpdates.find(output => output.projectPath === target.project)?.status, "planned");
+  const updated = await applySetup(planned);
+  assert.equal(updated.engineSwitch.to, NEWER);
+  assert.equal(updated.managedUpdates.find(output => output.projectPath === f.project)?.status, "pending");
+  assert.equal(updated.managedUpdates.find(output => output.projectPath === second.project)?.status, "updated");
+  assert.ok(updated.pendingSections.some(section => section.file === agents && section.id === "rule:batch"));
+  assert.ok(updated.warnings.some(warning => warning.reasonCode === "MANAGED_SECTION_REFRESH_INCOMPLETE"));
+  for (const target of [f, second]) {
+    const after = parseManagedFile(await readFile(join(target.project, "AGENTS.md"), "utf8"));
+    assert.deepEqual(after.outside, parseManagedFile(before.get(target.project)).outside, "Owner text is unchanged");
+    assert.match(after.sections.find(section => section.id === "rule:autonomy").body, /Selected release catalog fixture\./u, "render uses the selected engine, not the initiating catalog");
+    assert.ok(!after.sections.some(section => section.id === "rule:goal-writing"), "disabled rules remain absent");
+  }
+  const after = parseManagedFile(await readFile(agents, "utf8"));
+  for (const id of ["rule:batch", "rule:residue-cleanup"]) assert.equal(after.sections.find(section => section.id === id).raw, parsedBefore.sections.find(section => section.id === id).raw);
+  const backedUp = updated.backups.find(entry => entry.path === agents);
+  assert.equal(await readFile(join(backedUp.into, "AGENTS.md"), "utf8"), before.get(f.project));
+  await setWorkspaceSetting(second.library, { configurationProjectId: projectId(second.project), key: "agents.generation", value: "none", occurredAt: at() });
+  const again = await applySetup(await plan(f, "update", { archive: release.archive }));
+  assert.equal(again.written.filter(entry => entry.step === "managed-sections").length, 0, "repeated update does not rewrite identical sections");
+  assert.equal(again.managedUpdates.find(output => output.projectPath === second.project)?.reasonCode, "GENERATION_DISABLED");
+  await setWorkspaceSetting(second.library, { configurationProjectId: projectId(second.project), key: "agents.generation", value: "managed", occurredAt: at() });
+  const absent = join(f.base, "temporarily-unavailable");
+  await rename(second.project, absent);
+  const unavailable = await plan(f, "update", { rollback: true });
+  assert.deepEqual(unavailable.blockers, [], "an unavailable output does not block the engine or other outputs");
+  assert.equal(unavailable.managedUpdates.find(output => output.projectPath === second.project)?.status, "unavailable");
+  assert.ok(unavailable.warnings.some(warning => warning.file === join(second.project, "AGENTS.md")));
+  await rename(absent, second.project);
+  const rolled = await applySetup(await plan(f, "update", { rollback: true }));
+  assert.equal(rolled.engineSwitch.to, FRAMEWORK_VERSION);
+  assert.doesNotMatch(await readFile(join(second.project, "AGENTS.md"), "utf8"), /Selected release catalog fixture/u, "managed text follows the rollback engine too");
 });
 
 test("setup rollback refuses changed current or previous identities before changing the engine or wiring", async (context) => {
@@ -556,7 +625,7 @@ test("480-AC4 (U04): uninstall keeps the coordination registration while a regis
 // managed sections and the library's records, the apply writes them from the coordination library's own
 // configuration (no models.*, no setup project binding), a second repair writes nothing, and an update
 // plan writes no project file there.
-test("540-GWT4: repair of a coordination library's registered root plans and writes its managed sections; update plans none", async (context) => {
+test("coordination harness sections participate in repair and engine updates", async (context) => {
   const f = await installed(context);
   const coordination = join(f.deviceHome, "coordination-library");
   const container = join(f.base, "container");
@@ -591,7 +660,8 @@ test("540-GWT4: repair of a coordination library's registered root plans and wri
   const release = await releaseOf(f.base, NEWER);
   const updated = await plan(atContainer, "update", { archive: release.archive });
   assert.deepEqual(updated.blockers, []);
-  assert.deepEqual(updated.writes.filter((entry) => entry.step === "managed-sections" || entry.path.startsWith(`${container}/`)), [], "update writes no project file");
+  assert.equal(updated.managedUpdates.find(output => output.projectPath === container)?.status, "planned");
+  assert.deepEqual(updated.writes.filter(entry => entry.path.startsWith(`${container}/`)).map(entry => entry.path).sort(), [join(container, "AGENTS.md"), join(container, "CLAUDE.md")], "only harness files are possible writes");
 });
 
 

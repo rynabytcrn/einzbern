@@ -217,21 +217,21 @@ test("483-R2, R3: the rule verbs' refusals, and a rule recorded at another versi
   assert.equal(await readFile(agents, "utf8"), USER_TEXT, "no refusal wrote anything");
 
   // Enabled while an older engine shipped batch processing v1 (the catalog handed to core below):
-  // the rule reads update-available, and agents-render leaves its section byte for byte until
-  // rule-enable takes the new version.
+  // the rule reads update-available, and agents-render refreshes the enabled built-in
+  // without changing its activation record.
   const v1 = await readFile(join(fixtures, "batch-v1.zh.md"), "utf8");
   const older = BUILT_IN_RULES.map((rule) => rule.id !== "batch" ? rule : { ...rule, version: 1, body: { zh: v1, en: v1 } });
   await enableRule({ libraryRoot: library, projectRoot: project, id: "batch", occurredAt: at(), catalog: older, configurationProjectId: (await list(project)).projectId });
   const first = await render(project);
-  assert.deepEqual(first.sections.find((section) => section.id === "rule:batch"), { id: "rule:batch", file: "AGENTS.md", result: "unchanged", state: "managed" });
+  assert.deepEqual(first.sections.find((section) => section.id === "rule:batch"), { id: "rule:batch", file: "AGENTS.md", result: "replace", state: "managed" });
   const settled = await readFile(agents, "utf8");
-  assert.equal(sectionOf(settled, "rule:batch").body, v1, "the v1 text stays");
-  assert.deepEqual(await ruleOf(project, "batch"), { id: "batch", version: 3, recordedVersion: 1, fileVersion: 1, section: "rule:batch", state: "update-available" });
+  assert.equal(sectionOf(settled, "rule:batch").body, await readFile(join(fixtures, "batch.zh.md"), "utf8"), "the selected catalog text is rendered");
+  assert.deepEqual(await ruleOf(project, "batch"), { id: "batch", version: 3, recordedVersion: 1, fileVersion: 2, section: "rule:batch", state: "enabled" });
   const rendered = await render(project);
   assert.deepEqual([rendered.recorded, rendered.files.some((file) => file.written)], [0, false]);
   assert.equal(await readFile(agents, "utf8"), settled, "the file is byte for byte what it was");
   const updated = await enable(project, "batch");
-  assert.deepEqual([updated.result, updated.recorded, updated.rule.state, updated.rule.recordedVersion, updated.rule.fileVersion], ["replace", 2, "enabled", 3, 2]);
+  assert.deepEqual([updated.result, updated.recorded, updated.rule.state, updated.rule.recordedVersion, updated.rule.fileVersion], ["unchanged", 1, "enabled", 3, 2]);
   assert.equal(sectionOf(await readFile(agents, "utf8"), "rule:batch").body, await readFile(join(fixtures, "batch.zh.md"), "utf8"));
   const current = await readFile(agents, "utf8");
 
@@ -256,21 +256,21 @@ test("INIT-053 AC2: v2 through CLI: the rule verbs' refusals, and a rule recorde
   assert.equal(await readFile(agents, "utf8"), USER_TEXT, "no refusal wrote anything");
 
   // Enabled while an older engine shipped batch processing v2 (the catalog handed to core below):
-  // the rule reads update-available, and agents-render leaves its section byte for byte until
-  // rule-enable takes the new version.
+  // the rule reads update-available, and agents-render refreshes the enabled built-in
+  // without changing its activation record.
   const v2 = await readFile(join(fixtures, "batch-v2.zh.md"), "utf8");
   const older = BUILT_IN_RULES.map((rule) => rule.id !== "batch" ? rule : { ...rule, version: 2, body: { zh: v2, en: v2 } });
   await enableRule({ libraryRoot: library, projectRoot: project, id: "batch", occurredAt: at(), catalog: older, configurationProjectId: (await list(project)).projectId });
   const first = await render(project);
-  assert.deepEqual(first.sections.find((section) => section.id === "rule:batch"), { id: "rule:batch", file: "AGENTS.md", result: "unchanged", state: "managed" });
+  assert.deepEqual(first.sections.find((section) => section.id === "rule:batch"), { id: "rule:batch", file: "AGENTS.md", result: "replace", state: "managed" });
   const settled = await readFile(agents, "utf8");
-  assert.equal(sectionOf(settled, "rule:batch").body, v2, "the v2 text stays");
-  assert.deepEqual(await ruleOf(project, "batch"), { id: "batch", version: 3, recordedVersion: 2, fileVersion: 1, section: "rule:batch", state: "update-available" });
+  assert.equal(sectionOf(settled, "rule:batch").body, await readFile(join(fixtures, "batch.zh.md"), "utf8"), "the selected catalog text is rendered");
+  assert.deepEqual(await ruleOf(project, "batch"), { id: "batch", version: 3, recordedVersion: 2, fileVersion: 2, section: "rule:batch", state: "enabled" });
   const rendered = await render(project);
   assert.deepEqual([rendered.recorded, rendered.files.some((file) => file.written)], [0, false]);
   assert.equal(await readFile(agents, "utf8"), settled, "the file is byte for byte what it was");
   const updated = await enable(project, "batch");
-  assert.deepEqual([updated.result, updated.recorded, updated.rule.state, updated.rule.recordedVersion, updated.rule.fileVersion], ["replace", 2, "enabled", 3, 2]);
+  assert.deepEqual([updated.result, updated.recorded, updated.rule.state, updated.rule.recordedVersion, updated.rule.fileVersion], ["unchanged", 1, "enabled", 3, 2]);
   assert.equal(sectionOf(await readFile(agents, "utf8"), "rule:batch").body, await readFile(join(fixtures, "batch.zh.md"), "utf8"));
   const current = await readFile(agents, "utf8");
 

@@ -7,7 +7,7 @@ It is the wizard for an installation that already runs on this device: update it
 engine (`setup --mode update`), repair this device's wiring (`setup --mode repair`), or roll back
 to the engine version that ran before (`setup --mode update --rollback true`). Run the engine
 verbs below the way SKILL.md says to invoke the engine. Supply two flags yourself:
-`--project <dir>`, the root of the project (ask only when it is unclear which project), and
+`--project <dir>`, a registered harness context for the result's self-check, and
 `--at <UTC>`, the current instant written `YYYY-MM-DDTHH:MM:SSZ`.
 
 ## Questions (one screen)
@@ -54,7 +54,9 @@ at all, and doctor does not report it.
    release that does not match the sha256 beside it (`INSTALL_ARCHIVE_DIGEST_MISMATCH`), has none
    (`INSTALL_SHA256_MISSING`), is not a release (`INSTALL_ARCHIVE_INVALID`), or whose files do not
    hash as its manifest states (`INSTALL_TREE_DIGEST_MISMATCH`) is a blocker: get the release again
-   and never edit it.
+   and never edit it. `managedUpdates` lists this device's existing registered harness outputs.
+   Their section writes are possible writes: the selected engine computes the actual diff after
+   switching. An engine update covers these outputs, not only the `--project` context.
 2. Ask any open question on one screen, then plan again with the answers until none is open.
 3. Final confirmation. Show the action, the engine version it moves to as the plan names it, and
    every file the plan would write, as the plan lists them, and ask once whether to apply.
@@ -65,14 +67,27 @@ at all, and doctor does not report it.
 4. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: the files written,
    the backup directory, the switch it made (`engineSwitch`, for an update or a rollback), and
    `selfCheck`.
-5. Report the result, the eight checks in `selfCheck.checks`, and what the hook added for the
-   project's name as a sample prompt (`selfCheck.injected`). Handle any check that is not ok with
-   `doctor.md`.
+5. Report `selfCheck` and every pending or unavailable `managedUpdates` output. A successful
+   engine switch alone does not mean all harness content is current. Handle failed checks with
+   `doctor.md`; only the affected user-modified sections need a decision.
 
-## What an update leaves alone
+## Managed harness content and preserved choices
 
-- It never rewrites managed sections or rules by itself. When newer text is available, say so and
-  leave it until the user asks for it.
+- AGENTS.md's navigation, enabled built-in rules and variable sections are harness components.
+  The update refreshes existing registered outputs through the newly selected engine's managed
+  writer, including same-version body corrections. Approval for the update covers that refresh;
+  do not introduce a second approval for unchanged managed sections.
+- Owner text outside section markers, locally edited or user-owned sections, removed markers,
+  disabled rules, generation-disabled targets and independent dot targets retain their choices.
+  No new per-project AGENTS.md is created where no managed output was registered. Missing outputs
+  and refused writes are reported individually; other available outputs still refresh.
+- When upgrading from an engine whose update receipt has no `managedUpdates`, finish the same
+  approved update with the newly installed engine: use `library-list` and `rule-list` to identify
+  existing configured outputs, run `agents-render --project <registered output> --at <UTC>` for
+  each (with the recorded `--project-id` and actual `--actor` where required), and read back
+  `rule-list` and `doctor`. Do not enable disabled rules, create unconfigured outputs, or use
+  `rule-resolve overwrite` to bypass a local edit. This compatibility completion is unnecessary
+  when the update already returned `managedUpdates`.
 - It does not move a shared library to a newer format behind other devices: while another device
   that uses the library runs an older engine, a write that would raise the format is refused with
   `LIBRARY_UPGRADE_NOT_READY`, and its hint names the devices to update first.

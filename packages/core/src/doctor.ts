@@ -64,6 +64,7 @@ import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, hookLauncherPath, isEinzbernHook
 import type { HostHookFileHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
 import { managedSectionRecordKey, managedSectionRecordsFor, planManagedWrite } from "./managed-sections.js";
 import { readAgentsNavigation } from "./machine-settings.js";
+import { listRules } from "./rules.js";
 import { DIRECTORY } from "./names.js";
 import { NODE_FLOOR, meetsNodeFloor } from "./node-floor.js";
 import { gitRemoteOf, gitTopLevel, normalizeGitRemote, readRegistry } from "./registry.js";
@@ -659,6 +660,10 @@ async function managedSectionsCheck(context: DoctorContext, located: ProjectLibr
     }
   }
   if (pending.size > 0) causes.push("MANAGED_SECTION_PENDING");
+  const outdated = problems.length === 0 && !skipped.includes("AGENTS.md") ? (await listRules({ libraryRoot: located.libraryPath, projectRoot: context.projectRoot,
+    ...(located.entry?.projectId === undefined ? {} : { configurationProjectId: located.entry.projectId }),
+  })).filter(rule => rule.state === "update-available").map(rule => rule.section) : [];
+  if (outdated.length > 0) causes.push("MANAGED_SECTION_OUTDATED");
   return result("managed-sections", causes, {
     libraryPath: located.libraryPath,
     files,
@@ -668,6 +673,7 @@ async function managedSectionsCheck(context: DoctorContext, located: ProjectLibr
       .sort((left, right) => compareCanonicalText(left.section, right.section)),
     pending: [...pending].sort(),
     removed: removed.sort(),
+    outdated,
     problems,
     skipped,
   });

@@ -9,8 +9,8 @@
 //              apply unpacks it into trash/setup-update-<UTC second>/ of the device directory, where it
 //              stays, and installs it with engine-update (engine-home.ts), which checks it again, runs
 //              it once and makes it current. Then the skill copies, the launchers and the host hooks
-//              are laid again from the version now current. No managed section is written: an engine
-//              upgrade writes no project file (TCRN-CROSS-STORY-478 R6).
+//              are laid again from the version now current. That version also refreshes existing
+//              registered harness sections; Owner text and local section ownership are preserved.
 //   rollback   update --rollback true: engine-rollback makes the previous version current again, and
 //              the same three steps follow it. Nothing is fetched or unpacked.
 //   repair     the steps of a first installation from the registry on, again, for the project's
@@ -19,7 +19,7 @@
 //              TCRN-CROSS-STORY-540 GWT4 (MIN-258 D3(c); TCRN-CROSS-SUB-507): the root a coordination
 //              library is registered for, the container it coordinates, is repaired as a project is,
 //              its managed sections planned and written from the coordination library's own
-//              configuration; update still writes no project file.
+//              configuration.
 //   uninstall  the Einzbern hook groups taken out of both hosts' user settings, both skill copies and
 //              skills.json moved whole into the backups of this run, and the project's registry entry
 //              removed once registry.json is copied there, with the registration setup made for the
@@ -98,6 +98,7 @@ import type { EngineFiles, EngineSource, LibraryState } from "./setup-fresh.js";
 import { SKILL_COPIES_FILES, SKILL_COPY_ROOTS, skillCopiesRecordPath, skillCopyPath } from "./skill-copies.js";
 import { materializeWorkspaceFromGenesis } from "./workspace.js";
 import { scopedWorkspaceState } from "./project-scope.js";
+import { applySetupManagedUpdates, planSetupManagedUpdates, runSetupEngineCommand } from "./setup-managed-update.js";
 
 // ---- The release an update installs ----
 
@@ -399,7 +400,7 @@ function appliedLibrary(plan: SetupPlan): SetupApplied["library"] {
   return library === null || library.libraryId === null ? null : { path: library.path, libraryId: library.libraryId, created: false };
 }
 
-function planResult(recorder: SetupRecorder, parts: Pick<SetupModePlan, "questions" | "resolved" | "engine" | "library" | "pendingSections"> & { readonly engineSwitch?: SetupEngineSwitch; readonly coordination?: SetupCoordination | null }): SetupModePlan {
+function planResult(recorder: SetupRecorder, parts: Pick<SetupModePlan, "questions" | "resolved" | "engine" | "library" | "pendingSections" | "managedUpdates"> & { readonly engineSwitch?: SetupEngineSwitch; readonly coordination?: SetupCoordination | null }): SetupModePlan {
   return {
     ...parts,
     writes: recorder.writes,
@@ -466,7 +467,8 @@ async function planRelease(recorder: SetupRecorder, input: SetupModeInput, sourc
 /**
  * Plan an update (R4): the release --archive names, read and checked in memory, or with --rollback
  * true the previous version; then what the skill copies, the launchers and the host hooks would
- * become. Nothing is written, and no managed section is planned.
+ * become, and the existing registered harness outputs the selected engine will refresh.
+ * Possible section writes are listed conservatively; no release code runs and nothing is written.
  */
 export async function planUpdateSetup(input: SetupModeInput): Promise<SetupModePlan> {
   if (input.executionTarget === DOT_INSTALLATION_TARGET) return planDotSetup(input);
@@ -500,12 +502,17 @@ export async function planUpdateSetup(input: SetupModeInput): Promise<SetupModeP
     engine: target?.files ?? null,
     steps: ENGINE_STEPS,
   });
+  const managedUpdates = target === null ? [] : await planSetupManagedUpdates(recorder, deviceHome);
+  for (const output of managedUpdates.filter(output => output.status === "unavailable")) recorder.warnings.push({
+    reasonCode: "MANAGED_SECTION_REFRESH_INCOMPLETE", file: join(output.projectPath, AGENTS_FILE), message: output.reasonCode ?? "Managed output unavailable",
+  });
   return planResult(recorder, {
     questions,
     resolved: maintainedAnswers(context, answers, await registeredState(context.registered), deviceNavigation),
     engine: target?.engine ?? { version: current?.version ?? null, directory: null },
     library: registeredLibrary(context),
-    pendingSections: [],
+    pendingSections: managedUpdates.flatMap(output => (output.pending ?? []).map(section => ({ ...section, file: join(output.projectPath, section.file) }))),
+    managedUpdates,
     ...(target === null ? {} : { engineSwitch: target.engineSwitch }),
   });
 }
@@ -513,7 +520,7 @@ export async function planUpdateSetup(input: SetupModeInput): Promise<SetupModeP
 /**
  * Apply an update or a rollback (R4): the release is read and checked again, unpacked and installed
  * through engine-update, or engine-rollback makes the previous version current; then the skill
- * copies, the launchers and the host hooks are laid from the version now current.
+ * copies, launchers, host hooks and registered managed outputs follow that version.
  */
 export async function applyUpdateSetup(plan: SetupPlan): Promise<SetupApplied> {
   if (plan.executionTarget === DOT_INSTALLATION_TARGET) return applyDotSetup(plan);
@@ -559,10 +566,18 @@ export async function applyUpdateSetup(plan: SetupPlan): Promise<SetupApplied> {
     engineDirectory: engineVersionDirectory(report.current.version, deviceHome),
     steps: ENGINE_STEPS,
   });
+  const engineDirectory = engineVersionDirectory(report.current.version, deviceHome);
+  const managedUpdates = await applySetupManagedUpdates(recorder, plan, engineDirectory);
+  for (const output of managedUpdates.filter(output => output.status === "unavailable" || output.status === "pending")) recorder.warnings.push({
+    reasonCode: "MANAGED_SECTION_REFRESH_INCOMPLETE", file: join(output.projectPath, AGENTS_FILE), message: output.reasonCode ?? "User-modified sections need a decision",
+  });
+  const selfCheck = await runSetupEngineCommand<{ checks: SetupApplied["selfCheck"] }>(engineDirectory, plan, ["doctor", "--project", projectRoot]);
   return setupApplied(plan, recorder, {
     deviceId: (await readDevice(deviceHome))?.deviceId ?? null,
     library: appliedLibrary(plan),
-    pending: [],
+    pending: managedUpdates.flatMap(output => (output.pending ?? []).map(section => ({ ...section, file: join(output.projectPath, section.file) }))),
+    managedUpdates,
+    selfCheck: selfCheck.checks,
     engineSwitch: {
       source: planned.source,
       from: planned.source === null ? report.current.previous : before?.version ?? null,

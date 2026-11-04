@@ -14,7 +14,7 @@ import { scopedWorkspaceState } from "./project-scope.js";
 // force.
 //
 // A rule's state is read from three places, the rule's record, the section's record and the
-// section as it now stands in AGENTS.md, against the version this engine ships (rules-catalog.ts):
+// section as it now stands in AGENTS.md, against this engine's catalog body (rules-catalog.ts):
 //
 //   disabled            no record, or a record that says it is off;
 //   output-unconfigured enabled, but no output root was available to inspect;
@@ -24,12 +24,11 @@ import { scopedWorkspaceState } from "./project-scope.js";
 //   user-modified       enabled, and the section is not the text the engine wrote: the user changed
 //                       it, or kept a change as theirs (rule-resolve keep), after which the engine
 //                       never writes it again;
-//   update-available    enabled at a lower version than this engine ships; the file is left as it
-//                       is until the rule is enabled again;
-//   enabled             enabled, and the section is the text the engine wrote.
+//   update-available    enabled and intact, but its body differs from the current catalog;
+//   enabled             enabled, and the section matches the current catalog.
 //
-// Reading the states writes nothing, and nothing here runs unless it is called: an engine upgrade
-// that ships a new version of a rule writes no file.
+// Reading writes nothing. Managed renders refresh enabled built-ins; engine updates invoke that
+// writer for existing registered harness outputs, preserving Owner text and local section ownership.
 //
 // TCRN-CROSS-STORY-508 R7 (MIN-236 D7): a rule's record may also hold an order, a positive integer
 // that places the rule's section among the rule sections of AGENTS.md (agents-sections.ts,
@@ -60,7 +59,7 @@ import { AGENTS_FILE, RULE_SECTION_PREFIX, commitPlanned, filesAsPlanned, manage
 import type { ManagedOutputBinding, SectionChangeResult, SectionPlan } from "./agents-sections.js";
 import { configRecord, configRecords, removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
 import type { ConfigRecordValue } from "./config-records.js";
-import { applyManagedWrite, managedSectionRecordKey, managedSectionRecordsFor, parseManagedFile, planManagedWrite } from "./managed-sections.js";
+import { applyManagedWrite, managedSectionRecordKey, managedSectionRecordsFor, parseManagedFile, planManagedWrite, sectionDigest } from "./managed-sections.js";
 import type { ManagedSectionRecord, ManagedSectionResult, ManagedWritePlan, ParsedSection } from "./managed-sections.js";
 import { BUILT_IN_RULES } from "./rules-catalog.js";
 import type { BuiltInRule } from "./rules-catalog.js";
@@ -193,6 +192,7 @@ function sectionsOfText(text: string | null): ReadonlyMap<string, ParsedSection>
 export function ruleState(input: {
   readonly record: RuleRecordValue | null;
   readonly shippedVersion: number | null;
+  readonly shippedDigest?: string | null;
   readonly section: ParsedSection | null;
   readonly sectionRecord: ManagedSectionRecord | null;
   readonly outputConfigured?: boolean;
@@ -205,15 +205,19 @@ export function ruleState(input: {
   const changed = section.digest !== section.bodyDigest ||
     (sectionRecord !== null && (sectionRecord.digest !== section.digest || sectionRecord.state === "user-owned" || sectionRecord.state === "unmanaged"));
   if (changed) return "user-modified";
+  // Body corrections can ship without changing the rule version. Conversely, a render
+  // can refresh an enabled rule without changing the version at which it was enabled.
+  if (input.shippedDigest != null) return section.bodyDigest === input.shippedDigest ? "enabled" : "update-available";
   if (shippedVersion !== null && shippedVersion > record.version) return "update-available";
   return "enabled";
 }
 
-function statusOf(state: Pick<WorkspaceState, "configRecords">, inFile: ReadonlyMap<string, ParsedSection>, catalog: readonly BuiltInRule[], id: string, outputConfigured = true): RuleStatus {
+function statusOf(state: Pick<WorkspaceState, "configRecords" | "settings">, inFile: ReadonlyMap<string, ParsedSection>, catalog: readonly BuiltInRule[], id: string, outputConfigured = true): RuleStatus {
   const section = ruleSectionId(id);
   const record = recordedRule(state, id);
   const inFileSection = inFile.get(section) ?? null;
-  const shippedVersion = catalog.find((rule) => rule.id === id)?.version ?? null;
+  const shipped = catalog.find((rule) => rule.id === id);
+  const shippedVersion = shipped?.version ?? null;
   const sectionRecord = managedSectionRecordsFor(state, AGENTS_FILE).find((entry) => entry.id === section) ?? null;
   return {
     id,
@@ -222,12 +226,12 @@ function statusOf(state: Pick<WorkspaceState, "configRecords">, inFile: Readonly
     fileVersion: inFileSection?.rev ?? null,
     section,
     // TCRN-CROSS-STORY-540 (TCRN-CROSS-SUB-505): a coordination library's rule too.
-    state: ruleState({ record, shippedVersion, section: inFileSection, sectionRecord, outputConfigured }),
+    state: ruleState({ record, shippedVersion, shippedDigest: shipped === undefined ? null : sectionDigest(ruleText(shipped, artifactLanguage(state))), section: inFileSection, sectionRecord, outputConfigured }),
     ...(record?.order === undefined ? {} : { order: record.order }),
   };
 }
 
-function ruleStatuses(state: Pick<WorkspaceState, "configRecords">, inFile: ReadonlyMap<string, ParsedSection>, catalog: readonly BuiltInRule[], outputConfigured = true): readonly RuleStatus[] {
+function ruleStatuses(state: Pick<WorkspaceState, "configRecords" | "settings">, inFile: ReadonlyMap<string, ParsedSection>, catalog: readonly BuiltInRule[], outputConfigured = true): readonly RuleStatus[] {
   const shipped: readonly string[] = catalog.map((rule) => rule.id);
   const recordedOnly = configRecords(state, "rule").map((record) => record.key).filter((id) => !shipped.includes(id)).sort(compareCanonicalText);
   return [...shipped, ...recordedOnly].map((id) => statusOf(state, inFile, catalog, id, outputConfigured));

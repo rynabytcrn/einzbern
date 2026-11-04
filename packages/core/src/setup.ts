@@ -51,6 +51,7 @@ import { assertStrictInstant } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import { deviceFilePath, deviceHome as currentDeviceHome } from "./device-home.js";
 import type { DoctorCheck } from "./doctor.js";
+import type { SetupManagedUpdate } from "./setup-managed-update.js";
 import type { DshPluginInspection } from "./dsh-plugin.js";
 import { readEngineCurrent } from "./engine-home.js";
 import { DOT_INSTALLATION_TARGET, SETUP_EXECUTION_TARGETS, assertNotDotAgentsTarget } from "./dot-agents.js";
@@ -285,8 +286,8 @@ export interface SetupBlocker {
 // worded as scripts/host-render.mjs words it for the same file. The wizard changes nothing about
 // it: it never commits, unstages or ignores a file.
 export interface SetupWarning {
-  readonly reasonCode: "HOST_WRITABLE_ROOTS_TRACKED_BY_GIT";
-  // The host file, relative to the project root: .claude/settings.local.json or .codex/config.toml.
+  readonly reasonCode: "HOST_WRITABLE_ROOTS_TRACKED_BY_GIT" | "MANAGED_SECTION_REFRESH_INCOMPLETE";
+  // A tracked host file is relative to the project root; a managed refresh names its absolute output.
   readonly file: string;
   readonly message: string;
 }
@@ -432,12 +433,15 @@ export interface SetupPlan {
   readonly verification?: readonly RestoreCheck[];
   // update: the engine version current now and the one the apply makes current.
   readonly engineSwitch?: SetupEngineSwitch;
+  // update: existing harness outputs on this device; final diffs use the selected engine.
+  readonly managedUpdates?: readonly SetupManagedUpdate[];
   // migrate: the mapping it follows and, for each partition, the library it becomes, the chain's
   // events and head, the gates that are not satisfied and the open work; the registry entries, the
   // device settings that move (migrate-legacy.ts) and what the cleanup takes off (migrate-cleanup.ts).
   readonly migration?: SetupMigrationPlan;
   // Every file and directory the apply writes, in the order it writes them, and every original it
-  // copies first; backupDir holds the copies of this run.
+  // copies first; update lists possible managed writes until the selected engine computes the diff.
+  // backupDir holds the copies of this run.
   readonly writes: readonly SetupWrite[];
   readonly backups: readonly SetupBackup[];
   readonly backupDir: string | null;
@@ -555,6 +559,7 @@ export interface SetupApplied {
   readonly columns?: SetupColumns;
   // update: the engine switch it made.
   readonly engineSwitch?: SetupEngineSwitched;
+  readonly managedUpdates?: readonly SetupManagedUpdate[];
   // migrate: each partition's library as the apply left it (imported, or skipped as migrated
   // already), each registry entry with migratedFrom, the portal keys (migrate-legacy.ts) and what
   // the cleanup took off (migrate-cleanup.ts).
@@ -592,7 +597,7 @@ export interface SetupModeInput {
 }
 
 /** What a mode's planner answers; planSetup puts it into the plan, with no warnings when the mode names none. */
-export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "migration" | "coordination" | "dshPlugin" | "executionTarget" | "dot">
+export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "managedUpdates" | "migration" | "coordination" | "dshPlugin" | "executionTarget" | "dot">
   & { readonly warnings?: readonly SetupWarning[] };
 
 interface SetupModeEntry {

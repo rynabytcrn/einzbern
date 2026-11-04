@@ -207,51 +207,24 @@ test("483-AC3: a newer version of a rule reads update-available and leaves the f
   assert.equal(await readFile(paths.agents, "utf8"), after);
 });
 
-test("INIT-053 AC2: v2 to v3 of a rule reads update-available and leaves the file byte for byte until the rule is enabled again", async (context) => {
+test("enabled v2 built-ins refresh to v3 without re-enabling or changing activation choices", async (context) => {
   const paths = await scratch(context);
-  // Existing render owns its non-rule system sections before the v2 baseline is captured.
   await renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
   const v2 = await readFile(join(fixtures, "batch-v2.zh.md"), "utf8");
-  const catalog = BUILT_IN_RULES.map((rule) => rule.id !== "batch" ? rule : { ...rule, version: 2, body: { zh: v2, en: v2 } });
-  const v3 = await readFile(join(fixtures, "batch.zh.md"), "utf8");
-
-  // Enabled while the engine shipped batch processing v2.
-  const first = await enable(paths, "batch", { catalog });
-  assert.deepEqual([first.result, first.status.state, first.status.version], ["create", "enabled", 2]);
-  assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:batch").body, v2);
-  assert.deepEqual(await ruleRecord(paths, "batch"), { enabled: true, version: 2 });
-
-  // The engine now ships v3: the rule reads update-available, and nothing is written.
-  const before = await readFile(paths.agents);
-  const batch = await ruleOf(paths, "batch");
-  assert.deepEqual(batch, { id: "batch", version: 3, recordedVersion: 2, fileVersion: 1, section: "rule:batch", state: "update-available" });
-  assert.deepEqual(await readFile(paths.agents), before, "the file is byte for byte what it was");
-  assert.equal((await ruleOf(paths, "batch", { catalog })).state, "enabled", "the engine that wrote it reads it enabled");
-
-  const rendered = await renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
-  assert.equal(rendered.sections.find((section) => section.id === "rule:batch").result, "unchanged");
-  assert.deepEqual(await readFile(paths.agents), before, "ordinary render preserves v2 bytes");
-
-  // Enabling another rule writes AGENTS.md, and leaves the batch section as it is.
-  const other = await enable(paths, "autonomy");
-  assert.equal(other.written, true);
-  const withAutonomy = await readFile(paths.agents, "utf8");
-  assert.equal(sectionOf(withAutonomy, "rule:batch").raw, sectionOf(before.toString("utf8"), "rule:batch").raw);
+  const catalog = BUILT_IN_RULES.map(rule => rule.id !== "batch" ? rule : { ...rule, version: 2, body: { zh: v2, en: v2 } });
+  await enable(paths, "batch", { catalog });
+  const before = await readFile(paths.agents, "utf8");
   assert.equal((await ruleOf(paths, "batch")).state, "update-available");
-
-  // Enabling batch again takes the new version.
-  const updated = await enable(paths, "batch");
-  assert.deepEqual([updated.result, updated.written, updated.recorded], ["replace", true, 2]);
-  assert.deepEqual(updated.status, { id: "batch", version: 3, recordedVersion: 3, fileVersion: 2, section: "rule:batch", state: "enabled" });
-  const after = await readFile(paths.agents, "utf8");
-  assert.deepEqual([sectionOf(after, "rule:batch").body, sectionOf(after, "rule:batch").rev], [v3, 2]);
-  assert.equal(sectionOf(after, "rule:autonomy").raw, sectionOf(withAutonomy, "rule:autonomy").raw);
-  assert.equal(await readFile(updated.backupPath, "utf8"), withAutonomy);
-
-  // An engine that ships an older version than the library records refuses to write its text.
-  const older = await refusal(() => enable(paths, "batch", { catalog }));
-  assert.deepEqual([older.reasonCode, older.details.id, older.details.recordedVersion, older.details.version], ["RULE_VERSION_NEWER", "batch", "3", "2"]);
-  assert.equal(await readFile(paths.agents, "utf8"), after);
+  const rendered = await renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
+  assert.equal(rendered.sections.find(section => section.id === "rule:batch").result, "replace");
+  assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:batch").body, builtInRule("batch").body.zh);
+  assert.equal((await ruleOf(paths, "batch")).state, "enabled");
+  assert.deepEqual(await ruleRecord(paths, "batch"), { enabled: true, version: 2 }, "the version originally enabled remains historical configuration");
+  assert.equal(await readFile(rendered.files.find(file => file.file === "AGENTS.md").backupPath, "utf8"), before);
+  assert.equal((await ruleOf(paths, "autonomy")).state, "disabled");
+  const again = await renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
+  assert.ok(again.files.every(file => !file.written));
+  assert.equal(again.recorded, 0);
 });
 
 test("T15: rule-resolve overwrite records the version of the body it writes", async (context) => {
@@ -687,7 +660,7 @@ test("INIT-053 R40: a same-version revision replaces an unchanged rule section a
     const first = await enable(paths, "batch", { catalog });
     assert.deepEqual([first.result, first.status.version, first.status.fileVersion, first.status.state], ["create", 3, 1, "enabled"]);
     assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:batch").body, previous);
-    assert.equal((await ruleOf(paths, "batch")).state, "enabled", "the same version is not an update to enable");
+    assert.equal((await ruleOf(paths, "batch")).state, "update-available", "same-version body changes are visible without requiring re-enablement");
     const rendered = await render(paths);
     assert.equal(rendered.sections.find((section) => section.id === "rule:batch").result, "replace");
     const section = sectionOf(await readFile(paths.agents, "utf8"), "rule:batch");
@@ -749,40 +722,24 @@ test("540 (MIN-259 D1): residue-cleanup and goal-writing are enabled with their 
   }
 });
 
-// TCRN-CROSS-STORY-541 (MIN-258 D3, MIN-259 D2): unattended-commands rose to v2. A project that enabled
-// it at v1 reads update-available; neither the read nor agents-render writes its v1 section, and only
-// rule-enable takes v2.
-test("541 (MIN-259 D2): unattended-commands enabled at v1 reads update-available, agents-render leaves the v1 section byte for byte, and rule-enable takes v2", async (context) => {
+test("same-version body corrections are visible before rendering; local edits retain priority", async (context) => {
   const paths = await scratch(context);
-  // Existing render owns its non-rule system sections before the v1 baseline is captured.
+  const rule = builtInRule("autonomy");
+  const old = { ...rule, body: { zh: "## Earlier autonomy wording\n", en: "## Earlier autonomy wording\n" } };
+  await enable(paths, "autonomy", { catalog: BUILT_IN_RULES.map(entry => entry.id === rule.id ? old : entry) });
+  const before = await readFile(paths.agents, "utf8");
+  assert.equal((await ruleOf(paths, "autonomy")).state, "update-available");
+  assert.equal(await readFile(paths.agents, "utf8"), before, "freshness inspection is read-only");
   await renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
-  const v1 = { zh: await readFile(join(fixtures, "unattended-commands-v1.zh.md"), "utf8"), en: await readFile(join(fixtures, "unattended-commands-v1.en.md"), "utf8") };
-  const catalog = BUILT_IN_RULES.map((rule) => rule.id !== "unattended-commands" ? rule : { ...rule, version: 1, body: v1 });
-  const v2 = await readFile(join(fixtures, "unattended-commands.zh.md"), "utf8");
-  assert.equal(builtInRule("unattended-commands").version, 2);
-
-  // Enabled while the engine shipped unattended commands v1.
-  const first = await enable(paths, "unattended-commands", { catalog });
-  assert.deepEqual([first.result, first.status.state, first.status.version], ["create", "enabled", 1]);
-  assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:unattended-commands").body, v1.zh);
-  assert.deepEqual(await ruleRecord(paths, "unattended-commands"), { enabled: true, version: 1 });
-
-  // The engine now ships v2: the rule reads update-available, and nothing is written.
-  const before = await readFile(paths.agents);
-  assert.deepEqual(await ruleOf(paths, "unattended-commands"), { id: "unattended-commands", version: 2, recordedVersion: 1, fileVersion: 1, section: "rule:unattended-commands", state: "update-available" });
-  assert.deepEqual(await readFile(paths.agents), before, "reading the state writes nothing");
-  const rendered = await renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
-  assert.equal(rendered.sections.find((section) => section.id === "rule:unattended-commands").result, "unchanged");
-  assert.deepEqual(await readFile(paths.agents), before, "agents-render keeps the v1 section byte for byte");
-  assert.equal((await ruleOf(paths, "unattended-commands")).state, "update-available");
-
-  // Enabling it again takes v2.
-  const updated = await enable(paths, "unattended-commands");
-  assert.deepEqual([updated.result, updated.written, updated.recorded], ["replace", true, 2]);
-  assert.deepEqual(updated.status, { id: "unattended-commands", version: 2, recordedVersion: 2, fileVersion: 2, section: "rule:unattended-commands", state: "enabled" });
-  assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:unattended-commands").body, v2);
+  assert.equal((await ruleOf(paths, "autonomy")).state, "enabled");
+  assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:autonomy").body, rule.body.zh);
+  await writeFile(paths.agents, (await readFile(paths.agents, "utf8")).replace(rule.body.zh, `${rule.body.zh}Owner correction\n`));
+  assert.equal((await ruleOf(paths, "autonomy")).state, "user-modified");
+  const modified = await readFile(paths.agents, "utf8");
+  const pending = await renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
+  assert.ok(pending.pending.some(section => section.id === "rule:autonomy"));
+  assert.equal(await readFile(paths.agents, "utf8"), modified);
 });
-
 
 test("546: an enabled rule with no output binding does not assert its file was removed", () => {
   const input = { record: { enabled: true, version: 1 }, shippedVersion: 1, section: null, sectionRecord: null };
@@ -820,7 +777,7 @@ test("INIT-062/MIN358 same-version principle supplements update only untouched e
     assert.equal(sectionOf(await readFile(paths.agents, "utf8"), `rule:${id}`), null, "disabled is not implicitly enabled");
     await enable(paths, id, { catalog });
     const before = await readFile(paths.agents);
-    assert.equal((await ruleOf(paths, id)).state, "enabled", "same rule version needs no re-enable");
+    assert.equal((await ruleOf(paths, id)).state, "update-available", "same-version body changes are visible before automatic refresh");
     const updated = await render(paths);
     assert.equal(updated.sections.find(section => section.id === `rule:${id}`).result, "replace");
     const section = sectionOf(await readFile(paths.agents, "utf8"), `rule:${id}`);

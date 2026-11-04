@@ -577,7 +577,7 @@ execution policies and from representation or protocol bounds.
 ## Built-in rule catalog (TCRN-CROSS-STORY-540, MIN-259 D1)
 
 The engine ships seven system rules, in this order. Each is disabled until it is
-enabled and follows the same enable/read/render/explicit-upgrade,
+enabled and follows the same enable/read/render,
 keep/overwrite/unmanage and user-modified protection.
 
 | id | version | Chinese title | English title |
@@ -601,8 +601,14 @@ is an agent's translation. Both translations await the Owner's correction.
 sentence at the end of clause 1: with the Owner's authorization, the skill's
 `scripts/trash-empty.mjs` empties the named trash directories under the
 session's scratch directory, after it has listed its plan. A project that
-enabled v1 reads `update-available` and keeps its v1 section until `rule-enable`
-takes v2.
+enabled v1 reads `update-available` until a managed render takes the current catalog text.
+The 2026-11-04 harness clarification supersedes the former per-version opt-in:
+engine updates refresh existing registered managed outputs, including enabled built-ins.
+`rule-list` compares the configured-language body digest as well as its ownership, so corrections
+at the same version are visible. Reads remain read-only. Rendering preserves Owner text, local
+edits, user-owned and removed sections, disabled rules and generation-disabled targets; it does
+not change which rules are enabled or their order. `recordedVersion` remains the version at which
+the rule was explicitly enabled. A running engine too old to support that version leaves it alone.
 
 ## Coordination and target provenance
 

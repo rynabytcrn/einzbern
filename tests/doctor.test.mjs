@@ -31,6 +31,7 @@ import { setConfigRecord } from "../dist/build/packages/core/src/config-records.
 import { installSkillCopies } from "../dist/build/packages/core/src/skill-copies.js";
 import { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_REASON_CODES, runDoctor } from "../dist/build/packages/core/src/doctor.js";
 import { renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
+import { BUILT_IN_RULES } from "../dist/build/packages/core/src/rules-catalog.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 
 // Anything that fell back to the user's home would land in this empty directory, not the real one.
@@ -354,6 +355,21 @@ test("ordinary doctor waits for a live writer beyond the removed two-second prod
 // library is registered for, the container it coordinates, as it checks a project: the container's files
 // against the coordination library's records, every recorded section listed with its state, and a
 // section changed by hand pending.
+test("doctor detects a same-version catalog correction even when file, marker and stored digest agree", async context => {
+  const fixture = await healthy(context);
+  const catalog = BUILT_IN_RULES.map(rule => rule.id === "autonomy" ? { ...rule, body: { zh: "Earlier managed autonomy\n", en: "Earlier managed autonomy\n" } } : rule);
+  await enableRule({ libraryRoot: fixture.library, projectRoot: fixture.project, id: "autonomy", catalog, occurredAt: AT });
+  const path = join(fixture.project, "AGENTS.md");
+  const before = await readFile(path, "utf8");
+  const stale = await doctor(fixture);
+  assertOnlyRed(stale, "managed-sections", "MANAGED_SECTION_OUTDATED");
+  assert.deepEqual(byCheck(stale, "managed-sections").detail.outdated, ["rule:autonomy"]);
+  assert.deepEqual(byCheck(stale, "managed-sections").detail.pending, [], "old generated text is not a user edit");
+  assert.equal(await readFile(path, "utf8"), before, "doctor does not repair while inspecting");
+  await renderAgentsSections(fixture.library, { projectRoot: fixture.project, navigation: null, occurredAt: AT });
+  assert.equal(byCheck(await doctor(fixture), "managed-sections").ok, true);
+});
+
 test("540-GWT4: managed-sections checks a coordination library's registered root and lists its sections", async (context) => {
   const fixture = await healthy(context);
   await declareChainIdentity(fixture.library, { role: "coordination", coordinationLibraryId: await libraryId(fixture) }, { occurredAt: AT });

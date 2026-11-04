@@ -128,16 +128,18 @@ test("ruleBody gives the Chinese body when artifact.language is zh-CN and the En
   assert.throws(() => ruleBody("batch-processing", "zh-CN"), RangeError);
 });
 
+// Historical revision relationships are checked against their preserved pre-consolidation text.
+// The 2026-11-04 consolidation replaces contradictory clauses; current fixtures above cover it.
 // The old bodies remain applicable to enabled v2 projects until an explicit upgrade. The Owner's
 // revisions of v3 add clause 7 (INIT-053 R40), clause 8 (INIT-053 R48, MIN-242 D10), and the merging
 // of small rounds at the end of clause 6 with clause 9 (INIT-053 R52, MIN-246 D11) to the six
 // principles at the same version. Clause 6 is compared as it stood before its addition, the text
 // batch-v3-rev3 keeps.
-test("INIT-053 R1-R5, R40, R48, R52: v3 preserves the six principles in both languages, adds clauses 7, 8 and 9 and the end of clause 6, and adds communication and waiting", async () => {
+test("INIT-053 historical R1-R5, R40, R48, R52 revision relationships remain preserved in both languages", async () => {
   for (const language of LANGUAGES) {
     const previous = await readFile(join(fixtures, `batch-v2.${language}.md`), "utf8");
     const rev3 = await readFile(join(fixtures, `batch-v3-rev3.${language}.md`), "utf8");
-    const current = builtInRule("batch").body[language].split("\n### Codex ")[0];
+    const current = (await readFile(join(fixtures, `batch-before-empirical.${language}.md`), "utf8")).split("\n### Codex ")[0];
     const heading = language === "zh" ? "### 代理通信与等待" : "### Agent communication and waiting";
     const principles = current.split(heading)[0].split("\n");
     const clause6 = principles.filter((line) => line.startsWith("6. "));
@@ -245,7 +247,7 @@ test("540 (MIN-259 D1): residue-cleanup v1 preserves its eight historical clause
 // the end of clause 1. With the Owner's authorization, the trash-empty tool that ships with the skill
 // empties the named trash directories under the session's scratch directory; each authorization
 // covers one report of their paths and sizes. Every other line is v1's, in both languages.
-test("541 (MIN-259 D2): unattended-commands v2 is v1 with its heading at v2 and one sentence at the end of clause 1, in both languages", async () => {
+test("541 trash authorization remains intact while empirical consolidation clarifies dialog and permission handling", async () => {
   const rule = builtInRule("unattended-commands");
   assert.equal(rule.version, 2);
   assert.equal(rule.body.zh, await readFile(join(fixtures, "unattended-commands.zh.md"), "utf8"));
@@ -254,7 +256,8 @@ test("541 (MIN-259 D2): unattended-commands v2 is v1 with its heading at v2 and 
     const after = rule.body[language].split("\n");
     assert.equal(after.length, before.length, `${language}: no line is added or taken away`);
     const clause1 = after.findIndex((line) => line.startsWith("1. "));
-    assert.deepEqual(after.map((_, index) => index).filter((index) => after[index] !== before[index]), [0, clause1], `${language}: only the heading and clause 1 change`);
+    const clause5 = after.findIndex((line) => line.startsWith("5. "));
+    assert.deepEqual(after.map((_, index) => index).filter((index) => after[index] !== before[index]), [0, 2, clause1, clause5], `${language}: only the heading, opening, trash authorization and dialog disposition change`);
     assert.equal(after[0], before[0].replace(/ v1$/u, " v2"), `${language}: the heading names v2`);
     assert.ok(after[clause1].startsWith(before[clause1]) && after[clause1].length > before[clause1].length, `${language}: clause 1 keeps its v1 text and adds to its end`);
     const added = after[clause1].slice(before[clause1].length);
@@ -287,7 +290,8 @@ test("INIT-062 universal supplements preserve v1 history, explicit user limits a
       const previous = await readFile(join(fixtures, `${id}-v1-rev1.${language}.md`), "utf8");
       assert.equal(rule.version, 1);
       assert.equal(rule.body[language], await readFile(join(fixtures, `${id}.${language}.md`), "utf8"));
-      assert.ok(rule.body[language].startsWith(previous), `${id}: no historical sentence was removed`);
+      if (id === "residue-cleanup") assert.ok(rule.body[language].startsWith(previous), `${id}: historical cleanup remains intact`);
+      else assert.equal(rule.body[language].split("\n")[0], previous.split("\n")[0], "autonomy keeps its identity; the original paragraph is retained in the historical fixture");
       assert.notEqual(rule.body[language], previous);
     }
     assert.ok(Object.isFrozen(AUTONOMY_AUTHORIZATION_BODY));

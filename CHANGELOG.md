@@ -5,6 +5,14 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Dependency security
+
+- Upgrade the exact Ajv transitive dependency fast-uri from 3.1.8 to 3.1.9,
+  addressing GHSA-w74x-v6f9-j3xg, GHSA-xhq7-xmqj-769h,
+  GHSA-wjr9-j795-jxcr and GHSA-333x-w4r6-6crp. Retain the frozen graph and
+  verified package integrity; exercise malformed schemes/hosts, relative and
+  suffix references, and Ajv schema reference resolution.
+
 ### Principles and portable installation
 
 - Keep AGENTS limited to shared principles and one Mana Orchestrate entry. Move

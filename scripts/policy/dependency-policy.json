@@ -141,10 +141,10 @@
       "purpose": "exact Ajv transitive dependency",
       "acquisitionBoundary": "explicit-npm-registry-read-with-ignore-scripts"
     },
-    "fast-uri@3.1.8": {
+    "fast-uri@3.1.9": {
       "direct": false,
       "license": "BSD-3-Clause",
-      "integrity": "sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==",
+      "integrity": "sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==",
       "purpose": "exact Ajv transitive dependency",
       "acquisitionBoundary": "explicit-npm-registry-read-with-ignore-scripts"
     },

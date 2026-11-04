@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { createRequire } from "node:module";
 
 // The vulnerability snapshot check and its freshness window were the governance leg's, and
 // retire with it (TCRN-CROSS-STORY-467 R2); the frozen graph read by the SBOM stays.
@@ -40,7 +41,7 @@ test("the exact frozen dependency graph has complete policy and integrity closur
     "entities@4.2.0",
     "entities@7.0.1",
     "fast-deep-equal@3.1.3",
-    "fast-uri@3.1.8",
+    "fast-uri@3.1.9",
     "html-escaper@3.0.3",
     "htmlparser2@10.1.0",
     "json-schema-traverse@1.0.0",
@@ -54,13 +55,13 @@ test("the exact frozen dependency graph has complete policy and integrity closur
 test("unapproved lock packages and integrity drift fail closed", async () => {
   const inputs = await dependencyInputs();
   const missingPolicy = structuredClone(inputs.dependencyPolicy);
-  delete missingPolicy.dependencies["fast-uri@3.1.8"];
+  delete missingPolicy.dependencies["fast-uri@3.1.9"];
   assert.throws(
     () => validateFrozenDependencyGraph({ ...inputs, dependencyPolicy: missingPolicy }),
     (error) => error instanceof DependencyGraphError && error.reasonCode === "DEPENDENCY_GRAPH_POLICY_MISMATCH",
   );
   const wrongIntegrity = structuredClone(inputs.dependencyPolicy);
-  wrongIntegrity.dependencies["fast-uri@3.1.8"].integrity = "sha512-invalid";
+  wrongIntegrity.dependencies["fast-uri@3.1.9"].integrity = "sha512-invalid";
   assert.throws(
     () => validateFrozenDependencyGraph({ ...inputs, dependencyPolicy: wrongIntegrity }),
     (error) => error instanceof DependencyGraphError && error.reasonCode === "DEPENDENCY_GRAPH_INTEGRITY_MISMATCH",
@@ -83,4 +84,45 @@ test("a scoped lock identity parses through its surrounding pnpm quotes", async 
   const scoped = graph.records.find((record) => record.identity === "@types/node@24.13.2");
   assert.equal(scoped.name, "@types/node");
   assert.equal(scoped.version, "24.13.2");
+});
+
+
+// Exercise the actual transitive copy consumed by Ajv, not a separate direct dependency.
+const require = createRequire(import.meta.url);
+const requireAjv = createRequire(require.resolve("ajv/package.json"));
+const uri = requireAjv("fast-uri");
+
+test("fast-uri rejects encoded schemes and ambiguous hosts (GHSA-w74x, GHSA-wjr9)", () => {
+  for (const input of ["%6Aavascript:alert(1)", "%u006Aavascript:alert(1)"]) {
+    assert.ok(uri.parse(input).error);
+    assert.notEqual(uri.normalize(input), "javascript:alert(1)");
+    assert.throws(() => uri.resolve("https://a.example/", input), /malformed/);
+  }
+  for (const input of ["http://a@b@localhost/", "http://ex\tample.com/", "http://ex\nample.com/", "http://ex\rample.com/"]) {
+    assert.ok(uri.parse(input).error);
+    assert.throws(() => uri.resolve("https://a.example/", input), /malformed/);
+  }
+});
+
+test("fast-uri normalization preserves relative resolution and suffix paths (GHSA-xhq7, GHSA-333x)", () => {
+  const base = "https://a.example/dir/";
+  for (const ref of ["a/../b", "../x", "../../x", "./a:b"]) {
+    assert.equal(uri.resolve(base, uri.normalize(ref)), uri.resolve(base, ref));
+  }
+  // Match the upstream scheme-neutral suffix fixture: output has no emitted scheme.
+  for (const scheme of ["javascript", "data", "vbscript"]) {
+    const output = uri.normalize(`${scheme}:value`, { reference: "suffix", scheme: "x" });
+    assert.equal(uri.parse(output).scheme, undefined);
+    assert.ok(output.includes("%3A"));
+  }
+});
+
+test("Ajv still resolves relative schema references through the upgraded URI dependency", () => {
+  const Ajv = require("ajv");
+  const ajv = new Ajv();
+  ajv.addSchema({ $id: "https://schemas.example/types/value.json", type: "integer", minimum: 1 });
+  const validate = ajv.compile({ $id: "https://schemas.example/root/main.json", type: "object", properties: { count: { $ref: "../types/value.json" } }, required: ["count"] });
+  assert.equal(validate({ count: 2 }), true);
+  assert.equal(validate({ count: 0 }), false);
+  assert.equal(validate({ count: "2" }), false);
 });

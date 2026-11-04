@@ -2,7 +2,7 @@ packages:
   - packages/*
 
 overrides:
-  fast-uri: "3.1.8"
+  fast-uri: "3.1.9"
 
 # pnpm 11 reads non-registry settings from YAML, not .npmrc.
 # Online acquisition must opt in explicitly; verification never fetches dependencies.

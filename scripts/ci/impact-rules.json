@@ -1911,7 +1911,7 @@
     "scripts/policy/failure-pattern-register.json": "97d518a2028343d28c9a500d1c5b637fe19f07044b9e62389a52f969c6b65a53",
     "scripts/policy/gate-containment.json": "81b008ff59982c9e991bd3e17ced87bedbd1861dcbfc98952ae2dbf013c678e1",
     "scripts/policy/knowledge-provenance.json": "9f79bd5914397bf18b32981eed16da91bc8ef37404b4fd27a50f8453d7008153",
-    "scripts/policy/offline-loopback-harness.json": "032a8f9dc729da2fe55b1326473987a154f419e07d1a221d0d18485323bd37d9",
+    "scripts/policy/offline-loopback-harness.json": "c659c26fdfd215a1d26e31a51a3405f44e4a4ddfa75a9a21b2613f4a4c6c1708",
     "scripts/policy/portal-class-roots.json": "90c7f11ead7d2edaeee6c0f293cbfd6f62833473a48b0fb0815fafc990566039",
     "scripts/policy/retrieval-eval-thresholds.json": "61afc0941cdc2408698bf2fecb5d8b7009750f15644f6fbce2153822792a9488",
     "scripts/policy/story-rule-conservation.json": "ae2f56af7765ccef9219b6d85f4d5fb034f851bc4fa92e8ba7b85d221327a843",

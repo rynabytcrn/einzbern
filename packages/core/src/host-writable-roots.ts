@@ -444,6 +444,8 @@ export interface WritableRootsInput {
   readonly replacePaths?: readonly string[];
   readonly projectRoot: string;
   readonly libraryPath: string;
+  /** Runtime selected by a storage relocation that has not published its pointer yet. */
+  readonly runtimePath?: string;
   // Both hosts when left out.
   readonly hosts?: readonly WritableRootsHost[];
 }
@@ -466,7 +468,7 @@ export async function planWritableRoots(input: WritableRootsInput): Promise<Writ
     const path = WRITABLE_ROOTS_FILES[host];
     const before = await readHostFile(join(projectRoot, path), path);
     let after = portableWritableRoots(before, host, projectRoot, libraryPath, input.replacePaths);
-    const runtime = readStorageLocation(deviceHome())?.runtime;
+    const runtime = input.runtimePath === undefined ? readStorageLocation(deviceHome())?.runtime : resolve(input.runtimePath);
     if (runtime !== undefined && !inside(libraryPath, runtime)) after = portableWritableRoots(after, host, projectRoot, runtime);
     files.push({ host, path, before, after, changed: after !== before, trackedByGit: hostFileTrackedByGit(projectRoot, path) });
   }

@@ -36,7 +36,7 @@ try {
   // A project-delete refused while a lease still runs on live work names the project as well
   // (WORK_LEASED, TCRN-CROSS-STORY-535, TCRN-CROSS-SUB-495). projectId is only ever a project id: the
   // one this refusal and a refused project scope (WORKSPACE_INPUT_INVALID) carry, never a path.
-  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest", "check", "workId", "cardId", "query", "holder", "expiresAt", "leasedWorkId", "projectId", "decidedIn", "reason", "holderPid", "holderCommand", "heldSince"];
+  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest", "check", "workId", "cardId", "query", "holder", "expiresAt", "leasedWorkId", "projectId", "decidedIn", "reason", "holderPid", "holderCommand", "heldSince", "storageProgress"];
   const numberDetails = ["bodyBytes", "limit"];
   const listDetails = ["allowedValues", "conflicts", "reds", "stories"];
   const details = error?.details !== null && typeof error?.details === "object"

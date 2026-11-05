@@ -11,11 +11,11 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { applyWritableRoots, planWritableRoots } from "../dist/build/packages/core/src/index.js";
+import { applyWritableRoots, configureStorageLocation, planWritableRoots } from "../dist/build/packages/core/src/index.js";
 import { codexWritableRoots, hostFileTrackedByGit } from "../dist/build/packages/core/src/host-writable-roots.js";
 
 const AT = "2026-09-26T10:00:00Z";
@@ -57,6 +57,32 @@ async function hostFiles(root) {
     codex: await readFile(join(root, CODEX), "utf8").catch(() => null),
   };
 }
+
+test("storage relocation plans host roots for its target runtime before publishing the pointer", async (context) => {
+  const base = await scratch(context);
+  const root = await project(base);
+  const lib = await library(join(base, "cloud", "Ether", "project"));
+  const home = join(base, "device"), currentRuntime = join(base, "current-runtime"), targetRuntime = join(base, "target-runtime");
+  const claudePath = join(root, CLAUDE), codexPath = join(root, CODEX);
+  const claude = JSON.parse(await readFile(claudePath, "utf8"));
+  claude.permissions.additionalDirectories.push(relative(root, currentRuntime));
+  await writeFile(claudePath, `${JSON.stringify(claude, null, 2)}\n`);
+  await writeFile(codexPath, `[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(relative(join(root, ".codex"), currentRuntime))}]\nnetwork_access = true\n`);
+
+  await configureStorageLocation(home, lib, currentRuntime, AT, "minutes:000000000000000000000001#D1", true);
+  const before = await hostFiles(root);
+  const plan = await planWritableRoots({ projectRoot: root, libraryPath: lib, replacePaths: [currentRuntime], runtimePath: targetRuntime });
+
+  const plannedClaudeRoots = JSON.parse(plan.files.find(file => file.host === "claude-code").after).permissions.additionalDirectories.map(path => resolve(root, path));
+  assert.ok(plannedClaudeRoots.includes(lib));
+  assert.ok(plannedClaudeRoots.includes(targetRuntime));
+  assert.ok(!plannedClaudeRoots.includes(currentRuntime));
+  const plannedCodex = plan.files.find(file => file.host === "codex").after;
+  assert.ok(plannedCodex.includes(JSON.stringify(relative(join(root, ".codex"), targetRuntime))));
+  assert.ok(!plannedCodex.includes(JSON.stringify(relative(join(root, ".codex"), currentRuntime))));
+  assert.deepEqual(await hostFiles(root), before, "preflight does not write the target host settings");
+  assert.equal(resolve(home, JSON.parse(await readFile(join(home, "storage-location.json"), "utf8")).runtime), resolve(currentRuntime), "preflight does not publish the target pointer");
+});
 
 // A project whose host files already hold the user's own settings.
 async function project(base) {

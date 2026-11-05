@@ -69,6 +69,7 @@ import type {
   SetupPlan,
   SetupQuestion,
   SetupStep,
+  SetupUninstallImpact,
 } from "./setup.js";
 import {
   FRESH_ENGINE_TREE,
@@ -400,7 +401,7 @@ function appliedLibrary(plan: SetupPlan): SetupApplied["library"] {
   return library === null || library.libraryId === null ? null : { path: library.path, libraryId: library.libraryId, created: false };
 }
 
-function planResult(recorder: SetupRecorder, parts: Pick<SetupModePlan, "questions" | "resolved" | "engine" | "library" | "pendingSections" | "managedUpdates"> & { readonly engineSwitch?: SetupEngineSwitch; readonly coordination?: SetupCoordination | null }): SetupModePlan {
+function planResult(recorder: SetupRecorder, parts: Pick<SetupModePlan, "questions" | "resolved" | "engine" | "library" | "pendingSections" | "managedUpdates" | "engineSwitch" | "coordination" | "uninstallImpact">): SetupModePlan {
   return {
     ...parts,
     writes: recorder.writes,
@@ -685,6 +686,19 @@ export async function applyRepairSetup(plan: SetupPlan): Promise<SetupApplied> {
 
 // ---- uninstall ----
 
+function uninstallImpact(
+  registry: Registry,
+  recorder: SetupRecorder,
+  selectedProjectRegistration: SetupUninstallImpact["selectedProjectRegistration"],
+): SetupUninstallImpact {
+  const changesSharedWiring = recorder.writes.some(({ step }) => step === "host-hooks" || step === "skill-copies");
+  return {
+    scope: "device",
+    affectedRegisteredProjectPaths: changesSharedWiring ? registry.entries.map(({ projectPath }) => projectPath) : [],
+    selectedProjectRegistration,
+  };
+}
+
 // Where uninstall moves a skill copy or skills.json: the backups of this run, laid out as
 // installSkillCopies lays the copies it replaces.
 function skillCopyBackup(recorder: SetupRecorder, root: string): string {
@@ -737,6 +751,9 @@ export async function planUninstallSetup(input: SetupModeInput): Promise<SetupMo
   const { projectRoot, home, deviceHome } = context;
   const recorder = new SetupRecorder(deviceHome, input.at);
   const choice = managedSectionsChoice(input);
+  const registryFile = registryPath(deviceHome);
+  const registry = await recorder.attempt("registry", registryFile, () => readRegistry(deviceHome));
+  const registered = registry?.entries.find((entry) => entry.projectPath === projectRoot) ?? null;
 
   await planHooks(recorder, home, deviceHome, null, false);
   for (const root of SKILL_COPY_ROOTS) {
@@ -750,9 +767,9 @@ export async function planUninstallSetup(input: SetupModeInput): Promise<SetupMo
     recorder.write("skill-copies", record, "move");
     recorder.backup("skill-copies", record);
   }
-  if (context.registered !== null) {
-    recorder.write("registry", registryPath(deviceHome), "update");
-    recorder.backup("registry", registryPath(deviceHome));
+  if (registered !== null) {
+    recorder.write("registry", registryFile, "update");
+    recorder.backup("registry", registryFile);
   }
   if (choice === "remove") {
     for (const file of [AGENTS_FILE, CLAUDE_FILE]) {
@@ -768,11 +785,12 @@ export async function planUninstallSetup(input: SetupModeInput): Promise<SetupMo
     : [];
   return planResult(recorder, {
     questions,
-    resolved: maintainedAnswers(context, answers, await registeredState(context.registered), await readAgentsNavigation(deviceHome).catch(() => null)),
+    resolved: maintainedAnswers(context, answers, await registeredState(registered), await readAgentsNavigation(deviceHome).catch(() => null)),
     engine: { version: null, directory: null },
-    library: registeredLibrary(context),
+    library: registeredLibrary({ ...context, registered }),
     pendingSections: [],
-    coordination: context.registered === null ? null : await uninstallCoordination(await readRegistry(deviceHome), context.registered),
+    coordination: registry === null || registered === null ? null : await uninstallCoordination(registry, registered),
+    ...(registry === null ? {} : { uninstallImpact: uninstallImpact(registry, recorder, registered === null ? "not-registered" : "remove") }),
   });
 }
 
@@ -796,6 +814,8 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
   await assertNotDotAgentsTarget(plan.projectRoot);
   const { at, projectRoot, home, deviceHome } = plan;
   const recorder = new SetupRecorder(deviceHome, at);
+  const registry = await readRegistry(deviceHome);
+  const registered = registry.entries.find((entry) => entry.projectPath === projectRoot);
 
   await applyHooks(recorder, { home, deviceHome, at, navigation: null, install: false });
   for (const root of SKILL_COPY_ROOTS) {
@@ -812,7 +832,7 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
     recorder.backup("skill-copies", record);
   }
   const registryFile = registryPath(deviceHome);
-  const registered = (await readRegistry(deviceHome)).entries.find((entry) => entry.projectPath === projectRoot);
+  let registrationRemoved = false;
   let binding: SetupCoordination | null = null;
   if (registered !== undefined) {
     const copy = join(recorder.backupDirectory("registry"), DEVICE_HOME_ENTRIES.registry);
@@ -822,7 +842,7 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
     }
     // The coordination this project's library names (none when it is unclassified or does not read).
     const coordination = await coordinationNamedBy(registered.libraryPath);
-    await unregisterLibrary(projectRoot, deviceHome);
+    registrationRemoved = await unregisterLibrary(projectRoot, deviceHome);
     if (typeof coordination === "string") {
       // TCRN-CROSS-INIT-053 R46 (I08): the receipt says whether setup's registration of it went.
       const released = await releaseSetupCoordination(coordination, deviceHome);
@@ -830,7 +850,7 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
         ? { libraryId: coordination, status: "released", path: released[0]!.libraryPath }
         : { libraryId: coordination, status: "retained", path: coordinationLocation(await readRegistry(deviceHome), coordination) };
     }
-    recorder.write("registry", registryFile, "update");
+    if (registrationRemoved || binding?.status === "released") recorder.write("registry", registryFile, "update");
     recorder.backup("registry", registryFile);
   }
   if ((plan.options.managedSections ?? "keep") === "remove") {
@@ -846,10 +866,14 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
       recorder.backup("managed-sections", path);
     }
   }
-  return setupApplied(plan, recorder, {
+  const receipt = await setupApplied(plan, recorder, {
     deviceId: (await readDevice(deviceHome))?.deviceId ?? null,
     library: appliedLibrary(plan),
     pending: [],
     coordination: binding,
   });
+  return {
+    ...receipt,
+    uninstallImpact: uninstallImpact(registry, recorder, registrationRemoved ? "removed" : "not-registered"),
+  };
 }

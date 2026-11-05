@@ -132,6 +132,14 @@ test("479-AC1, AC3 through the CLI: every verb the generated table names is list
   assert.ok(verbs.includes("execution-evidence"), "the installed workflow names its public evidence entry");
   assert.match(markdown, /`execution-evidence --from-file <json>` remains read-only validation, not authentication/);
   assert.match(markdown, /specs\/dispatch-admission-evidence-v1\.md/);
+  assert.ok(markdown.includes('`recall --view agent --query "<task>"`'));
+  const recall = (await invoke(["recall", "--help"])).report.commands[0];
+  assert.equal(recall.flags.find(({ name }) => name === "view").valueKind, "enum");
+  assert.match(markdown, /specs\/work-practices-v1\.md/);
+  assert.match(markdown, /specs\/batch-execution-v1\.md/);
+  assert.match(markdown, /New, resumed and delegated sessions read their own live work/u);
+  assert.match(markdown, /Codex only: independent main\/economy peers, no collector/u);
+  assert.match(markdown, /Other hosts keep their workflow/u);
   assert.ok(Buffer.byteLength(markdown, "utf8") < 6000, "J17 preserves the ordinary Skill quality budget");
   for (const verb of verbs) assert.ok(listed.includes(verb), `${verb} is listed by commands`);
   assert.ok(listed.includes("skill-render"), "skill-render is itself listed by commands");

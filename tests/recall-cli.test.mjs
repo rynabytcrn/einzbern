@@ -18,13 +18,15 @@ import {
   captureKnowledgeUnit,
   createProject,
   createWork,
+  deleteProject,
   initializeKnowledgeStore,
   initializeLibrary,
   recordMinutes,
+  setWorkspaceSetting,
   transitionWork,
 } from "../dist/build/packages/core/src/index.js";
 import { RECALL_STRONG_TAU, resetRecallCache } from "../dist/build/packages/core/src/recall.js";
-import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const at = (second) => `2026-09-26T14:00:${String(second).padStart(2, "0")}Z`;
 const idOf = (key) => deriveStableId("work", key);
@@ -60,10 +62,14 @@ async function library(context) {
   return workspace;
 }
 
-async function recallCli(workspace, query, extra = []) {
+async function recallOutput(workspace, query, extra = []) {
   let output = "";
   await runCli(["recall", "--workspace", workspace, "--at", at(30), "--query", query, "--allow-trailing", "true", ...extra], { write(value) { output = value; } });
-  return JSON.parse(output);
+  return output;
+}
+
+async function recallCli(workspace, query, extra = []) {
+  return JSON.parse(await recallOutput(workspace, query, extra));
 }
 
 test("STORY-474 AC1 (CLI): the unrelated group is answered with nothing, and at threshold 0 it is not", async (context) => {
@@ -109,13 +115,92 @@ test("STORY-474 R2 (CLI): the context is cut to injection.perPromptBytes at whol
   assert.equal(full.perPromptBytes, 1600, "the setting's default");
   assert.ok(full.context.length >= 2);
   const firstLineBytes = Buffer.byteLength(full.context[0], "utf8");
-  const { setWorkspaceSetting } = await import("../dist/build/packages/core/src/index.js");
   await setWorkspaceSetting(workspace, { occurredAt: at(40), key: "injection.perPromptBytes", value: String(firstLineBytes) });
   resetRecallCache();
   const cut = await recallCli(workspace, query, ["--tau", "0"]);
   assert.equal(cut.perPromptBytes, firstLineBytes);
   assert.deepEqual(cut.context, [full.context[0]], "the first line that does not fit ends the answer");
   assert.equal(cut.records.length, full.records.length, "records are not cut; only the context is");
+});
+
+test("agent recall keeps the full context and identifies degraded knowledge without diagnostic arrays", async (context) => {
+  const workspace = await library(context);
+  const state = await createProject(workspace, { occurredAt: at(9), externalKey: "RC-ORPHAN", name: "Orphaned knowledge" });
+  const projectId = state.projects.find(({ externalKey }) => externalKey === "RC-ORPHAN").id;
+  const card = await captureKnowledgeUnit(workspace, {
+    occurredAt: at(10), scope: "project", projectId, externalKey: "RC-ORPHAN-CARD",
+    subject: "Orphaned lighthouse calibration", summary: "Former project calibration", snippet: "Kept for the diagnostic",
+    tags: ["recall"], accountableOwnerId: deriveStableId("owner", "RC-OWNER"), body: "Lighthouse calibration.",
+  });
+  await deleteProject(workspace, { occurredAt: at(11), id: projectId });
+
+  const query = "召回命中行怎么显示史诗与倡议标题";
+  const full = await recallCli(workspace, query);
+  const raw = await recallOutput(workspace, query, ["--view", "agent"]);
+  const agent = JSON.parse(raw);
+  assert.equal(full.schemaVersion, "tcrn.recall.v1");
+  assert.deepEqual(Object.keys(full).sort(), [
+    "at", "context", "headEventHash", "indexed", "knowledgeReasonCode", "knowledgeStores", "limit", "perPromptBytes",
+    "projectCrestDegraded", "query", "queryLanguage", "queryTokens", "queryTranslation", "reasonCode", "rebuilt", "records",
+    "relativeFloor", "schemaVersion", "scopeExcerptBytes", "tau", "telemetry", "total", "version", "workspaceId",
+  ].sort(), "the machine envelope keeps its established fields");
+  assert.equal(full.projectCrestDegraded.unresolvedScopes[0].id, card.id);
+  assert.equal(agent.schemaVersion, "tcrn.recall-agent.v1");
+  assert.equal(agent.delivery, "complete");
+  assert.ok(agent.context.length > 0);
+  for (const name of ["context", "reasonCode", "workspaceId", "version", "headEventHash", "perPromptBytes", "knowledgeReasonCode", "knowledgeStores"]) {
+    assert.deepEqual(agent[name], full[name], name);
+  }
+  assert.deepEqual(agent.projectCrestDegraded, {
+    reasonCode: "KNOWLEDGE_LINK_INVALID",
+    withheldCards: 1,
+    conflictPairs: 0,
+    duplicateIds: 0,
+    unresolvedScopes: 1,
+    awaitingChain: 0,
+  });
+  assert.equal(Object.hasOwn(agent, "records"), false);
+  assert.ok(!raw.includes(card.id), "the compact result contains counts only");
+  const { knowledgeReasonCode, knowledgeStores, projectCrestDegraded } = full;
+  assert.equal(agent.diagnostics.knowledgeSha256, canonicalSha256({ knowledgeReasonCode, knowledgeStores, projectCrestDegraded }));
+  assert.match(agent.diagnostics.projectSnapshotDigest, /^[a-f0-9]{64}$/u);
+  assert.equal(agent.diagnostics.schemaVersion, full.schemaVersion);
+  assert.ok(Buffer.byteLength(raw, "utf8") <= 32768);
+  assert.ok(raw.endsWith("\n"));
+
+  await assert.rejects(recallCli(workspace, query, ["--view", "unknown"]), {
+    reasonCode: "CLI_ARGUMENT_MALFORMED",
+    message: "view",
+  });
+});
+
+test("agent recall reports an oversized delivery without trimming the machine context", async (context) => {
+  const workspace = await library(context);
+  const projectId = deriveStableId("project", "RC-PROJECT");
+  const query = "Obsidian beacon";
+  const title = `${query} ${'界"\\'.repeat(4800)}`;
+  await createWork(workspace, {
+    occurredAt: at(40), projectId, externalKey: "RC-LARGE-CONTEXT", kind: "Initiative", parentId: null, title,
+  });
+  await setWorkspaceSetting(workspace, { occurredAt: at(41), key: "injection.perPromptBytes", value: "64000" });
+  const args = ["--limit", "1", "--tau", "0"];
+  const full = await recallCli(workspace, query, args);
+  const raw = await recallOutput(workspace, query, [...args, "--view", "agent"]);
+  const agent = JSON.parse(raw);
+  assert.equal(agent.delivery, "over-budget");
+  assert.equal(agent.reasonCode, full.reasonCode);
+  assert.equal(agent.perPromptBytes, full.perPromptBytes);
+  assert.equal(agent.headEventHash, full.headEventHash);
+  assert.equal(agent.outputLimitBytes, 32768);
+  assert.equal(Object.hasOwn(agent, "context"), false, "no partial context is delivered");
+  assert.equal(full.context.length, 1);
+  assert.ok(full.context[0].includes(title), "the machine view retains the full matching line");
+  assert.ok(Buffer.byteLength(full.context[0], "utf8") < 32768, "the unescaped line alone would fit");
+  const { requiredBytes, ...summary } = agent;
+  const complete = canonicalJson({ ...summary, delivery: "complete", context: full.context });
+  assert.equal(requiredBytes, Buffer.byteLength(complete, "utf8"), "counts UTF-8, escaping, the envelope and its final newline");
+  assert.ok(requiredBytes > 32768);
+  assert.ok(Buffer.byteLength(raw, "utf8") <= 32768);
 });
 
 test("STORY-474 (CLI): recall no longer takes --partition", async (context) => {

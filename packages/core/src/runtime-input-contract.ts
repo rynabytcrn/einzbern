@@ -3,6 +3,9 @@
 /** Metadata only. The owning consumers retain parsing, validation and write authority. */
 const RUNTIME_INPUT_CONTRACT_VERSION = "einzbern.runtime-input-contract.v1" as const;
 
+/** Upper bound for an agent recall result and a dedicated Read window. */
+export const AGENT_OUTPUT_MAX_BYTES = 32 * 1024;
+
 export type RuntimeInputClassification = "startup-override" | "host-context" | "internal-transient" | "browser-preference" | "lifecycle-input" | "managed-integration" | "test-only";
 export type RuntimeInputKind = "environment" | "portal-argument" | "cli-argument" | "installer-argument" | "browser-storage" | "host-file";
 export interface RuntimeCommandFlag {

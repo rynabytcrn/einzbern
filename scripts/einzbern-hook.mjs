@@ -22,10 +22,11 @@
 // schemaVersion, at, event, cwd and reasonCode reads these lines as before. The launcher's own
 // lines for prompts the registry does not cover are unchanged and carry no host.
 
-import { appendFileSync, mkdirSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, constants, fstatSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
+import { AGENT_OUTPUT_MAX_BYTES } from "../dist/build/packages/core/src/runtime-input-contract.js";
 // Held equal to scripts/einzbern-hook-launcher.mjs (LOG_DIRECTORY, LOG_FILE, LOG_SCHEMA_VERSION).
 const LOG_DIRECTORY = "log";
 const LOG_FILE = "hook.ndjson";
@@ -119,6 +120,42 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   }
 }
 
+// A text Read's offset is one-based. Count bytes, including line endings, from the opened
+// file and stop at the requested window, EOF or the byte limit. The prefix is scanned in chunks.
+function readWindowExceedsLimit(path, offset, limit) {
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  try {
+    const file = fstatSync(fd);
+    if (!file.isFile()) return false;
+    const buffer = Buffer.alloc(8192);
+    let remaining = file.size;
+    let skip = offset - 1;
+    let bytes = 0;
+    while (remaining > 0) {
+      const count = readSync(fd, buffer, 0, Math.min(buffer.length, remaining), null);
+      if (count === 0) break;
+      remaining -= count;
+      const chunk = buffer.subarray(0, count);
+      let cursor = 0;
+      while (cursor < count) {
+        const newline = chunk.indexOf(10, cursor);
+        const end = newline < 0 ? count : newline + 1;
+        if (skip === 0) {
+          bytes += end - cursor;
+          if (bytes > AGENT_OUTPUT_MAX_BYTES) return true;
+          if (newline >= 0 && --limit === 0) return false;
+        } else if (newline >= 0) {
+          skip -= 1;
+        }
+        cursor = end;
+      }
+    }
+    return false;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** BL-35: only a dedicated Read is enforceable. Shell commands are never interpreted. */
 export function readGuardAnswer(payload, cwd, host) {
   if (host === "dsh") return null;
@@ -127,13 +164,17 @@ export function readGuardAnswer(payload, cwd, host) {
     const input = payload.tool_input;
     if (input === null || typeof input !== "object" || Array.isArray(input)) return null;
     if (typeof input.file_path !== "string" || input.file_path.length === 0) return null;
-    const file = statSync(resolve(cwd, input.file_path));
-    if (!file.isFile() || file.size <= 32 * 1024) return null;
-    if (Number.isSafeInteger(input.limit) && input.limit > 0 && input.limit <= 200) return null;
+    const path = resolve(cwd, input.file_path);
+    const file = statSync(path);
+    if (!file.isFile() || file.size <= AGENT_OUTPUT_MAX_BYTES) return null;
+    const offset = input.offset === undefined ? 1 : input.offset;
+    const bounded = Number.isSafeInteger(offset) && offset >= 0
+      && Number.isSafeInteger(input.limit) && input.limit > 0 && input.limit <= 200;
+    if (bounded && !readWindowExceedsLimit(path, Math.max(1, offset), input.limit)) return null;
     return `${JSON.stringify({ hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: "This file exceeds 32 KB. Read a bounded section with a positive limit of at most 200 lines.",
+      permissionDecisionReason: `Read a window of at most 200 lines and ${AGENT_OUTPUT_MAX_BYTES} bytes. If one line exceeds the byte limit, extract a smaller excerpt with a tool.`,
     } })}\n`;
   } catch {
     // An unreadable path, invalid input or filesystem exception must never block a tool.

@@ -403,6 +403,13 @@ export const SETUP_MODEL_POLICY_ONBOARDING = Object.freeze({
   persistence: "explicit-actor-and-owner-decision" as const,
 });
 
+/** The impact of traditional uninstall on this device and on the selected project's registration. */
+export interface SetupUninstallImpact {
+  readonly scope: "device";
+  readonly affectedRegisteredProjectPaths: readonly string[];
+  readonly selectedProjectRegistration: "remove" | "removed" | "not-registered";
+}
+
 export interface SetupPlan {
   readonly modelPolicyOnboarding?: typeof SETUP_MODEL_POLICY_ONBOARDING;
   readonly codexAdmission?: CodexHookAdmission;
@@ -450,6 +457,7 @@ export interface SetupPlan {
   // fresh, restore and uninstall: the coordination binding the apply makes or finds (SetupCoordination);
   // null when there is none to name. update, repair and migrate leave it out.
   readonly coordination?: SetupCoordination | null;
+  readonly uninstallImpact?: SetupUninstallImpact;
   // What stops the apply. A plan with any is still a plan: it is shown, not applied.
   readonly blockers: readonly SetupBlocker[];
   // fresh: what this home's DSH profiles say about the Mana Orchestrate plugin (dsh-plugin.ts),
@@ -554,6 +562,7 @@ export interface SetupApplied {
   readonly warnings: readonly SetupWarning[];
   // fresh, restore and uninstall: the coordination binding as the apply left it (SetupCoordination).
   readonly coordination?: SetupCoordination | null;
+  readonly uninstallImpact?: SetupUninstallImpact;
   // restore: the project-level settings that came back with the library, and the device-level ones
   // to set again here.
   readonly columns?: SetupColumns;
@@ -597,7 +606,7 @@ export interface SetupModeInput {
 }
 
 /** What a mode's planner answers; planSetup puts it into the plan, with no warnings when the mode names none. */
-export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "managedUpdates" | "migration" | "coordination" | "dshPlugin" | "executionTarget" | "dot">
+export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "managedUpdates" | "migration" | "coordination" | "uninstallImpact" | "dshPlugin" | "executionTarget" | "dot">
   & { readonly warnings?: readonly SetupWarning[] };
 
 interface SetupModeEntry {

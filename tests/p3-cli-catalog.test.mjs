@@ -5,7 +5,7 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -57,6 +57,76 @@ test("catalog and dispatcher are in two-way name parity", async () => {
   const missingFromDispatch = [...cataloged].filter((name) => !dispatched.has(name)).sort();
   assert.deepEqual(missingFromCatalog, [], "every dispatched verb must have a catalog entry (SDC-1)");
   assert.deepEqual(missingFromDispatch, [], "every catalog entry must dispatch");
+});
+
+test("the catalog and verb help describe the same three required flag pairs the parser enforces", async (context) => {
+  const run = async (args) => {
+    const result = await invoke(args);
+    assert.equal(result.ok, true, `${args[0]}: ${result.reasonCode}`);
+    return JSON.parse(result.output);
+  };
+  const { commands } = await run(["commands"]);
+  const choices = commands.filter(({ flags }) => flags.some(({ valueShape }) => valueShape?.startsWith("exactly-one-of(")));
+  assert.deepEqual(choices.map(({ name }) => name), ["minutes-record", "minutes-show", "work-show"]);
+
+  async function group(verb, names) {
+    const entry = choices.find(({ name }) => name === verb);
+    assert.deepEqual((await run([verb, "--help"])).commands, [entry]);
+    const declared = entry.flags.filter(({ valueShape }) => valueShape?.startsWith("exactly-one-of("));
+    const shape = declared[0].valueShape;
+    const flags = shape.slice("exactly-one-of(".length, -1).split(",");
+    assert.deepEqual(flags, names);
+    assert.deepEqual(declared.map(({ name, required, valueShape }) => [`--${name}`, required, valueShape]),
+      flags.map((flag) => [flag, false, shape]));
+    return flags;
+  }
+
+  const base = await mkdtemp(join(tmpdir(), "einzbern-flag-pairs-"));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  const workspace = join(base, "library");
+  const scope = ["--workspace", workspace];
+  const at = (second) => `2026-09-26T14:00:0${second}Z`;
+  await run(["init", ...scope, "--project-name", "Flag pairs", "--at", at(0)]);
+  const { record: project } = await run([
+    "project-create", ...scope, "--at", at(1), "--external-key", "CHOICE-PROJECT", "--name", "Flag pairs",
+  ]);
+  const { record: work } = await run([
+    "work-create", ...scope, "--at", at(2), "--project-id", project.id, "--external-key", "CHOICE-WORK",
+    "--kind", "Initiative", "--title", "Flag choices",
+  ]);
+  const file = join(base, "decisions.json");
+  await writeFile(file, JSON.stringify(["File decision, including a comma"]));
+  const recordArgs = ["minutes-record", ...scope, "--project-id", project.id, "--title", "Choice", "--summary", "Flag group"];
+  const [inline, fromFile] = await group("minutes-record", ["--decisions", "--decisions-file"]);
+  const minutesArgs = [...recordArgs, "--at", at(3), "--external-key", "CHOICE-MIN-1"];
+  const refuse = (argv, reasonCode, message) => assert.rejects(runCli(argv, {
+    write: () => assert.fail("an invalid flag combination produced output"),
+  }), { reasonCode, message });
+  const neitherOrBoth = async (argv, first, second, value1, value2) => {
+    const message = `${argv[0]} takes exactly one of ${first} and ${second}`;
+    await refuse(argv, "CLI_ARGUMENT_MALFORMED", message);
+    await refuse([...argv, first, value1, second, value2], "CLI_ARGUMENT_MALFORMED", message);
+  };
+
+  await neitherOrBoth(minutesArgs, inline, fromFile, "inline", join(base, "unreadable.json"));
+  await refuse([...recordArgs, inline, "inline", fromFile, file], "CLI_ARGUMENT_MISSING", "at");
+  const minutes = await run([...minutesArgs, inline, "Inline decision"]);
+  const second = await run([...recordArgs, "--at", at(4), "--external-key", "CHOICE-MIN-2", fromFile, file]);
+  assert.equal(minutes.decisions[0].text, "Inline decision");
+  assert.equal(second.decisions[0].text, "File decision, including a comma");
+
+  for (const [verb, record] of [["work-show", work], ["minutes-show", minutes]]) {
+    const [id, key] = await group(verb, ["--id", "--external-key"]);
+    const argv = [verb, ...scope];
+    await neitherOrBoth(argv, id, key, record.id, record.externalKey);
+    const byId = await run([...argv, id, record.id]);
+    const byKey = await run([...argv, key, record.externalKey.toLowerCase()]);
+    assert.equal(byId.record.id, record.id);
+    assert.deepEqual(byKey.record, byId.record);
+    await refuse([...argv, id, record.id, id, record.id, key, record.externalKey], "CLI_ARGUMENT_DUPLICATE", "id");
+  }
+  await refuse(["minutes-show", ...scope, "--id", `${minutes.id}#D1`, "--external-key", minutes.externalKey, "--status", "invalid"],
+    "CLI_ARGUMENT_MALFORMED", "minutes-show takes exactly one of --id and --external-key");
 });
 
 test("unknown verbs fail closed and every cataloged verb dispatches", async () => {
@@ -232,7 +302,7 @@ test("STORY-474 R2, R4: recall reads, keeps --host and --tau, and no longer take
   const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "recall");
   assert.equal(entry.mutates, false);
   // TCRN-CROSS-SUB-425 (MIN-239 D6): --status adds removed cards only when a user asked for them.
-  assert.deepEqual(entry.flags.map((flag) => flag.name).sort(), ["allow-trailing", "at", "host", "limit", "project-id", "query", "status", "tau", "workspace"]);
+  assert.deepEqual(entry.flags.map((flag) => flag.name).sort(), ["allow-trailing", "at", "host", "limit", "project-id", "query", "status", "tau", "view", "workspace"]);
   assert.deepEqual(entry.flags.filter((flag) => flag.required).map((flag) => flag.name).sort(), ["at", "query"]);
 });
 
@@ -453,6 +523,11 @@ test("integrated engine: non-decision valueShapes document projection selection,
       name: "host", required: false, valueKind: "string",
       valueShape: "Explicit host for configured artifact-language model policy; required by that policy, not inferred.",
     }],
+    ["minutes-record", { name: "decisions", required: false, valueKind: "list", valueShape: "exactly-one-of(--decisions,--decisions-file)" }],
+    ["minutes-record", { name: "decisions-file", required: false, valueKind: "string", valueShape: "exactly-one-of(--decisions,--decisions-file)" }],
+    ["minutes-show", { name: "id", required: false, valueKind: "string", valueShape: "exactly-one-of(--id,--external-key)" }],
+    ["minutes-show", { name: "external-key", required: false, valueKind: "string", valueShape: "exactly-one-of(--id,--external-key)" }],
+    ["recall", { name: "view", required: false, valueKind: "enum", valueShape: "agent (omit for the full tcrn.recall.v1 response)" }],
     ["settings-catalog", { name: "work-content-observation", required: false, valueKind: "json", valueShape: "Optional machine-assembled rollout observation JSON; read-only unauthenticated preview, never persisted or approval" }],
     ["work-annotate", { name: "content", required: false, valueKind: "json", valueShape: "tcrn.work-content.v1; cannot be combined with legacy scope/goal/acceptance/body" }],
     ["work-content-context", { name: "offset", required: false, valueKind: "integer", valueShape: "Nonnegative Unicode code-point offset within the document; default 0; nonzero requires digest" }],
@@ -465,6 +540,8 @@ test("integrated engine: non-decision valueShapes document projection selection,
       name: "execution-request", required: false, valueKind: "string",
       valueShape: "Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics",
     }],
+    ["work-show", { name: "id", required: false, valueKind: "string", valueShape: "exactly-one-of(--id,--external-key)" }],
+    ["work-show", { name: "external-key", required: false, valueKind: "string", valueShape: "exactly-one-of(--id,--external-key)" }],
   ]);
 });
 

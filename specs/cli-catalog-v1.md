@@ -59,6 +59,50 @@ Each entry is `{name, availability, mutates, flags}`, optionally plus
     `project-bindings-remove` and `work-release` (for `--force true`) — as
     `minutes:<id>#D<n>`, so `--help` on any of them shows how to cite one.
 
+### Required flag pairs
+
+A pair marked `exactly-one-of(--first,--second)` in both flags' `valueShape`
+requires one flag and excludes the other. A consumer can parse the two
+comma-separated flag names in that shape. Each member remains individually
+optional in the flag list. The current pairs are `decisions` / `decisions-file`
+for `minutes-record` and `id` / `external-key` for `work-show` and
+`minutes-show`. The same declaration drives `commands`, verb `--help` and
+the dispatcher's pair check. Ordinary argument parsing and missing required
+flags are handled first. Providing both or neither retains
+`CLI_ARGUMENT_MALFORMED` and the verb's existing message. The pair uses an
+existing optional string field, so the strict v1 field set still validates.
+
+### Recall for agents
+
+Use `recall --view agent` with the same query and selection flags for bounded
+agent consumption. It returns `tcrn.recall-agent.v1` with the recall reason,
+match counts, source head, knowledge store reasons and degradation counts.
+When `delivery` is `complete`, `context` is identical to the context in
+`tcrn.recall.v1` for the same input and snapshots. The 32768-byte limit counts
+the complete serialized UTF-8 response, including JSON escaping and the final
+newline. A larger result reports `delivery: "over-budget"` and `requiredBytes`
+with the source and diagnostic summary. The response omits the whole context
+in that case. The configured `injection.perPromptBytes` still selects the
+machine context.
+
+Omit `--view agent` to obtain the full `tcrn.recall.v1` response. Reuse the
+original arguments and check the library ID, version and head. The
+`diagnostics.knowledgeSha256` in the agent view is the SHA-256 of canonical JSON
+with the full response's `knowledgeReasonCode`, `knowledgeStores` and either
+crest degradation field when present. The agent view also identifies each
+store's observed result digest. A null digest means the store snapshot was
+unavailable. Compare the digests across observed agent results when claiming
+snapshot equivalence, and keep comparisons unknown when the necessary
+snapshots differ or were unavailable.
+
+For larger contexts or diagnostics, redirect the full response to a local file
+and select fields or array slices with a JSON tool. Measure each excerpt's
+serialized UTF-8 bytes before delivering it, and use a smaller window where
+the host requires one. For example, a machine can join the context lines with
+LF and take 4096 Unicode code points per page. A page of that size uses at most
+16384 raw UTF-8 bytes, including when one line spans several pages. Apply
+the same budgeting to the serialization if wrapping the pages in JSON.
+
 ### Engine model policy
 
 `engine-model-policy-catalog` is a read of the single device-local model policy file. Its optional

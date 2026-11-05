@@ -11,10 +11,11 @@ import { isEinzbernHookCommand } from "../dist/build/packages/core/src/host-hook
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 
 import { renderWritableRoots } from "../scripts/host-render.mjs";
@@ -276,30 +277,96 @@ test("480-AC3 through the CLI: a restore of a library in a newer format stops at
   assert.equal(refusal.remedy, "engine-update");
 });
 
-test("480-AC4, AC5 through the CLI: doctor answers eight green checks; uninstall takes the hooks, the copies and the registry entry out and leaves the library's tree as it was", async (context) => {
-  const f = await fixture(context);
-  await setup(f, "fresh", "--yes", "true");
+async function twoProjectFixture(context) {
+  const first = await fixture(context);
+  const second = { ...first, project: join(first.base, "second-project") };
+  await mkdir(second.project);
+  for (const project of [first, second]) await setup(project, "fresh", "--yes", "true");
+  return [first, second];
+}
+
+test("project disconnect keeps the other project's registration and shared wiring", async (context) => {
+  const [f, second] = await twoProjectFixture(context);
+  assertChecksGreen((await cli(["doctor", "--project", second.project])).checks);
+
+  const registryFile = join(f.deviceHome, "registry.json");
+  const registryBefore = await readFile(registryFile);
+  const roots = [f.home, f.project, second.project];
+  const filesBefore = await snapshot(roots);
+  const libraryBefore = await libraryTreeDigests(f.library);
+  const args = ["library-unregister", "--project", f.project, "--at", at()];
+  const plan = await cli(args);
+  assert.equal(plan.reasonCode, "LIBRARY_UNREGISTER_PLAN_READY");
+  assert.deepEqual(plan.sameLibraryEntries, [second.project]);
+  assert.deepEqual(await readFile(registryFile), registryBefore);
+
+  const removed = await cli([...args, "--yes", "true"]);
+  assert.equal(removed.reasonCode, "LIBRARY_UNREGISTERED");
+  assert.deepEqual(await readFile(removed.backupPath), registryBefore);
+  assert.deepEqual((await cli(["library-list"])).entries.map(({ projectPath }) => projectPath), [second.project]);
+  await assert.rejects(cli(["library-resolve", "--cwd", f.project]), { reasonCode: "LIBRARY_NOT_REGISTERED" });
+  assert.deepEqual(await snapshot(roots), filesBefore, "both projects and the user-level wiring stay in place");
+  assert.deepEqual(await libraryTreeDigests(f.library), libraryBefore);
+  assertChecksGreen((await cli(["doctor", "--project", second.project])).checks);
+});
+
+test("480-AC4, AC5 through the CLI: device uninstall reports both projects' shared impact, backs up the wiring and removes the selected registration", async (context) => {
+  const [f, second] = await twoProjectFixture(context);
   const doctor = await cli(["doctor", "--project", f.project]);
   assert.equal(doctor.reasonCode, "DOCTOR_READY");
   assert.equal(doctor.ok, true);
   assert.equal(doctor.projectPath, f.project);
   assertChecksGreen(doctor.checks);
   for (const entry of doctor.checks) assert.deepEqual(Object.keys(entry).sort(), ["check", "detail", "ok", "reasonCode"]);
+  assertChecksGreen((await cli(["doctor", "--project", second.project])).checks);
 
   const libraryDigest = await libraryTreeDigests(f.library);
   const sections = await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file))));
-  const planned = await setup(f, "uninstall");
+  const roots = [f.home, f.deviceHome, f.project, second.project];
+  const filesBefore = await snapshot(roots);
+  const registryFile = join(f.deviceHome, "registry.json");
+  const registryBefore = await readFile(registryFile);
+  const skillRecordBefore = await readFile(join(f.deviceHome, "skills.json"));
+  const skillDigests = await Promise.all(SKILL_COPY_ROOTS.map(async (root) =>
+    (await computeInstallTreeDigest(skillCopyPath(f.home, root))).sha256));
+  const args = ["setup", "--mode", "uninstall", "--project", f.project, "--at", at()];
+  const planned = await cli(args);
   assert.deepEqual(planned.questions.map((question) => [question.flag, question.default]), [["--managed-sections", "keep"]]);
-  // Removing the project's registration retains the shared library and every byte it holds.
-  const retained = { libraryId: JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => resolve(f.deviceHome, entry.projectPath) === f.project).libraryId, status: "retained", path: null };
+  const impact = {
+    scope: "device",
+    affectedRegisteredProjectPaths: [f.project, second.project].sort(),
+    selectedProjectRegistration: "remove",
+  };
+  assert.deepEqual(planned.uninstallImpact, impact);
+  assert.deepEqual(await snapshot(roots), filesBefore, "preview is read-only");
+  const retained = { libraryId: planned.library.libraryId, status: "retained", path: f.library };
   assert.deepEqual(planned.coordination, retained);
-  const removed = await setup(f, "uninstall", "--managed-sections", "keep", "--yes", "true");
+  const hookBackups = await Promise.all(planned.backups.filter(({ into }) => basename(into) === "host-hooks")
+    .map(async ({ path, into }) => {
+      const homeDigest = createHash("sha256").update(f.home).digest("hex").slice(0, 16);
+      return { path: join(into, homeDigest, relative(f.home, path)), bytes: await readFile(path) };
+    }));
+  assert.ok(hookBackups.length >= 2);
+
+  const removed = await cli([...args, "--managed-sections", "keep", "--yes", "true"]);
   assert.equal(removed.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(removed.uninstallImpact, { ...impact, selectedProjectRegistration: "removed" });
   assert.deepEqual(removed.coordination, retained);
+  assert.deepEqual(removed.backups, planned.backups);
+  assert.deepEqual(removed.written, planned.writes);
+  assert.equal(removed.backupDir, planned.backupDir);
+  for (const { path, bytes } of hookBackups) assert.deepEqual(await readFile(path), bytes);
+  assert.deepEqual(await readFile(join(removed.backupDir, "registry", "registry.json")), registryBefore);
+  assert.deepEqual(await readFile(join(removed.backupDir, "skill-copies", "skills.json")), skillRecordBefore);
   assert.deepEqual(await einzbernHooks(join(f.home, ".claude", "settings.json")), []);
   assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), []);
-  for (const root of SKILL_COPY_ROOTS) assert.equal(await lstat(skillCopyPath(f.home, root)).catch(() => null), null, root.host);
-  assert.deepEqual(JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries, []);
+  for (const [index, root] of SKILL_COPY_ROOTS.entries()) {
+    const skillPath = skillCopyPath(f.home, root);
+    await assert.rejects(lstat(skillPath), { code: "ENOENT" });
+    const backup = join(removed.backupDir, "skill-copies", relative(f.home, skillPath));
+    assert.equal((await computeInstallTreeDigest(backup)).sha256, skillDigests[index]);
+  }
+  assert.deepEqual((await cli(["library-list"])).entries.map(({ projectPath }) => projectPath), [second.project]);
   assert.deepEqual(await libraryTreeDigests(f.library), libraryDigest, "480-AC4: all library records remain byte-identical; device runtime has its own lifecycle");
   assert.deepEqual(await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file)))), sections);
   assert.deepEqual(removed.selfCheck.injected, [], "an unregistered project's prompt gets nothing");
@@ -312,6 +379,16 @@ test("480-AC4, AC5 through the CLI: doctor answers eight green checks; uninstall
     ["skill-copies", "DOCTOR_SKILL_COPIES_MISMATCH"],
     ["registry", "DOCTOR_REGISTRY_UNRESOLVED"],
   ]);
+  const secondAfter = await cli(["doctor", "--project", second.project]);
+  assert.deepEqual(secondAfter.checks.filter(({ ok }) => !ok).map(({ check }) => check), ["hooks-present", "skill-copies"]);
+
+  const repeated = await setup(f, "uninstall", "--managed-sections", "keep");
+  assert.deepEqual(repeated.writes, []);
+  assert.deepEqual(repeated.uninstallImpact, {
+    scope: "device",
+    affectedRegisteredProjectPaths: [],
+    selectedProjectRegistration: "not-registered",
+  });
 });
 
 test("480-R6 through the CLI: migrate is the entry for an installation from before the rename", async (context) => {

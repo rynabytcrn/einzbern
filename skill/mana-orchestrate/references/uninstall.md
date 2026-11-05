@@ -1,13 +1,22 @@
-# Uninstall Einzbern from a project
+# Disconnect a project or uninstall traditional device wiring
 
 Load this reference only during an install-type task (install, restore, update, repair, rollback,
 migrate, uninstall, or doctor); do not load it for any other work.
 
-It is the wizard for `setup --mode uninstall`: it takes Einzbern's wiring out of the project and
-this device, as the plan lists it, and it never deletes the library. Run the engine verbs below
-the way SKILL.md says to invoke the engine. Supply two flags yourself: `--project <dir>`, the root
-of the project (ask only when it is unclear which project), and `--at <UTC>`, the current instant
-written `YYYY-MM-DDTHH:MM:SSZ`.
+## Project disconnect
+
+Run `library-unregister --project <dir> --at <UTC>` to preview removal of that project's device
+registration. The plan names the registration and the registry backup directory. Apply with
+`--yes true` after authorization. The project disconnect preserves shared hooks, Skill copies,
+instruction files, and library records.
+
+## Traditional device uninstall
+
+Run `setup --mode uninstall` to remove traditional hooks and Skill copies shared by the device.
+The `--project <dir>` argument selects the project for registration cleanup and managed-section
+handling. Follow the engine invocation in SKILL.md. For both operations, use the project root and
+the current UTC instant written `YYYY-MM-DDTHH:MM:SSZ`. The dot target follows its own
+installation instructions.
 
 ## Questions (one screen)
 
@@ -26,18 +35,22 @@ the conversation. Skip it if the user already answered it, and never guess the a
    if the user already answered, and without `--yes`. It writes nothing and returns
    `SETUP_PLAN_READY`: the decided answers, the open questions, and the files it would change:
    the hook files it takes the Einzbern hooks out of, the skill copies and their record it moves
-   into the backups (`move`), the registry it takes the project's entry out of, and, with
-   `remove`, the instruction files it takes the section markers out of.
+   into the backups (`move`), the registry it takes the selected project's entry out of, and,
+   with `remove`, the instruction files it takes the section markers out of. The plan's
+   `uninstallImpact.affectedRegisteredProjectPaths` lists the registered paths at the time of
+   the preview that will lose access to the shared wiring being removed.
+   `uninstallImpact.selectedProjectRegistration` describes the cleanup for the selected
+   `projectRoot`.
 2. Ask the managed-sections question if the plan reports it open, then plan again with the
    answer.
-3. Final confirmation. Show every file the plan would change, as the plan lists them, and say
-   plainly that the library stays where it is with all of its records. Ask once whether to apply.
-   Continue only on a clear yes.
+3. Final confirmation. Show the affected registered paths, the selected registration cleanup,
+   and every file and backup in the plan. Say that the libraries stay where they are with all
+   their records. Ask once whether to apply. Continue only on a clear yes.
 4. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: the files changed,
-   the backup directory, and `selfCheck`, whose hooks-present, skill-copies and registry checks
-   now report what was taken out.
-5. Report the files changed, the backup directory, and where the library still is, and
-   `coordination`, which both answers carry: `released` when the registration setup made for the
+   the backup directory, the observed `uninstallImpact`, and `selfCheck`, whose hooks-present,
+   skill-copies and registry checks now report what was taken out.
+5. Report the impact, the files changed, the backup directory, and where the library still is.
+   Both answers carry `coordination`, which is `released` when the registration setup made for the
    coordination chain the library names goes with this project, `retained` when another
    registration still names it (or one does not read), or null when the library names none; the
    coordination library itself is never touched.
@@ -48,8 +61,6 @@ the conversation. Skip it if the user already answered it, and never guess the a
   restore: `restore.md`.
 - Nothing is deleted: what the uninstall takes out is backed up into the device directory first,
   and the result names the backup directory.
-- The hooks and the skill copies belong to this device, not to one project: say so before the
-  final confirmation, since other projects on this device lose them too.
 - If the user also wants the library itself gone, that is the user's own step outside the wizard;
   do not do it as part of this task.
 

@@ -7,20 +7,37 @@ import { join } from "node:path";
 import test from "node:test";
 import { readGuardAnswer, runHookEvent } from "../scripts/einzbern-hook.mjs";
 
-test("BL35: dedicated Read denies only large, unbounded reads; all other tools and exceptions fail open", async (t) => {
+test("BL35: dedicated Read bounds large windows by bytes and lines and retains its tool and host scope", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "einzbern-read-guard-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "boundary"), "x".repeat(32768));
-  await writeFile(join(root, "large"), "x".repeat(32769));
-  const payload = (file_path, limit) => ({ tool_name: "Read", tool_input: { file_path, ...(limit === undefined ? {} : { limit }) } });
+  await writeFile(join(root, "large"), JSON.stringify({ diagnostic: "界".repeat(11000) }));
+  await writeFile(join(root, "multi"), `${"界".repeat(6000)}\n${"界".repeat(6000)}\n${"small\n".repeat(215)}`);
+  await writeFile(join(root, "windows"), `${"x".repeat(32767)}\n${"x".repeat(32768)}\nshort`);
+  const payload = (file_path, limit, offset) => ({
+    tool_name: "Read",
+    tool_input: { file_path, ...(limit === undefined ? {} : { limit }), ...(offset === undefined ? {} : { offset }) },
+  });
+  function assertDenied(input, host) {
+    const denied = JSON.parse(readGuardAnswer(input, root, host));
+    assert.equal(denied.hookSpecificOutput.hookEventName, "PreToolUse");
+    assert.equal(denied.hookSpecificOutput.permissionDecision, "deny");
+    assert.match(denied.hookSpecificOutput.permissionDecisionReason, /32768 bytes/u);
+  }
   for (const host of ["claude-code", "codex"]) {
     assert.equal(readGuardAnswer(payload("boundary"), root, host), null);
-    for (const limit of [undefined, 201, 0, -1, null, "200", 1.5]) {
-      const denied = JSON.parse(readGuardAnswer(payload("large", limit), root, host));
-      assert.equal(denied.hookSpecificOutput.hookEventName, "PreToolUse");
-      assert.equal(denied.hookSpecificOutput.permissionDecision, "deny");
+    for (const limit of [undefined, 1, 200, 201, 0, -1, null, "200", 1.5]) {
+      assertDenied(payload("large", limit), host);
     }
-    for (const limit of [1, 200]) assert.equal(readGuardAnswer(payload("large", limit), root, host), null);
+    assertDenied(payload("multi", 2), host);
+    assertDenied(payload("multi", 200, 1), host);
+    assertDenied(payload("multi", 201, 3), host);
+    assert.equal(readGuardAnswer(payload("multi", 1), root, host), null);
+    assert.equal(readGuardAnswer(payload("multi", 2, 2), root, host), null);
+    assert.equal(readGuardAnswer(payload("multi", 200, 3), root, host), null);
+    assert.equal(readGuardAnswer(payload("windows", 1, 1), root, host), null, "a full 32 KiB window fits");
+    assertDenied(payload("windows", 1, 2), host);
+    assert.equal(readGuardAnswer(payload("windows", 1, 3), root, host), null, "a short window after long lines fits");
     for (const tool_name of ["Bash", "Shell", "shell", "exec_command", "read_file", "mcp__Read"]) {
       assert.equal(readGuardAnswer({ ...payload("large"), tool_name }, root, host), null);
     }

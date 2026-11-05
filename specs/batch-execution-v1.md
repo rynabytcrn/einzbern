@@ -86,3 +86,67 @@ Record source/automated regression separately from native-host acceptance. The c
 协调者按同批同 attempt 去重，全部成员确认终态后向主决策对话交付一次批报告；失败不伪装成功。中断、期限、权限、安全、预算耗尽与无进展明确报告剩余责任。恢复时先核对既有派工、原生状态与已交付回执，结果未知先查证，不重复派工、不重放已确认交付、不复活已结束 worker；迟到结果保留但不得推进另一 attempt。交付未知不得盲目重发或启动下一批。缺能力只停依赖路径，不能换收集者回退。
 
 源码/自动化回归与真实宿主验收分别记录；具体测试范围和验收责任遵循当前 Owner 决定，不以文档或模拟冒称候选真实宿主已验收。不创建 daemon、不读取私有会话数据库、不虚构 RPC。保留既有用户目标、自动化及 M 正常治理轮次；本限制不取消有实质工作的后续轮。
+
+
+## Recording checks and reusing results
+
+### Direct checks and independent reproduction
+
+For a local check, select the command that exercises the changed behavior through
+its normal entry point. Use the existing test selector, fixture or declared gate
+that covers the actual trigger. Record the candidate revision, relevant fixture
+or input revision, invocation and environment, stdout or stderr evidence, and
+exit status. Record a skipped or unavailable check separately. The implementer
+can fix a confirmed failure in the original package and recheck its affected
+behavior.
+
+An independent reviewer can run the smallest reproduction that can change the
+judgment in the approved isolated environment. Follow the permissions and role
+limits for that batch. Cite the observed trigger, result and impact when asking
+for rework. Compare passing evidence against the current source, dependencies,
+environment, arguments, relevant inputs and baseline. A change invalidates
+evidence only where it affects one of those inputs. The approved formal gates
+and independent judgment retain their own scope.
+
+### One execution record and its references
+
+Record each actual execution once with a stable reference. Implementation
+handoff, acceptance, judgment and lessons cite the same record for the same
+execution, and each supplies the findings appropriate to its role. Keep raw
+outputs at the referenced location and let tools extract the fields needed for
+the decision. A required delivery view can carry a short finding and evidence
+reference. An earlier success can satisfy a current check only when its relevant
+inputs match and the record shows that it ran.
+
+For governance reads within one responsibility, reuse the version and head
+from the same live `work-show` receipt when the next step needs only that
+identity and revision. Read `status` when its own fields are needed. A new
+worker still reads its live work and inherited constraints. After a write or
+a relevant state change, read back the affected scope. When comparing a read
+workflow, keep the library, work item, inputs and effective head comparable.
+Record the command sequence, exit statuses, raw and delivered bytes where
+observable, and wall time. Keep token use, cost and causes unknown when the
+measurements cannot establish them.
+
+## 检查记录与结果复用
+
+### 局部检查与独立复现
+
+局部检查从正常入口触发本次改动影响的行为，使用现有测试选择器、夹具或适用门。
+记录候选版本、相关夹具或输入版本、命令和环境、标准输出或错误输出的证据及退出状态。
+跳过或无法执行的检查单列。实施者在原包内修复已确认的失败，并复验受影响行为。
+
+独立验收者可在已批准的隔离环境中执行能改变判断的最小复现，遵循该批次的权限与角色限制。
+要求返工时引用实测触发条件、结果和影响。复用通过证据前，核对相关源码、依赖、环境、参数、
+输入及基线是否等价。变更只使受影响的证据失效。既定正式门与独立判断各按其范围执行。
+
+### 一份执行事实与引用
+
+每次实际执行只记录一次并给出稳定引用。实施交接、验收、判断与知识采集针对同一次执行引用
+同一份记录，各自写出该角色应作出的结论。原始输出留在引用位置，需要哪些字段就用工具提取哪些。
+现有必需交付可只附简短发现和证据引用。只有相关输入等价且有实际成功执行记录时，才复用已有检查。
+
+同一职责范围内，后续若只需要任务身份、库版本及 head，复用同一份实时 `work-show` 回执。
+需要 `status` 独有字段时单独读取。新工作者仍须读取实时任务与继承约束。发生写入或相关状态
+变化后，读回受影响范围。比较读取流程时对齐库、任务、输入与生效的 head，记录调用序列、
+退出状态、可观测的原始与交付字节及墙钟时间。实测无法证明的 token、费用与归因保持未知。

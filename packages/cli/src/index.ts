@@ -34,7 +34,9 @@ import { readDevice } from "../../core/src/device-identity.js";
 import { CONFIG_BACKUP_LOCAL_BINDING_DIRECTORY, validateConfigBackupRetentionPolicy } from "../../core/src/config-backup-retention.js";
 import { NATIVE_TOOL_COMMAND_CATALOG, runNativeToolCommand } from "./native-tool-commands.js";
 import type { DotExecutionRequest } from "../../core/src/dot-execution.js";
-import type { RuntimeCommandCatalogEntry } from "../../core/src/runtime-input-contract.js";
+import { AGENT_OUTPUT_MAX_BYTES } from "../../core/src/runtime-input-contract.js";
+import type { RuntimeCommandCatalogEntry, RuntimeCommandFlag } from "../../core/src/runtime-input-contract.js";
+import type { RecallCardStoreRead, RecallUserCrestDegraded } from "../../core/src/recall-inputs.js";
 import type { ExecutionAdmissionRequest } from "../../core/src/execution-admission.js";
 import { readMachineSettings } from "../../core/src/machine-settings.js";
 import { configurationContract, annotateConfigValue } from "../../core/src/configuration-contract.js";
@@ -299,6 +301,27 @@ export interface CliIo {
 
 function fail(reasonCode: string, message: string): never {
   throw new WorkflowCliError(reasonCode, message);
+}
+
+const EXACTLY_ONE_FLAGS = {
+  "minutes-record": [{ name: "decisions", valueKind: "list" }, { name: "decisions-file", valueKind: "string" }],
+  "minutes-show": [{ name: "id", valueKind: "string" }, { name: "external-key", valueKind: "string" }],
+  "work-show": [{ name: "id", valueKind: "string" }, { name: "external-key", valueKind: "string" }],
+} as const;
+type ExactlyOneCommand = keyof typeof EXACTLY_ONE_FLAGS;
+
+function exactlyOneCatalogFlags(command: ExactlyOneCommand): readonly RuntimeCommandFlag[] {
+  const flags = EXACTLY_ONE_FLAGS[command];
+  const [first, second] = flags;
+  const valueShape = `exactly-one-of(--${first.name},--${second.name})`;
+  return flags.map((flag) => ({ ...flag, required: false, valueShape }));
+}
+
+function requireExactlyOne(command: ExactlyOneCommand, values: Readonly<Record<string, string>>): void {
+  const [first, second] = EXACTLY_ONE_FLAGS[command];
+  if ((values[first.name] === undefined) === (values[second.name] === undefined)) {
+    fail("CLI_ARGUMENT_MALFORMED", `${command} takes exactly one of --${first.name} and --${second.name}`);
+  }
 }
 
 function parseArguments(arguments_: readonly string[], allowed: readonly string[]): Readonly<Record<string, string>> {
@@ -1016,6 +1039,17 @@ function recallStatusOption(value: string | undefined): { readonly status?: Reca
     fail("CLI_ARGUMENT_MALFORMED", `status=${value}; one of ${RECALL_STATUS_FILTERS.join(", ")}`);
   }
   return { status: value as RecallStatusFilter };
+}
+
+function recallCrestSummary(degraded: RecallUserCrestDegraded, store: RecallCardStoreRead): Readonly<Record<string, JsonValue>> {
+  return {
+    reasonCode: degraded.reasonCode,
+    withheldCards: degraded.withheldCards ?? null,
+    conflictPairs: store.unresolvedConflicts.length,
+    duplicateIds: store.unresolvedDuplicates.length,
+    unresolvedScopes: store.unresolvedScopes.length,
+    awaitingChain: store.awaitingChain.length,
+  };
 }
 
 // TCRN-CROSS-STORY-485 R1 (TCRN-CROSS-SUB-345): a gate's command is its argv, given as one JSON array
@@ -1821,8 +1855,8 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // D3, D5, D6): minutes-record declares what it supersedes, withdraws or stands beside, and the reads
   // take --status valid|obsolete|all (valid by default).
   { name: "minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "minutes-record", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "decisions", required: false, valueKind: "list" }, { name: "decisions-file", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "work-ids", required: false, valueKind: "list" }, { name: "external-key", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "withdraws", required: false, valueKind: "list" }, { name: "coexists", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "minutes-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }] },
+  { name: "minutes-record", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, ...exactlyOneCatalogFlags("minutes-record"), { name: "decided-by", required: false, valueKind: "list" }, { name: "work-ids", required: false, valueKind: "list" }, { name: "external-key", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "withdraws", required: false, valueKind: "list" }, { name: "coexists", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
+  { name: "minutes-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, ...exactlyOneCatalogFlags("minutes-show"), { name: "status", required: false, valueKind: "string" }] },
   { name: "project-bindings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "key", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "project-bindings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "json" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "project-context", availability: "cli", mutates: false, flags: [{ name: "reference", required: true, valueKind: "json" }] },
@@ -1833,7 +1867,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // TCRN-CROSS-STORY-527 (Q6; TCRN-CROSS-SUB-478): Atelier settles a proposal (see rule-propose below).
   { name: "proposal-approve", availability: "cli", mutates: true, flags: [{ name: "key", required: true, valueKind: "string" }, { name: "proposed-at", required: true, valueKind: "instant" }, { name: "at", required: true, valueKind: "instant" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "proposal-reject", availability: "cli", mutates: true, flags: [{ name: "key", required: true, valueKind: "string" }, { name: "proposed-at", required: true, valueKind: "instant" }, { name: "at", required: true, valueKind: "instant" }, { name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "status", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "status", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "view", required: false, valueKind: "enum", valueShape: "agent (omit for the full tcrn.recall.v1 response)" }] },
   { name: "recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   // TCRN-CROSS-STORY-483 R2 (with agents-render and rule-resolve): the Command Spell rules of the
   // project the registry resolves from --project (the current directory when left out).
@@ -1904,7 +1938,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   { name: "work-content-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "offset", required: false, valueKind: "integer", valueShape: "Nonnegative Unicode code-point offset within the document; default 0; nonzero requires digest" }, { name: "limit", required: false, valueKind: "integer", valueShape: "Positive Unicode code-point window length; omitted returns the full document subject to output capacity" }, { name: "digest", required: false, valueKind: "string", valueShape: "Exact SHA-256 from the first segment; pins direct and ancestor/source versions" }] },
   { name: "work-project-context", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "execution-request", required: false, valueKind: "string", valueShape: "Versioned HostExecutionRequest JSON for native hosts; legacy ExecutionAdmissionRequest / DotExecutionRequest retain historical semantics" }] },
   { name: "work-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "decided-in", required: false, valueKind: "string", valueShape: DECIDED_IN_VALUE_SHAPE }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
+  { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, ...exactlyOneCatalogFlags("work-show")] },
   // TCRN-CROSS-STORY-485 R4: work-transition and work-batch take --project, the project the gates of a
   // Story going to done run in.
   { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
@@ -3923,9 +3957,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // that family as its list verb does (removed: the removed cards alone; obsolete: the obsolete
     // decisions alone; all: both families whole) and the other family's valid records; a model adds it
     // only when a user asked for them. See recallStatusOption.
-    const values = parseArguments(rest, ["project-id", "workspace", "host", "at", "query", "limit", "tau", "allow-trailing", "status"]);
+    const values = parseArguments(rest, ["project-id", "workspace", "host", "at", "query", "limit", "tau", "allow-trailing", "status", "view"]);
     required(values, ["workspace", "at", "query"]);
     const status = recallStatusOption(values.status);
+    if (values.view !== undefined && values.view !== "agent") fail("CLI_ARGUMENT_MALFORMED", "view");
     const cardStatus: KnowledgeStatusFilter = status.status === "removed" || status.status === "all" ? status.status : "valid";
     const decisions: DecisionStatusFilter = status.status === "obsolete" || status.status === "all" ? status.status : "valid";
     const workspace = values.workspace ?? "";
@@ -4005,15 +4040,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // under obsoleteDecisions, with the decision that superseded it (null when withdrawn), and its line
     // says so.
     const hits = recallDecisionHints(state, cards.cards, statusHits, { decisions });
-    io.write(canonicalJson({
-      schemaVersion: "tcrn.recall.v1",
-      reasonCode: result.reasonCode,
+    const context = [...recallContextLines(hits, perPromptBytes)];
+    const source = {
       workspaceId: state.metadata.workspaceId,
       version: state.version,
       headEventHash: state.headEventHash,
-      at: values.at ?? "",
-      // The --status the recall was asked with, when one was named.
-      ...status,
+    };
+    const knowledge = {
       knowledgeReasonCode: cards.stores.project.reasonCode,
       // Both stores' reads: each one's reason code and how many cards it gave.
       knowledgeStores: {
@@ -4035,6 +4068,44 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // (KNOWLEDGE_HIGH_WATER_MISMATCH when they are all that is withheld), with withheldCards. A
       // refused read stays knowledgeReasonCode.
       ...(cards.projectCrestDegraded === null ? {} : { projectCrestDegraded: cards.projectCrestDegraded as unknown as JsonValue }),
+    };
+    if (values.view === "agent") {
+      const summary = {
+        schemaVersion: "tcrn.recall-agent.v1",
+        reasonCode: result.reasonCode,
+        ...source,
+        ...status,
+        indexed: result.indexed,
+        total: result.total,
+        perPromptBytes,
+        queryLanguage: languageAnswer.queryLanguage,
+        translationTarget: languageAnswer.queryTranslation?.to ?? null,
+        knowledgeReasonCode: knowledge.knowledgeReasonCode,
+        knowledgeStores: knowledge.knowledgeStores,
+        ...(cards.userCrestDegraded === null ? {} : { userCrestDegraded: recallCrestSummary(cards.userCrestDegraded, cards.stores.user) }),
+        ...(cards.projectCrestDegraded === null ? {} : { projectCrestDegraded: recallCrestSummary(cards.projectCrestDegraded, cards.stores.project) }),
+        diagnostics: {
+          schemaVersion: "tcrn.recall.v1",
+          knowledgeSha256: canonicalSha256(knowledge),
+          projectSnapshotDigest: cards.stores.project.digest === "absent" ? null : cards.stores.project.digest,
+          userSnapshotDigest: cards.stores.user.digest === "absent" ? null : cards.stores.user.digest,
+        },
+        outputLimitBytes: AGENT_OUTPUT_MAX_BYTES,
+      };
+      const output = canonicalJson({ ...summary, delivery: "complete", context });
+      const bytes = Buffer.byteLength(output, "utf8");
+      io.write(bytes <= AGENT_OUTPUT_MAX_BYTES
+        ? output
+        : canonicalJson({ ...summary, delivery: "over-budget", requiredBytes: bytes }));
+      return;
+    }
+    io.write(canonicalJson({
+      schemaVersion: "tcrn.recall.v1",
+      reasonCode: result.reasonCode,
+      ...source,
+      at: values.at ?? "",
+      ...status,
+      ...knowledge,
       query,
       queryTokens: [...result.tokens],
       // The canonical protocol carries only safe integers, and a bm25 score is not one.
@@ -4067,7 +4138,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         ...(hit.removal === undefined ? {} : { removal: { ...hit.removal } }),
       })),
       perPromptBytes,
-      context: [...recallContextLines(hits, perPromptBytes)],
+      context,
     }));
     return;
   }
@@ -4487,11 +4558,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // and the events that were rejected against it, so neither a collision nor a lost race is
   // invisible.
   if (command === "work-show") {
-    const values = parseArguments(rest, ["workspace", "id", "external-key"]);
+    const values = parseArguments(rest, ["workspace", ...EXACTLY_ONE_FLAGS[command].map(({ name }) => name)]);
     required(values, ["workspace"]);
-    if ((values.id === undefined) === (values["external-key"] === undefined)) {
-      fail("CLI_ARGUMENT_MALFORMED", "work-show takes exactly one of --id and --external-key");
-    }
+    requireExactlyOne(command, values);
     const state = await validateWorkspace(values.workspace ?? "");
     const externalKey = values["external-key"]?.toUpperCase();
     const record = state.work.find((entry) => !entry.tombstone && (externalKey === undefined ? entry.id === values.id : entry.externalKey === externalKey));
@@ -4604,11 +4673,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // retired and answers CLI_COMMAND_UNKNOWN; every conference event already on a chain still
   // replays, and the minutes its closes wrote are read with minutes-list and minutes-show.
   if (command === "minutes-record") {
-    const values = parseArguments(rest, [...shared, "project-id", "external-key", "title", "summary", "decisions", "decisions-file", "decided-by", "work-ids", "supersedes", "withdraws", "coexists", "actor"]);
+    const values = parseArguments(rest, [...shared, "project-id", "external-key", "title", "summary", ...EXACTLY_ONE_FLAGS[command].map(({ name }) => name), "decided-by", "work-ids", "supersedes", "withdraws", "coexists", "actor"]);
     required(values, [...requiredShared, "project-id", "title", "summary"]);
-    if ((values.decisions === undefined) === (values["decisions-file"] === undefined)) {
-      fail("CLI_ARGUMENT_MALFORMED", "minutes-record takes exactly one of --decisions and --decisions-file");
-    }
+    requireExactlyOne(command, values);
     const decisions = values["decisions-file"] === undefined ? listValue(values.decisions) : decisionsFromFile(values["decisions-file"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
@@ -4671,11 +4738,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // (minutes:<id>#D<n> or <external key>#D<n>) reads that one decision whatever its state, and an
   // obsolete one comes with the decision that superseded it.
   if (command === "minutes-show") {
-    const values = parseArguments(rest, ["workspace", "id", "external-key", "status"]);
+    const values = parseArguments(rest, ["workspace", ...EXACTLY_ONE_FLAGS[command].map(({ name }) => name), "status"]);
     required(values, ["workspace"]);
-    if ((values.id === undefined) === (values["external-key"] === undefined)) {
-      fail("CLI_ARGUMENT_MALFORMED", "minutes-show takes exactly one of --id and --external-key");
-    }
+    requireExactlyOne(command, values);
     const reference = values.id ?? values["external-key"] ?? "";
     const named = /#D[1-9][0-9]*$/u.test(reference);
     if (named && values.status !== undefined) {

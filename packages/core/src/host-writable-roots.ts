@@ -492,18 +492,18 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /**
- * Write a plan. Every file that changes must still hold what was planned; each existing one is
- * copied to backups/<UTC instant>/writable-roots/<project digest>/ in the device directory, and
- * then every file is replaced atomically.
+ * Write a plan. Every file must still hold what was planned. Each existing file that changes
+ * is copied to backups/<UTC instant>/writable-roots/<project digest>/ in the device directory
+ * before it is replaced atomically.
  */
 export async function applyWritableRoots(plan: WritableRootsPlan, options: { readonly at: string; readonly home?: string }): Promise<AppliedWritableRoots> {
   const stamp = utcStamp(options.at);
-  const changed = plan.files.filter((file) => file.changed);
-  for (const file of changed) {
+  for (const file of plan.files) {
     if (await readHostFile(join(plan.projectRoot, file.path), file.path) !== file.before) {
       fail("HOST_WRITABLE_ROOTS_CONCURRENT_MODIFICATION", `${file.path} changed after the wiring was planned`, { file: file.path });
     }
   }
+  const changed = plan.files.filter((file) => file.changed);
   const backupDir = changed.some((file) => file.before !== null)
     ? join(options.home === undefined ? backupsPath() : backupsPath(options.home), stamp, "writable-roots",
       createHash("sha256").update(plan.projectRoot).digest("hex").slice(0, 16))

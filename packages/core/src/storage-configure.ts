@@ -36,6 +36,11 @@ export async function configureStorageLocation(home: string, library: string, ru
     const published = previous?.runtime === target && previous.library === libraryPath && previous.decidedIn === decidedIn;
     const recoverySource = published ? recorded?.from ?? from : from;
     const recovery = recorded !== null && sameRelocation(recorded, { ...expected, from: recoverySource }) ? recorded : null;
+    if (from === target && recorded !== null && recovery === null) {
+      // Legacy receipts have no progress, and the pointer was published only after the runtime move.
+      const finished = recorded.progress?.stage === "complete" || (recorded.progress === undefined && recorded.to === from);
+      if (!finished) throw new Error("STORAGE_RECOVERY_REQUIRED");
+    }
     const relocationFrom = recovery?.from ?? from;
     const relocationAt = recovery?.progress?.at ?? (recovery !== null && published ? previous.at : at);
     // Resolve every registered project before the relocation receipt, runtime directories,
@@ -46,9 +51,9 @@ export async function configureStorageLocation(home: string, library: string, ru
       const archive = join(from, "backups", "storage-locations");
       await mkdir(archive, { recursive: true });
       await writeFileAtomic(join(archive, `${at.replace(/[-:]/gu, "")}.json`), canonicalJson({ pointer: { ...previous, library: storePath(home, previous.library), runtime: storePath(home, previous.runtime) }, receipt: { ...recorded, from: storePath(home, recorded.from), to: storePath(home, recorded.to), library: storePath(home, recorded.library) } }));
-      recorded = null;
     }
-    const transaction: StoredRelocation = recorded ?? expected;
+    const transaction: StoredRelocation = recovery ?? expected;
+    const { applyWritableRoots, HostWritableRootsError } = await import("./host-writable-roots.js");
     const completedAreas = published ? [...(recovery?.progress?.completedAreas ?? [])] : [];
     let stage: RelocationStage = "runtime";
     let activeArea: typeof areas[number] | null = null;
@@ -57,7 +62,16 @@ export async function configureStorageLocation(home: string, library: string, ru
     let progress: StorageRelocationProgress | null = null;
     let transactionStarted = false;
     const persistProgress = async (): Promise<void> => {
-      progress = await observeRelocationProgress({ home, from: relocationFrom, target, at: relocationAt, areas, stage, completedAreas, activeArea, activeTransportReceipt, activeProjectRoot, hostPlans });
+      const observed = await observeRelocationProgress({ home, from: relocationFrom, target, at: relocationAt, areas, stage, completedAreas, activeArea, activeTransportReceipt, activeProjectRoot, hostPlans });
+      if (stage === "complete") {
+        const incomplete = observed.hostWiring.find(project => project.state !== "matches-target" && project.state !== "not-needed");
+        if (incomplete !== undefined) {
+          stage = "project-wiring";
+          activeProjectRoot = loadPath(home, incomplete.projectRoot);
+          throw new HostWritableRootsError("HOST_WRITABLE_ROOTS_FAILED", "Could not verify writable roots after applying the storage plan", { projectRoot: activeProjectRoot });
+        }
+      }
+      progress = observed;
       await writeRelocationReceipt(receiptPath, home, transaction, progress);
     };
 
@@ -129,7 +143,6 @@ export async function configureStorageLocation(home: string, library: string, ru
 
       stage = "project-wiring";
       await persistProgress();
-      const { applyWritableRoots } = await import("./host-writable-roots.js");
       const hostWiring = [];
       for (const plan of hostPlans) {
         activeProjectRoot = plan.projectRoot;

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { initializeLibrary, createProject, declareChainIdentity, materializeWorkspaceFromGenesis, readDevice, registerLibrary,
-  configureStorageLocation, consolidateStorage, defaultSharedLibraryPath, readStorageLocation } from "../dist/build/packages/core/src/index.js";
+  applyWritableRoots, configureStorageLocation, consolidateStorage, defaultSharedLibraryPath, planWritableRoots, readStorageLocation } from "../dist/build/packages/core/src/index.js";
 import { runtimeTransportReceiptPath } from "../dist/build/packages/core/src/runtime-transport.js";
 import { libraryTreeDigests } from "../dist/build/packages/core/src/workspace-snapshot.js";
 const at = "2026-10-19T16:00:00Z";
@@ -33,6 +35,16 @@ async function projectHostFiles(projectRoot) {
     claude: await readFile(join(projectRoot, ".claude", "settings.local.json"), "utf8").catch(() => null),
     codex: await readFile(join(projectRoot, ".codex", "config.toml"), "utf8").catch(() => null),
   };
+}
+
+function configureCli(t, fixture, runtime, timestamp, decidedIn) {
+  const argv = ["--import", fileURLToPath(new URL("../scripts/no-network.mjs", import.meta.url)),
+    fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url)),
+    "storage-configure", "--library", fixture.from, "--runtime", runtime, "--at", timestamp, "--decided-in", decidedIn, "--yes", "true"];
+  const { error, status, stdout, stderr } = spawnSync(process.execPath, argv, { cwd: fixture.root, encoding: "utf8" });
+  assert.ifError(error);
+  t.diagnostic(JSON.stringify({ argv: [process.execPath, ...argv], status, stdout, stderr }));
+  return { status, stdout, stderr };
 }
 test("Ether can live under a user-chosen local parent; defaults use its name without project subdirectories", () => {
   const home = join(tmpdir(), "custom-device", ".einzbern");
@@ -190,6 +202,126 @@ test("storage recovery after publishing the pointer keeps the original transport
   assert.deepEqual(JSON.parse(hostAfter.claude).permissions.additionalDirectories.map(path => resolve(project, path)).sort(), [f.from, target].sort());
   assert.ok(hostAfter.codex.includes(JSON.stringify(relative(join(project, ".codex"), target))));
   assert.ok(!hostAfter.codex.includes(JSON.stringify(relative(join(project, ".codex"), f.runtime))));
+});
+
+test("S4 J1: configuring the current runtime preserves a different verified relocation for CLI recovery", async t => {
+  const f = await fixture(t);
+  const target = join(f.root, "new runtime");
+  const moveAt = "2026-10-19T16:01:00Z", repairAt = "2026-10-19T16:02:00Z";
+  const moveDecision = "minutes:000000000000000000000002#D1";
+  const pointerFile = join(f.home, "storage-location.json");
+  const relocationFile = join(f.home, "storage-relocation.json");
+  const transportFile = runtimeTransportReceiptPath(f.home, join(f.runtime, "cache"), join(target, "cache"), moveAt);
+  const sourceEvidence = join(f.runtime, "cache", "gate-evidence.log");
+  const targetEvidence = join(target, "cache", "gate-evidence.log");
+  await assert.rejects(configureStorageLocation(f.home, f.from, target, moveAt, moveDecision, true, {
+    forceCopyForTest: true,
+    publicationStepForTest: phase => { if (phase === "verified") throw new Error("interrupted at verified copy"); },
+  }), /interrupted at verified copy/u);
+
+  const snapshot = async () => ({
+    pointer: await readFile(pointerFile, "utf8"),
+    receipt: await readFile(relocationFile, "utf8"),
+    transport: await readFile(transportFile, "utf8"),
+    forwarding: await readlink(join(f.home, "cache")),
+    host: await projectHostFiles(join(f.root, "source")),
+    source: await readFile(sourceEvidence, "utf8"),
+    destination: await readFile(targetEvidence, "utf8"),
+  });
+  const before = await snapshot();
+  const pending = JSON.parse(before.receipt);
+  const verified = JSON.parse(before.transport);
+  assert.equal(verified.phase, "verified");
+  assert.equal(pending.progress.at, moveAt);
+  assert.equal(pending.progress.stage, "runtime");
+  const inode = (await stat(targetEvidence)).ino;
+
+  const blocked = configureCli(t, f, f.runtime, repairAt, decision);
+  const afterRefusal = await snapshot();
+  const retry = configureCli(t, f, target, moveAt, moveDecision);
+  assert.deepEqual([blocked.status, retry.status], [1, 0]);
+  assert.equal(JSON.parse(blocked.stderr).error, "STORAGE_RECOVERY_REQUIRED");
+  assert.deepEqual(afterRefusal, before);
+  assert.equal(JSON.parse(retry.stdout).reasonCode, "STORAGE_LOCATION_CONFIGURED");
+
+  const recovered = JSON.parse(await readFile(relocationFile, "utf8"));
+  assert.deepEqual([recovered.from, recovered.to, recovered.decidedIn], [pending.from, pending.to, pending.decidedIn]);
+  assert.deepEqual([recovered.progress.at, recovered.progress.stage], [moveAt, "complete"]);
+  assert.equal(recovered.progress.runtimeAreas[0].receiptPath, pending.progress.activeTransportReceipt);
+  const transport = await readFile(transportFile, "utf8");
+  assert.deepEqual(JSON.parse(transport), { ...verified, phase: "complete" });
+  assert.equal((await stat(targetEvidence)).ino, inode);
+  assert.equal(await realpath(sourceEvidence), targetEvidence);
+  assert.equal(await readFile(sourceEvidence, "utf8"), before.source);
+  assert.equal(await readFile(targetEvidence, "utf8"), before.destination);
+
+  const repair = configureCli(t, f, target, repairAt, decision);
+  assert.equal(repair.status, 0);
+  assert.equal(JSON.parse(repair.stdout).reasonCode, "STORAGE_LOCATION_CONFIGURED");
+  const repaired = JSON.parse(await readFile(relocationFile, "utf8"));
+  assert.deepEqual([resolve(f.home, repaired.from), resolve(f.home, repaired.to), repaired.decidedIn], [target, target, decision]);
+  assert.deepEqual([repaired.progress.at, repaired.progress.stage], [repairAt, "complete"]);
+  assert.equal(await readFile(transportFile, "utf8"), transport);
+});
+
+test("S4 J2: storage relocation detects drift in a current host plan and CLI retry keeps user edits", async t => {
+  const f = await fixture(t);
+  const project = join(f.root, "source"), target = join(f.root, "new runtime");
+  const codexPath = ".codex/config.toml", codexFile = join(project, codexPath);
+  const oldCodex = await readFile(codexFile, "utf8");
+  const moveAt = "2026-10-19T16:01:00Z";
+  const plan = () => planWritableRoots({ projectRoot: project, libraryPath: f.from, replacePaths: [f.runtime], runtimePath: target });
+  const prewired = await applyWritableRoots(await plan(), { at, home: f.home });
+  assert.deepEqual((await plan()).files.map(file => file.changed), [false, false]);
+  const oldBackup = join(relative(f.runtime, prewired.backupDir), codexPath);
+  assert.equal(await readFile(join(f.runtime, oldBackup), "utf8"), oldCodex);
+
+  const userEdit = `${oldCodex}# concurrent user edit restores the old runtime root\n`;
+  let edited = false;
+  const first = await configureStorageLocation(f.home, f.from, target, moveAt, decision, true, {
+    forceCopyForTest: true,
+    publicationStepForTest: async phase => {
+      if (phase !== "verified" || edited) return;
+      await writeFile(codexFile, userEdit);
+      edited = true;
+    },
+  }).then(result => ({ result }), error => ({ error }));
+  const relocationFile = join(f.home, "storage-relocation.json");
+  const interrupted = JSON.parse(await readFile(relocationFile, "utf8"));
+  t.diagnostic(JSON.stringify({ result: first.result?.reasonCode, error: first.error?.reasonCode, progress: interrupted.progress }));
+  assert.equal(edited, true);
+  assert.equal(first.error?.reasonCode, "HOST_WRITABLE_ROOTS_CONCURRENT_MODIFICATION");
+  assert.equal(first.error.details.file, codexPath);
+  assert.deepEqual(JSON.parse(first.error.details.storageProgress), interrupted.progress);
+  assert.deepEqual([interrupted.progress.stage, interrupted.progress.storagePointer.status], ["project-wiring", "target"]);
+  assert.equal(interrupted.progress.hostWiring[0].files.find(file => file.host === "codex").state, "unknown");
+  assert.equal(readStorageLocation(f.home).runtime, target);
+  assert.equal(await readFile(codexFile, "utf8"), userEdit);
+
+  const transportFile = runtimeTransportReceiptPath(f.home, join(f.runtime, "cache"), join(target, "cache"), moveAt);
+  const transport = await readFile(transportFile, "utf8");
+  assert.equal(JSON.parse(transport).phase, "complete");
+  const targetEvidence = join(target, "cache", "gate-evidence.log");
+  const inode = (await stat(targetEvidence)).ino;
+
+  const retry = configureCli(t, f, target, moveAt, decision);
+  assert.equal(retry.status, 0);
+  const recovered = JSON.parse(retry.stdout);
+  assert.equal(recovered.reasonCode, "STORAGE_LOCATION_CONFIGURED");
+  const actualCodex = await readFile(codexFile, "utf8");
+  assert.ok(actualCodex.includes(JSON.stringify(relative(dirname(codexFile), target))));
+  assert.ok(!actualCodex.includes(JSON.stringify(relative(dirname(codexFile), f.runtime))));
+  assert.ok(actualCodex.includes("# concurrent user edit restores the old runtime root"));
+  assert.equal(await readFile(join(recovered.hostWiring[0].backupDir, codexPath), "utf8"), userEdit);
+  assert.equal(await readFile(join(target, oldBackup), "utf8"), oldCodex);
+  assert.equal(await readFile(transportFile, "utf8"), transport);
+  assert.equal((await stat(targetEvidence)).ino, inode);
+  assert.equal(await realpath(join(f.runtime, "cache", "gate-evidence.log")), targetEvidence);
+  assert.equal(await readFile(join(f.home, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
+  const completed = JSON.parse(await readFile(relocationFile, "utf8")).progress;
+  assert.deepEqual([completed.at, completed.stage], [moveAt, "complete"]);
+  assert.deepEqual(completed.runtimeAreas, interrupted.progress.runtimeAreas);
+  assert.equal(completed.hostWiring[0].state, "matches-target");
 });
 
 test("cross-device recovery refuses a changed verified destination and preserves the source", async t => {

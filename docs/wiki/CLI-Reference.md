@@ -1084,35 +1084,35 @@
 - 可用范围：`cli`。
 - 是否写入：是。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--project-id` | 必填 | `string` |
-| `--title` | 必填 | `string` |
-| `--summary` | 必填 | `string` |
-| `--decisions` | 可选 | `list` |
-| `--decisions-file` | 可选 | `string` |
-| `--decided-by` | 可选 | `list` |
-| `--work-ids` | 可选 | `list` |
-| `--external-key` | 可选 | `string` |
-| `--supersedes` | 可选 | `list` |
-| `--withdraws` | 可选 | `list` |
-| `--coexists` | 可选 | `list` |
-| `--actor` | 可选 | `string` |
-| `--timeout-ms` | 可选 | `integer` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--project-id` | 必填 | `string` |  |
+| `--title` | 必填 | `string` |  |
+| `--summary` | 必填 | `string` |  |
+| `--decisions` | 可选 | `list` | `exactly-one-of(--decisions,--decisions-file)` |
+| `--decisions-file` | 可选 | `string` | `exactly-one-of(--decisions,--decisions-file)` |
+| `--decided-by` | 可选 | `list` |  |
+| `--work-ids` | 可选 | `list` |  |
+| `--external-key` | 可选 | `string` |  |
+| `--supersedes` | 可选 | `list` |  |
+| `--withdraws` | 可选 | `list` |  |
+| `--coexists` | 可选 | `list` |  |
+| `--actor` | 可选 | `string` |  |
+| `--timeout-ms` | 可选 | `integer` |  |
 
 ## `minutes-show`
 
 - 可用范围：`cli`。
 - 是否写入：否。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--id` | 可选 | `string` |
-| `--external-key` | 可选 | `string` |
-| `--status` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--id` | 可选 | `string` | `exactly-one-of(--id,--external-key)` |
+| `--external-key` | 可选 | `string` | `exactly-one-of(--id,--external-key)` |
+| `--status` | 可选 | `string` |  |
 
 ## `project-bindings-remove`
 
@@ -1244,17 +1244,18 @@
 - 可用范围：`cli`。
 - 是否写入：否。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--host` | 可选 | `string` |
-| `--at` | 必填 | `instant` |
-| `--query` | 必填 | `string` |
-| `--limit` | 可选 | `integer` |
-| `--tau` | 可选 | `string` |
-| `--allow-trailing` | 可选 | `boolean` |
-| `--status` | 可选 | `string` |
-| `--project-id` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--host` | 可选 | `string` |  |
+| `--at` | 必填 | `instant` |  |
+| `--query` | 必填 | `string` |  |
+| `--limit` | 可选 | `integer` |  |
+| `--tau` | 可选 | `string` |  |
+| `--allow-trailing` | 可选 | `boolean` |  |
+| `--status` | 可选 | `string` |  |
+| `--project-id` | 可选 | `string` |  |
+| `--view` | 可选 | `enum` | `agent (omit for the full tcrn.recall.v1 response)` |
 
 ## `recover`
 
@@ -1815,11 +1816,11 @@
 - 可用范围：`cli`。
 - 是否写入：否。
 
-| 旗标 | 必填 | 取值类型 |
-| --- | --- | --- |
-| `--workspace` | 可选 | `string` |
-| `--id` | 可选 | `string` |
-| `--external-key` | 可选 | `string` |
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--workspace` | 可选 | `string` |  |
+| `--id` | 可选 | `string` | `exactly-one-of(--id,--external-key)` |
+| `--external-key` | 可选 | `string` | `exactly-one-of(--id,--external-key)` |
 
 ## `work-transition`
 

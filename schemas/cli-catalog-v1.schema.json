@@ -92,8 +92,12 @@
                   "type": "string",
                   "minLength": 1,
                   "description": "Value syntax or, for a flag in a required pair, exactly-one-of(--first,--second).",
-                  "if": { "pattern": "^exactly-one-of\\(" },
-                  "then": { "pattern": "^exactly-one-of\\(--[a-z][a-z0-9-]*,--[a-z][a-z0-9-]*\\)$" }
+                  "if": {
+                    "pattern": "^exactly-one-of\\("
+                  },
+                  "then": {
+                    "pattern": "^exactly-one-of\\(--[a-z][a-z0-9-]*,--[a-z][a-z0-9-]*\\)$"
+                  }
                 },
                 "deprecatedAliases": {
                   "type": "array",

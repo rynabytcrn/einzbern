@@ -10137,13 +10137,15 @@
           },
           {
             "name": "decisions",
+            "valueKind": "list",
             "required": false,
-            "valueKind": "list"
+            "valueShape": "exactly-one-of(--decisions,--decisions-file)"
           },
           {
             "name": "decisions-file",
+            "valueKind": "string",
             "required": false,
-            "valueKind": "string"
+            "valueShape": "exactly-one-of(--decisions,--decisions-file)"
           },
           {
             "name": "decided-by",
@@ -10199,13 +10201,15 @@
           },
           {
             "name": "id",
+            "valueKind": "string",
             "required": false,
-            "valueKind": "string"
+            "valueShape": "exactly-one-of(--id,--external-key)"
           },
           {
             "name": "external-key",
+            "valueKind": "string",
             "required": false,
-            "valueKind": "string"
+            "valueShape": "exactly-one-of(--id,--external-key)"
           },
           {
             "name": "status",
@@ -10593,6 +10597,12 @@
             "name": "project-id",
             "required": false,
             "valueKind": "string"
+          },
+          {
+            "name": "view",
+            "required": false,
+            "valueKind": "enum",
+            "valueShape": "agent (omit for the full tcrn.recall.v1 response)"
           }
         ]
       },
@@ -12120,13 +12130,15 @@
           },
           {
             "name": "id",
+            "valueKind": "string",
             "required": false,
-            "valueKind": "string"
+            "valueShape": "exactly-one-of(--id,--external-key)"
           },
           {
             "name": "external-key",
+            "valueKind": "string",
             "required": false,
-            "valueKind": "string"
+            "valueShape": "exactly-one-of(--id,--external-key)"
           }
         ]
       },

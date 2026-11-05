@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -11,7 +11,7 @@ import { planMemory, parseMemoryPolicy, MiB } from "../scripts/lib/memory-budget
 
 const key = "execution.memoryPolicy";
 test("supported device setter and backup allowlist retain policy but never sampled capacity or leases", async t => {
-  const root = await mkdtemp(join(tmpdir(), "memory-policy-backup-")); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "memory-policy-backup-"))); t.after(() => rm(root, { recursive: true, force: true }));
   const value = JSON.stringify({ enabled: true, reserveMiB: 1024, budgetMiB: 4096, fixedMiB: 256, workerMiB: 512, maxWorkers: 4 });
   assert.ok(CONFIG_BACKUP_MACHINE_KEYS.includes(key));
   await applyMachineSettingSet({ key, value, occurredAt: "2026-10-29T00:00:00Z", path: join(root, "machine-settings.json") });

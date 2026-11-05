@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -12,7 +12,7 @@ import { acquireMemoryBudget, checkMemorySample, MEMORY_LEASE_VARIABLE, MEMORY_P
 const snapshot = () => ({ sampledAt: Date.now(), limitBytes: 16 * 1024 * MiB, availableBytes: 12 * 1024 * MiB, stallPercent: 0, pressureSource: "linux-psi-full-avg10" });
 const policy = (overrides = {}) => parseMemoryPolicy(JSON.stringify({ enabled: true, reserveMiB: 1024, budgetMiB: 1024, fixedMiB: 128, workerMiB: 256, maxWorkers: 8, ...overrides }));
 async function fixture(t, value = policy()) {
-  const home = await mkdtemp(join(tmpdir(), "memory-budget-test-"));
+  const home = await realpath(await mkdtemp(join(tmpdir(), "memory-budget-test-")));
   t.after(() => rm(home, { recursive: true, force: true }));
   await writeFile(join(home, "machine-settings.json"), JSON.stringify({ schemaVersion: "tcrn.machine-settings.v1", values: { [MEMORY_POLICY_SETTING]: JSON.stringify(value) } }));
   return { deviceHome: home, directory: join(home, "locks"), command: "test", env: {}, sample: snapshot };

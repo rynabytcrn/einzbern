@@ -260,7 +260,7 @@ export async function singletonProbe({ repo, mode, destination, source, keep = f
   const { canonicalSha256 } = await import(`${repo}/dist/build/packages/protocol/src/index.js`);
   assert.equal(globalThis.__TCRN_OFFLINE_GUARD__, true);
   const AT = "2026-10-01T00:00:00Z";
-  const base = await fs.mkdtemp(path.join(destination ?? os.tmpdir(), "init080-singleton-"));
+  const base = await fs.realpath(await fs.mkdtemp(path.join(destination ?? os.tmpdir(), "init080-singleton-")));
   const root = path.join(base, "library"), home = path.join(base, "device");
   await fs.mkdir(home); process.env.EINZBERN_HOME = home;
   await fs.writeFile(path.join(home, "device.json"), JSON.stringify({ createdAt: AT, deviceId: "d".repeat(32), displayName: "pinned", schemaVersion: "einzbern.device.v1" }) + "\n");

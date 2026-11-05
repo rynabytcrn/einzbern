@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,7 +20,7 @@ async function put(root, path, content) {
 // Only repository child programs are tiny stand-ins; there is no injected runner,
 // forged spawn result, replaced roster, or test-only production option.
 async function fixture(t, variant = "green") {
-  const root = await mkdtemp(join(tmpdir(), "einzbern-light-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-light-")));
   let retain = false;
   t.after(() => retain ? t.diagnostic(`Retained failed light fixture: ${root}`) : rm(root, { recursive: true, force: true }));
   for (const path of ["home", "device", "tmp", "evidence", "scripts"]) await mkdir(join(root, path), { recursive: true });
@@ -319,7 +319,7 @@ print(json.dumps(results))
 });
 
 test("package smoke rereads sealed bytes and requires install/setup/doctor outcomes and exact light identity", async t => {
-  const root = await mkdtemp(join(tmpdir(), "einzbern-light-seal-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-light-seal-")));
   t.after(() => rm(root, { recursive: true, force: true }));
   const aggregatePath = fileURLToPath(new URL("../scripts/ci/aggregate-evidence.py", import.meta.url));
   const program = String.raw`

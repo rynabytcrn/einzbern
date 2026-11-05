@@ -3,7 +3,7 @@
 // points EINZBERN_HOME at a fresh temporary directory for the whole test process, unless the
 // caller explicitly chose one outside a whole-suite run, and removes it when the process exits.
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,7 +21,8 @@ export const testDeviceHome = process.env.EINZBERN_HOME;
  * every einzbern event hashes its device id (TCRN-CROSS-STORY-468 R3).
  */
 export async function asPinnedDevice(operation, deviceId = "d".repeat(32)) {
-  const directory = mkdtempSync(join(tmpdir(), "einzbern-test-pinned-"));
+  // Keep the active device and its explicit registry bindings in one spelling.
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "einzbern-test-pinned-")));
   const home = join(directory, "einzbern");
   mkdirSync(home);
   writeFileSync(join(home, "device.json"), `${JSON.stringify({ createdAt: "2026-01-01T00:00:00Z", deviceId, displayName: "pinned", schemaVersion: "einzbern.device.v1" })}\n`);

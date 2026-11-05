@@ -1060,12 +1060,16 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   const graph = sourceDependencyGraph(texts);
   assert.equal(graph.get("packages/core/src/names.ts").has("scripts/lib/privacy.mjs"), false);
   assert.equal(graph.get("portal/tests/portal.test.mjs").has("scripts/lib/log.mjs"), false);
-  const mergedPortalConsumers = names("config-backup-format config-backup-retention host-fallback-recommendation host-native-dispatch");
+  const mergedPortalTests = names(`codex-native-adapter codex-native-hook-ipc config-backup-format config-backup-retention
+    hook-host hook-launcher hook-read-guard hook-recall-log host-fallback-recommendation host-native-dispatch`);
+  const hookReader = "scripts/einzbern-hook.mjs";
+  assert.ok(graph.get(hookReader).has("packages/core/src/runtime-input-contract.ts"));
+  assert.ok(rules.consumers.portal.includes(hookReader));
   const portalInput = { ...input, records: [{ status: "M", paths: [rules.portalPaths[0]] }] };
   const portalPlan = createPlan(portalInput, rules, rulesHash);
   assert.equal(portalPlan.coverage, "selective");
   assert.deepEqual(portalPlan.portalTests, input.sourcePortalTests);
-  for (const consumer of mergedPortalConsumers) {
+  for (const consumer of mergedPortalTests) {
     assert.ok(rules.consumers.portal.includes(consumer));
     assert.ok(portalPlan.coreTests.includes(consumer), consumer);
   }
@@ -1076,10 +1080,11 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   // is already full. Source-changing negative cases elsewhere remain independent.
   for (const field of ["readers", "tests"]) {
     const incomplete = structuredClone(rules);
-    if (field === "readers") incomplete.consumers.portal = incomplete.consumers.portal.filter((path) => !mergedPortalConsumers.includes(path));
-    else incomplete.portalTests = incomplete.portalTests.filter((path) => !mergedPortalConsumers.includes(path));
+    const omittedConsumers = field === "readers" ? [...mergedPortalTests, hookReader] : mergedPortalTests;
+    if (field === "readers") incomplete.consumers.portal = incomplete.consumers.portal.filter((path) => !omittedConsumers.includes(path));
+    else incomplete.portalTests = incomplete.portalTests.filter((path) => !omittedConsumers.includes(path));
     const unknown = checkConsumers(root, incomplete);
-    assert.deepEqual(unknown, sorted(mergedPortalConsumers), field);
+    assert.deepEqual(unknown, sorted(omittedConsumers), field);
     const omitted = createPlan({ ...portalInput, unaccountedConsumers: unknown }, incomplete, digest(incomplete));
     assert.equal(omitted.coverage, "full", field);
     assert.deepEqual(omitted.reasons, ["unaccounted-consumers"], field);

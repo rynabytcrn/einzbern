@@ -76,7 +76,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Need the full text",
     verbs: ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Read work/minutes. Use each target's `handoff` for native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. Keep critical clauses (`specs/context-v1.md` segments/digests). For `--execution-request`, `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute. Keep stdout, stderr and exit code. Evidence is no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
+    action: "Read full work/minutes. Use each target's `handoff` for native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. Keep critical clauses (`specs/context-v1.md` segments/digests). For `--execution-request`, `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute. Keep stdout, stderr and exit code. Evidence is no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
     moment: "Native dispatch (Codex, Claude, dot)",
@@ -96,7 +96,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Work is done",
     verbs: ["work-transition", "work-annotate"],
-    action: "Actual actor/readback. Pending is not complete. Compare original source, behavior and assertions; structure is not semantic acceptance. Dot/local consumption separately; unavailable remains unverified. See `specs/batch-execution-v1.md`.",
+    action: "Actual actor/readback. Pending is not complete. Compare original source, behavior and assertions; structure is not semantic acceptance. Dot/local consumption separately; unavailable remains unverified. `specs/batch-execution-v1.md`.",
   },
   {
     moment: "A decision is made",

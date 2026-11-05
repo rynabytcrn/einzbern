@@ -1,10 +1,9 @@
-import { isAbsolute } from "node:path";
 // SPDX-License-Identifier: Apache-2.0
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { initializeLibrary, createProject, declareChainIdentity, materializeWorkspaceFromGenesis, readDevice, registerLibrary,
   configureStorageLocation, consolidateStorage, defaultSharedLibraryPath, readStorageLocation } from "../dist/build/packages/core/src/index.js";
@@ -135,7 +134,7 @@ test("cross-device runtime interruption reports actual progress and resumes with
   assert.deepEqual(await projectHostFiles(projectRoot), hostBefore, "project wiring has not started before runtime publication");
   assert.deepEqual(progress.hostWiring.map(project => project.state), ["matches-before"]);
 
-  await configureStorageLocation(f.home, f.from, target, at, decision, true, { forceCopyForTest: true });
+  await configureStorageLocation(f.home, f.from, target, "2026-10-19T16:00:30Z", decision, true, { forceCopyForTest: true });
   assert.equal(readStorageLocation(f.home).runtime, target);
   assert.equal(await readFile(join(f.home, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
   assert.equal(await realpath(join(f.runtime, "cache")), join(target, "cache"), "the old path forwards to the single landed copy");
@@ -148,6 +147,49 @@ test("cross-device runtime interruption reports actual progress and resumes with
   assert.ok(claudeRoots.includes(target));
   assert.ok(!claudeRoots.includes(f.runtime));
   assert.equal(JSON.parse(await readFile(join(f.home, "storage-relocation.json"), "utf8")).progress.stage, "complete");
+});
+
+test("storage recovery after publishing the pointer keeps the original transport and replaces stale host roots", async t => {
+  const f = await fixture(t), target = join(f.root, "new runtime", f.device.deviceId);
+  const project = join(f.root, "source"), codexFile = join(project, ".codex", "config.toml");
+  const hostBefore = await projectHostFiles(project);
+  const relocationFile = join(f.home, "storage-relocation.json");
+  const transportPath = runtimeTransportReceiptPath(f.home, join(f.runtime, "cache"), join(target, "cache"), at);
+  const evidenceFile = join(target, "cache", "gate-evidence.log");
+  await assert.rejects(configureStorageLocation(f.home, f.from, target, at, decision, true, {
+    forceCopyForTest: true,
+    publicationStepForTest: async phase => {
+      if (phase === "verified") await writeFile(codexFile, `${hostBefore.codex}# concurrent user edit\n`);
+    },
+  }), error => {
+    assert.equal(error.reasonCode, "HOST_WRITABLE_ROOTS_CONCURRENT_MODIFICATION");
+    const progress = JSON.parse(error.details.storageProgress);
+    assert.deepEqual([progress.stage, progress.storagePointer.status], ["project-wiring", "target"]);
+    return true;
+  });
+  const interrupted = JSON.parse(await readFile(relocationFile, "utf8"));
+  const transport = await readFile(transportPath, "utf8");
+  const evidenceStat = await stat(evidenceFile);
+  assert.equal(JSON.parse(transport).phase, "complete");
+  assert.equal(readStorageLocation(f.home).runtime, target);
+
+  await writeFile(codexFile, hostBefore.codex);
+  await configureStorageLocation(f.home, f.from, target, "2026-10-19T16:01:00Z", decision, true, { forceCopyForTest: true });
+
+  const recovered = JSON.parse(await readFile(relocationFile, "utf8"));
+  assert.deepEqual([recovered.from, recovered.to], [interrupted.from, interrupted.to]);
+  assert.deepEqual([resolve(f.home, recovered.from), resolve(f.home, recovered.to)], [f.runtime, target]);
+  assert.deepEqual(recovered.progress.completedAreas, interrupted.progress.completedAreas);
+  assert.deepEqual(recovered.progress.runtimeAreas, interrupted.progress.runtimeAreas);
+  assert.equal(recovered.progress.stage, "complete");
+  assert.equal(await readFile(transportPath, "utf8"), transport);
+  assert.equal((await stat(evidenceFile)).ino, evidenceStat.ino);
+  assert.equal(await realpath(join(f.runtime, "cache", "gate-evidence.log")), evidenceFile);
+  assert.equal(await readFile(join(f.home, "cache", "gate-evidence.log"), "utf8"), "original evidence bytes");
+  const hostAfter = await projectHostFiles(project);
+  assert.deepEqual(JSON.parse(hostAfter.claude).permissions.additionalDirectories.map(path => resolve(project, path)).sort(), [f.from, target].sort());
+  assert.ok(hostAfter.codex.includes(JSON.stringify(relative(join(project, ".codex"), target))));
+  assert.ok(!hostAfter.codex.includes(JSON.stringify(relative(join(project, ".codex"), f.runtime))));
 });
 
 test("cross-device recovery refuses a changed verified destination and preserves the source", async t => {

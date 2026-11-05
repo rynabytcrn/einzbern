@@ -16,33 +16,40 @@ import type { WritableRootsPlan } from "./host-writable-roots.js";
 export async function configureStorageLocation(home: string, library: string, runtime: string, at: string, decidedIn: string, yes = false, transportOptions: RuntimeTransportOptions = {}): Promise<Record<string, unknown>> {
   assertStrictInstant(at);
   if (!isAbsolute(library) || !isAbsolute(runtime) || resolve(runtime) === resolve(home) || resolve(runtime).startsWith(`${resolve(home)}/`)) throw new Error("STORAGE_LOCATION_INVALID");
-  const previous = readStorageLocation(home);
-  const from = previous?.runtime ?? home;
+  const libraryPath = resolve(library);
   const target = resolve(runtime);
   const areas = ["cache", "locks", "backups"] as const;
   if (!yes) {
-    await planRegisteredHostWiring(home, resolve(library), from, target);
+    const from = readStorageLocation(home)?.runtime ?? home;
+    await planRegisteredHostWiring(home, libraryPath, from, target);
     return { reasonCode: "STORAGE_LOCATION_PLAN_READY", library, from, runtime: target, areas };
   }
   return withFileLock(join(home, "storage-location.lock"), async () => {
-    // Resolve every registered project before the relocation receipt, runtime directories,
-    // pointer or host settings can be written. The same plans are applied after migration.
-    const hostPlans = await planRegisteredHostWiring(home, resolve(library), from, target);
+    const previous = readStorageLocation(home);
+    const from = previous?.runtime ?? home;
     const receiptPath = join(home, "storage-relocation.json");
-    const expected = { from, to: target, library: resolve(library), decidedIn };
+    const expected = { from, to: target, library: libraryPath, decidedIn };
     let recorded = await readFile(receiptPath, "utf8").then(text => JSON.parse(text) as StoredRelocation, error => { if (error.code === "ENOENT") return null; throw error; });
     if (recorded !== null) recorded = { ...recorded, from: loadPath(home, recorded.from), to: loadPath(home, recorded.to), library: loadPath(home, recorded.library) };
-    if (recorded !== null && !sameRelocation(recorded, expected) && from !== target) {
+    // After the pointer is published, the current runtime is the target. Host repair and
+    // transport evidence still need the original source and timestamp of this transaction.
+    const published = previous?.runtime === target && previous.library === libraryPath && previous.decidedIn === decidedIn;
+    const recoverySource = published ? recorded?.from ?? from : from;
+    const recovery = recorded !== null && sameRelocation(recorded, { ...expected, from: recoverySource }) ? recorded : null;
+    const relocationFrom = recovery?.from ?? from;
+    const relocationAt = recovery?.progress?.at ?? (recovery !== null && published ? previous.at : at);
+    // Resolve every registered project before the relocation receipt, runtime directories,
+    // pointer or host settings can be written. The same plans are applied after migration.
+    const hostPlans = await planRegisteredHostWiring(home, libraryPath, relocationFrom, target);
+    if (recorded !== null && recovery === null && from !== target) {
       if (previous === null || previous.runtime !== recorded.to || previous.decidedIn !== recorded.decidedIn) throw new Error("STORAGE_RECOVERY_REQUIRED");
       const archive = join(from, "backups", "storage-locations");
       await mkdir(archive, { recursive: true });
       await writeFileAtomic(join(archive, `${at.replace(/[-:]/gu, "")}.json`), canonicalJson({ pointer: { ...previous, library: storePath(home, previous.library), runtime: storePath(home, previous.runtime) }, receipt: { ...recorded, from: storePath(home, recorded.from), to: storePath(home, recorded.to), library: storePath(home, recorded.library) } }));
       recorded = null;
     }
-    // Keep an existing partial transaction's original roots when the pointer was already
-    // published before a later step failed. Extra progress data does not change transaction identity.
     const transaction: StoredRelocation = recorded ?? expected;
-    const completedAreas: string[] = [];
+    const completedAreas = published ? [...(recovery?.progress?.completedAreas ?? [])] : [];
     let stage: RelocationStage = "runtime";
     let activeArea: typeof areas[number] | null = null;
     let activeTransportReceipt: string | null = null;
@@ -50,7 +57,7 @@ export async function configureStorageLocation(home: string, library: string, ru
     let progress: StorageRelocationProgress | null = null;
     let transactionStarted = false;
     const persistProgress = async (): Promise<void> => {
-      progress = await observeRelocationProgress({ home, from, target, at, areas, stage, completedAreas, activeArea, activeTransportReceipt, activeProjectRoot, hostPlans });
+      progress = await observeRelocationProgress({ home, from: relocationFrom, target, at: relocationAt, areas, stage, completedAreas, activeArea, activeTransportReceipt, activeProjectRoot, hostPlans });
       await writeRelocationReceipt(receiptPath, home, transaction, progress);
     };
 
@@ -66,7 +73,7 @@ export async function configureStorageLocation(home: string, library: string, ru
         for (const area of areas) {
           activeArea = area;
           const source = join(from, area), destination = join(target, area);
-          const transportReceipt = runtimeTransportReceiptPath(home, source, destination, at);
+          const transportReceipt = runtimeTransportReceiptPath(home, source, destination, relocationAt);
           activeTransportReceipt = storePath(home, transportReceipt);
           await persistProgress();
           const sourceStat = await lstat(source).catch(error => { if (error.code === "ENOENT") return null; throw error; });
@@ -87,7 +94,7 @@ export async function configureStorageLocation(home: string, library: string, ru
             if (!sourceStat.isDirectory()) throw new Error("STORAGE_UNSAFE_PATH");
             const pendingCopy = await lstat(transportReceipt).then(() => true, error => { if (error.code === "ENOENT") return false; throw error; });
             if (occupied && !pendingCopy) throw new Error(`STORAGE_TARGET_NOT_EMPTY: ${destination}`);
-            await transportRuntimeArea(home, source, destination, at, transportOptions);
+            await transportRuntimeArea(home, source, destination, relocationAt, transportOptions);
             // Historical evidence paths keep resolving, without keeping a second data copy.
             await symlink(relative(dirname(source), destination), source, "dir");
           }
@@ -100,7 +107,7 @@ export async function configureStorageLocation(home: string, library: string, ru
 
       stage = "storage-pointer";
       await persistProgress();
-      const value: StorageLocation = { schemaVersion: "einzbern.storage-location.v2", library: resolve(library), runtime: target, at, decidedIn };
+      const value: StorageLocation = { schemaVersion: "einzbern.storage-location.v2", library: libraryPath, runtime: target, at, decidedIn };
       await writeFileAtomic(join(home, "storage-location.json"), canonicalJson({ ...value, library: storePath(home, value.library), runtime: storePath(home, value.runtime) }));
       stage = "home-forwarding";
       await persistProgress();

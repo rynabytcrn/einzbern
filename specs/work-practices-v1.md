@@ -6,6 +6,7 @@ Load only the reference and language needed by the enabled principle and current
 
 | Task | Reference (relative to this file) |
 | --- | --- |
+| Writing, refactoring or reviewing code | [Coding style](coding-style-v1.md) |
 | Approved batch, dispatch or acceptance | [Batch execution](batch-execution-v1.md), including [recording checks and reusing results](batch-execution-v1.md#recording-checks-and-reusing-results) |
 | Resource, worktree or branch cleanup | [Resource cleanup](resource-cleanup-v1.md) |
 | Noninteractive shell operations | [Unattended execution](unattended-execution-v1.md) |

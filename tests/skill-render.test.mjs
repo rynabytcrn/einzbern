@@ -3,7 +3,7 @@
 // SKILL.md of the Mana Orchestrate skill for its own version. Every verb the navigation table names
 // is a verb of the current command catalog, and a verb the catalog lacks refuses the rendering; the
 // file stays under 6000 bytes and carries none of the wizard text the references hold; and its
-// description is the finalized English description A, word for word.
+// description matches the approved discovery fixture, including managed-project coding tasks.
 
 import assert from "node:assert/strict";
 import { access, readdir, readFile } from "node:fs/promises";
@@ -244,7 +244,7 @@ test("DOT-R01/R02: generated navigation separates native evidence, rules, schedu
   for (const phrase of ["normal prompt reports", "Existing class fallback authority", "Parent reads before dispatch, child reads before work", "targets=[]", "scope/permission", "machine-assemble inputs", "never hand-fill JSON", "raw returns/reports", "attempt association", "Unknown retains responsibility", "Cancel acknowledgement is not termination", "Dot model selection is host-managed", "Validity, finality and review differ"]) assert.ok(native.includes(phrase), phrase);
   for (const phrase of ["parent or patrol reads do not substitute", "at most five new sourced lessons", "repository-relative evidence paths", "No progress in AGENTS", "independent dot target", "Installation, policy changes, restoration and publication retain their separate approvals", "20-minute patrol", "00:00 Asia/Shanghai", "unapproved policy forbids daily enablement", "unknown stays unknown"]) assert.ok(markdown.includes(phrase), phrase);
   for (const phrase of ["`--binding`", "`--prior`", "query unknown before retry"]) assert.ok(native.includes(phrase), phrase);
-  assert.ok(markdown.includes("actual engine bundle root `specs/` (beside `scripts/`), not this Skill"),
+  assert.ok(markdown.includes("engine bundle `specs/` beside `scripts/`, not this Skill"),
     "J02: closed inputs come from the actual shipped contracts, not only flag help or source TS");
   const shared = tableRows(markdown).find(([, verbs]) => verbs.includes("`shared-submit-plan`"))[2];
   for (const phrase of ["Complete baseline", "one complete pre-submit refresh", "engine reapply", "serial handoff", "segments before manifest", "verify remote bytes", "complete destination", "observe release", "Advisory is not a lock", "absence/age grants nothing", "Query unknown publication before retry"]) assert.ok(shared.includes(phrase), phrase);

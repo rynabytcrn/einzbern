@@ -25,6 +25,7 @@ import test, { after } from "node:test";
 import { BRAND, FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
 import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
 import { normalizedInstallBytes } from "../dist/build/packages/core/src/install-tree-digest.js";
+import { installSkillCopies } from "../dist/build/packages/core/src/skill-copies.js";
 import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { configBackupCanonical, configBackupDigest } from "../dist/build/packages/core/src/config-backup.js";
 import {
@@ -48,6 +49,7 @@ const SOURCE_COREPACK_HOME = resolve(process.env.COREPACK_HOME ?? join(
 ));
 const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
 const SPECIFICATIONS = Object.freeze([
+  "coding-style-v1.md",
   "installed-paths-v2.md", "work-practices-v1.md", "dot-task-recovery-v1.md", "batch-execution-v1.md", "resource-cleanup-v1.md", "unattended-execution-v1.md", "design-consumption-v1.md", "configuration-contract-v1.md", "settings-catalog-v1.md",
   "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md",
   "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md", "engine-hook-events-v2.md",
@@ -236,6 +238,7 @@ test("605: every contract referenced by the shipped Skill resolves to manifest-v
   assert.ok(references.has("docs/codex-native-controller.md"));
   assert.ok(references.has("specs/context-v1.md"));
   assert.ok(references.has("specs/work-content-v1.md"));
+  assert.ok(references.has("specs/coding-style-v1.md"));
   for (const reference of references) {
     assert.ok(files.has(reference), reference);
     assert.deepEqual(files.get(reference), await readFile(join(repositoryRoot, reference)), reference);
@@ -468,6 +471,30 @@ test("481-R2: the skill directory holds SKILL.md for this version and the six re
   assert.ok(markdown.includes(`Einzbern ${FRAMEWORK_VERSION}`), "SKILL.md is rendered for this version");
   assert.deepEqual((await readdir(join(skill, "references"))).sort(), REFERENCES);
   assert.ok(existsSync(join(skill, "agents/openai.yaml")));
+});
+
+test("coding guidance resolves from both installed host copies to the relocated release", async () => {
+  const { tree } = await packedRelease();
+  const source = join(tree, "skill/mana-orchestrate");
+  const home = join(base, "coding-hosts");
+  const installed = await installSkillCopies({
+    source,
+    home,
+    deviceHome: join(home, ".einzbern"),
+    now: "2026-11-06T00:00:00Z",
+  });
+  assert.equal(installed.reasonCode, "SKILL_COPIES_INSTALLED");
+  assert.deepEqual(installed.copies.map(copy => copy.host), ["claude", "codex"]);
+  for (const copy of installed.copies) {
+    const markdown = await readFile(copy.path + "/SKILL.md", "utf8");
+    const reference = markdown.match(/Coding tasks: read `([^`]+)`/u)?.[1];
+    assert.equal(reference, "specs/coding-style-v1.md");
+    assert.deepEqual(
+      await readFile(join(tree, reference)),
+      await readFile(join(repositoryRoot, reference)),
+      "the installed navigation resolves to the exact guide in this relocated release",
+    );
+  }
 });
 
 test("481-R2: Atelier runs from the release, serves its static files and reaches the engine beside it", async () => {
@@ -880,6 +907,11 @@ test("INIT-062 packaged CLI distributes the universal rule revision to ordinary 
     const independent = await readFile(join(dotRoot, "AGENTS.md"), "utf8");
     for (const id of ["autonomy", "residue-cleanup"]) assert.ok(independent.includes(ruleBody(id, language)));
     assert.match(independent, /Mana Orchestrate Skill/u);
+    const dotInput = JSON.parse(await readFile(inputPath, "utf8"));
+    const dotSkill = await readFile(dotInput.manaSkillPath, "utf8");
+    const codingReference = dotSkill.match(/Coding tasks: read `([^`]+)`/u)?.[1];
+    assert.equal(codingReference, "specs/coding-style-v1.md");
+    assert.deepEqual(await readFile(join(tree, codingReference)), await readFile(join(repositoryRoot, codingReference)));
     const procedures = await readFile(join(tree, "specs/resource-cleanup-v1.md"), "utf8");
     assert.ok(procedures.includes(BRANCH_LIFECYCLE_BODY.en.trim()));
     assert.equal(independent.includes("<!-- einzbern:section"), false, "dot remains an independent file, not generic sections");

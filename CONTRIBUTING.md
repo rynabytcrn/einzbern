@@ -4,6 +4,17 @@ Use the pinned Node and pnpm versions. Do not enable package lifecycle scripts,
 add an unpinned executable, introduce telemetry, or make a project command
 implicitly access the network.
 
+## Coding style
+
+Use the shared [coding guide](specs/coding-style-v1.md). E owns that guide and the
+Skill navigation; regenerate M with `scripts/render-helper-docs.mjs` when those
+sources change. For E's TypeScript and JavaScript, preserve the nearby indentation,
+quotes and API conventions, expand control flow that hides ordering, and keep
+domain contracts visible. `pnpm format:check` checks text/JSON hygiene; `pnpm lint`
+checks syntax and selected prohibited constructs. Neither measures readability.
+Use affected behavior tests and type checking for correctness. The separate
+[house style](docs/style/house-style.md) governs documentation.
+
 ## Fork-first, batch-end contribution workflow
 
 1. Fetch the upstream main branch and start a work branch from that exact commit,

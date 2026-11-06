@@ -43,6 +43,7 @@ import { assertP8TagPreconditions, assertReleaseCommitShape } from "./lib/releas
 import { ProtocolProofError } from "./lib/protocol-proof.mjs";
 import {
   BoundaryError,
+  activeOutputSessionLockPath,
   bindOutputSessionProcessGroup,
   assertCleanExclusiveSourceBasis,
   readBoundRegularFile,
@@ -139,7 +140,7 @@ async function runDetachedTestController(arguments_, extraEnvironment, tests, p8
       npm_config_fund: "false",
       npm_config_offline: "true",
       ...extraEnvironment,
-      TCRN_TEST_CONTROLLER_LOCK_PATH: resolve(repositoryRoot, ".git/einzbern-output.lock"),
+      TCRN_TEST_CONTROLLER_LOCK_PATH: activeOutputSessionLockPath(),
       TCRN_TEST_CONTROLLER_OUTER_PID: String(process.pid),
       TCRN_TEST_CONTROLLER_PROGRESS_PATH: progressPath,
       TCRN_TEST_CONTROLLER_REAPER_READY_PATH: reaperReadyPath,

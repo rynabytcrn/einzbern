@@ -180,7 +180,7 @@ function ensureSeparateRepositories(engineRoot, helperRoot) {
 
 async function enginePackagePaths(engineRoot) {
   const packagesRoot = join(engineRoot, "packages");
-  const children = await readdir(packagesRoot, { withFileTypes: true }).catch(() => []);
+  const children = await readdir(packagesRoot, { withFileTypes: true });
   const paths = [];
   for (const child of children.filter((entry) => entry.isDirectory()).sort((left, right) => left.name.localeCompare(right.name, "en"))) {
     const manifestPath = join(packagesRoot, child.name, "package.json");
@@ -723,8 +723,8 @@ function refuseViolations(violations, message) {
   if (violations.length > 0) refuse(violations[0].code, message, { violations });
 }
 
-// A linked worktree's .git is a file: the engine build, every gate and the output session that
-// moves stale release artifacts refuse it, so a release runs on a real checkout.
+// Release generation and finish keep their receipt and artifact work on a checkout with
+// a physical .git directory. Development output sessions support Git-linked worktrees.
 async function engineCheckoutViolation(root) {
   const metadata = await lstat(join(root, ".git")).catch(() => null);
   if (metadata !== null && !metadata.isSymbolicLink() && metadata.isDirectory()) return null;

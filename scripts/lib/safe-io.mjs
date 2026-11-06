@@ -115,7 +115,10 @@ export async function admitLegacyOutputSessionReceipt({ receiptPath, receiptSha2
   if (sha256(source.bytes) !== expectedDigest) fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH", canonicalPath);
   const value = parseLegacyReceipt(source.bytes, source.metadata, canonicalPath);
   const repositoryReal = await realpath(value.repositoryPath).catch(() => fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH", value.repositoryPath));
-  if (value.repositoryPath !== repositoryReal || inside(repositoryReal, canonicalPath) || value.lockPath !== resolve(repositoryReal, ".git", outputLockName)) fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH", canonicalPath);
+  if (value.repositoryPath !== repositoryReal || inside(repositoryReal, canonicalPath)) fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH", canonicalPath);
+  const { gitDirectory } = await resolveOutputGitBinding(repositoryReal, "OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH");
+  // The historical receipt authorizes a lock on a physical checkout.
+  if (gitDirectory !== resolve(repositoryReal, ".git") || value.lockPath !== resolve(gitDirectory, outputLockName)) fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH", canonicalPath);
   if (value.reviewReceiptPath !== reviewReceiptPath || value.reviewReceiptSha256 !== reviewReceiptSha256) fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH", canonicalPath);
   const review = await readReviewReceipt(reviewReceiptPath, reviewReceiptSha256, "OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH");
   if (value.reviewReceiptDev !== review.identity.dev || value.reviewReceiptIno !== review.identity.ino || value.reviewReceiptCtimeMs !== review.identity.ctimeMs || value.reviewReceiptMtimeMs !== review.identity.mtimeMs) fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH", canonicalPath);
@@ -124,13 +127,13 @@ export async function admitLegacyOutputSessionReceipt({ receiptPath, receiptSha2
   return authority;
 }
 
-async function validateLegacyAuthority(authority, repository, lock) {
+async function validateLegacyAuthority(authority, repository, lockPath, lock) {
   if (!authority || typeof authority !== "object" || !legacyAuthorityBrand.has(authority)) fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_REQUIRED", "legacy receipt authority");
   const source = await readBoundClaim(authority.sourcePath, "OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH");
   if (source.metadata.nlink !== 1 || !sameIdentity(source.metadata, authority.sourceIdentity) || source.bytes !== authority.sourceBytes || sha256(source.bytes) !== authority.sourceDigest) fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH", authority.sourcePath);
   const value = parseLegacyReceipt(source.bytes, source.metadata, authority.sourcePath);
   const review = await readReviewReceipt(authority.reviewPath, authority.reviewDigest, "OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH");
-  if (!sameIdentity(review.identity, authority.reviewIdentity) || review.bytes !== authority.reviewBytes || value.repositoryPath !== repository.realPath || value.lockPath !== resolve(repository.realPath, ".git", outputLockName) ||
+  if (!sameIdentity(review.identity, authority.reviewIdentity) || review.bytes !== authority.reviewBytes || value.repositoryPath !== repository.realPath || value.lockPath !== lockPath ||
       value.lockDev !== lock.dev || value.lockIno !== lock.ino || value.lockCtimeMs !== lock.ctimeMs || value.lockMtimeMs !== lock.mtimeMs || value.lockUid !== lock.uid || value.lockMode !== (lock.mode & 0o777) ||
       value.reviewReceiptDev !== review.identity.dev || value.reviewReceiptIno !== review.identity.ino || value.reviewReceiptCtimeMs !== review.identity.ctimeMs || value.reviewReceiptMtimeMs !== review.identity.mtimeMs) fail("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH", authority.sourcePath);
 }
@@ -514,7 +517,7 @@ function assertDeadProcessGroup(processGroup, liveReason, unknownReason) {
   }
 }
 
-function parseRecoveryClaim(bytes, metadata, expectedLockPath, reasonCode, { expectedNlink, lock, lockTimesMayDiffer = false, owner, repositoryPath = dirname(dirname(expectedLockPath)) } = {}) {
+function parseRecoveryClaim(bytes, metadata, expectedLockPath, reasonCode, { expectedNlink, lock, lockTimesMayDiffer = false, owner, repositoryPath } = {}) {
   let value;
   try { value = JSON.parse(bytes); } catch { fail(reasonCode, expectedLockPath); }
   const stageMatch = recoveryStagePattern.exec(value?.stagingName);
@@ -742,10 +745,9 @@ async function findRecoveryObjects(gitDirectory, claimPath, reasonCode) {
   return { fixed, stages };
 }
 
-async function expectedRecoveryClaimStageBytes(gitDirectory, stagePath, stage) {
+async function expectedRecoveryClaimStageBytes(repositoryPath, lockPath, stagePath, stage) {
   const stageMatch = recoveryStagePattern.exec(basename(stagePath));
   if (!stageMatch) fail("OUTPUT_SESSION_RECOVERY_CLAIM_INVALID", stagePath);
-  const lockPath = resolve(gitDirectory, outputLockName);
   const lock = await lstat(lockPath).catch((error) => {
     if (error.code === "ENOENT") return undefined;
     fail("OUTPUT_SESSION_RECOVERY_CLAIM_INVALID", `${lockPath}: ${error.code ?? error.message}`);
@@ -760,7 +762,7 @@ async function expectedRecoveryClaimStageBytes(gitDirectory, stagePath, stage) {
   const owner = await readOutputLockMetadata(lockPath);
   if (owner.value.lockDev !== lock.dev || owner.value.lockIno !== lock.ino) fail("OUTPUT_SESSION_RECOVERY_CLAIM_INVALID", lockPath);
   return recoveryClaimBytes(
-    dirname(gitDirectory),
+    repositoryPath,
     lockPath,
     lock,
     { lockCtimeMs: lock.ctimeMs, lockMtimeMs: lock.mtimeMs },
@@ -771,8 +773,8 @@ async function expectedRecoveryClaimStageBytes(gitDirectory, stagePath, stage) {
   );
 }
 
-async function isExactPrepublicationRecoveryClaimPrefix(gitDirectory, stagePath, stage, bytes) {
-  const expected = await expectedRecoveryClaimStageBytes(gitDirectory, stagePath, stage);
+async function isExactPrepublicationRecoveryClaimPrefix(repositoryPath, lockPath, stagePath, stage, bytes) {
+  const expected = await expectedRecoveryClaimStageBytes(repositoryPath, lockPath, stagePath, stage);
   // A stage can outlive the lock only after the fixed claim transaction has
   // progressed.  Its full basis is then no longer derivable, but the reserved
   // dead prepublication object is still recognizable by the canonical prefix.
@@ -783,7 +785,8 @@ async function isExactPrepublicationRecoveryClaimPrefix(gitDirectory, stagePath,
   return bytes.length < expected.length && expected.startsWith(bytes);
 }
 
-async function clearDeadStageOnlyOrphans(gitDirectory, claimPath) {
+async function clearDeadStageOnlyOrphans(claimPath, repositoryPath, lockPath) {
+  const gitDirectory = dirname(claimPath);
   const entries = await readdir(gitDirectory).catch((error) => fail("OUTPUT_SESSION_RECOVERY_CLAIM_INVALID", `${gitDirectory}: ${error.code ?? error.message}`));
   for (const name of entries) {
     if (!name.startsWith(".einzbern-output-recovery-claim.staging-")) continue;
@@ -807,11 +810,8 @@ async function clearDeadStageOnlyOrphans(gitDirectory, claimPath) {
     assertDeadProcess(Number(match[1]), "OUTPUT_SESSION_RECOVERY_CLAIM_LIVE", "OUTPUT_SESSION_RECOVERY_CLAIM_LIVENESS_UNKNOWN");
     const bound = await readBoundClaim(stagePath, "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID");
     if (!sameIdentity(bound.metadata, stage) || bound.metadata.nlink !== 1) fail("OUTPUT_SESSION_RECOVERY_CLAIM_CHANGED", stagePath);
-    if (!(await isExactPrepublicationRecoveryClaimPrefix(gitDirectory, stagePath, stage, bound.bytes))) {
-      parseRecoveryClaim(bound.bytes, bound.metadata, resolve(gitDirectory, outputLockName), "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID", {
-        expectedNlink: 1,
-        repositoryPath: dirname(gitDirectory),
-      });
+    if (!(await isExactPrepublicationRecoveryClaimPrefix(repositoryPath, lockPath, stagePath, stage, bound.bytes))) {
+      parseRecoveryClaim(bound.bytes, bound.metadata, lockPath, "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID", { expectedNlink: 1, repositoryPath });
     }
     const beforeRemove = await pathMetadata(stagePath, "OUTPUT_SESSION_RECOVERY_CLAIM_CHANGED");
     if (!sameIdentity(bound.metadata, beforeRemove) || beforeRemove.isSymbolicLink() || !beforeRemove.isFile() ||
@@ -848,7 +848,7 @@ async function acquireRecoveryClaim(claimPath, repositoryPath, lockPath, lock, r
   let handle;
   let publishing = false;
   try {
-    await clearDeadStageOnlyOrphans(dirname(claimPath), claimPath);
+    await clearDeadStageOnlyOrphans(claimPath, repositoryPath, lockPath);
     const resumed = await resumeRecoveryClaim(claimPath, repositoryPath, lockPath, lock, owner);
     if (resumed) return { identity: resumed.metadata, bytes: resumed.bytes };
     const stagingName = `${basename(claimPath)}.staging-${process.pid}-${temporarySequence += 1}`;
@@ -922,8 +922,7 @@ export async function recoverStaleOutputSessionLock(repositoryPath, authority) {
 }
 
 async function recoverStaleOutputSessionLockImpl(repository, authority) {
-  const repositoryPath = repository.realPath;
-  const gitDirectory = resolve(repository.realPath, ".git");
+  const { gitDirectory } = await resolveOutputGitBinding(repository.realPath);
   const lockPath = resolve(gitDirectory, outputLockName);
   const recoveryClaim = resolve(gitDirectory, outputRecoveryClaimName);
   const acquisitionClaimPath = resolve(gitDirectory, outputAcquisitionClaimName);
@@ -973,7 +972,7 @@ async function recoverStaleOutputSessionLockImpl(repository, authority) {
     await removeAcquisitionClaim({ path: acquisitionClaimPath, ...settledAcquisition }, repository.realPath, lockPath);
   }
   if (!lock) {
-    await clearDeadStageOnlyOrphans(gitDirectory, recoveryClaim);
+    await clearDeadStageOnlyOrphans(recoveryClaim, repository.realPath, lockPath);
     const residue = await clearDeadRecoveryClaimWithoutLock(recoveryClaim, repository.realPath, lockPath);
     if (residue) {
       await assertRecoveryClean(gitDirectory, lockPath, recoveryClaim, "OUTPUT_SESSION_RECOVERY_CLAIM_CHANGED");
@@ -1029,7 +1028,7 @@ async function recoverStaleOutputSessionLockImpl(repository, authority) {
   }
   const claim = await readRecoveryClaim(recoveryClaim, lockPath, "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID", { expectedNlink: 1, allowMissing: true, lock, lockTimesMayDiffer: true, repositoryPath: repository.realPath });
   if (!claim) {
-    await validateLegacyAuthority(authority, repository, lock);
+    await validateLegacyAuthority(authority, repository, lockPath, lock);
     const entries = await readdir(lockPath).catch((error) => fail("OUTPUT_SESSION_RECOVERY_NOT_EMPTY", `${lockPath}: ${error.code ?? error.message}`));
     if (entries.length !== 0) fail("OUTPUT_SESSION_RECOVERY_NOT_EMPTY", lockPath);
     const afterEmptyRead = await pathMetadata(lockPath, "OUTPUT_SESSION_RECOVERY_TARGET_REPLACED");
@@ -1093,15 +1092,87 @@ async function resolveOutputRepository(repositoryPath) {
   });
 }
 
+async function resolveOutputGitBinding(repositoryReal, reasonCode = "OUTPUT_SESSION_REPOSITORY_INVALID") {
+  const gitEntryPath = resolve(repositoryReal, ".git");
+  const entry = await pathMetadata(gitEntryPath, reasonCode);
+  if (entry.isDirectory()) {
+    const directory = await resolveBoundDirectory(gitEntryPath, { reasonCode });
+    if (directory.realPath !== gitEntryPath || !sameIdentity(entry, directory.metadata)) {
+      fail(reasonCode, gitEntryPath);
+    }
+    return { gitDirectory: directory.realPath };
+  }
+  if (!entry.isFile() || entry.nlink !== 1) {
+    fail(reasonCode, gitEntryPath);
+  }
+
+  // Git resolves the worktree's gitfile. Its administrative directory must point back
+  // to that same entry, so an unrelated gitfile cannot select another worktree's lock.
+  const { runLocalCommand } = await import("./local-command.mjs");
+  let gitDirectoryPath;
+  try {
+    const result = runLocalCommand("git", ["rev-parse", "--resolve-git-dir", gitEntryPath], {
+      cwd: repositoryReal,
+      env: {
+        GIT_DIR: undefined,
+        GIT_WORK_TREE: undefined,
+        GIT_COMMON_DIR: undefined,
+        GIT_OBJECT_DIRECTORY: undefined,
+        GIT_OPTIONAL_LOCKS: "0",
+      },
+      raw: true,
+    });
+    gitDirectoryPath = result.toString("utf8").replace(/\n$/u, "");
+  } catch (error) {
+    fail(reasonCode, error.message);
+  }
+  const directory = await resolveBoundDirectory(resolve(repositoryReal, gitDirectoryPath), { reasonCode });
+  const backlink = await readBoundRegularFile(resolve(directory.realPath, "gitdir"), {
+    reasonCode,
+    pathChangedReasonCode: reasonCode,
+  });
+  const backlinkPath = resolve(directory.realPath, backlink.content.toString("utf8").replace(/\r?\n$/u, ""));
+  const linkedEntry = await realpath(backlinkPath).catch((error) => fail(reasonCode, error.message));
+  const currentEntry = await pathMetadata(gitEntryPath, reasonCode);
+  const currentDirectory = await pathMetadata(directory.realPath, reasonCode);
+  if (linkedEntry !== gitEntryPath || !sameIdentity(entry, currentEntry) || entry.ctimeMs !== currentEntry.ctimeMs ||
+      !sameIdentity(directory.metadata, currentDirectory)) {
+    fail(reasonCode, gitEntryPath);
+  }
+  return { gitDirectory: directory.realPath, gitFile: { path: gitEntryPath, identity: currentEntry } };
+}
+
+async function assertOutputSessionBinding(session, repository) {
+  if (!sameIdentity(session.repositoryIdentity, repository.metadata)) {
+    fail("OUTPUT_SESSION_LOST", repository.realPath);
+  }
+  // A linked checkout can move or be replaced while its old lock still exists
+  // outside the checkout. Keep mutation bound to the gitfile we acquired for.
+  if (session.gitFile) {
+    const { path, identity } = session.gitFile;
+    const current = await pathMetadata(path, "OUTPUT_SESSION_LOST");
+    if (!sameIdentity(identity, current) || identity.ctimeMs !== current.ctimeMs) {
+      fail("OUTPUT_SESSION_LOST", path);
+    }
+  }
+  const lock = await pathMetadata(session.lockPath, "OUTPUT_SESSION_LOST");
+  assertOutputLockIdentity(lock, session.lockIdentity, "OUTPUT_SESSION_LOST", session.lockPath);
+}
+
 async function requireOutputSession(repositoryPath) {
   const repository = await resolveOutputRepository(repositoryPath);
   const session = outputSessionStorage.getStore();
   if (!session || session.repositoryReal !== repository.realPath) {
     fail("OUTPUT_SESSION_REQUIRED", "Output mutation requires the repository's exclusive output session");
   }
-  const lock = await pathMetadata(session.lockPath, "OUTPUT_SESSION_LOST");
-  assertOutputLockIdentity(lock, session.lockIdentity, "OUTPUT_SESSION_LOST", `${session.lockPath} no longer names the exclusive output lock`);
+  await assertOutputSessionBinding(session, repository);
   return repository;
+}
+
+export function activeOutputSessionLockPath() {
+  const session = outputSessionStorage.getStore();
+  if (!session) fail("OUTPUT_SESSION_REQUIRED", "An active output session is required");
+  return session.lockPath;
 }
 
 export async function bindOutputSessionProcessGroup(processGroup) {
@@ -1110,8 +1181,7 @@ export async function bindOutputSessionProcessGroup(processGroup) {
   }
   const session = outputSessionStorage.getStore();
   if (!session) fail("OUTPUT_SESSION_REQUIRED", "Process-group binding requires the repository's exclusive output session");
-  const lock = await pathMetadata(session.lockPath, "OUTPUT_SESSION_LOST");
-  assertOutputLockIdentity(lock, session.lockIdentity, "OUTPUT_SESSION_LOST", session.lockPath);
+  await requireOutputSession(session.repositoryReal);
   const owner = await readOutputLockMetadata(session.lockPath);
   if (!sameIdentity(owner.identity, session.ownerIdentity) || owner.value.pid !== process.pid) {
     fail("OUTPUT_SESSION_RELEASE_REPLACED", resolve(session.lockPath, outputLockMetadataName));
@@ -1137,22 +1207,15 @@ export async function withExclusiveOutputSession(repositoryPath, operation) {
     if (active.repositoryReal !== repository.realPath) {
       fail("OUTPUT_SESSION_REPOSITORY_MISMATCH", "A nested output session cannot change repositories");
     }
+    await assertOutputSessionBinding(active, repository);
     return operation();
   }
-  const gitDirectory = resolve(repository.realPath, ".git");
-  const gitMetadata = await pathMetadata(gitDirectory, "OUTPUT_SESSION_REPOSITORY_INVALID");
-  if (gitMetadata.isSymbolicLink() || !gitMetadata.isDirectory()) {
-    fail("OUTPUT_SESSION_REPOSITORY_INVALID", `${gitDirectory} must be a real directory`);
-  }
-  const gitReal = await realpath(gitDirectory);
-  if (dirname(gitReal) !== repository.realPath) {
-    fail("OUTPUT_SESSION_REPOSITORY_INVALID", `${gitDirectory} must remain directly beneath the repository`);
-  }
-  const lockPath = resolve(gitReal, outputLockName);
-  const recoveryClaim = resolve(gitReal, outputRecoveryClaimName);
-  const acquisitionClaimPath = resolve(gitReal, outputAcquisitionClaimName);
-  await clearDeadStageOnlyOrphans(gitReal, recoveryClaim);
-  await clearDeadAcquisitionClaimStages(gitReal, repository.realPath, lockPath);
+  const { gitDirectory, gitFile } = await resolveOutputGitBinding(repository.realPath);
+  const lockPath = resolve(gitDirectory, outputLockName);
+  const recoveryClaim = resolve(gitDirectory, outputRecoveryClaimName);
+  const acquisitionClaimPath = resolve(gitDirectory, outputAcquisitionClaimName);
+  await clearDeadStageOnlyOrphans(recoveryClaim, repository.realPath, lockPath);
+  await clearDeadAcquisitionClaimStages(gitDirectory, repository.realPath, lockPath);
   // A fixed claim is disposable only after a fresh ENOENT readback of its
   // bound lock.  When both objects exist, recovery owns their transaction.
   const lockBeforeAcquisition = await lstat(lockPath).catch((error) => {
@@ -1177,13 +1240,13 @@ export async function withExclusiveOutputSession(repositoryPath, operation) {
       await recoverStaleOutputSessionLock(repository.realPath);
     } catch (error) {
       if (!(error instanceof BoundaryError) || error.reasonCode !== "OUTPUT_SESSION_RECOVERY_MISSING") throw error;
-      await assertRecoveryClean(gitReal, lockPath, recoveryClaim, "OUTPUT_SESSION_RECOVERY_CHANGED");
+      await assertRecoveryClean(gitDirectory, lockPath, recoveryClaim, "OUTPUT_SESSION_RECOVERY_CHANGED");
     }
     return withExclusiveOutputSession(repository.realPath, operation);
   }
   let acquisition;
   const publishAcquisition = async () => {
-    acquisition = await publishAcquisitionClaim(gitReal, repository.realPath, lockPath);
+    acquisition = await publishAcquisitionClaim(gitDirectory, repository.realPath, lockPath);
     if (process.env.TCRN_TEST_OUTPUT_SESSION_ACQUISITION_CRASH_AT === "after-marker-publication") process.kill(process.pid, "SIGKILL");
   };
   await publishAcquisition();
@@ -1195,10 +1258,10 @@ export async function withExclusiveOutputSession(repositoryPath, operation) {
     throw error;
   }
   const lock = await pathMetadata(lockPath, "OUTPUT_SESSION_LOST");
-  const recoveryAfterLock = await findRecoveryObjects(gitReal, recoveryClaim, "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID");
+  const recoveryAfterLock = await findRecoveryObjects(gitDirectory, recoveryClaim, "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID");
   if (recoveryAfterLock.fixed || recoveryAfterLock.stages.length !== 0) {
     await removeUninitializedOutputSessionLock(lockPath, lock);
-    fail("OUTPUT_SESSION_RECOVERY_CLAIM_PENDING", recoveryAfterLock.fixed ? recoveryClaim : resolve(gitReal, recoveryAfterLock.stages[0]));
+    fail("OUTPUT_SESSION_RECOVERY_CLAIM_PENDING", recoveryAfterLock.fixed ? recoveryClaim : resolve(gitDirectory, recoveryAfterLock.stages[0]));
   }
   const ownerUid = process.getuid?.();
   if (!Number.isSafeInteger(ownerUid) || lock.uid !== ownerUid || (lock.mode & 0o777) !== 0o700) {
@@ -1224,7 +1287,14 @@ export async function withExclusiveOutputSession(repositoryPath, operation) {
     fail("OUTPUT_SESSION_ACQUISITION_CHANGED", acquisitionClaimPath);
   }
   await removeAcquisitionClaim(acquisition, repository.realPath, lockPath);
-  const session = { repositoryReal: repository.realPath, lockPath, lockIdentity, ownerIdentity };
+  const session = {
+    repositoryReal: repository.realPath,
+    repositoryIdentity: repository.metadata,
+    gitFile,
+    lockPath,
+    lockIdentity,
+    ownerIdentity,
+  };
   let released = false;
   let releasePromise;
   const release = () => releasePromise ??= (async () => {
@@ -1264,7 +1334,7 @@ export async function withExclusiveOutputSession(repositoryPath, operation) {
     }
     await removeRecoveryClaim(recoveryClaim, claim.identity, claim.bytes);
     locallyPublishedRecoveryClaims.delete(recoveryClaim);
-    await assertRecoveryClean(gitReal, lockPath, recoveryClaim, "OUTPUT_SESSION_RELEASE_FAILED");
+    await assertRecoveryClean(gitDirectory, lockPath, recoveryClaim, "OUTPUT_SESSION_RELEASE_FAILED");
   })();
   const interrupt = (signal) => {
     if (released) return;
@@ -1277,7 +1347,10 @@ export async function withExclusiveOutputSession(repositoryPath, operation) {
   process.once("SIGINT", onSigint);
   process.once("SIGTERM", onSigterm);
   try {
-    return await outputSessionStorage.run(session, operation);
+    return await outputSessionStorage.run(session, async () => {
+      await requireOutputSession(repository.realPath);
+      return operation();
+    });
   } finally {
     process.removeListener("SIGINT", onSigint);
     process.removeListener("SIGTERM", onSigterm);

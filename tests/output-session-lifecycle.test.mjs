@@ -151,10 +151,10 @@ async function sealPublishedRecoveryClaim(root, lock, { pid = 999999, keepStage 
   return { claimPath, stagingPath, ownerPath, sealed };
 }
 
-async function assertRecoveryStateClean(root) {
-  await assert.rejects(lstat(lockPath(root)), { code: "ENOENT" });
-  await assert.rejects(lstat(recoveryClaimPath(root)), { code: "ENOENT" });
-  const names = await (await import("node:fs/promises")).readdir(resolve(root, ".git"));
+async function assertRecoveryStateClean(root, gitDirectory = resolve(root, ".git")) {
+  await assert.rejects(lstat(resolve(gitDirectory, "einzbern-output.lock")), { code: "ENOENT" });
+  await assert.rejects(lstat(resolve(gitDirectory, ".einzbern-output-recovery-claim")), { code: "ENOENT" });
+  const names = await readdir(gitDirectory);
   assert.equal(names.some((name) => name.startsWith(".einzbern-output-recovery-claim.staging-") || name.startsWith(".einzbern-output-acquisition-claim")), false);
 }
 
@@ -163,6 +163,7 @@ const productRoot = resolve(import.meta.dirname, "..");
 function runGit(root, arguments_) {
   const result = spawnSync("git", arguments_, { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 0, `${arguments_.join(" ")}\n${result.stdout}${result.stderr}`);
+  return result.stdout.trim();
 }
 
 // The `test` verb's success payload, stated once here rather than four times below so
@@ -1059,6 +1060,85 @@ test("nested work uses the existing session and releases once", async (context) 
     assert.equal((await lstat(lock)).ino, before.ino);
   });
   await assert.rejects(lstat(lock), { code: "ENOENT" });
+});
+
+test("632-Q1: linked worktrees isolate output sessions and recover their own claims", async (context) => {
+  const checkout = await taskEntrypointFixture(context, 'import test from "node:test";\ntest("linked controller", () => {});\n');
+  const linkedRoot = await realpath(await mkdtemp(join(tmpdir(), "tcrn-linked-output-")));
+  const first = resolve(linkedRoot, "linked first");
+  const second = resolve(linkedRoot, "linked second");
+  const created = [];
+  const safeIo = new URL("../scripts/lib/safe-io.mjs", import.meta.url).href;
+  try {
+    for (const worktree of [first, second]) {
+      runGit(checkout, ["worktree", "add", "--quiet", "--detach", worktree, "HEAD"]);
+      created.push(worktree);
+      assert.equal((await lstat(resolve(worktree, ".git"))).isFile(), true);
+    }
+    const firstGitDirectory = runGit(first, ["rev-parse", "--absolute-git-dir"]);
+    const secondGitDirectory = runGit(second, ["rev-parse", "--absolute-git-dir"]);
+    assert.notEqual(firstGitDirectory, secondGitDirectory);
+    const firstLock = resolve(firstGitDirectory, "einzbern-output.lock");
+    const outputPath = "dist/result.txt";
+
+    await withExclusiveOutputSession(first, async () => {
+      const ownerPath = resolve(firstLock, "owner.json");
+      const owner = await readFile(ownerPath, "utf8");
+      assert.equal(JSON.parse(owner).pid, process.pid);
+      const contender = await startExclusiveOutputSession(safeIo, first).result;
+      assert.equal(contender.code, 1);
+      assert.equal(JSON.parse(contender.stderr).reasonCode, "OUTPUT_SESSION_RECOVERY_OWNER_LIVE");
+      const independent = await startExclusiveOutputSession(safeIo, second).result;
+      assert.deepEqual(independent, { code: 0, signal: null, stdout: "OK\n", stderr: "" });
+      assert.equal(await readFile(ownerPath, "utf8"), owner);
+      await safeWriteOutput(first, outputPath, "first\n");
+    });
+    await withExclusiveOutputSession(second, () => safeWriteOutput(second, outputPath, "second\n"));
+    assert.equal(await readFile(resolve(first, outputPath), "utf8"), "first\n");
+    assert.equal(await readFile(resolve(second, outputPath), "utf8"), "second\n");
+
+    const crashed = await startExclusiveOutputSession(safeIo, first, {
+      TCRN_TEST_OUTPUT_SESSION_ACQUISITION_CRASH_AT: "after-lock-mkdir",
+    }).result;
+    assert.equal(crashed.signal, "SIGKILL");
+    const acquisition = JSON.parse(await readFile(resolve(firstGitDirectory, ".einzbern-output-acquisition-claim"), "utf8"));
+    assert.equal(acquisition.repositoryPath, first);
+    assert.equal(acquisition.lockPath, firstLock);
+    assert.equal((await recoverStaleOutputSessionLock(first)).reasonCode, "OUTPUT_SESSION_STALE_LOCK_RECOVERED");
+
+    const interrupted = await startExclusiveOutputSession(safeIo, first, {
+      TCRN_TEST_OUTPUT_SESSION_RELEASE_FAILURE_AT: "after-owner-unlink",
+    }).result;
+    assert.equal(interrupted.code, 1);
+    assert.equal(JSON.parse(interrupted.stderr).reasonCode, "OUTPUT_SESSION_RELEASE_INJECTED_FAILURE");
+    const legacy = await legacyAuthority(context, first, firstLock, { admit: false });
+    await assert.rejects(admitLegacyOutputSessionReceipt(legacy.request), expectReason("OUTPUT_SESSION_RECOVERY_LEGACY_RECEIPT_MISMATCH"));
+    assert.equal((await recoverStaleOutputSessionLock(first)).reasonCode, "OUTPUT_SESSION_STALE_LOCK_RECOVERED");
+
+    await cp(resolve(checkout, "node_modules"), resolve(first, "node_modules"), { recursive: true });
+    const controller = await startTaskEntrypoint(first, {}, resolve(linkedRoot, "heavy-locks")).result;
+    assert.equal(controller.code, 0, controller.stderr);
+    assert.equal(controller.stderr, "");
+    assertTaskSuccess(JSON.parse(controller.stdout));
+    await assertRecoveryStateClean(first, firstGitDirectory);
+    await assertRecoveryStateClean(second, secondGitDirectory);
+    await assertRecoveryStateClean(checkout);
+
+    await withExclusiveOutputSession(first, async () => {
+      const moved = resolve(linkedRoot, "moved first");
+      runGit(checkout, ["worktree", "move", first, moved]);
+      created[0] = moved;
+      runGit(checkout, ["worktree", "add", "--quiet", "--detach", first, "HEAD"]);
+      created.push(first);
+      await assert.rejects(safeWriteOutput(first, outputPath, "unowned"), expectReason("OUTPUT_SESSION_LOST"));
+      await assert.rejects(lstat(resolve(first, outputPath)), { code: "ENOENT" });
+      assert.equal(await readFile(resolve(moved, outputPath), "utf8"), "first\n");
+    });
+    await assertRecoveryStateClean(created[0], firstGitDirectory);
+  } finally {
+    for (const worktree of created) runGit(checkout, ["worktree", "remove", worktree]);
+    await rm(linkedRoot, { recursive: true, force: true });
+  }
 });
 
 test("normal acquisition preserves malformed recovery claims", async (context) => {

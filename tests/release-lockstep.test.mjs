@@ -309,6 +309,67 @@ test("488-AC1: a helper version mismatch is refused with the locations that disa
   );
 });
 
+const directoryPermissionsUnavailable = process.platform === "win32" || process.getuid?.() === 0;
+
+test("631-Q2: release check distinguishes consistent, mismatched and unreadable packages", async (context) => {
+  const repos = await createRepos("check-engine-packages");
+  const env = await makeEnvironment("check-engine-packages");
+  const options = { ...repos, version: OLD_VERSION, env };
+  await writeText(repos.helperRoot, "package.json", JSON.stringify({ name: "mana-orchestrate", version: OLD_VERSION }));
+  for (const name of HELPER_READMES) await writeText(repos.helperRoot, name, helperReadme(OLD_VERSION));
+
+  const checked = await checkRelease(options);
+  assert.equal(checked.reasonCode, "RELEASE_VERSION_CHECKED");
+  assert.ok(checked.packageFiles.includes("packages/cli/package.json"));
+
+  await writeText(repos.engineRoot, "packages/cli/package.json", JSON.stringify({ name: "@einzbern/cli", version: NEXT_VERSION }));
+  await assert.rejects(checkRelease(options), (error) => {
+    assert.equal(error.reasonCode, "RELEASE_VERSION_MISMATCH");
+    assert.deepEqual(error.details.mismatches, [{ path: "packages/cli/package.json", expected: OLD_VERSION, actual: NEXT_VERSION }]);
+    return true;
+  });
+
+  await context.test("the same mismatch with an unlistable directory preserves EACCES", {
+    skip: directoryPermissionsUnavailable ? "requires a non-root user and POSIX directory permissions" : false,
+  }, async () => {
+    const packagesRoot = join(repos.engineRoot, "packages");
+    await chmod(packagesRoot, 0o111);
+    try {
+      await assert.rejects(readdir(packagesRoot), { code: "EACCES" });
+      await assert.rejects(checkRelease(options), { code: "EACCES", path: packagesRoot, syscall: "scandir" });
+    } finally {
+      await chmod(packagesRoot, 0o755);
+    }
+  });
+});
+
+test("631-Q2: release prepare fails on unreadable packages before changing versions", {
+  skip: directoryPermissionsUnavailable ? "requires a non-root user and POSIX directory permissions" : false,
+}, async () => {
+  const repos = await createRepos("prepare-engine-packages");
+  const env = await makeEnvironment("prepare-engine-packages");
+  const workspace = await makeWorkspace("prepare-engine-packages", repos, env);
+  const packagesRoot = join(repos.engineRoot, "packages");
+  const options = {
+    ...repos, version: NEXT_VERSION, workspace, env,
+    runner: () => assert.fail("preparing unreadable packages must stop before building"),
+  };
+  await writeText(repos.engineRoot, "packages/cli/package.json", JSON.stringify({ name: "@einzbern/cli", version: NEXT_VERSION }));
+  await commitAll(repos.engineRoot, "mismatched CLI version");
+  await assert.rejects(prepareRelease(options), { reasonCode: "RELEASE_VERSION_MISMATCH" });
+
+  await chmod(packagesRoot, 0o111);
+  try {
+    await assert.rejects(readdir(packagesRoot), { code: "EACCES" });
+    await assert.rejects(prepareRelease(options), { code: "EACCES", path: packagesRoot, syscall: "scandir" });
+  } finally {
+    await chmod(packagesRoot, 0o755);
+  }
+  for (const root of [repos.engineRoot, repos.helperRoot]) {
+    assert.equal(git(root, ["status", "--porcelain"]), "");
+  }
+});
+
 test("488-R1/R2/R4, MIN-235 D13: prepare aligns both repositories, keeps schema IDs independent, gates before packing, and writes the checksum", async () => {
   const repos = await createRepos("prepare");
   const schemaPath = join(repos.engineRoot, "packages/protocol/schema-fixture.json");
@@ -845,8 +906,11 @@ test("SUB-357 R41 B1: generate reports every failed precondition together before
   await assert.rejects(generateFixture(fixture, { receiptPath: join(fixture.projectRoot, "absent", "release-receipt.json") }), (error) => error.reasonCode === "RELEASE_RECEIPT_INVALID");
   const linked = join(fixture.projectRoot, "einzbern-linked");
   git(fixture.engineRoot, ["worktree", "add", "--quiet", linked, "HEAD"]);
-  await assert.rejects(generateFixture(fixture, { engineRoot: await realpath(linked) }), (error) => error.reasonCode === "RELEASE_ENGINE_CHECKOUT_LINKED");
-  git(fixture.engineRoot, ["worktree", "remove", "--force", linked]);
+  try {
+    await assert.rejects(generateFixture(fixture, { engineRoot: await realpath(linked) }), (error) => error.reasonCode === "RELEASE_ENGINE_CHECKOUT_LINKED");
+  } finally {
+    git(fixture.engineRoot, ["worktree", "remove", linked]);
+  }
   await unchanged();
   await assert.rejects(
     generateFixture(fixture, { keepExtra: ["README.md"] }),

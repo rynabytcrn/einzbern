@@ -1,5 +1,5 @@
 {
-  "version": 62,
+  "version": 63,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -2242,7 +2242,7 @@
     "tests/recall-inputs.test.mjs": "cf2d8f27bcbf2f8fe3c265e64c479459937297944b39cbee41550c406e4a22a7",
     "tests/recall-strong-hit.test.mjs": "777f65889a4a553c17ebbe3afafdf64a354f21a00fd83bf8ae3b36804346aa2b",
     "tests/registry-resolve.test.mjs": "af8046c8efe0491c17f84a2001931848b222bcaf13347e8a8d2d144d2bd355de",
-    "tests/release-lockstep.test.mjs": "374d5ab8cf4d1d1ed04e8cae0d8a626f08059a9fa82b37fe6cc6965b8553628f",
+    "tests/release-lockstep.test.mjs": "40d112dc0bc2757c7062178baf0066ab8c9f2c9e5816c13802b7c839df0ace16",
     "tests/release-readiness.test.mjs": "9105e3d4fab0a69adb272d2286cedcd8b6e1eebb9721f3297289103daa7eb906",
     "tests/release-tag-gate.test.mjs": "8f41389ef5554c7efb17db2e1e528bc22cdf62b2f910b47b2333e71f9f254098",
     "tests/release-tooling-audit-boundaries.test.mjs": "4bfe8b3e0dd702e925aeefdfc2f8ad1d67dcb5ea9919aca1199d12ffc18b5001",

@@ -653,6 +653,10 @@ export async function prepareRelease({ engineRoot, helperRoot, version, workspac
   const engine = await assertRepository(engineRoot, ENGINE_PACKAGE_NAME, { clean: true, env });
   const helper = await assertRepository(helperRoot, HELPER_PACKAGE_NAME, { clean: true, env });
   ensureSeparateRepositories(engine.root, helper.root);
+  const checkoutViolation = await engineCheckoutViolation(engine.root);
+  if (checkoutViolation) {
+    refuse(checkoutViolation.code, checkoutViolation.message, { root: checkoutViolation.root });
+  }
   // Read the existing declaration and registry before changing either release tree. These reads
   // and the actual gate process bypass a test runner: a synthetic ok cannot prove a release.
   await checkReleaseGatePlan({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, projectId, workIds, env });
@@ -723,7 +727,7 @@ function refuseViolations(violations, message) {
   if (violations.length > 0) refuse(violations[0].code, message, { violations });
 }
 
-// Release generation and finish keep their receipt and artifact work on a checkout with
+// Release preparation, generation and finish require a checkout with
 // a physical .git directory. Development output sessions support Git-linked worktrees.
 async function engineCheckoutViolation(root) {
   const metadata = await lstat(join(root, ".git")).catch(() => null);

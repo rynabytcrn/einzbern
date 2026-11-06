@@ -76,9 +76,9 @@ between generating the release files and running the gates.
 ## Two-phase preparation
 
 The approved method splits preparation around one local release commit per
-repository. Run both phases from the Einzbern repository, on checkouts whose `.git`
-is a directory rather than linked worktrees: the build, the gates and the output
-session that moves stale artifacts refuse a linked worktree. Keep `EINZBERN_HOME`
+repository. Run both phases from the Einzbern repository on a checkout with a
+physical `.git` directory. The release preconditions enforce this checkout shape.
+Keep `EINZBERN_HOME`
 on the same device directory for both phases, because the library registration
 and the gate runs belong to that device.
 

@@ -920,6 +920,24 @@ test("SUB-357 R41 B1: generate reports every failed precondition together before
   await assert.rejects(readFile(fixture.receiptPath), (error) => error.code === "ENOENT", "no receipt is written for a refused generation");
 });
 
+test("632-Q1: release prepare refuses a linked worktree before touching versions", async () => {
+  const repos = await createRepos("prepare-linked-refusal");
+  const linked = join(repos.projectRoot, "einzbern-linked");
+  git(repos.engineRoot, ["worktree", "add", "--quiet", "--detach", linked, "HEAD"]);
+  const linkedRepos = { ...repos, engineRoot: await realpath(linked) };
+  const env = await makeEnvironment("prepare-linked-refusal");
+  const workspace = await makeWorkspace("prepare-linked-refusal", linkedRepos, env);
+  await cp(join(repos.engineRoot, "dist/build"), join(linked, "dist/build"), { recursive: true });
+  await assert.rejects(prepareRelease({
+    ...linkedRepos, version: NEXT_VERSION, workspace, env,
+    runner: () => assert.fail("linked release preparation reached the build step"),
+  }), { reasonCode: "RELEASE_ENGINE_CHECKOUT_LINKED" });
+  for (const root of [linked, repos.helperRoot]) {
+    assert.equal(git(root, ["status", "--porcelain"]), "");
+  }
+  git(repos.engineRoot, ["worktree", "remove", linked]);
+});
+
 test("SUB-357 R41 B1: finish refuses a missing, invalid or mismatched receipt and any commit that is not exactly the receipt", async () => {
   const fixture = await createReleaseFixture("finish-refusals");
   await validateGeneratedFixture(fixture, { keepExtra: [CREATE_SKILL_ARCHIVE] });

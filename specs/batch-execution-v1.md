@@ -20,6 +20,11 @@ This governs approved decomposition, implementation, gates, testing, acceptance,
 ### Acceptance evidence and recheck scope
 
 1. For runnable questions, first choose the smallest empirical check that can change the judgment, then expand only as its result warrants. Record actual inputs, commands, output, exit status and candidate version. Static proof needs a definite trigger and contract basis. Distinguish observed failures, static proof and untested hypotheses. Missing environment or permission remains explicitly unverified with a reason; inference cannot manufacture a pass or failure. Check test assertions against current requirements too. Passing tests does not replace Owner visual acceptance or publication authorization.
+
+   - Exercise an added or changed guard with real inputs the current contract supports. Use the actual interface or filesystem layout when it is part of the behavior under review.
+   - For an added or changed fallback, distinguish permitted absence, unreadable data, malformed data and a valid empty result. Apply an absence default only where the contract allows it. Keep reads required for a completion decision failed or explicitly unverified when they cannot be completed.
+   - For a bug fix, use the original failing input to show that the regression detects the defect and that the fixed candidate meets the contract. Reuse locatable evidence of the original failure when the relevant inputs are equivalent under item 3.
+
 2. A blocking finding needs current behavior, an explicit contract or a credible security boundary, with its trigger and impact. Style preferences, unsupported future extensions and speculative defenses do not automatically require rework; no substantive findings is a valid outcome. Do not silently relax an existing criterion because its measured impact is small; present the difference and options to the authorized decision-maker.
 3. Before rechecking, identify which changes invalidate which evidence. Reuse locatable successful execution evidence when the source, dependencies, environment, parameters, inputs and baseline relevant to that check are equivalent. Deduplicate parent and child gates from actual execution records: a script naming a child does not prove it ran, and early-failure skips remain not run. A successful child within a parent can satisfy the same check without a separate rerun, but cannot turn a failed parent into a pass. When equivalence is unproved, evidence is missing or relevant inputs changed, run the affected required checks.
 4. Independent review focuses on this round's changes, failures and affected behavior, citing still-valid conclusions. Required complete validation, final integration, release and security checks follow the current contract. Reuse cannot delete gates, change criteria, reorder dependencies or conceal checks not run. Use existing tools for mechanical checks without adding review layers, agents or proof frameworks.
@@ -62,6 +67,11 @@ Record source/automated regression separately from native-host acceptance. The c
 ### 验收依据与复验范围
 
 1. 可运行的问题优先选择能改变判断的最小实测，再据结果决定是否扩大检查。记录实际输入、命令、输出、退出状态及候选版本。静态证明须给出确定触发路径与契约依据；实测失败、静态证明和待验证假设分开。环境或权限不足时标明未验证及原因，不用推测补成通过或失败。测试断言也须核对当前需求，测试通过不替代 Owner 目视验收或发布授权。
+
+   - 新增或修改 guard 时，用当前契约支持的真实合法输入验证。被审行为依赖实际接口或文件系统布局时，使用该接口或布局。
+   - 新增或修改 fallback 时，区分合法缺失、不可读、损坏与有效空结果。只有契约允许的缺失才使用默认值。完成判定所依赖的读取未能完成时，保留失败或明确标为未验证。
+   - 修复缺陷时，用原失败输入证明回归能检出缺陷，且修复后的候选满足契约。相关输入符合第 3 条的等价条件时，复用可定位的原失败证据。
+
 2. 阻断发现须对应当前行为、明确契约或可信安全边界，并说明触发条件与影响。风格偏好、无依据的未来扩展或推测性防御建议不能自动变成必修项；允许无实质性发现。既定判据即使影响很小也不能私自放宽，须把实测差异和处置选择交有权决定的人。
 3. 复验前说明哪些改动使哪些证据失效。该项检查涉及的源码、依赖、环境、参数、相关输入与基线一致，且有可定位的成功执行证据时，可以复用。父门去重以实际执行记录为准，脚本声明包含子门不证明子门已执行；被早期失败跳过的项目保持未执行。父门内已成功的子门可满足同一检查，不再单独重跑，但不能据此把失败的父门标为通过。无法证明等价、证据缺失或相关输入变化时，补跑相关必需项。
 4. 独立审查聚焦本轮变更、失败和受影响行为，引用仍有效的既有结论；必要完整验证、最终集成、发布及安全检查仍按当前契约执行。不得因复用证据删除门、改变判据、重排依赖或掩盖未执行项。机械核对优先用现有工具，不为此新增审查层、代理或证明框架。

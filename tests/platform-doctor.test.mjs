@@ -659,7 +659,7 @@ test("R47-06: a launcher hook on a device without the installed engine is its ow
   assert.equal(noRegistry.ok, false);
   assert.equal(noRegistry.reasonCode, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED");
   assert.deepEqual(noRegistry.failures.map((failure) => [failure.source, failure.reasonCode, failure.missing]), [
-    ...[1, 2, 3].map(() => ["container.codex-hooks", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
+    ...[1, 2, 3, 4, 5].map(() => ["container.codex-hooks", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
     ...[1, 2, 3].map(() => ["container.claude-settings", "PLATFORM_HOOK_ENGINE_NOT_INSTALLED", ["registry.json"]]),
   ]);
   assert.equal(noRegistry.failures[0].device, device);
@@ -680,7 +680,7 @@ test("R47-06: a launcher hook on a device without the installed engine is its ow
   assert.equal(hooks(both).reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
   assert.deepEqual(hooks(both).failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
     ["container.claude-settings", "Stop", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
-    ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["container.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
+    ...["UserPromptSubmit", "SubagentStart", "PreToolUse", "PostToolUse", "Stop"].map((event) => ["container.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
     ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["container.claude-settings", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
   ]);
 });
@@ -707,9 +707,9 @@ test("R47-06: the hook leg reads the user-level Claude and Codex files of the gi
   assert.equal(leg.reasonCode, "PLATFORM_HOOK_TARGET_UNAVAILABLE");
   assert.deepEqual(leg.failures.map((failure) => [failure.source, failure.event, failure.reasonCode]), [
     ["machine.claude-settings", "UserPromptSubmit", "PLATFORM_HOOK_TARGET_UNAVAILABLE"],
-    ...["UserPromptSubmit", "SubagentStart", "PreToolUse"].map((event) => ["machine.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
+    ...["UserPromptSubmit", "SubagentStart", "PreToolUse", "PostToolUse", "Stop"].map((event) => ["machine.codex-hooks", event, "PLATFORM_HOOK_ENGINE_NOT_INSTALLED"]),
   ]);
-  assert.deepEqual([leg.user.claude.state, leg.user.claude.checked, leg.user.codex.state, leg.user.codex.checked], ["broken", 1, "broken", 3]);
+  assert.deepEqual([leg.user.claude.state, leg.user.claude.checked, leg.user.codex.state, leg.user.codex.checked], ["broken", 1, "broken", 5]);
   assert.equal(leg.failures[0].target, oldScript);
 
   // An absent container Claude file defers that file only; the user-level findings stay red.
@@ -724,9 +724,9 @@ test("R47-06: the hook leg reads the user-level Claude and Codex files of the gi
   await writeFile(join(device, DEVICE_HOME_ENTRIES.registry), `${JSON.stringify({ schemaVersion: "einzbern.registry.v1", entries: [] })}\n`);
   const live = hooks(await inspectInstallFixture(fixture));
   assert.equal(live.ok, true, JSON.stringify(live));
-  // This live file still has no supported admission; restoring the engine does
-  // not promote the unknown host observation or add the native stop event.
-  assert.deepEqual([live.user.claude.state, live.user.codex.state, live.user.codex.events], ["live", "live", ["PreToolUse", "SubagentStart", "UserPromptSubmit"]]);
+  // Restoring the engine makes the five registered Codex events inspectable;
+  // command inspection does not claim native execution support.
+  assert.deepEqual([live.user.claude.state, live.user.codex.state, live.user.codex.events], ["live", "live", ["PostToolUse", "PreToolUse", "Stop", "SubagentStart", "UserPromptSubmit"]]);
 
   await writeFile(join(fixture.home, ".codex", "hooks.json"), "{ not json");
   const invalid = hooks(await inspectInstallFixture(fixture));

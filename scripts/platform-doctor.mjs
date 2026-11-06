@@ -31,7 +31,7 @@ import { PROTOCOL_LIMITS } from "../dist/build/packages/protocol/src/index.js";
 // Which hook commands are Einzbern's launcher or a script of the old harness: the engine's own
 // answer, read from the module that renders and reconciles host hooks (scripts/host-render.mjs
 // imports it the same way).
-import { HOST_HOOK_FILES, HOST_HOOK_EVENTS, HOST_HOOK_POINTER_EVENTS, hostHookCommand, isEinzbernHookCommand, isLegacyHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
+import { HOST_HOOK_FILES, HOST_HOOK_EVENTS, CODEX_HOOK_EVENTS, HOST_HOOK_POINTER_EVENTS, hostHookCommand, isEinzbernHookCommand, isLegacyHookCommand } from "../dist/build/packages/core/src/host-hooks.js";
 import { toPosixPath, walkFiles } from "./lib/files.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -846,7 +846,7 @@ function nodeHookTarget(command, expand = (path) => path, userHome = homedir()) 
     if (!binding) return undefined;
     const target = resolve(userHome, binding[1].replaceAll("\\'", "'"), "engine/hook.mjs");
     // Verify the complete generated command; never evaluate text from a settings file.
-    return Object.keys({ ...HOST_HOOK_EVENTS, ...HOST_HOOK_POINTER_EVENTS }).some(event => hostHookCommand(target, event, userHome) === command) ? target : undefined;
+    return Object.keys({ ...HOST_HOOK_EVENTS, ...CODEX_HOOK_EVENTS, ...HOST_HOOK_POINTER_EVENTS }).some(event => hostHookCommand(target, event, userHome) === command) ? target : undefined;
   }
   const match = NODE_HOOK_COMMAND.exec(command.trim());
   if (!match) return undefined;

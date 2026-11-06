@@ -2,7 +2,7 @@
 # Engine hook events
 
 The installed engine owns UserPromptSubmit, SubagentStart and PreToolUse for
-Claude Code and Codex. Codex peer coordination does not register SubagentStop or
+Claude Code and Codex, plus PostToolUse and Stop for Codex. Codex peer coordination does not register SubagentStop or
 a collector keepalive hook. Setup, update and
 host-render reconcile the same stable launcher commands; doctor compares the
 installed hooks with that same plan. SessionStart remains the navigation fallback
@@ -47,12 +47,44 @@ reading worker results. It is selected only for an explicit Codex host, never by
 an unknown-host fallback. Claude Code and DSH retain single-conversation
 coordination and native completion notifications; dot remains independent.
 
+For the existing peer-receipt workflow, `execution-codex-peer-record` also stages
+a small disposable observation when the native `CODEX_THREAD_ID` (or
+`CODEX_SESSION_ID`) matches a recorded peer. The retained receipt remains the
+evidence. The observation contains peer IDs and derived batch facts, not prompts,
+paths, new project fields or execution authority. A failed cache write does not
+invalidate the retained receipt; it leaves the hook protection unavailable.
+
+PostToolUse consumes that observation after a Bash call and binds it to the
+native session and turn. It does not parse shell commands, scan transcripts,
+read arbitrary receipt paths or depend on untruncated command output. After a
+confirmed native send from that main conversation to its coordinator, PreToolUse
+denies `wait_threads` and `read_thread` calls to that coordinator in the same turn
+while the recorded batch remains nonterminal. Feedback points to Mana Orchestrate.
+The hook does not perform another query or send a message.
+
+A new user turn discards the old observation. Unknown roles, absent receipts,
+unsuccessful or ambiguous sends, other targets and remote-host queries are not
+blocked by this guard. Coordinator worker waits and other hosts are unchanged.
+This is a bounded handoff guard, not a global polling quota, an authorization
+system or a promise that the model will stop generating. A denied tool call can
+still be followed by model output.
+
+Before a coordinator ends, Stop checks the same observation. Only a confirmed
+terminal, report-eligible batch with no delivery attempt receives a reminder to
+load Mana Orchestrate and follow its batch-delivery procedure. It does not send
+the report itself or create messaging authority. The first reminder is retained
+before returning `decision: block`; a repeated Stop, an active stop continuation,
+an attempted or uncertain delivery, or an absent observation ends normally.
+This checks completion of an existing handoff; it does not wait for workers or
+keep the coordinator alive while a batch is pending.
+
 No collector subagent, cap exemption, reserved collector slot, SubagentStop
 keepalive, collector-wait helper or old collector fallback is active. Normal
 setup/update/repair retires an old stop entry only when it can prove that the exact
 entry is engine-owned. Preserve user-edited entries and unrelated hooks; surface
-unresolved ownership rather than erasing it. Unknown host support does not justify
-installing a stop hook. Ordinary native final output is not intercepted or blocked.
+unresolved ownership rather than erasing it. Peer hooks are rendered only for
+explicit Codex, not an unknown or different host. Final output outside the eligible coordinator case is
+not intercepted or blocked.
 
 The former collector admission/bridge protocol is superseded history, not an
 activation prerequisite for peers. Historical records and evidence stay readable;

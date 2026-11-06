@@ -8,6 +8,7 @@ import { applyEngineModelPolicySet, engineModelPolicyOnboarding } from "../dist/
 import { recordCodexPeerBatch as recordAtCutoff, normalizeCodexPeerBatch, codexPeerReportPrefix } from "../dist/build/packages/core/src/codex-peer-batch.js";
 import { canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 import { nativeFixture, selection } from "./helpers/host-native-fixture.mjs";
+import { runCodexPeerHook, stageCodexPeerReceipt } from "../dist/build/packages/core/src/codex-peer-hooks.js";
 
 const recordCodexPeerBatch = input => recordAtCutoff({ observationCutoff: new Date().toISOString(), ...input });
 const at = "2026-10-30T00:00:00Z";
@@ -28,6 +29,58 @@ async function fixture(t) {
 }
 const observed = (state, id = `host-${state}`, conversationId = "fixture-worker") => ({ ...response(state, id), raw: { state, terminal: true, conversationId }, providerId: { pointer: "/conversationId" } });
 const finish = f => recordHostNativeEvents(f.preparation, [f.completedEvent ??= observed("completed")]);
+
+test("peer hooks stop same-turn main polling only after a verified receipt and successful handoff", async t => {
+  const f = await fixture(t);
+  const receipt = recordCodexPeerBatch(f.input);
+  const envelope = { session_id: "fixture-main", turn_id: "turn-1" };
+  const run = (event, values = {}) => runCodexPeerHook(event, { ...envelope, ...values }, f.home);
+  const query = { tool_name: "mcp__codex_app__wait_threads", tool_input: { targets: [{ threadId: "fixture-economy", hostId: "local" }], timeoutMs: 0 } };
+  assert.equal((await run("PreToolUse", query)).output, null, "unregistered conversations remain unaffected");
+  await stageCodexPeerReceipt(receipt, f.home, "fixture-main");
+  assert.equal((await run("PostToolUse", { tool_name: "Bash", tool_response: "truncated stdout is irrelevant" })).reasonCode, "HOOK_PEER_RECEIPT_OBSERVED");
+  const send = { tool_name: "mcp__codex_app__send_message_to_thread", tool_input: { threadId: "fixture-economy" } };
+  await run("PostToolUse", { ...send, tool_response: { isError: true, content: [{ type: "text", text: JSON.stringify({ threadId: "fixture-economy" }) }] } });
+  assert.equal((await run("PreToolUse", query)).output, null, "failed delivery is not successful handoff");
+  await run("PostToolUse", { ...send, tool_response: { isError: false, content: [{ type: "text", text: JSON.stringify({ threadId: "fixture-economy" }) }] } });
+  for (const tool of [query, { tool_name: "mcp__codex_app__read_thread", tool_input: { threadId: "fixture-economy" } }]) {
+    const answer = JSON.parse((await run("PreToolUse", tool)).output);
+    assert.equal(answer.hookSpecificOutput.permissionDecision, "deny");
+    assert.match(answer.hookSpecificOutput.permissionDecisionReason, /Mana Orchestrate/);
+  }
+  assert.equal((await run("PreToolUse", { ...query, turn_id: "owner-next-turn" })).output, null);
+  assert.equal((await run("PreToolUse", { ...query, session_id: "fixture-economy" })).output, null);
+  assert.equal((await run("PreToolUse", { ...query, tool_input: { targets: [{ threadId: "fixture-economy", hostId: "remote" }] } })).output, null);
+  assert.equal((await run("PreToolUse", { ...query, tool_input: { targets: [{ threadId: "unrelated" }] } })).output, null);
+  const terminal = recordCodexPeerBatch({ ...f.input, records: [finish(f)] });
+  await stageCodexPeerReceipt(terminal, f.home, "fixture-main");
+  await run("PostToolUse", { tool_name: "Bash", tool_response: "record retained" });
+  assert.equal((await run("PreToolUse", query)).output, null, "terminal evidence releases the handoff guard");
+  await stageCodexPeerReceipt(receipt, f.home, "fixture-main");
+  await run("UserPromptSubmit", { turn_id: "new-owner-turn" });
+  assert.equal((await run("PostToolUse", { turn_id: "new-owner-turn", tool_name: "Bash", tool_response: "unrelated output" })).reasonCode, "HOOK_PEER_NOT_APPLICABLE", "new user input discards unconsumed old observations");
+});
+
+test("coordinator delivery reminder is terminal-only and does not repeat or resend an unknown attempt", async t => {
+  const f = await fixture(t);
+  const terminal = recordCodexPeerBatch({ ...f.input, records: [finish(f)] });
+  const run = (event, values = {}) => runCodexPeerHook(event, { session_id: "fixture-economy", turn_id: "turn-1", ...values }, f.home);
+  await stageCodexPeerReceipt(recordCodexPeerBatch(f.input), f.home, "fixture-economy");
+  await run("PostToolUse", { tool_name: "Bash", tool_response: "record retained" });
+  assert.equal((await run("Stop", { stop_hook_active: false })).output, null, "pending workers are not polled by Stop");
+  await stageCodexPeerReceipt(terminal, f.home, "fixture-economy");
+  await run("PostToolUse", { tool_name: "Bash", tool_response: "record retained" });
+  assert.equal((await run("Stop", { stop_hook_active: true })).output, null);
+  assert.equal(JSON.parse((await run("Stop", { stop_hook_active: false })).output).decision, "block");
+  assert.equal((await run("Stop", { stop_hook_active: false })).output, null, "a host with a missing repeat flag still cannot loop");
+  await stageCodexPeerReceipt(terminal, f.home, "fixture-economy");
+  await run("PostToolUse", { turn_id: "turn-2", tool_name: "Bash", tool_response: "record retained" });
+  await run("PreToolUse", { turn_id: "turn-2", tool_name: "mcp__codex_app__send_message_to_thread", tool_input: { threadId: "fixture-main" } });
+  assert.equal((await run("Stop", { turn_id: "turn-2", stop_hook_active: false })).output, null, "an attempted send is not blindly repeated");
+  const invalid = { ...terminal, reportEligible: false };
+  assert.equal((await run("PostToolUse", { turn_id: "turn-3", tool_name: "Bash", tool_response: { output: JSON.stringify(invalid) } })).reasonCode, "HOOK_PEER_NOT_APPLICABLE");
+  assert.equal((await run("Stop", { turn_id: "turn-3", stop_hook_active: false })).output, null);
+});
 
 test("unknown native outcomes retain occupancy; completion, failures and confirmed cancellation remain distinct", async t => {
   const f = await fixture(t);
@@ -163,11 +216,13 @@ test("CLI batch record reads current workspace and device policy, writes private
   await writeFile(recordsPath, JSON.stringify([finish(f)]));
   await writeFile(capacityPath, JSON.stringify(f.input.capacity));
   const cli = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
-  const invoke = args => JSON.parse(execFileSync(process.execPath, [cli, ...args], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: f.home }, timeout: 30_000 }));
+  const invoke = args => JSON.parse(execFileSync(process.execPath, [cli, ...args], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: f.home, CODEX_THREAD_ID: "fixture-main" }, timeout: 30_000 }));
   const before = new Date().toISOString();
   const result = invoke(["execution-codex-peer-record", "--workspace", f.workspace, "--manifest", manifestPath, "--records", recordsPath, "--capacity", capacityPath, "--output", output]);
   assert.ok(result.observationCutoff >= before && result.observationCutoff <= new Date().toISOString());
   assert.equal(result.reportEligible, true);
+  const hook = await runCodexPeerHook("PostToolUse", { session_id: "fixture-main", turn_id: "cli-turn", tool_name: "Bash", tool_response: "output may be truncated" }, f.home);
+  assert.equal(hook.reasonCode, "HOOK_PEER_RECEIPT_OBSERVED", "the real CLI stages the validated receipt independently of stdout");
   assert.equal(result.reportPrefix, codexPeerReportPrefix(f.input.manifest));
   assert.throws(() => normalizeCodexPeerBatch({ ...result, reportPrefix: "tampered" }), /differs from retained/u);
   assert.equal(result.deliveryStatus, "not-attempted");

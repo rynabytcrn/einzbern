@@ -76,6 +76,25 @@ Main resumes for the delivered batch decision and, where authorized, hands off t
 next batch. A missing or uncertain host result remains uncertain; source code and
 local evidence files do not manufacture native delivery or released resources.
 
+A final reply in the coordinator's own conversation is not a send to main. Use
+the supported cross-conversation tool under the existing delivery authorization,
+and retain its actual return. Do not label a report delivered merely because its
+text says that it was returned. When delivery is unavailable or uncertain, retain
+that fact without making main poll to keep itself alive.
+
+The engine's tool hooks can reinforce this handoff when the existing
+`execution-codex-peer-record` has been run in the peer's native session. Record
+the frozen manifest and current facts before handing a batch off; update the same
+receipt with observed terminal facts before returning the batch. The record command
+automatically stages the small hook observation. No new project configuration or
+hook-registration command is needed. Missing observations remain unguarded rather
+than making ordinary chats fail admission. See `specs/engine-hook-events-v2.md`.
+
+Stop supplies one reminder to follow this delivery procedure when a coordinator
+ends with an eligible terminal batch and no delivery attempt. Repeated Stop or an
+uncertain attempt ends normally. The reminder does not send a message, create
+authorization, wait for pending workers or revive the retired collector loop.
+
 ## Supported batch receipt commands
 
 The coordinator records native preparation/response history through the existing

@@ -4,7 +4,7 @@
 // guard. Each host file runs the stable device launcher, never a checkout or platform script.
 // SessionStart is added only when agents.navigation is declined. SubagentStart always carries
 // navigation and recalls against the host's documented agent_type (not a fabricated task field).
-// Codex SubagentStop, SSH and control-tree hooks are retired. No peer coordination hook is installed.
+// Codex SubagentStop, SSH and control-tree hooks are retired. Peer hooks guard handoff and return.
 // DSH keeps its separate plugin contract.
 // Engine updates change engine/current without rewriting host command paths.
 //
@@ -93,7 +93,10 @@ export const HOST_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze(
 });
 // Codex-only events are deliberately separate from the common table: rendering one must never
 // add a native event to Claude Code or DSH.
-export const CODEX_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze({});
+export const CODEX_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze({
+  PostToolUse: "post-tool-use",
+  Stop: "stop",
+});
 // TCRN-CROSS-STORY-478 R4, AC5: the pointer hooks of a device whose agents.navigation is declined,
 // with their launcher words. SubagentStart also recalls and is always installed.
 export const HOST_HOOK_POINTER_EVENTS: Readonly<Record<string, string>> = Object.freeze({
@@ -252,6 +255,7 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   if (install) {
     const events = [...new Set([
       ...Object.keys(HOST_HOOK_EVENTS),
+      ...(host === "codex" ? Object.keys(CODEX_HOOK_EVENTS) : []),
       ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : []),
     ])];
     for (const event of events) {
@@ -281,7 +285,7 @@ const LAUNCHER_COMMAND = /^node "([^"]+)" ([a-z]+(?:-[a-z]+)*)$/u;
 
 /** Whether a hook command runs Einzbern's launcher. */
 export function isEinzbernHookCommand(command: string): boolean {
-  if (/^node -e "\/\*einzbern-hook\*\/.*" (?:user-prompt-submit|subagent-start|pre-tool-use|session-start)$/u.test(command.trim())) return true;
+  if (/^node -e "\/\*einzbern-hook\*\/.*" (?:user-prompt-submit|subagent-start|pre-tool-use|post-tool-use|stop|session-start)$/u.test(command.trim())) return true;
   const match = LAUNCHER_COMMAND.exec(command.trim());
   if (match === null) return false;
   const segments = (match[1] ?? "").split(/[\\/]/u);

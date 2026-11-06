@@ -1,5 +1,8 @@
 import { recordCodexPeerBatch, normalizeCodexPeerBatch } from "../../core/src/codex-peer-batch.js";
 import type { CodexPeerBatchInput } from "../../core/src/codex-peer-batch.js";
+import type { CodexPeerBatch } from "../../core/src/codex-peer-batch.js";
+import { stageCodexPeerReceipt } from "../../core/src/codex-peer-hooks.js";
+import { deviceHome } from "../../core/src/device-home.js";
 import { readEngineModelPolicyFile } from "../../core/src/engine-model-policy.js";
 import { validateHostExecutionRequest } from "../../core/src/execution-fallback.js";
 import { prepareHostNativeDispatch } from "../../core/src/dispatch-workflow.js";
@@ -66,6 +69,14 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
     try { result = recordCodexPeerBatch({ observationCutoff, manifest, records, capacity, policy, workRevisions, ...(delivery === undefined ? {} : { delivery }), ...(prior === undefined ? {} : { prior }) }); }
     catch (error) { result = { reasonCode: "CODEX_PEER_RECORD_INVALID", observationCutoff, manifest, records, capacity, ...(delivery === undefined ? {} : { delivery }), ...(prior === undefined ? {} : { prior }), validation: { status: "invalid" }, problems: [String(error)] }; }
     await writeDispatchArtifact(values.output!, result, [workspace.root], context.home);
+    if ((result as { schemaVersion?: unknown }).schemaVersion === "tcrn.codex-peer-batch.v1") {
+      try {
+        await stageCodexPeerReceipt(result as CodexPeerBatch, context.home ?? deviceHome(), process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"]);
+      } catch {
+        // A disposable hook cache cannot invalidate a retained native receipt.
+        // Without this observation, hooks leave the conversation unguarded.
+      }
+    }
     return json(result);
   }
   if (command === "execution-host-prepare") {

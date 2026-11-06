@@ -237,7 +237,7 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   assert.equal((await current(f)).previous, FRAMEWORK_VERSION);
   assert.deepEqual(await copyDigests(f), [release.skillDigest, release.skillDigest], "both copies are the new version's skill");
   assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
-  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PostToolUse", "PreToolUse", "Stop", "SubagentStart", "UserPromptSubmit"]);
   assert.deepEqual(await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file)))), sections, "identical catalog content remains byte-for-byte unchanged");
   assert.equal(updated.managedUpdates.find(output => output.projectPath === f.project)?.status, "unchanged");
   assert.ok(await exists(join(staging, `einzbern-${NEWER}`, "scripts", "einzbern.mjs")), "the unpacked release stays in the device directory's trash");
@@ -260,7 +260,7 @@ test("480-R4: update installs a newer release, switches engine/current and lays 
   const original = (await computeInstallTreeDigest(join(f.deviceHome, "engine", FRAMEWORK_VERSION, "skill", "mana-orchestrate"))).sha256;
   assert.deepEqual(await copyDigests(f), [original, original]);
   assert.deepEqual((await einzbernHooks(join(f.home, ".claude", "settings.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
-  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(join(f.home, ".codex", "hooks.json"))).map(([event]) => event).sort(), ["PostToolUse", "PreToolUse", "Stop", "SubagentStart", "UserPromptSubmit"]);
   assertSelfCheckGreen(rolled);
 
   // The unpacked release directory installs too: the version is already there, so it is reused.
@@ -395,7 +395,7 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
   const settings = join(f.home, ".claude", "settings.json");
   const codexHooks = join(f.home, ".codex", "hooks.json");
   const codexDocument = JSON.parse(await readFile(codexHooks, "utf8"));
-  delete codexDocument.hooks.PreToolUse; // Unknown admission installs the ordinary read guard, not native stop.
+  delete codexDocument.hooks.PreToolUse; // Repair restores the ordinary read guard without changing peer hooks.
   await writeFile(codexHooks, `${JSON.stringify(codexDocument, null, 2)}\n`);
   await rm(claudeCopy, { recursive: true, force: true });
   await writeFile(settings, "{}\n");
@@ -416,7 +416,7 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
   // R46 I08: repair names no coordination binding, in the plan or the receipt.
   assert.deepEqual([Object.hasOwn(planned, "coordination"), Object.hasOwn(repaired, "coordination")], [false, false]);
   assert.deepEqual(repaired.backups.map((entry) => entry.path), [settings, codexHooks], "both host files are backed up before replacement");
-  assert.deepEqual((await einzbernHooks(codexHooks)).map(([event]) => event).sort(), ["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
+  assert.deepEqual((await einzbernHooks(codexHooks)).map(([event]) => event).sort(), ["PostToolUse", "PreToolUse", "Stop", "SubagentStart", "UserPromptSubmit"]);
   assertSelfCheckGreen(repaired);
 
   const files = [settings, join(f.home, ".codex", "hooks.json"), join(f.project, "AGENTS.md"), join(f.project, "CLAUDE.md"), join(f.deviceHome, "registry.json"), join(f.deviceHome, "skills.json")];

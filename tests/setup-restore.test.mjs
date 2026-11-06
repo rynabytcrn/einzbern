@@ -394,7 +394,7 @@ test("480-R3: once all eight pass, the project is registered and wired from the 
   for (const root of SKILL_COPY_ROOTS) assert.ok((await lstat(join(skillCopyPath(f.b.home, root), "SKILL.md"))).isFile(), root.host);
   const launcher = join(f.b.deviceHome, "engine", "hook.mjs");
   assert.deepEqual(await einzbernHooks(join(f.b.home, ".claude", "settings.json")), [["UserPromptSubmit", hostHookCommand(launcher, "UserPromptSubmit", f.b.home)], ["SubagentStart", hostHookCommand(launcher, "SubagentStart", f.b.home)], ["PreToolUse", hostHookCommand(launcher, "PreToolUse", f.b.home)]]);
-  assert.deepEqual(await einzbernHooks(join(f.b.home, ".codex", "hooks.json")), [["UserPromptSubmit", hostHookCommand(launcher, "UserPromptSubmit", f.b.home)], ["SubagentStart", hostHookCommand(launcher, "SubagentStart", f.b.home)], ["PreToolUse", hostHookCommand(launcher, "PreToolUse", f.b.home)]]);
+  assert.deepEqual(await einzbernHooks(join(f.b.home, ".codex", "hooks.json")), [["UserPromptSubmit", hostHookCommand(launcher, "UserPromptSubmit", f.b.home)], ["SubagentStart", hostHookCommand(launcher, "SubagentStart", f.b.home)], ["PreToolUse", hostHookCommand(launcher, "PreToolUse", f.b.home)], ["PostToolUse", hostHookCommand(launcher, "PostToolUse", f.b.home)], ["Stop", hostHookCommand(launcher, "Stop", f.b.home)]]);
 
   // Two columns: the project's settings and records that came back, and this device's own keys.
   const project = applied.columns.project;

@@ -9,7 +9,7 @@
 // build (dist/build); a release carries it as one file (TCRN-CROSS-STORY-481).
 // BL-34: SubagentStart recalls from the native agent_type and includes navigation before work.
 // SessionStart remains a navigation-only fallback. BL-35 adds the narrowly bounded Read guard.
-// INIT-076: Codex peer coordination uses host-native conversation operations, never a stop hook.
+// Codex peer observations use native tool results; no collector or polling process is started.
 // TCRN-CROSS-SUB-483 (TCRN-CROSS-STORY-529, MIN-257 D6): every prompt recalled here also leaves
 // one line in log/hook.ndjson in the device directory, naming why it got what it got, so a prompt
 // that was answered can be told from one that got nothing and from a hook that never ran. The line
@@ -76,14 +76,34 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   const host = hookHost(process.env);
   // Stale owned SubagentStop commands are inert until normal setup retires them.
   if (event === "subagent-stop") return null;
+  if (name === "UserPromptSubmit" && host === "codex") {
+    const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
+    await runCodexPeerHook(name, body, deviceHome(process.env));
+  }
   // DSH retains its existing navigation contract; its next feature batch is separate.
   if (name === "SubagentStart" && host === "dsh") return `${navigationPointerAnswer(host, name).output}\n`;
   switch (name) {
     case "PreToolUse": {
       const directory = absolute(cwd) ?? absolute(body.cwd) ?? process.cwd();
+      if (host === "codex" && ["mcp__codex_app__wait_threads", "mcp__codex_app__read_thread", "mcp__codex_app__send_message_to_thread"].includes(body.tool_name)) {
+        const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
+        const result = await runCodexPeerHook(name, body, deviceHome(process.env));
+        noteRecall(deviceHome(process.env), event, directory, result.reasonCode, host);
+        return result.output;
+      }
       const answer = readGuardAnswer(body, directory, host);
       if (host !== "dsh") noteRecall(deviceHome(process.env), event, directory, answer === null ? "HOOK_READ_GUARD_OBSERVED" : "HOOK_READ_GUARD_DENIED", host);
       return answer;
+    }
+    case "PostToolUse":
+    case "Stop": {
+      if (host !== "codex") return null;
+      const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
+      const result = await runCodexPeerHook(name, body, deviceHome(process.env));
+      if (result.reasonCode !== "HOOK_PEER_NOT_APPLICABLE") {
+        noteRecall(deviceHome(process.env), event, absolute(cwd) ?? absolute(body.cwd) ?? process.cwd(), result.reasonCode, host);
+      }
+      return result.output;
     }
     case "SubagentStart":
     case "UserPromptSubmit": {

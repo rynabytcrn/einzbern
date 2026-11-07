@@ -26,6 +26,7 @@ const referenceDirectory = join(repositoryRoot, "skill", BRAND.helper.id, "refer
 const descriptionFixture = join(repositoryRoot, "tests", "fixtures", "skill", "description-a.en.txt");
 const catalogNames = COMMAND_CATALOG.map((entry) => entry.name);
 const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
+const INSTALL_REFERENCE_NAMES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
 
 // Text that belongs to the wizard references and never to SKILL.md: each phrase is checked below
 // to occur in at least one reference, so the list cannot drift into words the references lack.
@@ -82,8 +83,8 @@ function tableRows(markdown) {
 }
 
 async function references() {
-  const names = (await readdir(referenceDirectory)).filter((name) => name.endsWith(".md")).sort();
-  assert.equal(names.length, 6, "the six install-type references are present");
+  const names = (await readdir(referenceDirectory)).filter((name) => INSTALL_REFERENCE_NAMES.includes(name)).sort();
+  assert.deepEqual(names, [...INSTALL_REFERENCE_NAMES].sort(), "the six install-type references are present");
   return Promise.all(names.map(async (name) => ({ name, text: await readFile(join(referenceDirectory, name), "utf8") })));
 }
 
@@ -121,6 +122,15 @@ test("479-R1, 475-R4: the table records a decision as soon as it is judged one a
   assert.ok(decision[2].includes("已记 <minutes key> Dn"), "the row echoes the minutes key and decision number");
   const design = rows.find(([, verbs]) => verbs.includes("`settings-catalog`"));
   assert.ok(design[2].includes("`design.authority`"), "UI design reads design.authority first");
+});
+
+test("C.1: generated navigation points Kiro Spec work to its reference and managed helper", async () => {
+  const markdown = render();
+  const startingWork = tableRows(markdown).find(([, verbs]) => verbs.includes("`recall`"));
+  assert.ok(startingWork[2].includes("`references/kiro-specs.md`"));
+  const reference = await readFile(join(referenceDirectory, "kiro-specs.md"), "utf8");
+  assert.ok(reference.includes("scripts/kiro-specs.mjs"));
+  assert.match(reference, /KIRO-OPEN-OPERATIONAL-VALIDATION:BEGIN/);
 });
 
 // INIT-053 U10 (approved contract item 9): the native host dispatch passes each target's own handoff,
@@ -313,7 +323,7 @@ test("INIT065 generated normal Skill directs each native host to matching versio
 
 test("MIN358 installed Skill navigates actual enabled rules without hard-coding optional principle text", () => {
   const markdown = render();
-  assert.ok(markdown.includes("Read enabled rules, not catalog defaults"));
+  assert.ok(markdown.includes("Enabled rules only (`specs/work-practices-v1.md`)"));
   assert.ok(SKILL_NAVIGATION[0].verbs.includes("rule-list"));
   assert.equal(markdown.includes("Do not establish a prohibition"), false, "optional text comes from scoped rule consumption, not an unconditional Skill duplicate");
 });
@@ -327,7 +337,7 @@ test("INIT068 R05/R08/R12–14: generated navigation uses typed native content a
 test("dot blocker recovery is an on-demand E-owned workflow, not a patrol context payload", async () => {
   const body = render();
   const start = tableRows(body).find(([moment]) => moment === "Starting work")[2];
-  assert.ok(start.includes("Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`"));
+  assert.ok(start.includes("Dot blocker/privacy-publication: `specs/dot-rules-v1.md`"));
   const spec = await readFile(join(repositoryRoot, "specs", "dot-rules-v1.md"), "utf8");
   for (const clause of ["task-targeted `recall`", "approved, implemented and verified", "sensitive material", "Current remote publication"]) {
     // The authoritative workflow carries detail; the high-frequency navigation remains compact.

@@ -65,7 +65,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall", "rule-list"],
-    action: "Prompt recall if sufficient, else `recall --view agent --query \"<task>\"`. Read enabled rules, not catalog defaults (`specs/work-practices-v1.md`). New, resumed and delegated sessions read their own live work; parent or patrol reads do not substitute. Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`.",
+    action: "Prompt recall if sufficient, else `recall --view agent --query \"<task>\"`. Enabled rules only (`specs/work-practices-v1.md`). New, resumed and delegated sessions read their own live work; parent or patrol reads do not substitute. Specs: `references/kiro-specs.md`. Dot blocker/privacy-publication: `specs/dot-rules-v1.md`.",
   },
 
   {

@@ -96,7 +96,8 @@ test("479-R1: skill-render writes SKILL.md and copies the template's references,
   assert.equal(report.out, out);
   assert.equal(await exists(join(templateDirectory, "SKILL.md")), false, "the template keeps no SKILL.md");
   const copied = await templateFiles(templateDirectory);
-  assert.ok(copied.includes("agents/openai.yaml") && copied.filter((path) => path.startsWith("references/")).length === 6);
+  assert.ok(copied.includes("agents/openai.yaml") && copied.filter((path) => path.startsWith("references/")).length === 7);
+  assert.ok(copied.includes("references/kiro-specs.md"));
   assert.deepEqual([...report.files].sort(), ["SKILL.md", ...copied].sort());
   assert.deepEqual((await walk(out)).sort(), ["SKILL.md", ...copied].sort(), "the directory holds SKILL.md and the template's files, nothing else");
   for (const path of copied) {

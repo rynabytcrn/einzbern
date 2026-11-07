@@ -16,7 +16,7 @@ import { COMMAND_CATALOG } from "../dist/build/packages/cli/src/index.js";
 import { buildKiroCliArgs, collectKiroProcess } from "../skill/mana-orchestrate/scripts/kiro-run.mjs";
 import { nativeFixture, at } from "./helpers/host-native-fixture.mjs";
 
-const modelTuple = { runner: "kiro-cli", model: "claude-haiku-4.5", effort: "high" };
+const modelTuple = { runner: "kiro-cli", model: "claude-haiku-4.5", effort: "default" };
 const explicitSelection = { kind: "explicit", tuple: modelTuple };
 const managedSelection = { kind: "host-managed" };
 
@@ -74,7 +74,7 @@ test("INIT085-B3: Kiro preparation checks tool scope, fallback, host capacity, c
   assert.equal(preflight.status, "ready");
   assert.equal(preflight.requested.harness, "v3");
   assert.deepEqual(preflight.requested.model, { status: "requested", value: "claude-haiku-4.5" });
-  assert.deepEqual(preflight.requested.effort, { status: "requested", value: "high" });
+  assert.deepEqual(preflight.requested.effort, { status: "requested", value: "default" });
 
   const unavailable = await prepare(f, kiroRequest(f, { capabilities: { toolAvailable: false } }));
   assert.equal(unavailable.attempt, null);
@@ -119,7 +119,7 @@ test("INIT085-B3: runner passes explicit V3 and requested tuple, sends prompt on
   const preparation = await prepare(f);
   const preflight = inspectKiroProcessPreparation(preparation);
   const args = buildKiroCliArgs(preflight);
-  assert.deepEqual(args, ["chat", "--v3", "--no-interactive", "--output-format", "stream-json", "--model", "claude-haiku-4.5", "--effort", "high"]);
+  assert.deepEqual(args, ["chat", "--v3", "--no-interactive", "--output-format", "stream-json", "--model", "claude-haiku-4.5"]);
   assert.equal(args.includes("fixture prompt; never sent to Kiro"), false);
   let observed;
   const fakeSpawn = (executable, actualArgs, options) => {
@@ -161,17 +161,10 @@ test("INIT085-B3: runner passes explicit V3 and requested tuple, sends prompt on
   assert.equal(normalizeKiroProcessEvidence(evidence).digest, evidence.digest);
 });
 
-test("INIT085-B3: launch blocks, MCP service error, cancellation request, and task finality remain separate", async t => {
+test("INIT085-B3: Kiro CLI auth failures, MCP service errors, cancellation, and task finality remain separate", async t => {
   const f = await nativeFixture(t);
   await configureKiroPolicy(f);
   const preparation = await prepare(f);
-  const launchBlock = await collectKiroProcess(inspectKiroProcessPreparation(preparation), { env: {} });
-  assert.equal(launchBlock.processStarted, false);
-  assert.equal(launchBlock.launchBlock, "headless invocation requires KIRO_API_KEY");
-  const notLaunched = recordKiroProcessEvidence(preparation, launchBlock);
-  assert.equal(notLaunched.process.status, "not-started");
-  assert.equal(notLaunched.process.finality, "unknown");
-  assert.equal(notLaunched.actual.taskFinality, "unknown");
 
   const service = recordKiroProcessEvidence(preparation, processReturn(preparation, { exitCode: 3, stderr: "required MCP server failed to start\n" }));
   assert.equal(service.process.status, "exited-nonzero");
@@ -191,6 +184,43 @@ test("INIT085-B3: launch blocks, MCP service error, cancellation request, and ta
   assert.equal(refused.refusal.status, "observed");
   assert.equal(refused.process.status, "not-started");
   assert.equal(refused.processReturn, null);
+});
+
+test("INIT085-B3: missing API key reaches Kiro CLI and records its authentication failure", async t => {
+  const f = await nativeFixture(t);
+  await configureKiroPolicy(f);
+  const preparation = await prepare(f);
+  const preflight = inspectKiroProcessPreparation(preparation);
+  const executable = join(f.root, "fake-kiro-cli");
+  const source = [
+    "#!/usr/bin/env node",
+    "let input = \"\";",
+    "for await (const chunk of process.stdin) input += chunk;",
+    "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), input }) + \"\\n\");",
+    "process.stderr.write(\"Authentication required\\n\");",
+    "process.exitCode = 2;",
+  ].join("\n");
+  await writeFile(executable, `${source}\n`, { encoding: "utf8", mode: 0o700, flag: "wx" });
+  const env = { PATH: process.env.PATH ?? "", HOME: f.root };
+  assert.equal(Object.hasOwn(env, "KIRO_API_KEY"), false);
+
+  const returned = await collectKiroProcess(preflight, { env, cwd: f.root, executable });
+  assert.equal(returned.processStarted, true, "the runner invokes the CLI without a local API-key gate");
+  assert.equal(returned.processClosed, true);
+  assert.equal(returned.launchBlock, null);
+  assert.equal(returned.exitCode, 2);
+  assert.equal(returned.stderr, "Authentication required\n");
+  const cliOutput = JSON.parse(returned.stdout);
+  assert.deepEqual(cliOutput.argv, ["chat", "--v3", "--no-interactive", "--output-format", "stream-json", "--model", "claude-haiku-4.5"]);
+  assert.equal(cliOutput.input, "fixture prompt; never sent to Kiro");
+
+  const evidence = recordKiroProcessEvidence(preparation, returned);
+  assert.equal(evidence.process.status, "exited-nonzero");
+  assert.equal(evidence.process.exitCode, 2);
+  assert.equal(evidence.process.stderr, "Authentication required\n");
+  assert.equal(evidence.refusal.status, "not-observed-in-return");
+  assert.equal(evidence.actual.model, "unknown");
+  assert.equal(evidence.actual.effort, "unknown");
 });
 
 test("INIT085-B3: CLI exposes and records the Kiro preflight/process evidence contract", async t => {

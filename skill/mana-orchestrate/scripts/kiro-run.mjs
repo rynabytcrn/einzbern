@@ -50,7 +50,9 @@ export function buildKiroCliArgs(preflight) {
     if (tuple?.runner !== "kiro-cli" || typeof tuple.model !== "string" || !tuple.model.trim() || typeof tuple.effort !== "string" || !tuple.effort.trim()) {
       throw new Error("explicit Kiro selection must name runner kiro-cli, model, and effort");
     }
-    args.push("--model", tuple.model, "--effort", tuple.effort);
+    args.push("--model", tuple.model);
+    // "default" is an explicit no-override marker, not a Kiro CLI effort level.
+    if (tuple.effort !== "default") args.push("--effort", tuple.effort);
   } else if (selection?.kind !== "host-managed") {
     throw new Error("Kiro preflight selection is unknown");
   }
@@ -106,9 +108,6 @@ export async function collectKiroProcess(preflight, options = {}) {
     ...fields,
   });
   const env = options.env ?? process.env;
-  if (!env.KIRO_API_KEY) {
-    return notStarted({ launchBlock: "headless invocation requires KIRO_API_KEY" });
-  }
 
   const prompt = attempt.argumentsValue?.prompt;
   if (typeof prompt !== "string" || !prompt.trim()) throw new Error("prepared Kiro attempt does not retain a nonempty prompt");

@@ -8392,6 +8392,63 @@
         ]
       },
       {
+        "name": "execution-kiro-evidence",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "from-file",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Kiro process evidence JSON."
+          }
+        ]
+      },
+      {
+        "name": "execution-kiro-preflight",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "binding",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Saved HostExecutionPreparation v1 JSON; validates Kiro V3 scope without launching a process."
+          },
+          {
+            "name": "reserve-output",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "Optionally reserve the private create-new evidence destination before launching Kiro."
+          }
+        ]
+      },
+      {
+        "name": "execution-kiro-record",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "binding",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Saved Kiro HostExecutionPreparation v1 JSON."
+          },
+          {
+            "name": "result",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "Actual Kiro child process return JSON; omit only for a refused preflight."
+          },
+          {
+            "name": "output",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Create-new private Kiro process evidence outside device/library roots."
+          }
+        ]
+      },
+      {
         "name": "execution-native-evidence",
         "availability": "cli",
         "mutates": false,

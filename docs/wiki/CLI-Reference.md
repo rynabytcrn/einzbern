@@ -454,6 +454,36 @@
 | `--prior` | 可选 | `string` |  |
 | `--output` | 必填 | `string` |  |
 
+## `execution-kiro-evidence`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--from-file` | 必填 | `string` | `Kiro process evidence JSON.` |
+
+## `execution-kiro-preflight`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--binding` | 必填 | `string` | `Saved HostExecutionPreparation v1 JSON; validates Kiro V3 scope without launching a process.` |
+| `--reserve-output` | 可选 | `string` | `Optionally reserve the private create-new evidence destination before launching Kiro.` |
+
+## `execution-kiro-record`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--binding` | 必填 | `string` | `Saved Kiro HostExecutionPreparation v1 JSON.` |
+| `--result` | 可选 | `string` | `Actual Kiro child process return JSON; omit only for a refused preflight.` |
+| `--output` | 必填 | `string` | `Create-new private Kiro process evidence outside device/library roots.` |
+
 ## `execution-native-evidence`
 
 - 可用范围：`cli`。

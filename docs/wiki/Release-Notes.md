@@ -4,6 +4,7 @@
 
 | 版本 | 发行说明 | 完整版本说明 |
 | --- | --- | --- |
+| 4.4.0 | [Einzbern 4.4.0](Release-Notes-4.4.0.md) | 引擎仓库 tag `v4.4.0` 中的 `docs/releases/4.4.0.md` |
 | 4.2.0 | [Einzbern 4.2.0](Release-Notes-4.2.0.md) | 引擎仓库 tag `v4.2.0` 中的 `docs/releases/4.2.0.md` |
 | 4.1.0 | [Einzbern 4.1.0](Release-Notes-4.1.0.md) | 引擎仓库 tag `v4.1.0` 中的 `docs/releases/4.1.0.md` |
 | 4.0.0 | [Einzbern 4.0.0](Release-Notes-4.0.0.md) | 引擎仓库 tag `v4.0.0` 中的 `docs/releases/4.0.0.md` |

@@ -415,20 +415,19 @@ export function buildDocuments(snapshot) {
   ].join("\n");
 
   const taskTitle = snapshot.work.record.title ?? direct.fields.goal;
-  const taskGoal = direct.fields.goal;
+  const taskGoal = direct.fields.goal.replace(/\s+/gu, " ");
+  const taskAcceptance = direct.fields.acceptance.replace(/\s+/gu, " ");
+  const taskScope = String(direct.scope ?? "").replace(/\s+/gu, " ");
+  const taskSourceNotes = String(direct.fields.body ?? "").replace(/\s+/gu, " ");
   const taskBody = [
     "Exactly one executable task represents the current work item. It is a local Spec checklist only; checking it never changes formal work status or evidence.",
     "",
     `- [ ] 1. ${taskTitle}`,
     "  - Work item: `" + stamp.workId + "` revision " + stamp.workRevision + ".",
-    "  - Goal from the current formal source: " + taskGoal.replace(/\s+/gu, " "),
-    "  - Scope: " + String(direct.scope ?? "").replace(/\s+/gu, " "),
-    "",
-    "## Operational validation",
-    "",
-    "<!-- KIRO-OPEN-OPERATIONAL-VALIDATION:BEGIN -->",
-    "<!-- This section is intentionally unfinished for the authorized native Kiro Spec task. -->",
-    "<!-- KIRO-OPEN-OPERATIONAL-VALIDATION:END -->",
+    "  - Goal from the current formal source: " + taskGoal,
+    "  - Scope from the current formal source: " + taskScope,
+    "  - Acceptance from the current formal source: " + taskAcceptance,
+    ...(taskSourceNotes === "" ? [] : ["  - Original work notes and delivery details from the current formal source: " + taskSourceNotes]),
     "",
     "A checked task is local progress only. Formal completion still requires the engine's work transition and its required evidence.",
   ].join("\n");

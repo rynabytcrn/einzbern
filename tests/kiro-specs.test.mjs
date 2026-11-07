@@ -18,11 +18,16 @@ function sha256(value) {
 }
 
 function sourceFixture(options = {}) {
+  const workId = options.workId ?? WORK_ID;
+  const externalKey = options.externalKey ?? "TCRN-CROSS-SUB-TEST-C2";
   const state = {
     revision: options.revision ?? 2,
     status: options.status ?? "active",
     goal: options.goal ?? "Document the open work item without inventing requirements.",
     acceptance: options.acceptance ?? "Read current sources, preserve user content, and keep formal completion in Einzbern.",
+    title: options.title ?? "Add an ordinary example index entry",
+    scope: options.scope ?? "Update only the current index entry.",
+    body: options.body ?? "Output: docs/examples/index.md.",
     decidedIn: options.decidedIn ?? [],
     contextComplete: options.contextComplete ?? true,
     emptyGoal: options.emptyGoal ?? false,
@@ -32,13 +37,13 @@ function sourceFixture(options = {}) {
     reasonCode: "WORKSPACE_RECORD_READY",
     kind: "work",
     record: {
-      id: WORK_ID,
-      externalKey: "TCRN-CROSS-SUB-TEST-C2",
+      id: workId,
+      externalKey,
       kind: "Subtask",
       revision: state.revision,
       status: state.status,
-      title: "Complete an open operational validation note",
-      summary: "One open work item for the Feature Spec pilot.",
+      title: state.title,
+      summary: "One ordinary open work item.",
       projectId: "project:dddddddddddddddddddddddd",
       parentId: PARENT_ID,
       scopeDigest: "e".repeat(64),
@@ -49,12 +54,12 @@ function sourceFixture(options = {}) {
   const makeDocument = () => ({
     schemaVersion: "tcrn.work-content-context.v1",
     libraryId: "workspace:eeeeeeeeeeeeeeeeeeeeeeee",
-    workId: WORK_ID,
+    workId,
     workRevision: state.revision,
     records: [
       {
-        workId: WORK_ID,
-        externalKey: "TCRN-CROSS-SUB-TEST-C2",
+        workId,
+        externalKey,
         workRevision: state.revision,
         relation: "direct",
         kind: "Subtask",
@@ -64,10 +69,10 @@ function sourceFixture(options = {}) {
         fields: {
           goal: state.emptyGoal ? "" : state.goal,
           acceptance: state.acceptance,
-          body: `Approved source: ${MINUTES_ID}#D1.\nOutput: skill/mana-orchestrate/references/kiro-specs.md.`,
+          body: state.body,
           source: "fields",
         },
-        scope: "Only complete the current open subtask.",
+        scope: state.scope,
         missing: [],
         sourceStatus: "legacy-unverified",
       },
@@ -98,10 +103,10 @@ function sourceFixture(options = {}) {
     if (command === "work-show") return workShow();
     if (command === "work-content-context") {
       const text = JSON.stringify(makeDocument());
-      return { schemaVersion: "tcrn.work-content-segment.v1", workId: WORK_ID, workRevision: state.revision, digest: sha256(text), encoding: "json-text", offset: 0, end: [...text].length, total: [...text].length, text, truncated: false, complete: state.contextComplete, nextOffset: null };
+      return { schemaVersion: "tcrn.work-content-segment.v1", workId, workRevision: state.revision, digest: sha256(text), encoding: "json-text", offset: 0, end: [...text].length, total: [...text].length, text, truncated: false, complete: state.contextComplete, nextOffset: null };
     }
     if (command === "work-project-context") return {
-      workId: WORK_ID,
+      workId,
       workRevision: state.revision,
       workContent: { workRevision: state.revision },
       contexts: [],
@@ -134,7 +139,7 @@ const optionsFor = (base, invoke, overrides = {}) => ({
   ...overrides,
 });
 
-test("C.1: identical engine sources reproduce one managed Spec and report missing design authority", async context => {
+test("ordinary task projection preserves its source facts without inheriting the pilot validation block", async context => {
   const base = await temporaryDirectory(context);
   const { state, invoke } = sourceFixture();
   const first = await initializeSpec(optionsFor(base, invoke));
@@ -145,14 +150,21 @@ test("C.1: identical engine sources reproduce one managed Spec and report missin
   const stamp = await readFile(join(directory, "source.json"), "utf8");
   assert.equal(first.reasonCode, "SPEC_INITIALIZED");
   assert.match(requirements, /revision 2/);
+  assert.match(requirements, /Update only the current index entry\./);
+  assert.match(requirements, /Read current sources, preserve user content/);
+  assert.match(requirements, /Output: docs\/examples\/index\.md\./);
   assert.match(requirements, /legacy-unverified/);
   assert.match(requirements, /No effective typed requirements/);
   assert.match(design, /No design authority is configured/);
   assert.match(design, /"status":"unconfigured"/);
   assert.equal((tasks.match(/^- \[ \] /gmu) ?? []).length, 1);
   assert.equal((tasks.match(/^- \[x\] /gmu) ?? []).length, 0);
-  assert.match(tasks, /KIRO-OPEN-OPERATIONAL-VALIDATION:BEGIN/);
-  assert.match(tasks, /intentionally unfinished/);
+  assert.match(tasks, /- \[ \] 1\. Add an ordinary example index entry/);
+  assert.match(tasks, /Goal from the current formal source: Document the open work item without inventing requirements\./);
+  assert.match(tasks, /Scope from the current formal source: Update only the current index entry\./);
+  assert.match(tasks, /Acceptance from the current formal source: Read current sources, preserve user content, and keep formal completion in Einzbern\./);
+  assert.match(tasks, /Original work notes and delivery details from the current formal source: Output: docs\/examples\/index\.md\./);
+  assert.doesNotMatch(tasks, /Operational validation|KIRO-OPEN-OPERATIONAL-VALIDATION|intentionally unfinished/);
 
   const second = await initializeSpec(optionsFor(base, invoke));
   assert.equal(second.reasonCode, "SPEC_ALREADY_CURRENT");
@@ -203,7 +215,7 @@ test("C.1: real source change becomes a draft; linked engine writeback enables r
   assert.match(updatedRequirements, /approved, updated task source/);
   assert.match(updatedRequirements, /User-only note: keep this sentence\./);
   assert.match(updatedRequirements, /revision 3/);
-  assert.match(updatedTasks, /KIRO-OPEN-OPERATIONAL-VALIDATION:BEGIN/);
+  assert.doesNotMatch(updatedTasks, /Operational validation|KIRO-OPEN-OPERATIONAL-VALIDATION/);
   assert.match(updatedTasks, /- \[x\] 1\./);
   const current = await checkSpec(optionsFor(base, invoke));
   assert.equal(current.reasonCode, "SPEC_CURRENT");
@@ -211,6 +223,38 @@ test("C.1: real source change becomes a draft; linked engine writeback enables r
   assert.equal(current.formalStatus, "active");
   assert.equal(current.formalDone, false);
   assert.equal(state.calls.some(call => ["work-annotate", "work-transition"].includes(call.command)), false);
+});
+
+test("current C2 projection preserves its formal source and product delivery location without pilot template pollution", async context => {
+  const base = await temporaryDirectory(context);
+  const { invoke } = sourceFixture({
+    workId: "work:71bfe83f87da034d09dd7a9c",
+    externalKey: "TCRN-CROSS-SUB-INIT085-C2",
+    revision: 3,
+    status: "ready",
+    title: "用 Kiro Specs 完成开放的操作验证说明",
+    goal: "可进入 E 候选的操作验证说明增量，以及实际 Spec、任务产物、引擎读回和用量记录。",
+    scope: "在隔离工作树生成与此 Subtask 对应的 Feature Spec，通过实际 CLI Spec 任务入口消费并补齐尚未完成的候选操作验证说明。证据同时覆盖可复用的宿主用例。 产品产物位于 E 仓根的 skill/mana-orchestrate/references/kiro-specs.md；任务清单本身不能替代产品文件。",
+    acceptance: "真实未完成任务执行前有来源核验。CLI 固定 `claude-haiku-4.5` 并留明确权限、终态及可得估算用量。引擎隔离写回与新会话读回可关联，正式 work 由主决策按既有契约写回。报告真实发现、分歧、返工或实际为零，收益对照缺失时保留 unknown。",
+    body: "产品交付位于 E 仓根的 skill/mana-orchestrate/references/kiro-specs.md；tasks.md 只承载任务清单及来源，不作为产品说明替代。",
+  });
+  const initialized = await initializeSpec(optionsFor(base, invoke, {
+    workId: "work:71bfe83f87da034d09dd7a9c",
+    specDir: ".kiro/specs/c2-current-revision-3",
+  }));
+  const directory = join(base, ".kiro/specs/c2-current-revision-3");
+  const requirements = await readFile(join(directory, "requirements.md"), "utf8");
+  const tasks = await readFile(join(directory, "tasks.md"), "utf8");
+  assert.equal(initialized.reasonCode, "SPEC_INITIALIZED");
+  assert.match(requirements, /可进入 E 候选的操作验证说明增量/);
+  assert.match(requirements, /skill\/mana-orchestrate\/references\/kiro-specs\.md/);
+  assert.match(tasks, /- \[ \] 1\. 用 Kiro Specs 完成开放的操作验证说明/);
+  assert.match(tasks, /Work item: `work:71bfe83f87da034d09dd7a9c` revision 3\./);
+  assert.match(tasks, /Goal from the current formal source: 可进入 E 候选的操作验证说明增量，以及实际 Spec、任务产物、引擎读回和用量记录。/);
+  assert.match(tasks, /Scope from the current formal source: 在隔离工作树生成与此 Subtask 对应的 Feature Spec，通过实际 CLI Spec 任务入口消费并补齐尚未完成的候选操作验证说明。证据同时覆盖可复用的宿主用例。 产品产物位于 E 仓根的 skill\/mana-orchestrate\/references\/kiro-specs\.md；任务清单本身不能替代产品文件。/);
+  assert.match(tasks, /Acceptance from the current formal source: 真实未完成任务执行前有来源核验。CLI 固定 `claude-haiku-4\.5` 并留明确权限、终态及可得估算用量。引擎隔离写回与新会话读回可关联，正式 work 由主决策按既有契约写回。报告真实发现、分歧、返工或实际为零，收益对照缺失时保留 unknown。/);
+  assert.match(tasks, /Original work notes and delivery details from the current formal source: 产品交付位于 E 仓根的 skill\/mana-orchestrate\/references\/kiro-specs\.md/);
+  assert.doesNotMatch(tasks, /Operational validation|KIRO-OPEN-OPERATIONAL-VALIDATION|intentionally unfinished/);
 });
 
 test("C.1: unowned targets and edited managed content are refused without overwriting the file", async context => {

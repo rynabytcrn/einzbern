@@ -222,6 +222,34 @@ test("C.1: real source change becomes a draft; linked engine writeback enables r
   assert.deepEqual(current.tasksCheckedLocalOnly, ["1"]);
   assert.equal(current.formalStatus, "active");
   assert.equal(current.formalDone, false);
+  // A pre-fix refresh stamped the checked task verbatim; retain that existing source stamp.
+  const sourcePath = join(directory, "source.json");
+  const legacyStamp = JSON.parse(await readFile(sourcePath, "utf8"));
+  delete legacyStamp.manifestDigest;
+  const start = "<!-- EINZBERN-SPEC:MANAGED-START -->";
+  const end = "<!-- EINZBERN-SPEC:MANAGED-END -->";
+  legacyStamp.managedSha256["tasks.md"] = sha256(updatedTasks.slice(updatedTasks.indexOf(start), updatedTasks.indexOf(end) + end.length));
+  const canonicalStamp = JSON.stringify(legacyStamp, (_key, value) => value && !Array.isArray(value) && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+  await writeFile(sourcePath, JSON.stringify({ ...legacyStamp, manifestDigest: sha256(canonicalStamp) }));
+  await writeFile(tasksPath, updatedTasks.replace("- [x] 1.", "- [ ] 1."));
+  assert.deepEqual((await checkSpec(optionsFor(base, invoke))).tasksCheckedLocalOnly, []);
+  assert.equal((await initializeSpec(optionsFor(base, invoke))).reasonCode, "SPEC_ALREADY_CURRENT");
+  await writeFile(tasksPath, (await readFile(tasksPath, "utf8")).replace("- [ ] 1.", "- [x] 1."));
+  assert.deepEqual((await checkSpec(optionsFor(base, invoke))).tasksCheckedLocalOnly, ["1"]);
+
+  state.revision = 4;
+  state.goal = "A second approved source revision.";
+  assert.equal((await refreshSpec(optionsFor(base, invoke, { approvedIn: `${MINUTES_ID}#D1` }))).reasonCode, "SPEC_REFRESHED");
+  const twiceRefreshed = await readFile(tasksPath, "utf8");
+  assert.match(twiceRefreshed, /- \[x\] 1\./);
+  await writeFile(tasksPath, twiceRefreshed.replace("- [x] 1.", "- [ ] 1."));
+  assert.deepEqual((await checkSpec(optionsFor(base, invoke))).tasksCheckedLocalOnly, []);
+  assert.match(await readFile(requirementsPath, "utf8"), /User-only note: keep this sentence\./);
+  const editedTasks = (await readFile(tasksPath, "utf8")).replace("A second approved source revision.", "User edited managed content.");
+  await writeFile(tasksPath, editedTasks);
+  await assert.rejects(checkSpec(optionsFor(base, invoke)), error => error.reasonCode === "SPEC_EDIT_CONFLICT");
+  assert.equal(await readFile(tasksPath, "utf8"), editedTasks);
+  assert.equal(state.status, "active");
   assert.equal(state.calls.some(call => ["work-annotate", "work-transition"].includes(call.command)), false);
 });
 

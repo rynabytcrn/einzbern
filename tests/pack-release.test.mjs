@@ -5,7 +5,7 @@ import { BRANCH_LIFECYCLE_BODY, ruleBody } from "../dist/build/packages/core/src
 // but the archive's files, the engine lists its commands and creates and reads a library with
 // Node.js alone, Atelier reaches the engine beside it, and the hook entry answers nothing on an
 // older Node.js. The manifest states the install-tree digest of the unpacked directory (without
-// manifest.json itself), the skill directory holds SKILL.md and the six references, and the
+// manifest.json itself), the skill directory holds SKILL.md and the seven references, and the
 // launchers are the templates as they are. scripts/lib/tar.mjs writes the bytes P8's independent
 // rebuild writes, reads them back, and refuses the entries an unpacker must not follow.
 
@@ -47,7 +47,7 @@ const SOURCE_COREPACK_HOME = resolve(process.env.COREPACK_HOME ?? join(
   process.env.XDG_CACHE_HOME ?? process.env.LOCALAPPDATA ?? join(homedir(), process.platform === "win32" ? "AppData/Local" : ".cache"),
   "node/corepack",
 ));
-const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
+const REFERENCES = Object.freeze(["doctor.md", "install.md", "kiro-specs.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
 const SPECIFICATIONS = Object.freeze([
   "coding-style-v1.md",
   "installed-paths-v2.md", "work-practices-v1.md", "dot-task-recovery-v1.md", "batch-execution-v1.md", "resource-cleanup-v1.md", "unattended-execution-v1.md", "design-consumption-v1.md", "configuration-contract-v1.md", "settings-catalog-v1.md",
@@ -464,13 +464,14 @@ test("481-R2: the manifest states the install-tree digest of the unpacked direct
   }
 });
 
-test("481-R2: the skill directory holds SKILL.md for this version and the six references", async () => {
+test("481-R2: the skill directory holds SKILL.md for this version and the seven references", async () => {
   const { tree } = await packedRelease();
   const skill = join(tree, "skill/mana-orchestrate");
   const markdown = await readFile(join(skill, "SKILL.md"), "utf8");
   assert.ok(markdown.startsWith("---\nname: mana-orchestrate\n"), "SKILL.md opens with its frontmatter");
   assert.ok(markdown.includes(`Einzbern ${FRAMEWORK_VERSION}`), "SKILL.md is rendered for this version");
   assert.deepEqual((await readdir(join(skill, "references"))).sort(), REFERENCES);
+  assert.deepEqual(await readFile(join(skill, "references/kiro-specs.md")), await readFile(join(repositoryRoot, "skill/mana-orchestrate/references/kiro-specs.md")));
   assert.ok(existsSync(join(skill, "agents/openai.yaml")));
 });
 

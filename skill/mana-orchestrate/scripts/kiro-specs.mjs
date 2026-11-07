@@ -487,6 +487,15 @@ function taskTemplate(block) {
   return block.replace(/^- \[[ x]\] (?=[0-9]+\.)/gmu, "- [ ] ");
 }
 
+function taskChecksumMatches(block, expected) {
+  const template = taskTemplate(block);
+  if (checksumMatches(template, expected)) return true;
+  // Earlier refreshes stamped the sole task's checked state verbatim.
+  const checkbox = /^- \[ \] (?=[0-9]+\.)/gmu;
+  return [...template.matchAll(checkbox)].length === 1
+    && checksumMatches(template.replace(checkbox, "- [x] "), expected);
+}
+
 function applyTaskStates(documents, states) {
   if (Object.keys(states).length === 0) return documents;
   const block = managedPart(documents["tasks.md"], "tasks.md").managed;
@@ -504,7 +513,7 @@ async function inspectFiles(directory, manifest, { allowLocalTaskChecks = false 
     const parts = managedPart(text, name);
     let states = name === "tasks.md" ? taskStates(parts.managed) : {};
     const unchanged = checksumMatches(parts.managed, manifest.managedSha256[name]);
-    if (!unchanged && name === "tasks.md" && allowLocalTaskChecks && checksumMatches(taskTemplate(parts.managed), manifest.managedSha256[name])) {
+    if (!unchanged && name === "tasks.md" && allowLocalTaskChecks && taskChecksumMatches(parts.managed, manifest.managedSha256[name])) {
       states = taskStates(parts.managed);
     } else if (!unchanged) {
       fail("SPEC_EDIT_CONFLICT", `${name} changed inside its managed section; refresh refused to overwrite the edit.`, { file: name });
@@ -521,7 +530,10 @@ function manifestFor(stamp, documents) {
     workRevision: stamp.workRevision,
     sourceDigest: stamp.sourceDigest,
     sourceStamp: stamp,
-    managedSha256: Object.fromEntries(FILES.map(name => [name, sha256(managedPart(documents[name], name).managed)])),
+    managedSha256: Object.fromEntries(FILES.map(name => {
+      const managed = managedPart(documents[name], name).managed;
+      return [name, sha256(name === "tasks.md" ? taskTemplate(managed) : managed)];
+    })),
     files: [...FILES],
   };
   return { ...unsigned, manifestDigest: sha256(canonical(unsigned)) };
@@ -577,7 +589,7 @@ export async function initializeSpec({ workspace, workId, specDir, cwd = process
   const documents = buildDocuments(snapshot);
   const prior = await prepareDirectory(directory, workId, true);
   if (prior !== null) {
-    const inspected = await inspectFiles(directory, prior);
+    const inspected = await inspectFiles(directory, prior, { allowLocalTaskChecks: true });
     if (prior.sourceDigest === snapshot.stamp.sourceDigest) {
       return { ok: true, reasonCode: "SPEC_ALREADY_CURRENT", workId, workRevision: snapshot.stamp.workRevision, sourceDigest: snapshot.stamp.sourceDigest };
     }

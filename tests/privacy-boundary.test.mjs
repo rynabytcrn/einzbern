@@ -1387,7 +1387,7 @@ test("reviewed diagnostic 3.0.0 package owner classification is exact in version
 });
 
 // Keep all historical classifications and their negative checks intact.
-for (const reviewedVersion of ["3.1.0", "3.2.0", "3.3.0", "3.3.1", "3.4.0", "4.0.0"]) test(`reviewed diagnostic ${reviewedVersion} package owner classification is exact in version, member, origin and line`, async () => {
+for (const reviewedVersion of ["3.1.0", "3.2.0", "3.3.0", "3.3.1", "3.4.0", "4.0.0", "4.4.0"]) test(`reviewed diagnostic ${reviewedVersion} package owner classification is exact in version, member, origin and line`, async () => {
   const owner = LEGACY_REPOSITORY_NAMES.owner;
   const buildPath = "dist/build/packages/core/src/names.js";
   const build = await readFile(resolve(import.meta.dirname, "..", buildPath), "utf8");
@@ -1395,7 +1395,7 @@ for (const reviewedVersion of ["3.1.0", "3.2.0", "3.3.0", "3.3.1", "3.4.0", "4.0
   assert.equal(createHash("sha256").update(ownerLine).digest("hex"), "3861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56");
   const member = (path, version = reviewedVersion) => `dist/release/${BRAND.engine.id}-${version}.tar.gz/${BRAND.engine.id}-${version}/${path}`;
   const members = ["atelier/portal.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern.mjs"];
-  if (reviewedVersion === "3.4.0" || reviewedVersion === "4.0.0") members.push("scripts/library-catalog-worker.mjs");
+  if (["3.4.0", "4.0.0", "4.4.0"].includes(reviewedVersion)) members.push("scripts/library-catalog-worker.mjs");
   for (const path of members) {
     const label = member(path);
     const entry = { label, kind: "release", releaseArchiveMember: true, sourcePaths: p8ReleasePrivacySourcePaths(label), content: ownerLine };
@@ -1403,7 +1403,7 @@ for (const reviewedVersion of ["3.1.0", "3.2.0", "3.3.0", "3.3.1", "3.4.0", "4.0
       .includes(`OWNER_PRIVATE_IDENTIFIER:release:${candidate.label}`);
     assert.deepEqual(entry.sourcePaths, [buildPath]);
     assert.deepEqual(scanPrivacyEntries([entry], { owner }), []);
-    for (const changedLabel of [member(path, "3.1.1"), member(path, "3.2.1"), member(path, "3.3.2"), member(path, "3.4.1"), member(path, "4.0.1"), member(path, "2.2.4"), ...(path === "scripts/library-catalog-worker.mjs" ? [member(path, "3.3.1")] : []), member(`adjacent/${path}`), label.replace(".tar.gz/", ".other.tar.gz/")]) {
+    for (const changedLabel of [member(path, "3.1.1"), member(path, "3.2.1"), member(path, "3.3.2"), member(path, "3.4.1"), member(path, "4.0.1"), member(path, "4.4.1"), member(path, "2.2.4"), ...(path === "scripts/library-catalog-worker.mjs" ? [member(path, "3.3.1")] : []), member(`adjacent/${path}`), label.replace(".tar.gz/", ".other.tar.gz/")]) {
       assert.deepEqual(p8ReleasePrivacySourcePaths(changedLabel), []);
       assert.ok(finding({ ...entry, label: changedLabel, sourcePaths: p8ReleasePrivacySourcePaths(changedLabel) }));
     }

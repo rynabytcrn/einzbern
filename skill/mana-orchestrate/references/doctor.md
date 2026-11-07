@@ -40,11 +40,20 @@ stable entry is missing (`ENGINE_ENTRY_MISSING`): repair. Node.js is older than 
 
 ### hooks-present
 
-Both hosts' settings carry the one Einzbern hook, as the engine renders it, and the launcher it
-runs is there. Not ok: `DOCTOR_HOOKS_MISMATCH`. Missing (`HOOK_MISSING`), more than one
+Claude Code and Codex's grouped settings carry the Einzbern hooks, as the engine renders them,
+and the launcher they run is there. Kiro appears in `detail.hosts` separately: its CLI and IDE
+identity are independent, and missing Hooks are applicable only when a Kiro configuration root is
+selected. A missing identity or an unavailable IDE does not select Kiro. Not ok:
+`DOCTOR_HOOKS_MISMATCH`. Missing (`HOOK_MISSING`), more than one
 (`HOOK_DUPLICATED`), changed (`HOOK_NOT_AS_EXPECTED`), a hook of the old platform left in place
 (`HOOK_LEGACY_PRESENT`), or no launcher (`HOOK_LAUNCHER_MISSING`): repair. A settings file that is
 a symbolic link (`HOST_HOOKS_FILE_UNSUPPORTED`) is left alone; ask the user what to do with it.
+
+Kiro CLI and IDE identity are reported separately. `selection` is `selected`, `not-selected`, or
+`unknown`; `applicability` is `selected`, `not-selected`, or `selection-unknown`. When not selected,
+missing Kiro Hooks do not make the check fail. When selected, doctor checks the standalone v1
+global and workspace files and reports the path and owned-hook count. A conflict or unreadable
+standalone file is left for review before repair.
 
 DSH keeps no hook file: its Mana Orchestrate plugin runs the launcher. When the user's home has
 `.dsh/profiles/`, `detail.hosts` also has a `dsh` entry with one row per profile: whether its
@@ -58,7 +67,8 @@ DSH profile; installing or configuring the plugin is done in DSH.
 
 ### skill-copies
 
-The skill copies for both hosts match what this device recorded for them. Not ok:
+The skill copies for Claude Code and Codex match what this device recorded for them; the Kiro copy
+is included when that surface is selected or previously recorded. Not ok:
 `DOCTOR_SKILL_COPIES_MISMATCH`. No record (`SKILL_COPIES_NOT_RECORDED`), an unreadable record
 (`SKILL_COPIES_RECORD_INVALID`), or a copy that is missing or differs (`SKILL_COPIES_DRIFTED`):
 repair, which backs up a copy the user changed before it replaces it. The old helper's copies are

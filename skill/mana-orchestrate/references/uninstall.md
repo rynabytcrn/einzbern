@@ -18,6 +18,11 @@ handling. Follow the engine invocation in SKILL.md. For both operations, use the
 the current UTC instant written `YYYY-MM-DDTHH:MM:SSZ`. The dot target follows its own
 installation instructions.
 
+When Kiro was selected, uninstall also removes only its exact owned standalone Hook entries and
+moves the Skill copy only when its current bytes still match the recorded digest. Custom Hooks,
+Agents, user-edited Skills, trust, permissions and unrelated configuration remain. The removed
+Hook files and owned Skill copy are listed for backup in the uninstall plan.
+
 ## Questions (one screen)
 
 There is one question, asked once for all managed sections together, never section by section.

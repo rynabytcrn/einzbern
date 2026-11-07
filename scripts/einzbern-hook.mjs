@@ -17,7 +17,7 @@
 // note for a prompt the registry does not cover. A line that cannot be written is dropped: the
 // hook's output, stderr and exit code stay what they were without it.
 // TCRN-CROSS-STORY-548 R3: each recall line also names the host the hook ran under (host:
-// claude-code, codex or dsh, as hookHost reads it), after reasonCode. It is an additive field of
+// claude-code, codex, dsh or kiro, as hookHost reads it), after reasonCode. It is an additive field of
 // einzbern.hook-log.v1: the schema version is unchanged, and a v1 reader that takes only
 // schemaVersion, at, event, cwd and reasonCode reads these lines as before. The launcher's own
 // lines for prompts the registry does not cover are unchanged and carry no host.
@@ -66,14 +66,15 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   // file. Keep this guard for direct callers too: a hook answers nothing, and the CLI is where the
   // floor is reported (ENGINE_NODE_TOO_OLD).
   if (!meetsNodeFloor(process.versions.node)) return null;
-  const [{ hookEventName, hookHost, navigationPointerAnswer, promptRecallOutcome, hookProtocolOutput }, { deviceHome }] = await Promise.all([
+  const [{ hookEventName, hookHost, navigationPointerAnswer, promptRecallOutcome, hookProtocolOutput }, { deviceHome }, { kiroHookEventName }] = await Promise.all([
     import("../dist/build/packages/core/src/hook-recall.js"),
     import("../dist/build/packages/core/src/device-home.js"),
+    import("../dist/build/packages/core/src/kiro-host.js"),
   ]);
   const body = payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
-  const name = hookEventName(event);
   // Read once, for the recall and for its log line alike.
   const host = hookHost(process.env);
+  const name = host === "kiro" ? (kiroHookEventName(event) ?? hookEventName(event)) : hookEventName(event);
   // Stale owned SubagentStop commands are inert until normal setup retires them.
   if (event === "subagent-stop") return null;
   if (name === "UserPromptSubmit" && host === "codex") {
@@ -85,6 +86,15 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   switch (name) {
     case "PreToolUse": {
       const directory = absolute(cwd) ?? absolute(body.cwd) ?? process.cwd();
+      if (host === "kiro") {
+        const observation = kiroReadGuardObservation(body, directory);
+        if (observation.status === "denied") {
+          process.stderr.write(`${observation.reason}\n`);
+          process.exitCode = 2;
+        }
+        noteRecall(deviceHome(process.env), event, directory, observation.reasonCode, host);
+        return null;
+      }
       if (host === "codex" && ["mcp__codex_app__wait_threads", "mcp__codex_app__read_thread", "mcp__codex_app__send_message_to_thread"].includes(body.tool_name)) {
         const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
         const result = await runCodexPeerHook(name, body, deviceHome(process.env));
@@ -113,11 +123,14 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
       let outcome;
       try {
         // A payload without a prompt string is an empty prompt (HOOK_RECALL_PROMPT_EMPTY).
+        const prompt = host === "kiro" && typeof process.env.USER_PROMPT === "string"
+          ? process.env.USER_PROMPT
+          : (typeof body.prompt === "string" ? body.prompt : "");
         outcome = await promptRecallOutcome({
           libraryPath,
           // Native SubagentStart has agent_type, not a task prompt. Never read
           // arbitrary transcript paths or claim task-specific injection from a made-up field.
-          prompt: name === "SubagentStart" ? (typeof body.agent_type === "string" ? body.agent_type : "") : (typeof body.prompt === "string" ? body.prompt : ""),
+          prompt: name === "SubagentStart" ? (typeof body.agent_type === "string" ? body.agent_type : "") : prompt,
           event: name,
           host,
           cwd: directory,
@@ -179,6 +192,16 @@ function readWindowExceedsLimit(path, offset, limit) {
 /** BL-35: only a dedicated Read is enforceable. Shell commands are never interpreted. */
 export function readGuardAnswer(payload, cwd, host) {
   if (host === "dsh") return null;
+  const reason = readGuardReason(payload, cwd);
+  if (reason === null) return null;
+  return `${JSON.stringify({ hookSpecificOutput: {
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+    permissionDecisionReason: reason,
+  } })}\n`;
+}
+
+function readGuardReason(payload, cwd) {
   try {
     if (payload?.tool_name !== "Read") return null;
     const input = payload.tool_input;
@@ -191,13 +214,29 @@ export function readGuardAnswer(payload, cwd, host) {
     const bounded = Number.isSafeInteger(offset) && offset >= 0
       && Number.isSafeInteger(input.limit) && input.limit > 0 && input.limit <= 200;
     if (bounded && !readWindowExceedsLimit(path, Math.max(1, offset), input.limit)) return null;
-    return `${JSON.stringify({ hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: `Read a window of at most 200 lines and ${AGENT_OUTPUT_MAX_BYTES} bytes. If one line exceeds the byte limit, extract a smaller excerpt with a tool.`,
-    } })}\n`;
+    return `Read a window of at most 200 lines and ${AGENT_OUTPUT_MAX_BYTES} bytes. If one line exceeds the byte limit, extract a smaller excerpt with a tool.`;
   } catch {
     // An unreadable path, invalid input or filesystem exception must never block a tool.
     return null;
   }
+}
+
+/** Kiro only denies the documented Read shape; an unfamiliar tool payload stays unknown. */
+function kiroReadGuardObservation(payload, cwd) {
+  const input = payload?.tool_input;
+  // Kiro CLI V3 names the built-in file reader `read_file`; its path argument is `path`.
+  // No other read-like tool or undocumented payload is turned into an allow/deny decision.
+  if (!payload || payload.tool_name !== "read_file" || input === null || typeof input !== "object" || Array.isArray(input) || typeof input.path !== "string" || input.path.length === 0) {
+    return { status: "unknown", reasonCode: "HOOK_KIRO_PRETOOL_INPUT_UNKNOWN" };
+  }
+  try {
+    const path = resolve(cwd, input.path);
+    if (!statSync(path).isFile()) return { status: "unknown", reasonCode: "HOOK_KIRO_PRETOOL_INPUT_UNKNOWN" };
+  } catch {
+    return { status: "unknown", reasonCode: "HOOK_KIRO_PRETOOL_INPUT_UNKNOWN" };
+  }
+  const reason = readGuardReason({ ...payload, tool_name: "Read", tool_input: { ...input, file_path: input.path } }, cwd);
+  return reason === null
+    ? { status: "allowed", reasonCode: "HOOK_KIRO_PRETOOL_INPUT_OBSERVED" }
+    : { status: "denied", reasonCode: "HOOK_KIRO_PRETOOL_INPUT_DENIED", reason };
 }

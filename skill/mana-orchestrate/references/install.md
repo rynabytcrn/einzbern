@@ -372,6 +372,13 @@ Claude Code and DSH retain their single-conversation workflow. Codex-specific
 batch recovery uses `docs/codex-native-controller.md`; no collector or stop-hook
 activation is needed. Updates/repairs must preserve user-edited hooks and groups.
 
+When Kiro is selected by an existing global `${KIRO_HOME:-$HOME/.kiro}` or project `.kiro/`
+configuration directory, fresh setup also manages Kiro's standalone Hooks file and Skill copy.
+The CLI and IDE remain separate surfaces; CLI presence or an existing configuration directory
+does not claim that an IDE Hook ran or that a CLI session selected V3. Other Kiro Hook files,
+Agents, trust and permissions are preserved. This setup does not install the Kiro CLI or IDE
+application.
+
 ## Plan, final confirmation, apply
 
 1. Plan. Run `setup --mode fresh --project <dir> --at <UTC>`, with a flag for each answer already

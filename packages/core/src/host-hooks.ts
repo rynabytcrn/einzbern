@@ -8,7 +8,9 @@
 // DSH keeps its separate plugin contract.
 // Engine updates change engine/current without rewriting host command paths.
 //
-// Rendering a file keeps everything that is not Einzbern's: other tools' hook groups, in their
+// Claude Code and Codex use grouped files rendered here. Kiro's standalone v1 JSON file is managed
+// separately in kiro-host.ts; DSH runs through its plugin. Rendering a grouped file keeps everything
+// that is not Einzbern's: other tools' hook groups, in their
 // order, and every other key. What is Einzbern's is taken out and written again: every hook that
 // runs the launcher, and every hook of the old platform harness (named by its script in names.ts,
 // whichever directory it ran from); in Claude Code's settings also the permissions.deny rules that
@@ -75,12 +77,11 @@ function unsupported(file: string, reason: string): never {
   return fail("HOST_HOOKS_FILE_UNSUPPORTED", `${file}: ${reason}`, { file });
 }
 
-// Every host the hook may run under. TCRN-CROSS-STORY-548 R1: DSH runs the same launcher through
-// its plugin and reads the same protocol, but keeps no hook file Einzbern writes; the hosts whose
-// hook file Einzbern renders, merges, reads and writes are HOST_HOOK_FILE_HOSTS.
-export type HostHookHost = "claude-code" | "codex" | "dsh";
-export const HOST_HOOK_HOSTS: readonly HostHookHost[] = Object.freeze(["claude-code", "codex", "dsh"]);
-export type HostHookFileHost = Exclude<HostHookHost, "dsh">;
+// Every host the hook may run under. DSH runs the same launcher through its plugin; Kiro uses its
+// standalone Hooks JSON. HOST_HOOK_FILE_HOSTS names only grouped files rendered by this module.
+export type HostHookHost = "claude-code" | "codex" | "dsh" | "kiro";
+export const HOST_HOOK_HOSTS: readonly HostHookHost[] = Object.freeze(["claude-code", "codex", "dsh", "kiro"]);
+export type HostHookFileHost = Exclude<HostHookHost, "dsh" | "kiro">;
 export const HOST_HOOK_FILE_HOSTS: readonly HostHookFileHost[] = Object.freeze(["claude-code", "codex"]);
 export type HostHookScope = "user" | "project";
 export const HOST_HOOK_SCOPES: readonly HostHookScope[] = Object.freeze(["user", "project"]);
@@ -212,14 +213,15 @@ export function hookLauncherPath(deviceHome: string, platform: NodeJS.Platform =
 }
 
 /** The one line a host runs for `event`: node, the quoted launcher, and the event's word (R1). */
-export function hostHookCommand(launcher: string, event: string, userHome: string = homedir(), platform: NodeJS.Platform = process.platform): string {
+export function hostHookCommand(launcher: string, event: string, userHome: string = homedir(), platform: NodeJS.Platform = process.platform, runningHost?: HostHookHost): string {
   const word = Object.hasOwn(HOOK_EVENT_WORDS, event) ? HOOK_EVENT_WORDS[event] : undefined;
   if (word === undefined) fail("HOST_HOOKS_INPUT_INVALID", `${event} is not an event Einzbern hooks`, { event });
   const paths = platform === "win32" ? win32 : posix;
   const device = paths.relative(userHome, paths.dirname(paths.dirname(launcher))).replaceAll("\\", "/") || ".";
   if (paths.isAbsolute(device)) fail("HOST_HOOKS_PATH_UNSUPPORTED", "the device directory needs a relative home binding", { launcher });
   const literal = device.replaceAll("'", "\\'");
-  const code = `/*einzbern-hook*/const p=require('node:path');const d=p.resolve(process.env.EINZBERN_HOME||p.resolve(require('node:os').homedir(),'${literal}'));process.env.EINZBERN_HOME=d;import(require('node:url').pathToFileURL(p.join(d,'engine/hook.mjs')).href).then(m=>m.launch(process.argv.slice(1),process.env)).then(s=>{if(s)process.stdout.write(s)}).catch(e=>process.stderr.write(JSON.stringify({ok:false,reasonCode:e.reasonCode||'HOOK_LAUNCH_FAILED',error:e.message})+'\\n'))`;
+  const hostBinding = runningHost === undefined ? "" : `process.env.EINZBERN_HOST='${runningHost}';`;
+  const code = `/*einzbern-hook*/const p=require('node:path');const d=p.resolve(process.env.EINZBERN_HOME||p.resolve(require('node:os').homedir(),'${literal}'));process.env.EINZBERN_HOME=d;${hostBinding}import(require('node:url').pathToFileURL(p.join(d,'engine/hook.mjs')).href).then(m=>m.launch(process.argv.slice(1),process.env)).then(s=>{if(s)process.stdout.write(s)}).catch(e=>process.stderr.write(JSON.stringify({ok:false,reasonCode:e.reasonCode||'HOOK_LAUNCH_FAILED',error:e.message})+'\\n'))`;
   return `node -e "${code}" ${word}`;
 }
 
@@ -228,7 +230,7 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   if (!HOST_HOOK_HOSTS.includes(request.host)) {
     fail("HOST_HOOKS_INPUT_INVALID", `host must be one of ${HOST_HOOK_HOSTS.join(", ")}`, { host: String(request.host) });
   }
-  // TCRN-CROSS-STORY-548 R1: no hook file is ever planned for DSH; its plugin runs the launcher.
+  // DSH's plugin and Kiro's standalone JSON are handled elsewhere; this planner owns grouped files.
   if (!(HOST_HOOK_FILE_HOSTS as readonly string[]).includes(request.host)) {
     fail("HOST_HOOKS_HOST_NOT_FILE_BASED", `${request.host} keeps no hook file Einzbern writes; hook files are written for ${HOST_HOOK_FILE_HOSTS.join(", ")}`, { host: request.host });
   }

@@ -84,8 +84,8 @@ export function hookEventName(word: unknown): string | null {
  * the answer; the DSH plugin sets it to dsh on every spawn, because DSH's Claude Code hook bridge
  * also gives the hook CLAUDE_PROJECT_DIR. Any other value, the empty string included, counts as
  * unset and never fails the hook. Unset, Claude Code gives every hook command it runs
- * CLAUDE_PROJECT_DIR, and Codex is the other host the hook is rendered for. Every host reads the
- * same protocol (hookProtocolOutput), so the answer never depends on this guess being right.
+ * CLAUDE_PROJECT_DIR, and Codex is the other grouped-file host. Kiro commands bind their host
+ * explicitly; each protocol is rendered by hookProtocolOutput for its documented output shape.
  */
 export function hookHost(env: NodeJS.ProcessEnv = process.env): HostHookHost {
   const declared = env["EINZBERN_HOST"];
@@ -95,15 +95,14 @@ export function hookHost(env: NodeJS.ProcessEnv = process.env): HostHookHost {
 }
 
 /**
- * The JSON a host reads from the hook's standard output for `event`: `lines` joined by newlines as
- * the hookSpecificOutput's additionalContext. Claude Code, Codex and DSH read one shape, the one
- * the retired prompt-injection hook wrote for the first two.
+ * The context a host reads from stdout for `event`. Claude Code, Codex and DSH use the shared JSON
+ * additionalContext shape; Kiro CLI reads the same lines as plain text from its hook action.
  */
 export function hookProtocolOutput(host: HostHookHost, event: string, lines: readonly string[]): string {
   if (!HOST_HOOK_HOSTS.includes(host)) fail("HOOK_INPUT_INVALID", `host must be one of ${HOST_HOOK_HOSTS.join(", ")}`, { host: String(host) });
   if (!Object.hasOwn(hookEventWords(), event)) fail("HOOK_INPUT_INVALID", `${String(event)} is not an event Einzbern hooks`, { event: String(event) });
   if (!Array.isArray(lines) || lines.some((line) => typeof line !== "string")) fail("HOOK_INPUT_INVALID", "lines must be strings");
-  return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: lines.join("\n") } });
+  return host === "kiro" ? lines.join("\n") : JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: lines.join("\n") } });
 }
 
 /**

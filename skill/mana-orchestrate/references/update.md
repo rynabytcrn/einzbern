@@ -86,6 +86,10 @@ at all, and doctor does not report it.
   disabled rules, generation-disabled targets and independent dot targets retain their choices.
   No new per-project AGENTS.md is created where no managed output was registered. Missing outputs
   and refused writes are reported individually; other available outputs still refresh.
+- When Kiro is selected, update and repair keep its standalone Hooks in the active global or
+  workspace scope and refresh its Skill copy from recorded ownership evidence. A managed Hook
+  whose trigger or action was edited is preserved and reported as a conflict; other Kiro Agents,
+  trust, permissions and hooks remain intact.
 - When upgrading from an engine whose update receipt has no `managedUpdates`, finish the same
   approved update with the newly installed engine: use `library-list` and `rule-list` to identify
   existing configured outputs, run `agents-render --project <registered output> --at <UTC>` for

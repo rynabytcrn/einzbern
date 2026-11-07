@@ -96,7 +96,7 @@ import {
   setupTargetState,
 } from "./setup-fresh.js";
 import type { EngineFiles, EngineSource, LibraryState } from "./setup-fresh.js";
-import { SKILL_COPIES_FILES, SKILL_COPY_ROOTS, skillCopiesRecordPath, skillCopyPath } from "./skill-copies.js";
+import { KIRO_SKILL_COPY_ROOT, SKILL_COPIES_FILES, SKILL_COPY_ROOTS, skillCopyPath, verifySkillCopies, skillCopiesRecordPath } from "./skill-copies.js";
 import { materializeWorkspaceFromGenesis } from "./workspace.js";
 import { scopedWorkspaceState } from "./project-scope.js";
 import { applySetupManagedUpdates, planSetupManagedUpdates, runSetupEngineCommand } from "./setup-managed-update.js";
@@ -755,12 +755,22 @@ export async function planUninstallSetup(input: SetupModeInput): Promise<SetupMo
   const registry = await recorder.attempt("registry", registryFile, () => readRegistry(deviceHome));
   const registered = registry?.entries.find((entry) => entry.projectPath === projectRoot) ?? null;
 
-  await planHooks(recorder, home, deviceHome, null, false);
+  await planHooks(recorder, home, deviceHome, null, false, undefined, false, projectRoot);
   for (const root of SKILL_COPY_ROOTS) {
     const path = skillCopyPath(home, root);
     if (await entryKind(path) === null) continue;
     recorder.write("skill-copies", path, "move");
     recorder.backup("skill-copies", path);
+  }
+  const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
+  const kiroPath = skillCopyPath(home, KIRO_SKILL_COPY_ROOT, kiroHome);
+  const kiroVerification = await verifySkillCopies({ home, deviceHome, includeKiro: true, kiroHome });
+  const kiroCopy = kiroVerification.copies.find(copy => copy.host === "kiro" && copy.path === kiroPath);
+  if (kiroCopy?.ok) {
+    recorder.write("skill-copies", kiroPath, "move");
+    recorder.backup("skill-copies", kiroPath);
+  } else if (kiroCopy !== undefined && await entryKind(kiroPath) !== null && kiroCopy.recorded !== null) {
+    recorder.block("skill-copies", kiroPath, "SETUP_SKILL_USER_EDITED", "The Kiro Skill copy differs from its ownership digest; preserve and review it before uninstall.");
   }
   const record = skillCopiesRecordPath(deviceHome);
   if (await entryKind(record) !== null) {
@@ -817,13 +827,22 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
   const registry = await readRegistry(deviceHome);
   const registered = registry.entries.find((entry) => entry.projectPath === projectRoot);
 
-  await applyHooks(recorder, { home, deviceHome, at, navigation: null, install: false });
+  await applyHooks(recorder, { home, projectRoot, deviceHome, at, navigation: null, install: false });
   for (const root of SKILL_COPY_ROOTS) {
     const path = skillCopyPath(home, root);
     if (await entryKind(path) === null) continue;
     await moveIntoBackup(path, skillCopyBackup(recorder, root.root));
     recorder.write("skill-copies", path, "move");
     recorder.backup("skill-copies", path);
+  }
+  const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
+  const kiroPath = skillCopyPath(home, KIRO_SKILL_COPY_ROOT, kiroHome);
+  const kiroVerification = await verifySkillCopies({ home, deviceHome, includeKiro: true, kiroHome });
+  const kiroCopy = kiroVerification.copies.find(copy => copy.host === "kiro" && copy.path === kiroPath);
+  if (kiroCopy?.ok && await entryKind(kiroPath) !== null) {
+    await moveIntoBackup(kiroPath, skillCopyBackup(recorder, KIRO_SKILL_COPY_ROOT.root));
+    recorder.write("skill-copies", kiroPath, "move");
+    recorder.backup("skill-copies", kiroPath);
   }
   const record = skillCopiesRecordPath(deviceHome);
   if (await entryKind(record) !== null) {

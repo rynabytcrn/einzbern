@@ -62,6 +62,7 @@ import { ENGINE_FORMAT_VERSION, librarySupportRefusal } from "./format-version.j
 import { inspectDshPlugin } from "./dsh-plugin.js";
 import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, hookLauncherPath, isEinzbernHookCommand, planHostHooks, readHostHooks } from "./host-hooks.js";
 import type { HostHookFileHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
+import { inspectKiroHookScope, kiroSelectionStatus, planKiroHookScopes, probeKiroHost } from "./kiro-host.js";
 import { managedSectionRecordKey, managedSectionRecordsFor, planManagedWrite } from "./managed-sections.js";
 import { readAgentsNavigation } from "./machine-settings.js";
 import { listRules } from "./rules.js";
@@ -356,6 +357,36 @@ async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
     causes.push(...hostCauses);
     hosts.push({ host, hooks: total, files, causes: [...unique(hostCauses)] });
   }
+  const kiroIdentity = probeKiroHost({ home: context.home, env: { ...context.cloud.env } as NodeJS.ProcessEnv });
+  const kiroSelection = kiroSelectionStatus({ home: context.home, projectRoot: context.projectRoot, ...(context.cloud.env.KIRO_HOME === undefined ? {} : { kiroHome: context.cloud.env.KIRO_HOME }) });
+  const kiroDetected = kiroSelection === "selected";
+  const kiroHome = context.cloud.env.KIRO_HOME ?? join(context.home, ".kiro");
+  const kiroUserScope = await inspectKiroHookScope(kiroHome, "user");
+  const kiroProjectScope = await inspectKiroHookScope(context.projectRoot, "project");
+  const kiroScopes = kiroUserScope.path === kiroProjectScope.path ? [kiroUserScope] : [kiroUserScope, kiroProjectScope];
+  const kiroCount = kiroScopes.reduce((sum, scope) => sum + scope.count, 0);
+  const kiroCauses: string[] = [];
+  let kiroApplicability = kiroSelection === "not-selected" ? "not-selected" : "selection-unknown";
+  if (kiroDetected) {
+    kiroApplicability = "selected";
+    for (const scope of kiroScopes) if (scope.error !== null) kiroCauses.push("KIRO_HOOKS_FILE_UNREADABLE");
+    if (kiroCauses.length === 0 && kiroCount === 0) kiroCauses.push("HOOK_MISSING");
+    if (kiroCauses.length === 0 && kiroScopes.filter(scope => scope.count > 0).length > 1) kiroCauses.push("HOOK_DUPLICATED");
+    if (kiroCauses.length === 0 && launcher !== null) {
+      try {
+        const plans = await planKiroHookScopes({
+          home: context.home, kiroHome, projectRoot: context.projectRoot, deviceHome: context.deviceHome,
+          install: true, navigation: await readAgentsNavigation(context.deviceHome) === "declined" ? "declined" : "always", platform: context.platform,
+        });
+        if (plans.some(plan => plan.changed)) kiroCauses.push("HOOK_NOT_AS_EXPECTED");
+      } catch (error) {
+        kiroCauses.push((error as { readonly reasonCode?: string }).reasonCode === "KIRO_HOOKS_OWNERSHIP_CONFLICT" ? "HOOK_NOT_AS_EXPECTED" : "KIRO_HOOKS_FILE_UNREADABLE");
+      }
+    }
+  }
+  const kiroFiles: JsonValue[] = kiroScopes.map(scope => ({ path: scope.path, hooks: scope.count, ...(scope.error === null ? {} : { error: scope.error }) }));
+  causes.push(...kiroCauses);
+  hosts.push({ host: "kiro", applicability: kiroApplicability, selection: kiroSelection, cliVersion: kiroIdentity.cli.version, cliStatus: kiroIdentity.cli.status, ideBundleId: kiroIdentity.ide.bundleId, ideVersion: kiroIdentity.ide.version, hooks: kiroCount, files: kiroFiles, causes: [...unique(kiroCauses)] });
   // TCRN-CROSS-STORY-548 R4: DSH keeps no hook file; when this home has DSH profiles, its entry says
   // what each profile's plugin would run. A launcher other than this device directory's is red; a
   // profile without the plugin, or one that cannot be read, is a hint and leaves the check as it is.
@@ -386,7 +417,9 @@ async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
 // ---- skill-copies ----
 
 async function skillCopiesCheck(context: DoctorContext): Promise<DoctorCheck> {
-  const verification = await verifySkillCopies({ home: context.home, deviceHome: context.deviceHome });
+  const includeKiro = kiroSelectionStatus({ home: context.home, projectRoot: context.projectRoot, ...(context.cloud.env.KIRO_HOME === undefined ? {} : { kiroHome: context.cloud.env.KIRO_HOME }) }) === "selected";
+  const kiroHome = context.cloud.env.KIRO_HOME ?? join(context.home, ".kiro");
+  const verification = await verifySkillCopies({ home: context.home, deviceHome: context.deviceHome, includeKiro, kiroHome });
   return result("skill-copies", verification.ok ? [] : [verification.reasonCode], {
     record: verification.record,
     copies: verification.copies.map((copy) => ({ host: copy.host, path: copy.path, reasonCode: copy.reasonCode })),

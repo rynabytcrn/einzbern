@@ -150,7 +150,7 @@ test("480-AC5: a device and project as setup leaves them are green on all eight 
   assert.deepEqual(results.map((entry) => [entry.check, entry.ok, entry.reasonCode]), DOCTOR_CHECKS.map((check) => [check, true, null]));
   for (const entry of results) assert.deepEqual(entry.detail.causes, [], entry.check);
   assert.equal(byCheck(results, "engine-version").detail.current, FRAMEWORK_VERSION);
-  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_FILE_HOSTS.map((host) => [host, 1]));
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.filter((host) => HOST_HOOK_FILE_HOSTS.includes(host.host)).map((host) => [host.host, host.hooks]), HOST_HOOK_FILE_HOSTS.map((host) => [host, 1]));
   assert.equal(byCheck(results, "registry").detail.via, "project-path");
   assert.equal(byCheck(results, "library-format").detail.source, "registry");
   assert.deepEqual(byCheck(results, "managed-sections").detail.pending, []);
@@ -175,7 +175,7 @@ test("480-AC5: hooks-present is red for a host without its hook", async (context
   const results = await doctor(fixture);
   assertOnlyRed(results, "hooks-present", "HOOK_MISSING");
   const hosts = byCheck(results, "hooks-present").detail.hosts;
-  assert.deepEqual(hosts.map((host) => [host.host, host.causes]), [["claude-code", ["HOOK_MISSING"]], ["codex", []]]);
+  assert.deepEqual(hosts.map((host) => [host.host, host.causes]), [["claude-code", ["HOOK_MISSING"]], ["codex", []], ["kiro", []]]);
 });
 
 test("480-AC5: hooks-present is red for a host whose hook is in both scopes", async (context) => {
@@ -200,7 +200,7 @@ test("478-AC5: hooks-present accepts declined-navigation pointers and reports a 
 
   const results = await doctor(fixture);
   assert.ok(results.every((entry) => entry.ok), JSON.stringify(results));
-  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_FILE_HOSTS.map((host) => [host, 1]));
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.filter((host) => HOST_HOOK_FILE_HOSTS.includes(host.host)).map((host) => [host.host, host.hooks]), HOST_HOOK_FILE_HOSTS.map((host) => [host, 1]));
 
   const settings = join(fixture.home, ".claude", "settings.json");
   const document = JSON.parse(await readFile(settings, "utf8"));
@@ -427,7 +427,7 @@ test("548-AC4: no DSH profiles, no dsh entry", async (context) => {
   const results = await doctor(fixture);
   assert.ok(results.every((entry) => entry.ok));
   assert.equal(dshEntry(results), undefined);
-  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => host.host), ["claude-code", "codex"]);
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => host.host), ["claude-code", "codex", "kiro"]);
 });
 
 test("548-AC4: a profile whose plugin runs this device directory's launcher is green, and doctor writes nothing under .dsh", async (context) => {

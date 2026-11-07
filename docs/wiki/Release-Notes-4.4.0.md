@@ -17,6 +17,14 @@ versioned engine package and generated Skill. Engine updates refresh the normal
 hook registrations and managed guidance; installing the Skill alone does not
 switch an existing engine.
 
+When upgrading from 4.2.0, its updater can leave the previous three-event Codex
+registration in place. The newly installed 4.4.0 self-check reports
+`DOCTOR_HOOKS_MISMATCH` in that case. Complete the update through Mana Orchestrate's
+existing doctor/repair procedure: run `setup --mode repair` with the installed
+4.4.0 engine and the device's existing cloud and navigation choices, then confirm
+all eight self-checks pass. This adds PostToolUse and Stop through the normal
+installer. Review and trust the new commands through the host's native interface.
+
 The Codex guards use recorded peer-batch facts and the host's native hook support.
 Host trust still applies to newly registered commands. Check actual hook activation
 before treating a configuration file or a successful engine update as proof that

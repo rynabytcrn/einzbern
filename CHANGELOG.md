@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 4.4.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 4.4.0.
+
 ### Codex handoff and report delivery
 
 - Install Codex PostToolUse and Stop hooks through the same setup, update and

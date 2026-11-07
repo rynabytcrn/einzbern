@@ -5,9 +5,10 @@
 // an admission decision, choose a fallback, or claim that the requested model was used.
 
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { constants } from "node:fs";
+import { lstat, mkdtemp, open, rm } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const RETURN_VERSION = "tcrn.kiro-process-return.v1";
@@ -86,14 +87,8 @@ function invokeEngine(command, args, options = {}) {
   return cliResult(spawn(process.execPath, [entry, command, ...args], { cwd: options.cwd, env: options.env, stdio: ["pipe", "pipe", "pipe"], shell: false, windowsHide: true }));
 }
 
-async function privateTemporaryDirectory() {
-  const path = await mkdtemp(join(tmpdir(), "einzbern-kiro-run-"));
-  return path;
-}
-
-async function writeProcessReturn(directory, value) {
-  const path = join(directory, "process-return.json");
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+async function privateTemporaryDirectory(output) {
+  const path = await mkdtemp(join(dirname(output), ".einzbern-kiro-run-"));
   return path;
 }
 
@@ -142,8 +137,9 @@ export async function collectKiroProcess(preflight, options = {}) {
   };
   const onInterrupt = () => requestCancellation("SIGINT");
   const onTerminate = () => requestCancellation("SIGTERM");
-  process.once("SIGINT", onInterrupt);
-  process.once("SIGTERM", onTerminate);
+  const signals = options.signals ?? process;
+  signals.once("SIGINT", onInterrupt);
+  signals.once("SIGTERM", onTerminate);
 
   try {
     await new Promise(resolveClose => {
@@ -162,8 +158,8 @@ export async function collectKiroProcess(preflight, options = {}) {
       child.stdin?.end(prompt);
     });
   } finally {
-    process.removeListener("SIGINT", onInterrupt);
-    process.removeListener("SIGTERM", onTerminate);
+    signals.removeListener("SIGINT", onInterrupt);
+    signals.removeListener("SIGTERM", onTerminate);
   }
   if (!processStarted) return notStarted({ spawnError: spawnError ?? "Kiro CLI process did not emit a spawn event", stdout, stderr, cancellationRequested });
   return {
@@ -173,19 +169,63 @@ export async function collectKiroProcess(preflight, options = {}) {
   };
 }
 
-async function run(argv = process.argv.slice(2), options = {}) {
-  const paths = parseArguments(argv);
-  const preflight = await invokeEngine("execution-kiro-preflight", ["--binding", paths.binding], options);
-  const temporaryDirectory = await privateTemporaryDirectory();
-  try {
-    if (preflight.status !== "ready") {
-      return await invokeEngine("execution-kiro-record", ["--binding", paths.binding, "--output", paths.output], options);
+async function assertReservation(file, reservation) {
+  const [opened, named] = await Promise.all([file.stat({ bigint: true }), lstat(reservation.destination, { bigint: true })]);
+  for (const stat of [opened, named]) {
+    if (!stat.isFile() || String(stat.dev) !== reservation.device || String(stat.ino) !== reservation.inode || stat.size !== 0n) {
+      throw new Error("reserved output changed before evidence was written");
     }
-    const processReturn = await collectKiroProcess(preflight, options);
-    const resultPath = await writeProcessReturn(temporaryDirectory, processReturn);
-    return await invokeEngine("execution-kiro-record", ["--binding", paths.binding, "--result", resultPath, "--output", paths.output], options);
+  }
+}
+
+export async function run(argv = process.argv.slice(2), options = {}) {
+  const paths = parseArguments(argv);
+  const engine = options.invokeEngine ?? invokeEngine;
+  let temporaryDirectory = null;
+  let output = null;
+  let returnFile = null;
+  let reservation = null;
+  let recoveryPath = null;
+  let returnPersisted = false;
+  try {
+    const preflight = await engine("execution-kiro-preflight", ["--binding", paths.binding, "--reserve-output", paths.output], options);
+    reservation = preflight.reservation;
+    if (!reservation || typeof reservation.destination !== "string" || typeof reservation.device !== "string" || typeof reservation.inode !== "string") throw new Error("engine did not return an output reservation");
+    output = await open(reservation.destination, constants.O_RDWR | (constants.O_NOFOLLOW ?? 0));
+    await assertReservation(output, reservation);
+    temporaryDirectory = await privateTemporaryDirectory(reservation.destination);
+    let resultPath;
+    if (preflight.status === "ready") {
+      resultPath = join(temporaryDirectory, "process-return.json");
+      returnFile = await open(resultPath, "wx", 0o600);
+      const processReturn = await collectKiroProcess(preflight, options);
+      recoveryPath = resultPath;
+      await returnFile.writeFile(`${JSON.stringify(processReturn, null, 2)}\n`, "utf8");
+      await returnFile.sync();
+      await returnFile.close();
+      returnFile = null;
+      returnPersisted = true;
+    }
+    const args = ["--binding", paths.binding, ...(resultPath ? ["--result", resultPath] : []), "--output", join(temporaryDirectory, "evidence.json")];
+    const result = await engine("execution-kiro-record", args, options);
+    await assertReservation(output, reservation);
+    await (options.writeEvidence ?? ((file, value) => file.writeFile(value, "utf8")))(output, `${JSON.stringify(result, null, 2)}\n`);
+    await output.sync();
+    const named = await lstat(reservation.destination, { bigint: true });
+    if (!named.isFile() || String(named.dev) !== reservation.device || String(named.ino) !== reservation.inode) throw new Error("reserved output changed during evidence write");
+    await output.close();
+    output = null;
+    recoveryPath = null;
+    return result;
+  } catch (error) {
+    if (recoveryPath && returnPersisted) throw new Error(`${String(error?.message ?? error)}; actual process return retained privately at ${recoveryPath}`);
+    if (recoveryPath) throw new Error(`${String(error?.message ?? error)}; process return could not be fully persisted; partial file may remain at ${recoveryPath}`);
+    if (reservation?.destination) throw new Error(`${String(error?.message ?? error)}; reserved output may remain at ${reservation.destination}`);
+    throw error;
   } finally {
-    await rm(temporaryDirectory, { recursive: true, force: true });
+    if (output) await output.close().catch(() => {});
+    if (returnFile) await returnFile.close().catch(() => {});
+    if (temporaryDirectory && !recoveryPath) await rm(temporaryDirectory, { recursive: true, force: true });
   }
 }
 

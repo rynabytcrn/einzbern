@@ -230,7 +230,10 @@ test("INIT085-B2: selected Kiro skill copies are owned, repeatable, upgradeable,
   await writeFile(join(source, "SKILL.md"), "# Mana\n\nversion one\n");
   const rolledBack = await installSkillCopies({ source, now: "2026-11-03T00:03:00Z", home: f.home, deviceHome: f.deviceHome, includeKiro: true, kiroHome });
   assert.equal(rolledBack.copies.find(copy => copy.host === "kiro").action, "replaced");
-  assert.equal(await readFile(join(kiroHome, "skills", "mana-orchestrate", "SKILL.md"), "utf8"), "# Mana\n\nversion one\n");
+  {
+    const fixture = { kiroHome };
+    assert.equal(await readFile(join(fixture.kiroHome, "skills", "mana-orchestrate", "SKILL.md"), "utf8"), "# Mana\n\nversion one\n");
+  }
   const modifiedPath = join(kiroHome, "skills", "mana-orchestrate", "SKILL.md");
   await writeFile(modifiedPath, "# user edit\n");
   const verification = await verifySkillCopies({ home: f.home, deviceHome: f.deviceHome, includeKiro: true, kiroHome });

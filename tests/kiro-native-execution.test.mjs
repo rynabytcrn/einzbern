@@ -2,9 +2,9 @@
 
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { PassThrough } from "node:stream";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { applyEngineModelPolicySet, readEngineModelPolicyFile } from "../dist/build/packages/core/src/engine-model-policy.js";
@@ -13,7 +13,7 @@ import { prepareHostNativeDispatch } from "../dist/build/packages/core/src/dispa
 import { inspectKiroProcessPreparation, normalizeKiroProcessEvidence, recordKiroProcessEvidence } from "../dist/build/packages/core/src/native-tool-evidence.js";
 import { runNativeToolCommand, NATIVE_TOOL_COMMAND_CATALOG } from "../dist/build/packages/cli/src/native-tool-commands.js";
 import { COMMAND_CATALOG } from "../dist/build/packages/cli/src/index.js";
-import { buildKiroCliArgs, collectKiroProcess } from "../skill/mana-orchestrate/scripts/kiro-run.mjs";
+import { buildKiroCliArgs, collectKiroProcess, run } from "../skill/mana-orchestrate/scripts/kiro-run.mjs";
 import { nativeFixture, at } from "./helpers/host-native-fixture.mjs";
 
 const modelTuple = { runner: "kiro-cli", model: "claude-haiku-4.5", effort: "default" };
@@ -247,4 +247,148 @@ test("INIT085-B3: CLI exposes and records the Kiro preflight/process evidence co
   assert.equal(fromDisk.digest, recorded.digest);
   const normalized = await runNativeToolCommand("execution-kiro-evidence", { "from-file": outputPath }, context);
   assert.equal(normalized.digest, recorded.digest);
+});
+
+test("INIT085-B3: runner reserves a private destination before spawning and retains real returns on persistence failure", async t => {
+  const f = await nativeFixture(t);
+  await configureKiroPolicy(f);
+  const preparation = await prepare(f);
+  const binding = join(f.root, "runner-binding.json");
+  await writeFile(binding, JSON.stringify(preparation));
+  const context = { home: f.home, resolveWorkspace: async () => { throw new Error("unexpected workspace lookup"); } };
+  const engine = async (command, args) => {
+    const values = Object.fromEntries(Array.from({ length: args.length / 2 }, (_, i) => [args[i * 2].slice(2), args[i * 2 + 1]]));
+    return runNativeToolCommand(command, values, context);
+  };
+  let calls = 0;
+  const signals = new EventEmitter();
+  const fakeSpawn = (_executable, _args, _options) => {
+    calls += 1;
+    const child = new EventEmitter();
+    child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+    child.kill = () => true;
+    setImmediate(() => {
+      child.emit("spawn");
+      child.stdout.end('{"type":"fixture"}\n'); child.stderr.end(); child.emit("close", 0, null);
+    });
+    return child;
+  };
+  const options = { invokeEngine: engine, spawn: fakeSpawn, signals, env: { KIRO_API_KEY: "synthetic-fixture-secret" } };
+  const existing = join(f.root, "existing.json");
+  await writeFile(existing, "sentinel");
+  await assert.rejects(run(["--binding", binding, "--output", existing], options), /EEXIST/u);
+  await assert.rejects(run(["--binding", binding, "--output", join(f.workspace, "protected.json")], options), /outside device and library roots/u);
+  assert.equal(calls, 0);
+  assert.equal(await readFile(existing, "utf8"), "sentinel");
+
+  const replaced = join(f.root, "replaced.json");
+  const replacingEngine = async (command, args) => {
+    const result = await engine(command, args);
+    if (command === "execution-kiro-preflight") {
+      await rm(result.reservation.destination);
+      await writeFile(result.reservation.destination, "other owner", { flag: "wx" });
+    }
+    return result;
+  };
+  await assert.rejects(run(["--binding", binding, "--output", replaced], { ...options, invokeEngine: replacingEngine }), /reserved output changed/u);
+  assert.equal(calls, 0);
+  assert.equal(await readFile(replaced, "utf8"), "other owner");
+
+  const raced = join(f.root, "race.json");
+  const outcomes = await Promise.allSettled([run(["--binding", binding, "--output", raced], options), run(["--binding", binding, "--output", raced], options)]);
+  assert.equal(outcomes.filter(outcome => outcome.status === "fulfilled").length, 1);
+  assert.equal(outcomes.filter(outcome => outcome.status === "rejected").length, 1);
+  assert.equal(calls, 1, "only the reservation owner can launch");
+  const racedRecord = JSON.parse(await readFile(raced, "utf8"));
+  assert.equal(normalizeKiroProcessEvidence(racedRecord).process.status, "exited-zero");
+  assert.equal(JSON.stringify(racedRecord).includes("synthetic-fixture-secret"), false);
+  assert.equal((await stat(raced)).mode & 0o777, 0o600);
+  assert.equal((await readdir(f.root)).some(name => name.startsWith(".einzbern-kiro-run-")), false, "successful runs remove their private scratch directory");
+
+  const failedOutput = join(f.root, "failed-output.json");
+  let failure;
+  try {
+    await run(["--binding", binding, "--output", failedOutput], { ...options, writeEvidence: async () => { throw new Error("fixture persistence failure"); } });
+    assert.fail("persistence failure must be reported");
+  } catch (error) { failure = String(error.message); }
+  const recovery = failure.match(/actual process return retained privately at (.+)$/u)?.[1];
+  assert.ok(recovery, failure);
+  assert.equal(failure.includes("synthetic-fixture-secret"), false);
+  t.after(() => rm(dirname(recovery), { recursive: true, force: true }));
+  const returned = JSON.parse(await readFile(recovery, "utf8"));
+  assert.equal(returned.processStarted, true);
+  assert.equal(returned.processClosed, true);
+  assert.equal(returned.stdout, '{"type":"fixture"}\n');
+  assert.equal((await stat(recovery)).mode & 0o777, 0o600);
+  assert.equal((await stat(dirname(recovery))).mode & 0o777, 0o700);
+  assert.equal(await readFile(failedOutput, "utf8"), "");
+  assert.equal(await readFile(existing, "utf8"), "sentinel");
+  const recovered = await runNativeToolCommand("execution-kiro-record", { binding, result: recovery, output: join(f.root, "recovered.json") }, context);
+  assert.equal(recovered.process.status, "exited-zero");
+  assert.equal(recovered.process.stdout, returned.stdout);
+
+  const failedRecordOutput = join(f.root, "failed-record.json");
+  let recordFailure;
+  try {
+    await run(["--binding", binding, "--output", failedRecordOutput], { ...options, invokeEngine: async (command, args) => {
+      if (command === "execution-kiro-record") throw new Error("fixture engine persistence failure");
+      return engine(command, args);
+    } });
+    assert.fail("engine persistence failure must be reported");
+  } catch (error) { recordFailure = String(error.message); }
+  const recordRecovery = recordFailure.match(/actual process return retained privately at (.+)$/u)?.[1];
+  assert.ok(recordRecovery, recordFailure);
+  t.after(() => rm(dirname(recordRecovery), { recursive: true, force: true }));
+  const recoveredAfterEngineFailure = await runNativeToolCommand("execution-kiro-record", { binding, result: recordRecovery, output: join(f.root, "recovered-engine.json") }, context);
+  assert.equal(recoveredAfterEngineFailure.process.status, "exited-zero");
+  assert.equal(await readFile(failedRecordOutput, "utf8"), "");
+
+  const swappedOutput = join(f.root, "swapped-after-launch.json");
+  let swappedFailure;
+  try {
+    await run(["--binding", binding, "--output", swappedOutput], { ...options, writeEvidence: async (file, value) => {
+      await rm(swappedOutput);
+      await writeFile(swappedOutput, "new owner", { flag: "wx" });
+      await file.writeFile(value, "utf8");
+    } });
+    assert.fail("destination swap must be reported");
+  } catch (error) { swappedFailure = String(error.message); }
+  const swappedRecovery = swappedFailure.match(/actual process return retained privately at (.+)$/u)?.[1];
+  assert.ok(swappedRecovery, swappedFailure);
+  t.after(() => rm(dirname(swappedRecovery), { recursive: true, force: true }));
+  assert.equal(JSON.parse(await readFile(swappedRecovery, "utf8")).processClosed, true);
+  assert.equal(await readFile(swappedOutput, "utf8"), "new owner");
+});
+
+test("INIT085-B3: reserved runner preserves refusal, nonzero and cancellation facts", async t => {
+  const f = await nativeFixture(t);
+  await configureKiroPolicy(f);
+  const ready = await prepare(f);
+  const refused = await prepare(f, kiroRequest(f, { capabilities: { toolAvailable: false } }));
+  const context = { home: f.home, resolveWorkspace: async () => { throw new Error("unexpected workspace lookup"); } };
+  const engine = async (command, args) => runNativeToolCommand(command, Object.fromEntries(Array.from({ length: args.length / 2 }, (_, i) => [args[i * 2].slice(2), args[i * 2 + 1]])), context);
+  let calls = 0;
+  const signals = new EventEmitter();
+  const spawnFor = mode => () => {
+    calls += 1;
+    const child = new EventEmitter();
+    child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => true;
+    setImmediate(() => {
+      child.emit("spawn");
+      if (mode === "cancel") signals.emit("SIGINT");
+      child.stdout.end(); child.stderr.end(mode === "denied" ? "[denied] tool permission approval is not supported in non-interactive mode.\n" : "");
+      child.emit("close", mode === "cancel" ? null : 1, mode === "cancel" ? "SIGINT" : null);
+    });
+    return child;
+  };
+  for (const [name, preparation, mode] of [["refused", refused, "denied"], ["denied", ready, "denied"], ["cancel", ready, "cancel"]]) {
+    const binding = join(f.root, `${name}-binding.json`); const output = join(f.root, `${name}-evidence.json`);
+    await writeFile(binding, JSON.stringify(preparation));
+    const result = await run(["--binding", binding, "--output", output], { invokeEngine: engine, spawn: spawnFor(mode), signals });
+    assert.equal(JSON.parse(await readFile(output, "utf8")).digest, result.digest);
+    if (name === "refused") { assert.equal(result.dispatch.status, "refused"); assert.equal(result.process.status, "not-started"); }
+    if (name === "denied") { assert.equal(result.process.status, "exited-nonzero"); assert.equal(result.refusal.kind, "permission-refused"); }
+    if (name === "cancel") { assert.equal(result.cancellation.requested, true); assert.equal(result.process.signal, "SIGINT"); }
+  }
+  assert.equal(calls, 2, "a refused preflight never launches the fake CLI");
 });

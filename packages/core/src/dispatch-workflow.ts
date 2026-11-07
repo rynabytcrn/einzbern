@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { open, realpath } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { parseStrictInstant } from "../../protocol/src/index.js";
 import { deviceHome } from "./device-home.js";
@@ -85,8 +86,7 @@ export function recordDispatch(preparationValue: unknown, target: number, proces
   return { schemaVersion: "tcrn.dispatch-record.v1", target, binding: binding.handoff ?? null, preparationDigest: preparation.digest ?? null, raw: processReturn, normalized };
 }
 
-/** Explicit private local artifact only, never a device/registered-library write or overwrite. */
-export async function writeDispatchArtifact(path: string, value: unknown, forbiddenRoots: readonly string[] = [], home: string = deviceHome()): Promise<void> {
+async function openDispatchArtifact(path: string, forbiddenRoots: readonly string[], home: string): Promise<{ destination: string; file: FileHandle }> {
   const destination = resolve(await realpath(dirname(resolve(path))), basename(resolve(path)));
   // Also exclude an unregistered library selected explicitly in an earlier preparation.
   for (let parent = dirname(destination); ; parent = dirname(parent)) {
@@ -99,7 +99,21 @@ export async function writeDispatchArtifact(path: string, value: unknown, forbid
     try { actual = await realpath(root); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     if (pathIsInside(actual, destination)) throw new DispatchWorkflowError("output must be a private local artifact outside device and library roots");
   }
-  const file = await open(destination, "wx", 0o600);
+  return { destination, file: await open(destination, "wx", 0o600) };
+}
+
+/** Reserve a private create-new destination using the same guard as dispatch artifacts. */
+export async function reserveDispatchArtifact(path: string, forbiddenRoots: readonly string[] = [], home: string = deviceHome()): Promise<{ destination: string; device: string; inode: string }> {
+  const { destination, file } = await openDispatchArtifact(path, forbiddenRoots, home);
+  try {
+    const stat = await file.stat({ bigint: true });
+    return { destination, device: String(stat.dev), inode: String(stat.ino) };
+  } finally { await file.close(); }
+}
+
+/** Explicit private local artifact only, never a device/registered-library write or overwrite. */
+export async function writeDispatchArtifact(path: string, value: unknown, forbiddenRoots: readonly string[] = [], home: string = deviceHome()): Promise<void> {
+  const { file } = await openDispatchArtifact(path, forbiddenRoots, home);
   try { await file.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8"); } finally { await file.close(); }
 }
 

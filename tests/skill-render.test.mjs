@@ -344,6 +344,8 @@ test("Codex peer navigation replaces collector helper within ordinary budget", (
   assert.ok(body.includes("docs/codex-native-controller.md"));
   assert.ok(body.includes("Codex only: independent main/economy peers, no collector"));
   assert.ok(body.includes("Other hosts keep their workflow"));
+  assert.ok(body.includes("reports threadId/hostId/prompt only"));
+  assert.ok(body.includes("authorized settings/query exits"));
   assert.equal(body.includes("isolated opt-in/same-live helper"), false);
   assert.ok(Buffer.byteLength(body) < 6000);
 });

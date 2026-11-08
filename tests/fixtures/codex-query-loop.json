@@ -1,0 +1,194 @@
+{
+  "source": "INIT-088 T13 observed wait/cursor/read sequence, identities and cursor prefixes deidentified; no prompt or production content",
+  "calls": [
+    {
+      "tool": "read_thread",
+      "arguments": {
+        "threadId": "fixture-independent-1",
+        "hostId": "local",
+        "turnLimit": 2,
+        "includeOutputs": false,
+        "maxOutputCharsPerItem": 9000
+      }
+    },
+    {
+      "tool": "read_thread",
+      "arguments": {
+        "threadId": "fixture-independent-2",
+        "hostId": "local",
+        "turnLimit": 1,
+        "includeOutputs": false,
+        "maxOutputCharsPerItem": 4500
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local",
+            "afterCursor": "fixture-cursor:16"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "read_thread",
+      "arguments": {
+        "threadId": "fixture-independent-2",
+        "hostId": "local",
+        "turnLimit": 1,
+        "includeOutputs": false,
+        "maxOutputCharsPerItem": 1400
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local",
+            "afterCursor": "fixture-cursor:17"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "read_thread",
+      "arguments": {
+        "threadId": "fixture-independent-1",
+        "hostId": "local",
+        "turnLimit": 1,
+        "includeOutputs": false,
+        "maxOutputCharsPerItem": 600
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local",
+            "afterCursor": "fixture-cursor:23"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "read_thread",
+      "arguments": {
+        "threadId": "fixture-independent-1",
+        "hostId": "local",
+        "turnLimit": 1,
+        "includeOutputs": false,
+        "maxOutputCharsPerItem": 400
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local",
+            "afterCursor": "fixture-cursor:25"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local",
+            "afterCursor": "fixture-cursor:28"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local",
+            "afterCursor": "fixture-cursor:30"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local",
+            "afterCursor": "fixture-cursor:31"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local",
+            "afterCursor": "fixture-cursor:35"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "wait_threads",
+      "arguments": {
+        "targets": [
+          {
+            "threadId": "fixture-independent-1",
+            "hostId": "local",
+            "afterCursor": "fixture-cursor:37"
+          }
+        ],
+        "timeoutMs": 50000
+      }
+    },
+    {
+      "tool": "read_thread",
+      "arguments": {
+        "threadId": "fixture-independent-1",
+        "hostId": "local",
+        "turnLimit": 1,
+        "includeOutputs": false,
+        "maxOutputCharsPerItem": 500
+      }
+    }
+  ]
+}

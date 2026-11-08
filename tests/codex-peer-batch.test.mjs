@@ -32,35 +32,150 @@ async function fixture(t) {
 const observed = (state, id = `host-${state}`, conversationId = "fixture-worker") => ({ ...response(state, id), raw: { state, terminal: true, conversationId }, providerId: { pointer: "/conversationId" } });
 const finish = f => recordHostNativeEvents(f.preparation, [f.completedEvent ??= observed("completed")]);
 
-test("peer hooks stop same-turn main polling only after a verified receipt and successful handoff", async t => {
-  const f = await fixture(t);
-  const receipt = recordCodexPeerBatch(f.input);
-  const envelope = { session_id: "fixture-main", turn_id: "turn-1" };
-  const run = (event, values = {}) => runCodexPeerHook(event, { ...envelope, ...values }, f.home);
-  const query = { tool_name: "mcp__codex_app__wait_threads", tool_input: { targets: [{ threadId: "fixture-economy", hostId: "local" }], timeoutMs: 0 } };
-  assert.equal((await run("PreToolUse", query)).output, null, "unregistered conversations remain unaffected");
-  await stageCodexPeerReceipt(receipt, f.home, "fixture-main");
-  assert.equal((await run("PostToolUse", { tool_name: "Bash", tool_response: "truncated stdout is irrelevant" })).reasonCode, "HOOK_PEER_RECEIPT_OBSERVED");
-  const send = { tool_name: "mcp__codex_app__send_message_to_thread", tool_input: { threadId: "fixture-economy" } };
-  await run("PostToolUse", { ...send, tool_response: { isError: true, content: [{ type: "text", text: JSON.stringify({ threadId: "fixture-economy" }) }] } });
-  assert.equal((await run("PreToolUse", query)).output, null, "failed delivery is not successful handoff");
-  await run("PostToolUse", { ...send, tool_response: { isError: false, content: [{ type: "text", text: JSON.stringify({ threadId: "fixture-economy" }) }] } });
-  for (const tool of [query, { tool_name: "mcp__codex_app__read_thread", tool_input: { threadId: "fixture-economy" } }]) {
-    const answer = JSON.parse((await run("PreToolUse", tool)).output);
-    assert.equal(answer.hookSpecificOutput.permissionDecision, "deny");
-    assert.match(answer.hookSpecificOutput.permissionDecisionReason, /Mana Orchestrate/);
+function queryResponse(tool, input, status = "inProgress") {
+  return tool.endsWith("read_thread") ? { thread: { id: input.threadId, hostId: input.hostId ?? "local" }, page: { order: "newest_first" }, turns: [{ status }] }
+    : { timedOut: true, wake: null, polls: input.targets.map(target => ({ thread: { id: target.threadId, hostId: target.hostId ?? "local", status: { type: "active" } }, latestTurn: { status }, changed: true, cursor: "fixture-cursor:1" })) };
+}
+
+test("T13 actual wait/cursor/read shapes execute one query and zero subsequent side effects", async t => {
+  const { readFile } = await import("node:fs/promises");
+  const calls = JSON.parse(await readFile(new URL("./fixtures/codex-query-loop.json", import.meta.url), "utf8")).calls;
+  assert.equal(calls.filter(call => call.tool === "wait_threads").length, 10);
+  assert.equal(calls.filter(call => call.tool === "read_thread").length, 6);
+  for (const start of [0, calls.findIndex(call => call.tool === "wait_threads")]) {
+    const f = await nativeFixture(t);
+    let executed = 0;
+    for (const [index, call] of calls.slice(start).entries()) {
+      const payload = { session_id: "fixture-main-with-no-role-or-cache", turn_id: index < 2 ? "original-turn" : "summary-continuation", model: "unchanged-model", tool_name: "mcp__codex_app__" + call.tool, tool_input: call.arguments };
+      const pre = await runCodexPeerHook("PreToolUse", payload, f.home);
+      if (pre.output !== null) { assert.equal(JSON.parse(pre.output).hookSpecificOutput.permissionDecision, "deny"); continue; }
+      executed++;
+      await runCodexPeerHook("PostToolUse", { ...payload, tool_response: { content: [{ type: "text", text: JSON.stringify(queryResponse(payload.tool_name, payload.tool_input)) }] } }, f.home);
+    }
+    assert.equal(executed, 1, "no second tool executes, even when the loop alternates wrappers, cursors, targets and turns");
   }
+});
+
+test("T14 only native children with returned in-progress turns permit another query", async t => {
+  const f = await nativeFixture(t);
+  const base = { session_id: "fixture-query-parent", turn_id: "turn-1" };
+  const run = (event, payload) => runCodexPeerHook(event, { ...base, ...payload }, f.home);
+  await run("SubagentStart", { agent_id: "fixture-child", agent_type: "worker" });
+  const query = { tool_name: "mcp__codex_app__wait_threads", tool_input: { targets: [{ threadId: "fixture-child" }], timeoutMs: 50_000 } };
+  for (let i = 0; i < 2; i++) {
+    assert.equal((await run("PreToolUse", query)).output, null);
+    assert.equal((await run("PostToolUse", { ...query, tool_response: queryResponse(query.tool_name, query.tool_input) })).reasonCode, "HOOK_QUERY_CHILD_IN_PROGRESS");
+  }
+  assert.equal((await run("PreToolUse", query)).output, null);
+  await run("PostToolUse", { ...query, tool_response: queryResponse(query.tool_name, query.tool_input, "completed") });
+  assert.equal((await run("PreToolUse", query)).reasonCode, "HOOK_QUERY_LOOP_DENIED");
+  await run("UserPromptSubmit", { turn_id: "new-owner", prompt: "Read status once" });
+  const mixed = { tool_name: "mcp__codex_app__wait_threads", tool_input: { targets: [{ threadId: "fixture-child" }, { threadId: "fixture-independent" }], timeoutMs: 0 } };
+  assert.equal((await run("PreToolUse", mixed)).output, null);
+  await run("PostToolUse", { ...mixed, tool_response: queryResponse(mixed.tool_name, mixed.tool_input) });
+  assert.equal((await run("PreToolUse", query)).reasonCode, "HOOK_QUERY_LOOP_DENIED");
+  await run("UserPromptSubmit", { turn_id: "new-owner" });
+  assert.equal((await run("PreToolUse", query)).reasonCode, "HOOK_QUERY_LOOP_DENIED", "a new turn without a submitted prompt cannot reset the loop");
+  await run("UserPromptSubmit", { turn_id: "another-owner", prompt: "A new actual request" });
+  assert.equal((await run("PreToolUse", query)).output, null);
+  assert.equal((await run("PreToolUse", query)).reasonCode, "HOOK_QUERY_LOOP_DENIED", "parallel inner promises cannot pass before the outstanding result");
+  await run("UserPromptSubmit", { turn_id: "another-owner", prompt: "New human steering in the same active turn" });
+  const remote = { tool_name: "mcp__codex_app__read_thread", tool_input: { threadId: "fixture-child", hostId: "remote" } };
+  assert.equal((await run("PreToolUse", remote)).output, null);
+  await run("PostToolUse", { ...remote, tool_response: queryResponse(remote.tool_name, remote.tool_input) });
+  assert.equal((await run("PreToolUse", remote)).reasonCode, "HOOK_QUERY_LOOP_DENIED", "a same-named remote thread is not the native local child");
+  await run("UserPromptSubmit", { turn_id: "another-owner", prompt: "New human steering in the same active turn" });
+  assert.equal((await run("PreToolUse", remote)).output, null, "identical text in a new actual prompt event must not permanently lock queries");
+});
+
+test("native spawn evidence, unknown/remote status and code-mode promise rejection keep their actual boundaries", async t => {
+  const f = await nativeFixture(t);
+  const owner = { session_id: "fixture-code-parent", turn_id: "turn" };
+  await runCodexPeerHook("PostToolUse", { ...owner, tool_name: "collaboration.spawn_agent", tool_response: { task_name: "fixture-native-child" } }, f.home);
+  const input = { threadId: "fixture-native-child" };
+  const payload = { ...owner, tool_name: "mcp__codex_app__read_thread", tool_input: input };
+  let executions = 0;
+  const invoke = async response => {
+    const pre = await runCodexPeerHook("PreToolUse", payload, f.home);
+    if (pre.output) throw new Error(JSON.parse(pre.output).hookSpecificOutput.permissionDecisionReason);
+    executions++;
+    await runCodexPeerHook("PostToolUse", { ...payload, tool_response: response }, f.home);
+    return response;
+  };
+  await invoke(queryResponse(payload.tool_name, input));
+  await invoke({ thread: { id: input.threadId, status: { type: "active" } }, turns: [] });
+  await assert.rejects(invoke(queryResponse(payload.tool_name, input)), /End this waiting loop/);
+  assert.equal(executions, 2, "a status label, changed flag or timeout cannot establish an in-progress native turn");
+  assert.equal((await runCodexPeerHook("PreToolUse", { ...payload, agent_id: "separate-native-actor" }, f.home)).output, null, "native child actor state is separate from its parent session");
+  assert.equal((await runCodexPeerHook("PreToolUse", { ...owner, tool_name: "functions.exec", tool_input: { code: "read_thread wait_threads" } }, f.home)).output, null, "JavaScript text is not interpreted");
+});
+
+test("terminal child results, outstanding-call correlation and damaged durable state never reopen a loop", async t => {
+  const f = await nativeFixture(t);
+  for (const status of ["completed", "failed", "cancelled", "unknown"]) {
+    const payload = { session_id: "fixture-parent-" + status, turn_id: "turn", tool_use_id: "query-one", tool_name: "mcp__codex_app__read_thread", tool_input: { threadId: "fixture-child" } };
+    await runCodexPeerHook("SubagentStart", { session_id: payload.session_id, agent_id: "fixture-child" }, f.home);
+    await runCodexPeerHook("PreToolUse", payload, f.home);
+    await runCodexPeerHook("PostToolUse", { ...payload, tool_response: queryResponse(payload.tool_name, payload.tool_input, status) }, f.home);
+    assert.equal((await runCodexPeerHook("PreToolUse", { ...payload, turn_id: "summary" }, f.home)).reasonCode, "HOOK_QUERY_LOOP_DENIED");
+  }
+  const payload = { session_id: "fixture-steering", turn_id: "same-active-turn", tool_use_id: "old-query", tool_name: "mcp__codex_app__read_thread", tool_input: { threadId: "independent" } };
+  await runCodexPeerHook("PreToolUse", payload, f.home);
+  await runCodexPeerHook("UserPromptSubmit", { ...payload, prompt: "A new user request" }, f.home);
+  const next = { ...payload, tool_use_id: "new-query" };
+  await runCodexPeerHook("PreToolUse", next, f.home);
+  await runCodexPeerHook("PostToolUse", { ...payload, tool_response: queryResponse(payload.tool_name, payload.tool_input) }, f.home);
+  assert.equal((await runCodexPeerHook("PreToolUse", next, f.home)).reasonCode, "HOOK_QUERY_LOOP_DENIED", "the old result cannot release the new outstanding native call");
+  await runCodexPeerHook("PostToolUse", { ...next, tool_response: queryResponse(next.tool_name, next.tool_input) }, f.home);
+  const { writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  // The guard's directory key is SHA-256 of the actual actor JSON, not canonical JSON.
+  const { createHash } = await import("node:crypto");
+  const key = createHash("sha256").update(JSON.stringify({ sessionId: payload.session_id, agentId: null })).digest("hex");
+  await writeFile(join(f.home, "codex-query-guards", key, "state.json"), "{broken");
+  assert.equal((await runCodexPeerHook("PreToolUse", next, f.home)).reasonCode, "HOOK_QUERY_RECOVERY_FAILED");
+});
+
+test("query readiness requires all four actual native lifecycle event registrations", async t => {
+  const f = await fixture(t);
+  const { codexNativeGuardHealth } = await import("../dist/build/packages/core/src/codex-native-health.js");
+  for (const event of ["preToolUse", "postToolUse", "userPromptSubmit", "subagentStart"]) {
+    const observation = structuredClone(f.native);
+    observation.raw.data[0].hooks = observation.raw.data[0].hooks.filter(hook => hook.eventName !== event);
+    const result = await codexNativeGuardHealth({ device: f.home, home: f.userHome, cwd: process.cwd(), observation });
+    assert.equal(result.ready, false, event);
+    assert.ok(result.reasons.some(reason => /registration missing/.test(reason)));
+  }
+});
+
+test("main-first handoff and later coordinator receipt recover without main staging", async t => {
+  const f = await fixture(t);
+  const { readFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { createHash } = await import("node:crypto");
+  const run = (event, values = {}) => runCodexPeerHook(event, { session_id: "fixture-main", turn_id: "turn-1", ...values }, f.home);
+  const send = { tool_name: "mcp__codex_app__send_message_to_thread", tool_input: { threadId: "fixture-economy", hostId: "local", prompt: "Authorized handoff" } };
+  assert.equal((await run("PostToolUse", { ...send, tool_response: { threadId: "fixture-economy" } })).reasonCode, "HOOK_PEER_HANDOFF_OBSERVED");
+  const key = createHash("sha256").update("fixture-main").digest("hex");
+  const handoffKey = canonicalSha256({ sourceId: "fixture-main", targetId: "fixture-economy", hostId: "local" });
+  const handoff = JSON.parse(await readFile(join(f.home, "codex-peer-handoffs", handoffKey + ".json"), "utf8"));
+  assert.equal(handoff.targetId, "fixture-economy");
+  await new Promise(resolve => setTimeout(resolve, 2));
+  const preparation = await prepareHostNativeDispatch(f.state, f.request, { selection, argumentsValue: {}, peerWorker: true, nativeSessionId: "fixture-economy", codexObservation: f.native, userHome: f.userHome }, f.home);
+  f.input.manifest.members[0].attemptId = preparation.attempt.id;
+  f.input.records = [recordHostNativeEvents(preparation, [])];
+  await stageCodexPeerReceipt(recordCodexPeerBatch(f.input), f.home, "fixture-economy");
+  const participant = JSON.parse(await readFile(join(f.home, "cache", "codex-peer-hooks", key + ".json.receipt"), "utf8"));
+  assert.equal(participant.coordinatorId, "fixture-economy");
+  assert.equal(participant.handedOff, true, "the original successful send associates after coordinator recording, without main staging");
+  await stageCodexPeerReceipt(recordCodexPeerBatch({ ...f.input, manifest: { ...f.input.manifest, batchId: "other-batch", attemptId: "other-attempt" } }), f.home, "fixture-economy");
+  assert.equal(JSON.parse(await readFile(join(f.home, "cache", "codex-peer-hooks", key + ".json.receipt"), "utf8")).handedOff, false, "another batch cannot reuse the old send observation");
+  const query = { tool_name: "mcp__codex_app__read_thread", tool_input: { threadId: "fixture-economy" } };
+  assert.equal((await run("PreToolUse", query)).output, null, "first query is available without any main-side stage");
+  await run("PostToolUse", { ...query, tool_response: { thread: { id: "fixture-economy" }, turns: [{ status: "inProgress" }] } });
+  for (const turn_id of ["turn-1", "summary-continuation", "restart"]) assert.equal(JSON.parse((await run("PreToolUse", { ...query, turn_id })).output).hookSpecificOutput.permissionDecision, "deny");
+  await run("UserPromptSubmit", { turn_id: "owner-next-turn", prompt: "What is the current status?" });
   assert.equal((await run("PreToolUse", { ...query, turn_id: "owner-next-turn" })).output, null);
-  assert.equal((await run("PreToolUse", { ...query, session_id: "fixture-economy" })).output, null);
-  assert.equal((await run("PreToolUse", { ...query, tool_input: { targets: [{ threadId: "fixture-economy", hostId: "remote" }] } })).output, null);
-  assert.equal((await run("PreToolUse", { ...query, tool_input: { targets: [{ threadId: "unrelated" }] } })).output, null);
-  const terminal = recordCodexPeerBatch({ ...f.input, records: [finish(f)] });
-  await stageCodexPeerReceipt(terminal, f.home, "fixture-main");
-  await run("PostToolUse", { tool_name: "Bash", tool_response: "record retained" });
-  assert.equal((await run("PreToolUse", query)).output, null, "terminal evidence releases the handoff guard");
-  await stageCodexPeerReceipt(receipt, f.home, "fixture-main");
-  await run("UserPromptSubmit", { turn_id: "new-owner-turn" });
-  assert.equal((await run("PostToolUse", { turn_id: "new-owner-turn", tool_name: "Bash", tool_response: "unrelated output" })).reasonCode, "HOOK_PEER_NOT_APPLICABLE", "new user input discards unconsumed old observations");
 });
 
 test("coordinator delivery reminder is terminal-only and does not repeat or resend an unknown attempt", async t => {
@@ -150,6 +265,72 @@ async function deliveryFor(f, events = [], action = "coordination", message = `$
   assert.ok(preparation.attempt);
   return { record: recordHostNativeEvents(preparation, events), recipientPointer: "/recipient", correlationPointer: "/message", batchId: f.input.manifest.batchId, batchAttemptId: f.input.manifest.attemptId };
 }
+
+test("ordinary send preparation and new batch delivery cannot copy sender settings", async t => {
+  const f = await fixture(t);
+  const request = { ...f.request, action: "coordination", capabilities: { ...f.request.capabilities, toolName: "mcp__codex_app__send_message_to_thread" } };
+  const args = { threadId: "fixture-main", hostId: "local", prompt: "Ordinary result" };
+  assert.ok((await prepareHostNativeDispatch(f.state, request, { selection, argumentsValue: args }, f.home)).attempt);
+  for (const extra of [{ model: "fixture-sender-model" }, { thinking: "max" }, { model: "fixture-sender-model", thinking: "max" }]) {
+    await assert.rejects(prepareHostNativeDispatch(f.state, request, { selection, argumentsValue: { ...args, ...extra } }, f.home), /omit model\/thinking/);
+  }
+  const ordinary = await deliveryFor(f);
+  const { digest: old, ...payload } = ordinary.record.preparation;
+  payload.attempt = { ...payload.attempt, argumentsValue: { ...payload.attempt.argumentsValue, model: "fixture-sender-model" } };
+  const preparation = { ...payload, digest: canonicalSha256(payload) };
+  const changed = { ...ordinary, record: recordHostNativeEvents(preparation, []) };
+  assert.throws(() => recordCodexPeerBatch({ ...f.input, records: [finish(f)], delivery: changed }), /omit model\/thinking/);
+  const current = recordCodexPeerBatch({ ...f.input, records: [finish(f)], delivery: ordinary });
+  const { digest: omitted, ...historical } = current;
+  historical.delivery = changed;
+  const historicalReceipt = { ...historical, digest: canonicalSha256(historical) };
+  assert.equal(normalizeCodexPeerBatch(historicalReceipt).delivery.record.preparation.attempt.argumentsValue.model, "fixture-sender-model", "historical normalization preserves its original evidence meaning");
+  assert.equal(recordCodexPeerBatch({ ...f.input, records: [], prior: historicalReceipt }).deliveryStatus, "unknown");
+});
+
+test("exact settings adjustment uses a live Owner source, preserves class authorization and reconciles unknown attempts", async t => {
+  const f = await fixture(t);
+  const { recordMinutes } = await import("../dist/build/packages/core/src/index.js");
+  const { persistCodexPeerRole } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
+  const { stageCodexSettingsIntent } = await import("../dist/build/packages/core/src/codex-peer-settings.js");
+  const state = await recordMinutes(f.workspace, { projectId: f.work.projectId, externalKey: "SETTINGS-TEST", title: "Temporary native settings test", summary: "Existing class authorization fixture", occurredAt: at, decidedBy: ["owner:governance"], decisions: ["Allow settings adjustments in isolated temporary native test conversations."], linkedWorkIds: [f.work.id] });
+  const decidedIn = state.minutes.find(row => row.externalKey === "SETTINGS-TEST").id + "#D1";
+  const intent = { decidedIn, basis: "The temporary fixture target and exact settings are in the existing test scope.", targetSource: { toolName: "mcp__codex_app__create_thread", response: { threadId: "fixture-main", hostId: "local" } } };
+  const request = { ...f.request, action: "coordination", capabilities: { ...f.request.capabilities, toolName: "mcp__codex_app__send_message_to_thread" } };
+  const args = { threadId: "fixture-main", hostId: "local", prompt: "Explicit authorized settings adjustment", model: "fixture-target-model", thinking: "max" };
+  const prepare = value => prepareHostNativeDispatch(state, request, { selection, argumentsValue: args, nativeSessionId: "fixture-economy", codexSettingsIntent: value }, f.home);
+  await assert.rejects(prepare({ ...intent, targetSource: { ...intent.targetSource, response: { threadId: "wrong-target" } } }), /matching native/);
+  await persistCodexPeerRole({ receipt: recordCodexPeerBatch(f.input), device: f.home, sessionId: "fixture-economy", libraryId: state.metadata.workspaceId, actor: "agent:fixture" });
+  const body = { session_id: "fixture-economy", turn_id: "new-turn-with-no-cache", tool_name: request.capabilities.toolName, tool_input: args };
+  assert.equal((await runCodexPeerHook("PreToolUse", body, f.home)).reasonCode, "HOOK_PEER_SETTINGS_DENIED");
+  const prepared = await prepare(intent);
+  const { writeFile, readFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { execFileSync } = await import("node:child_process");
+  const files = { request, arguments: { selection, argumentsValue: args }, intent };
+  for (const [name, value] of Object.entries(files)) await writeFile(join(f.root, name + ".json"), JSON.stringify(value));
+  const output = join(f.root, "settings-preparation.json");
+  const cli = new URL("../scripts/einzbern.mjs", import.meta.url).pathname;
+  const cliResult = JSON.parse(execFileSync(process.execPath, [cli, "execution-host-prepare", "--workspace", f.workspace, "--request", join(f.root, "request.json"), "--arguments", join(f.root, "arguments.json"), "--codex-settings-intent", join(f.root, "intent.json"), "--output", output], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: f.home, CODEX_THREAD_ID: "fixture-economy" }, timeout: 30_000 }));
+  assert.equal(cliResult.reasonCode, "HOST_PREPARATION_READY");
+  assert.deepEqual(Object.keys(JSON.parse(await readFile(output, "utf8"))).sort(), ["schemaVersion", "context", "decision", "attempt", "digest"].sort(), "the bridge adds no field to the closed preparation");
+  const stage = (attemptId, value = intent) => stageCodexSettingsIntent({ device: f.home, sessionId: "fixture-economy", workspaceRoot: f.workspace, attemptId, argumentsValue: args, intent: value });
+  await stage(prepared.attempt.id);
+  assert.equal((await runCodexPeerHook("PreToolUse", { ...body, tool_input: { ...args, thinking: "low" } }, f.home)).reasonCode, "HOOK_PEER_SETTINGS_DENIED");
+  assert.equal((await runCodexPeerHook("PreToolUse", { ...body, agent_id: "native-caller" }, f.home)).output, null, "the exact authorized native-session attempt does not acquire an extra agent-id requirement");
+  assert.equal((await runCodexPeerHook("PreToolUse", body, f.home)).reasonCode, "HOOK_PEER_SETTINGS_DENIED", "an unobserved attempted send is not blindly repeated");
+  await assert.rejects(stage("new-attempt"), /outcome is unknown/);
+  await stage("reconciled-attempt", { ...intent, reconciliation: { attemptId: prepared.attempt.id, toolName: "thread/read", response: { thread: { id: args.threadId, model: args.model, reasoningEffort: args.thinking } } } });
+  assert.equal((await runCodexPeerHook("PreToolUse", body, f.home)).output, null);
+  await runCodexPeerHook("PostToolUse", { ...body, tool_response: { threadId: args.threadId } }, f.home);
+  await stage("another-authorized-attempt");
+  assert.equal((await runCodexPeerHook("PreToolUse", body, f.home)).output, null, "the existing Owner authorization is not exhausted by the earlier completed adjustment");
+  await runCodexPeerHook("PostToolUse", { ...body, tool_response: { threadId: args.threadId } }, f.home);
+  await stage("withdrawn-attempt");
+  await recordMinutes(f.workspace, { projectId: f.work.projectId, externalKey: "SETTINGS-WITHDRAW", title: "Withdraw temporary test", summary: "The source is no longer valid", occurredAt: "2026-10-30T00:00:01Z", decidedBy: ["owner:governance"], decisions: ["Withdraw the temporary settings authorization."], withdraws: [decidedIn], linkedWorkIds: [f.work.id] });
+  assert.equal((await runCodexPeerHook("PreToolUse", body, f.home)).reasonCode, "HOOK_PEER_SETTINGS_DENIED", "the hook rereads current decision validity before the side effect");
+  assert.equal((await runCodexPeerHook("PreToolUse", { ...body, session_id: "unbound-conversation" }, f.home)).output, null, "the enrolled-peer settings boundary is not a global model-change ban");
+});
 
 test("report eligibility is not a send; attempted unknown delivery survives recovery without permitting resend", async t => {
   const f = await fixture(t);

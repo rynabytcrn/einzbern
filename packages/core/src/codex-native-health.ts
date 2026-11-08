@@ -57,14 +57,18 @@ export async function codexNativeGuardHealth(input: {
       if (rows.length !== 1) throw new Error("hooks/list cwd is missing or ambiguous");
       const row = rows[0]!;
       if (!Array.isArray(row.errors) || row.errors.length !== 0 || !Array.isArray(row.warnings) || row.warnings.length !== 0) throw new Error("native hook loading errors/warnings obscure applicability");
-      const command = hostHookCommand(hookLauncherPath(input.device), "PreToolUse", input.home);
-      const hooks = Array.isArray(row.hooks) ? row.hooks.map(object).filter(hook => hook?.eventName === "preToolUse" && hook.handlerType === "command" && hook.command === command) : [];
-      if (hooks.length !== 1) throw new Error("candidate native PreToolUse registration missing or duplicated");
-      const hook = hooks[0]!;
-      if (hook.enabled !== true) throw new Error("candidate native PreToolUse is disabled");
-      if (hook.trustStatus !== "trusted" || typeof hook.currentHash !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(hook.currentHash)) throw new Error("current exact native PreToolUse definition is not trusted");
-      if (typeof hook.sourcePath !== "string" || (hook.matcher !== null && hook.matcher !== undefined)) throw new Error("candidate hook source or applicability unavailable");
-      const required = [hook.sourcePath, join(input.home, ".codex", "config.toml")];
+      const required = [join(input.home, ".codex", "config.toml")];
+      for (const event of ["PreToolUse", "PostToolUse", "UserPromptSubmit", "SubagentStart"] as const) {
+        const command = hostHookCommand(hookLauncherPath(input.device), event, input.home);
+        const nativeEvent = event[0]!.toLowerCase() + event.slice(1);
+        const hooks = Array.isArray(row.hooks) ? row.hooks.map(object).filter(hook => hook?.eventName === nativeEvent && hook.handlerType === "command" && hook.command === command) : [];
+        if (hooks.length !== 1) throw new Error(`candidate native ${event} registration missing or duplicated`);
+        const hook = hooks[0]!;
+        if (hook.enabled !== true) throw new Error(`candidate native ${event} is disabled`);
+        if (hook.trustStatus !== "trusted" || typeof hook.currentHash !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(hook.currentHash)) throw new Error(`current exact native ${event} definition is not trusted`);
+        if (typeof hook.sourcePath !== "string" || (hook.matcher !== null && hook.matcher !== undefined)) throw new Error("candidate hook source or applicability unavailable");
+        if (!required.includes(hook.sourcePath)) required.push(hook.sourcePath);
+      }
       for (const file of required) {
         const actual = await realpath(file);
         const facts = observed.files.filter(fact => resolve(fact.path) === actual || resolve(fact.path) === resolve(file));

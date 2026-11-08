@@ -7,7 +7,9 @@ import { writeFileAtomic } from "./atomic-file.js";
 import { withFileLock } from "./file-lock.js";
 import { isCodexIndependentCreate, isCodexNativeSpawn } from "./native-tool-evidence.js";
 import type { CodexPeerBatch } from "./codex-peer-batch.js";
-import { canonicalSha256 } from "../../protocol/src/index.js";
+import { canonicalSha256, parseStrictInstant } from "../../protocol/src/index.js";
+import { codexToolResult, runCodexQueryGuard } from "./codex-query-guard.js";
+import { consumeCodexSettingsIntent, hasCodexSettingsOverride, observeCodexSettingsResult } from "./codex-peer-settings.js";
 
 type ObjectValue = Record<string, unknown>;
 interface PeerTurn {
@@ -20,6 +22,7 @@ interface PeerTurn {
   readonly allTerminal: boolean;
   readonly reportEligible: boolean;
   readonly deliveryStatus: string;
+  readonly workerIds?: readonly string[];
   handedOff: boolean;
   deliveryAttempted: boolean;
   stopPrompted: boolean;
@@ -33,7 +36,6 @@ export interface PeerHookResult {
 const SEND = "mcp__codex_app__send_message_to_thread";
 const WAIT = "mcp__codex_app__wait_threads";
 const READ = "mcp__codex_app__read_thread";
-const POLL_REASON = "This main conversation already handed this batch to its independent coordinator in this turn. Load Mana Orchestrate and follow its Codex handoff procedure; do not poll the coordinator to keep this turn alive.";
 const DELIVERY_REASON = "This coordinator's recorded batch is terminal, but no return attempt was observed. Load Mana Orchestrate and follow its Codex batch-delivery procedure. If the existing authorization covers delivery, send the batch result to the recorded main conversation and retain the receipt. A local final reply is not cross-conversation delivery. Report unavailable capability or permission instead of retrying blindly.";
 
 function object(value: unknown): ObjectValue | null {
@@ -45,22 +47,6 @@ function text(value: unknown): value is string {
 }
 
 // Consume structured tool results only. Never interpret a shell command or a transcript.
-function resultObject(value: unknown): ObjectValue | null {
-  const result = object(value);
-  if (result === null || result.isError === true) return null;
-  if (typeof result.exit_code === "number" && result.exit_code !== 0) return null;
-  let output = result.stdout ?? result.output;
-  if (Array.isArray(result.content)) {
-    const parts = result.content.filter(part => object(part)?.type === "text");
-    if (parts.length !== 1) return null;
-    output = object(parts[0])?.text;
-  }
-  if (typeof output === "string") {
-    try { return object(JSON.parse(output)); }
-    catch { return null; }
-  }
-  return result;
-}
 
 function statePath(device: string, sessionId: string): string {
   const key = createHash("sha256").update(sessionId).digest("hex");
@@ -91,12 +77,26 @@ async function saveTurn(file: string, state: PeerTurn): Promise<void> {
 export async function stageCodexPeerReceipt(receipt: CodexPeerBatch, device: string, sessionId: string | undefined): Promise<void> {
   const manifest = receipt.manifest;
   if (!sessionId || ![manifest.main.conversationId, manifest.coordinator.conversationId].includes(sessionId)) return;
-  await saveTurn(`${statePath(device, sessionId)}.pending`, {
-    schemaVersion: "einzbern.codex-peer-hook.v1", sessionId, turnId: "pending",
-    manifestDigest: canonicalSha256(manifest), mainId: manifest.main.conversationId, coordinatorId: manifest.coordinator.conversationId,
-    allTerminal: receipt.allTerminal, reportEligible: receipt.reportEligible, deliveryStatus: receipt.deliveryStatus,
-    handedOff: false, deliveryAttempted: false, stopPrompted: false,
+  const workerIds = receipt.records.flatMap(record => {
+    const provider = object(record.providerId);
+    return provider?.status === "observed" && text(provider.value) ? [provider.value] : [];
   });
+  const handoffBound = await bindHandoff(receipt, device);
+  for (const participant of [manifest.main.conversationId, manifest.coordinator.conversationId]) {
+    const file = statePath(device, participant);
+    const previous = await readTurn(`${file}.receipt`, participant, "pending");
+    const same = previous?.manifestDigest === canonicalSha256(manifest) ? previous : null;
+    const state: PeerTurn = {
+      schemaVersion: "einzbern.codex-peer-hook.v1", sessionId: participant, turnId: "pending",
+      manifestDigest: canonicalSha256(manifest), mainId: manifest.main.conversationId, coordinatorId: manifest.coordinator.conversationId,
+      allTerminal: receipt.allTerminal, reportEligible: receipt.reportEligible, deliveryStatus: receipt.deliveryStatus,
+      workerIds, handedOff: same?.handedOff === true || (participant === manifest.main.conversationId && handoffBound), deliveryAttempted: same?.deliveryAttempted ?? false, stopPrompted: same?.stopPrompted ?? false,
+    };
+    // A derived participant index is written by the validated receipt path for
+    // both peers. It does not assert a native parent/child relationship.
+    await saveTurn(`${file}.receipt`, state);
+    await saveTurn(`${file}.pending`, state);
+  }
 }
 
 async function takeReceipt(file: string, sessionId: string): Promise<PeerTurn | null> {
@@ -110,21 +110,25 @@ async function takeReceipt(file: string, sessionId: string): Promise<PeerTurn | 
   finally { await rm(claimed, { force: true }); }
 }
 
-function targetsCoordinator(tool: unknown, input: ObjectValue, coordinatorId: string): boolean {
-  if (tool === READ) return input.threadId === coordinatorId && (input.hostId === undefined || input.hostId === "local");
-  if (tool !== WAIT || !Array.isArray(input.targets)) return false;
-  return input.targets.some(target => {
-    const row = object(target);
-    return row?.threadId === coordinatorId && (row.hostId === undefined || row.hostId === "local");
-  });
-}
-
-/** A small, disposable observation cache; it grants no dispatch or messaging authority. */
+/** Receipt/cache observations grant no dispatch or messaging authority. */
 export async function runCodexPeerHook(event: string, payload: unknown, device: string): Promise<PeerHookResult> {
   const body = object(payload);
   const unchanged = { reasonCode: "HOOK_PEER_NOT_APPLICABLE", output: null };
   if (body === null || !text(body.session_id)) return unchanged;
   const tool = body.tool_name;
+  if (event === "PostToolUse" && tool === SEND && hasCodexSettingsOverride(body.tool_input)) await observeCodexSettingsResult(device, body);
+  const query = await runCodexQueryGuard(event, body, device);
+  if (query.reasonCode !== "HOOK_PEER_NOT_APPLICABLE") return query;
+  if (event === "PreToolUse" && tool === SEND && hasCodexSettingsOverride(body.tool_input)) {
+    const role = await readCodexPeerRole(device, body.session_id);
+    if (role.status === "error") return denyPeer("HOOK_PEER_ROLE_RECOVERY_FAILED", role.reason);
+    const input = object(body.tool_input) ?? {};
+    if (role.status === "active" && input.threadId === role.role.mainId && (input.hostId === undefined || input.hostId === "local")) {
+      try {
+        if (!await consumeCodexSettingsIntent(device, body)) return denyPeer("HOOK_PEER_SETTINGS_DENIED", "Ordinary reports omit model/thinking. Load Mana Orchestrate; prepare an explicitly authorized settings adjustment with its exact native arguments and existing Owner decision.");
+      } catch (error) { return denyPeer("HOOK_PEER_SETTINGS_DENIED", String(error)); }
+    }
+  }
   if (event === "PreToolUse" && (isCodexIndependentCreate(tool) || isCodexNativeSpawn(tool))) {
     const role = await readCodexPeerRole(device, body.session_id);
     if (role.status === "error") return denyPeer("HOOK_PEER_ROLE_RECOVERY_FAILED", `Load Mana Orchestrate. ${role.reason}; recover the enrolled role before dependent dispatch.`);
@@ -134,11 +138,15 @@ export async function runCodexPeerHook(event: string, payload: unknown, device: 
   if (!["Stop", "UserPromptSubmit"].includes(event) && ![SEND, WAIT, READ, "Bash"].includes(String(tool))) return unchanged;
   const file = statePath(device, body.session_id);
   if (event === "UserPromptSubmit") {
-    await rm(`${file}.pending`, { force: true });
     await rm(file, { force: true });
     return unchanged;
   }
   let state = await readTurn(file, body.session_id, body.turn_id);
+  const retained = await readTurn(`${file}.receipt`, body.session_id, "pending");
+  if (retained && state?.manifestDigest !== retained.manifestDigest) {
+    state = { ...retained, turnId: body.turn_id };
+    await saveTurn(file, state);
+  }
   const input = object(body.tool_input) ?? {};
 
   if (event === "PostToolUse") {
@@ -153,11 +161,13 @@ export async function runCodexPeerHook(event: string, payload: unknown, device: 
       await saveTurn(file, state);
       return { reasonCode: "HOOK_PEER_RECEIPT_OBSERVED", output: null };
     }
-    const result = resultObject(body.tool_response);
-    if (state === null || tool !== SEND || result?.threadId !== input.threadId) return unchanged;
+    const result = codexToolResult(body.tool_response);
+    if (tool !== SEND || result === null || !text(input.threadId) || result.threadId !== input.threadId) return unchanged;
+    // Preserve a successful main-first send even when no receipt/role exists yet.
+    // This is an unbound observation, never a fabricated batch or dispatch permit.
+    if (!text(body.agent_id)) await observeHandoff(device, body.session_id, input, result);
+    if (state === null) return { reasonCode: "HOOK_PEER_HANDOFF_OBSERVED", output: null };
     if (body.session_id === state.mainId && input.threadId === state.coordinatorId) {
-      state.handedOff = true;
-      await saveTurn(file, state);
       return { reasonCode: "HOOK_PEER_HANDOFF_OBSERVED", output: null };
     }
     return unchanged;
@@ -165,16 +175,12 @@ export async function runCodexPeerHook(event: string, payload: unknown, device: 
 
   if (state === null) return unchanged;
   if (event === "PreToolUse") {
-    if (tool === SEND && body.session_id === state.coordinatorId && input.threadId === state.mainId) {
+    if (tool === SEND && !hasCodexSettingsOverride(input) && body.session_id === state.coordinatorId && input.threadId === state.mainId) {
       // An attempted send with no result is unknown, never an invitation to resend.
       state.deliveryAttempted = true;
       await saveTurn(file, state);
+      await saveTurn(`${file}.receipt`, { ...state, turnId: "pending" });
       return { reasonCode: "HOOK_PEER_DELIVERY_ATTEMPTED", output: null };
-    }
-    if (body.session_id === state.mainId && state.handedOff && !state.allTerminal && targetsCoordinator(tool, input, state.coordinatorId)) {
-      return { reasonCode: "HOOK_PEER_IDLE_POLL_DENIED", output: JSON.stringify({ hookSpecificOutput: {
-        hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: POLL_REASON,
-      } }) + "\n" };
     }
     return unchanged;
   }
@@ -183,9 +189,56 @@ export async function runCodexPeerHook(event: string, payload: unknown, device: 
       state.deliveryStatus === "not-attempted" && !state.deliveryAttempted && !state.stopPrompted && body.stop_hook_active === false) {
     state.stopPrompted = true;
     await saveTurn(file, state);
+    await saveTurn(`${file}.receipt`, { ...state, turnId: "pending" });
     return { reasonCode: "HOOK_PEER_DELIVERY_REMINDER", output: JSON.stringify({ decision: "block", reason: DELIVERY_REASON }) + "\n" };
   }
   return unchanged;
+}
+
+function handoffPath(device: string, sourceId: string, targetId: string, hostId: string): string {
+  return join(device, "codex-peer-handoffs", canonicalSha256({ sourceId, targetId, hostId }) + ".json");
+}
+async function handoffState(file: string, sourceId: string, targetId: string, hostId: string): Promise<ObjectValue> {
+  try {
+    const row = object(JSON.parse(await readFile(file, "utf8")));
+    if (!row) throw new Error("invalid handoff state");
+    const { digest, ...payload } = row;
+    if (digest !== canonicalSha256(payload) || row.schemaVersion !== "einzbern.codex-handoff-observation.v1" || row.sourceId !== sourceId || row.targetId !== targetId || row.hostId !== hostId || !object(row.bindings)) throw new Error("known handoff observation cannot be recovered");
+    return payload;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return { schemaVersion: "einzbern.codex-handoff-observation.v1", sourceId, targetId, hostId, latest: null, bindings: {} };
+  }
+}
+async function observeHandoff(device: string, sessionId: string, input: ObjectValue, result: ObjectValue): Promise<void> {
+  if (!text(input.threadId)) return;
+  const hostId = String(input.hostId ?? "local");
+  const file = handoffPath(device, sessionId, input.threadId, hostId);
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+  await withFileLock(`${file}.lock`, async () => {
+    const prior = await handoffState(file, sessionId, String(input.threadId), hostId);
+    const payload = { ...prior, latest: { observedAt: new Date().toISOString(), inputDigest: canonicalSha256(input), resultDigest: canonicalSha256(result), manifestDigest: null } };
+    await writeFileAtomic(file, JSON.stringify({ ...payload, digest: canonicalSha256(payload) }) + "\n");
+  }, { command: "einzbern handoff observation" });
+}
+async function bindHandoff(receipt: CodexPeerBatch, device: string): Promise<boolean> {
+  const manifest = receipt.manifest;
+  const file = handoffPath(device, manifest.main.conversationId, manifest.coordinator.conversationId, "local");
+  try { await lstat(file); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
+  return withFileLock(`${file}.lock`, async () => {
+    const state = await handoffState(file, manifest.main.conversationId, manifest.coordinator.conversationId, "local");
+    const digest = canonicalSha256(manifest);
+    const bindings = object(state.bindings)!;
+    if (object(bindings[digest])) return true;
+    const latest = object(state.latest);
+    if (!latest || latest.manifestDigest !== null || !text(latest.observedAt) || receipt.records.length === 0 || receipt.records.some(record => parseStrictInstant(record.preparation.attempt!.requestedAt) <= parseStrictInstant(String(latest.observedAt)))) return false;
+    // Identity, native order and exclusive consumption associate observed facts.
+    // They do not authenticate the message's natural-language handoff intent.
+    const bound = { ...latest, manifestDigest: digest, batchId: manifest.batchId, attemptId: manifest.attemptId };
+    const payload = { ...state, latest: bound, bindings: { ...bindings, [digest]: bound } };
+    await writeFileAtomic(file, JSON.stringify({ ...payload, digest: canonicalSha256(payload) }) + "\n");
+    return true;
+  }, { command: "einzbern handoff association" });
 }
 
 export interface CodexPeerRole {

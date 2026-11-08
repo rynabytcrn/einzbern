@@ -270,6 +270,7 @@
 
 | 旗标 | 必填 | 取值类型 | 写法 |
 | --- | --- | --- | --- |
+| `--codex-admission` | 可选 | `string` |  |
 | `--project` | 可选 | `string` |  |
 | `--execution-target` | 可选 | `string` | `traditional | chatgpt-dot` |
 
@@ -398,6 +399,9 @@
 | `--manifest` | 必填 | `string` |
 | `--records` | 必填 | `string` |
 | `--capacity` | 必填 | `string` |
+| `--codex-admission` | 可选 | `string` |
+| `--role-change` | 可选 | `string` |
+| `--actor` | 可选 | `string` |
 | `--delivery` | 可选 | `string` |
 | `--prior` | 可选 | `string` |
 | `--output` | 必填 | `string` |
@@ -440,6 +444,8 @@
 | `--workspace` | 必填 | `string` |  |
 | `--request` | 必填 | `string` | `HostExecutionRequest v1 JSON` |
 | `--arguments` | 必填 | `string` | `{selection, argumentsValue} actual request JSON` |
+| `--codex-peer-worker` | 可选 | `boolean` |  |
+| `--codex-admission` | 可选 | `string` |  |
 | `--output` | 必填 | `string` |  |
 
 ## `execution-host-record`

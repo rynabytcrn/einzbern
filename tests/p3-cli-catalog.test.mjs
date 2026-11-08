@@ -471,7 +471,7 @@ test("STORY-480/605: setup writes and takes the wizard's flags; doctor reads and
     ["yes", false, "boolean"],
   ]);
   assert.equal(entry("doctor").mutates, false);
-  assert.deepEqual(flags("doctor"), [["project", false, "string"], ["execution-target", false, "string"]]);
+  assert.deepEqual(flags("doctor"), [["codex-admission", false, "string"], ["project", false, "string"], ["execution-target", false, "string"]]);
   // Neither takes --workspace: the project's library is the one this device's registry names.
   assert.equal(["setup", "doctor"].some((name) => entry(name).flags.some((flag) => flag.name === "workspace")), false);
 });
@@ -641,7 +641,10 @@ test("INIT065 general-native catalog is separate from legacy closed roster", asy
   assert.deepEqual(entries.map(entry => entry.name), ["execution-host-evidence", "execution-host-prepare", "execution-host-record"]);
   assert.deepEqual(entries.flatMap(entry => entry.flags.filter(flag => flag.valueShape !== undefined).map(flag => `${entry.name}:${flag.name}`)), ["execution-host-prepare:request", "execution-host-prepare:arguments", "execution-host-record:events"]);
   for (const entry of entries) {
-    assert.ok(entry.flags.every(flag => flag.valueKind === "string"));
+    for (const flag of entry.flags) {
+      const expectedKind = entry.name === "execution-host-prepare" && flag.name === "codex-peer-worker" ? "boolean" : "string";
+      assert.equal(flag.valueKind, expectedKind, `${entry.name}:${flag.name}`);
+    }
     assert.equal((await invoke([entry.name, "--help"])).ok, true);
     assert.equal((await invoke([entry.name, "--injected-admission", "true"])).reasonCode, "CLI_ARGUMENT_UNKNOWN");
   }

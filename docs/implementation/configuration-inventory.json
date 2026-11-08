@@ -6113,6 +6113,123 @@
         "owner": "device-user",
         "source": "explicit invocation",
         "persistence": "invocation",
+        "sensitivity": "ordinary",
+        "pathBase": null,
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:codex-admission",
+        "kind": "cli-argument",
+        "name": "--codex-admission",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[codex-admission]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --codex-admission",
+          "absent; no fabricated evidence, identity, approval or revision"
+        ],
+        "semanticType": "string",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Owning typed validator remains authoritative.",
+        "defaultDescription": "absent; no fabricated evidence, identity, approval or revision",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "codex-admission",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "ordinary",
+        "pathBase": null,
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:role-change",
+        "kind": "cli-argument",
+        "name": "--role-change",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[role-change]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --role-change",
+          "absent; no fabricated evidence, identity, approval or revision"
+        ],
+        "semanticType": "string",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Owning typed validator remains authoritative.",
+        "defaultDescription": "absent; no fabricated evidence, identity, approval or revision",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "role-change",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
+        "sensitivity": "actor-identifier",
+        "pathBase": null,
+        "sharing": "private local invocation; only declared normalized evidence may be shared",
+        "export": "not a shared setting; no raw tool arguments, tokens, local paths or backup content promoted to governed evidence",
+        "restart": "one invocation only; no persistent target, policy, schedule or admission bypass",
+        "editing": "dedicated invocation only; not a generic settings-editor field",
+        "consumption": "wired",
+        "key": "cli:execution-codex-peer-record:actor",
+        "kind": "cli-argument",
+        "name": "--actor",
+        "command": "execution-codex-peer-record",
+        "catalogReference": "COMMAND_CATALOG[execution-codex-peer-record].flags[actor]",
+        "consumer": [
+          "packages/cli/src/index.ts dispatchCli",
+          "packages/cli/src/native-tool-commands.ts runNativeToolCommand"
+        ],
+        "precedence": [
+          "explicit execution-codex-peer-record --actor",
+          "absent; no fabricated evidence, identity, approval or revision"
+        ],
+        "semanticType": "string",
+        "validation": "string. Existing strict pair parser rejects unknown/duplicate flags. Owning typed validator remains authoritative.",
+        "defaultDescription": "absent; no fabricated evidence, identity, approval or revision",
+        "scope": "one fixed Codex peer batch receipt",
+        "effect": "Recomputes fixed membership, actual native results and report delivery; retained latest prior prevents blind redispatch/resend. Recording never launches peers, sends messages or grants authorization.",
+        "flag": {
+          "name": "actor",
+          "required": false,
+          "valueKind": "string"
+        }
+      },
+      {
+        "classification": "lifecycle-input",
+        "visibility": "public",
+        "transport": "argv-string",
+        "defaultValue": null,
+        "owner": "device-user",
+        "source": "explicit invocation",
+        "persistence": "invocation",
         "sensitivity": "context-may-contain-private-data",
         "pathBase": "process cwd for relative path; owning consumer validates",
         "sharing": "private local invocation; only declared normalized evidence may be shared",
@@ -7989,6 +8106,11 @@
         "mutates": false,
         "flags": [
           {
+            "name": "codex-admission",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
             "name": "project",
             "required": false,
             "valueKind": "string"
@@ -8276,6 +8398,21 @@
             "valueKind": "string"
           },
           {
+            "name": "codex-admission",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "role-change",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
+            "name": "actor",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
             "name": "delivery",
             "required": false,
             "valueKind": "string"
@@ -8355,6 +8492,16 @@
             "required": true,
             "valueKind": "string",
             "valueShape": "{selection, argumentsValue} actual request JSON"
+          },
+          {
+            "name": "codex-peer-worker",
+            "required": false,
+            "valueKind": "boolean"
+          },
+          {
+            "name": "codex-admission",
+            "required": false,
+            "valueKind": "string"
           },
           {
             "name": "output",

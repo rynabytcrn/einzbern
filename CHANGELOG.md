@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 4.4.1
+
+Einzbern and Mana Orchestrate ship in lockstep at 4.4.1.
+
 ### Codex worker dispatch
 
 - Keep implementation workers on the native subagent entry in the approved

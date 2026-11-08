@@ -258,6 +258,12 @@ const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-4.4.0.tar.gz/einzbern-4.4.0/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-4.4.0.tar.gz/einzbern-4.4.0/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-4.4.0.tar.gz/einzbern-4.4.0/scripts/library-catalog-worker.mjs", "dist/build/packages/core/src/names.js"],
+  // The 4.4.1 diagnostic archive (cd0775d8e86c7e9dd1471e8d6048a53d9d1b229030a5851a35e364b650cb4f1f)
+  // retains the same reviewed owner value, source origin and whole-line digest.
+  ["dist/release/einzbern-4.4.1.tar.gz/einzbern-4.4.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-4.4.1.tar.gz/einzbern-4.4.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-4.4.1.tar.gz/einzbern-4.4.1/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-4.4.1.tar.gz/einzbern-4.4.1/scripts/library-catalog-worker.mjs", "dist/build/packages/core/src/names.js"],
 ]);
 const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
   [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [

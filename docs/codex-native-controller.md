@@ -139,9 +139,10 @@ receipt or `covered` report grants this correlation. The caller remains
 responsible for the decision's natural-language scope.
 
 The CLI saves a private association to the actual session, complete native
-arguments digest, attempt and current decision source; it adds no MCP or v1
+arguments digest, work/revision, attempt and current decision source; it adds no MCP or v1
 request/record fields. The enrolled coordinator's PreToolUse checks the exact
-recipient/host/settings and rereads decision validity before execution. The
+recipient/host/settings and rereads the work revision/status and decision validity
+before execution. The
 association is current for five minutes and records that native attempt as
 attempted before the side effect. A successful native PostToolUse marks its
 outcome; an unknown outcome cannot be overwritten by another preparation.

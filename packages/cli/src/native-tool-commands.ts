@@ -114,6 +114,7 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
       const sessionId = process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"];
       if (!sessionId) throw new Error("settings preparation lost its native session");
       await stageCodexSettingsIntent({ device: context.home ?? deviceHome(), sessionId, workspaceRoot: workspace.root,
+        workId: result.decision.request.workId, workRevision: result.decision.request.workRevision,
         attemptId: result.attempt.id, argumentsValue: result.attempt.argumentsValue, intent: settingsIntent });
     }
     return json({ reasonCode: result.attempt ? "HOST_PREPARATION_READY" : "HOST_PREPARATION_NOT_EXECUTABLE", ...result });

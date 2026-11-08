@@ -314,7 +314,9 @@ test("exact settings adjustment uses a live Owner source, preserves class author
   const cliResult = JSON.parse(execFileSync(process.execPath, [cli, "execution-host-prepare", "--workspace", f.workspace, "--request", join(f.root, "request.json"), "--arguments", join(f.root, "arguments.json"), "--codex-settings-intent", join(f.root, "intent.json"), "--output", output], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: f.home, CODEX_THREAD_ID: "fixture-economy" }, timeout: 30_000 }));
   assert.equal(cliResult.reasonCode, "HOST_PREPARATION_READY");
   assert.deepEqual(Object.keys(JSON.parse(await readFile(output, "utf8"))).sort(), ["schemaVersion", "context", "decision", "attempt", "digest"].sort(), "the bridge adds no field to the closed preparation");
-  const stage = (attemptId, value = intent) => stageCodexSettingsIntent({ device: f.home, sessionId: "fixture-economy", workspaceRoot: f.workspace, attemptId, argumentsValue: args, intent: value });
+  const stage = (attemptId, value = intent, revision = f.work.revision) => stageCodexSettingsIntent({ device: f.home, sessionId: "fixture-economy", workspaceRoot: f.workspace, workId: f.work.id, workRevision: revision, attemptId, argumentsValue: args, intent: value });
+  await stage("wrong-work-revision", intent, f.work.revision + 1);
+  assert.equal((await runCodexPeerHook("PreToolUse", body, f.home)).reasonCode, "HOOK_PEER_SETTINGS_DENIED", "the native attempt is bound to its actual live work revision");
   await stage(prepared.attempt.id);
   assert.equal((await runCodexPeerHook("PreToolUse", { ...body, tool_input: { ...args, thinking: "low" } }, f.home)).reasonCode, "HOOK_PEER_SETTINGS_DENIED");
   assert.equal((await runCodexPeerHook("PreToolUse", { ...body, agent_id: "native-caller" }, f.home)).output, null, "the exact authorized native-session attempt does not acquire an extra agent-id requirement");

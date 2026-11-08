@@ -45,10 +45,10 @@ export async function verifyCodexSettingsIntent(state: WorkspaceState, value: un
 function directory(device: string, sessionId: string): string {
   return join(device, "codex-peer-settings", createHash("sha256").update(sessionId).digest("hex"));
 }
-export async function stageCodexSettingsIntent(input: { readonly device: string; readonly sessionId: string; readonly workspaceRoot: string; readonly attemptId: string; readonly argumentsValue: unknown; readonly intent: unknown }): Promise<void> {
+export async function stageCodexSettingsIntent(input: { readonly device: string; readonly sessionId: string; readonly workspaceRoot: string; readonly workId: string; readonly workRevision: number; readonly attemptId: string; readonly argumentsValue: unknown; readonly intent: unknown }): Promise<void> {
   const dir = directory(input.device, input.sessionId);
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  const payload = { schemaVersion: "einzbern.codex-peer-settings.v1", sessionId: input.sessionId, workspaceRoot: input.workspaceRoot, attemptId: input.attemptId, argumentsValue: input.argumentsValue, argumentsDigest: canonicalSha256(input.argumentsValue), intent: input.intent, preparedAt: new Date().toISOString(), attempted: false, outcome: "not-attempted" };
+  const payload = { schemaVersion: "einzbern.codex-peer-settings.v1", sessionId: input.sessionId, workspaceRoot: input.workspaceRoot, workId: input.workId, workRevision: input.workRevision, attemptId: input.attemptId, argumentsValue: input.argumentsValue, argumentsDigest: canonicalSha256(input.argumentsValue), intent: input.intent, preparedAt: new Date().toISOString(), attempted: false, outcome: "not-attempted" };
   await withFileLock(join(dir, "write.lock"), async () => {
     let prior: ObjectValue | null = null;
     try { prior = object(JSON.parse(await readFile(join(dir, "intent.json"), "utf8"))); }
@@ -94,7 +94,10 @@ export async function consumeCodexSettingsIntent(device: string, body: ObjectVal
     if (digest !== canonicalSha256(payload) || row.schemaVersion !== "einzbern.codex-peer-settings.v1" || row.sessionId !== body.session_id || row.attempted !== false || row.argumentsDigest !== canonicalSha256(body.tool_input) || !text(row.workspaceRoot) || !text(row.preparedAt)) return false;
     const age = parseStrictInstant(new Date().toISOString()) - parseStrictInstant(row.preparedAt);
     if (age < 0n || age > 300_000_000_000n) return false;
-    await verifyCodexSettingsIntent(await materializeWorkspaceFromGenesis(row.workspaceRoot), row.intent, body.tool_input, device);
+    const state = await materializeWorkspaceFromGenesis(row.workspaceRoot);
+    const work = state.work.find(record => record.id === row.workId && !record.tombstone);
+    if (!work || work.revision !== row.workRevision || ["done", "cancelled", "blocked"].includes(work.status)) return false;
+    await verifyCodexSettingsIntent(state, row.intent, body.tool_input, device);
     const next = { ...payload, attempted: true };
     await writeFileAtomic(join(dir, "intent.json"), JSON.stringify({ ...next, digest: canonicalSha256(next) }) + "\n");
     // This ends one native attempt; preparing another within the same existing

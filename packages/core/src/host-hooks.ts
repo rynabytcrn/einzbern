@@ -133,7 +133,10 @@ export interface CodexHookAdmission {
   readonly state: "supported" | "unsupported" | "unknown";
   readonly version: string | null;
   readonly evidenceRef: string | null;
-  readonly subagentStop: boolean;
+  /** Legacy observation only; never proves the dispatch guard. */
+  readonly subagentStop?: boolean;
+  readonly preToolUse?: boolean;
+  readonly native?: import("./codex-native-health.js").CodexHookObservation;
   readonly trust: "permitted" | "restricted" | "unknown";
 }
 
@@ -245,12 +248,12 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   const launcher = hookLauncherPath(request.deviceHome, platform);
   const admission: CodexHookAdmission = structuredClone(request.codexAdmission === undefined ? { state: "unknown", version: null, evidenceRef: null, subagentStop: false, trust: "unknown" } : request.codexAdmission);
   const observedText = (value: unknown): boolean => value === null || (typeof value === "string" && value.trim().length > 0 && !value.includes("\u0000"));
-  if (!isObject(admission) || Object.keys(admission).some(key => !["state", "version", "evidenceRef", "subagentStop", "trust"].includes(key)) ||
+  if (!isObject(admission) || Object.keys(admission).some(key => !["state", "version", "evidenceRef", "subagentStop", "preToolUse", "native", "trust"].includes(key)) ||
       !["supported", "unsupported", "unknown"].includes(admission.state) || !["permitted", "restricted", "unknown"].includes(admission.trust) ||
-      typeof admission.subagentStop !== "boolean" || !observedText(admission.version) || !observedText(admission.evidenceRef)) {
-    fail("HOST_HOOKS_INPUT_INVALID", "Codex admission must contain only state, observed version/evidenceRef, boolean subagentStop and trust");
+      (admission.subagentStop !== undefined && typeof admission.subagentStop !== "boolean") || (admission.preToolUse !== undefined && typeof admission.preToolUse !== "boolean") || !observedText(admission.version) || !observedText(admission.evidenceRef)) {
+    fail("HOST_HOOKS_INPUT_INVALID", "Codex admission must contain only state, observed version/evidenceRef, optional legacy subagentStop, preToolUse, native observation and trust");
   }
-  if (admission.state === "supported" && (admission.version === null || admission.evidenceRef === null || !admission.subagentStop || admission.trust !== "permitted")) fail("HOST_HOOKS_INPUT_INVALID", "supported Codex admission requires actual version/capability/trust evidence");
+  if (admission.state === "supported" && (admission.version === null || admission.evidenceRef === null || !(admission.preToolUse === true || admission.subagentStop === true) || admission.trust !== "permitted")) fail("HOST_HOOKS_INPUT_INVALID", "supported Codex admission requires actual version/capability/trust evidence");
   const groups: Record<string, readonly HostHookGroup[]> = {};
   if (install) {
     const events = [...new Set([

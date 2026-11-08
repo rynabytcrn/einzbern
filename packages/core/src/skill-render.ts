@@ -81,7 +81,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Native dispatch (Codex, Claude, dot)",
     verbs: ["execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
-    action: "Authorized tools; normal prompt reports. Existing class fallback authority unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[]: no binding; scope/permission. machine-assemble inputs, never hand-fill JSON; raw returns/reports, actual status/attempt association, `--binding`/`--prior`. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; authorized saves. `specs/host-fallback-v1.md`. Codex only: independent main/economy peers, no collector. `docs/codex-native-controller.md`. Other hosts keep their workflow.",
+    action: "Authorized tools; normal prompt reports. Existing class fallback authority unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[]: no binding; scope/permission. machine-assemble inputs, never hand-fill JSON; raw returns/reports and attempt association, `--binding`/`--prior`. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ. `specs/host-fallback-v1.md`. Codex only: independent main/economy peers, no collector. `collaboration.spawn_agent` workers. `docs/codex-native-controller.md`. Other hosts keep their workflow.",
   },
   {
     moment: "Shared submission",

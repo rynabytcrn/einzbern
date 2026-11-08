@@ -8,7 +8,7 @@ import { canonicalSha256, parseStrictInstant } from "../../protocol/src/index.js
 import { hostObject, hostText, HostExecutionError } from "./host-capabilities.js";
 import { codexPeerReadiness, resolveEngineExecutionPolicyFromSnapshot, validateEngineModelPolicyFile } from "./engine-model-policy.js";
 import type { EngineModelPolicyFile } from "./engine-model-policy.js";
-import { normalizeHostNativeRecord, recordHostNativeEvents } from "./native-tool-evidence.js";
+import { normalizeHostNativeRecord, recordHostNativeEvents, isCodexNativeSpawn } from "./native-tool-evidence.js";
 import type { HostNativeRecord } from "./native-tool-evidence.js";
 
 export interface CodexPeerManifest {
@@ -145,7 +145,7 @@ function associatedMembers(manifest: CodexPeerManifest, records: readonly HostNa
   }
   return associated;
 }
-function derive(input: Omit<CodexPeerBatchInput, "prior">): CodexPeerBatch {
+function derive(input: Omit<CodexPeerBatchInput, "prior">, version: CodexPeerBatch["schemaVersion"] = "tcrn.codex-peer-batch.v2"): CodexPeerBatch {
   const cutoff = dotInstant(input.observationCutoff, "observation cutoff");
   const manifest = manifestOf(input.manifest);
   const policy = validateEngineModelPolicyFile(input.policy);
@@ -176,6 +176,12 @@ function derive(input: Omit<CodexPeerBatchInput, "prior">): CodexPeerBatch {
     if (!member || seen.has(attempt.id)) fail("unexpected or duplicate worker attempt");
     seen.add(attempt.id);
     const request = record.preparation.decision.request;
+    if (version === "tcrn.codex-peer-batch.v2") {
+      if (!isCodexNativeSpawn(record.preparation.attempt?.toolName) || request.action === "coordination" ||
+          record.preparation.codexPeerWorker?.coordinatorId !== manifest.coordinator.conversationId) fail("worker must bind the native coordinator and collaboration.spawn_agent; independent create/fork is not a worker");
+      const dispatch = record.events.filter(event => event.kind === "host-response" && isCodexNativeSpawn(event.sourceTool) && event.providerId);
+      if (record.events.some(event => event.providerId) && dispatch.length === 0) fail("worker identity needs the retained native spawn return, not only a wait/status response");
+    }
     if (request.workId !== member.workId || request.workRevision !== member.workRevision) fail("member work revision drift");
   }
   const associated = associatedMembers(manifest, records, blockedReasons);
@@ -220,7 +226,7 @@ function derive(input: Omit<CodexPeerBatchInput, "prior">): CodexPeerBatch {
       associatedBeforeSend.has(worker.preparation.attempt!.id) && worker.executionFinality === "confirmed")) blockedReasons.push("delivery-before-terminal-batch");
   }
   const payload = {
-    schemaVersion: "tcrn.codex-peer-batch.v1" as const,
+    schemaVersion: version,
     observationCutoff: input.observationCutoff,
     manifest, records, policy, capacity: { limit: Number(capacity.limit), active: capacity.active === null ? null : Number(capacity.active) },
     delivery, workRevisions, readiness, requestedPeers, reportPrefix: codexPeerReportPrefix(manifest), blockedReasons, allTerminal, deliveryStatus,
@@ -232,7 +238,7 @@ function derive(input: Omit<CodexPeerBatchInput, "prior">): CodexPeerBatch {
 }
 export interface CodexPeerBatch {
   readonly observationCutoff: string;
-  readonly schemaVersion: "tcrn.codex-peer-batch.v1";
+  readonly schemaVersion: "tcrn.codex-peer-batch.v1" | "tcrn.codex-peer-batch.v2";
   readonly manifest: CodexPeerManifest;
   readonly records: readonly HostNativeRecord[];
   readonly policy: EngineModelPolicyFile;
@@ -256,14 +262,15 @@ export interface CodexPeerBatch {
 /** Recompute derived fields; a file cannot declare itself complete or authorized. */
 export function normalizeCodexPeerBatch(value: unknown): CodexPeerBatch {
   const row = hostObject(value, "peer receipt", ["schemaVersion", "observationCutoff", "manifest", "records", "policy", "capacity", "delivery", "workRevisions", "readiness", "requestedPeers", "reportPrefix", "blockedReasons", "allTerminal", "deliveryStatus", "reportEligible", "occupancy", "authority", "digest"]);
-  if (row.schemaVersion !== "tcrn.codex-peer-batch.v1") fail("unknown receipt version");
-  const calculated = derive({ ...row, workRevisions: row.workRevisions ?? undefined } as unknown as CodexPeerBatchInput);
+  if (row.schemaVersion !== "tcrn.codex-peer-batch.v1" && row.schemaVersion !== "tcrn.codex-peer-batch.v2") fail("unknown receipt version");
+  const calculated = derive({ ...row, workRevisions: row.workRevisions ?? undefined } as unknown as CodexPeerBatchInput, row.schemaVersion);
   if (canonicalSha256(calculated) !== canonicalSha256(row)) fail("receipt differs from retained native evidence");
   return calculated;
 }
 /** Monotonic merge of same-batch receipts. Unknown delivery is retained, never retried by us. */
 export function recordCodexPeerBatch(input: CodexPeerBatchInput): CodexPeerBatch {
   const prior = input.prior === undefined ? null : normalizeCodexPeerBatch(input.prior);
+  if (prior?.schemaVersion === "tcrn.codex-peer-batch.v1") fail("legacy peer receipts remain historical and unguarded; start a new scoped native worker batch");
   const cutoff = dotInstant(input.observationCutoff, "observation cutoff");
   if (prior && cutoff < dotInstant(prior.observationCutoff, "prior observation cutoff")) fail("observation cutoff moved backwards; reconcile the clock before resuming");
   const manifest = manifestOf(input.manifest);

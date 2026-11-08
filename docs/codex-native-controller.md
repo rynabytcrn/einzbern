@@ -24,9 +24,17 @@ policy and generic collection/conference behavior are unchanged.
   reports it once to main. It is not a child collector, read-only summarizer, or
   extra collection tier. Package implementation/acceptance responsibilities do
   not silently transfer to the coordinator.
-- **Workers**: one bounded package each, task-category model routing and existing
+- **Workers**: the coordinator invokes the exposed `collaboration.spawn_agent` native
+  subagent tool for one bounded package each, task-category model routing and existing
   rejection-threshold escalation. They do not proactively message their parent;
   retain native final output and supported safety/interruption/result paths.
+
+The two peers are independent conversations. `create_thread` and `fork_thread`
+can establish independent peers under their actual authorization; neither creates
+a worker. A supported native CLI can expose the spawn tool as
+`multi_agent_v1.spawn_agent`; retain that actual namespace and argument/return shape
+rather than relabeling it. Missing native spawn or exact configured selection capability stops
+that dependent path visibly. Do not substitute an independent chat or runner.
 
 Resolve actual models/effort from the selected device-host policy, retaining its
 revision/digest and actual dispatch receipt. Never embed concrete vendor models
@@ -82,13 +90,28 @@ and retain its actual return. Do not label a report delivered merely because its
 text says that it was returned. When delivery is unavailable or uncertain, retain
 that fact without making main poll to keep itself alive.
 
-The engine's tool hooks can reinforce this handoff when the existing
-`execution-codex-peer-record` has been run in the peer's native session. Record
-the frozen manifest and current facts before handing a batch off; update the same
-receipt with observed terminal facts before returning the batch. The record command
-automatically stages the small hook observation. No new project configuration or
-hook-registration command is needed. Missing observations remain unguarded rather
-than making ordinary chats fail admission. See `specs/engine-hook-events-v2.md`.
+The existing `execution-codex-peer-record` enrolls the validated coordinator in
+`device:codex-peer-roles/`, separately from disposable per-turn observations.
+Its anchor and validated receipt survive new turns, summaries, terminal batches,
+engine switches and client restart. Known enrollment with missing, unreadable,
+malformed or mismatched material is a visible recovery failure. PreToolUse denies
+its dependent create/fork/spawn calls until recovery. Ordinary unbound chats remain
+subject to their normal authorization. Total removal of engine and every anchor
+cannot be distinguished from a never-enrolled installation by a standalone hook.
+
+Before the first spawn, prepare pending native workers with
+`execution-host-prepare --codex-peer-worker true --codex-admission <observation>`
+in the actual coordinator session, then record the frozen manifest and pending
+records. This validates the first batch before workers execute. Subsequent worker
+preparation automatically resolves the enrolled native session; caller-supplied
+sessionRef must match it. Use the actual tool name and returned worker ID pointer;
+do not fabricate parentId or model metadata absent from the native return.
+
+PreToolUse denies an active coordinator's independent create/fork before MCP
+execution, including native inner calls in code mode. It checks tool identities,
+never JavaScript or shell text. The stable launcher applies this check even outside
+a registered project cwd, without loading an unrelated library. It does not spawn,
+call a provider, grant permission or send messages.
 
 Stop supplies one reminder to follow this delivery procedure when a coordinator
 ends with an eligible terminal batch and no delivery attempt. Repeated Stop or an
@@ -111,6 +134,11 @@ response. The pointed identities must match their declarations and must differ. 
 preparation `attemptId`, `workId`, `workRevision`, and observed `conversationId`
 (or null while unknown). `records` is an array of retained
 `tcrn.host-native-record.v1` worker records, not invented status summaries.
+New v2 receipts require scoped native spawn preparations bound to the manifest's
+coordinator. Associated worker identities require the original spawn return;
+distinct wait/status tools retain their actual names and attempt association.
+Legacy v1 receipts replay with their original historical semantics and remain
+unguarded history. They cannot enroll roles or resume into new guarded batches.
 `capacity` contains the observed nonnegative `active` count (null when unknown)
 and positive `limit`; it is an observation, not an exemption or a scheduler.
 
@@ -124,7 +152,7 @@ it cannot establish completion or release responsibility. Keep the last valid
 receipt. Resume captures a fresh cutoff and refuses clock rollback below the prior
 cutoff; reconcile the clock/input instead of discarding history. This is a local
 observation bound, not provider clock synchronization or authentication. Its
-`tcrn.codex-peer-batch.v1` output includes requested main/economy model intent,
+`tcrn.codex-peer-batch.v2` output includes requested main/economy model intent,
 readiness, outstanding occupancy, blocked reasons and report eligibility. These
 are recomputed from evidence; no supplied field can declare successful execution.
 The output is a new private file using the existing dispatch-artifact writer,
@@ -183,6 +211,41 @@ or dispatching anything. A fresh recording may have a new cutoff/digest even whe
 its deduplicated native history is unchanged. It does not refresh native state. These
 commands do not send messages or enforce global exactly-once delivery across
 independent files; the coordinator must retain and resume the latest receipt.
+
+## Role lifecycle and native readiness
+
+`execution-codex-peer-record --role-change <json> --actor <actual actor>` uses the
+same validated manifest/records and retains its predecessor. `operation: "retire"`
+or `"activate"` requires `decidedIn` naming a live Owner decision authorizing the
+exact target `codex-peer-roles.<coordinatorId>.<operation>` (or its governed wildcard).
+The existing write-authorization verifier resolves the decision; `authorized:true`
+and local overrides are not inputs. Method changes retire the corresponding role
+through this path. `operation: "recover"` rebuilds fallible active role material
+from its retained validated v2 receipt in an actual peer session; it cannot activate
+a retired role. Every mutation reads back the saved role. Batch completion is not
+retirement. Enrollment/persistence failures retain the receipt and return nonzero
+`CODEX_PEER_GUARD_NOT_READY`, not ordinary-unbound success.
+
+Setup's existing `--codex-admission` and `doctor --codex-admission` accept current
+native observations. The same option is used by peer-record and worker prepare.
+Machine-assemble `native` as `tcrn.codex-hook-observation.v1` with `observedAt`,
+actual client `version`, `cwd`, original public app-server `hooks/list` result in
+`raw`, and `files` (`path`, byte `sha256`) for the returned hook `sourcePath` and
+current user `.codex/config.toml`. Retain actual returned fields unchanged. This is
+observation correlation, not authentication or trust enrollment. No new daemon is
+installed. Legacy `subagentStop` observations remain readable but prove no guard.
+
+Readiness requires exactly the candidate stable PreToolUse command registered at
+the observed cwd, enabled, currentHash trusted, no load errors/warnings obscuring
+applicability, unchanged observed hook/config bytes, and successful durable role
+recovery. Use a current observation within the native dispatch five-minute bound;
+re-observe before each new dependent batch and after installation/config changes.
+Missing capability/schema, disabled/missing/untrusted entries, stale observations
+or role failures are not-ready. Model-group readiness remains separate. File
+reconciliation can pass while `hooks-present.detail.codexGuard.ready` is false.
+Fresh/update/repair report that native status in their self-check; they preserve
+roles and user settings rather than granting trust. A disabled hook cannot promise
+prevention until its real native state is restored and verified.
 
 ## Installation and compatibility
 

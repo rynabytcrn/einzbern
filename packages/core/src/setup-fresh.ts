@@ -1,3 +1,4 @@
+import { codexNativeGuardHealth } from "./codex-native-health.js";
 import { SETUP_MODEL_POLICY_ONBOARDING } from "./setup.js";
 import { spawnSync } from "node:child_process";
 import { HOST_SKILL_PROTOCOL_MARKER, checkHostSkillCompatibility } from "./skill-render.js";
@@ -950,7 +951,12 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
   readonly coordination?: SetupCoordination | null;
 }): Promise<SetupApplied> {
   const { at, projectRoot, home, deviceHome } = plan;
-  const selfCheck = result.selfCheck ?? await runDoctor({ projectRoot, home, deviceHome });
+  const checks = result.selfCheck ?? await runDoctor({ projectRoot, home, deviceHome, ...(plan.codexAdmission ? { codexAdmission: plan.codexAdmission } : {}) });
+  const codexGuard = await codexNativeGuardHealth({ device: deviceHome, home, cwd: projectRoot, ...(plan.codexAdmission?.state === "supported" && plan.codexAdmission.trust === "permitted" && plan.codexAdmission.preToolUse === true && plan.codexAdmission.native ? { observation: plan.codexAdmission.native } : {}) });
+  const selfCheck = checks.map(check => check.check !== "hooks-present" ? check : {
+    ...check, detail: { ...check.detail, codexGuard: codexGuard as unknown as import("../../protocol/src/index.js").JsonValue },
+    ...(!codexGuard.ready && (plan.codexAdmission !== undefined || codexGuard.roleRecovery.roles.length > 0) ? { ok: false, reasonCode: "DOCTOR_HOOKS_MISMATCH" as const } : {}),
+  });
   return {
     schemaVersion: SETUP_APPLIED_SCHEMA_VERSION,
     reasonCode: "SETUP_APPLIED",

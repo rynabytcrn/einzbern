@@ -711,7 +711,9 @@ test("public update and repair carry synthetic native admission without granting
   assert.deepEqual(planned.codexAdmission, admission);
   assert.deepEqual(planned.modelPolicyOnboarding.optionalModelCategories, ["flagship"]);
   const updated = await applySetup(planned);
-  assertSelfCheckGreen(updated);
+  assert.equal(updated.selfCheck.find(check => check.check === "hooks-present").detail.codexGuard.ready, false);
+  assert.equal(updated.selfCheck.find(check => check.check === "hooks-present").ok, false, "legacy admission is not a native guard observation");
+  for (const check of updated.selfCheck.filter(check => check.check !== "hooks-present")) assert.equal(check.ok, true);
   assert.deepEqual(updated.codexAdmission, admission);
   assert.deepEqual(updated.modelPolicyOnboarding, planned.modelPolicyOnboarding);
   const document = JSON.parse(await readFile(path, "utf8"));

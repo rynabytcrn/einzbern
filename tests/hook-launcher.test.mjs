@@ -560,3 +560,25 @@ test("relative EINZBERN_HOME is reported without blocking the native hook", () =
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /DEVICE_HOME_INVALID/u);
 });
+
+test("durable Codex role denial runs outside registry and fails visibly when its engine is missing", async context => {
+  const { base, home } = await scratch(context);
+  const installed = await installEngine(home);
+  const { codexPeerRoleDirectory } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
+  const directory = codexPeerRoleDirectory(home, "known-coordinator");
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "anchor.json"), "{broken");
+  const call = (session_id, tool_name, env = {}) => runHook(installed, { home, cwd: base, event: "pre-tool-use", env: { EINZBERN_HOST: "codex", ...env }, input: JSON.stringify({ session_id, tool_name, tool_input: {}, cwd: base }) });
+  for (const tool of ["mcp__codex_app__create_thread", "mcp__codex_app__fork_thread", "collaboration.spawn_agent"]) {
+    const run = call("known-coordinator", tool);
+    assert.equal(run.status, 0);
+    assert.equal(JSON.parse(run.stdout).hookSpecificOutput.permissionDecision, "deny");
+    assert.match(run.stdout, /recover/);
+    assert.equal(call("unbound", tool).stdout, "");
+  }
+  assert.equal(call("known-coordinator", "mcp__codex_app__create_thread", { EINZBERN_HOST: "claude-code" }).stdout, "");
+  await rm(join(home, "engine", "current"));
+  const missing = call("known-coordinator", "mcp__codex_app__create_thread");
+  assert.equal(JSON.parse(missing.stdout).hookSpecificOutput.permissionDecision, "deny");
+  assert.equal(call("unbound", "mcp__codex_app__create_thread").stdout, "");
+});

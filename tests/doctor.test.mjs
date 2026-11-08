@@ -474,3 +474,19 @@ test("548-AC4: a plugin that runs another launcher makes hooks-present red with 
   // The two file hosts are untouched by it.
   assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.slice(0, 2).map((host) => host.causes), [[], []]);
 });
+
+test("doctor separates structural hook files from native readiness and exposes known role damage", async t => {
+  const f = await healthy(t);
+  const first = byCheck(await doctor(f), "hooks-present");
+  assert.equal(first.ok, true, "ordinary installation structural checks retain their contract");
+  assert.equal(first.detail.codexGuard.ready, false);
+  assert.equal(first.detail.codexGuard.native, "unknown");
+  const { codexPeerRoleDirectory } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
+  const directory = codexPeerRoleDirectory(f.deviceHome, "known-coordinator");
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "anchor.json"), "{malformed");
+  assertOnlyRed(await doctor(f), "hooks-present", "CODEX_PEER_GUARD_NOT_READY");
+  const damaged = byCheck(await doctor(f), "hooks-present").detail.codexGuard;
+  assert.equal(damaged.roleRecovery.ready, false);
+  assert.equal(damaged.roleRecovery.roles[0].status, "error");
+});

@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile, lstat, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { normalizeCodexPeerBatch } from "./codex-peer-batch.js";
+import { writeFileAtomic } from "./atomic-file.js";
+import { withFileLock } from "./file-lock.js";
+import { isCodexIndependentCreate, isCodexNativeSpawn } from "./native-tool-evidence.js";
 import type { CodexPeerBatch } from "./codex-peer-batch.js";
 import { canonicalSha256 } from "../../protocol/src/index.js";
 
@@ -119,8 +123,14 @@ function targetsCoordinator(tool: unknown, input: ObjectValue, coordinatorId: st
 export async function runCodexPeerHook(event: string, payload: unknown, device: string): Promise<PeerHookResult> {
   const body = object(payload);
   const unchanged = { reasonCode: "HOOK_PEER_NOT_APPLICABLE", output: null };
-  if (body === null || !text(body.session_id) || !text(body.turn_id)) return unchanged;
+  if (body === null || !text(body.session_id)) return unchanged;
   const tool = body.tool_name;
+  if (event === "PreToolUse" && (isCodexIndependentCreate(tool) || isCodexNativeSpawn(tool))) {
+    const role = await readCodexPeerRole(device, body.session_id);
+    if (role.status === "error") return denyPeer("HOOK_PEER_ROLE_RECOVERY_FAILED", `Load Mana Orchestrate. ${role.reason}; recover the enrolled role before dependent dispatch.`);
+    if (role.status === "active" && isCodexIndependentCreate(tool)) return denyPeer("HOOK_PEER_WORKER_TOOL_DENIED", "This enrolled Codex coordinator must load Mana Orchestrate and dispatch workers with collaboration.spawn_agent. Independent create_thread/fork_thread cannot be used as workers.");
+  }
+  if (!text(body.turn_id)) return unchanged;
   if (!["Stop", "UserPromptSubmit"].includes(event) && ![SEND, WAIT, READ, "Bash"].includes(String(tool))) return unchanged;
   const file = statePath(device, body.session_id);
   if (event === "UserPromptSubmit") {
@@ -176,4 +186,133 @@ export async function runCodexPeerHook(event: string, payload: unknown, device: 
     return { reasonCode: "HOOK_PEER_DELIVERY_REMINDER", output: JSON.stringify({ decision: "block", reason: DELIVERY_REASON }) + "\n" };
   }
   return unchanged;
+}
+
+export interface CodexPeerRole {
+  readonly schemaVersion: "einzbern.codex-peer-role.v1";
+  readonly host: "codex";
+  readonly coordinatorId: string;
+  readonly mainId: string;
+  readonly libraryId: string;
+  readonly status: "active" | "retired";
+  readonly actor: string;
+  readonly recordedAt: string;
+  readonly decidedIn: string | null;
+  readonly previousDigest: string | null;
+  readonly receipt: CodexPeerBatch;
+  readonly digest: string;
+}
+export type CodexPeerRoleRead =
+  | { readonly status: "unbound" }
+  | { readonly status: "error"; readonly reason: string }
+  | { readonly status: "active" | "retired"; readonly role: CodexPeerRole };
+
+export function codexPeerRoleDirectory(device: string, sessionId: string): string {
+  return join(device, "codex-peer-roles", createHash("sha256").update(sessionId).digest("hex"));
+}
+
+/** A directory/anchor is enrollment knowledge even if its fallible payload is gone. */
+export async function readCodexPeerRole(device: string, sessionId: string): Promise<CodexPeerRoleRead> {
+  const directory = codexPeerRoleDirectory(device, sessionId);
+  try { await lstat(directory); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { status: "unbound" };
+    return { status: "error", reason: `role directory: ${String(error)}` };
+  }
+  try {
+    const anchor = object(JSON.parse(await readFile(join(directory, "anchor.json"), "utf8")));
+    if (anchor?.schemaVersion !== "einzbern.codex-peer-enrollment.v1" || anchor.coordinatorId !== sessionId || !["active", "retired"].includes(String(anchor.status))) throw new Error("invalid enrollment anchor");
+    const value = object(JSON.parse(await readFile(join(directory, "role.json"), "utf8")));
+    if (value === null) throw new Error("missing role payload");
+    const { digest, ...payload } = value;
+    if (digest !== canonicalSha256(payload) || value.schemaVersion !== "einzbern.codex-peer-role.v1" ||
+        value.host !== "codex" || value.coordinatorId !== sessionId || !["active", "retired"].includes(String(value.status)) ||
+        value.libraryId !== anchor.libraryId || value.mainId !== anchor.mainId || value.status !== anchor.status || !text(value.actor) || !text(value.recordedAt)) throw new Error("invalid role identity, version or digest");
+    const receipt = normalizeCodexPeerBatch(value.receipt);
+    if (receipt.schemaVersion !== "tcrn.codex-peer-batch.v2" || receipt.manifest.coordinator.conversationId !== sessionId ||
+        receipt.manifest.main.conversationId !== value.mainId) throw new Error("role differs from validated peer receipt");
+    if (value.status === "retired" && !text(value.decidedIn)) throw new Error("retired role has no lifecycle decision");
+    return { status: value.status as "active" | "retired", role: value as unknown as CodexPeerRole };
+  } catch (error) {
+    return { status: "error", reason: `known coordinator role cannot be recovered: ${String(error)}` };
+  }
+}
+
+/** Existing peer-record is the only enrollment/lifecycle writer. Authorization is resolved
+ * against live minutes by its CLI, never taken from a self-declared tool argument. */
+export async function persistCodexPeerRole(input: {
+  readonly receipt: CodexPeerBatch;
+  readonly device: string;
+  readonly sessionId: string | undefined;
+  readonly libraryId: string;
+  readonly actor: string;
+  readonly change?: { readonly operation: "retire" | "activate" | "recover"; readonly decidedIn: string | null };
+}): Promise<CodexPeerRole> {
+  const receipt = normalizeCodexPeerBatch(input.receipt);
+  const manifest = receipt.manifest;
+  if (receipt.schemaVersion !== "tcrn.codex-peer-batch.v2") throw new Error("legacy peer receipt is historical, not role enrollment");
+  if (!input.sessionId || ![manifest.main.conversationId, manifest.coordinator.conversationId].includes(input.sessionId)) throw new Error("role enrollment requires the actual native main/coordinator session");
+  if (receipt.records.length !== manifest.members.length || receipt.blockedReasons.some(reason => reason === "work-revisions-unknown" || reason === "policy-drift" || reason === "model-groups-not-ready" || reason.startsWith("work-revision-drift:"))) throw new Error("role enrollment needs the current complete set of scoped pending worker preparations and matching work/policy");
+  const directory = codexPeerRoleDirectory(input.device, manifest.coordinator.conversationId);
+  let existed = true;
+  try { await lstat(directory); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") existed = false; else throw error; }
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  return withFileLock(join(directory, "write.lock"), async () => {
+    const prior = await readCodexPeerRole(input.device, manifest.coordinator.conversationId);
+    const anchorFile = join(directory, "anchor.json");
+    let anchor: ObjectValue | null = null;
+    try { anchor = object(JSON.parse(await readFile(anchorFile, "utf8"))); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    if (anchor !== null && (anchor.coordinatorId !== manifest.coordinator.conversationId || anchor.mainId !== manifest.main.conversationId || anchor.libraryId !== input.libraryId)) throw new Error("enrolled peer identity/library changed; retire it through the governed lifecycle first");
+    if (prior.status === "error" && (anchor !== null || existed) && !input.change) throw new Error(prior.reason);
+    if ((prior.status === "retired" || anchor?.status === "retired") && input.change?.operation !== "activate") throw new Error("retired role needs an explicit governed activation");
+    if (input.change && input.change.operation !== "recover" && !input.change.decidedIn) throw new Error("role lifecycle requires a verified Owner decision");
+    if (input.change?.operation === "recover" && prior.status === "retired") throw new Error("recovery cannot activate a retired role");
+    if (input.change?.operation === "retire" && prior.status !== "active") throw new Error("only a recovered active role can retire");
+    const payload = {
+      schemaVersion: "einzbern.codex-peer-role.v1" as const, host: "codex" as const,
+      coordinatorId: manifest.coordinator.conversationId, mainId: manifest.main.conversationId, libraryId: input.libraryId,
+      status: input.change?.operation === "retire" ? "retired" as const : "active" as const,
+      actor: input.actor, recordedAt: new Date().toISOString(), decidedIn: input.change?.decidedIn ?? null,
+      previousDigest: prior.status === "active" || prior.status === "retired" ? prior.role.digest : null, receipt,
+    };
+    if (prior.status === "active" || prior.status === "retired") {
+      await mkdir(join(directory, "history"), { recursive: true, mode: 0o700 });
+      await writeFileAtomic(join(directory, "history", `${prior.role.digest}.json`), JSON.stringify(prior.role) + "\n");
+    }
+    // The anchor goes first: interrupted writes must leave a known failed enrollment.
+    await writeFileAtomic(anchorFile, JSON.stringify({ schemaVersion: "einzbern.codex-peer-enrollment.v1", coordinatorId: payload.coordinatorId, mainId: payload.mainId, libraryId: payload.libraryId, status: payload.status }) + "\n");
+    const role: CodexPeerRole = { ...payload, digest: canonicalSha256(payload) };
+    await writeFileAtomic(join(directory, "role.json"), JSON.stringify(role) + "\n");
+    const recovered = await readCodexPeerRole(input.device, manifest.coordinator.conversationId);
+    if ((recovered.status !== "active" && recovered.status !== "retired") || recovered.role.digest !== role.digest) throw new Error("role persistence readback failed");
+    return recovered.role;
+  }, { command: "einzbern execution-codex-peer-record" });
+}
+
+export async function inspectCodexPeerRoles(device: string): Promise<{ readonly ready: boolean; readonly roles: readonly { readonly key: string; readonly status: string; readonly reason: string | null }[] }> {
+  let entries;
+  try { entries = await readdir(join(device, "codex-peer-roles"), { withFileTypes: true }); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ready: true, roles: [] };
+    return { ready: false, roles: [{ key: "enrollments", status: "error", reason: String(error) }] };
+  }
+  const roles = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const anchor = object(JSON.parse(await readFile(join(device, "codex-peer-roles", entry.name, "anchor.json"), "utf8")));
+      if (!text(anchor?.coordinatorId) || codexPeerRoleDirectory(device, anchor.coordinatorId) !== join(device, "codex-peer-roles", entry.name)) throw new Error("enrollment anchor identity mismatch");
+      const read = await readCodexPeerRole(device, anchor.coordinatorId);
+      roles.push({ key: entry.name, status: read.status, reason: read.status === "error" ? read.reason : null });
+    } catch (error) { roles.push({ key: entry.name, status: "error", reason: String(error) }); }
+  }
+  return { ready: roles.every(role => role.status === "active" || role.status === "retired"), roles };
+}
+
+function denyPeer(reasonCode: string, reason: string): PeerHookResult {
+  return { reasonCode, output: JSON.stringify({ hookSpecificOutput: {
+    hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason,
+  } }) + "\n" };
 }

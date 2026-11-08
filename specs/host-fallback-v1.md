@@ -85,3 +85,25 @@ Independent C4 must additionally run T01/T02 with actual exposed host tools and 
 Candidates come only from reported tool combinations, fresh supported per-selection observations or the exposed host-managed contract. Same-model effort variants then same-runner alternatives receive soft precedence; no effort strength equivalence across providers is inferred. Cost and quality stay explicitly unknown. Explicit hard limits and actual tool absence are honored. Existing authority is assessed by the same core decision function; a suggestion awaiting a decision is not permission to execute.
 
 The first three entries are a presentation budget, with an omitted count. This is not a limit on authorized calls or retries. Known authorized alternatives remain directly executable without first generating or choosing from a recommendation list. Missing optional observations do not introduce a new execution gate.
+
+Codex peer workers use `collaboration.spawn_agent`, distinct from the independent
+main/economy conversations. The optional peer-worker preparation scope is derived
+from the actual native session and durable enrollment. Wrong independent
+create/fork tools are rejected only in that scope. Missing native capability or
+current guard readiness stops the dependent worker path, without changing other
+hosts, sourceScope admission or existing same-class fallback authority. New v2
+peer receipts require scoped spawn preparations and original spawn identity
+returns; legacy v1 replay remains unguarded historical evidence. See
+`docs/codex-native-controller.md` for initial pending batches, lifecycle and the
+native hooks/list observation contract.
+
+The general preparation keeps its v1 closed fields (`schemaVersion`, `context`,
+`decision`, `attempt`, `digest`) and adds only optional
+`codexPeerWorker: { coordinatorId: string }`. The engine derives that scope from
+the actual native session and enrollment (or the initial `--codex-peer-worker
+true` extension); it is not a new request/project field or caller authorization.
+The supplied capabilities.sessionRef, when present, must match that native session.
+The CLI's optional `--codex-admission` consumes the observed admission described
+in `docs/codex-native-controller.md`. Supported/current PreToolUse and native
+recovery are required for that dependent preparation. Other hosts and unbound
+non-peer operations keep the general preparation contract.

@@ -1,3 +1,5 @@
+import { codexNativeGuardHealth } from "./codex-native-health.js";
+import type { CodexHookAdmission } from "./host-hooks.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-480 R4, AC5 (MIN-227; TCRN-CROSS-SUB-326): doctor, eight checks of this device and
@@ -122,6 +124,7 @@ const MANAGED_FILES: readonly string[] = Object.freeze(["AGENTS.md", "CLAUDE.md"
 const MANAGED_SECTION_COLLECTION = "managed-section";
 
 export interface DoctorInput {
+  readonly codexAdmission?: CodexHookAdmission;
   // The project the checks are about: its hook files, its registration, its library and its files.
   readonly projectRoot: string;
   // Explicit applicability only; a dot device check does not attest native session reads.
@@ -149,6 +152,7 @@ export interface DoctorCheck {
 type Detail = { readonly [key: string]: JsonValue };
 
 interface DoctorContext {
+  readonly codexAdmission: CodexHookAdmission | undefined;
   readonly projectRoot: string;
   readonly home: string;
   readonly deviceHome: string;
@@ -380,7 +384,10 @@ async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
       });
     }
   }
-  return result("hooks-present", causes, { launcher, hosts });
+  const codexGuard = await codexNativeGuardHealth({ device: context.deviceHome, home: context.home, cwd: context.projectRoot,
+    ...(context.codexAdmission?.state === "supported" && context.codexAdmission.trust === "permitted" && context.codexAdmission.preToolUse === true && context.codexAdmission.native ? { observation: context.codexAdmission.native } : {}) });
+  if (!codexGuard.ready && (context.codexAdmission !== undefined || codexGuard.roleRecovery.roles.length > 0)) causes.push("CODEX_PEER_GUARD_NOT_READY");
+  return result("hooks-present", causes, { launcher, hosts, codexGuard: codexGuard as unknown as JsonValue });
 }
 
 // ---- skill-copies ----
@@ -715,6 +722,7 @@ async function doctorContext(input: DoctorInput): Promise<DoctorContext> {
     platform,
     cloud: { platform, env: input.env ?? process.env, home },
     lockTimeoutMs: input.lockTimeoutMs,
+    codexAdmission: input.codexAdmission,
   };
 }
 

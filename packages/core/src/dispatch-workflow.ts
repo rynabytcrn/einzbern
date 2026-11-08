@@ -2,6 +2,10 @@
 import { open, realpath } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { parseStrictInstant } from "../../protocol/src/index.js";
+import { readCodexPeerRole } from "./codex-peer-hooks.js";
+import { codexNativeGuardHealth } from "./codex-native-health.js";
+import { isCodexNativeSpawn } from "./native-tool-evidence.js";
+import { homedir } from "node:os";
 import { deviceHome } from "./device-home.js";
 import { hasLibraryManifest } from "./ether-library.js";
 import { readRegistry } from "./registry.js";
@@ -146,15 +150,30 @@ import type { HostExecutionRequest, HostExecutionDecision } from "./execution-fa
 import { HOST_NATIVE_PREPARATION_VERSION, validateHostNativePreparation } from "./native-tool-evidence.js";
 import type { HostNativePreparation } from "./native-tool-evidence.js";
 /** Optional audit preparation; no adapter, save transaction or prior success receipt prerequisite. */
-export async function prepareHostNativeDispatch(state: WorkspaceState, requestValue: HostExecutionRequest, tool: { readonly argumentsValue: unknown; readonly selection: HostSelection }, home?: string): Promise<HostNativePreparation> {
+export async function prepareHostNativeDispatch(state: WorkspaceState, requestValue: HostExecutionRequest, tool: { readonly argumentsValue: unknown; readonly selection: HostSelection; readonly peerWorker?: boolean; readonly nativeSessionId?: string; readonly codexObservation?: import("./codex-native-health.js").CodexHookObservation; readonly userHome?: string; readonly cwd?: string }, home?: string): Promise<HostNativePreparation> {
   const request = validateHostExecutionRequest(requestValue);
   validateHostSelection(tool.selection);
+  let codexPeerWorker: { coordinatorId: string } | undefined;
+  if (request.capabilities.hostKind === "codex" && request.action !== "coordination") {
+    const sessionId = tool.nativeSessionId ?? process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"];
+    if (sessionId && request.capabilities.sessionRef !== undefined && request.capabilities.sessionRef !== sessionId) throw new HostExecutionError("reported sessionRef differs from the actual native session");
+    const role = sessionId ? await readCodexPeerRole(home ?? deviceHome(), sessionId) : { status: "unbound" as const };
+    if (role.status === "error") throw new HostExecutionError(role.reason);
+    if (tool.peerWorker || role.status === "active") {
+      if (!sessionId) throw new HostExecutionError("Codex peer worker preparation needs the actual native coordinator session");
+      if (role.status === "retired") throw new HostExecutionError("Codex peer coordinator is retired");
+      if (!isCodexNativeSpawn(request.capabilities.toolName)) throw new HostExecutionError("Codex peer worker requires collaboration.spawn_agent, not create_thread/fork_thread");
+      const health = await codexNativeGuardHealth({ device: home ?? deviceHome(), home: tool.userHome ?? homedir(), cwd: tool.cwd ?? process.cwd(), ...(tool.codexObservation ? { observation: tool.codexObservation } : {}) });
+      if (!health.ready) throw new HostExecutionError(`Codex peer guard not ready: ${health.reasons.join("; ")}`);
+      codexPeerWorker = { coordinatorId: sessionId };
+    }
+  }
   const context = await workProjectContexts(state, request.workId, home, request);
   const decision = context.executionDecision as HostExecutionDecision;
   const executable = executionDecisionEligibility(decision) === "executable" && context.dispatchAdmitted === true;
   if (executable && !sameHostSelection(tool.selection, decision.requestedSelection)) throw new HostExecutionError("tool request selection differs from the resolved selection; construct arguments for the resolved request, not an invented actual model");
   const payload = {
-    schemaVersion: HOST_NATIVE_PREPARATION_VERSION, context, decision,
+    schemaVersion: HOST_NATIVE_PREPARATION_VERSION, context, decision, ...(codexPeerWorker ? { codexPeerWorker } : {}),
     attempt: executable ? { id: `local-attempt:${randomUUID()}`, identityKind: "local-correlation" as const, toolName: request.capabilities.toolName, argumentsValue: tool.argumentsValue, requestedAt: new Date().toISOString() } : null,
   };
   return validateHostNativePreparation({ ...payload, digest: dotDigest(payload) });

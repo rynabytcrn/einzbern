@@ -14,6 +14,7 @@ arguments are observations, not portable configuration to copy into another inst
 | Claude additionalDirectories | Project root |
 | Codex writable_roots | Directory containing .codex/config.toml |
 | Hook launcher | EINZBERN_HOME when set; otherwise the device's relative location from the current home |
+| Codex peer enrollment and role files (`codex-peer-roles/<session-sha256>/`) | Device directory; identities and retained receipts contain no filesystem pointers |
 | Dot binding root | Target root (stored as a dot) |
 | Other dot bindings and AGENTS readback | Dot target root |
 | Dot options root | Directory containing the options JSON file |

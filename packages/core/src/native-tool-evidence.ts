@@ -324,6 +324,7 @@ export const HOST_NATIVE_RECORD_VERSION = "tcrn.host-native-record.v1" as const;
 export interface HostNativePreparation {
   readonly schemaVersion: typeof HOST_NATIVE_PREPARATION_VERSION;
   readonly context: Record<string, unknown>;
+  readonly codexPeerWorker?: { readonly coordinatorId: string };
   readonly decision: HostExecutionDecision;
   readonly attempt: null | { readonly id: string; readonly identityKind: "local-correlation"; readonly toolName: string; readonly argumentsValue: unknown; readonly requestedAt: string };
   readonly digest: string;
@@ -365,13 +366,20 @@ export interface HostNativeRecord {
   readonly digest: string;
 }
 export function validateHostNativePreparation(value: unknown): HostNativePreparation {
-  const p = hostObject(value, "host preparation", ["schemaVersion", "context", "decision", "attempt", "digest"]);
+  const p = hostObject(value, "host preparation", ["schemaVersion", "context", "decision", "attempt", "digest", "codexPeerWorker"]);
   if (p.schemaVersion !== HOST_NATIVE_PREPARATION_VERSION) throw new HostExecutionError("unknown native preparation protocol");
   const { digest, ...payload } = p;
   if (digest !== dotDigest(payload)) throw new HostExecutionError("native preparation digest mismatch");
   const decision = p.decision as HostExecutionDecision;
   if (decision?.schemaVersion !== HOST_EXECUTION_DECISION_VERSION || executionDecisionEligibility(decision) === "uninterpretable") throw new HostExecutionError("uninterpretable execution decision");
   validateHostExecutionRequest(decision.request);
+  if (p.codexPeerWorker !== undefined) {
+    const scope = hostObject(p.codexPeerWorker, "Codex peer worker", ["coordinatorId"]);
+    hostText(scope.coordinatorId, "native coordinator identity");
+    if (decision.request.capabilities.hostKind !== "codex" || decision.request.action === "coordination" ||
+        !isCodexNativeSpawn(decision.request.capabilities.toolName)) throw new HostExecutionError("Codex peer worker requires collaboration.spawn_agent, not independent create_thread/fork_thread");
+    if (decision.request.capabilities.sessionRef !== undefined && decision.request.capabilities.sessionRef !== scope.coordinatorId) throw new HostExecutionError("Codex peer worker session differs from its native coordinator");
+  }
   const context = p.context as Record<string, unknown>;
   if (!context || context.workId !== decision.request.workId || context.workRevision !== decision.request.workRevision || dotDigest(context.executionDecision) !== dotDigest(decision)) throw new HostExecutionError("decision differs from project context");
   if (p.attempt !== null) {
@@ -488,4 +496,12 @@ export function normalizeHostNativeRecord(value: unknown): HostNativeRecord {
   const calculated = recordHostNativeEvents(record.preparation, record.events);
   if (dotDigest(calculated) !== dotDigest(record)) throw new HostExecutionError("native record differs from retained events");
   return calculated;
+}
+
+/** Tool identities only; never inspect JavaScript, prompts or shell text. */
+export function isCodexNativeSpawn(tool: unknown): boolean {
+  return ["collaboration.spawn_agent", "collaboration__spawn_agent", "multi_agent_v1.spawn_agent", "spawn_agent"].includes(String(tool));
+}
+export function isCodexIndependentCreate(tool: unknown): boolean {
+  return typeof tool === "string" && /(?:^|__|\.)(?:create_thread|fork_thread)$/u.test(tool);
 }

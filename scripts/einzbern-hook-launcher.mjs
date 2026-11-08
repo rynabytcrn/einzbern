@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { constants as bufferConstants } from "node:buffer";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-477 R1, R2, R5 (MIN-227 D4, D5, D23): the stable hook launcher. The installer
@@ -27,7 +28,8 @@ import { constants as bufferConstants } from "node:buffer";
 //
 // It imports nothing but node: built-ins, so no engine update changes it, and a host file naming it
 // stays current across updates and rollbacks. Within the supported Node.js line, every failure
-// ends the hook with exit code 0 and one line on stderr: a hook never blocks a session. A
+// reports ordinary routing failures with exit code 0 and one line on stderr. A known
+// Codex role whose guard cannot load receives an explicit PreToolUse deny instead. A
 // below-floor runtime ends quietly before engine loading. The same file runs on macOS, Linux and
 // Windows (R5): paths are the platform's own, and the engine's entry is imported through the file URL
 // pathToFileURL builds, never a string joined by hand.
@@ -461,6 +463,24 @@ export async function launch(argv, env) {
   if (typeof event !== "string" || event.length === 0) throw new HookLaunchError("HOOK_EVENT_MISSING", "the hook command names no event");
   const payload = await readInput();
   const device = deviceDirectory(env);
+  const codex = env.EINZBERN_HOST === "codex" || (!env.EINZBERN_HOST && !env.CLAUDE_PROJECT_DIR);
+  const workerTool = typeof payload.tool_name === "string" && (/(?:^|__|\.)(?:create_thread|fork_thread)$/u.test(payload.tool_name) || ["collaboration.spawn_agent", "collaboration__spawn_agent", "multi_agent_v1.spawn_agent", "spawn_agent"].includes(payload.tool_name));
+  if (event === "pre-tool-use" && codex && workerTool && typeof payload.session_id === "string") {
+    const key = createHash("sha256").update(payload.session_id).digest("hex");
+    let known = true;
+    try { statSync(join(device, "codex-peer-roles", key)); }
+    catch (error) { if (error?.code === "ENOENT") known = false; }
+    if (known) {
+      try {
+        const hook = await import(hookEntryUrl(join(device, ENGINE_DIRECTORY), currentVersion(join(device, ENGINE_DIRECTORY))));
+        if (typeof hook.runPeerDispatchHookEvent !== "function") throw new Error("current engine has no durable peer guard");
+        const output = await hook.runPeerDispatchHookEvent({ event, payload, device });
+        if (output !== null) return output;
+      } catch (error) {
+        return JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `Load Mana Orchestrate. Known coordinator guard could not recover: ${String(error?.message ?? error)}` } }) + "\n";
+      }
+    }
+  }
   const entries = registryEntries(device);
   if (entries.length === 0) {
     noteUnanswered(device, entries, event, payload);

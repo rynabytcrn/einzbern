@@ -221,3 +221,25 @@ prompt means the directory is in no known container, or the hook never reached t
 Doctor never writes. The fixes never commit, push, edit `.gitignore`, or delete anything, and
 neither do you during this task. The one removal is `library-unregister --yes true`, which takes a
 single registry entry out once the user agreed and keeps a copy of the registry first.
+
+## Codex peer dispatch readiness
+
+Read the installed bundle's `docs/codex-native-controller.md` for the exact
+scoped worker, durable role lifecycle and native-observation contracts. Independent
+main/economy chats remain distinct from `collaboration.spawn_agent` workers.
+Use the existing `--codex-admission` observation conduit for setup, doctor,
+peer-record and worker prepare. Machine-assemble current public app-server
+`hooks/list` raw output and hook/config byte observations; do not ask the Owner
+to fill JSON. Native registration, enabled/current trust and role recovery must
+be confirmed before a dependent worker batch. Unknown, missing, disabled or
+untrusted state is not-ready even when file reconciliation passes. Old
+`subagentStop` observations are legacy only and no such hook is installed.
+
+Normal fresh/update/repair reports `codexGuard` in its self-check, preserves
+user hooks/settings and durable `device:codex-peer-roles/`, and does not grant
+trust. Re-observe after changes. Enrollment failures retain factual receipts
+and return nonzero; recover only from validated retained evidence. Role retirement
+or method change uses peer-record with the exact live Owner decision and actual
+actor, followed by readback; terminal batches never retire roles implicitly.
+Use owned isolated homes for validation. Source/fixture results and old prototypes
+do not certify current native installation readiness.

@@ -1761,7 +1761,7 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   { name: "device-clean", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "yes", required: false, valueKind: "boolean" }, { name: "home", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-480 R4, AC5: doctor's eight checks of this device and one project, --project or
   // the current directory. It changes nothing: device-stream's lock and probe file go again.
-  { name: "doctor", availability: "cli", mutates: false, flags: [{ name: "project", required: false, valueKind: "string" }, { name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }] },
+  { name: "doctor", availability: "cli", mutates: false, flags: [{ name: "codex-admission", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "execution-target", required: false, valueKind: "string", valueShape: "traditional | chatgpt-dot" }] },
   // TCRN-CROSS-STORY-471 R2, R3: the engine versions in this device's engine/ directory. engine-update
   // installs an unpacked, digest-checked version and makes it current; engine-rollback makes the
   // previous one current again. Both rewrite engine/current alone, never a host file.
@@ -2554,6 +2554,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson(result));
     const receipt = result as Readonly<Record<string, JsonValue>>;
     if (command === "execution-host-prepare" && receipt.attempt === null) fail("HOST_PREPARATION_NOT_EXECUTABLE", "Only this action is not executable; inspect decision, not a claimed host rejection");
+    if (command === "execution-codex-peer-record" && receipt.reasonCode === "CODEX_PEER_GUARD_NOT_READY") fail("CODEX_PEER_GUARD_NOT_READY", "Receipt retained; durable role/native guard readiness failed; see actual diagnostics");
     if (command === "execution-codex-peer-record" && receipt.reasonCode === "CODEX_PEER_RECORD_INVALID") fail("CODEX_PEER_RECORD_INVALID", "Raw invalid peer material retained; see problems");
     if (command === "execution-host-record" && (receipt.validation as Readonly<Record<string, JsonValue>>)?.status !== "valid") fail("HOST_RECORD_INVALID", "Raw invalid material retained; see problems");
     // New host-record exit 0 means valid recording, NOT execution completion or acceptance.
@@ -3097,11 +3098,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   // TCRN-CROSS-STORY-480 R4, AC5 (doctor.ts): the eight checks, each {check, ok, reasonCode, detail}.
   if (command === "doctor") {
-    const values = parseArguments(rest, ["project", "execution-target"]);
+    const values = parseArguments(rest, ["project", "execution-target", "codex-admission"]);
     const executionTarget = values["execution-target"] ?? "traditional";
     if (!(SETUP_EXECUTION_TARGETS as readonly string[]).includes(executionTarget)) fail("CLI_ARGUMENT_MALFORMED", "unknown doctor execution-target");
     const projectPath = resolve(values.project ?? process.cwd());
-    const checks: readonly DoctorCheck[] = await runDoctor({ projectRoot: projectPath, executionTarget: executionTarget as SetupExecutionTarget });
+    const codexAdmission = values["codex-admission"] === undefined ? undefined : JSON.parse(await readFile(resolve(values["codex-admission"]), "utf8")) as NonNullable<SetupOptions["codexAdmission"]>;
+    if (codexAdmission && executionTarget !== "traditional") fail("CLI_ARGUMENT_MALFORMED", "Codex admission only applies to traditional doctor");
+    const checks: readonly DoctorCheck[] = await runDoctor({ projectRoot: projectPath, executionTarget: executionTarget as SetupExecutionTarget, ...(codexAdmission ? { codexAdmission } : {}) });
     const applicability = executionTarget === DOT_INSTALLATION_TARGET ? {
       executionTarget,
       notApplicableChecks: DOCTOR_TRADITIONAL_CHECKS.map((check) => ({ check, reason: "Traditional host integration is not required by chatgpt-dot." })),

@@ -995,8 +995,8 @@ async function inspectHookExecutability(platformRoot, homeRoot, manifest) {
     return check("hooks", false, { reasonCode: failures[0].reasonCode, failures, source: failures[0].source, codex, claude, user });
   }
   return claude.state === "absent"
-    ? check("hooks", true, { source: "installWiring", deferredTo: "installWiring", codex, user })
-    : check("hooks", true, { source: "container.claude-settings", checked: claude.checked, events: claude.events, codex, user });
+    ? check("hooks", true, { source: "installWiring", deferredTo: "installWiring", codexGuard: { ready: false, native: "not-observed", verifyWith: "doctor --codex-admission <native-observation>" }, codex, user })
+    : check("hooks", true, { source: "container.claude-settings", checked: claude.checked, events: claude.events, codexGuard: { ready: false, native: "not-observed", verifyWith: "doctor --codex-admission <native-observation>" }, codex, user });
 }
 
 function versionFromSkill(text) {

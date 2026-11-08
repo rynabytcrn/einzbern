@@ -1,6 +1,11 @@
 import { recordCodexPeerBatch, normalizeCodexPeerBatch } from "../../core/src/codex-peer-batch.js";
 import type { CodexPeerBatchInput } from "../../core/src/codex-peer-batch.js";
 import type { CodexPeerBatch } from "../../core/src/codex-peer-batch.js";
+import { persistCodexPeerRole } from "../../core/src/codex-peer-hooks.js";
+import { codexNativeGuardHealth } from "../../core/src/codex-native-health.js";
+import type { CodexHookObservation } from "../../core/src/codex-native-health.js";
+import { verifyWriteAuthorization } from "../../core/src/write-authorization.js";
+import { homedir } from "node:os";
 import { stageCodexPeerReceipt } from "../../core/src/codex-peer-hooks.js";
 import { deviceHome } from "../../core/src/device-home.js";
 import { readEngineModelPolicyFile } from "../../core/src/engine-model-policy.js";
@@ -25,9 +30,9 @@ import type { WorkspaceState, WorkspaceWriteLockOptions } from "../../core/src/w
 
 const flag = (name: string, required: boolean, valueKind = "path", valueShape?: string): RuntimeCommandFlag => ({ name, required, valueKind: valueKind === "path" ? "string" : valueKind, ...(valueShape === undefined ? {} : { valueShape }) });
 export const NATIVE_TOOL_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.freeze([
-  { name: "execution-codex-peer-record", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("manifest", true), flag("records", true), flag("capacity", true), flag("delivery", false), flag("prior", false), flag("output", true)] },
+  { name: "execution-codex-peer-record", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("manifest", true), flag("records", true), flag("capacity", true), flag("codex-admission", false), flag("role-change", false), flag("actor", false, "string"), flag("delivery", false), flag("prior", false), flag("output", true)] },
   { name: "execution-codex-peer-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
-  { name: "execution-host-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "HostExecutionRequest v1 JSON"), flag("arguments", true, "path", "{selection, argumentsValue} actual request JSON"), flag("output", true)] },
+  { name: "execution-host-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "HostExecutionRequest v1 JSON"), flag("arguments", true, "path", "{selection, argumentsValue} actual request JSON"), flag("codex-peer-worker", false, "boolean"), flag("codex-admission", false), flag("output", true)] },
   { name: "execution-host-record", availability: "cli", mutates: true, flags: [flag("binding", true), flag("events", false, "path", "HostNativeEvent array; absent preserves pending"), flag("prior", false), flag("output", true)] },
   { name: "execution-host-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
   { name: "execution-native-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "DotExecutionRequest JSON including actual-session contextRead"), flag("tool", true, "string"), flag("tool-contract", true, "path", "{ref,sha256} JSON"), flag("arguments", true, "path", "actual tool arguments JSON"), flag("retry-from", false, "path", "previous saved native record, required for an explicit retry"), flag("reconciliation", false, "path", "NativeRetryReconciliation; paired with retry-from"), flag("output", true)] },
@@ -69,12 +74,27 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
     try { result = recordCodexPeerBatch({ observationCutoff, manifest, records, capacity, policy, workRevisions, ...(delivery === undefined ? {} : { delivery }), ...(prior === undefined ? {} : { prior }) }); }
     catch (error) { result = { reasonCode: "CODEX_PEER_RECORD_INVALID", observationCutoff, manifest, records, capacity, ...(delivery === undefined ? {} : { delivery }), ...(prior === undefined ? {} : { prior }), validation: { status: "invalid" }, problems: [String(error)] }; }
     await writeDispatchArtifact(values.output!, result, [workspace.root], context.home);
-    if ((result as { schemaVersion?: unknown }).schemaVersion === "tcrn.codex-peer-batch.v1") {
+    if ((result as { schemaVersion?: unknown }).schemaVersion === "tcrn.codex-peer-batch.v2") {
       try {
+        const change = values["role-change"] === undefined ? undefined : dotObject(await input(values["role-change"]), "peer role lifecycle", ["operation", "decidedIn"]);
+        if (change && !["retire", "activate", "recover"].includes(String(change.operation))) throw new Error("unknown peer role lifecycle operation");
+        let decidedIn: string | null = null;
+        if (change && change.operation !== "recover") {
+          if (!values.actor) throw new Error("role lifecycle requires the actual --actor");
+          const authorization = await verifyWriteAuthorization({ state: workspace.state, decidedIn: String(change.decidedIn), target: `codex-peer-roles.${manifest.coordinator.conversationId}.${String(change.operation)}`, ...(context.home ? { home: context.home } : {}) });
+          decidedIn = authorization.decidedIn;
+        }
+        const role = await persistCodexPeerRole({ receipt: result as CodexPeerBatch, device: context.home ?? deviceHome(),
+          sessionId: process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"], libraryId: workspace.state.metadata.workspaceId,
+          actor: values.actor ?? "agent:codex", ...(change ? { change: { operation: change.operation as "retire" | "activate" | "recover", decidedIn } } : {}) });
+        if (role.status === "active") {
+          const admission = values["codex-admission"] === undefined ? undefined : await input(values["codex-admission"]) as { native?: CodexHookObservation; state?: string; trust?: string; preToolUse?: boolean };
+          const health = await codexNativeGuardHealth({ device: context.home ?? deviceHome(), home: homedir(), cwd: process.cwd(), ...(admission?.state === "supported" && admission.trust === "permitted" && admission.preToolUse === true && admission.native ? { observation: admission.native } : {}) });
+          if (!health.ready) return json({ reasonCode: "CODEX_PEER_GUARD_NOT_READY", receipt: result, role, nativeGuard: health, receiptFile: values.output });
+        }
         await stageCodexPeerReceipt(result as CodexPeerBatch, context.home ?? deviceHome(), process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"]);
-      } catch {
-        // A disposable hook cache cannot invalidate a retained native receipt.
-        // Without this observation, hooks leave the conversation unguarded.
+      } catch (error) {
+        return json({ reasonCode: "CODEX_PEER_GUARD_NOT_READY", receipt: result, problems: [String(error)], receiptFile: values.output });
       }
     }
     return json(result);
@@ -84,7 +104,9 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
     const request = validateHostExecutionRequest(await input(values.request!));
     const tool = dotObject(await input(values.arguments!), "tool request", ["selection", "argumentsValue"]);
     if (!Object.hasOwn(tool, "argumentsValue")) throw new Error("actual tool arguments are required");
-    const result = await prepareHostNativeDispatch(workspace.state, request, tool as { selection: HostSelection; argumentsValue: unknown }, context.home);
+    if (values["codex-peer-worker"] !== undefined && !["true", "false"].includes(values["codex-peer-worker"])) throw new Error("codex-peer-worker must be true or false");
+    const admission = values["codex-admission"] === undefined ? undefined : await input(values["codex-admission"]) as { native?: CodexHookObservation; state?: string; trust?: string; preToolUse?: boolean };
+    const result = await prepareHostNativeDispatch(workspace.state, request, { ...(tool as { selection: HostSelection; argumentsValue: unknown }), peerWorker: values["codex-peer-worker"] === "true", ...(admission?.state === "supported" && admission.trust === "permitted" && admission.preToolUse === true && admission.native ? { codexObservation: admission.native } : {}) }, context.home);
     await writeDispatchArtifact(values.output!, result, [workspace.root], context.home);
     return json({ reasonCode: result.attempt ? "HOST_PREPARATION_READY" : "HOST_PREPARATION_NOT_EXECUTABLE", ...result });
   }

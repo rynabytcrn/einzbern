@@ -657,7 +657,10 @@ for (const state of ["supported", "unsupported", "unknown"]) {
     assert.deepEqual(applied.modelPolicyOnboarding, planned.modelPolicyOnboarding);
     await assert.rejects(readFile(join(f.deviceHome, "engine-model-policy.json")), { code: "ENOENT" });
     assert.deepEqual(applied.codexAdmission, codexAdmission);
-    assertSelfCheckGreen(applied);
+    const hookCheck = applied.selfCheck.find(check => check.check === "hooks-present");
+    assert.equal(hookCheck.ok, false, "legacy support/trust flags alone cannot attest current native guard readiness");
+    assert.equal(hookCheck.detail.codexGuard.ready, false);
+    for (const check of applied.selfCheck.filter(check => check.check !== "hooks-present")) assert.equal(check.ok, true);
     for (const host of ["codex", "claude"]) {
       const document = JSON.parse(await readFile(join(f.home, `.${host}`, host === "codex" ? "hooks.json" : "settings.json"), "utf8"));
       assert.equal(Object.hasOwn(document.hooks, "SubagentStop"), false);

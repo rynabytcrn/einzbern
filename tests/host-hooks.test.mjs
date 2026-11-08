@@ -609,3 +609,10 @@ test("unchanged native user_prompt_submit trust slot survives duplicate-owned cl
   assert.equal(readback.text, config);
   assert.deepEqual(readback.removedTrustStates, []);
 });
+
+test("PreToolUse observations have no retired SubagentStop prerequisite", () => {
+  const planned = rawPlanHostHooks({ host: "codex", scope: "user", deviceHome: "/tmp/synthetic-device", codexAdmission: { state: "supported", version: "synthetic", evidenceRef: "fixture:pretooluse", preToolUse: true, trust: "permitted" } });
+  assert.equal(planned.codexAdmission.subagentStop, undefined);
+  assert.ok(planned.groups.PreToolUse);
+  assert.equal(planned.groups.SubagentStop, undefined);
+});

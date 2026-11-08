@@ -28,6 +28,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
 import { AGENT_OUTPUT_MAX_BYTES } from "../dist/build/packages/core/src/runtime-input-contract.js";
 // Held equal to scripts/einzbern-hook-launcher.mjs (LOG_DIRECTORY, LOG_FILE, LOG_SCHEMA_VERSION).
+export const CODEX_PEER_GUARD_CONTRACT = "einzbern.codex-peer-dispatch-guard.v1";
 const LOG_DIRECTORY = "log";
 const LOG_FILE = "hook.ndjson";
 const LOG_SCHEMA_VERSION = "einzbern.hook-log.v1";
@@ -85,11 +86,11 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   switch (name) {
     case "PreToolUse": {
       const directory = absolute(cwd) ?? absolute(body.cwd) ?? process.cwd();
-      if (host === "codex" && ["mcp__codex_app__wait_threads", "mcp__codex_app__read_thread", "mcp__codex_app__send_message_to_thread"].includes(body.tool_name)) {
+      if (host === "codex") {
         const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
         const result = await runCodexPeerHook(name, body, deviceHome(process.env));
         noteRecall(deviceHome(process.env), event, directory, result.reasonCode, host);
-        return result.output;
+        if (result.output !== null) return result.output;
       }
       const answer = readGuardAnswer(body, directory, host);
       if (host !== "dsh") noteRecall(deviceHome(process.env), event, directory, answer === null ? "HOOK_READ_GUARD_OBSERVED" : "HOOK_READ_GUARD_DENIED", host);
@@ -200,4 +201,15 @@ export function readGuardAnswer(payload, cwd, host) {
     // An unreadable path, invalid input or filesystem exception must never block a tool.
     return null;
   }
+}
+
+/** Launcher-only role check before project resolution. No library recall or project access. */
+export async function runPeerDispatchHookEvent({ event, payload, device } = {}) {
+  if (event !== "pre-tool-use") return null;
+  const { hookHost } = await import("../dist/build/packages/core/src/hook-recall.js");
+  if (hookHost(process.env) !== "codex") return null;
+  const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
+  const result = await runCodexPeerHook("PreToolUse", payload, device);
+  noteRecall(device, event, payload?.cwd ?? process.cwd(), result.reasonCode, "codex");
+  return result.output;
 }

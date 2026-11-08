@@ -167,3 +167,25 @@ holds an original stays, the `launchers` and `registry` a write replaced and the
 and install markers the migration moved among them, and so does a backup it does not know.
 Emptying a session's trash is not part of this task: `trash-empty.mjs --yes` runs only after the
 Owner authorized the report its plan made, and deletes only what the named trash directories hold.
+
+## Codex peer dispatch readiness
+
+Read the installed bundle's `docs/codex-native-controller.md` for the exact
+scoped worker, durable role lifecycle and native-observation contracts. Independent
+main/economy chats remain distinct from `collaboration.spawn_agent` workers.
+Use the existing `--codex-admission` observation conduit for setup, doctor,
+peer-record and worker prepare. Machine-assemble current public app-server
+`hooks/list` raw output and hook/config byte observations; do not ask the Owner
+to fill JSON. Native registration, enabled/current trust and role recovery must
+be confirmed before a dependent worker batch. Unknown, missing, disabled or
+untrusted state is not-ready even when file reconciliation passes. Old
+`subagentStop` observations are legacy only and no such hook is installed.
+
+Normal fresh/update/repair reports `codexGuard` in its self-check, preserves
+user hooks/settings and durable `device:codex-peer-roles/`, and does not grant
+trust. Re-observe after changes. Enrollment failures retain factual receipts
+and return nonzero; recover only from validated retained evidence. Role retirement
+or method change uses peer-record with the exact live Owner decision and actual
+actor, followed by readback; terminal batches never retire roles implicitly.
+Use owned isolated homes for validation. Source/fixture results and old prototypes
+do not certify current native installation readiness.

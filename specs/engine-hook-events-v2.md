@@ -51,8 +51,8 @@ For the existing peer-receipt workflow, `execution-codex-peer-record` also stage
 a small disposable observation when the native `CODEX_THREAD_ID` (or
 `CODEX_SESSION_ID`) matches a recorded peer. The retained receipt remains the
 evidence. The observation contains peer IDs and derived batch facts, not prompts,
-paths, new project fields or execution authority. A failed cache write does not
-invalidate the retained receipt; it leaves the hook protection unavailable.
+paths, new project fields or execution authority. The disposable cache does not own durable roles; receipt persistence and role
+readback failures return explicit not-ready diagnostics through peer-record.
 
 PostToolUse consumes that observation after a Bash call and binds it to the
 native session and turn. It does not parse shell commands, scan transcripts,
@@ -62,7 +62,7 @@ denies `wait_threads` and `read_thread` calls to that coordinator in the same tu
 while the recorded batch remains nonterminal. Feedback points to Mana Orchestrate.
 The hook does not perform another query or send a message.
 
-A new user turn discards the old observation. Unknown roles, absent receipts,
+A new user turn discards only the old turn observation. Unbound roles, absent turn receipts,
 unsuccessful or ambiguous sends, other targets and remote-host queries are not
 blocked by this guard. Coordinator worker waits and other hosts are unchanged.
 This is a bounded handoff guard, not a global polling quota, an authorization
@@ -98,6 +98,35 @@ Source/fixture checks cover host isolation and owned-hook retirement. Native
 acceptance follows the current Owner review scope and remains separate from source
 regression and ordinary platform doctor results. Keep individual run results in
 their work records; this installed contract does not certify a particular host.
+
+## Durable Codex worker dispatch guard
+
+New v2 peer receipts validate scoped `collaboration.spawn_agent` preparations and
+retain their actual spawn returns/worker ID pointers. Independent create/fork
+records remain their historical kind; v1 replay is legacy and cannot enroll.
+`execution-codex-peer-record` writes `codex-peer-roles/<session-sha256>/anchor.json`
+and `role.json` under the device root with atomic files and the existing lock.
+The anchor is saved first, so interrupted payload persistence is known failure.
+Role identity and validated receipt are checked on every recovery. This state is
+outside cache and version directories and is not cleared by UserPromptSubmit,
+summary, terminal batch, Stop or restart. Explicit governed lifecycle and readback
+use the existing peer-record command as described in the native controller doc.
+
+Before ordinary cwd/registry routing, the stable launcher sends only Codex
+create_thread/fork_thread/native spawn identities for a known enrolled session to
+the current version's role check. Active coordinator create/fork is explicitly
+denied with permissionDecision: deny. Known invalid/unreadable/missing related
+state also denies dependent dispatch. Unrelated reads and unbound chats continue.
+Native code mode fires the same inner PreToolUse seam; source text is never parsed.
+No SubagentStop, extra collector or background service is added.
+
+Doctor/setup report native hook registration, enabled/current trust and role
+recovery as `codexGuard` separately from structural file reconciliation. Only a
+current actual hooks/list observation with matching candidate commands and
+unchanged source/config byte observations establishes native readiness. Missing,
+disabled, untrusted, unsupported or unknown native state is not-ready. A file or
+old subagentStop flag alone cannot prove readiness. See the closed observation
+shape and lifecycle in `docs/codex-native-controller.md`.
 
 ## Platform doctor (BL-41)
 

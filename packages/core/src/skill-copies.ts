@@ -45,7 +45,7 @@ export const SKILL_COPIES_FILES = Object.freeze({
   entry: "SKILL.md",
 } as const);
 
-export type SkillCopyHost = "claude" | "codex";
+export type SkillCopyHost = "claude" | "codex" | "kiro";
 
 export interface SkillCopyRoot {
   readonly host: SkillCopyHost;
@@ -58,6 +58,11 @@ export const SKILL_COPY_ROOTS: readonly SkillCopyRoot[] = Object.freeze([
   { host: "claude", root: ".claude/skills" },
   { host: "codex", root: ".agents/skills" },
 ]);
+export const KIRO_SKILL_COPY_ROOT: SkillCopyRoot = Object.freeze({ host: "kiro", root: ".kiro/skills" });
+
+export function skillCopyRoots(includeKiro = false): readonly SkillCopyRoot[] {
+  return includeKiro ? [...SKILL_COPY_ROOTS, KIRO_SKILL_COPY_ROOT] : SKILL_COPY_ROOTS;
+}
 
 // Every root the legacy helper was ever copied into: both roots above and Codex's older one.
 export const LEGACY_SKILL_ROOTS: readonly string[] = Object.freeze([".claude/skills", ".agents/skills", ".codex/skills"]);
@@ -122,8 +127,9 @@ export function skillCopiesRecordPath(home: string = currentDeviceHome()): strin
 }
 
 /** Where a host's copy of the skill lives under a home directory. */
-export function skillCopyPath(home: string, root: SkillCopyRoot): string {
-  return join(home, ...root.root.split("/"), BRAND.helper.id);
+export function skillCopyPath(home: string, root: SkillCopyRoot, kiroHome?: string): string {
+  const parent = root.host === "kiro" ? resolve(kiroHome ?? process.env.KIRO_HOME ?? join(home, ".kiro")) : home;
+  return join(parent, ...(root.host === "kiro" ? ["skills"] : root.root.split("/")), BRAND.helper.id);
 }
 
 // The UTC second as a directory name that is legal on every platform: 20260926T140000Z.
@@ -204,7 +210,7 @@ type LoadedRecord =
 const RECORD_FIELDS = ["copies", "installedAt", "schemaVersion", "skill"];
 const COPY_FIELDS = ["host", "installTreeDigest", "path"];
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
-const HOSTS: readonly string[] = SKILL_COPY_ROOTS.map((root) => root.host);
+const HOSTS: readonly string[] = skillCopyRoots(true).map((root) => root.host);
 
 function exactFields(value: unknown, fields: readonly string[]): value is Readonly<Record<string, unknown>> {
   return value !== null && typeof value === "object" && !Array.isArray(value) &&
@@ -271,6 +277,9 @@ export interface InstallSkillCopiesInput {
   readonly home?: string;
   // The device directory that keeps skills.json and the backups (default: EINZBERN_HOME or ~/.einzbern).
   readonly deviceHome?: string;
+  /** Install Kiro's standard global Skill copy when the Kiro surface is applicable. */
+  readonly includeKiro?: boolean;
+  readonly kiroHome?: string;
 }
 
 export type SkillCopyAction = "created" | "replaced" | "reused";
@@ -384,8 +393,12 @@ export async function installSkillCopies(input: InstallSkillCopiesInput): Promis
   return withFileLock(lock, async () => {
     const backupDir = join(backupsPath(device), stamp, SKILL_COPIES_FILES.backup);
     const planned: PlannedCopy[] = [];
-    for (const root of SKILL_COPY_ROOTS) {
-      const path = skillCopyPath(home, root);
+    const previous = await loadRecord(skillCopiesRecordPath(device));
+    const includeKiro = input.includeKiro === true || previous.state === "valid" && previous.record.copies.some(copy => copy.host === "kiro");
+    const roots = skillCopyRoots(includeKiro);
+    const kiroHome = input.kiroHome ?? process.env.KIRO_HOME ?? join(home, ".kiro");
+    for (const root of roots) {
+      const path = skillCopyPath(home, root, kiroHome);
       const existing = await lstatOrNull(path);
       let action: SkillCopyAction = "created";
       if (existing !== null) {
@@ -398,18 +411,20 @@ export async function installSkillCopies(input: InstallSkillCopiesInput): Promis
       }
       planned.push({ host: root.host, path, action, backup });
     }
+    const copies: SkillCopyRecord[] = planned.map((copy) => ({ host: copy.host, path: copy.path, installTreeDigest: digest.sha256 }));
+    // Resolve every stored path before touching a copy; a KIRO_HOME on another volume is not
+    // portable in the current device-relative manifest and must block before writes.
+    const storedCopies = copies.map(copy => ({ ...copy, path: storePath(device, copy.path) }));
     for (const copy of planned) {
       if (copy.action !== "reused") await placeCopy(source, digest.sha256, copy);
     }
-    const copies: SkillCopyRecord[] = planned.map((copy) => ({ host: copy.host, path: copy.path, installTreeDigest: digest.sha256 }));
     const recordPath = skillCopiesRecordPath(device);
-    const previous = await loadRecord(recordPath);
     const recorded = previous.state === "valid" && canonicalJson(previous.record.copies) === canonicalJson(copies);
     const current = recorded && previous.state === "valid" && previous.portable && planned.every((copy) => copy.action === "reused");
     if (!current) {
       const record: SkillCopiesRecord = { schemaVersion: SKILL_COPIES_SCHEMA_VERSION, skill: BRAND.helper.id, installedAt: input.now, copies };
       await ensureDeviceDirectory(device);
-      await writeFileAtomic(recordPath, canonicalJson({ ...record, copies: record.copies.map(copy => ({ ...copy, path: storePath(device, copy.path) })) }));
+      await writeFileAtomic(recordPath, canonicalJson({ ...record, copies: storedCopies }));
     }
     return {
       reasonCode: current ? "SKILL_COPIES_CURRENT" : "SKILL_COPIES_INSTALLED",
@@ -470,15 +485,18 @@ async function legacySkillCopies(home: string): Promise<{ readonly root: string;
  * Compare both copies with skills.json and look for a legacy helper copy in the three roots it was
  * ever placed in (TCRN-CROSS-STORY-479 R4, R5). Nothing is written.
  */
-export async function verifySkillCopies(input: { readonly home?: string; readonly deviceHome?: string } = {}): Promise<SkillCopiesVerification> {
+export async function verifySkillCopies(input: { readonly home?: string; readonly deviceHome?: string; readonly includeKiro?: boolean; readonly kiroHome?: string } = {}): Promise<SkillCopiesVerification> {
   const home = resolve(input.home ?? homedir());
   const device = resolve(input.deviceHome ?? currentDeviceHome());
   const recordPath = skillCopiesRecordPath(device);
   const loaded = await loadRecord(recordPath);
   const recorded = loaded.state === "valid" ? loaded.record.copies : [];
+  const includeKiro = input.includeKiro === true || recorded.some(copy => copy.host === "kiro");
+  const roots = skillCopyRoots(includeKiro);
+  const kiroHome = input.kiroHome ?? process.env.KIRO_HOME ?? join(home, ".kiro");
   const copies: SkillCopyVerification[] = [];
-  for (const root of SKILL_COPY_ROOTS) {
-    const path = skillCopyPath(home, root);
+  for (const root of roots) {
+    const path = skillCopyPath(home, root, kiroHome);
     const entry = recorded.find((copy) => copy.host === root.host && copy.path === path);
     const stats = await lstatOrNull(path);
     const actual = stats !== null && stats.isDirectory() ? await treeDigestOrNull(path) : null;

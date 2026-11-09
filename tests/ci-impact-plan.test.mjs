@@ -1061,7 +1061,8 @@ test("real repository README, every ordinary Wiki and original PR33 retain exact
   assert.equal(graph.get("packages/core/src/names.ts").has("scripts/lib/privacy.mjs"), false);
   assert.equal(graph.get("portal/tests/portal.test.mjs").has("scripts/lib/log.mjs"), false);
   const mergedPortalTests = names(`codex-native-adapter codex-native-hook-ipc config-backup-format config-backup-retention
-    hook-host hook-launcher hook-read-guard hook-recall-log host-fallback-recommendation host-native-dispatch`);
+    hook-host hook-launcher hook-read-guard hook-recall-log host-fallback-recommendation host-native-dispatch
+    kiro-hooks kiro-native-execution`);
   const hookReader = "scripts/einzbern-hook.mjs";
   assert.ok(graph.get(hookReader).has("packages/core/src/runtime-input-contract.ts"));
   assert.ok(rules.consumers.portal.includes(hookReader));

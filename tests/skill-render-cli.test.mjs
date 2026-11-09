@@ -96,7 +96,8 @@ test("479-R1: skill-render writes SKILL.md and copies the template's references,
   assert.equal(report.out, out);
   assert.equal(await exists(join(templateDirectory, "SKILL.md")), false, "the template keeps no SKILL.md");
   const copied = await templateFiles(templateDirectory);
-  assert.ok(copied.includes("agents/openai.yaml") && copied.filter((path) => path.startsWith("references/")).length === 6);
+  assert.ok(copied.includes("agents/openai.yaml") && copied.filter((path) => path.startsWith("references/")).length === 7);
+  assert.ok(copied.includes("references/kiro-specs.md"));
   assert.deepEqual([...report.files].sort(), ["SKILL.md", ...copied].sort());
   assert.deepEqual((await walk(out)).sort(), ["SKILL.md", ...copied].sort(), "the directory holds SKILL.md and the template's files, nothing else");
   for (const path of copied) {
@@ -126,15 +127,16 @@ test("479-AC1, AC3 through the CLI: every verb the generated table names is list
   const verbs = tableVerbs(markdown);
   // The full-text moment includes both project context and the packaged evidence entry.
   assert.deepEqual(verbs, SKILL_NAVIGATION.flatMap(entry => [...entry.verbs]), "CLI output preserves the complete current navigation contract");
-  assert.equal(verbs.length, 36, "ten moments include on-demand configuration, typed drafting, complete content, peer receipts and backup barriers");
+  assert.equal(verbs.length, 37, "ten moments include host policy, on-demand configuration, typed drafting, complete content, peer receipts and backup barriers");
   for (const verb of ["work-draft", "work-content-context"]) assert.ok(verbs.includes(verb), `${verb} remains in installed navigation`);
   assert.equal(verbs.filter(verb => verb === "rule-list").length, 1, "the normal installed starting-work row names current rule state exactly once");
   assert.ok(verbs.includes("execution-evidence"), "the installed workflow names its public evidence entry");
   assert.match(markdown, /`execution-evidence --from-file <json>` remains read-only validation, not authentication/);
   assert.match(markdown, /specs\/dispatch-admission-evidence-v1\.md/);
-  assert.ok(markdown.includes('`recall --view agent --query "<task>"`'));
+  assert.ok(markdown.includes('`recall --view agent --query "<task>" --at <UTC>`'));
   const recall = (await invoke(["recall", "--help"])).report.commands[0];
   assert.equal(recall.flags.find(({ name }) => name === "view").valueKind, "enum");
+  assert.equal(recall.flags.find(({ name }) => name === "at").required, true);
   assert.match(markdown, /specs\/work-practices-v1\.md/);
   assert.match(markdown, /specs\/batch-execution-v1\.md/);
   assert.match(markdown, /New, resumed and delegated sessions read their own live work/u);

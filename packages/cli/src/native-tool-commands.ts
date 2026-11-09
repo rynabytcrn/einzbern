@@ -20,10 +20,11 @@ import { canonicalJson } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import type { RuntimeCommandCatalogEntry, RuntimeCommandFlag } from "../../core/src/runtime-input-contract.js";
 import { dotObject, validateDotExecutionRequest } from "../../core/src/dot-execution.js";
-import { prepareNativeDispatch, recordNativeDispatch, writeDispatchArtifact } from "../../core/src/dispatch-workflow.js";
+import { prepareNativeDispatch, recordNativeDispatch, reserveDispatchArtifact, writeDispatchArtifact } from "../../core/src/dispatch-workflow.js";
 import type { NativeDispatchPreparation } from "../../core/src/dispatch-workflow.js";
 import { normalizeNativeToolEvidence } from "../../core/src/native-tool-evidence.js";
 import type { NativeToolAttempt, NativeToolResponseInput, NativeRetryReconciliation } from "../../core/src/native-tool-evidence.js";
+import { inspectKiroProcessPreparation, normalizeKiroProcessEvidence, recordKiroProcessEvidence } from "../../core/src/native-tool-evidence.js";
 import { planSharedSubmit, readSharedSubmitAdvisory, validateSharedSubmitAdvisory, writeSharedSubmitAdvisory } from "../../core/src/shared-submit.js";
 import type { SharedSubmitInput } from "../../core/src/shared-submit.js";
 import type { WorkspaceState, WorkspaceWriteLockOptions } from "../../core/src/workspace.js";
@@ -35,6 +36,9 @@ export const NATIVE_TOOL_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] 
   { name: "execution-host-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "HostExecutionRequest v1 JSON"), flag("arguments", true, "path", "{selection, argumentsValue} actual request JSON"), flag("codex-peer-worker", false, "boolean"), flag("codex-admission", false), flag("output", true)] },
   { name: "execution-host-record", availability: "cli", mutates: true, flags: [flag("binding", true), flag("events", false, "path", "HostNativeEvent array; absent preserves pending"), flag("prior", false), flag("output", true)] },
   { name: "execution-host-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
+  { name: "execution-kiro-preflight", availability: "cli", mutates: true, flags: [flag("binding", true, "path", "Saved HostExecutionPreparation v1 JSON; validates Kiro V3 scope without launching a process."), flag("reserve-output", false, "path", "Optionally reserve the private create-new evidence destination before launching Kiro.")] },
+  { name: "execution-kiro-record", availability: "cli", mutates: true, flags: [flag("binding", true, "path", "Saved Kiro HostExecutionPreparation v1 JSON."), flag("result", false, "path", "Actual Kiro child process return JSON; omit only for a refused preflight."), flag("output", true, "path", "Create-new private Kiro process evidence outside device/library roots.")] },
+  { name: "execution-kiro-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true, "path", "Kiro process evidence JSON.")] },
   { name: "execution-native-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "DotExecutionRequest JSON including actual-session contextRead"), flag("tool", true, "string"), flag("tool-contract", true, "path", "{ref,sha256} JSON"), flag("arguments", true, "path", "actual tool arguments JSON"), flag("retry-from", false, "path", "previous saved native record, required for an explicit retry"), flag("reconciliation", false, "path", "NativeRetryReconciliation; paired with retry-from"), flag("output", true)] },
   { name: "execution-native-record", availability: "cli", mutates: true, flags: [flag("binding", true), flag("response", false, "path", "NativeToolResponseInput JSON; absent keeps pending attempt"), flag("prior", false, "path", "previous saved record/history for this same attempt"), flag("output", true)] },
   { name: "execution-native-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true), flag("work-id", false, "string"), flag("work-revision", false, "integer")] },
@@ -121,6 +125,20 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
     return json(result);
   }
   if (command === "execution-host-evidence") return json(normalizeHostNativeRecord(await input(values["from-file"]!)));
+  if (command === "execution-kiro-preflight") {
+    const preflight = inspectKiroProcessPreparation(await input(values.binding!));
+    if (values["reserve-output"] === undefined) return json(preflight);
+    const reservation = await reserveDispatchArtifact(values["reserve-output"], [], context.home);
+    return json({ ...preflight, reservation });
+  }
+  if (command === "execution-kiro-record") {
+    const preparation = await input(values.binding!);
+    const processReturn = values.result === undefined ? undefined : await input(values.result!);
+    const result = recordKiroProcessEvidence(preparation, processReturn);
+    await writeDispatchArtifact(values.output!, result, [], context.home);
+    return json(result);
+  }
+  if (command === "execution-kiro-evidence") return json(normalizeKiroProcessEvidence(await input(values["from-file"]!)));
   if (command === "execution-native-prepare") {
     const workspace = await context.resolveWorkspace(values.workspace!);
     const request = validateDotExecutionRequest(await input(values.request!));

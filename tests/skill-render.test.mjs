@@ -26,6 +26,7 @@ const referenceDirectory = join(repositoryRoot, "skill", BRAND.helper.id, "refer
 const descriptionFixture = join(repositoryRoot, "tests", "fixtures", "skill", "description-a.en.txt");
 const catalogNames = COMMAND_CATALOG.map((entry) => entry.name);
 const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
+const INSTALL_REFERENCE_NAMES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
 
 // Text that belongs to the wizard references and never to SKILL.md: each phrase is checked below
 // to occur in at least one reference, so the list cannot drift into words the references lack.
@@ -82,8 +83,8 @@ function tableRows(markdown) {
 }
 
 async function references() {
-  const names = (await readdir(referenceDirectory)).filter((name) => name.endsWith(".md")).sort();
-  assert.equal(names.length, 6, "the six install-type references are present");
+  const names = (await readdir(referenceDirectory)).filter((name) => INSTALL_REFERENCE_NAMES.includes(name)).sort();
+  assert.deepEqual(names, [...INSTALL_REFERENCE_NAMES].sort(), "the six install-type references are present");
   return Promise.all(names.map(async (name) => ({ name, text: await readFile(join(referenceDirectory, name), "utf8") })));
 }
 
@@ -94,7 +95,7 @@ test("479-AC1: every verb the navigation table names is a verb of the current co
     ["recall", "rule-list"],
     ["work-draft"],
     ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    ["execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
+    ["execution-policy-resolve", "execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
     ["shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"],
     ["config-backup-plan", "config-backup-create", "config-backup-prepare", "config-backup-commit", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
     ["work-transition", "work-annotate"],
@@ -121,6 +122,15 @@ test("479-R1, 475-R4: the table records a decision as soon as it is judged one a
   assert.ok(decision[2].includes("已记 <minutes key> Dn"), "the row echoes the minutes key and decision number");
   const design = rows.find(([, verbs]) => verbs.includes("`settings-catalog`"));
   assert.ok(design[2].includes("`design.authority`"), "UI design reads design.authority first");
+});
+
+test("C.1: generated navigation points Kiro Spec work to its reference and managed helper", async () => {
+  const markdown = render();
+  const startingWork = tableRows(markdown).find(([, verbs]) => verbs.includes("`recall`"));
+  assert.ok(startingWork[2].includes("`references/kiro-specs.md`"));
+  const reference = await readFile(join(referenceDirectory, "kiro-specs.md"), "utf8");
+  assert.ok(reference.includes("scripts/kiro-specs.mjs"));
+  assert.match(reference, /KIRO-OPEN-OPERATIONAL-VALIDATION:BEGIN/);
 });
 
 // INIT-053 U10 (approved contract item 9): the native host dispatch passes each target's own handoff,
@@ -229,21 +239,23 @@ test("488-AC2 (MIN-238 D4): the install line and the fetch script name both repo
 
 test("552: generated dispatch workflow consumes admission rather than treating a catalog as permission", () => {
   const row = tableRows(render()).find(([, verbs]) => verbs.includes("`work-project-context`"));
-  for (const phrase of ["--execution-request", "`dispatchAdmitted` is true", "Pass its selected runner/model/effort exactly", "never substitute", "no reusable permit", "stdout, stderr and exit code"]) assert.ok(row[2].includes(phrase), phrase);
+  for (const phrase of ["--execution-request", "`dispatchAdmitted=true`", "selected runner/model/effort", "never substitute", "no reusable permit", "stdout/stderr/exit code"]) assert.ok(row[2].includes(phrase), phrase);
   assert.ok(row[2].includes("`execution-evidence --from-file <json>` remains read-only validation, not authentication"),
     "J17: retain the exact public process-evidence navigation and its non-authentication boundary");
   assert.ok(row[2].includes("specs/dispatch-admission-evidence-v1.md"));
 });
 
 // Original DOT-R01/R02/R03 generation consumers: authored here, actual sessions remain E4.
-test("DOT-R01/R02: generated navigation separates native evidence, rules, schedules and permission", () => {
+test("DOT-R01/R02: generated navigation separates native evidence, rules, schedules and permission", async () => {
   const markdown = render();
   // INIT065 intentionally replaces the normal dot-only row with a general versioned path.
   // Legacy protocol behavior remains covered by native-tool-evidence and dispatch tests.
   const native = tableRows(markdown).find(([, verbs]) => verbs.includes("`execution-host-prepare`"))[2];
-  for (const phrase of ["normal prompt reports", "Existing class fallback authority", "Parent reads before dispatch, child reads before work", "targets=[]", "scope/permission", "machine-assemble inputs", "never hand-fill JSON", "raw returns/reports", "attempt association", "Unknown retains responsibility", "Cancel acknowledgement is not termination", "Dot model selection is host-managed", "Validity, finality and review differ"]) assert.ok(native.includes(phrase), phrase);
+  for (const phrase of ["normal prompt reports", "Existing class fallback authority", "hard limits", "Parent reads before dispatch, child reads before work", "targets=[]", "scope/permission", "machine-assembled raw returns/reports", "attempt association", "unknown/cancel/finality/review", "Dot model selection is host-managed"]) assert.ok(native.includes(phrase), phrase);
   for (const phrase of ["parent or patrol reads do not substitute", "at most five new sourced lessons", "repository-relative evidence paths", "No progress in AGENTS", "independent dot target", "Installation, policy changes, restoration and publication retain their separate approvals", "20-minute patrol", "00:00 Asia/Shanghai", "unapproved policy forbids daily enablement", "unknown stays unknown"]) assert.ok(markdown.includes(phrase), phrase);
-  for (const phrase of ["`--binding`", "`--prior`", "query unknown before retry"]) assert.ok(native.includes(phrase), phrase);
+  for (const phrase of ["`--binding`", "`--prior`", "specs/host-fallback-v1.md"]) assert.ok(native.includes(phrase), phrase);
+  const contract = await readFile(join(repositoryRoot, "specs", "host-fallback-v1.md"), "utf8");
+  for (const phrase of ["never ask the user to hand-fill repeated metadata", "Unknown outcomes require reconciliation before duplicate invocation", "Cancel-accepted records host acknowledgement, not termination", "Pending/unknown tasks keep follow-up responsibility"]) assert.ok(contract.includes(phrase), phrase);
   assert.ok(markdown.includes("engine bundle `specs/` beside `scripts/`, not this Skill"),
     "J02: closed inputs come from the actual shipped contracts, not only flag help or source TS");
   const shared = tableRows(markdown).find(([, verbs]) => verbs.includes("`shared-submit-plan`"))[2];
@@ -301,7 +313,7 @@ test("INIT065 generated normal Skill directs each native host to matching versio
   const { checkHostSkillCompatibility, HOST_SKILL_PROTOCOL_MARKER } = await import("../dist/build/packages/core/src/skill-render.js");
   const markdown = render();
   assert.ok(markdown.includes(HOST_SKILL_PROTOCOL_MARKER));
-  assert.ok(markdown.includes("Native dispatch (Codex, Claude, dot)"));
+  assert.ok(markdown.includes("Native dispatch (Codex, Claude, dot, Kiro CLI)"));
   assert.ok(markdown.includes("Parent reads before dispatch, child reads before work"));
   assert.ok(markdown.includes("targets=[]"));
   assert.ok(!markdown.includes("stop its dispatch"));
@@ -313,7 +325,7 @@ test("INIT065 generated normal Skill directs each native host to matching versio
 
 test("MIN358 installed Skill navigates actual enabled rules without hard-coding optional principle text", () => {
   const markdown = render();
-  assert.ok(markdown.includes("Read enabled rules, not catalog defaults"));
+  assert.ok(markdown.includes("Enabled rules only (`specs/work-practices-v1.md`)"));
   assert.ok(SKILL_NAVIGATION[0].verbs.includes("rule-list"));
   assert.equal(markdown.includes("Do not establish a prohibition"), false, "optional text comes from scoped rule consumption, not an unconditional Skill duplicate");
 });
@@ -327,7 +339,7 @@ test("INIT068 R05/R08/R12–14: generated navigation uses typed native content a
 test("dot blocker recovery is an on-demand E-owned workflow, not a patrol context payload", async () => {
   const body = render();
   const start = tableRows(body).find(([moment]) => moment === "Starting work")[2];
-  assert.ok(start.includes("Dot blocker recovery/privacy-publication: `specs/dot-rules-v1.md`"));
+  assert.ok(start.includes("Dot blocker/privacy-publication: `specs/dot-rules-v1.md`"));
   const spec = await readFile(join(repositoryRoot, "specs", "dot-rules-v1.md"), "utf8");
   for (const clause of ["task-targeted `recall`", "approved, implemented and verified", "sensitive material", "Current remote publication"]) {
     // The authoritative workflow carries detail; the high-frequency navigation remains compact.

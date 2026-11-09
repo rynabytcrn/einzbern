@@ -121,7 +121,12 @@ test("fresh mode removes explicitly declined shared navigation, preserving user 
   assert.equal(await readFile(agentsPath, "utf8"), beforeDecline.replace(`${navigation.raw}\n`, ""));
   assertSelfCheck(declined, true);
   const hooksCheck = check(declined, "hooks-present");
-  assert.ok(hooksCheck.detail.hosts.every((host) => host.hooks === 1));
+  const traditionalHosts = hooksCheck.detail.hosts.filter((host) => host.host !== "kiro");
+  assert.ok(traditionalHosts.every((host) => host.hooks === 1));
+  const optionalKiro = hooksCheck.detail.hosts.find((host) => host.host === "kiro");
+  assert.equal(optionalKiro.selection, "not-selected");
+  assert.equal(optionalKiro.applicability, "not-selected");
+  assert.equal(optionalKiro.hooks, 0);
   const claudeHooks = JSON.parse(await readFile(join(f.home, ".claude", "settings.json"), "utf8")).hooks;
   assert.deepEqual(Object.keys(claudeHooks).sort(), ["PreToolUse", "SessionStart", "SubagentStart", "UserPromptSubmit"]);
   assert.equal(JSON.parse(await readFile(join(f.deviceHome, "machine-settings.json"), "utf8")).values["agents.navigation"], "declined");

@@ -321,12 +321,45 @@ import type { HostExecutionDecision } from "./execution-fallback.js";
 import { validateHostExecutionRequest } from "./execution-fallback.js";
 export const HOST_NATIVE_PREPARATION_VERSION = "tcrn.host-native-preparation.v1" as const;
 export const HOST_NATIVE_RECORD_VERSION = "tcrn.host-native-record.v1" as const;
+export const KIRO_PROCESS_RETURN_VERSION = "tcrn.kiro-process-return.v1" as const;
+export const KIRO_PROCESS_EVIDENCE_VERSION = "tcrn.kiro-process-evidence.v1" as const;
 export interface HostNativePreparation {
   readonly schemaVersion: typeof HOST_NATIVE_PREPARATION_VERSION;
   readonly context: Record<string, unknown>;
   readonly codexPeerWorker?: { readonly coordinatorId: string };
   readonly decision: HostExecutionDecision;
   readonly attempt: null | { readonly id: string; readonly identityKind: "local-correlation"; readonly toolName: string; readonly argumentsValue: unknown; readonly requestedAt: string };
+  readonly digest: string;
+}
+export interface KiroProcessReturn {
+  readonly schemaVersion: typeof KIRO_PROCESS_RETURN_VERSION;
+  readonly source: "kiro-cli-process-return";
+  readonly preparationDigest: string;
+  readonly attemptId: string;
+  readonly processStarted: boolean;
+  readonly processClosed: boolean;
+  readonly spawnError: string | null;
+  readonly launchBlock: string | null;
+  readonly startedAt: string | null;
+  readonly finishedAt: string | null;
+  readonly exitCode: number | null;
+  readonly signal: string | null;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly cancellationRequested: boolean;
+}
+export interface KiroProcessEvidence {
+  readonly schemaVersion: typeof KIRO_PROCESS_EVIDENCE_VERSION;
+  readonly preparation: HostNativePreparation;
+  readonly dispatch: { readonly status: "allowed" | "refused"; readonly reason: string | null };
+  readonly requested: { readonly harness: "v3"; readonly selection: unknown; readonly model: unknown; readonly effort: unknown; readonly fallbackBoundary: unknown };
+  readonly process: { readonly status: "not-started" | "exited-zero" | "exited-nonzero" | "signaled" | "unknown"; readonly startedAt: string | null; readonly finishedAt: string | null; readonly exitCode: number | null; readonly signal: string | null; readonly stdout: string | null; readonly stderr: string | null; readonly finality: "confirmed" | "unknown" };
+  readonly refusal: { readonly status: "observed" | "not-observed-in-return" | "unknown"; readonly kind: "permission-refused" | null; readonly evidence: string | null };
+  readonly serviceError: { readonly status: "observed" | "unknown"; readonly kind: "mcp-startup-failure" | null; readonly evidence: string | null; readonly reason: string };
+  readonly cancellation: { readonly requested: boolean; readonly signalObserved: string | null };
+  readonly actual: { readonly harness: "unknown"; readonly model: "unknown"; readonly effort: "unknown"; readonly usage: "unknown"; readonly taskFinality: "unknown" };
+  readonly validation: { readonly status: "valid"; readonly authentication: "caller-supplied-process-report-not-authenticated" };
+  readonly processReturn: KiroProcessReturn | null;
   readonly digest: string;
 }
 export type HostNativeStatus = "unknown" | "accepted" | "running" | "completed" | "failed" | "cancelled";
@@ -391,6 +424,100 @@ export function validateHostNativePreparation(value: unknown): HostNativePrepara
   }
   return value as HostNativePreparation;
 }
+
+function kiroProcessReturn(value: unknown, preparation: HostNativePreparation): KiroProcessReturn {
+  const row = hostObject(value, "Kiro process return", ["schemaVersion", "source", "preparationDigest", "attemptId", "processStarted", "processClosed", "spawnError", "launchBlock", "startedAt", "finishedAt", "exitCode", "signal", "stdout", "stderr", "cancellationRequested"]);
+  if (row.schemaVersion !== KIRO_PROCESS_RETURN_VERSION || row.source !== "kiro-cli-process-return" || typeof row.processStarted !== "boolean" || typeof row.processClosed !== "boolean") throw new HostExecutionError("Kiro process return must state process start and close observations");
+  if (row.preparationDigest !== preparation.digest || row.attemptId !== preparation.attempt?.id) throw new HostExecutionError("Kiro process return belongs to another prepared invocation");
+  if (row.processStarted === true && row.processClosed !== true || row.processStarted === false && row.processClosed === true) throw new HostExecutionError("Kiro process start/close observations conflict");
+  if (row.spawnError !== null && (typeof row.spawnError !== "string" || !row.spawnError.trim())) throw new HostExecutionError("Kiro spawnError must be nonempty text or null");
+  if (row.launchBlock !== null && (typeof row.launchBlock !== "string" || !row.launchBlock.trim())) throw new HostExecutionError("Kiro launchBlock must be nonempty text or null");
+  if (row.processStarted === false && (Number(row.spawnError !== null) + Number(row.launchBlock !== null) !== 1)) throw new HostExecutionError("a process that did not start needs exactly one observed spawn error or launch block");
+  if (row.processStarted === true && (row.spawnError !== null || row.launchBlock !== null)) throw new HostExecutionError("a started process cannot carry a prelaunch failure");
+  if (row.processStarted) dotInstant(row.startedAt, "Kiro process startedAt");
+  else if (row.startedAt !== null) throw new HostExecutionError("an unstarted process cannot have a start instant");
+  if (row.processClosed) {
+    if (row.finishedAt === null) throw new HostExecutionError("a closed process needs a finish instant");
+    const finish = dotInstant(row.finishedAt, "Kiro process finishedAt");
+    if (finish < dotInstant(row.startedAt, "Kiro process startedAt")) throw new HostExecutionError("Kiro process finishedAt predates startedAt");
+  } else if (row.finishedAt !== null) throw new HostExecutionError("an open or unstarted process cannot have a finish instant");
+  if (row.exitCode !== null && (!Number.isSafeInteger(row.exitCode) || Number(row.exitCode) < 0)) throw new HostExecutionError("Kiro process exitCode must be a nonnegative integer or null");
+  if (row.processStarted === false && (row.exitCode !== null || row.signal !== null)) throw new HostExecutionError("a process that did not start cannot return an exit code or signal");
+  if (row.signal !== null && (typeof row.signal !== "string" || !row.signal.trim())) throw new HostExecutionError("Kiro process signal must be nonempty text or null");
+  for (const key of ["stdout", "stderr"]) if (typeof row[key] !== "string") throw new HostExecutionError(`Kiro process ${key} must be retained text`);
+  if (typeof row.cancellationRequested !== "boolean") throw new HostExecutionError("Kiro cancellation request must be a boolean");
+  return value as KiroProcessReturn;
+}
+
+/** Validates an existing host-native preflight; it never starts a Kiro process. */
+export function inspectKiroProcessPreparation(value: unknown): { readonly status: "ready" | "refused"; readonly preparation: HostNativePreparation; readonly reason: string | null; readonly requested: KiroProcessEvidence["requested"] } {
+  const preparation = validateHostNativePreparation(value);
+  const request = preparation.decision.request;
+  if (request.capabilities.hostKind !== "kiro-cli" || request.capabilities.toolName !== "kiro-cli") throw new HostExecutionError("Kiro preflight must name hostKind and toolName kiro-cli");
+  const allowed = preparation.attempt !== null && executionDecisionEligibility(preparation.decision) === "executable";
+  const selection = preparation.decision.requestedSelection;
+  const explicit = selection.kind === "explicit";
+  if (allowed && explicit && selection.tuple.runner !== "kiro-cli") throw new HostExecutionError("explicit Kiro selection runner must be kiro-cli");
+  const args = preparation.attempt?.argumentsValue;
+  if (allowed) {
+    const prompt = hostObject(args, "Kiro invocation arguments", ["prompt"]);
+    if (typeof prompt.prompt !== "string" || !prompt.prompt.trim()) throw new HostExecutionError("Kiro invocation requires a nonempty prompt");
+  }
+  return {
+    status: allowed ? "ready" : "refused", preparation,
+    reason: allowed ? null : preparation.decision.reasons.join("; ") || "host-native preflight refused invocation",
+    requested: {
+      harness: "v3", selection,
+      model: explicit ? { status: "requested", value: selection.tuple.model } : { status: "unknown", reason: "host-managed selection" },
+      effort: explicit ? { status: "requested", value: selection.tuple.effort } : { status: "unknown", reason: "host-managed selection" },
+      fallbackBoundary: request.authorization.fallbackBoundaryAssessment ?? "unknown",
+    },
+  };
+}
+
+/** Retains a Kiro process outcome separately from model selection and task finality. */
+export function recordKiroProcessEvidence(preparationValue: unknown, processReturnValue?: unknown): KiroProcessEvidence {
+  const preflight = inspectKiroProcessPreparation(preparationValue);
+  if (preflight.status === "ready" && processReturnValue === undefined) throw new HostExecutionError("ready Kiro invocation needs its actual process return");
+  if (preflight.status === "refused" && processReturnValue !== undefined) throw new HostExecutionError("refused Kiro preflight cannot be paired with a process return");
+  const processReturn = processReturnValue === undefined ? null : kiroProcessReturn(processReturnValue, preflight.preparation);
+  let process: KiroProcessEvidence["process"] = { status: "not-started", startedAt: null, finishedAt: null, exitCode: null, signal: null, stdout: null, stderr: null, finality: "unknown" };
+  let refusal: KiroProcessEvidence["refusal"] = { status: preflight.status === "refused" ? "observed" : "unknown", kind: null, evidence: preflight.status === "refused" ? preflight.reason : null };
+  let serviceError: KiroProcessEvidence["serviceError"] = { status: "unknown", kind: null, evidence: null, reason: "Kiro does not document a stable structured service-error event; the raw return remains authoritative" };
+  let cancellation: KiroProcessEvidence["cancellation"] = { requested: false, signalObserved: null };
+  if (processReturn !== null) {
+    const deniedLine = `${processReturn.stdout}\n${processReturn.stderr}`.split(/\r?\n/u).find(line => /^\[denied\] tool permission approval is not supported in non-interactive mode\b/u.test(line));
+    const status = !processReturn.processStarted ? "not-started" as const
+      : processReturn.signal !== null ? "signaled" as const
+        : processReturn.exitCode === 0 ? "exited-zero" as const
+          : processReturn.exitCode === null ? "unknown" as const : "exited-nonzero" as const;
+    process = { status, startedAt: processReturn.startedAt, finishedAt: processReturn.finishedAt, exitCode: processReturn.exitCode, signal: processReturn.signal, stdout: processReturn.stdout, stderr: processReturn.stderr, finality: processReturn.processClosed ? "confirmed" : "unknown" };
+    refusal = deniedLine === undefined
+      ? { status: "not-observed-in-return", kind: null, evidence: null }
+      : { status: "observed", kind: "permission-refused", evidence: deniedLine };
+    if (processReturn.processClosed && processReturn.exitCode === 3) serviceError = { status: "observed", kind: "mcp-startup-failure", evidence: "exit code 3", reason: "Kiro's CLI exit-code contract assigns 3 to required MCP startup failure" };
+    cancellation = { requested: processReturn.cancellationRequested, signalObserved: processReturn.signal };
+  }
+  const payload = {
+    schemaVersion: KIRO_PROCESS_EVIDENCE_VERSION, preparation: preflight.preparation,
+    dispatch: { status: preflight.status === "ready" ? "allowed" as const : "refused" as const, reason: preflight.reason },
+    requested: preflight.requested, process, refusal,
+    serviceError,
+    cancellation, actual: { harness: "unknown" as const, model: "unknown" as const, effort: "unknown" as const, usage: "unknown" as const, taskFinality: "unknown" as const },
+    validation: { status: "valid" as const, authentication: "caller-supplied-process-report-not-authenticated" as const },
+    processReturn,
+  };
+  return { ...payload, digest: dotDigest(payload) };
+}
+
+export function normalizeKiroProcessEvidence(value: unknown): KiroProcessEvidence {
+  const record = hostObject(value, "Kiro process evidence", ["schemaVersion", "preparation", "dispatch", "requested", "process", "refusal", "serviceError", "cancellation", "actual", "validation", "processReturn", "digest"]);
+  if (record.schemaVersion !== KIRO_PROCESS_EVIDENCE_VERSION) throw new HostExecutionError("unknown Kiro process evidence protocol");
+  const rebuilt = recordKiroProcessEvidence(record.preparation, record.processReturn === null ? undefined : record.processReturn);
+  if (dotDigest(rebuilt) !== dotDigest(record)) throw new HostExecutionError("Kiro process evidence differs from its retained preflight and return");
+  return rebuilt;
+}
+
 const hostStatuses: readonly HostNativeStatus[] = ["unknown", "accepted", "running", "completed", "failed", "cancelled"];
 function validateHostNativeEvent(value: unknown, p: HostNativePreparation): HostNativeEvent {
   const e = hostObject(value, "native event", ["id", "at", "kind", "raw", "sourceTool", "association", "sourceRef", "status", "terminal", "actualSelection", "providerId", "report", "review"]);

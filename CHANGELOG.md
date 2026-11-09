@@ -5,6 +5,52 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Kiro host integration
+
+- Add Kiro CLI V3 host identity and capability observations, public Mana
+  Orchestrate discovery, and separate CLI and IDE capability records. Unknown
+  host payloads, unavailable model metadata and unsupported selection controls
+  remain explicit.
+- Map Kiro session and prompt events to the existing recall workflow. Keep CLI
+  prompt submission advisory, and deny only the documented file-read input
+  shape through Kiro's supported PreToolUse exit convention.
+- Extend fresh installation, update, repair, uninstall and doctor to owned Kiro
+  hooks and Skill copies. Preserve user agents, trust, model permissions,
+  unmanaged files and conflicting edits through the existing ownership rules.
+
+### Kiro execution evidence
+
+- Add an explicit Kiro CLI runner that uses the existing login, preserves the
+  requested model and default effort, reserves a private evidence destination
+  before launch, and records process exit separately from model and native
+  terminal observations. It does not turn policy selection into permission.
+- Retain the observed guided CLI current-work, rules and recall cases and the
+  isolated CLI write/read continuation evidence. Historical free-prompt gaps
+  remain; IDE model reading, recall, writeback and fresh-session continuation
+  have not yet been verified.
+
+### Specs source and refresh
+
+- Generate managed Kiro requirements, design and task projections from current
+  engine work, revisions, field digests and applicable design sources. Check
+  freshness before work and keep proposed changes as drafts until an engine
+  decision permits refresh.
+- Preserve user-only content, unknown files, conflicts and local task checkbox
+  history. Local task completion does not mark the authoritative work accepted.
+- Include the operational guide developed through the actual open Spec task,
+  with its permission, source review and continuation boundaries. Generate Mana
+  Orchestrate from the same engine source for distribution.
+
+### Compatibility and delivery
+
+- Preserve the released Codex native worker dispatch guard, durable role
+  recovery and hook readiness alongside Kiro event handling. Refresh the public
+  configuration inventory, CLI reference and current Portal proof from the
+  integrated source; frozen historical evidence keeps its original bytes.
+- This Unreleased integration is local preparation against the observed released
+  baseline. The ordered preceding release, final version selection, complete
+  IDE behavior evidence and final release gates remain pending.
+
 ## 4.4.1
 
 Einzbern and Mana Orchestrate ship in lockstep at 4.4.1.

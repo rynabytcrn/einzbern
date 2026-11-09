@@ -109,7 +109,8 @@ import type {
   SetupWrite,
   SetupWriteAction,
 } from "./setup.js";
-import { SKILL_COPY_ROOTS, installSkillCopies, skillCopiesRecordPath, skillCopyPath, verifySkillCopies } from "./skill-copies.js";
+import { installSkillCopies, skillCopyRoots, skillCopiesRecordPath, skillCopyPath, verifySkillCopies } from "./skill-copies.js";
+import { KIRO_USER_HOOKS_FILE, applyKiroHookPlan, kiroSelectionStatus, planKiroHookScopes } from "./kiro-host.js";
 import { createProject, initializeLibrary, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
 import { canonicalSha256 } from "../../protocol/src/index.js";
 import { projectLineage, scopedWorkspaceState } from "./project-scope.js";
@@ -540,9 +541,10 @@ async function planRegistry(recorder: SetupRecorder, input: WiringPlanInput, lib
   if (!current || !await registryPathsPortable(input.deviceHome)) recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
 }
 
-async function planSkillCopies(recorder: SetupRecorder, digest: string, home: string, deviceHome: string): Promise<void> {
-  for (const root of SKILL_COPY_ROOTS) {
-    const path = skillCopyPath(home, root);
+async function planSkillCopies(recorder: SetupRecorder, digest: string, home: string, deviceHome: string, includeKiro = false): Promise<void> {
+  const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
+  for (const root of skillCopyRoots(includeKiro)) {
+    const path = skillCopyPath(home, root, kiroHome);
     const kind = await entryKind(path);
     if (kind === null) {
       recorder.write("skill-copies", path, "create");
@@ -555,7 +557,7 @@ async function planSkillCopies(recorder: SetupRecorder, digest: string, home: st
     }
   }
   const record = skillCopiesRecordPath(deviceHome);
-  const verification = await recorder.attempt("skill-copies", record, () => verifySkillCopies({ home, deviceHome }));
+  const verification = await recorder.attempt("skill-copies", record, () => verifySkillCopies({ home, deviceHome, includeKiro, kiroHome }));
   if (verification === null) return;
   for (const copy of verification.copies) {
     if (copy.recorded !== null && copy.actual !== null && copy.actual !== copy.recorded && copy.actual !== digest) {
@@ -587,7 +589,7 @@ async function planLaunchers(recorder: SetupRecorder, launchers: EngineFiles["la
 }
 
 /** The host-hooks step of a plan: each host's user files, rendered with (or, install false, without) the Einzbern hooks. */
-export async function planHooks(recorder: SetupRecorder, home: string, deviceHome: string, navigation: AgentsNavigationChoice | null, install = true, codexAdmission?: CodexHookAdmission, enableHooksAuthorized = false): Promise<void> {
+export async function planHooks(recorder: SetupRecorder, home: string, deviceHome: string, navigation: AgentsNavigationChoice | null, install = true, codexAdmission?: CodexHookAdmission, enableHooksAuthorized = false, projectRoot = home): Promise<void> {
   for (const host of HOST_HOOK_FILE_HOSTS) {
     const plan = await recorder.attempt("host-hooks", join(home, ...HOST_HOOK_FILES[host].split("/")),
       async () => readHostHooks(planHostHooks({ host, scope: "user", deviceHome, userHome: home, navigation, install, ...(codexAdmission ? { codexAdmission } : {}), enableHooksAuthorized }), { root: home, home }));
@@ -596,6 +598,19 @@ export async function planHooks(recorder: SetupRecorder, home: string, deviceHom
       if (!file.changed || file.after === null) continue;
       recorder.write("host-hooks", file.path, file.before === null ? "create" : "update");
       if (file.before !== null) recorder.backup("host-hooks", file.path);
+    }
+  }
+  const kiroSelected = kiroSelectionStatus({ home, projectRoot }) === "selected";
+  if (!install || kiroSelected) {
+    const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
+    const target = join(kiroHome, ...KIRO_USER_HOOKS_FILE.split("/"));
+    const plans = await recorder.attempt("host-hooks", target, () => planKiroHookScopes({
+      home, kiroHome, projectRoot, deviceHome, install, navigation: navigation === "declined" ? "declined" : "always",
+    }));
+    if (plans !== null) for (const plan of plans) {
+      if (!plan.changed) continue;
+      recorder.write("host-hooks", plan.path, plan.before === null ? "create" : "update");
+      if (plan.before !== null) recorder.backup("host-hooks", plan.path);
     }
   }
 }
@@ -689,11 +704,12 @@ async function coordinationSectionsRoot(libraryPath: string, projectRoot: string
  */
 export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
   const { projectRoot, home, deviceHome, library, navigation, steps } = input;
+  const kiroSelected = kiroSelectionStatus({ home, projectRoot }) === "selected";
   if (library !== null && runs(steps, "registry")) await planRegistry(recorder, input, library);
   const skillDigest = input.engine?.skillDigest ?? null;
-  if (skillDigest !== null && runs(steps, "skill-copies")) await planSkillCopies(recorder, skillDigest, home, deviceHome);
+  if (skillDigest !== null && runs(steps, "skill-copies")) await planSkillCopies(recorder, skillDigest, home, deviceHome, kiroSelected);
   if (input.engine !== null && runs(steps, "launchers")) await planLaunchers(recorder, input.engine.launchers, deviceHome);
-  if (runs(steps, "host-hooks")) await planHooks(recorder, home, deviceHome, navigation, true, input.codexAdmission, input.enableHooksAuthorized === true);
+  if (runs(steps, "host-hooks")) await planHooks(recorder, home, deviceHome, navigation, true, input.codexAdmission, input.enableHooksAuthorized === true, projectRoot);
   if (library !== null && runs(steps, "writable-roots")) await planRoots(recorder, projectRoot, library.path);
   const settingsFile = join(deviceHome, MACHINE_SETTINGS_FILE_NAME);
   if (runs(steps, "machine-settings") && input.deviceNavigation !== navigation && recorder.blockers.every((blocker) => blocker.step !== "machine-settings")) {
@@ -783,13 +799,15 @@ async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput, l
 
 async function applySkillCopies(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
   const { home, deviceHome, at } = input;
+  const includeKiro = kiroSelectionStatus({ home, projectRoot: input.projectRoot }) === "selected";
+  const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
   const record = skillCopiesRecordPath(deviceHome);
   const recordAction: SetupWriteAction = await entryKind(record) === null ? "create" : "update";
   const source = join(input.engineDirectory, ...FRESH_ENGINE_TREE.skill.split("/"));
   const desired = (await computeInstallTreeDigest(source)).sha256;
-  const verification = await verifySkillCopies({ home, deviceHome });
+  const verification = await verifySkillCopies({ home, deviceHome, includeKiro, kiroHome });
   if (verification.copies.some(copy => copy.recorded !== null && copy.actual !== null && copy.actual !== copy.recorded && copy.actual !== desired)) setupFail("SETUP_SKILL_USER_EDITED", "Preserve and review user-modified Skill before replacement");
-  const copies = await installSkillCopies({ source: join(input.engineDirectory, ...FRESH_ENGINE_TREE.skill.split("/")), now: at, home, deviceHome });
+  const copies = await installSkillCopies({ source: join(input.engineDirectory, ...FRESH_ENGINE_TREE.skill.split("/")), now: at, home, deviceHome, includeKiro, kiroHome });
   for (const copy of copies.copies) {
     if (copy.action === "reused") continue;
     recorder.write("skill-copies", copy.path, copy.action === "created" ? "create" : "update");
@@ -824,6 +842,7 @@ async function applyLaunchers(recorder: SetupRecorder, input: WiringApplyInput):
 /** The host-hooks step of an apply: the user scope of both hosts, with (or, install false, without) the Einzbern hooks. */
 export async function applyHooks(recorder: SetupRecorder, input: {
   readonly home: string;
+  readonly projectRoot: string;
   readonly deviceHome: string;
   readonly at: string;
   readonly navigation: AgentsNavigationChoice | null;
@@ -839,6 +858,20 @@ export async function applyHooks(recorder: SetupRecorder, input: {
       if (!file.changed || file.after === null) continue;
       recorder.write("host-hooks", file.path, file.before === null ? "create" : "update");
       if (file.before !== null) recorder.backup("host-hooks", file.path);
+    }
+  }
+  const kiroSelected = kiroSelectionStatus({ home, projectRoot: input.projectRoot }) === "selected";
+  if (input.install === false || kiroSelected) {
+    const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
+    const plans = await planKiroHookScopes({
+      home, kiroHome, projectRoot: input.projectRoot, deviceHome, install: input.install ?? true,
+      navigation: navigation === "declined" ? "declined" : "always",
+    });
+    for (const plan of plans) {
+      await applyKiroHookPlan(plan, { at, deviceHome });
+      if (!plan.changed) continue;
+      recorder.write("host-hooks", plan.path, plan.before === null ? "create" : "update");
+      if (plan.before !== null) recorder.backup("host-hooks", plan.path);
     }
   }
 }

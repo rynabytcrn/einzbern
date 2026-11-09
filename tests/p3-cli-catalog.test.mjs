@@ -639,7 +639,7 @@ test("INIT062 new valueShape roster is closed and preserves the existing transpo
 test("INIT065 general-native catalog is separate from legacy closed roster", async () => {
   const entries = COMMAND_CATALOG.filter(entry => entry.name.startsWith("execution-host-"));
   assert.deepEqual(entries.map(entry => entry.name), ["execution-host-evidence", "execution-host-prepare", "execution-host-record"]);
-  assert.deepEqual(entries.flatMap(entry => entry.flags.filter(flag => flag.valueShape !== undefined).map(flag => `${entry.name}:${flag.name}`)), ["execution-host-prepare:request", "execution-host-prepare:arguments", "execution-host-record:events"]);
+  assert.deepEqual(entries.flatMap(entry => entry.flags.filter(flag => flag.valueShape !== undefined).map(flag => `${entry.name}:${flag.name}`)), ["execution-host-prepare:request", "execution-host-prepare:arguments", "execution-host-prepare:codex-settings-intent", "execution-host-record:events"]);
   for (const entry of entries) {
     for (const flag of entry.flags) {
       const expectedKind = entry.name === "execution-host-prepare" && flag.name === "codex-peer-worker" ? "boolean" : "string";

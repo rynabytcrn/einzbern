@@ -221,6 +221,8 @@ test("548-R3: a recall line names the host EINZBERN_HOST declares, and a v1 read
   assert.deepEqual(log.map((line) => [line.reasonCode, line.host]), [
     ["HOOK_RECALL_ANSWERED", "claude-code"],
     ["HOOK_RECALL_ANSWERED", "dsh"],
+    // Codex records the launcher's peer check before its separate library recall.
+    ["HOOK_PEER_NOT_APPLICABLE", "codex"],
     ["HOOK_RECALL_NO_HITS", "codex"],
   ]);
   assert.ok(log.every((line) => line.schemaVersion === "einzbern.hook-log.v1"), "the schema version is unchanged");
@@ -230,6 +232,7 @@ test("548-R3: a recall line names the host EINZBERN_HOST declares, and a v1 read
   assert.deepEqual(v1.map(summary), [
     ["user-prompt-submit", directory, "HOOK_RECALL_ANSWERED"],
     ["user-prompt-submit", directory, "HOOK_RECALL_ANSWERED"],
+    ["user-prompt-submit", directory, "HOOK_PEER_NOT_APPLICABLE"],
     ["user-prompt-submit", directory, "HOOK_RECALL_NO_HITS"],
   ]);
   assert.ok(v1.every((line) => V1_KEYS.every((key) => typeof line[key] === "string" && line[key].length > 0)));

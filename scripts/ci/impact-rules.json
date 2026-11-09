@@ -1999,7 +1999,7 @@
     "tests/code-only.test.mjs": "3e142ce62d12311e855d5f70442fff90ad015b428ae608a39cde09a194cec000",
     "tests/codex-native-adapter.test.mjs": "43973efd8e48495870f9c2cf7510ff76213228a016429587f3190147ef97bf01",
     "tests/codex-native-hook-ipc.test.mjs": "67abe352eca687a83d6591e9abe6a905119f1ad2945c9312a4683f8849272544",
-    "tests/codex-peer-batch.test.mjs": "a7b4c4f816f1f8bb308d74d381addeeab6ec754c8263007836c6026c800019e4",
+    "tests/codex-peer-batch.test.mjs": "e1266150428b9d701949f03b114f056fcc7364b0b881a2e832b7b8b1e43fe7fe",
     "tests/codex-peer-onboarding.test.mjs": "84f92fa59a5b0b2d89e4b0757a795a4a29a3378e7a35efe7033da1e88449aaec",
     "tests/codex-subagent-stop.test.mjs": "248c7c109e488957fea6d92a066d2325e3e5b87b44b77c7991ebaf646a84974f",
     "tests/conference-execution.test.mjs": "43ddf8c214df652e5490cc9f61b7fbfd5b6ba13b78031cbf56eafa64fcb02cc2",

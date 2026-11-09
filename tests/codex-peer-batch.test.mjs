@@ -307,10 +307,11 @@ test("exact settings adjustment uses a live Owner source, preserves class author
   const { writeFile, readFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const { execFileSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
   const files = { request, arguments: { selection, argumentsValue: args }, intent };
   for (const [name, value] of Object.entries(files)) await writeFile(join(f.root, name + ".json"), JSON.stringify(value));
   const output = join(f.root, "settings-preparation.json");
-  const cli = new URL("../scripts/einzbern.mjs", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
   const cliResult = JSON.parse(execFileSync(process.execPath, [cli, "execution-host-prepare", "--workspace", f.workspace, "--request", join(f.root, "request.json"), "--arguments", join(f.root, "arguments.json"), "--codex-settings-intent", join(f.root, "intent.json"), "--output", output], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: f.home, CODEX_THREAD_ID: "fixture-economy" }, timeout: 30_000 }));
   assert.equal(cliResult.reasonCode, "HOST_PREPARATION_READY");
   assert.deepEqual(Object.keys(JSON.parse(await readFile(output, "utf8"))).sort(), ["schemaVersion", "context", "decision", "attempt", "digest"].sort(), "the bridge adds no field to the closed preparation");

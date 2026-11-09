@@ -1,5 +1,5 @@
 {
-  "version": 65,
+  "version": 66,
   "docs": {
     "README.md": [
       "tests/bootstrap.test.mjs",
@@ -1879,7 +1879,7 @@
     "scripts/lib/memory-worker-check.mjs": "3e94968ba11b5582da309c433c9e824ca77e55d32bfb041656db81e531e23506",
     "scripts/lib/names.mjs": "12b7838f5edaf792fb2bfee3688328d50b3ba8b896f7bf1d960addc9e50c7b3f",
     "scripts/lib/p8-workflow-rc.mjs": "f34e3006756daf413e32f6a98b6008a06d6cbbf4271565363c6cd925bf4ce4bc",
-    "scripts/lib/privacy.mjs": "6ac3ae6ce58b89b031d625b482a409460c4fc70ba8259a00a3bd89f03194885f",
+    "scripts/lib/privacy.mjs": "d542b449f152888e890e8478182d96ce083d8dcf863f73d706fc82c46fe532f3",
     "scripts/lib/private-token-roster.mjs": "b1215d2e2b701213980d35fac6100aa38ceed4f3e5285db36bdf2551faa97571",
     "scripts/lib/protocol-proof.mjs": "f32c144836dbb368b9852e66be617ba521eb0ba5b611f124ea581c3a8e329d3e",
     "scripts/lib/push-gate-children.mjs": "24cd269f3c99eddca52ef81f78db8e8c830f54e567fcb9679e041fa6a0ca5ecc",

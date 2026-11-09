@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 4.4.2
+
+Einzbern and Mana Orchestrate ship in lockstep at 4.4.2.
+
 ### Codex recipient settings and query loops
 
 - Keep ordinary report parameters separate from recipient model/effort settings.

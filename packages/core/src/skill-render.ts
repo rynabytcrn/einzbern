@@ -51,7 +51,7 @@ function fail(reasonCode: SkillRenderReasonCode, message: string, details: Reado
 }
 
 /** Description A, extended with coding-task discovery for Einzbern-managed projects. */
-export const SKILL_DESCRIPTION = "The Grail grants wishes; Mana Orchestrate makes the mana flow to the right place at the right moment. It brings Einzbern, project memory, into Claude Code, Codex and DeepSeek Harness: recall before you start, write results back to the work item, record decisions as minutes, keep lessons as cards. Where Einzbern is not installed yet, it is the wizard: install, restore, update, migrate, uninstall, health check. Use for Einzbern-managed coding, work items, knowledge cards, minutes, .ether, Atelier, installation or updates." as const;
+export const SKILL_DESCRIPTION = "The Grail grants wishes; Mana Orchestrate makes the mana flow to the right place at the right moment. It brings Einzbern, project memory, into Claude Code, Codex, Kiro and DeepSeek Harness: recall before you start, write results back to the work item, record decisions as minutes, keep lessons as cards. Where Einzbern is not installed yet, it is the wizard: install, restore, update, migrate, uninstall, health check. Use for Einzbern-managed coding, work items, knowledge cards, minutes, .ether, Atelier, installation or updates." as const;
 
 /** One row of the navigation table: at this moment, run these verbs, like this. */
 export interface SkillNavigationEntry {
@@ -65,7 +65,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall", "rule-list"],
-    action: "Prompt recall if sufficient, else `recall --view agent --query \"<task>\"`. Enabled rules only (`specs/work-practices-v1.md`). New, resumed and delegated sessions read their own live work; parent or patrol reads do not substitute. Specs: `references/kiro-specs.md`. Dot blocker/privacy-publication: `specs/dot-rules-v1.md`.",
+    action: "Prompt recall if sufficient, else `recall --view agent --query \"<task>\" --at <UTC>`. Enabled rules only (`specs/work-practices-v1.md`). New, resumed and delegated sessions read their own live work; parent or patrol reads do not substitute. Specs: `references/kiro-specs.md`. Dot blocker/privacy-publication: `specs/dot-rules-v1.md`.",
   },
 
   {
@@ -76,12 +76,12 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Need the full text",
     verbs: ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Read full work/minutes. Use each target's `handoff` for native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. Keep critical clauses (`specs/context-v1.md` segments/digests). For `--execution-request`, `dispatchAdmitted` is true. Pass its selected runner/model/effort exactly, never substitute. Keep stdout, stderr and exit code. Evidence is no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
+    action: "Use each target's `handoff` for native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. Segments/digests: `specs/context-v1.md`. Require `dispatchAdmitted=true` for `--execution-request`; selected runner/model/effort, never substitute. Retain stdout/stderr/exit code; no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
-    moment: "Native dispatch (Codex, Claude, dot)",
-    verbs: ["execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
-    action: "Authorized tools; normal prompt reports. Existing class fallback authority unless explicitly hard. Parent reads before dispatch, child reads before work. targets=[]: no binding; scope/permission. machine-assemble inputs, never hand-fill JSON; raw returns/reports, actual status/attempt association, `--binding`/`--prior`. Unknown retains responsibility; query unknown before retry. Cancel acknowledgement is not termination. Dot model selection is host-managed. Validity, finality and review differ; authorized saves. `specs/host-fallback-v1.md`. Codex only: independent main/economy peers, no collector. `docs/codex-native-controller.md`. Other hosts keep their workflow.",
+    moment: "Native dispatch (Codex, Claude, dot, Kiro CLI)",
+    verbs: ["execution-policy-resolve", "execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
+    action: "Resolve host/category/rejection policy, then admission. Policy is not permission. Authorized tools; normal prompt reports. Existing class fallback authority/hard limits. Parent reads before dispatch, child reads before work. scope/permission, targets=[], machine-assembled raw returns/reports, status/attempt association (`--binding`/`--prior`), unknown/cancel/finality/review: `specs/host-fallback-v1.md`. Dot model selection is host-managed. Codex only: independent main/economy peers, no collector; `docs/codex-native-controller.md`. Kiro CLI: `specs/kiro-host-v1.md`. Other hosts keep their workflow.",
   },
   {
     moment: "Shared submission",
@@ -116,7 +116,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
 ].map((entry) => Object.freeze({ ...entry, verbs: Object.freeze([...entry.verbs]) })));
 
 // Verbs the text names outside the table.
-const OTHER_NAMED_VERBS: readonly string[] = Object.freeze(["commands", "setup"]);
+const OTHER_NAMED_VERBS: readonly string[] = Object.freeze(["commands", "library-resolve", "setup"]);
 
 /** Every engine verb SKILL.md names, the table's first and in its order, without repeats. */
 export function skillNamedVerbs(): readonly string[] {
@@ -165,7 +165,7 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     "## Navigation",
     "",
-    `Run \`node "<device directory>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb> --<flag> <value>\`. Root: \`~/${DIRECTORY.device}\` or \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\`; if missing, install first. \`commands\` / \`<verb> --help\`: verbs/flags. UTC \`--at\`; \`--workspace <library>\` when required. Contracts: engine bundle \`specs/\` beside \`scripts/\`, not this Skill.`,
+    `Root: nonempty \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\` wins (absolute required), else \`~/${DIRECTORY.device}\`. Run \`node "<root>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb>\`; install if absent. \`library-resolve --cwd <cwd>\` gives \`libraryPath\` for \`--workspace\`; use work's \`projectId\` for \`--project-id\` where accepted. \`commands\` / \`<verb> --help\`: flags; UTC \`--at\` if required. Contracts: engine bundle \`specs/\` beside \`scripts/\`, not this Skill.`,
     "",
     "Local sessions share queued writes without stepping aside, not cross-device exclusion. Remote submission needs serial handoff. No platform-native dot hook, background lifecycle manager or sync service is installed.",
     "",

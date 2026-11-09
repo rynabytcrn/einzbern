@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 4.5.0
+
+Einzbern and Mana Orchestrate ship in lockstep at 4.5.0.
+
 ### Kiro host integration
 
 - Add Kiro CLI V3 host identity and capability observations, public Mana

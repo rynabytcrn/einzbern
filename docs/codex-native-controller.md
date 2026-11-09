@@ -118,6 +118,54 @@ ends with an eligible terminal batch and no delivery attempt. Repeated Stop or a
 uncertain attempt ends normally. The reminder does not send a message, create
 authorization, wait for pending workers or revive the retired collector loop.
 
+## Reports, settings and query exit
+
+An ordinary report sends only `threadId`, `hostId` and `prompt`. Sender task
+selection remains preparation metadata and does not set the recipient's model or
+effort. Native coordination preparation rejects `model`/`thinking` overrides by
+default; new ordinary delivery records also reject them. Historical receipt
+normalization retains the original meaning of stored evidence.
+
+An explicitly authorized settings adjustment is a separate native attempt, not a
+final batch delivery. Machine-assemble an optional engine-only
+`--codex-settings-intent <file>` for `execution-host-prepare`. Its closed object
+contains `decidedIn` (one existing Owner decision), `basis` (the caller's actual
+scope assessment), and, for a temporary target not named in that decision,
+`targetSource: {toolName, response}` containing the matching original independent
+create/fork return. The current decision must be valid and Owner-decided. A named
+target uses the existing write-authorization verifier; class authorization retains
+its actual native test-target source. Neither a prompt marker nor an ordinary
+receipt or `covered` report grants this correlation. The caller remains
+responsible for the decision's natural-language scope.
+
+The CLI saves a private association to the actual session, complete native
+arguments digest, work/revision, attempt and current decision source; it adds no MCP or v1
+request/record fields. The enrolled coordinator's PreToolUse checks the exact
+recipient/host/settings and rereads the work revision/status and decision validity
+before execution. The
+association is current for five minutes and records that native attempt as
+attempted before the side effect. A successful native PostToolUse marks its
+outcome; an unknown outcome cannot be overwritten by another preparation.
+Reconcile unknown settings through public `thread/read` and retain
+`reconciliation: {attemptId, toolName: "thread/read", response}` in a subsequent
+intent. Its readback must match the previous target's requested model/effort.
+This reconciles an attempt; it does not consume or exhaust the Owner's existing
+authorization. Prepare any further covered adjustment from the actual current
+state and record it separately. Unbound ordinary chats gain no global model ban.
+
+For `read_thread` and `wait_threads`, only confirmed native subagents whose
+returned latest turn is still in progress permit another bounded query. An
+independent economy conversation is an independent target. After its first
+query returns, end the loop: the next actual read/wait is denied before execution,
+including changed targets/cursors, mixed waits, code-mode inner calls and summary
+continuations. This applies without a prior model change, receipt or role.
+A new actual UserPromptSubmit can obtain a new result and follows the same exit
+rule; no query-intent JSON or additional approval is required. Native spawn or
+SubagentStart evidence supplies identity; model/category/title/old cache does not.
+PostToolUse feedback and stopping the whole model turn are separate host facts.
+See `specs/engine-hook-events-v2.md`; actual Desktop consumption needs its own
+native execution counts and version evidence.
+
 ## Supported batch receipt commands
 
 The coordinator records native preparation/response history through the existing
@@ -235,7 +283,7 @@ current user `.codex/config.toml`. Retain actual returned fields unchanged. This
 observation correlation, not authentication or trust enrollment. No new daemon is
 installed. Legacy `subagentStop` observations remain readable but prove no guard.
 
-Readiness requires exactly the candidate stable PreToolUse command registered at
+Readiness requires the candidate stable PreToolUse, PostToolUse, UserPromptSubmit and SubagentStart commands registered at
 the observed cwd, enabled, currentHash trusted, no load errors/warnings obscuring
 applicability, unchanged observed hook/config bytes, and successful durable role
 recovery. Use a current observation within the native dispatch five-minute bound;

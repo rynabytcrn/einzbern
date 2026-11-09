@@ -582,3 +582,30 @@ test("durable Codex role denial runs outside registry and fails visibly when its
   assert.equal(JSON.parse(missing.stdout).hookSpecificOutput.permissionDecision, "deny");
   assert.equal(call("unbound", "mcp__codex_app__create_thread").stdout, "");
 });
+
+test("Codex query side effects stop before the second tool in registered and unregistered directories", async context => {
+  const { base, home } = await scratch(context);
+  const installed = await installEngine(home);
+  const registered = await registeredProject(base, "query-project");
+  for (const [name, cwd] of [["unregistered", base], ["registered", registered.directory]]) {
+    const session_id = "query-" + name;
+    const payload = { session_id, turn_id: "first-turn", tool_name: "mcp__codex_app__wait_threads", tool_input: { targets: [{ threadId: "independent-economy" }], timeoutMs: 50_000 }, cwd };
+    const hook = (event, extra = {}) => runHook(installed, { home, cwd, event, env: { EINZBERN_HOST: "codex" }, input: JSON.stringify({ ...payload, ...extra }) });
+    let sideEffects = 0;
+    const invokeInnerTool = () => {
+      const pre = hook("pre-tool-use");
+      assert.equal(pre.status, 0);
+      if (pre.stdout) throw new Error(JSON.parse(pre.stdout).hookSpecificOutput.permissionDecisionReason);
+      sideEffects++;
+      const post = hook("post-tool-use", { tool_response: { timedOut: true, wake: null, polls: [{ thread: { id: "independent-economy", hostId: "local" }, latestTurn: { status: "inProgress" } }] } });
+      assert.equal(post.status, 0);
+    };
+    invokeInnerTool();
+    assert.throws(invokeInnerTool, /End this waiting loop/);
+    assert.equal(sideEffects, 1, "the same native inner-tool path blocks before a second direct or code-mode side effect");
+    const changed = hook("pre-tool-use", { turn_id: "summary-continuation", tool_name: "mcp__codex_app__read_thread", tool_input: { threadId: "different-independent", hostId: "remote" } });
+    assert.equal(JSON.parse(changed.stdout).hookSpecificOutput.permissionDecision, "deny");
+    assert.equal(hook("user-prompt-submit", { turn_id: "new-human-turn", prompt: "Read status for me" }).status, 0);
+    assert.equal(hook("pre-tool-use", { turn_id: "new-human-turn" }).stdout, "");
+  }
+});

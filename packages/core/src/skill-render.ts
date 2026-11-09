@@ -76,12 +76,12 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Need the full text",
     verbs: ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Use each target's `handoff` for native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. Segments/digests: `specs/context-v1.md`. `--execution-request`: `dispatchAdmitted=true`; use selected runner/model/effort, never substitute. Keep stdout/stderr/exit code; no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
+    action: "Use each target's `handoff` for native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. `specs/context-v1.md`. `--execution-request`: `dispatchAdmitted=true`; selected runner/model/effort, never substitute. Keep stdout/stderr/exit code; no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
     moment: "Native dispatch (Codex, Claude, dot, Kiro CLI)",
     verbs: ["execution-policy-resolve", "execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
-    action: "Resolve host/category/rejection policy before admission; it is not permission. Authorized tools; normal prompt reports. Existing class fallback authority/hard limits. Parent reads before dispatch, child reads before work. scope/permission, targets=[], machine-assembled raw returns/reports, status/attempt association (`--binding`/`--prior`), unknown/cancel/finality/review: `specs/host-fallback-v1.md`. Dot model selection is host-managed. Codex only: independent main/economy peers, no collector; `collaboration.spawn_agent` workers. `docs/codex-native-controller.md`. Kiro CLI: `specs/kiro-host-v1.md`. Other hosts keep their workflow.",
+    action: "Resolve host/category/rejection policy; not permission. Authorized tools; normal prompt reports. Existing class fallback authority/hard limits. Parent reads before dispatch, child reads before work. scope/permission, targets=[], machine-assembled raw returns/reports, attempt association (`--binding`/`--prior`), unknown/cancel/finality/review: `specs/host-fallback-v1.md`. Dot model selection is host-managed. Codex only: independent main/economy peers, no collector; `collaboration.spawn_agent`; reports threadId/hostId/prompt only; authorized settings/query exits: `docs/codex-native-controller.md`. Kiro: `specs/kiro-host-v1.md`. Other hosts keep their workflow.",
   },
   {
     moment: "Shared submission",

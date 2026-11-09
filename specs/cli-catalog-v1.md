@@ -351,3 +351,12 @@ given neither, the current directory's registered project answers. `gates-config
 `rule-list` take `--status declared|pending|rejected`: `declared`, the default, keeps each list as
 it was; `pending` and `rejected` answer `WORKSPACE_LIST_READY` with `kind` `proposal` and the
 proposals of that kind and status in the scope.
+
+## Optional Codex settings source on native preparation
+
+`execution-host-prepare --codex-settings-intent <file>` accepts the existing Owner
+decision and target-source correlation for an explicit settings adjustment only.
+The exact shape, source validity, attempt reconciliation and native hook boundary
+are in `docs/codex-native-controller.md`. It is optional for ordinary native work,
+is not a read/wait permission and adds no field to a native MCP invocation or the
+closed v1 request/preparation/record formats.

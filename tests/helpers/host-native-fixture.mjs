@@ -40,13 +40,13 @@ export async function codexGuardFixture(f, cwd = process.cwd()) {
   await writeFile(join(engine, "launchers", "hook.mjs"), launcher);
   await writeFile(join(engine, "scripts", "einzbern-hook.mjs"), 'export const CODEX_PEER_GUARD_CONTRACT = "einzbern.codex-peer-dispatch-guard.v1"; export function runPeerDispatchHookEvent() {}\n');
   await mkdir(join(userHome, ".codex"), { recursive: true });
-  const command = hostHookCommand(hookLauncherPath(f.home), "PreToolUse", userHome);
+  const events = ["PreToolUse", "PostToolUse", "UserPromptSubmit", "SubagentStart"];
   const sourcePath = join(userHome, ".codex", "hooks.json");
   const configPath = join(userHome, ".codex", "config.toml");
-  const texts = [JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command }] }] } }), "[features]\nhooks = true\n"];
+  const texts = [JSON.stringify({ hooks: Object.fromEntries(events.map(event => [event, [{ hooks: [{ type: "command", command: hostHookCommand(hookLauncherPath(f.home), event, userHome) }] }]])) }), "[features]\nhooks = true\n"];
   await writeFile(sourcePath, texts[0]); await writeFile(configPath, texts[1]);
   const native = { schemaVersion: "tcrn.codex-hook-observation.v1", observedAt: new Date().toISOString(), version: "synthetic-only", cwd: await realpath(cwd),
-    raw: { data: [{ cwd: await realpath(cwd), hooks: [{ eventName: "preToolUse", handlerType: "command", command, sourcePath, matcher: null, enabled: true, currentHash: `sha256:${"a".repeat(64)}`, trustStatus: "trusted" }], errors: [], warnings: [] }] },
+    raw: { data: [{ cwd: await realpath(cwd), hooks: events.map(event => ({ eventName: event[0].toLowerCase() + event.slice(1), handlerType: "command", command: hostHookCommand(hookLauncherPath(f.home), event, userHome), sourcePath, matcher: null, enabled: true, currentHash: `sha256:${"a".repeat(64)}`, trustStatus: "trusted" })), errors: [], warnings: [] }] },
     files: await Promise.all([sourcePath, configPath].map(async (path, i) => ({ path: await realpath(path), sha256: createHash("sha256").update(texts[i]).digest("hex") }))) };
   const admission = { state: "supported", version: "synthetic-only", evidenceRef: "fixture:hooks-list", preToolUse: true, trust: "permitted", native };
   const admissionPath = join(f.root, "native-admission.json");

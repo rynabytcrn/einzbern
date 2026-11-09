@@ -62,7 +62,7 @@ function noteRecall(device, event, cwd, reasonCode, host) {
  * entry the launcher matched and `cwd` the directory it matched from (the payload's cwd, or this
  * process's, when left out). Returns the text for stdout, or null when the hook prints nothing.
  */
-export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
+export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuardObserved = false } = {}) {
   // TCRN-CROSS-STORY-481 R2, R4: the stable launcher refuses older Node.js before it imports this
   // file. Keep this guard for direct callers too: a hook answers nothing, and the CLI is where the
   // floor is reported (ENGINE_NODE_TOO_OLD).
@@ -78,7 +78,7 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   const name = host === "kiro" ? (kiroHookEventName(event) ?? hookEventName(event)) : hookEventName(event);
   // Stale owned SubagentStop commands are inert until normal setup retires them.
   if (event === "subagent-stop") return null;
-  if (name === "UserPromptSubmit" && host === "codex") {
+  if (["UserPromptSubmit", "SubagentStart"].includes(name) && host === "codex" && !peerGuardObserved) {
     const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
     await runCodexPeerHook(name, body, deviceHome(process.env));
   }
@@ -96,7 +96,7 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
         noteRecall(deviceHome(process.env), event, directory, observation.reasonCode, host);
         return null;
       }
-      if (host === "codex") {
+      if (host === "codex" && !peerGuardObserved) {
         const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
         const result = await runCodexPeerHook(name, body, deviceHome(process.env));
         noteRecall(deviceHome(process.env), event, directory, result.reasonCode, host);
@@ -109,6 +109,7 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
     case "PostToolUse":
     case "Stop": {
       if (host !== "codex") return null;
+      if (peerGuardObserved) return null;
       const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
       const result = await runCodexPeerHook(name, body, deviceHome(process.env));
       if (result.reasonCode !== "HOOK_PEER_NOT_APPLICABLE") {
@@ -224,11 +225,11 @@ function readGuardReason(payload, cwd) {
 
 /** Launcher-only role check before project resolution. No library recall or project access. */
 export async function runPeerDispatchHookEvent({ event, payload, device } = {}) {
-  if (event !== "pre-tool-use") return null;
-  const { hookHost } = await import("../dist/build/packages/core/src/hook-recall.js");
+  if (!["pre-tool-use", "post-tool-use", "user-prompt-submit", "subagent-start", "stop"].includes(event)) return null;
+  const { hookHost, hookEventName } = await import("../dist/build/packages/core/src/hook-recall.js");
   if (hookHost(process.env) !== "codex") return null;
   const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
-  const result = await runCodexPeerHook("PreToolUse", payload, device);
+  const result = await runCodexPeerHook(hookEventName(event), payload, device);
   noteRecall(device, event, payload?.cwd ?? process.cwd(), result.reasonCode, "codex");
   return result.output;
 }

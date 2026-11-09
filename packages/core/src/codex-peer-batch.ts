@@ -270,6 +270,10 @@ export function normalizeCodexPeerBatch(value: unknown): CodexPeerBatch {
 /** Monotonic merge of same-batch receipts. Unknown delivery is retained, never retried by us. */
 export function recordCodexPeerBatch(input: CodexPeerBatchInput): CodexPeerBatch {
   const prior = input.prior === undefined ? null : normalizeCodexPeerBatch(input.prior);
+  if (input.delivery && !prior?.delivery) {
+    const argumentsValue = input.delivery.record.preparation.attempt?.argumentsValue;
+    if (argumentsValue !== null && typeof argumentsValue === "object" && ["model", "thinking"].some(key => Object.hasOwn(argumentsValue, key))) fail("ordinary final delivery must omit model/thinking; record an authorized settings adjustment separately");
+  }
   if (prior?.schemaVersion === "tcrn.codex-peer-batch.v1") fail("legacy peer receipts remain historical and unguarded; start a new scoped native worker batch");
   const cutoff = dotInstant(input.observationCutoff, "observation cutoff");
   if (prior && cutoff < dotInstant(prior.observationCutoff, "prior observation cutoff")) fail("observation cutoff moved backwards; reconcile the clock before resuming");

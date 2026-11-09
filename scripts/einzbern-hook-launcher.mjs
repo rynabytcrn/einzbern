@@ -465,19 +465,27 @@ export async function launch(argv, env) {
   const device = deviceDirectory(env);
   const codex = env.EINZBERN_HOST === "codex" || (!env.EINZBERN_HOST && !env.CLAUDE_PROJECT_DIR);
   const workerTool = typeof payload.tool_name === "string" && (/(?:^|__|\.)(?:create_thread|fork_thread)$/u.test(payload.tool_name) || ["collaboration.spawn_agent", "collaboration__spawn_agent", "multi_agent_v1.spawn_agent", "spawn_agent"].includes(payload.tool_name));
-  if (event === "pre-tool-use" && codex && workerTool && typeof payload.session_id === "string") {
+  const queryTool = ["mcp__codex_app__read_thread", "mcp__codex_app__wait_threads"].includes(payload.tool_name);
+  const peerTool = workerTool || queryTool || payload.tool_name === "mcp__codex_app__send_message_to_thread";
+  let peerGuardObserved = false;
+  if (codex && typeof payload.session_id === "string" && ((["pre-tool-use", "post-tool-use"].includes(event) && peerTool) || ["user-prompt-submit", "subagent-start", "stop"].includes(event))) {
     const key = createHash("sha256").update(payload.session_id).digest("hex");
     let known = true;
     try { statSync(join(device, "codex-peer-roles", key)); }
     catch (error) { if (error?.code === "ENOENT") known = false; }
-    if (known) {
+    if (known || queryTool || ["post-tool-use", "user-prompt-submit", "subagent-start", "stop"].includes(event)) {
       try {
         const hook = await import(hookEntryUrl(join(device, ENGINE_DIRECTORY), currentVersion(join(device, ENGINE_DIRECTORY))));
-        if (typeof hook.runPeerDispatchHookEvent !== "function") throw new Error("current engine has no durable peer guard");
-        const output = await hook.runPeerDispatchHookEvent({ event, payload, device });
-        if (output !== null) return output;
+        if (typeof hook.runPeerDispatchHookEvent !== "function") {
+          if (queryTool || (known && event === "pre-tool-use")) throw new Error("current engine has no durable peer guard");
+        } else {
+          const output = await hook.runPeerDispatchHookEvent({ event, payload, device });
+          peerGuardObserved = true;
+          if (output !== null) return output;
+        }
       } catch (error) {
-        return JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `Load Mana Orchestrate. Known coordinator guard could not recover: ${String(error?.message ?? error)}` } }) + "\n";
+        if (event === "pre-tool-use") return JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `Load Mana Orchestrate. Native query/coordinator guard could not recover: ${String(error?.message ?? error)}` } }) + "\n";
+        throw error;
       }
     }
   }
@@ -495,7 +503,7 @@ export async function launch(argv, env) {
   const engine = join(device, ENGINE_DIRECTORY);
   const hook = await import(hookEntryUrl(engine, currentVersion(engine)));
   if (typeof hook.runHookEvent !== "function") throw new HookLaunchError("HOOK_ENTRY_INVALID", "the current engine's hook entry has no runHookEvent");
-  const output = await hook.runHookEvent({ event, payload, libraryPath: entry.libraryPath, cwd: directory });
+  const output = await hook.runHookEvent({ event, payload, libraryPath: entry.libraryPath, cwd: directory, peerGuardObserved });
   return typeof output === "string" && output.length > 0 ? output : null;
 }
 

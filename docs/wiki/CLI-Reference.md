@@ -446,6 +446,7 @@
 | `--arguments` | 必填 | `string` | `{selection, argumentsValue} actual request JSON` |
 | `--codex-peer-worker` | 可选 | `boolean` |  |
 | `--codex-admission` | 可选 | `string` |  |
+| `--codex-settings-intent` | 可选 | `string` | `Existing Owner decision and exact settings target source; never a query permission` |
 | `--output` | 必填 | `string` |  |
 
 ## `execution-host-record`

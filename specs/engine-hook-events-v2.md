@@ -47,27 +47,38 @@ reading worker results. It is selected only for an explicit Codex host, never by
 an unknown-host fallback. Claude Code and DSH retain single-conversation
 coordination and native completion notifications; dot remains independent.
 
-For the existing peer-receipt workflow, `execution-codex-peer-record` also stages
-a small disposable observation when the native `CODEX_THREAD_ID` (or
-`CODEX_SESSION_ID`) matches a recorded peer. The retained receipt remains the
-evidence. The observation contains peer IDs and derived batch facts, not prompts,
-paths, new project fields or execution authority. The disposable cache does not own durable roles; receipt persistence and role
-readback failures return explicit not-ready diagnostics through peer-record.
+A successful native SEND is retained as an unbound handoff observation even before
+main has a receipt or role. Validated peer-record stages recoverable receipt facts
+for both participants, including actual retained worker IDs. These derived facts
+survive turn changes and engine restarts; they grant neither dispatch permission
+nor a native parent/child relationship. No main-side staging or repeated SEND is
+required. Unknown/failed sends do not become successful handoffs.
 
-PostToolUse consumes that observation after a Bash call and binds it to the
-native session and turn. It does not parse shell commands, scan transcripts,
-read arbitrary receipt paths or depend on untruncated command output. After a
-confirmed native send from that main conversation to its coordinator, PreToolUse
-denies `wait_threads` and `read_thread` calls to that coordinator in the same turn
-while the recorded batch remains nonterminal. Feedback points to Mana Orchestrate.
-The hook does not perform another query or send a message.
+Codex `read_thread` and `wait_threads` use a separate durable query guard, including
+sessions with no cache or peer role. The first query can return its result. Another
+query is allowed only when every target is an observed native subagent of this
+native session/actor and its actual returned latest turn is `inProgress`. Native
+SubagentStart or the original native spawn return establishes that relationship;
+peer labels, model names, `changed`, timeout and thread-active flags do not.
+Unknown identity, terminal/unknown turns or any independent target ends the loop.
+The next PreToolUse denies before the tool runs, regardless of cursor, tool,
+target mixture, wrapper, new model turn or summary continuation. Reserving the
+outstanding query also prevents concurrent inner calls from outrunning its result.
 
-A new user turn discards only the old turn observation. Unbound roles, absent turn receipts,
-unsuccessful or ambiguous sends, other targets and remote-host queries are not
-blocked by this guard. Coordinator worker waits and other hosts are unchanged.
-This is a bounded handoff guard, not a global polling quota, an authorization
-system or a promise that the model will stop generating. A denied tool call can
-still be followed by model output.
+UserPromptSubmit with an actual nonempty prompt starts a new query opportunity.
+A new prompt can steer the same active turn, including an identical repeated
+request. A turn id or compaction alone cannot reset state.
+Where the host supplies a subagent actor ID, its query state is separate from
+the parent session. The
+hook consumes the supported event, not a caller-added query-intent field or an
+extra Owner approval. Host events and local evidence are source correlation,
+not authentication against a same-permission local writer.
+
+PostToolUse adds context without hiding the first query result. It cannot undo a
+query or promise to stop the whole model turn. In code mode the same inner
+PreToolUse deny rejects the next tool promise before execution. `continue:false`
+from PostToolUse is not used as evidence of hard termination. Verify tool effect
+counts and host termination separately on the actual consuming Desktop version.
 
 Before a coordinator ends, Stop checks the same observation. Only a confirmed
 terminal, report-eligible batch with no delivery attempt receives a reminder to
@@ -112,17 +123,20 @@ outside cache and version directories and is not cleared by UserPromptSubmit,
 summary, terminal batch, Stop or restart. Explicit governed lifecycle and readback
 use the existing peer-record command as described in the native controller doc.
 
-Before ordinary cwd/registry routing, the stable launcher sends only Codex
-create_thread/fork_thread/native spawn identities for a known enrolled session to
-the current version's role check. Active coordinator create/fork is explicitly
-denied with permissionDecision: deny. Known invalid/unreadable/missing related
-state also denies dependent dispatch. Unrelated reads and unbound chats continue.
-Native code mode fires the same inner PreToolUse seam; source text is never parsed.
-No SubagentStop, extra collector or background service is added.
+Before ordinary cwd/registry routing, the stable launcher routes Codex query,
+SEND, native dispatch, UserPromptSubmit and SubagentStart observations to the same
+current engine guard. This covers independent queries without role enrollment and
+successful main-first sends outside a registered cwd. Active coordinator
+create/fork and unauthorized coordinator-to-main settings overrides are denied at
+PreToolUse. Known damaged protective state fails visibly for its dependent tools.
+Other hosts keep their existing behavior. Native code mode uses structured inner
+tool identities and arguments; JavaScript, shell and transcripts are never parsed.
+No SubagentStop, collector or background service is added.
 
 Doctor/setup report native hook registration, enabled/current trust and role
 recovery as `codexGuard` separately from structural file reconciliation. Only a
-current actual hooks/list observation with matching candidate commands and
+current actual hooks/list observation for PreToolUse, PostToolUse,
+UserPromptSubmit and SubagentStart, with matching candidate commands and
 unchanged source/config byte observations establishes native readiness. Missing,
 disabled, untrusted, unsupported or unknown native state is not-ready. A file or
 old subagentStop flag alone cannot prove readiness. See the closed observation

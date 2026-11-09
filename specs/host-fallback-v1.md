@@ -107,3 +107,22 @@ The CLI's optional `--codex-admission` consumes the observed admission described
 in `docs/codex-native-controller.md`. Supported/current PreToolUse and native
 recovery are required for that dependent preparation. Other hosts and unbound
 non-peer operations keep the general preparation contract.
+
+## Codex recipient settings and query continuation
+
+Ordinary Codex coordination sends omit `model` and `thinking`; preparation rejects
+their accidental use as recipient settings. Explicitly authorized adjustments use
+the optional engine-only `execution-host-prepare --codex-settings-intent <file>`
+source correlation described in `docs/codex-native-controller.md`, not new native
+tool or v1 request fields. The hook verifies exact parameters and a live Owner
+source before an enrolled coordinator changes its main recipient. Ordinary batch
+reports cannot serve as adjustment records. Existing receipt normalization is
+historical; only newly supplied ordinary delivery is checked on record entry.
+
+Repeated read/wait is permitted only for confirmed native subagents whose actual
+returned latest turn is in progress. All other results end that query loop; the
+next tool is denied before execution even without peer roles or a prior receipt.
+Actual new UserPromptSubmit events restore a new query opportunity without an
+extra permission field. A summary or changed native model turn does not. This
+applies to direct and code-mode inner tools and does not claim hard termination
+of the model turn. Other hosts retain their native workflows.

@@ -8,6 +8,7 @@ import { codexNativeGuardHealth } from "./codex-native-health.js";
 import { isCodexNativeSpawn } from "./native-tool-evidence.js";
 import { homedir } from "node:os";
 import { deviceHome } from "./device-home.js";
+import { hasCodexSettingsOverride, verifyCodexSettingsIntent } from "./codex-peer-settings.js";
 import { hasLibraryManifest } from "./ether-library.js";
 import { readRegistry } from "./registry.js";
 import { pathIsInside } from "./path-containment.js";
@@ -164,9 +165,18 @@ import type { HostExecutionRequest, HostExecutionDecision } from "./execution-fa
 import { HOST_NATIVE_PREPARATION_VERSION, validateHostNativePreparation } from "./native-tool-evidence.js";
 import type { HostNativePreparation } from "./native-tool-evidence.js";
 /** Optional audit preparation; no adapter, save transaction or prior success receipt prerequisite. */
-export async function prepareHostNativeDispatch(state: WorkspaceState, requestValue: HostExecutionRequest, tool: { readonly argumentsValue: unknown; readonly selection: HostSelection; readonly peerWorker?: boolean; readonly nativeSessionId?: string; readonly codexObservation?: import("./codex-native-health.js").CodexHookObservation; readonly userHome?: string; readonly cwd?: string }, home?: string): Promise<HostNativePreparation> {
+export async function prepareHostNativeDispatch(state: WorkspaceState, requestValue: HostExecutionRequest, tool: { readonly argumentsValue: unknown; readonly selection: HostSelection; readonly peerWorker?: boolean; readonly nativeSessionId?: string; readonly codexSettingsIntent?: unknown; readonly codexObservation?: import("./codex-native-health.js").CodexHookObservation; readonly userHome?: string; readonly cwd?: string }, home?: string): Promise<HostNativePreparation> {
   const request = validateHostExecutionRequest(requestValue);
   validateHostSelection(tool.selection);
+  if (request.capabilities.hostKind === "codex" && request.capabilities.toolName === "mcp__codex_app__send_message_to_thread") {
+    if (tool.codexSettingsIntent !== undefined) {
+      const sessionId = tool.nativeSessionId ?? process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"];
+      if (!sessionId || (request.capabilities.sessionRef !== undefined && request.capabilities.sessionRef !== sessionId)) throw new HostExecutionError("settings preparation needs the actual native session");
+      await verifyCodexSettingsIntent(state, tool.codexSettingsIntent, tool.argumentsValue, home ?? deviceHome());
+    } else if (request.action === "coordination" && hasCodexSettingsOverride(tool.argumentsValue)) {
+      throw new HostExecutionError("ordinary Codex coordination sends omit model/thinking; explicit settings adjustments need --codex-settings-intent and their existing Owner decision");
+    }
+  } else if (tool.codexSettingsIntent !== undefined) throw new HostExecutionError("settings intent applies only to a native Codex send_message_to_thread adjustment");
   let codexPeerWorker: { coordinatorId: string } | undefined;
   if (request.capabilities.hostKind === "codex" && request.action !== "coordination") {
     const sessionId = tool.nativeSessionId ?? process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"];

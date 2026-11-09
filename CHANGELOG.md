@@ -24,10 +24,13 @@ Versioning after the first accepted release.
   requested model and default effort, reserves a private evidence destination
   before launch, and records process exit separately from model and native
   terminal observations. It does not turn policy selection into permission.
-- Retain the observed guided CLI current-work, rules and recall cases and the
-  isolated CLI write/read continuation evidence. Historical free-prompt gaps
-  remain; IDE model reading, recall, writeback and fresh-session continuation
-  have not yet been verified.
+- Retain the observed guided CLI and IDE current-work, rules and recall cases,
+  isolated engine writeback and fresh-session continuation. The IDE observations
+  cover Default and custom agents at container and subproject roots in the
+  tested multi-root workspaces.
+- Preserve the limits of those observations: historical free-prompt gaps,
+  Default IDE automatic Skill loading, full IDE Hook semantics, provider backend
+  identity, actual timeout arguments and precise per-task costs remain explicit.
 
 ### Specs source and refresh
 
@@ -43,13 +46,33 @@ Versioning after the first accepted release.
 
 ### Compatibility and delivery
 
-- Preserve the released Codex native worker dispatch guard, durable role
-  recovery and hook readiness alongside Kiro event handling. Refresh the public
+- Preserve the released Codex native worker dispatch guard, recipient settings,
+  query exits, durable role recovery and hook readiness alongside Kiro event
+  handling. Refresh the public
   configuration inventory, CLI reference and current Portal proof from the
   integrated source; frozen historical evidence keeps its original bytes.
-- This Unreleased integration is local preparation against the observed released
-  baseline. The ordered preceding release, final version selection, complete
-  IDE behavior evidence and final release gates remain pending.
+- Keep independent source and behavior judgment, machine gate evidence, global
+  installation, publication and Owner visual acceptance as distinct records.
+
+## 4.4.2
+
+Einzbern and Mana Orchestrate ship in lockstep at 4.4.2.
+
+### Codex recipient settings and query loops
+
+- Keep ordinary report parameters separate from recipient model/effort settings.
+  Reject accidental overrides during preparation, new delivery recording and the
+  enrolled coordinator's native PreToolUse. Explicitly authorized adjustments
+  retain a narrow source/target/parameter association and unknown-attempt recovery.
+- Persist successful main-first handoff observations and validated receipt facts
+  for both peers, including actual worker IDs, across turns and engine recovery.
+- End read/wait loops after an independent or unknown target result. Only native
+  subagents whose returned latest turn is in progress permit another query.
+  Enforce the second-call boundary before direct or code-mode tool execution,
+  including legacy sessions without roles/cache; a new human prompt can query anew.
+- Route the required observations outside project cwd lookup and check native
+  PreToolUse, PostToolUse, UserPromptSubmit and SubagentStart readiness. Tool
+  blocking and whole-turn termination remain separate observed host capabilities.
 
 ## 4.4.1
 

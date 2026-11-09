@@ -11,6 +11,7 @@ import { deviceHome } from "../../core/src/device-home.js";
 import { readEngineModelPolicyFile } from "../../core/src/engine-model-policy.js";
 import { validateHostExecutionRequest } from "../../core/src/execution-fallback.js";
 import { prepareHostNativeDispatch } from "../../core/src/dispatch-workflow.js";
+import { stageCodexSettingsIntent } from "../../core/src/codex-peer-settings.js";
 import { recordHostNativeEvents, normalizeHostNativeRecord } from "../../core/src/native-tool-evidence.js";
 import type { HostNativeEvent } from "../../core/src/native-tool-evidence.js";
 import type { HostSelection } from "../../core/src/host-capabilities.js";
@@ -33,7 +34,7 @@ const flag = (name: string, required: boolean, valueKind = "path", valueShape?: 
 export const NATIVE_TOOL_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.freeze([
   { name: "execution-codex-peer-record", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("manifest", true), flag("records", true), flag("capacity", true), flag("codex-admission", false), flag("role-change", false), flag("actor", false, "string"), flag("delivery", false), flag("prior", false), flag("output", true)] },
   { name: "execution-codex-peer-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
-  { name: "execution-host-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "HostExecutionRequest v1 JSON"), flag("arguments", true, "path", "{selection, argumentsValue} actual request JSON"), flag("codex-peer-worker", false, "boolean"), flag("codex-admission", false), flag("output", true)] },
+  { name: "execution-host-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "HostExecutionRequest v1 JSON"), flag("arguments", true, "path", "{selection, argumentsValue} actual request JSON"), flag("codex-peer-worker", false, "boolean"), flag("codex-admission", false), flag("codex-settings-intent", false, "path", "Existing Owner decision and exact settings target source; never a query permission"), flag("output", true)] },
   { name: "execution-host-record", availability: "cli", mutates: true, flags: [flag("binding", true), flag("events", false, "path", "HostNativeEvent array; absent preserves pending"), flag("prior", false), flag("output", true)] },
   { name: "execution-host-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
   { name: "execution-kiro-preflight", availability: "cli", mutates: true, flags: [flag("binding", true, "path", "Saved HostExecutionPreparation v1 JSON; validates Kiro V3 scope without launching a process."), flag("reserve-output", false, "path", "Optionally reserve the private create-new evidence destination before launching Kiro.")] },
@@ -110,8 +111,16 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
     if (!Object.hasOwn(tool, "argumentsValue")) throw new Error("actual tool arguments are required");
     if (values["codex-peer-worker"] !== undefined && !["true", "false"].includes(values["codex-peer-worker"])) throw new Error("codex-peer-worker must be true or false");
     const admission = values["codex-admission"] === undefined ? undefined : await input(values["codex-admission"]) as { native?: CodexHookObservation; state?: string; trust?: string; preToolUse?: boolean };
-    const result = await prepareHostNativeDispatch(workspace.state, request, { ...(tool as { selection: HostSelection; argumentsValue: unknown }), peerWorker: values["codex-peer-worker"] === "true", ...(admission?.state === "supported" && admission.trust === "permitted" && admission.preToolUse === true && admission.native ? { codexObservation: admission.native } : {}) }, context.home);
+    const settingsIntent = values["codex-settings-intent"] === undefined ? undefined : await input(values["codex-settings-intent"]);
+    const result = await prepareHostNativeDispatch(workspace.state, request, { ...(tool as { selection: HostSelection; argumentsValue: unknown }), peerWorker: values["codex-peer-worker"] === "true", ...(settingsIntent === undefined ? {} : { codexSettingsIntent: settingsIntent }), ...(admission?.state === "supported" && admission.trust === "permitted" && admission.preToolUse === true && admission.native ? { codexObservation: admission.native } : {}) }, context.home);
     await writeDispatchArtifact(values.output!, result, [workspace.root], context.home);
+    if (settingsIntent !== undefined && result.attempt) {
+      const sessionId = process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"];
+      if (!sessionId) throw new Error("settings preparation lost its native session");
+      await stageCodexSettingsIntent({ device: context.home ?? deviceHome(), sessionId, workspaceRoot: workspace.root,
+        workId: result.decision.request.workId, workRevision: result.decision.request.workRevision,
+        attemptId: result.attempt.id, argumentsValue: result.attempt.argumentsValue, intent: settingsIntent });
+    }
     return json({ reasonCode: result.attempt ? "HOST_PREPARATION_READY" : "HOST_PREPARATION_NOT_EXECUTABLE", ...result });
   }
   if (command === "execution-host-record") {

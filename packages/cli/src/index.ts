@@ -3479,7 +3479,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // meet again later. validateSettingValue is the same pure function setWorkspaceSetting
       // is about to call, so calling it here costs a second pass over one string and buys a
       // stable reason code rather than whichever check happened to be reached first.
-      await assertGeneratedArtifactsRoot(workspace, validateSettingValue(values.key, values.value ?? "", workspace));
+      await assertGeneratedArtifactsRoot(workspace, validateSettingValue(values.key, values.value ?? "", workspace), undefined, true);
     }
     const state = await withWriteLock(workspace, at, async () => setWorkspaceSetting(workspace, {
       occurredAt: at, ...configurationOptions(values),

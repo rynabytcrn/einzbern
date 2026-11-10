@@ -5426,7 +5426,7 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
     const state = await materializeWorkspace(workspaceRoot);
     assertScopedSettingWriteConsistent(state, input.key, value, input.configurationProjectId);
     validateSettingValue(input.key, value, workspaceRoot);
-    await assertGeneratedArtifactsRoot(workspaceRoot, value);
+    await assertGeneratedArtifactsRoot(workspaceRoot, value, undefined, true);
     value = projectArtifactBinding(state.metadata.workspaceId, input.configurationProjectId);
   }
   // TCRN-CROSS-SUB-481: the projection of config/project.json follows the append under the same lock;
@@ -5465,7 +5465,7 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
       };
     }, input, async (root, committed) => {
       if (input.key === "workspace.generatedArtifactsPath" && isAbsolute(input.value) && input.configurationProjectId) {
-        await assertGeneratedArtifactsRoot(root, input.value);
+        await assertGeneratedArtifactsRoot(root, input.value, undefined, true);
         await bindProjectArtifactPath(committed.metadata.workspaceId, input.configurationProjectId, input.value);
       }
       await projectConfiguration(root, committed);

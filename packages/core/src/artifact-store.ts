@@ -216,6 +216,7 @@ export async function assertGeneratedArtifactsRoot(
   workspaceRoot: string,
   value: string,
   home?: string,
+  writable = false,
 ): Promise<string> {
   if (typeof workspaceRoot !== "string" || workspaceRoot.length === 0) {
     fail("ARTIFACT_INPUT_INVALID", "workspace root");
@@ -237,8 +238,10 @@ export async function assertGeneratedArtifactsRoot(
   }
   const directory = await boundDirectory(root);
   if (pathIsInside(device, directory) || pathIsInside(workspace, directory)) fail("ARTIFACT_PATH_INVALID", "artifact directory resolves inside a control tree");
-  try { await access(directory, constants.W_OK); }
-  catch (error) { fail("ARTIFACT_PATH_INVALID", `${directory}: ${String((error as NodeJS.ErrnoException).code ?? error)}`); }
+  if (writable) {
+    try { await access(directory, constants.W_OK); }
+    catch (error) { fail("ARTIFACT_PATH_INVALID", `${directory}: ${String((error as NodeJS.ErrnoException).code ?? error)}`); }
+  }
   return directory;
 }
 
@@ -425,7 +428,7 @@ export async function putArtifact(
   let copied: CopiedArtifact | null = null;
   for (let attempt = 1; attempt <= ARTIFACT_PUT_ATTEMPTS; attempt += 1) {
     const state = await materializeWorkspace(workspace);
-    const root = await assertGeneratedArtifactsRoot(workspace, artifactsSettingOf(scopedWorkspaceState(state, options.projectId)));
+    const root = await assertGeneratedArtifactsRoot(workspace, artifactsSettingOf(scopedWorkspaceState(state, options.projectId)), undefined, true);
     if (copied === null || copied.root !== root) copied = await copyArtifactBlob(root, file);
     const blob = copied;
     const receipt = await withWorkspaceWriteLock(workspace, async (locked) => {
@@ -435,7 +438,7 @@ export async function putArtifact(
     if (receipt !== null) return receipt;
   }
   return withWorkspaceWriteLock(workspace, async (locked) => {
-    const root = await assertGeneratedArtifactsRoot(locked, await effectiveArtifactsSetting(locked, options.projectId));
+    const root = await assertGeneratedArtifactsRoot(locked, await effectiveArtifactsSetting(locked, options.projectId), undefined, true);
     return recordArtifact(locked, await copyArtifactBlob(root, file), at, options.projectId);
   });
 }

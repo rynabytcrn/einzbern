@@ -1,0 +1,15 @@
+# Codex batch report recipient preflight
+
+- Check a coordinator's batch-marked report against its current durable role,
+  exact manifest prefix and main recipient/host in preparation and native
+  PreToolUse. Reject the demonstrated self-recipient error before sending and
+  point to the current main source without silently changing the arguments.
+  Preserve unmarked authorized messages, settings, historical receipts and native
+  worker final results.
+- Select explicit release versions by actual public compatibility: compatible
+  fixes and internal validation/evidence improvements use patch, new public
+  capabilities use minor, and public compatibility breaks use major. Internal
+  fields, formats and events alone do not select a minor increment. Deliver the
+  same concise guidance through the canonical Skill renderer.
+
+[Version directory](Release-Notes-4.5.1.md)

@@ -4882,7 +4882,8 @@ const BOOT = __PORTAL_BOOT__;
   };
   const controlFor = (entry) => {
     const values = [...(entry.allowedValues || [])];
-    const current = entry.deviceValue ?? entry.currentValue ?? "";
+    const unconfiguredDevicePath = entry.deviceStatus === "unconfigured";
+    const current = unconfiguredDevicePath ? "" : entry.deviceValue ?? entry.currentValue ?? "";
     const id = controlId("setting-control", entry.key);
     const label = settingLabel(entry.key);
     if (entry.controlType === "boolean") return `<label class="tcrn-switch" data-switch-state="${current === (entry.trueValue || "allowed") ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" data-setting-value="${esc(entry.trueValue || "allowed")}" ${current === (entry.trueValue || "allowed") ? "checked" : ""}><span class="tcrn-switch__label">${esc(current === (entry.trueValue || "allowed") ? t("config.enabled") : t("config.disabled"))}</span></label>`;
@@ -4890,7 +4891,7 @@ const BOOT = __PORTAL_BOOT__;
     if (entry.key === "retrieval.promptLanguages") return promptLanguageChoice(entry, label, id);
     if (entry.controlType === "reference") return referenceChoice(entry, label, id);
     if (entry.controlType === "enum" && values.length > 0) return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(values, entry.key)}><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" aria-label="${esc(label)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${values.map((value) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(entry.key === "artifact.language" ? promptLanguageLabel(value) : value || t("config.unset"))}</option>`).join("")}</select></label></div>`;
-    return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input" id="${esc(id)}" value="${esc(current)}" placeholder="${esc(entry.defaultValue ?? t("config.unset"))}" aria-label="${esc(label)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set"></label>`;
+    return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input" id="${esc(id)}" value="${esc(current)}" placeholder="${esc(unconfiguredDevicePath ? t("config.unset") : entry.defaultValue ?? t("config.unset"))}" aria-label="${esc(label)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${unconfiguredDevicePath ? `<span class="tcrn-field__hint" data-device-path-status="unconfigured">${esc(t("config.unset"))}</span>` : ""}</label>`;
   };
   // INC-193: the design authority is a declaration, and what is behind it is an
   // external fact. Verified-true is green, verified-false is red, and "cannot be

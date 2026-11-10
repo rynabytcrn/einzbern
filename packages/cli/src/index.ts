@@ -1422,6 +1422,16 @@ async function projectionRefreshReadback(state: Awaited<ReturnType<typeof materi
   catch { return { plan: null, status: "unavailable", reason: "projection-discovery-unavailable", refreshCommand: "configuration-projections-plan --workspace <library>" }; }
 }
 
+// A missing device binding prevents artifact use, not access to the editor that repairs it.
+function artifactDeviceReadback(key: string, value: unknown): { deviceValue?: string | null; deviceStatus?: "ready" | "unconfigured"; deviceReasonCode?: string } {
+  if (key !== "workspace.generatedArtifactsPath" || typeof value !== "string" || !isProjectArtifactBinding(value)) return {};
+  try { return { deviceValue: resolveProjectArtifactBinding(value), deviceStatus: "ready" }; }
+  catch (error) {
+    if ((error as { reasonCode?: string }).reasonCode !== "PATH_BINDING_UNCONFIGURED") throw error;
+    return { deviceValue: null, deviceStatus: "unconfigured", deviceReasonCode: "PATH_BINDING_UNCONFIGURED" };
+  }
+}
+
 async function writeSettingsState(io: CliIo, rawState: Awaited<ReturnType<typeof materializeWorkspace>>, key: string, projectId?: string): Promise<void> {
   const state = scopedWorkspaceState(rawState, projectId);
   const setting = state.settings.find((entry) => entry.key === key);
@@ -1439,7 +1449,7 @@ async function writeSettingsState(io: CliIo, rawState: Awaited<ReturnType<typeof
     source: current.source ?? null,
     setting: setting ?? null,
     effectiveValue: current.currentValue,
-    ...(key === "workspace.generatedArtifactsPath" && typeof current.currentValue === "string" && isProjectArtifactBinding(current.currentValue) ? { deviceValue: resolveProjectArtifactBinding(current.currentValue) } : {}),
+    ...artifactDeviceReadback(key, current.currentValue),
     persistence: "committed",
     projections: { ...await projectionRefreshReadback(rawState, projectId), status: "refresh-required", targets: affectedProjectionTargets(rawState, projectId), includesLibraryDefaults: projectId === undefined, command: "agents-render", note: "Saving declarations does not refresh inherited outputs on other targets or devices." },
   } as const;
@@ -3428,7 +3438,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       typedValues: presentedSettings.map(entry => ({ ...annotateConfigValue(entry.key, entry.currentValue), effectiveScope: entry.scope, effectiveSource: entry.source ?? null })),
       projectBindings: state.configRecords.filter(record => record.collection === "chain" && record.key !== "identity"),
       // TCRN-CROSS-INIT-053 R47 (c1-B): a coordination chain lists its own runtime settings, each for the whole library.
-      settings: presentedSettings.map(entry => entry.key === "workspace.generatedArtifactsPath" && typeof entry.currentValue === "string" && isProjectArtifactBinding(entry.currentValue) ? { ...entry, deviceValue: resolveProjectArtifactBinding(entry.currentValue) } : entry) }));
+      settings: presentedSettings.map(entry => ({ ...entry, ...artifactDeviceReadback(entry.key, entry.currentValue) })) }));
     return;
   }
   if (command === "install-manifest") {

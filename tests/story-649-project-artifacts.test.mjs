@@ -82,3 +82,51 @@ test("Story649: project binding has independent locations on two device homes an
     assert.equal(resolveProjectArtifactBinding(binding, homes[1]), join(base, "b"));
   } finally { process.env.EINZBERN_HOME = previous; }
 });
+
+test("F649-1: a new device can read all settings and repair only its missing artifact binding", async () => {
+  const base = await mkdtemp(join(tmpdir(), "story649-repair-"));
+  const workspace = join(base, "library");
+  const targets = [join(base, "first"), join(base, "second")];
+  for (const target of targets) await mkdir(target);
+  await initializeLibrary({ root: workspace, createdAt: at });
+  const projectId = (await cli(["project-create", "--workspace", workspace, "--at", at, "--external-key", "REPAIR-649", "--name", "Repair"])).record.id;
+  const args = ["--workspace", workspace, "--project-id", projectId];
+  const set = target => cli(["settings-set", ...args, "--at", at, "--key", "workspace.generatedArtifactsPath", "--value", target]);
+  const first = await set(targets[0]);
+  const previous = process.env.EINZBERN_HOME;
+  try {
+    process.env.EINZBERN_HOME = join(base, "new-device");
+    const catalog = await cli(["settings-catalog", ...args]);
+    assert.ok(catalog.settings.some(row => row.key === "artifact.language"), "unrelated configuration remains accessible");
+    const row = catalog.settings.find(row => row.key === "workspace.generatedArtifactsPath");
+    assert.equal(row.currentValue, first.setting.value, "retain portable declaration, not a fallback");
+    assert.equal(row.deviceValue, null);
+    assert.equal(row.deviceStatus, "unconfigured");
+    assert.equal(row.deviceReasonCode, "PATH_BINDING_UNCONFIGURED");
+    await assert.rejects(cli(["artifact-list", ...args]), { reasonCode: "PATH_BINDING_UNCONFIGURED" });
+    const repaired = await set(targets[1]);
+    assert.equal(repaired.deviceValue, targets[1]);
+    assert.equal(repaired.deviceStatus, "ready");
+    assert.equal(repaired.setting.value, first.setting.value);
+    assert.equal((await cli(["artifact-list", ...args])).reasonCode, "ARTIFACT_LIST_READY");
+  } finally { process.env.EINZBERN_HOME = previous; }
+  const original = (await cli(["settings-catalog", ...args])).settings.find(row => row.key === "workspace.generatedArtifactsPath");
+  assert.equal(original.deviceValue, targets[0]);
+});
+
+test("F649-1: Atelier directory control stays editable and explicitly unset without local binding", async () => {
+  const { runInNewContext } = await import("node:vm");
+  const html = await readFile(new URL("../portal/index.html", import.meta.url), "utf8");
+  const start = html.indexOf("  const controlFor = (entry) => {");
+  const end = html.indexOf("\n  };", start) + "\n  };".length;
+  const render = runInNewContext(`${html.slice(start, end)}; controlFor`, {
+    esc: value => String(value), t: key => key === "config.unset" ? "Unset" : key,
+    controlId: (_, key) => key, settingLabel: key => key,
+  });
+  const result = render({ key: "workspace.generatedArtifactsPath", controlType: "text", currentValue: "binding:projectArtifacts/" + "a".repeat(64), deviceValue: null, deviceStatus: "unconfigured", defaultValue: "artifacts" });
+  assert.match(result, /value=""/u);
+  assert.match(result, /placeholder="Unset"/u);
+  assert.match(result, /data-device-path-status="unconfigured">Unset/u);
+  assert.match(result, /data-cli-action="settings-set"/u);
+  assert.doesNotMatch(result, /disabled|binding:projectArtifacts/u);
+});

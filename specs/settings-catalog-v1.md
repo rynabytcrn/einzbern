@@ -278,7 +278,11 @@ entries below are TCRN-CROSS-STORY-484's; the others name the change that retire
     Users do not author binding strings. `settings-catalog` and the write receipt expose
     `deviceValue` for the selected device location, separately from the portable declaration.
     A different device must configure its own location; missing binding is an error,
-    never a fallback. Changing one project/device location does not rewrite others.
+    never a fallback. The catalog keeps the declaration and returns `deviceValue: null`,
+    `deviceStatus: unconfigured` and `deviceReasonCode: PATH_BINDING_UNCONFIGURED`
+    so Atelier can still edit the directory and unrelated settings. Artifact operations
+    continue to refuse until this device has a valid binding. Changing one project/device
+    location does not rewrite others.
     Relative values and historical library-level absolute records remain readable;
     project declaration, parent declaration, legacy library declaration, then default
     is the precedence. Existing `binding:paths.artifacts` retains its explicit global meaning.

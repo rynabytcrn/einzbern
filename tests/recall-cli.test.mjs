@@ -270,3 +270,22 @@ test("D9 (CLI): at the default threshold a small library answers a Story's goal 
   }
   assert.equal(answeredAtZero.length, 3, answeredAtZero.join(" | "));
 });
+
+test("644: actual recall CLI records correlated result/error without leaking query", async context => {
+  const workspace = await library(context);
+  const previous = process.env.EINZBERN_RECALL_OBSERVATION;
+  process.env.EINZBERN_RECALL_OBSERVATION = "1";
+  context.after(() => { if (previous === undefined) delete process.env.EINZBERN_RECALL_OBSERVATION; else process.env.EINZBERN_RECALL_OBSERVATION = previous; });
+  const query = "private-observation-query-xyz";
+  await runCli(["recall", "--workspace", workspace, "--at", at(30), "--query", query], { write() {} });
+  await assert.rejects(runCli(["recall", "--workspace", workspace, "--at", at(30), "--query", ""], { write() {} }));
+  const { readFile } = await import("node:fs/promises");
+  const { deviceHome } = await import("../dist/build/packages/core/src/device-home.js");
+  const lines = (await readFile(join(deviceHome(), "log", "hook.ndjson"), "utf8")).trim().split("\n").map(JSON.parse).filter(line => line.host === "cli");
+  assert.ok(lines.some(line => line.outcome === "result"));
+  const error = lines.find(line => line.outcome === "error");
+  assert.equal(error.reasonCode, "CLI_ARGUMENT_MISSING");
+  assert.equal(error.observation.materializations, 0);
+  assert.equal(new Set(lines.map(line => line.observation.correlationId)).size, lines.length);
+  assert.equal(JSON.stringify(lines).includes(query), false);
+});

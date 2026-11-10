@@ -1,7 +1,7 @@
 import { validateSettingValue } from "./settings.js";
 import { bindProjectArtifactPath, projectArtifactBinding } from "./artifact-path-binding.js";
 import { assertGeneratedArtifactsRoot } from "./artifact-store.js";
-import { observeMaterialization, observeStage, observeCheckpoint, observeCacheReason } from "./recall-observation.js";
+import { observeMaterialization, observeStage, observeCheckpoint, observeCacheReason, observeReplay } from "./recall-observation.js";
 import { WORK_CONTENT_KEY, workContent, validateWorkContent, contentFail } from "./work-content.js";
 import type { ContentWorkKind } from "./work-content.js";
 import { WORK_CONTENT_POLICY_KEY, readWorkContentPolicy, validateWorkContentPolicy, workContentPolicyApplies, workContentRolloutReadiness } from "./work-content-templates.js";
@@ -14,6 +14,7 @@ import { verifyDotExtensionSource } from "./dot-extension-source.js";
 import type { DotSourceVerificationBindings } from "./dot-extension-source.js";
 import { verifyWriteAuthorization } from "./write-authorization.js";
 import { consolidateStates } from "./consolidation-state.js";
+import { ConsolidationError } from "./consolidation-format.js";
 import { FormatVersionError, isEngineVersion, compareSemver } from "./format-version.js";
 import type { InvolvedProjects } from "../../protocol/src/index.js";
 import { normalizeInvolvedProjects, involvedProjectsOf, assertStoredInvolvedProjects, assertInvolvedProjectScope, storedInvolvedProjects } from "./involved-projects.js";
@@ -2233,6 +2234,7 @@ function replayModelPlanMutation(
 }
 
 function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[], snapshot?: ReplaySeed, merge?: MergeReplay): WorkspaceState {
+  observeReplay(events.length);
   if (snapshot === undefined) {
     recordFullMaterialize();
   } else {
@@ -3339,6 +3341,7 @@ type LibraryReadShape = { readonly consolidation?: LibraryRead["consolidation"];
 interface LibrarySeed {
   readonly seed: ReplaySeed;
   readonly merge: MergeReplayCheckpoint;
+  readonly consolidatedTailVersion?: number;
 }
 
 interface LibraryReplayResult {
@@ -3357,14 +3360,14 @@ interface LibraryReplayResult {
 function replayLibrary(library: Library, read: LibraryReadShape, cached?: LibrarySeed, sourceStates?: readonly WorkspaceState[]): LibraryReplayResult {
   if (read.consolidation !== undefined) {
     const { index, sources } = read.consolidation;
-    const inputs = sources.map(({ source, read: sourceRead }, index) => ({ source, state: sourceStates?.[index] ?? replayLibrary({ root: `${library.root}/${source.archive}`, manifest: source.manifest }, sourceRead).state }));
-    const base = consolidateStates(index, inputs);
-    const entries = read.events.filter(entry => entry.event.sequence > (index.primaryVersionVector[entry.deviceId] ?? 0));
+    const inputs = cached === undefined ? sources.map(({ source, read: sourceRead }, index) => ({ source, state: sourceStates?.[index] ?? replayLibrary({ root: `${library.root}/${source.archive}`, manifest: source.manifest }, sourceRead).state })) : [];
+    const base = cached?.seed ?? (() => { const state = consolidateStates(index, inputs); return { ...state, prefixEvents: state.events }; })();
+    const entries = read.events.filter(entry => entry.event.sequence > (index.primaryVersionVector[entry.deviceId] ?? 0)).slice(cached?.consolidatedTailVersion ?? 0);
     const origins = new Map<EventRecord, ReplayOrigin>(entries.map(entry => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
-    const merge = new MergeReplay(origins);
-    const replayed = materialize(libraryWorkspaceMetadata(library), entries.map(entry => entry.event), { ...base, prefixEvents: base.events }, merge);
+    const merge = new MergeReplay(origins, cached?.merge);
+    const replayed = materialize(libraryWorkspaceMetadata(library), entries.map(entry => entry.event), base, merge);
     const streams = read.streams.flatMap(stream => stream.manifest === null ? [] : [streamHead(stream.manifest)]);
-    const importedStreams = inputs.flatMap(entry => entry.state.library?.streams ?? []);
+    const importedStreams = sources.flatMap(({ read: sourceRead }) => sourceRead.streams.flatMap(stream => stream.manifest === null ? [] : [streamHead(stream.manifest)]));
     const headEventHash = canonicalSha256({ schemaVersion: "einzbern.shared-head.v1", provenance: library.manifest.consolidation!.sha256, head: libraryHeadDigest(streams) });
     return { state: checkedWorkContentBoundary({ ...replayed, headEventHash, library: { minEngineVersion: library.manifest.minEngineVersion, libraryRoot: library.root, versionVector: read.versionVector, streams, importedStreams, consolidation: index, rejectedEvents: merge.rejected, aliases: merge.aliases } }), replayExecutionConfig: replayed.executionConfig, merge };
   }
@@ -3394,6 +3397,7 @@ function replayLibrary(library: Library, read: LibraryReadShape, cached?: Librar
 
 /** Replay a library's merged events from genesis, without this device's cache. */
 export function materializeLibraryRead(library: Library, read: LibraryReadShape): WorkspaceState {
+  observeMaterialization();
   return replayLibrary(library, read).state;
 }
 
@@ -3462,7 +3466,7 @@ function seedFromSnapshot(snapshot: CacheSnapshot, read: LibraryRead): LibrarySe
   const state = snapshotState(snapshot.state);
   if (state === null) return null;
   const { merge, ...collections } = state;
-  return { seed: { version: prefix, ...collections, prefixEvents: read.events.slice(0, prefix).map((entry) => entry.event) }, merge };
+  return { seed: { ...collections, version: prefix, prefixEvents: read.events.slice(0, prefix).map((entry) => entry.event) }, merge };
 }
 
 // The snapshot interval: storage.snapshotEveryEvents, or its catalog default.
@@ -3475,7 +3479,7 @@ async function cachedSeed(library: Library, read: LibraryRead): Promise<LibraryS
   try {
     const snapshot = await readCacheSnapshot(library.manifest.libraryId);
     if (snapshot === null) { observeCacheReason("replay-seed-absent"); return null; }
-    const seeded = seedFromSnapshot(snapshot, read);
+    const seeded = typeof snapshot.state === "object" && snapshot.state !== null && "consolidationBinding" in snapshot.state ? null : seedFromSnapshot(snapshot, read);
     observeCacheReason(seeded === null ? "replay-seed-incompatible" : "replay-seed-validated");
     if (seeded === null) await discardCacheSnapshot(library.manifest.libraryId);
     return seeded;
@@ -3547,18 +3551,65 @@ async function refreshLibraryCache(
  * cache. A seed the rest of the events cannot be replayed onto is a cache fault, and the replay
  * starts again from genesis; the result is the same state either way.
  */
+/** Events in the consolidation reducer's deterministic source order, rebuilt from
+ * fully validated bytes, never trusted from a cache payload. */
+function consolidationEvents(read: LibraryReadShape): readonly EventRecord[] {
+  if (read.consolidation === undefined) return read.events.map(entry => entry.event);
+  const { index, sources } = read.consolidation;
+  return [...sources.flatMap(source => consolidationEvents(source.read)), ...read.events.filter(entry => entry.event.sequence > (index.primaryVersionVector[entry.deviceId] ?? 0)).map(entry => entry.event)];
+}
+
 async function replayLibraryResultThroughCache(library: Library, read: LibraryRead): Promise<LibraryReplayResult> {
   if (read.consolidation !== undefined) {
-    // readAllStreams has already validated every archived byte, source manifest and
-    // consolidation binding. Reuse only each source's checkpoint-validated replay;
-    // the consolidation reducer and the live post-base tail still run normally.
-    observeCacheReason("consolidation-source-replay-reuse-full-byte-validation");
-    const sourceStates: WorkspaceState[] = [];
+    // Revalidate the index's expected source heads before trusting a prior merge.
+    // Stream self-consistency and an unchanged version vector alone do not prove
+    // that an archive has not been coherently rewritten at the same sequences.
     for (const { source, read: sourceRead } of read.consolidation.sources) {
-      const sourceLibrary = { root: `${library.root}/${source.archive}`, manifest: source.manifest };
-      sourceStates.push((await replayLibraryResultThroughCache(sourceLibrary, sourceRead)).state);
+      const streams = sourceRead.streams.flatMap(stream => stream.manifest === null ? [] : [streamHead(stream.manifest)]);
+      const head = source.manifest.consolidation === undefined ? libraryHeadDigest(streams) : canonicalSha256({ schemaVersion: "einzbern.shared-head.v1", provenance: source.manifest.consolidation.sha256, head: libraryHeadDigest(streams) });
+      if (head !== source.headEventHash || Boolean(source.manifest.consolidation) !== Boolean(sourceRead.consolidation)) throw new ConsolidationError("CONSOLIDATION_SOURCE_CHANGED", "validated source head differs from the consolidation index");
     }
-    return replayLibrary(library, read, undefined, sourceStates);
+    const binding = canonicalSha256({ projection: FRAMEWORK_VERSION, manifest: library.manifest, index: read.consolidation.index });
+    const baseEvents = read.consolidation.sources.flatMap(source => consolidationEvents(source.read));
+    const tail = read.events.filter(entry => entry.event.sequence > (read.consolidation!.index.primaryVersionVector[entry.deviceId] ?? 0));
+    let replay: LibraryReplayResult | null = null;
+    let cachedVersion: number | null = null;
+    try {
+      const snapshot = await readCacheSnapshot(library.manifest.libraryId);
+      const value = snapshot?.state as { consolidationBinding?: unknown } | undefined;
+      if (snapshot !== null && value?.consolidationBinding === binding) {
+        const cached = seedFromSnapshot({ ...snapshot, version: snapshot.version - baseEvents.length }, { ...read, events: tail });
+        if (cached !== null) {
+          const seed = { ...cached.seed, version: snapshot.version, prefixEvents: [...baseEvents, ...cached.seed.prefixEvents] };
+          replay = replayLibrary(library, read, { seed, merge: cached.merge, consolidatedTailVersion: cached.seed.version });
+          cachedVersion = snapshot.version;
+          observeCacheReason("consolidation-checkpoint-validated-full-byte-read");
+        }
+      }
+    } catch {
+      // Derived cache faults never replace source validation or suppress authority errors.
+      replay = null;
+    }
+    if (replay === null) {
+      observeCacheReason("consolidation-checkpoint-miss-full-replay");
+      const sourceStates: WorkspaceState[] = [];
+      for (const { source, read: sourceRead } of read.consolidation.sources) {
+        const sourceLibrary = { root: `${library.root}/${source.archive}`, manifest: source.manifest };
+        sourceStates.push((await replayLibraryResultThroughCache(sourceLibrary, sourceRead)).state);
+      }
+      replay = replayLibrary(library, read, undefined, sourceStates);
+    }
+    try {
+      if (cachedVersion !== replay.state.version) await writeCacheSnapshot({
+        libraryId: library.manifest.libraryId, engineVersion: FRAMEWORK_VERSION,
+        version: replay.state.version, maxClock: tail.reduce((largest, entry) => Math.max(largest, entry.clock), 0),
+        streams: read.streams.flatMap(stream => stream.manifest === null || stream.manifest.headEventHash === null ? [] : [{ deviceId: stream.deviceId, streamId: stream.manifest.streamId, sequence: stream.manifest.sequence, eventHash: stream.manifest.headEventHash }]),
+        state: { ...Object.fromEntries(SNAPSHOT_COLLECTIONS.map(name => [name, replay.state[name]])), attestationEnabledAtSequence: replay.state.attestationEnabledAtSequence, consolidationBinding: binding, executionConfig: replay.replayExecutionConfig, merge: replay.merge.checkpoint() },
+      });
+    } catch {
+      // A disposable cache write does not change the authority result.
+    }
+    return replay;
   }
   const cached = await cachedSeed(library, read);
   let replay: LibraryReplayResult | null = null;

@@ -1,4 +1,6 @@
 import { isProjectArtifactBinding, resolveProjectArtifactBinding } from "../../core/src/artifact-path-binding.js";
+import { withRecallObservation } from "../../core/src/recall-observation.js";
+import { logCliRecall } from "../../core/src/recall-observation-log.js";
 import { readRecallAuthority } from "../../core/src/recall-authority.js";
 import { MEMORY_LEASE_VARIABLE } from "../../../scripts/lib/memory-budget.mjs";
 import { readWorkContentImpact } from "../../core/src/work-requirements.js";
@@ -2085,6 +2087,26 @@ export function assertDeclaredOutputCategory(command: string, output: string): v
 }
 
 export async function runCli(arguments_: readonly string[], io: CliIo): Promise<void> {
+  if (arguments_[0] !== "recall" || process.env["EINZBERN_RECALL_OBSERVATION"] !== "1") return runCliUnobserved(arguments_, io);
+  const results: { reasonCode: string; outcome: string }[] = [];
+  let observation: import("../../core/src/recall-observation.js").RecallObservation | undefined;
+  try {
+    await withRecallObservation(() => runCliUnobserved(arguments_, { write(value) {
+      let reasonCode = "CLI_RECALL_RESULT";
+      try { const parsed = JSON.parse(value) as { reasonCode?: unknown }; if (typeof parsed.reasonCode === "string") reasonCode = parsed.reasonCode; } catch { /* Non-JSON output is not copied into telemetry. */ }
+      results.push({ reasonCode, outcome: "result" });
+      io.write(value);
+    } }), value => { observation = value; });
+  } catch (error) {
+    const reason = (error as { reasonCode?: unknown }).reasonCode;
+    results.push({ reasonCode: typeof reason === "string" ? reason : "CLI_RECALL_FAILED", outcome: "error" });
+    throw error;
+  } finally {
+    if (observation !== undefined) await logCliRecall(observation, results);
+  }
+}
+
+async function runCliUnobserved(arguments_: readonly string[], io: CliIo): Promise<void> {
   const command = arguments_[0];
   if (!command || command.startsWith("--")) {
     fail("CLI_COMMAND_REQUIRED", "A governed command is required");

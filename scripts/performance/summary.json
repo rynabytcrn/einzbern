@@ -1,4 +1,5 @@
 {
+  "baselineCommit": "c877b13b4df3ceadcff18b28e8fb02e993f828f5",
   "samples": 45,
   "fixture": "22 work records, one project, no knowledge cards; fixed at, unchanged authority; not production SLA",
   "semanticDigests": [
@@ -8,16 +9,16 @@
     "baseline": {
       "n": 15,
       "elapsedMs": {
-        "p50": 78.25407200000001,
-        "p95": 93.316452
+        "p50": 70.44582399999999,
+        "p95": 89.898
       },
       "cpuMicros": {
-        "p50": 101020,
-        "p95": 119180
+        "p50": 95962,
+        "p95": 114741
       },
       "maxRss": {
-        "p50": 80788,
-        "p95": 81524
+        "p50": 80536,
+        "p95": 81676
       },
       "logicalEventBytes": {
         "p50": 182124,
@@ -31,16 +32,16 @@
     "candidate": {
       "n": 15,
       "elapsedMs": {
-        "p50": 51.104355999999996,
-        "p95": 68.642087
+        "p50": 49.63985199999999,
+        "p95": 59.196855
       },
       "cpuMicros": {
-        "p50": 73987,
-        "p95": 91421
+        "p50": 75563,
+        "p95": 84788
       },
       "maxRss": {
-        "p50": 81604,
-        "p95": 82640
+        "p50": 81732,
+        "p95": 82544
       },
       "logicalEventBytes": {
         "p50": 91062,
@@ -54,16 +55,16 @@
     "candidate-observed": {
       "n": 15,
       "elapsedMs": {
-        "p50": 51.595879,
-        "p95": 64.017675
+        "p50": 50.72501299999999,
+        "p95": 64.712585
       },
       "cpuMicros": {
-        "p50": 77621,
-        "p95": 90291
+        "p50": 74472,
+        "p95": 89426
       },
       "maxRss": {
-        "p50": 81976,
-        "p95": 82888
+        "p50": 81732,
+        "p95": 82512
       },
       "logicalEventBytes": {
         "p50": 91062,

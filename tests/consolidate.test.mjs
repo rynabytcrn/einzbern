@@ -142,6 +142,10 @@ test("a fresh shared library recalls global cards and only the selected project'
     stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" },
   });
   for (const [selected, other] of [[projects[0], projects[1]], [projects[1], projects[0]]]) {
+    const { readRecallAuthority } = await import("../dist/build/packages/core/src/recall-authority.js");
+    const { readRecallCards } = await import("../dist/build/packages/core/src/recall-inputs.js");
+    const { authority } = await readRecallAuthority(library);
+    for (const status of ["valid", "removed", "all"]) assert.deepEqual(await readRecallCards(library, { at, projectId: selected.id, status }, authority), await readRecallCards(library, { at, projectId: selected.id, status }), "645: project/status differential");
     let output = "";
     await runCli(["recall", "--workspace", library, "--project-id", selected.id, "--at", at, "--query", "calibration", "--tau", "0"], { write: value => { output += value; } });
     const keys = JSON.parse(output).records.map(record => record.key).sort();
@@ -202,4 +206,102 @@ test("647: validated source snapshots preserve consolidated state and corrupt ca
   const snapshots = join(cachePath(f.sources[0].id), "snapshots");
   for (const name of await readdir(snapshots)) if (name.endsWith(".json")) await writeFile(join(snapshots, name), "broken cache\n");
   assert.deepEqual(await materializeLibrary(f.to), expected);
+});
+
+test("647: full consolidated checkpoint skips replay, survives restart and resumes necessary tail", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  await materializeLibrary(f.to);
+  const same = await withRecallObservation(() => materializeLibrary(f.to));
+  assert.ok(same.observation.cacheReasons.includes("consolidation-checkpoint-validated-full-byte-read"));
+  assert.equal(same.observation.replayedEvents, 0);
+  const full = await withRecallObservation(() => materializeWorkspaceFromGenesis(f.to));
+  assert.deepEqual(same.value, full.value);
+  assert.ok(full.observation.replayedEvents > 0);
+  t.diagnostic(JSON.stringify({ fullReplay: full.observation, cachedReplay: same.observation }));
+  assert.ok(same.observation.logicalEventBytes > 0, "cache never bypasses archive byte validation");
+  const { spawnSync } = await import("node:child_process");
+  const module = new URL("../dist/build/packages/core/src/workspace.js", import.meta.url).href;
+  const observer = new URL("../dist/build/packages/core/src/recall-observation.js", import.meta.url).href;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `import {materializeLibrary} from ${JSON.stringify(module)}; import {withRecallObservation} from ${JSON.stringify(observer)}; console.log(JSON.stringify((await withRecallObservation(()=>materializeLibrary(process.argv[1]))).observation));`, f.to], { env: process.env, encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(JSON.parse(child.stdout).replayedEvents, 0);
+  await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "2", occurredAt: at });
+  assert.deepEqual(await materializeLibrary(f.to), await materializeWorkspaceFromGenesis(f.to));
+  await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "3", occurredAt: at });
+  await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "4", occurredAt: at });
+  assert.deepEqual(await materializeLibrary(f.to), await materializeWorkspaceFromGenesis(f.to));
+  const originalHome = process.env.EINZBERN_HOME;
+  await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "5", occurredAt: at });
+  try {
+    process.env.EINZBERN_HOME = join(f.root, "second-writer");
+    await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "6", occurredAt: at });
+  } finally { process.env.EINZBERN_HOME = originalHome; }
+  const appended = await withRecallObservation(() => materializeLibrary(f.to));
+  assert.ok(appended.observation.replayedEvents > 0);
+  assert.deepEqual(appended.value, await materializeWorkspaceFromGenesis(f.to));
+  const { readCacheSnapshot, writeCacheSnapshot, discardCacheSnapshot } = await import("../dist/build/packages/core/src/library-cache.js");
+  const libraryId = (await openLibrary(f.to)).manifest.libraryId;
+  const checkpoint = await readCacheSnapshot(libraryId);
+  await writeCacheSnapshot({ ...checkpoint, state: { ...checkpoint.state, consolidationBinding: "mismatched-generation" } });
+  const invalid = await withRecallObservation(() => materializeLibrary(f.to));
+  assert.ok(invalid.observation.cacheReasons.includes("consolidation-checkpoint-miss-full-replay"));
+  assert.deepEqual(invalid.value, await materializeWorkspaceFromGenesis(f.to));
+  await discardCacheSnapshot(libraryId);
+  assert.deepEqual(await materializeLibrary(f.to), await materializeWorkspaceFromGenesis(f.to));
+  const index = await readConsolidationIndex(f.to, (await openLibrary(f.to)).manifest);
+  const source = index.sources[1];
+  const entry = source.inventory.find(file => /akasha\/.*\.ndjson$/u.test(file.path));
+  const path = join(f.to, source.archive, entry.path);
+  const bytes = await readFile(path);
+  const changed = Buffer.from(bytes); changed[changed.length - 2] ^= 1;
+  await writeFile(path, changed);
+  await assert.rejects(materializeLibrary(f.to), "same-length archive tampering must reject even with a warm checkpoint");
+});
+
+test("647: unsupported nested generation refuses instead of adopting the prior checkpoint", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  await materializeLibrary(f.to);
+  const next = join(f.root, "next-generation");
+  const bindings = f.mapping.sources.flatMap(source => source.bindings);
+  const extra = join(f.root, "gamma-library");
+  const projectPath = join(f.root, "gamma-source");
+  await mkdir(projectPath);
+  await initializeLibrary({ root: extra, createdAt: at });
+  const gamma = await createProject(extra, { externalKey: "GAMMA", name: "Gamma", occurredAt: at });
+  const projectId = gamma.projects[0].id;
+  await declareChainIdentity(extra, { role: "project", coordinationLibraryId: (await openLibrary(f.to)).manifest.libraryId, primaryProjectId: projectId }, { occurredAt: at });
+  await registerLibrary({ projectPath, projectId, libraryPath: extra, registeredAt: at, gitRemote: null });
+  await assert.rejects(consolidateLibraries({ primary: f.to, sources: [{ path: f.to, bindings }, { path: extra, bindings: [{ projectPath, projectId, role: "project" }] }] }, next, f.options), { reasonCode: "CONSOLIDATION_MAPPING_INVALID" });
+  assert.deepEqual(await materializeLibrary(f.to), await materializeWorkspaceFromGenesis(f.to));
+});
+
+test("647: warm checkpoint rejects coherently rehashed source history at unchanged vector", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { createEvent, eventInputOf, canonicalJson } = await import("../dist/build/packages/protocol/src/index.js");
+  const { createHash } = await import("node:crypto");
+  await materializeLibrary(f.to);
+  const index = await readConsolidationIndex(f.to, (await openLibrary(f.to)).manifest);
+  const source = index.sources[1];
+  const file = source.inventory.find(file => /akasha\/.*\.ndjson$/u.test(file.path));
+  const path = join(f.to, source.archive, file.path);
+  const events = (await readFile(path, "utf8")).trim().split("\n").map(JSON.parse);
+  const last = events.at(-1);
+  events[events.length - 1] = createEvent({ ...eventInputOf(last), occurredAt: "2026-10-19T12:00:01Z" }, last.schemaVersion);
+  const text = events.map(event => canonicalJson(event)).join("");
+  await writeFile(path, text);
+  const manifestPath = path.replace(/[^/]+$/u, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.headEventHash = events.at(-1).eventHash;
+  const segment = manifest.segments.find(segment => path.endsWith(segment.name));
+  segment.bytes = Buffer.byteLength(text);
+  segment.sha256 = createHash("sha256").update(text).digest("hex");
+  await writeFile(manifestPath, canonicalJson(manifest));
+  await assert.rejects(materializeLibrary(f.to), { reasonCode: "CONSOLIDATION_SOURCE_CHANGED" });
 });

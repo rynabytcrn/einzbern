@@ -10,6 +10,7 @@ import { performance } from "node:perf_hooks";
 const [repository, library, mode, observe = "0"] = process.argv.slice(2);
 const root = resolve(repository);
 let logicalEventBytes = 0, segmentReads = 0;
+let authorityHead = null;
 const originalOpen = fs.open;
 fs.open = async function(path, ...args) {
   const handle = await originalOpen.call(this, path, ...args);
@@ -30,10 +31,11 @@ const observer = observe === "1" ? await load("recall-observation") : null;
 const start = performance.now(), cpu = process.cpuUsage();
 const operation = async () => {
   const read = authorityApi ? await authorityApi.readRecallAuthority(library) : { state: await materializeLibrary(library) };
+  authorityHead = read.state.headEventHash;
   const state = await effectiveProjectState(read.state);
   const cards = await readRecallCards(library, { at: "2026-11-10T15:00:00Z", allowTrailing: true, status: "valid" }, read.authority);
   return ["Recall performance", "TCRN-CROSS-INIT-090", "nonexistent-zxy-needle"].map(query => ({ cards, result: recall({ cacheKey: state.metadata.workspaceId, checkpoint: `${state.headEventHash}:${cards.digest}`, documents: () => recallDocuments(recallInputsFromState(state, cards.cards)), query, tau: 0 }) }));
 };
 const measured = observer ? await observer.withRecallObservation(operation) : { value: await operation() };
 const used = process.cpuUsage(cpu);
-console.log(JSON.stringify({ mode, observe, elapsedMs: performance.now() - start, cpuMicros: used.user + used.system, maxRss: process.resourceUsage().maxRSS, logicalEventBytes, segmentReads, semanticSha256: createHash("sha256").update(JSON.stringify(measured.value)).digest("hex"), ...(measured.observation ? { observation: measured.observation } : {}) }));
+console.log(JSON.stringify({ mode, observe, authorityHead, elapsedMs: performance.now() - start, cpuMicros: used.user + used.system, maxRss: process.resourceUsage().maxRSS, logicalEventBytes, segmentReads, semanticSha256: createHash("sha256").update(JSON.stringify(measured.value)).digest("hex"), ...(measured.observation ? { observation: measured.observation } : {}) }));

@@ -26,6 +26,7 @@ import { appendFileSync, closeSync, constants, fstatSync, mkdirSync, openSync, r
 import { isAbsolute, join, resolve } from "node:path";
 
 import { withRecallObservation } from "../dist/build/packages/core/src/recall-observation.js";
+import { CACHE_VIEWS_SCHEMA_VERSION } from "../dist/build/packages/core/src/library-cache.js";
 import { FRAMEWORK_VERSION } from "../dist/build/packages/core/src/framework-version.js";
 import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
 import { AGENT_OUTPUT_MAX_BYTES } from "../dist/build/packages/core/src/runtime-input-contract.js";
@@ -51,7 +52,8 @@ function noteRecall(device, event, cwd, reasonCode, host, observation) {
     } catch (error) {
       if (error?.code !== "EEXIST") return;
     }
-    const line = { schemaVersion: LOG_SCHEMA_VERSION, at: new Date().toISOString(), event, cwd, reasonCode, host, ...(observation === undefined ? {} : { observation, engineVersion: FRAMEWORK_VERSION, projectionVersion: FRAMEWORK_VERSION }) };
+    const outcome = reasonCode === "HOOK_RECALL_ANSWERED" ? "hit" : reasonCode === "HOOK_RECALL_NO_HITS" ? "no-hit" : reasonCode === "HOOK_RECALL_PROMPT_EMPTY" ? "empty" : "refused-or-error";
+    const line = { schemaVersion: LOG_SCHEMA_VERSION, at: new Date().toISOString(), event, cwd, reasonCode, host, ...(observation === undefined ? {} : { outcome, observation, engineVersion: FRAMEWORK_VERSION, projectionVersion: CACHE_VIEWS_SCHEMA_VERSION }) };
     appendFileSync(join(logDirectory, LOG_FILE), `${JSON.stringify(line)}\n`, { mode: 0o600 });
   } catch {
     // A hook never blocks a session, and a line it cannot write changes nothing it answers.
@@ -85,7 +87,14 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
     await runCodexPeerHook(name, body, deviceHome(process.env));
   }
   // DSH retains its existing navigation contract; its next feature batch is separate.
-  if (name === "SubagentStart" && host === "dsh") return `${navigationPointerAnswer(host, name).output}\n`;
+  if (name === "SubagentStart" && host === "dsh") {
+    const result = `${navigationPointerAnswer(host, name).output}\n`;
+    if (process.env.EINZBERN_RECALL_OBSERVATION === "1") {
+      const { observation } = await withRecallObservation(async () => result);
+      noteRecall(deviceHome(process.env), event, absolute(cwd) ?? absolute(body.cwd) ?? process.cwd(), "HOOK_RECALL_PROMPT_EMPTY", host, observation);
+    }
+    return result;
+  }
   switch (name) {
     case "PreToolUse": {
       const directory = absolute(cwd) ?? absolute(body.cwd) ?? process.cwd();

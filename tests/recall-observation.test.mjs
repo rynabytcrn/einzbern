@@ -5,10 +5,11 @@ import { summarizeRecall } from "../scripts/performance/recall-summary.mjs";
 import { withRecallObservation, observeStage, observeEventRead, observeRecall } from "../dist/build/packages/core/src/recall-observation.js";
 test("644: fractional windows, duplicate results and nested spans are separate counts", () => {
   const observation = { correlationId: "one", recallCalls: 1, logicalEventBytes: 10, cpuMicros: 4, elapsedMs: 10, stages: [{ startMs: 0, endMs: 10 }, { startMs: 2, endMs: 8 }] };
-  const a = { at: "2026-11-10T00:00:00.125Z", observation };
+  const a = { at: "2026-11-10T00:00:00.125Z", observation, reasonCode: "HOOK_RECALL_ANSWERED", outcome: "hit" };
   const b = { ...a, at: "2026-11-10T00:00:00.250Z", observation: { ...observation, correlationId: "two" } };
   const result = summarizeRecall([a, a, b], { from: a.at, to: b.at });
   assert.equal(result.eventCount, 1); assert.equal(result.recallCount, 1); assert.equal(result.resultLogCount, 2);
+  assert.equal(result.reasonCounts.HOOK_RECALL_ANSWERED, 2); assert.equal(result.outcomeCounts.hit, 2); assert.equal(result.eventOutcomeCounts.hit, 1);
   assert.equal(result.stageUnionMs, 10); assert.equal(result.logicalEventBytes, 10); assert.equal(result.osIoBytes, null);
 });
 test("644: concurrent observations do not mix counters or payloads", async () => {

@@ -466,6 +466,10 @@ test("R13 D10, SUB-425: a superseded user card is removed: its body is cleared, 
     subject, summary: "Current pademelon shelter instructions", snippet: "current shelter repair steps", body: "Current body for the shelter plan.", supersedes: old.id,
   }));
   const removed = await listKnowledgeMetadata(first.workspace, { at, scope: "user", status: "removed" });
+  const { readRecallAuthority } = await import("../dist/build/packages/core/src/recall-authority.js");
+  const { readRecallCards } = await import("../dist/build/packages/core/src/recall-inputs.js");
+  const { authority } = await readRecallAuthority(first.workspace);
+  for (const status of ["valid", "removed", "all"]) assert.deepEqual(await readRecallCards(first.workspace, { at, status }, authority), await readRecallCards(first.workspace, { at, status }), "645: superseded card selection differential");
   assert.deepEqual(removed.records.map((record) => [record.id, record.removal.reason, record.removal.supersededBy]), [[old.id, "superseded", replacement.id]]);
   assert.deepEqual((await listKnowledgeMetadata(first.workspace, { at, scope: "user", selection: "all" })).records.map((record) => record.id), [replacement.id]);
   await expectReason("KNOWLEDGE_CARD_REMOVED", () => readKnowledgeBody(first.workspace, old.id, { at, scope: "user" }));
@@ -807,6 +811,11 @@ test("R14 (a) D7: a same-subject card B wrote before A's stream arrived is withh
     const listed = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user" }));
     assert.equal(listed.reasonCode, "KNOWLEDGE_LIST_READY", "the crest still reads on either device");
     assert.deepEqual(listed.unresolvedConflicts, [pair], "the pair is named");
+    await asDevice(home, async () => {
+      const { readRecallAuthority } = await import("../dist/build/packages/core/src/recall-authority.js");
+      const { authority } = await readRecallAuthority(workspace);
+      assert.deepEqual(await listKnowledgeMetadata(workspace, { at, scope: "user" }, authority), listed, "645: user-crest family conflict selection equals a fresh authority read");
+    });
     assert.deepEqual(sortedIds(listed.records), [marmot.id], "only the pair leaves default selection");
     const all = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user", selection: "all" }));
     assert.deepEqual(sortedIds(all.records), [marmot.id, ...pair].sort(), "selection all lists both cards of the pair");

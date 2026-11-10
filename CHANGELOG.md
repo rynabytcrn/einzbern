@@ -5,6 +5,20 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+### Codex batch report recipient preflight
+
+- Check a coordinator's batch-marked report against its current durable role,
+  exact manifest prefix and main recipient/host in preparation and native
+  PreToolUse. Reject the demonstrated self-recipient error before sending and
+  point to the current main source without silently changing the arguments.
+  Preserve unmarked authorized messages, settings, historical receipts and native
+  worker final results.
+- Select explicit release versions by actual public compatibility: compatible
+  fixes and internal validation/evidence improvements use patch, new public
+  capabilities use minor, and public compatibility breaks use major. Internal
+  fields, formats and events alone do not select a minor increment. Deliver the
+  same concise guidance through the canonical Skill renderer.
+
 ## 4.5.0
 
 Einzbern and Mana Orchestrate ship in lockstep at 4.5.0.

@@ -137,7 +137,7 @@ test("C.1: generated navigation points Kiro Spec work to its reference and manag
 // the object gate processes receive, and an unresolved target stops only the work that needs it.
 test("U10: the full-text row passes each target's handoff to the native host dispatch, as gate processes receive it", () => {
   const fullText = tableRows(render()).find(([, verbs]) => verbs.includes("`work-project-context`"));
-  for (const phrase of ["each target's `handoff`", "native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`)", "Unresolved targets stop dependent work only", "coordination-only work needs no development target"]) {
+  for (const phrase of ["each target's `handoff`", "native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`)", "Unresolved targets block only dependent work", "coordination-only needs no development target"]) {
     assert.ok(fullText[2].includes(phrase), phrase);
   }
 });
@@ -148,9 +148,9 @@ test("532 / DOT-R01: local queue guidance does not imply a distributed lock or p
   const lines = markdown.split("\n");
   const navigation = lines.indexOf("## Navigation");
   const table = lines.indexOf("| Moment | Verb | What to do |");
-  const note = lines.findIndex((line) => line.startsWith("Local sessions share"));
+  const note = lines.findIndex((line) => line.startsWith("Local writes queue"));
   assert.ok(navigation > 0 && navigation < note && note < table);
-  for (const phrase of ["queued writes without stepping aside", "not cross-device exclusion", "serial handoff", "No platform-native dot hook, background lifecycle manager or sync service is installed"]) {
+  for (const phrase of ["Local writes queue together", "not cross-device exclusion", "serial handoff", "Dot installs no native hook, lifecycle manager or sync service"]) {
     assert.ok(lines[note].includes(phrase), phrase);
   }
   assert.ok(Buffer.byteLength(markdown, "utf8") < 6000, `${Buffer.byteLength(markdown, "utf8")} bytes`);
@@ -251,11 +251,11 @@ test("DOT-R01/R02: generated navigation separates native evidence, rules, schedu
   // INIT065 intentionally replaces the normal dot-only row with a general versioned path.
   // Legacy protocol behavior remains covered by native-tool-evidence and dispatch tests.
   const native = tableRows(markdown).find(([, verbs]) => verbs.includes("`execution-host-prepare`"))[2];
-  for (const phrase of ["normal prompt reports", "Existing class fallback authority", "hard limits", "Parent reads before dispatch, child reads before work", "targets=[]", "scope/permission", "machine-assembled raw returns/reports", "attempt association", "unknown/cancel/finality/review", "Dot model selection is host-managed"]) assert.ok(native.includes(phrase), phrase);
-  for (const phrase of ["parent or patrol reads do not substitute", "at most five new sourced lessons", "repository-relative evidence paths", "No progress in AGENTS", "independent dot target", "Installation, policy changes, restoration and publication retain their separate approvals", "20-minute patrol", "00:00 Asia/Shanghai", "unapproved policy forbids daily enablement", "unknown stays unknown"]) assert.ok(markdown.includes(phrase), phrase);
+  for (const phrase of ["normal prompt reports", "Class fallback", "hard limits", "Parent reads before dispatch, child reads before work", "targets=[]", "scope/permission", "machine-assembled raw returns/reports", "attempt association", "unknown/cancel/finality/review", "Dot model selection is host-managed"]) assert.ok(native.includes(phrase), phrase);
+  for (const phrase of ["New, resumed and delegated sessions read their own live work", "at most five new sourced lessons", "repository-relative evidence paths", "No progress in AGENTS", "independent dot target", "Installation, policy changes, restoration and publication retain their separate approvals", "20-minute patrol", "00:00 Asia/Shanghai", "unapproved policy forbids daily enablement", "unknown stays unknown"]) assert.ok(markdown.includes(phrase), phrase);
   for (const phrase of ["`--binding`", "`--prior`", "specs/host-fallback-v1.md"]) assert.ok(native.includes(phrase), phrase);
   const contract = await readFile(join(repositoryRoot, "specs", "host-fallback-v1.md"), "utf8");
-  for (const phrase of ["never ask the user to hand-fill repeated metadata", "Unknown outcomes require reconciliation before duplicate invocation", "Cancel-accepted records host acknowledgement, not termination", "Pending/unknown tasks keep follow-up responsibility"]) assert.ok(contract.includes(phrase), phrase);
+  for (const phrase of ["normal prompt/report instructions", "never ask the user to hand-fill repeated metadata", "Unknown outcomes require reconciliation before duplicate invocation", "Cancel-accepted records host acknowledgement, not termination", "Pending/unknown tasks keep follow-up responsibility"]) assert.ok(contract.includes(phrase), phrase);
   assert.ok(markdown.includes("engine bundle `specs/` beside `scripts/`, not this Skill"),
     "J02: closed inputs come from the actual shipped contracts, not only flag help or source TS");
   const shared = tableRows(markdown).find(([, verbs]) => verbs.includes("`shared-submit-plan`"))[2];

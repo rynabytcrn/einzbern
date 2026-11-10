@@ -65,7 +65,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Starting work",
     verbs: ["recall", "rule-list"],
-    action: "Prompt recall if sufficient, else `recall --view agent --query \"<task>\" --at <UTC>`. Enabled rules only (`specs/work-practices-v1.md`). New, resumed and delegated sessions read their own live work; parent or patrol reads do not substitute. Specs: `references/kiro-specs.md`. Dot blocker/privacy-publication: `specs/dot-rules-v1.md`.",
+    action: "Recall as needed: `recall --view agent --query \"<task>\" --at <UTC>`. Enabled rules only (`specs/work-practices-v1.md`). New, resumed and delegated sessions read their own live work. Specs: `references/kiro-specs.md`. Dot blocker/privacy-publication: `specs/dot-rules-v1.md`.",
   },
 
   {
@@ -76,12 +76,12 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Need the full text",
     verbs: ["work-show", "work-content-context", "minutes-show", "work-project-context", "execution-prepare", "execution-record", "execution-evidence"],
-    action: "Use each target's `handoff` for native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets stop dependent work only; coordination-only work needs no development target. `specs/context-v1.md`. `--execution-request`: `dispatchAdmitted=true`; selected runner/model/effort, never substitute. Keep stdout/stderr/exit code; no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
+    action: "Use each target's `handoff` for native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets block only dependent work; coordination-only needs no development target. `specs/context-v1.md`. `--execution-request`: `dispatchAdmitted=true`; selected runner/model/effort, never substitute. Keep stdout/stderr/exit code; no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
     moment: "Native dispatch (Codex, Claude, dot, Kiro CLI)",
     verbs: ["execution-policy-resolve", "execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
-    action: "Resolve host/category/rejection policy; not permission. Authorized tools; normal prompt reports. Existing class fallback authority/hard limits. Parent reads before dispatch, child reads before work. scope/permission, targets=[], machine-assembled raw returns/reports, attempt association (`--binding`/`--prior`), unknown/cancel/finality/review: `specs/host-fallback-v1.md`. Dot model selection is host-managed. Codex only: independent main/economy peers, no collector; `collaboration.spawn_agent`; reports threadId/hostId/prompt only; authorized settings/query exits: `docs/codex-native-controller.md`. Kiro: `specs/kiro-host-v1.md`. Other hosts keep their workflow.",
+    action: "Resolve host/category/rejection policy; not permission. Class fallback/hard limits; normal prompt reports. Parent reads before dispatch, child reads before work. scope/permission, targets=[], machine-assembled raw returns/reports, attempt association (`--binding`/`--prior`), unknown/cancel/finality/review: `specs/host-fallback-v1.md`. Dot model selection is host-managed. Codex only: independent main/economy peers, no collector; `collaboration.spawn_agent`; workers native final; coordinator reports to manifest.main; reports threadId/hostId/prompt only; authorized settings/query exits: `docs/codex-native-controller.md`. Kiro: `specs/kiro-host-v1.md`. Other hosts keep their workflow.",
   },
   {
     moment: "Shared submission",
@@ -101,12 +101,12 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "A decision is made",
     verbs: ["minutes-record"],
-    action: "As soon as you judge a decision, record D1–Dn; end with `已记 <minutes key> Dn` (`Recorded <minutes key> Dn` in English). Prior: `--supersedes`/`--withdraws`/`--coexists`.",
+    action: "As soon as you judge, record D1–Dn; end with `已记 <minutes key> Dn` (English: `Recorded <minutes key> Dn`). `--supersedes`/`--withdraws`/`--coexists`.",
   },
   {
     moment: "A lesson is learned",
     verbs: ["knowledge-create", "knowledge-capture"],
-    action: "Capture at most five new sourced lessons per approved batch; read back. Use stable project IDs and repository-relative evidence paths, not device paths. No progress in AGENTS.",
+    action: "Capture at most five new sourced lessons per approved batch; read back. Use stable project IDs and repository-relative evidence paths. No progress in AGENTS.",
   },
   {
     moment: "Configuration / UI",
@@ -167,13 +167,15 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     `Root: nonempty \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\` (absolute), else \`~/${DIRECTORY.device}\`. \`node "<root>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb>\`; install if absent. \`library-resolve --cwd <cwd>\`: \`libraryPath\` for \`--workspace\`, work's \`projectId\` for \`--project-id\` where accepted. \`commands\`/\`<verb> --help\`: flags; UTC \`--at\` if required. Read engine bundle \`specs/\` beside \`scripts/\`, not this Skill.`,
     "",
-    "Local sessions share queued writes without stepping aside, not cross-device exclusion. Remote submission needs serial handoff. No platform-native dot hook, background lifecycle manager or sync service is installed.",
+    "Local writes queue together, not cross-device exclusion. Remote submission needs serial handoff. Dot installs no native hook, lifecycle manager or sync service.",
     "",
     "| Moment | Verb | What to do |",
     "| --- | --- | --- |",
     ...SKILL_NAVIGATION.map(navigationRow),
     "",
     "Coding tasks: read `specs/coding-style-v1.md`.",
+    "",
+    "Versions: compatible fixes/internal changes: patch; new public features: minor; public breaks: major. Explicit `--version`.",
     "",
     "## Three steps",
     "",

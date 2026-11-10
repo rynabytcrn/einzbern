@@ -231,6 +231,27 @@ only**, never authority, enrollment or proof of provider authenticity. A marker
 elsewhere in the body, an old batch marker or a wrapper relabel is not a match.
 Keep the original prepared send arguments and native response unchanged.
 
+For a coordinator's native `send_message_to_thread` report, optional preparation
+and actual PreToolUse both resolve the current native session's validated durable
+role. A line beginning the existing marker above identifies a batch report: its
+exact prefix must be first and match the current role receipt's manifest. Prepare
+also checks that the request work/revision and library belong to that manifest.
+Use `role.receipt.manifest.main.conversationId` as `threadId`; obtain `hostId` from
+the native object containing the main identity at its `conversationPointer`
+(the native omitted-host default is `local`). A self-recipient, other main or wrong
+host is rejected before sending, with the expected main and its source reference.
+Correct the arguments explicitly; the engine never silently redirects a message.
+
+Model category, worker instructions and `agent_id` do not change the coordinator's
+role or main. Workers still return with native final. Missing or damaged known role
+material blocks the dependent marked report until existing governed recovery;
+new turns and cleared turn cache do not replace the durable binding. An old,
+misplaced or incorrectly terminated marker cannot stand for the current batch.
+Ordinary separately authorized messages without a marker keep their existing
+recipient semantics, including self or another conversation. Main's handoff,
+authorized settings attempts, historical receipts and other hosts retain their
+existing contracts. The marker and recipient check grant no message authority.
+
 A worker releases batch occupancy and counts toward `allTerminal` only when its
 native terminal evidence has a unique, consistent identity matching its fixed
 member (when known). Main/coordinator and every fixed member identity remain

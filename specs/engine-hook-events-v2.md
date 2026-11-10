@@ -128,7 +128,12 @@ SEND, native dispatch, UserPromptSubmit and SubagentStart observations to the sa
 current engine guard. This covers independent queries without role enrollment and
 successful main-first sends outside a registered cwd. Active coordinator
 create/fork and unauthorized coordinator-to-main settings overrides are denied at
-PreToolUse. Known damaged protective state fails visibly for its dependent tools.
+PreToolUse. A coordinator's batch-marked SEND also resolves the validated durable
+role and requires its exact current reportPrefix first, plus manifest.main's
+recipient and native host. Self/other-main/host mismatches fail before the side
+effect with the expected source, without redirecting the arguments. Unmarked
+authorized messages preserve their ordinary recipients; worker final and other
+hosts retain their contracts. Known damaged protective state fails visibly for its dependent tools.
 Other hosts keep their existing behavior. Native code mode uses structured inner
 tool identities and arguments; JavaScript, shell and transcripts are never parsed.
 No SubagentStop, collector or background service is added.

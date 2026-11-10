@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile, lstat, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { normalizeCodexPeerBatch } from "./codex-peer-batch.js";
+import { codexPeerReportPrefix, normalizeCodexPeerBatch } from "./codex-peer-batch.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { withFileLock } from "./file-lock.js";
 import { isCodexIndependentCreate, isCodexNativeSpawn } from "./native-tool-evidence.js";
@@ -119,6 +119,10 @@ export async function runCodexPeerHook(event: string, payload: unknown, device: 
   if (event === "PostToolUse" && tool === SEND && hasCodexSettingsOverride(body.tool_input)) await observeCodexSettingsResult(device, body);
   const query = await runCodexQueryGuard(event, body, device);
   if (query.reasonCode !== "HOOK_PEER_NOT_APPLICABLE") return query;
+  if (event === "PreToolUse" && tool === SEND) {
+    const problem = await codexPeerReportRecipientProblem(device, body.session_id, body.tool_input);
+    if (problem) return denyPeer(problem.reasonCode, problem.reason);
+  }
   if (event === "PreToolUse" && tool === SEND && hasCodexSettingsOverride(body.tool_input)) {
     const role = await readCodexPeerRole(device, body.session_id);
     if (role.status === "error") return denyPeer("HOOK_PEER_ROLE_RECOVERY_FAILED", role.reason);
@@ -259,6 +263,62 @@ export type CodexPeerRoleRead =
   | { readonly status: "unbound" }
   | { readonly status: "error"; readonly reason: string }
   | { readonly status: "active" | "retired"; readonly role: CodexPeerRole };
+
+/** The existing report marker binds a batch report, never an ordinary message permit. */
+export async function codexPeerReportRecipientProblem(
+  device: string,
+  sessionId: string | undefined,
+  argumentsValue: unknown,
+  work?: { readonly libraryId: string; readonly workId: string; readonly workRevision: number },
+): Promise<{ reasonCode: string; reason: string } | null> {
+  const input = object(argumentsValue);
+  const prompt = input?.prompt;
+  if (typeof prompt !== "string" || !/^Einzbern-Codex-Peer-Manifest-SHA256:/mu.test(prompt)) return null;
+  const role = sessionId ? await readCodexPeerRole(device, sessionId) : { status: "unbound" as const };
+  if (role.status === "unbound") return null;
+  if (role.status === "error") {
+    return {
+      reasonCode: "HOOK_PEER_ROLE_RECOVERY_FAILED",
+      reason: `Load Mana Orchestrate. ${role.reason}; recover the enrolled role before preparing this batch report.`,
+    };
+  }
+  if (role.status !== "active") {
+    return {
+      reasonCode: "HOOK_PEER_REPORT_BINDING_DENIED",
+      reason: "This batch report needs the current native coordinator session's active durable role. Load Mana Orchestrate and recover the existing role/manifest; native workers return with final.",
+    };
+  }
+  const manifest = role.role.receipt.manifest;
+  const source = `role.receipt.manifest.main (${manifest.main.sourceRef})`;
+  const binding = `batch ${manifest.batchId}/${manifest.attemptId}`;
+  if (!prompt.startsWith(codexPeerReportPrefix(manifest))) {
+    return {
+      reasonCode: "HOOK_PEER_REPORT_BINDING_DENIED",
+      reason: `Report marker differs from the current ${binding}. Read the durable role receipt's reportPrefix and ${source}; put that exact prefix, including LF, first.`,
+    };
+  }
+  const works = [{ workId: manifest.workId, workRevision: manifest.workRevision }, ...manifest.members];
+  if (work && (work.libraryId !== role.role.libraryId || !works.some(member => member.workId === work.workId && member.workRevision === work.workRevision))) {
+    return {
+      reasonCode: "HOOK_PEER_REPORT_BINDING_DENIED",
+      reason: `Report work/library differs from the current ${binding}; read the durable role receipt's manifest and current work before preparing delivery.`,
+    };
+  }
+  // The identity pointer's containing native object supplies hostId; the native
+  // tool's existing omitted-host default is local. No second manifest field.
+  let nativeMain: unknown = manifest.main.raw;
+  for (const segment of manifest.main.conversationPointer.split("/").slice(1, -1)) {
+    nativeMain = object(nativeMain)?.[segment.replaceAll("~1", "/").replaceAll("~0", "~")];
+  }
+  const hostId = object(nativeMain)?.hostId ?? "local";
+  if (input?.threadId !== manifest.main.conversationId || (input.hostId ?? "local") !== hostId) {
+    return {
+      reasonCode: "HOOK_PEER_REPORT_RECIPIENT_DENIED",
+      reason: `This native session is coordinator ${role.role.coordinatorId}. The current ${binding} report must use threadId=${manifest.main.conversationId}, hostId=${String(hostId)} from ${source}. Correct the arguments explicitly; worker return instructions do not change the coordinator's recipient.`,
+    };
+  }
+  return null;
+}
 
 export function codexPeerRoleDirectory(device: string, sessionId: string): string {
   return join(device, "codex-peer-roles", createHash("sha256").update(sessionId).digest("hex"));

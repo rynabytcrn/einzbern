@@ -3,7 +3,7 @@ import { open, realpath } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { parseStrictInstant } from "../../protocol/src/index.js";
-import { readCodexPeerRole } from "./codex-peer-hooks.js";
+import { codexPeerReportRecipientProblem, readCodexPeerRole } from "./codex-peer-hooks.js";
 import { codexNativeGuardHealth } from "./codex-native-health.js";
 import { isCodexNativeSpawn } from "./native-tool-evidence.js";
 import { homedir } from "node:os";
@@ -169,8 +169,10 @@ export async function prepareHostNativeDispatch(state: WorkspaceState, requestVa
   const request = validateHostExecutionRequest(requestValue);
   validateHostSelection(tool.selection);
   if (request.capabilities.hostKind === "codex" && request.capabilities.toolName === "mcp__codex_app__send_message_to_thread") {
+    const sessionId = tool.nativeSessionId ?? process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"];
+    const problem = await codexPeerReportRecipientProblem(home ?? deviceHome(), sessionId, tool.argumentsValue, { libraryId: state.metadata.workspaceId, workId: request.workId, workRevision: request.workRevision });
+    if (problem) throw new HostExecutionError(problem.reason);
     if (tool.codexSettingsIntent !== undefined) {
-      const sessionId = tool.nativeSessionId ?? process.env["CODEX_THREAD_ID"] ?? process.env["CODEX_SESSION_ID"];
       if (!sessionId || (request.capabilities.sessionRef !== undefined && request.capabilities.sessionRef !== sessionId)) throw new HostExecutionError("settings preparation needs the actual native session");
       await verifyCodexSettingsIntent(state, tool.codexSettingsIntent, tool.argumentsValue, home ?? deviceHome());
     } else if (request.action === "coordination" && hasCodexSettingsOverride(tool.argumentsValue)) {

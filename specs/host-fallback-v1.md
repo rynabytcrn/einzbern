@@ -110,6 +110,17 @@ non-peer operations keep the general preparation contract.
 
 ## Codex recipient settings and query continuation
 
+Native Codex coordinator reports carrying the existing batch marker are checked
+in optional preparation and actual PreToolUse against the current session's
+validated durable role, its exact reportPrefix and manifest.main recipient/host.
+Preparation also checks manifest work/revision and library association. Wrong
+self/main/host or stale/misplaced markers fail before sending and identify the
+current source; arguments are never silently redirected. Known role damage uses
+existing recovery. Unmarked authorized messages retain ordinary recipient
+semantics; worker native final and model category do not redefine the coordinator.
+This uses existing fields and grants no new authority. See the native controller
+document for the exact marker and native identity/host source.
+
 Ordinary Codex coordination sends omit `model` and `thinking`; preparation rejects
 their accidental use as recipient settings. Explicitly authorized adjustments use
 the optional engine-only `execution-host-prepare --codex-settings-intent <file>`

@@ -16,15 +16,32 @@ The release triggers remain:
 
 Every approved public release uses a fresh Semantic Version and `v<version>` tag,
 even when it does not change a protocol schema. Select the increment by the
-compatibility effect: breaking public changes use a major increment,
-backward-compatible functionality uses a minor increment, and compatible fixes use
-a patch increment. Both repositories carry the same version in every package
+compatibility effect: breaking an existing public compatibility promise uses a
+major increment; adding public functionality while preserving existing behavior
+uses a minor increment; compatible fixes, internal refactoring, validation and
+evidence improvements use a patch increment. Both repositories carry the same version in every package
 manifest and generated versioned document. An existing changelog section or local
 or remote tag cannot be reused.
 
-From the first release after 2.0.3, a change to a format version or to the shape
-of an event raises the minor version (TCRN-CROSS-MIN-257 D3); such a change is not
-released as a patch.
+Internal fields, format or event-shape changes, schema labels, file counts and
+version labels do not by themselves require a minor increment. Identify the
+actual public consumer and compatibility effect. For example, preserving a
+supported report's recipient contract while rejecting an erroneous self-recipient
+is a patch fix; an internal evidence field that preserves the public contract is
+also patch. A new public command is minor; removing a promised public argument
+without compatibility is major. Record the affected contract and observed behavior
+with the classification. This rule supersedes the unconditional format/event-shape
+minor rule of TCRN-CROSS-MIN-257 D3 for future releases
+(TCRN-CROSS-MIN-20261110-INIT089-DECOMPOSITION D3); published versions stay historical.
+
+The production entry `scripts/release.mjs` requires an explicit `--version` for
+every command. It validates and propagates that value; it does not derive an
+increment from changes, fields or events. `scripts/render-helper-docs.mjs` accepts
+an explicit render version and otherwise uses the engine package version for
+local rendering; it neither selects a release increment nor starts a release.
+Semantic-version parsing/comparison and a test fixture's next-patch value are not
+production selectors. Select the release number after refreshing the published
+baseline and checking occupied versions, then supply it explicitly.
 
 `schemaVersion` identifies a protocol or document contract, independently of the
 package version. It changes when that contract's compatibility semantics change;

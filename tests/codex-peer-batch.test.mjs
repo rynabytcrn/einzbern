@@ -266,6 +266,62 @@ async function deliveryFor(f, events = [], action = "coordination", message = `$
   return { record: recordHostNativeEvents(preparation, events), recipientPointer: "/recipient", correlationPointer: "/message", batchId: f.input.manifest.batchId, batchAttemptId: f.input.manifest.attemptId };
 }
 
+test("batch-marked coordinator sends preflight the durable main before preparation or native side effects", async t => {
+  const f = await fixture(t);
+  const { persistCodexPeerRole, codexPeerRoleDirectory } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
+  const { readFile, writeFile, rm } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const receipt = recordCodexPeerBatch(f.input);
+  const save = extra => persistCodexPeerRole({ receipt, device: f.home, sessionId: "fixture-economy", libraryId: f.state.metadata.workspaceId, actor: "agent:fixture", ...extra });
+  await save();
+  const request = { ...f.request, action: "coordination", category: "main", capabilities: { ...f.request.capabilities, toolName: "mcp__codex_app__send_message_to_thread", sessionRef: "fixture-economy" } };
+  const args = { threadId: "fixture-main", hostId: "local", prompt: `${codexPeerReportPrefix(f.input.manifest)}Synthetic batch report` };
+  const prepare = (argumentsValue, extra = {}) => prepareHostNativeDispatch(f.state, request, { selection, argumentsValue, nativeSessionId: "fixture-economy", ...extra }, f.home);
+  const hook = (tool_input, extra = {}) => runCodexPeerHook("PreToolUse", { session_id: "fixture-economy", turn_id: "no-turn-cache", tool_name: request.capabilities.toolName, tool_input, ...extra }, f.home);
+  const original = structuredClone(args);
+  const prepared = await prepare(args);
+  assert.deepEqual(prepared.attempt.argumentsValue, original);
+  assert.equal(Object.hasOwn(prepared, "codexPeerWorker"), false, "category main does not turn the coordinator's report into worker dispatch");
+  assert.equal((await hook(args, { agent_id: "native-caller" })).output, null);
+  assert.equal((await hook({ ...args, hostId: undefined })).output, null, "native omitted-host default remains local");
+  for (const changed of [{ threadId: "fixture-economy" }, { threadId: "other-main" }, { hostId: "remote" }]) {
+    const input = { ...args, ...changed };
+    await assert.rejects(prepare(input), /role.receipt.manifest.main/);
+    const denied = await hook(input);
+    assert.equal(denied.reasonCode, "HOOK_PEER_REPORT_RECIPIENT_DENIED");
+    assert.match(JSON.parse(denied.output).hookSpecificOutput.permissionDecisionReason, /threadId=fixture-main, hostId=local/);
+    assert.deepEqual(input, { ...original, ...changed }, "a rejected report is never silently redirected");
+  }
+  for (const prompt of [args.prompt.replace(/[a-f0-9]{64}/u, "0".repeat(64)), `Preamble\n${args.prompt}`, args.prompt.replace("\n", "\r\n")]) {
+    await assert.rejects(prepare({ ...args, prompt }), /Report marker differs/);
+    assert.equal((await hook({ ...args, prompt })).reasonCode, "HOOK_PEER_REPORT_BINDING_DENIED");
+  }
+  const mismatchedWork = { ...request, workRevision: request.workRevision + 1 };
+  await assert.rejects(prepareHostNativeDispatch(f.state, mismatchedWork, { selection, argumentsValue: args, nativeSessionId: "fixture-economy" }, f.home), /work\/library differs/);
+  for (const changed of [{}, { threadId: "fixture-economy" }, { threadId: "other-main", hostId: "remote" }]) {
+    const input = { ...args, ...changed, prompt: "Separately authorized ordinary message, no batch marker" };
+    assert.ok((await prepare(input)).attempt);
+    assert.equal((await hook(input)).output, null);
+  }
+  await runCodexPeerHook("UserPromptSubmit", { session_id: "fixture-economy", turn_id: "next-turn", prompt: "Continue" }, f.home);
+  assert.equal((await hook({ ...args, threadId: "fixture-economy" }, { turn_id: "summary-continuation" })).reasonCode, "HOOK_PEER_REPORT_RECIPIENT_DENIED");
+  const file = join(codexPeerRoleDirectory(f.home, "fixture-economy"), "role.json");
+  const good = await readFile(file, "utf8");
+  for (const damage of [() => rm(file), () => writeFile(file, "{broken")]) {
+    await damage();
+    await assert.rejects(prepare(args), /cannot be recovered/);
+    assert.equal((await hook(args)).reasonCode, "HOOK_PEER_ROLE_RECOVERY_FAILED");
+    assert.equal((await hook({ ...args, prompt: "Ordinary authorized message" })).output, null);
+    await writeFile(file, good);
+  }
+  assert.ok((await prepare(args)).attempt, "recovered role restores the same main preflight");
+  await save({ change: { operation: "retire", decidedIn: "minutes:fixture#D1" } });
+  assert.equal((await hook(args)).reasonCode, "HOOK_PEER_REPORT_BINDING_DENIED");
+  assert.ok((await prepare({ ...args, prompt: "Ordinary authorized retired-role message" })).attempt);
+  assert.equal((await hook({ ...args, prompt: "Ordinary authorized retired-role message" })).output, null);
+  assert.equal((await hook({ threadId: "fixture-economy", hostId: "local", prompt: "Main's authorized worker handoff" }, { session_id: "fixture-main" })).output, null);
+});
+
 test("ordinary send preparation and new batch delivery cannot copy sender settings", async t => {
   const f = await fixture(t);
   const request = { ...f.request, action: "coordination", capabilities: { ...f.request.capabilities, toolName: "mcp__codex_app__send_message_to_thread" } };

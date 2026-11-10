@@ -3,7 +3,7 @@ import "./helpers/device-home.mjs";
 import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rename, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -20,6 +20,7 @@ async function cli(args) {
 test("Story649: direct absolute selection, project isolation, fresh reads, actual blobs and negative paths", async (t) => {
   const base = await mkdtemp(join(tmpdir(), "story649-"));
   const local = await mkdtemp(join(process.cwd(), ".story649-"));
+  t.after(() => Promise.all([rm(base, { recursive: true, force: true }), rm(local, { recursive: true, force: true })]));
   const workspace = join(local, "library");
   await initializeLibrary({ root: workspace, createdAt: at });
   const a = (await cli(["project-create", "--workspace", workspace, "--at", at, "--external-key", "ARTIFACT-A", "--name", "A"])).record.id;

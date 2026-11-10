@@ -1,3 +1,4 @@
+import { readRecallAuthority } from "./recall-authority.js";
 import { effectiveProjectState } from "./project-chain.js";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -24,7 +25,7 @@ import { effectiveProjectState } from "./project-chain.js";
 //
 // TCRN-CROSS-STORY-478 R4, AC5 (TCRN-CROSS-SUB-317): on a device that declined the navigation
 // section in AGENTS.md, SessionStart supplies navigation alone. BL-34 always installs
-// SubagentStart: the entry recalls against its native agent_type and adds navigation.
+// SubagentStart: a role-only event adds navigation without treating the role as a task.
 // navigationPointerAnswer itself reads nothing.
 //
 // TCRN-CROSS-SUB-483 (TCRN-CROSS-STORY-529, MIN-257 D6): every recall also says why it answered
@@ -43,7 +44,6 @@ import { resolveLibrary } from "./registry.js";
 import type { ResolvedLibrary } from "./registry.js";
 import { SETTINGS_CATALOG } from "./settings.js";
 import type { SettingKey } from "./settings.js";
-import { materializeLibrary } from "./workspace.js";
 import type { WorkspaceState } from "./workspace.js";
 
 export const HOOK_RECALL_REASON_CODES = Object.freeze(["HOOK_INPUT_INVALID"] as const);
@@ -192,11 +192,12 @@ export async function promptRecallOutcome(request: PromptRecallRequest): Promise
   const library = await confirmedLibrary(request.cwd, request.libraryPath);
   if (library === null) return { answer: null, reasonCode: "HOOK_RECALL_LIBRARY_UNCONFIRMED" };
   const at = request.at ?? currentInstant();
-  const state = await effectiveProjectState(await materializeLibrary(library.libraryPath), library.entry.projectId);
+  const { state: rawState, authority } = await readRecallAuthority(library.libraryPath);
+  const state = await effectiveProjectState(rawState, library.entry.projectId);
   const projectId = isSharedLibrary(state) ? library.entry.projectId : undefined;
   // TCRN-CROSS-SUB-425 (MIN-239 D6): the prompt hook recalls valid cards only, always; no prompt asks
   // it for a removed one.
-  const { cards, digest } = await readRecallCards(library.libraryPath, { at, allowTrailing: true, status: "valid", ...(projectId === undefined ? {} : { projectId }) });
+  const { cards, digest } = await readRecallCards(library.libraryPath, { at, allowTrailing: true, status: "valid", ...(projectId === undefined ? {} : { projectId }) }, authority);
   const tau = numericSetting(state, "retrieval.tau", (value) => Number.isFinite(value) && value >= 0);
   const scopeExcerptBytes = numericSetting(state, "retrieval.scopeExcerptBytes", (value) => Number.isSafeInteger(value) && value > 0);
   const perPromptBytes = numericSetting(state, "injection.perPromptBytes", (value) => Number.isSafeInteger(value) && value > 0);

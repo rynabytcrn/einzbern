@@ -1,3 +1,4 @@
+import { observeRecall } from "./recall-observation.js";
 import type { InvolvedProjects } from "../../protocol/src/index.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
@@ -786,6 +787,7 @@ export class RecallError extends Error {
 
 export function recall(request: RecallRequest): RecallResult {
   let index = cachedIndexes.get(request.cacheKey);
+  observeRecall(index === undefined ? "index-build" : index.checkpoint === request.checkpoint ? "request-index-hit" : "checkpoint-changed");
   let rebuilt = false;
   let moved = { inserted: 0, removed: 0 };
   if (index === undefined) {

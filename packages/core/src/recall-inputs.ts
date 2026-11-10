@@ -1,3 +1,4 @@
+import type { RecallAuthority } from "./recall-authority.js";
 import { involvedProjectsOf } from "./involved-projects.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
@@ -368,7 +369,7 @@ export interface RecallCardReadOptions {
  * cards alone, "all" every card. A removed card is indexed by what it keeps, its subject; it carries its
  * removal, as the list gave it, and its id is named in `removedCardIds`.
  */
-export async function readRecallCards(workspaceRoot: string, options: RecallCardReadOptions): Promise<RecallCardRead> {
+export async function readRecallCards(workspaceRoot: string, options: RecallCardReadOptions, authority?: RecallAuthority): Promise<RecallCardRead> {
   const read = async (scope: KnowledgeStoreScope): Promise<{ readonly cards: readonly RecallKnowledgeInput[]; readonly store: RecallCardStoreRead }> => {
     try {
       const answer = await listKnowledgeMetadata(workspaceRoot, {
@@ -379,7 +380,7 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
         includeExplicitOnly: true,
         limit: Number.MAX_SAFE_INTEGER,
         ...(scope === "user" ? { scope } : {}),
-      });
+      }, authority);
       const records = (answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[];
       const cards = records.map((record) => recallCardFromRecord(record, scope));
       return {

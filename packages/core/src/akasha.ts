@@ -1,3 +1,4 @@
+import { observeEventRead } from "./recall-observation.js";
 import { readConsolidationIndex } from "./consolidation-format.js";
 import type { ConsolidationIndex, ConsolidationSource } from "./consolidation-format.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
@@ -396,6 +397,7 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
     if (code === "EISDIR") fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is not a file`, where);
     throw error;
   }
+  observeEventRead(content.length);
   if (content.length < segment.bytes) fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is shorter than its manifest records`, where);
   const committed = content.subarray(0, segment.bytes);
   return { bytes: committed, digestMatches: sha256(committed) === segment.sha256 };

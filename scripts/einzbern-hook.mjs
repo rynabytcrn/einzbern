@@ -7,7 +7,7 @@
 // The hook holds no rule of its own (D5): which event is answered and what the answer carries is
 // decided here, by the engine version that is current. In the development tree it reads the
 // build (dist/build); a release carries it as one file (TCRN-CROSS-STORY-481).
-// BL-34: SubagentStart recalls from the native agent_type and includes navigation before work.
+// STORY-646: SubagentStart role names are not tasks; retain navigation before work.
 // SessionStart remains a navigation-only fallback. BL-35 adds the narrowly bounded Read guard.
 // Codex peer observations use native tool results; no collector or polling process is started.
 // TCRN-CROSS-SUB-483 (TCRN-CROSS-STORY-529, MIN-257 D6): every prompt recalled here also leaves
@@ -25,6 +25,8 @@
 import { appendFileSync, closeSync, constants, fstatSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { withRecallObservation } from "../dist/build/packages/core/src/recall-observation.js";
+import { FRAMEWORK_VERSION } from "../dist/build/packages/core/src/framework-version.js";
 import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
 import { AGENT_OUTPUT_MAX_BYTES } from "../dist/build/packages/core/src/runtime-input-contract.js";
 // Held equal to scripts/einzbern-hook-launcher.mjs (LOG_DIRECTORY, LOG_FILE, LOG_SCHEMA_VERSION).
@@ -41,7 +43,7 @@ function absolute(value) {
 
 // One line in log/hook.ndjson for one recall, written as the launcher writes its note: the
 // directory 0700, the file 0600, and every failure dropped.
-function noteRecall(device, event, cwd, reasonCode, host) {
+function noteRecall(device, event, cwd, reasonCode, host, observation) {
   try {
     const logDirectory = join(device, LOG_DIRECTORY);
     try {
@@ -49,7 +51,7 @@ function noteRecall(device, event, cwd, reasonCode, host) {
     } catch (error) {
       if (error?.code !== "EEXIST") return;
     }
-    const line = { schemaVersion: LOG_SCHEMA_VERSION, at: new Date().toISOString(), event, cwd, reasonCode, host };
+    const line = { schemaVersion: LOG_SCHEMA_VERSION, at: new Date().toISOString(), event, cwd, reasonCode, host, ...(observation === undefined ? {} : { observation, engineVersion: FRAMEWORK_VERSION, projectionVersion: FRAMEWORK_VERSION }) };
     appendFileSync(join(logDirectory, LOG_FILE), `${JSON.stringify(line)}\n`, { mode: 0o600 });
   } catch {
     // A hook never blocks a session, and a line it cannot write changes nothing it answers.
@@ -123,25 +125,29 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
       const directory = absolute(cwd) ?? absolute(body.cwd) ?? process.cwd();
       const device = deviceHome(process.env);
       let outcome;
+      let observation;
       try {
         // A payload without a prompt string is an empty prompt (HOOK_RECALL_PROMPT_EMPTY).
         const prompt = host === "kiro" && typeof process.env.USER_PROMPT === "string"
           ? process.env.USER_PROMPT
           : (typeof body.prompt === "string" ? body.prompt : "");
-        outcome = await promptRecallOutcome({
+        const operation = () => promptRecallOutcome({
           libraryPath,
           // Native SubagentStart has agent_type, not a task prompt. Never read
           // arbitrary transcript paths or claim task-specific injection from a made-up field.
-          prompt: name === "SubagentStart" ? (typeof body.agent_type === "string" ? body.agent_type : "") : prompt,
+          prompt: name === "SubagentStart" ? "" : prompt,
           event: name,
           host,
           cwd: directory,
         });
+        if (process.env.EINZBERN_RECALL_OBSERVATION === "1") {
+          ({ value: outcome, observation } = await withRecallObservation(operation, value => { observation = value; }));
+        } else { outcome = await operation(); }
       } catch (error) {
-        noteRecall(device, event, directory, typeof error?.reasonCode === "string" ? error.reasonCode : UNCODED_FAILURE, host);
+        noteRecall(device, event, directory, typeof error?.reasonCode === "string" ? error.reasonCode : UNCODED_FAILURE, host, observation);
         throw error;
       }
-      noteRecall(device, event, directory, outcome.reasonCode, host);
+      noteRecall(device, event, directory, outcome.reasonCode, host, observation);
       if (name === "SubagentStart") {
         const pointer = navigationPointerAnswer(host, name);
         return `${hookProtocolOutput(host, name, [...pointer.lines, ...(outcome.answer?.lines ?? [])])}\n`;

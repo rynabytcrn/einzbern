@@ -1,3 +1,5 @@
+import { recallAuthorityState } from "./recall-authority.js";
+import type { RecallAuthority } from "./recall-authority.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 import { scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
@@ -2317,8 +2319,10 @@ interface KnowledgeStorePlace {
   readonly storePath: string;
 }
 
-async function knowledgeStorePlace(workspaceRootInput: string): Promise<KnowledgeStorePlace> {
-  const workspace = await materializeWorkspace(workspaceRootInput);
+async function knowledgeStorePlace(workspaceRootInput: string, authority?: RecallAuthority): Promise<KnowledgeStorePlace> {
+  // Recall may reuse only its raw authority read, never a project-derived state.
+  const workspace = authority === undefined ? await materializeWorkspace(workspaceRootInput) : await recallAuthorityState(workspaceRootInput, authority);
+  if ("configurationProjectId" in workspace) fail("KNOWLEDGE_PATH_INVALID", "knowledge requires raw authority state");
   const workspaceRoot = await boundDirectory(workspaceRootInput);
   // WSR-1: read the ACTIVE binding, not the raw roots array, so this stays the
   // single definition of the authority root across a relocation.
@@ -3399,10 +3403,10 @@ function familySplitScan<T extends CrestScan>(scan: T, state: WorkFamilyState | 
  * goes through, as a user-crest write's guard names them there (TCRN-CROSS-SUB-485) -- read only when
  * the crest holds a pair. A library the read cannot open names none, and every pair stands.
  */
-async function userCrestFamilyState(scan: UserCrestScan, workspaceRoot: string): Promise<WorkFamilyState | null> {
+async function userCrestFamilyState(scan: UserCrestScan, workspaceRoot: string, authority?: RecallAuthority): Promise<WorkFamilyState | null> {
   if (scan.unresolvedConflicts.length === 0) return null;
   try {
-    return await materializeWorkspace(workspaceRoot);
+    return authority === undefined ? await materializeWorkspace(workspaceRoot) : (await knowledgeStorePlace(workspaceRoot, authority)).workspace;
   } catch (error) {
     if (typeof (error as { readonly reasonCode?: unknown }).reasonCode !== "string") throw error;
     return null;
@@ -5600,16 +5604,16 @@ function withheldCardIds(scan: CrestScan): ReadonlySet<string> {
  * unresolved conflict of the answer, and holds neither card out of default selection
  * (familySplitScan); the user crest's cards name their families in the library `workspaceRoot` names.
  */
-export async function listKnowledgeMetadata(workspaceRoot: string, query: KnowledgeListQuery): Promise<Readonly<Record<string, JsonValue>>> {
+export async function listKnowledgeMetadata(workspaceRoot: string, query: KnowledgeListQuery, authority?: RecallAuthority): Promise<Readonly<Record<string, JsonValue>>> {
   const normalized = normalizeListQuery(query);
   assertStoreScope(query.scope);
   if (query.scope === "user") {
     return readUserCrest(query, async (scan) => {
       if (scan === null) return knowledgeListAnswer([], query, normalized, USER_CREST_DISCLOSURE);
-      return mergedCrestList(familySplitScan(scan, await userCrestFamilyState(scan, workspaceRoot)), query, normalized, USER_CREST_DISCLOSURE);
+      return mergedCrestList(familySplitScan(scan, await userCrestFamilyState(scan, workspaceRoot, authority)), query, normalized, USER_CREST_DISCLOSURE);
     });
   }
-  const place = await knowledgeStorePlace(workspaceRoot);
+  const place = await knowledgeStorePlace(workspaceRoot, authority);
   // TCRN-CROSS-INIT-053 R46 (I04): a library whose store was never created holds no card yet: an empty
   // inventory that says so, never a refusal.
   if (await libraryStoreNeverCreated(place)) return knowledgeListAnswer([], query, normalized, ABSENT_STORE_DISCLOSURE);

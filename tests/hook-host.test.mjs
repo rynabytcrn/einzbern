@@ -15,6 +15,7 @@ import test from "node:test";
 import { pathToFileURL } from "node:url";
 
 import { createProject, createWork, initializeLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { withRecallObservation } from "../dist/build/packages/core/src/recall-observation.js";
 import { hookHost } from "../dist/build/packages/core/src/hook-recall.js";
 import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -98,17 +99,21 @@ test("548-AC2: without EINZBERN_HOST, Claude Code and Codex get byte-for-byte th
   }
 });
 
-test("BL34: native SubagentStart recalls by its documented agent_type before first work", async (context) => {
+test("646: native SubagentStart role names produce navigation without task recall", async (context) => {
   const { directory, library } = await registeredProject(context);
   const { runHookEvent } = await import(pathToFileURL(join(repositoryRoot, "scripts/einzbern-hook.mjs")).href);
   for (const host of ["claude-code", "codex"]) {
     process.env.EINZBERN_HOST = host;
     // Both native interfaces provide agent_type, not the delegated task prompt.
     const payload = { hook_event_name: "SubagentStart", cwd: directory, agent_id: "agent-1", agent_type: "zebrafish" };
-    const answer = JSON.parse(await runHookEvent({ event: "subagent-start", payload, libraryPath: library, cwd: directory }));
+    const observed = await withRecallObservation(() => runHookEvent({ event: "subagent-start", payload, libraryPath: library, cwd: directory }));
+    const answer = JSON.parse(observed.value);
+    assert.equal(observed.observation.materializations, 0);
+    assert.equal(observed.observation.segmentReads, 0);
+    assert.equal(observed.observation.recallCalls, 0);
     assert.equal(answer.hookSpecificOutput.hookEventName, "SubagentStart");
     assert.match(answer.hookSpecificOutput.additionalContext, /Load and follow the Mana Orchestrate skill/u);
-    assert.match(answer.hookSpecificOutput.additionalContext, /Zebrafish tank · HOOK-STORY/u);
+    assert.doesNotMatch(answer.hookSpecificOutput.additionalContext, /Zebrafish tank · HOOK-STORY/u);
     const empty = JSON.parse(await runHookEvent({ event: "subagent-start", payload: { prompt: PROMPT }, libraryPath: library, cwd: directory }));
     assert.doesNotMatch(empty.hookSpecificOutput.additionalContext, /HOOK-STORY/u, "a made-up native prompt field is not treated as task evidence");
   }

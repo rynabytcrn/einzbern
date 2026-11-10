@@ -183,3 +183,23 @@ test("verified cleanup clears redundant copies and keeps the target fully replay
   for (const source of f.sources) await assert.rejects(readFile(join(source.path, "manifest.json")), { code: "ENOENT" });
   assert.equal((await materializeWorkspaceFromGenesis(f.to)).projects.length, 3);
 });
+
+test("647: validated source snapshots preserve consolidated state and corrupt cache falls back", async t => {
+  const f = await fixture(t);
+  for (const source of f.sources) await setWorkspaceSetting(source.path, { key: "storage.snapshotEveryEvents", value: "1", occurredAt: at });
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { readCacheSnapshot } = await import("../dist/build/packages/core/src/library-cache.js");
+  const expected = await materializeWorkspaceFromGenesis(f.to);
+  const first = await materializeLibrary(f.to);
+  const second = await materializeLibrary(f.to);
+  assert.deepEqual(first, expected);
+  assert.deepEqual(second, expected);
+  for (const source of f.sources) assert.notEqual(await readCacheSnapshot(source.id), null);
+  // A damaged derived checkpoint is not authority. Full archive validation still
+  // precedes cache use and the normal replay rebuilds its disposable projection.
+  const { readdir } = await import("node:fs/promises");
+  const snapshots = join(cachePath(f.sources[0].id), "snapshots");
+  for (const name of await readdir(snapshots)) if (name.endsWith(".json")) await writeFile(join(snapshots, name), "broken cache\n");
+  assert.deepEqual(await materializeLibrary(f.to), expected);
+});

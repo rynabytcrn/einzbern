@@ -1,6 +1,7 @@
 import { validateSettingValue } from "./settings.js";
 import { bindProjectArtifactPath, projectArtifactBinding } from "./artifact-path-binding.js";
 import { assertGeneratedArtifactsRoot } from "./artifact-store.js";
+import { observeMaterialization, observeStage, observeCheckpoint, observeCacheReason } from "./recall-observation.js";
 import { WORK_CONTENT_KEY, workContent, validateWorkContent, contentFail } from "./work-content.js";
 import type { ContentWorkKind } from "./work-content.js";
 import { WORK_CONTENT_POLICY_KEY, readWorkContentPolicy, validateWorkContentPolicy, workContentPolicyApplies, workContentRolloutReadiness } from "./work-content-templates.js";
@@ -3353,10 +3354,10 @@ interface LibraryReplayResult {
  * device held first is renamed with an alias. The result does not depend on which device
  * merges: the order and the renaming are both deterministic.
  */
-function replayLibrary(library: Library, read: LibraryReadShape, cached?: LibrarySeed): LibraryReplayResult {
+function replayLibrary(library: Library, read: LibraryReadShape, cached?: LibrarySeed, sourceStates?: readonly WorkspaceState[]): LibraryReplayResult {
   if (read.consolidation !== undefined) {
     const { index, sources } = read.consolidation;
-    const inputs = sources.map(({ source, read: sourceRead }) => ({ source, state: replayLibrary({ root: `${library.root}/${source.archive}`, manifest: source.manifest }, sourceRead).state }));
+    const inputs = sources.map(({ source, read: sourceRead }, index) => ({ source, state: sourceStates?.[index] ?? replayLibrary({ root: `${library.root}/${source.archive}`, manifest: source.manifest }, sourceRead).state }));
     const base = consolidateStates(index, inputs);
     const entries = read.events.filter(entry => entry.event.sequence > (index.primaryVersionVector[entry.deviceId] ?? 0));
     const origins = new Map<EventRecord, ReplayOrigin>(entries.map(entry => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
@@ -3473,8 +3474,9 @@ function snapshotInterval(state: WorkspaceState): number {
 async function cachedSeed(library: Library, read: LibraryRead): Promise<LibrarySeed | null> {
   try {
     const snapshot = await readCacheSnapshot(library.manifest.libraryId);
-    if (snapshot === null) return null;
+    if (snapshot === null) { observeCacheReason("replay-seed-absent"); return null; }
     const seeded = seedFromSnapshot(snapshot, read);
+    observeCacheReason(seeded === null ? "replay-seed-incompatible" : "replay-seed-validated");
     if (seeded === null) await discardCacheSnapshot(library.manifest.libraryId);
     return seeded;
   } catch {
@@ -3546,7 +3548,18 @@ async function refreshLibraryCache(
  * starts again from genesis; the result is the same state either way.
  */
 async function replayLibraryResultThroughCache(library: Library, read: LibraryRead): Promise<LibraryReplayResult> {
-  if (read.consolidation !== undefined) return replayLibrary(library, read);
+  if (read.consolidation !== undefined) {
+    // readAllStreams has already validated every archived byte, source manifest and
+    // consolidation binding. Reuse only each source's checkpoint-validated replay;
+    // the consolidation reducer and the live post-base tail still run normally.
+    observeCacheReason("consolidation-source-replay-reuse-full-byte-validation");
+    const sourceStates: WorkspaceState[] = [];
+    for (const { source, read: sourceRead } of read.consolidation.sources) {
+      const sourceLibrary = { root: `${library.root}/${source.archive}`, manifest: source.manifest };
+      sourceStates.push((await replayLibraryResultThroughCache(sourceLibrary, sourceRead)).state);
+    }
+    return replayLibrary(library, read, undefined, sourceStates);
+  }
   const cached = await cachedSeed(library, read);
   let replay: LibraryReplayResult | null = null;
   if (cached !== null) {
@@ -3568,8 +3581,12 @@ async function replayLibraryThroughCache(library: Library, read: LibraryRead): P
 
 /** Read every stream of a library and replay them merged, through this device's cache. */
 export async function materializeLibrary(libraryOrRoot: Library | string, options: LibraryReadOptions = {}): Promise<WorkspaceState> {
+  observeMaterialization();
   const library = typeof libraryOrRoot === "string" ? await openLibrary(libraryOrRoot) : libraryOrRoot;
-  return replayLibraryThroughCache(library, await readAllStreams(library.root, options));
+  const read = await observeStage("authority-read", () => readAllStreams(library.root, options));
+  const state = await observeStage("replay", () => replayLibraryThroughCache(library, read));
+  observeCheckpoint(state.headEventHash);
+  return state;
 }
 
 /** The keys a record was renamed from, and the records renamed away from its key (TCRN-CROSS-STORY-468 R5). */

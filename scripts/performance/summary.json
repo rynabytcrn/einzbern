@@ -1,0 +1,79 @@
+{
+  "samples": 45,
+  "fixture": "22 work records, one project, no knowledge cards; fixed at, unchanged authority; not production SLA",
+  "semanticDigests": [
+    "feb74d365321aeafe070340541657306574f89cb8d588d484e3a86ae74448b26"
+  ],
+  "groups": {
+    "baseline": {
+      "n": 15,
+      "elapsedMs": {
+        "p50": 78.25407200000001,
+        "p95": 93.316452
+      },
+      "cpuMicros": {
+        "p50": 101020,
+        "p95": 119180
+      },
+      "maxRss": {
+        "p50": 80788,
+        "p95": 81524
+      },
+      "logicalEventBytes": {
+        "p50": 182124,
+        "p95": 182124
+      },
+      "segmentReads": {
+        "p50": 2,
+        "p95": 2
+      }
+    },
+    "candidate": {
+      "n": 15,
+      "elapsedMs": {
+        "p50": 51.104355999999996,
+        "p95": 68.642087
+      },
+      "cpuMicros": {
+        "p50": 73987,
+        "p95": 91421
+      },
+      "maxRss": {
+        "p50": 81604,
+        "p95": 82640
+      },
+      "logicalEventBytes": {
+        "p50": 91062,
+        "p95": 91062
+      },
+      "segmentReads": {
+        "p50": 1,
+        "p95": 1
+      }
+    },
+    "candidate-observed": {
+      "n": 15,
+      "elapsedMs": {
+        "p50": 51.595879,
+        "p95": 64.017675
+      },
+      "cpuMicros": {
+        "p50": 77621,
+        "p95": 90291
+      },
+      "maxRss": {
+        "p50": 81976,
+        "p95": 82888
+      },
+      "logicalEventBytes": {
+        "p50": 91062,
+        "p95": 91062
+      },
+      "segmentReads": {
+        "p50": 1,
+        "p95": 1
+      }
+    }
+  },
+  "logicalBytesRatio": 0.5
+}

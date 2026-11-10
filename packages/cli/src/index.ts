@@ -1,4 +1,5 @@
 import { isProjectArtifactBinding, resolveProjectArtifactBinding } from "../../core/src/artifact-path-binding.js";
+import { readRecallAuthority } from "../../core/src/recall-authority.js";
 import { MEMORY_LEASE_VARIABLE } from "../../../scripts/lib/memory-budget.mjs";
 import { readWorkContentImpact } from "../../core/src/work-requirements.js";
 import { workContent, workContentDraft, workContentMissing } from "../../core/src/work-content.js";
@@ -3973,7 +3974,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     if (query.length === 0 || query.length > RUNTIME_CAPACITY.stringCodeUnits || !query.isWellFormed()) fail("CLI_ARGUMENT_MALFORMED", "query");
     const limit = values.limit === undefined ? undefined : integerValue(values, "limit");
     if (limit !== undefined && (limit < 1 || !Number.isSafeInteger(limit))) fail("CLI_ARGUMENT_MALFORMED", "limit");
-    const state = await effectiveProjectState(await validateWorkspace(workspace), values["project-id"]);
+    const { state: rawState, authority } = await readRecallAuthority(workspace, true);
+    const state = await effectiveProjectState(rawState, values["project-id"]);
     // Legacy project selection chooses configuration only; shared libraries also isolate corpora.
     const projectId = isSharedLibrary(state) ? values["project-id"] : undefined;
     const settingValue = (key: string): string | undefined => state.settings.find((entry) => entry.key === key)?.value;
@@ -4011,7 +4013,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       at: values.at ?? "",
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
       ...(cardStatus === "valid" ? {} : { status: cardStatus }),
-    });
+    }, authority);
     // TCRN-CROSS-STORY-474 R1: what the index holds is decided in one place (recall-inputs.ts), so
     // the verb and the prompt hook cannot index differently: the Stories, Incidents, Initiatives and
     // Epics with their goal, body and parent titles, every minutes record, and the cards.

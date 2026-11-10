@@ -4872,7 +4872,7 @@ const BOOT = __PORTAL_BOOT__;
     ? [...new Set((BOOT.libraries || []).map((library) => library.libraryId))]
     : entry.allowedValues || [];
   const deviceControlFor = (entry) => {
-    const current = entry.currentValue ?? "";
+    const current = entry.deviceValue ?? entry.currentValue ?? "";
     // Named `name`, not `label`: the design proof pins the project controls' own markup by its text.
     const name = settingLabel(entry.key);
     if (entry.controlType === "number") return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(name)}</span><input class="tcrn-input tcrn-number-input" type="number" min="${esc(entry.min)}" ${entry.max === undefined ? "" : `max="${esc(entry.max)}"`} step="1" value="${esc(current)}" data-machine-control="${esc(entry.key)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-cli-action="machine-settings-set" aria-label="${esc(name)}"></label>`;
@@ -4882,7 +4882,7 @@ const BOOT = __PORTAL_BOOT__;
   };
   const controlFor = (entry) => {
     const values = [...(entry.allowedValues || [])];
-    const current = entry.currentValue ?? "";
+    const current = entry.deviceValue ?? entry.currentValue ?? "";
     const id = controlId("setting-control", entry.key);
     const label = settingLabel(entry.key);
     if (entry.controlType === "boolean") return `<label class="tcrn-switch" data-switch-state="${current === (entry.trueValue || "allowed") ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" data-setting-value="${esc(entry.trueValue || "allowed")}" ${current === (entry.trueValue || "allowed") ? "checked" : ""}><span class="tcrn-switch__label">${esc(current === (entry.trueValue || "allowed") ? t("config.enabled") : t("config.disabled"))}</span></label>`;

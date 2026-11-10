@@ -1,3 +1,4 @@
+import { scopedWorkspaceState } from "./project-scope.js";
 import { pathIsInside } from "./path-containment.js";
 import { resolvePortablePath } from "./portable-path.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
@@ -43,7 +44,7 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // manifest alone; the blob is copied and read back before the lock is taken (putArtifact).
 
 import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { access, constants, lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, resolve } from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 
@@ -234,11 +235,15 @@ export async function assertGeneratedArtifactsRoot(
   if (pathIsInside(device, root)) {
     fail("ARTIFACT_PATH_INVALID", `${ARTIFACT_ROOT_SETTING_KEY} must be outside the machine control home`);
   }
-  return boundDirectory(root);
+  const directory = await boundDirectory(root);
+  if (pathIsInside(device, directory) || pathIsInside(workspace, directory)) fail("ARTIFACT_PATH_INVALID", "artifact directory resolves inside a control tree");
+  try { await access(directory, constants.W_OK); }
+  catch (error) { fail("ARTIFACT_PATH_INVALID", `${directory}: ${String((error as NodeJS.ErrnoException).code ?? error)}`); }
+  return directory;
 }
 
-async function effectiveArtifactsSetting(workspaceRoot: string): Promise<string> {
-  return artifactsSettingOf(await materializeWorkspace(workspaceRoot));
+async function effectiveArtifactsSetting(workspaceRoot: string, projectId?: string): Promise<string> {
+  return artifactsSettingOf(scopedWorkspaceState(await materializeWorkspace(workspaceRoot), projectId));
 }
 
 // The blob root a library's state sets, or the catalog's default.
@@ -255,7 +260,8 @@ function artifactsSettingOf(state: Pick<WorkspaceState, "settings">): string {
 // TCRN-CROSS-STORY-469 R1: a library keeps the artifact manifest in its artifacts/ directory; the
 // blobs go to the configured root, which is that same directory unless the operator names
 // another. An old-layout workspace's manifest stays in its control directory, read-only.
-async function manifestPath(workspaceRoot: string): Promise<string> {
+async function manifestPath(workspaceRoot: string, projectId?: string): Promise<string> {
+  if (projectId !== undefined) return resolve(workspaceRoot, DIRECTORY.artifacts, `artifact-manifest-${sha256(Buffer.from(projectId))}.json`);
   return await hasLibraryManifest(workspaceRoot)
     ? resolve(workspaceRoot, DIRECTORY.artifacts, ARTIFACT_MANIFEST_FILE_NAME)
     : resolve(workspaceRoot, WORKSPACE_CONTROL_DIRECTORY, ARTIFACT_MANIFEST_FILE_NAME);
@@ -287,8 +293,8 @@ function validateManifest(value: JsonValue): ArtifactManifestDocument {
   return { schemaVersion: ARTIFACT_MANIFEST_SCHEMA_VERSION, artifacts };
 }
 
-async function readManifest(workspaceRoot: string): Promise<ArtifactManifestDocument> {
-  const path = await manifestPath(workspaceRoot);
+async function readManifest(workspaceRoot: string, projectId?: string): Promise<ArtifactManifestDocument> {
+  const path = await manifestPath(workspaceRoot, projectId);
   let stats;
   try {
     stats = await lstat(path);
@@ -330,7 +336,7 @@ async function writeAtomic(path: string, content: Buffer): Promise<void> {
   }
 }
 
-async function writeManifest(workspaceRoot: string, document: ArtifactManifestDocument): Promise<void> {
+async function writeManifest(workspaceRoot: string, document: ArtifactManifestDocument, projectId?: string): Promise<void> {
   const serialised = canonicalJson({
     schemaVersion: document.schemaVersion,
     artifacts: document.artifacts.map((entry) => ({
@@ -344,7 +350,7 @@ async function writeManifest(workspaceRoot: string, document: ArtifactManifestDo
   if (Buffer.byteLength(serialised, "utf8") > ARTIFACT_BYTES_MAX) {
     fail("ARTIFACT_MANIFEST_INVALID", `${ARTIFACT_MANIFEST_FILE_NAME} would exceed the ${String(ARTIFACT_BYTES_MAX)} byte ceiling`);
   }
-  const path = await manifestPath(workspaceRoot);
+  const path = await manifestPath(workspaceRoot, projectId);
   const staging = `${path}.tmp-${String(process.pid)}`;
   await rm(staging, { force: true });
   await writeFile(staging, serialised, "utf8");
@@ -403,7 +409,7 @@ const ARTIFACT_PUT_ATTEMPTS = 4;
  */
 export async function putArtifact(
   workspaceRootInput: string,
-  options: { readonly file: string; readonly at: string },
+  options: { readonly file: string; readonly at: string; readonly projectId?: string },
 ): Promise<ArtifactPutReceipt> {
   if (typeof workspaceRootInput !== "string" || workspaceRootInput.length === 0) {
     fail("ARTIFACT_INPUT_INVALID", "workspace root");
@@ -419,18 +425,18 @@ export async function putArtifact(
   let copied: CopiedArtifact | null = null;
   for (let attempt = 1; attempt <= ARTIFACT_PUT_ATTEMPTS; attempt += 1) {
     const state = await materializeWorkspace(workspace);
-    const root = await assertGeneratedArtifactsRoot(workspace, artifactsSettingOf(state));
+    const root = await assertGeneratedArtifactsRoot(workspace, artifactsSettingOf(scopedWorkspaceState(state, options.projectId)));
     if (copied === null || copied.root !== root) copied = await copyArtifactBlob(root, file);
     const blob = copied;
     const receipt = await withWorkspaceWriteLock(workspace, async (locked) => {
       if (!(await libraryUnchangedSince(state)) || !(await blobInPlace(blob))) return null;
-      return recordArtifact(locked, blob, at);
+      return recordArtifact(locked, blob, at, options.projectId);
     });
     if (receipt !== null) return receipt;
   }
   return withWorkspaceWriteLock(workspace, async (locked) => {
-    const root = await assertGeneratedArtifactsRoot(locked, await effectiveArtifactsSetting(locked));
-    return recordArtifact(locked, await copyArtifactBlob(root, file), at);
+    const root = await assertGeneratedArtifactsRoot(locked, await effectiveArtifactsSetting(locked, options.projectId));
+    return recordArtifact(locked, await copyArtifactBlob(root, file), at, options.projectId);
   });
 }
 
@@ -497,8 +503,8 @@ async function copyArtifactBlob(root: string, file: string): Promise<CopiedArtif
 }
 
 // The second half, under the lock (TCRN-CROSS-SUB-500): index the blob, replacing the manifest.
-async function recordArtifact(workspace: string, blob: CopiedArtifact, at: string): Promise<ArtifactPutReceipt> {
-  const manifest = await readManifest(workspace);
+async function recordArtifact(workspace: string, blob: CopiedArtifact, at: string, projectId?: string): Promise<ArtifactPutReceipt> {
+  const manifest = await readManifest(workspace, projectId);
   const entry: ArtifactManifestEntry = {
     sha256: blob.digest,
     bytes: blob.bytes,
@@ -508,7 +514,7 @@ async function recordArtifact(workspace: string, blob: CopiedArtifact, at: strin
   };
   const artifacts = [...manifest.artifacts.filter((candidate) => candidate.sha256 !== blob.digest), entry]
     .sort((left, right) => compareCanonicalText(left.sha256, right.sha256));
-  await writeManifest(workspace, { schemaVersion: ARTIFACT_MANIFEST_SCHEMA_VERSION, artifacts });
+  await writeManifest(workspace, { schemaVersion: ARTIFACT_MANIFEST_SCHEMA_VERSION, artifacts }, projectId);
 
   return {
     schemaVersion: ARTIFACT_PUT_SCHEMA_VERSION,
@@ -538,10 +544,10 @@ export interface ArtifactListing {
  * differs on every machine, and a receipt that carries one turns a portable manifest
  * into a machine-bound one the moment anybody stores the receipt.
  */
-export async function listArtifacts(workspaceRootInput: string): Promise<ArtifactListing> {
+export async function listArtifacts(workspaceRootInput: string, projectId?: string): Promise<ArtifactListing> {
   const workspace = await boundDirectory(workspaceRootInput);
-  const root = await assertGeneratedArtifactsRoot(workspace, await effectiveArtifactsSetting(workspace));
-  const manifest = await readManifest(workspace);
+  const root = await assertGeneratedArtifactsRoot(workspace, await effectiveArtifactsSetting(workspace, projectId));
+  const manifest = await readManifest(workspace, projectId);
   const onDisk = new Set((await readdir(root)).filter((name) => name.endsWith(BLOB_SUFFIX)));
   const indexed = new Set(manifest.artifacts.map((entry) => `${entry.sha256}${BLOB_SUFFIX}`));
   return {
@@ -566,10 +572,10 @@ export interface ArtifactVerification {
  * an operator one name when what they need is the extent of the damage. The reason code
  * carries the verdict, which is the same division `verifySnapshotManifest` makes.
  */
-export async function verifyArtifacts(workspaceRootInput: string): Promise<ArtifactVerification> {
+export async function verifyArtifacts(workspaceRootInput: string, projectId?: string): Promise<ArtifactVerification> {
   const workspace = await boundDirectory(workspaceRootInput);
-  const root = await assertGeneratedArtifactsRoot(workspace, await effectiveArtifactsSetting(workspace));
-  const manifest = await readManifest(workspace);
+  const root = await assertGeneratedArtifactsRoot(workspace, await effectiveArtifactsSetting(workspace, projectId));
+  const manifest = await readManifest(workspace, projectId);
   const findings: ArtifactVerifyFinding[] = [];
   for (const entry of manifest.artifacts) {
     const target = blobPath(root, entry.sha256);

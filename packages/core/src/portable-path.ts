@@ -1,3 +1,4 @@
+import { isProjectArtifactBinding, resolveProjectArtifactBinding } from "./artifact-path-binding.js";
 // SPDX-License-Identifier: Apache-2.0
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
@@ -6,12 +7,14 @@ import { deviceHome } from "./device-home.js";
 
 const PORTABLE_PATH_BINDINGS = ["paths.artifacts", "paths.knowledgeArticles"] as const;
 export function isPortablePathBinding(value: string): boolean {
+  if (isProjectArtifactBinding(value)) return true;
   const [name, ...parts] = value.split("/");
   return PORTABLE_PATH_BINDINGS.some(key => name === `binding:${key}`) &&
     parts.every(part => part.length > 0 && part !== "." && part !== ".." && !/[\\\u0000-\u001f\u007f:]/u.test(part));
 }
 /** Shared declarations carry only the logical name; the existing machine settings own location. */
 export function resolvePortablePath(root: string, value: string, home: string = deviceHome()): string {
+  if (isProjectArtifactBinding(value)) return resolveProjectArtifactBinding(value, home);
   if (!value.startsWith("binding:")) return isAbsolute(value) ? resolve(value) : resolve(root, value);
   const [key, ...suffix] = value.slice("binding:".length).split("/");
   if (!isPortablePathBinding(value)) throw Object.assign(new Error("unknown portable path binding"), { reasonCode: "PATH_BINDING_INVALID" });

@@ -1,3 +1,4 @@
+import { isProjectArtifactBinding, resolveProjectArtifactBinding } from "../../core/src/artifact-path-binding.js";
 import { MEMORY_LEASE_VARIABLE } from "../../../scripts/lib/memory-budget.mjs";
 import { readWorkContentImpact } from "../../core/src/work-requirements.js";
 import { workContent, workContentDraft, workContentMissing } from "../../core/src/work-content.js";
@@ -1437,6 +1438,7 @@ async function writeSettingsState(io: CliIo, rawState: Awaited<ReturnType<typeof
     source: current.source ?? null,
     setting: setting ?? null,
     effectiveValue: current.currentValue,
+    ...(key === "workspace.generatedArtifactsPath" && typeof current.currentValue === "string" && isProjectArtifactBinding(current.currentValue) ? { deviceValue: resolveProjectArtifactBinding(current.currentValue) } : {}),
     persistence: "committed",
     projections: { ...await projectionRefreshReadback(rawState, projectId), status: "refresh-required", targets: affectedProjectionTargets(rawState, projectId), includesLibraryDefaults: projectId === undefined, command: "agents-render", note: "Saving declarations does not refresh inherited outputs on other targets or devices." },
   } as const;
@@ -1745,9 +1747,9 @@ export const COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.fre
   // CLAUDE.md, rendered against the library's records. --project names a directory of the project
   // (the current one when left out), and this device's registry gives the project and its library.
   { name: "agents-render", availability: "cli", mutates: true, flags: [{ name: "project", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "artifact-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
-  { name: "artifact-put", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "file", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "artifact-verify", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
+  { name: "artifact-list", availability: "cli", mutates: false, flags: [{ name: "project-id", required: false, valueKind: "string" }, { name: "workspace", required: false, valueKind: "string" }] },
+  { name: "artifact-put", availability: "cli", mutates: true, flags: [{ name: "project-id", required: false, valueKind: "string" }, { name: "workspace", required: false, valueKind: "string" }, { name: "file", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
+  { name: "artifact-verify", availability: "cli", mutates: false, flags: [{ name: "project-id", required: false, valueKind: "string" }, { name: "workspace", required: false, valueKind: "string" }] },
   { name: "chain-declare", availability: "cli", mutates: true, flags: [{ name: "project-id", required: false, valueKind: "string" }, { name: "workspace", required: false, valueKind: "string" }, { name: "role", required: true, valueKind: "string" }, { name: "coordination-library-id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "chain-identity", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-467 R4: replay a chain from genesis without trusting any view, and
@@ -3425,7 +3427,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       typedValues: presentedSettings.map(entry => ({ ...annotateConfigValue(entry.key, entry.currentValue), effectiveScope: entry.scope, effectiveSource: entry.source ?? null })),
       projectBindings: state.configRecords.filter(record => record.collection === "chain" && record.key !== "identity"),
       // TCRN-CROSS-INIT-053 R47 (c1-B): a coordination chain lists its own runtime settings, each for the whole library.
-      settings: presentedSettings }));
+      settings: presentedSettings.map(entry => entry.key === "workspace.generatedArtifactsPath" && typeof entry.currentValue === "string" && isProjectArtifactBinding(entry.currentValue) ? { ...entry, deviceValue: resolveProjectArtifactBinding(entry.currentValue) } : entry) }));
     return;
   }
   if (command === "install-manifest") {
@@ -3596,23 +3598,23 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // reads it back before it takes the lock. No chain event is appended — the manifest is the record,
     // and keeping the put off the chain is what lets the blob root be a directory the engine does not
     // own.
-    const values = parseArguments(rest, ["workspace", "file", "at", "timeout-ms"]);
+    const values = parseArguments(rest, ["project-id", "workspace", "file", "at", "timeout-ms"]);
     required(values, ["workspace", "file", "at"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
-    io.write(canonicalJson(await putArtifact(workspace, { file: values.file ?? "", at })));
+    io.write(canonicalJson(await putArtifact(workspace, { file: values.file ?? "", at, ...(values["project-id"] ? { projectId: values["project-id"] } : {}) })));
     return;
   }
   if (command === "artifact-list") {
-    const values = parseArguments(rest, ["workspace"]);
+    const values = parseArguments(rest, ["project-id", "workspace"]);
     required(values, ["workspace"]);
-    io.write(canonicalJson(await listArtifacts(values.workspace ?? "")));
+    io.write(canonicalJson(await listArtifacts(values.workspace ?? "", values["project-id"])));
     return;
   }
   if (command === "artifact-verify") {
-    const values = parseArguments(rest, ["workspace"]);
+    const values = parseArguments(rest, ["project-id", "workspace"]);
     required(values, ["workspace"]);
-    io.write(canonicalJson(await verifyArtifacts(values.workspace ?? "")));
+    io.write(canonicalJson(await verifyArtifacts(values.workspace ?? "", values["project-id"])));
     return;
   }
   if (command === "snapshot-manifest") {

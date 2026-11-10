@@ -1,3 +1,6 @@
+import { validateSettingValue } from "./settings.js";
+import { bindProjectArtifactPath, projectArtifactBinding } from "./artifact-path-binding.js";
+import { assertGeneratedArtifactsRoot } from "./artifact-store.js";
 import { WORK_CONTENT_KEY, workContent, validateWorkContent, contentFail } from "./work-content.js";
 import type { ContentWorkKind } from "./work-content.js";
 import { WORK_CONTENT_POLICY_KEY, readWorkContentPolicy, validateWorkContentPolicy, workContentPolicyApplies, workContentRolloutReadiness } from "./work-content-templates.js";
@@ -5417,13 +5420,22 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
   readonly value: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertProjectSettingKey(input.key);
+  let value = input.value;
+  if (input.key === "workspace.generatedArtifactsPath" && isAbsolute(value)) {
+    if (!input.configurationProjectId) throw new SettingsError("SETTINGS_VALUE_INVALID", "an absolute artifact directory requires an explicit project scope");
+    const state = await materializeWorkspace(workspaceRoot);
+    assertScopedSettingWriteConsistent(state, input.key, value, input.configurationProjectId);
+    validateSettingValue(input.key, value, workspaceRoot);
+    await assertGeneratedArtifactsRoot(workspaceRoot, value);
+    value = projectArtifactBinding(state.metadata.workspaceId, input.configurationProjectId);
+  }
   // TCRN-CROSS-SUB-481: the projection of config/project.json follows the append under the same lock;
   // the read and the delta stay outside it.
   return appendEvent(workspaceRoot, (state) => {
       const current = state.settings.find((record) => record.key === input.key && record.projectId === input.configurationProjectId);
       const record = createWorkspaceSettingRecord(
         input.key,
-        input.value,
+        value,
         (current?.revision ?? 0) + 1,
         input.occurredAt,
         workspaceRoot,
@@ -5451,7 +5463,13 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
           record,
         ]),
       };
-    }, input, (root, committed) => projectConfiguration(root, committed));
+    }, input, async (root, committed) => {
+      if (input.key === "workspace.generatedArtifactsPath" && isAbsolute(input.value) && input.configurationProjectId) {
+        await assertGeneratedArtifactsRoot(root, input.value);
+        await bindProjectArtifactPath(committed.metadata.workspaceId, input.configurationProjectId, input.value);
+      }
+      await projectConfiguration(root, committed);
+    });
 }
 
 export async function removeWorkspaceSetting(workspaceRoot: string, input: {

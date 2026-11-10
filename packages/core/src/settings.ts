@@ -1,3 +1,4 @@
+import { isProjectArtifactBinding } from "./artifact-path-binding.js";
 import { normalizeWorkContentPolicy } from "./work-content-templates.js";
 import { pathIsInside } from "./path-containment.js";
 import { isPortablePathBinding, resolvePortablePath } from "./portable-path.js";
@@ -296,7 +297,7 @@ function assertWorkspaceRelativeSettingPath(value: string, label: string): void 
 // `artifact-put` calls it again before writing a byte, because a directory that was real
 // when it was declared is not necessarily real when it is used.
 function assertAbsoluteArtifactsSettingPath(value: string, label: string, workspaceRoot?: string): void {
-  if (value.includes("\\")) {
+  if (process.platform !== "win32" && value.includes("\\")) {
     fail("SETTINGS_VALUE_INVALID", `${label} must not contain a backslash`);
   }
   // Containment below is decided on the RESOLVED path, so an unnormalized value would be
@@ -656,8 +657,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "scope" | "
 export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = Object.freeze(
   catalogEntries.slice().sort((left, right) => compareCanonicalText(left.key, right.key)).map((entry) => Object.freeze({
     ...entry,
-    layer: ["engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"].includes(entry.key) ? "library" as const : SETTINGS_PROJECT_LAYER,
-    scope: ["engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"].includes(entry.key) ? "library" as const : "project" as const,
+    layer: ["engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents"].includes(entry.key) ? "library" as const : SETTINGS_PROJECT_LAYER,
+    scope: ["engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents"].includes(entry.key) ? "library" as const : "project" as const,
     modelWritable: entry.modelWritable ?? false,
     shape: entry.shape ?? "scalar",
     ...(entry.allowedValues === undefined ? {} : { allowedValues: Object.freeze([...entry.allowedValues]) }),
@@ -902,10 +903,12 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
     if (/[\u0000-\u001f\u007f]/u.test(value)) fail("SETTINGS_VALUE_INVALID", `${entry.key} must not contain control characters`);
   }
   if (["workspace.generatedArtifactsPath", "knowledge.articlesPath"].includes(entry.key) && value.startsWith("binding:")) {
+    if (isProjectArtifactBinding(value) && entry.key !== "workspace.generatedArtifactsPath") fail("SETTINGS_VALUE_INVALID", "project artifact bindings apply only to generated artifacts");
     if (!isPortablePathBinding(value)) fail("SETTINGS_VALUE_INVALID", `${entry.key} names an unknown local binding`);
     return value;
   }
   if (entry.key === "workspace.generatedArtifactsPath") {
+    if (/[\u0000-\u001f\u007f]/u.test(value)) fail("SETTINGS_VALUE_INVALID", `${entry.key} must not contain control characters`);
     // TCRN-CROSS-STORY-380: an absolute root is admitted so generated blobs can be written
     // to a directory the operator manages — a cloud-synced folder is the case Owner asked
     // for — while the chain, the lease and this manifest stay inside the workspace. The

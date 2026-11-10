@@ -33,12 +33,12 @@ Catalog `layer` and `scope` describe three ownership levels:
   `declaredValue`, effective `currentValue`, `source` and `inheritedFrom`. Reset removes
   only this target's declaration. Renaming a project never changes its identity.
 - **library**: `engine.requiredVersion`, `storage.segmentBytes`,
-  `storage.snapshotEveryEvents` and `workspace.generatedArtifactsPath` govern shared
-  storage or the one artifact manifest. A project-specific write refuses; all targets
+  `storage.snapshotEveryEvents` govern shared
+  storage. A project-specific write refuses; all targets
   use the same declaration. Their values still travel with the library event chain.
   On a classified coordination chain the library level also holds the chain's own
   runtime settings (TCRN-CROSS-INIT-053 R47, c1-B): `artifact.language`,
-  `execution.maxConcurrentSubagents` and the four `quota.*` keys join the four above,
+  `execution.maxConcurrentSubagents` and the four `quota.*` keys plus `workspace.generatedArtifactsPath` join the three above,
   ten in all. There `settings-catalog` lists exactly these ten, each with `scope` and
   `layer` `library`; they are read and written for the whole library (a write naming a
   `projectId` refuses as above) and never inherited as development configuration.
@@ -127,7 +127,7 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `retrieval` | `retrieval.tau` | project | scalar | 2 |
 | `retrieval` | `retrieval.scopeExcerptBytes` | project | scalar | 3 |
 | `retrieval` | `injection.perPromptBytes` | project | scalar | 4 |
-| `storage` | `workspace.generatedArtifactsPath` | library | scalar | 1 |
+| `storage` | `workspace.generatedArtifactsPath` | project | scalar | 1 |
 | `storage` | `storage.segmentBytes` | library | scalar | 2 |
 | `storage` | `storage.snapshotEveryEvents` | library | scalar | 3 |
 | `storage` | `paths.artifacts` | device | scalar | 10 |
@@ -271,13 +271,25 @@ entries below are TCRN-CROSS-STORY-484's; the others name the change that retire
 ## Engine-consumed keys — workspace
 
 - **Key:** `workspace.generatedArtifactsPath`
-  - **Type:** workspace-relative path, or an absolute path.
+  - **Type:** workspace-relative path, existing portable binding, or a native absolute path.
+  - **Scope:** project with inherited legacy library default. Absolute selections through
+    `settings-set --project-id` (also used by Atelier) are stored automatically as a
+    stable project binding; the location stays in this device's `artifact-paths/` registry.
+    Users do not author binding strings. `settings-catalog` and the write receipt expose
+    `deviceValue` for the selected device location, separately from the portable declaration.
+    A different device must configure its own location; missing binding is an error,
+    never a fallback. Changing one project/device location does not rewrite others.
+    Relative values and historical library-level absolute records remain readable;
+    project declaration, parent declaration, legacy library declaration, then default
+    is the precedence. Existing `binding:paths.artifacts` retains its explicit global meaning.
+    Artifact CLI commands accept `--project-id`; each project has its own manifest.
+    Calls without a project keep the historical library manifest and default.
+    A new absolute selection without a project is refused as ambiguous.
   - **Layer:** `workspace_configuration`.
   - **Default:** `artifacts` inside the workspace control directory.
   - **Bounds, relative form:** non-empty relative path with no `.`, `..`, empty,
     backslash, or NUL path segment.
-  - **Bounds, absolute form:** normalized (`resolve(value) === value`), no
-    backslash, and outside both the workspace and its control
+  - **Bounds, absolute form:** normalized (`resolve(value) === value`), native-platform separators, and outside both the workspace and its control
     tree. Those are the predicates `validateSettingValue` decides, and it decides
     only those: it also runs on the replay path, so a predicate that consulted the
     filesystem or this machine's home directory would make a chain recorded on one

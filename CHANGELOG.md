@@ -5,6 +5,10 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+## 4.5.1
+
+Einzbern and Mana Orchestrate ship in lockstep at 4.5.1.
+
 ### Codex batch report recipient preflight
 
 - Check a coordinator's batch-marked report against its current durable role,

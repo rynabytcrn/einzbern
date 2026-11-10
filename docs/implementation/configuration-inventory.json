@@ -828,7 +828,7 @@
       "schemaOwner": "installed-engine",
       "source": "library events bound to stable target identity",
       "storageSource": "library settings.updated events (historical string transport)",
-      "inheritance": "explicit project parent chain and permitted public defaults; no implicit coordination-library inheritance",
+      "inheritance": "explicit project parent chain, legacy library declaration, then default; no cross-project common-default inheritance; absolute locations resolve on this device",
       "sharing": "portable declarations sync with library",
       "export": "consumer-specific whitelist; library config projection is not an authority",
       "consumer": "artifact-store.ts artifact root resolution",

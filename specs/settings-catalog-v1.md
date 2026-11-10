@@ -285,7 +285,11 @@ entries below are TCRN-CROSS-STORY-484's; the others name the change that retire
     location does not rewrite others.
     Relative values and historical library-level absolute records remain readable;
     project declaration, parent declaration, legacy library declaration, then default
-    is the precedence. Existing `binding:paths.artifacts` retains its explicit global meaning.
+    is the precedence. This directory key never inherits another project through
+    `common-default`, including relative directories and device bindings; catalog and
+    artifact operations use the same local selection. An unresolved common default
+    therefore does not make this directory row unresolved. Ordinary project scalar
+    inheritance is unchanged. Existing `binding:paths.artifacts` retains its explicit global meaning.
     Artifact CLI commands accept `--project-id`; each project has its own manifest.
     Calls without a project keep the historical library manifest and default.
     A new absolute selection without a project is refused as ambiguous.

@@ -130,8 +130,9 @@ async function resolveProjectTargetFromSnapshot(referenceInput: ProjectReference
       common = await resolveProjectTargetFromSnapshot(projectReference(commonRecord.value), home, seen, execution);
       if (!["configured", "unconfigured"].includes(String(common.status)) || !Array.isArray(common.settings)) return { ...base, status: "conflicting", reason: "common-default-unresolved", common };
       const defaults = common.settings as typeof settings;
+      // Artifact locations belong to this project/device, never a different common-default target.
       for (const entry of settings) {
-        if (entry.source.kind !== "default" || catalog.settings.find(candidate => candidate.key === entry.key)?.scope === "library" || catalog.settings.find(candidate => candidate.key === entry.key)?.shape === "collection") continue;
+        if (entry.key === "workspace.generatedArtifactsPath" || entry.source.kind !== "default" || catalog.settings.find(candidate => candidate.key === entry.key)?.scope === "library" || catalog.settings.find(candidate => candidate.key === entry.key)?.shape === "collection") continue;
         const fallback = defaults.find(other => other.key === entry.key);
         if (fallback && fallback.source.kind !== "default") { entry.value = fallback.value; entry.source = { ...fallback.source, kind: "common" as typeof entry.source.kind, inherited: true }; }
       }
@@ -483,7 +484,7 @@ export async function settingsCatalogState(state: WorkspaceState, projectId?: st
   const common = context.common as Readonly<Record<string, unknown>> | undefined;
   if (context.status === "conflicting" && (context.reason === "common-default-unresolved" || context.reason === "common-default-cycle")) {
     const source: ConfigurationSource = { kind: "common", status: "unresolved", libraryId: reference.libraryId, projectId: reference.projectId, projectName: null, inherited: true };
-    const unresolvedKeys = SETTINGS_CATALOG.filter(entry => entry.scope !== "library" && entry.shape !== "collection" && scoped.settingSources[entry.key]?.kind === "default").map(entry => entry.key);
+    const unresolvedKeys = SETTINGS_CATALOG.filter(entry => entry.key !== "workspace.generatedArtifactsPath" && entry.scope !== "library" && entry.shape !== "collection" && scoped.settingSources[entry.key]?.kind === "default").map(entry => entry.key);
     const marked = Object.fromEntries(unresolvedKeys.map(key => [key, source]));
     return {
       state: { ...scoped, settingSources: { ...scoped.settingSources, ...marked }, settingFallbackSources: { ...scoped.settingFallbackSources, ...marked } },

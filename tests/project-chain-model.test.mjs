@@ -849,3 +849,45 @@ test("INIT068 legacy planned content dispatch requires action, preserves researc
   assert.equal(implementation.contexts[0].executionAdmission.contentReason, "work-content-incomplete");
   await assert.rejects(workProjectContexts(typed, work.id, f.home, { ...request, action: "pretend-research" }));
 });
+
+test("Story649: common-default artifact locations never redirect a different project's catalog or actual output", async t => {
+  const { putArtifact, verifyArtifacts } = await import("../dist/build/packages/core/src/artifact-store.js");
+  const { inflateSync } = await import("node:zlib");
+  const f = await fixture(t);
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = f.home;
+  try {
+    await configure(f.a, "alpha");
+    const alphaRoot = join(f.root, "alpha-blobs");
+    const betaRoot = join(f.root, "beta-blobs");
+    await mkdir(alphaRoot); await mkdir(betaRoot);
+    await setWorkspaceSetting(f.a.path, { key: "workspace.generatedArtifactsPath", value: alphaRoot, configurationProjectId: f.a.reference.projectId, occurredAt: at });
+    await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: f.a.reference, occurredAt: at });
+    const args = ["--workspace", f.b.path, "--project-id", f.b.reference.projectId];
+    const catalog = await catalogAs(f, args);
+    const directory = rowOf(catalog, "workspace.generatedArtifactsPath");
+    assert.equal(directory.currentValue, "artifacts");
+    assert.equal(directory.source.kind, "default");
+    assert.equal(rowOf(catalog, "artifact.language").currentValue, "en");
+    assert.equal(rowOf(catalog, "artifact.language").source.kind, "common", "ordinary settings keep their common-default semantics");
+    const input = join(f.root, "beta-input.txt");
+    await writeFile(input, "beta project actual artifact");
+    const first = await putArtifact(f.b.path, { projectId: f.b.reference.projectId, file: input, at });
+    assert.equal(inflateSync(await readFile(join(f.b.path, directory.currentValue, first.blobName))).toString(), "beta project actual artifact");
+    await assert.rejects(readFile(join(alphaRoot, first.blobName)), { code: "ENOENT" });
+    await setWorkspaceSetting(f.b.path, { key: "workspace.generatedArtifactsPath", value: betaRoot, configurationProjectId: f.b.reference.projectId, occurredAt: at });
+    assert.equal(rowOf(await catalogAs(f, args), "workspace.generatedArtifactsPath").deviceValue, betaRoot);
+    const second = await putArtifact(f.b.path, { projectId: f.b.reference.projectId, file: input, at });
+    assert.equal(inflateSync(await readFile(join(betaRoot, second.blobName))).toString(), "beta project actual artifact");
+    assert.equal((await verifyArtifacts(f.b.path, f.b.reference.projectId)).reasonCode, "ARTIFACT_VERIFIED");
+    assert.equal(rowOf(await catalogAs(f, ["--workspace", f.a.path, "--project-id", f.a.reference.projectId]), "workspace.generatedArtifactsPath").deviceValue, alphaRoot);
+    await removeWorkspaceSetting(f.b.path, { key: "workspace.generatedArtifactsPath", configurationProjectId: f.b.reference.projectId, occurredAt: at });
+    await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: { libraryId: "library:" + "c".repeat(24), projectId: "project:" + "d".repeat(24) }, occurredAt: at });
+    const unresolved = await catalogAs(f, args);
+    assert.equal(unresolved.commonDefault.status, "unresolved");
+    assert.equal(rowOf(unresolved, "workspace.generatedArtifactsPath").currentValue, "artifacts");
+    assert.equal(rowOf(unresolved, "workspace.generatedArtifactsPath").source.kind, "default");
+    assert.equal(rowOf(unresolved, "artifact.language").currentValue, null);
+    assert.equal((await verifyArtifacts(f.b.path, f.b.reference.projectId)).reasonCode, "ARTIFACT_VERIFIED");
+  } finally { process.env.EINZBERN_HOME = previous; }
+});

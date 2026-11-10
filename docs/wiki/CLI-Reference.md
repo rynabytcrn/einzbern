@@ -22,6 +22,7 @@
 
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
+| `--project-id` | 可选 | `string` |
 | `--workspace` | 可选 | `string` |
 
 ## `artifact-put`
@@ -31,6 +32,7 @@
 
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
+| `--project-id` | 可选 | `string` |
 | `--workspace` | 可选 | `string` |
 | `--file` | 必填 | `string` |
 | `--at` | 必填 | `instant` |
@@ -43,6 +45,7 @@
 
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
+| `--project-id` | 可选 | `string` |
 | `--workspace` | 可选 | `string` |
 
 ## `chain-declare`

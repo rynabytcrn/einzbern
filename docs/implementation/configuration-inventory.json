@@ -822,13 +822,13 @@
       "semanticType": "path",
       "storageType": "string",
       "controlType": "text",
-      "registeredScope": "library",
-      "scope": "library",
+      "registeredScope": "project",
+      "scope": "project",
       "owner": "governed-owner",
       "schemaOwner": "installed-engine",
       "source": "library events bound to stable target identity",
       "storageSource": "library settings.updated events (historical string transport)",
-      "inheritance": "target library only",
+      "inheritance": "explicit project parent chain and permitted public defaults; no implicit coordination-library inheritance",
       "sharing": "portable declarations sync with library",
       "export": "consumer-specific whitelist; library config projection is not an authority",
       "consumer": "artifact-store.ts artifact root resolution",
@@ -7502,6 +7502,11 @@
         "mutates": false,
         "flags": [
           {
+            "name": "project-id",
+            "required": false,
+            "valueKind": "string"
+          },
+          {
             "name": "workspace",
             "required": false,
             "valueKind": "string"
@@ -7513,6 +7518,11 @@
         "availability": "cli",
         "mutates": true,
         "flags": [
+          {
+            "name": "project-id",
+            "required": false,
+            "valueKind": "string"
+          },
           {
             "name": "workspace",
             "required": false,
@@ -7540,6 +7550,11 @@
         "availability": "cli",
         "mutates": false,
         "flags": [
+          {
+            "name": "project-id",
+            "required": false,
+            "valueKind": "string"
+          },
           {
             "name": "workspace",
             "required": false,

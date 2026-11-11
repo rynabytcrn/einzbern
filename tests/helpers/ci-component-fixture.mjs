@@ -90,6 +90,8 @@ export async function createCiComponentFixture(context, { production = false, fi
     await mkdir(repo);
     if (production) {
       await cp(join(componentSourceRoot, "scripts"), join(repo, "scripts"), { recursive: true });
+      await mkdir(join(repo, "packages/core/src"), { recursive: true });
+      await cp(join(componentSourceRoot, "packages/core/src/darwin-source-identity.mjs"), join(repo, "packages/core/src/darwin-source-identity.mjs"));
       // Task's imports need the already installed Ajv and TypeScript dependencies.
       // The actual node_modules directory is excluded by the unchanged walker.
       await mkdir(join(repo, "node_modules"));

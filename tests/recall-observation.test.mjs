@@ -20,9 +20,9 @@ test("644: concurrent observations do not mix counters or payloads", async () =>
 });
 
 test("645: paired summaries retain failed samples and cannot accept an unconfirmed library", () => {
-  const rows = Array.from({ length: 15 }, (_, pair) => ["baseline", "candidate", "candidate-observed"].map(mode => ({
+  const rows = Array.from({ length: 15 }, (_, pair) => (pair % 2 === 0 ? ["baseline", "candidate", "candidate-observed"] : ["candidate", "baseline", "candidate-observed"]).map(mode => ({
     pair, queryIndex: 0, mode, exit: 0, parseError: null, lifecycleElapsedMs: mode === "baseline" ? 20 : 10,
-    sample: { authorityHead: "same-head", semanticSha256: "same-output", query: "same-query", logicalEventBytes: mode === "baseline" ? 200 : 100,
+    sample: { authorityHead: "same-head", semanticSha256: "same-output", query: "same-query", at: "2026-11-10T15:00:00Z", logicalEventBytes: mode === "baseline" ? 200 : 100,
       maxRss: pair === 14 ? 200 : 100, operationElapsedMs: 1, operationCpuMicros: 1, processCpuMicros: 2, segmentReads: 1, materializations: 1 },
   }))).flat();
   const summary = summarizePairedSamples(rows);

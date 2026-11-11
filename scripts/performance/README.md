@@ -53,7 +53,7 @@ This is a partial implementation, not an INIT-090 completion or release receipt.
 Use the pinned Node/pnpm toolchain and independently preserved baseline build.
 Run `recall-fixture.mjs <new-library>` with an isolated `EINZBERN_HOME`, then
 `recall-ab.mjs <baseline-repository> <candidate-repository> <same-library>`.
-Each of 15 groups uses fresh processes, alternates A/B order and adds a candidate
+Each group uses fresh processes, alternates A/B order and adds a candidate
 observation-on sample. The fixed `at` and library bytes stay unchanged. The
 sampling script measures actual event-file bytes through Node's file handle API;
 it does not use external read counters as a proxy for CPU or OS I/O.
@@ -126,8 +126,26 @@ elapsed and CPU clocks remain real.
 node scripts/performance/recall-ab.mjs BASELINE CANDIDATE LIBRARY SPEC.json > samples.ndjson
 ```
 
-Each query gets 15 alternating A/B groups and an observer-on process per group.
+The default is 15 groups starting at pair 0 and every query in the spec. Optional
+`--groups N`, `--start-pair N` and `--query-indexes 0,2` select an explicit fixed
+series without rewriting the spec or the child inputs. For example, to append
+pairs 15 through 99 for just the first query:
+
+```sh
+node scripts/performance/recall-ab.mjs BASELINE CANDIDATE LIBRARY SPEC.json --groups 85 --start-pair 15 --query-indexes 0 > appended.ndjson
+```
+
+Even pair numbers run baseline then candidate; odd pair numbers run candidate
+then baseline. Candidate-observed runs last. A continuing series must prove
+source, runtime, dependency, input, entry, measurement and device/cache conditions
+equivalent before combining historical rows. Otherwise keep those rows separate
+and use the complete predeclared fresh series. Never choose a window or stop or
+extend the series based on its performance results.
+
 All stdout, stderr, order, failed samples and actual result logs are retained.
+Each row also records the actual child command/argv/cwd, device home and a SHA256
+of the sorted environment entries, without publishing environment values. This
+parent metadata is prepared after the measured spawn-to-close interval.
 The script does not stop at the first child failure. Event-file reads are counted
 through file handles. Identical in-memory module probes count complete library
 materializations and time the real CLI operation without changing baseline files.
@@ -151,9 +169,27 @@ conditions and remain separate evidence. This correction alone does not explain
 an operation-timer or pre-report Node RSS regression.
 
 Import `summarizePairedSamples` from `recall-summary.mjs` to summarize the JSON
-rows. It uses nearest-rank P50/P95 per query/input, retains failure counts, and
-refuses to treat a null/unconfirmed authority head as a successful performance
-comparison. It also reconciles the actual logs through `summarizeRecall`.
+rows. Pass the frozen series explicitly, for example
+`summarizePairedSamples(rows, { groups: 100, startPair: 0, queryIndexes: [0] })`.
+Its compatible defaults are 15 groups starting at 0, using the queries present in
+the input rows. Each expected pair must contain exactly one baseline, candidate
+and candidate-observed in the alternating order. Missing, duplicate, unexpected,
+failed or unparseable samples remain visible and prevent `complete=true` and
+passing thresholds. An explicitly selected query with no rows is incomplete.
+Query, fixed time, head, semantic output and read-file inputs must match across
+the series; physical counts and loaded-source fingerprints must remain stable
+within each mode; candidate and candidate-observed physical counts must match.
+Observation may load additional modules, whose mode-specific fingerprints stay
+separate. Baseline and
+candidate retain their different physical read/materialization counts.
+
+P50/P95 remains nearest rank `sorted[ceil(p*n)-1]` per query/input: n=15 P95 is
+rank 15 (the maximum); n=100 P95 is rank 95. The report includes each mode's
+actual n and ranks. A complete measurement is separate from satisfying each
+unchanged resource and logical-byte threshold. Actual logs are reconciled through
+`summarizeRecall`; the source/spec/library/device fingerprints and cache conditions
+also need their external before/after evidence, since event read counts alone do
+not fingerprint all knowledge-card inputs.
 Cold device caches do not imply a cold OS/file-provider cache. Negative observed
 differences do not establish negative observer overhead. The historical small
 fixture RSS regression and its raw samples above remain part of the evidence;

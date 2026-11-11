@@ -1,18 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-const [baseline, candidate, library, entrySpec] = process.argv.slice(2);
+import { parseArgs } from "node:util";
+const { values, positionals } = parseArgs({
+  allowPositionals: true,
+  options: { groups: { type: "string", default: "15" }, "start-pair": { type: "string", default: "0" }, "query-indexes": { type: "string" } },
+});
+const [baseline, candidate, library, entrySpec] = positionals;
+if (positionals.length < 3 || positionals.length > 4) throw new Error("Expected baseline, candidate, library and optional entry spec");
+const groups = Number(values.groups), startPair = Number(values["start-pair"]);
+if (!Number.isSafeInteger(groups) || groups < 1 || !Number.isSafeInteger(startPair) || startPair < 0 || !Number.isSafeInteger(startPair + groups)) {
+  throw new Error("groups must be positive and start-pair nonnegative safe integers");
+}
 const spec = entrySpec === undefined ? null : JSON.parse(await readFile(entrySpec, "utf8"));
+const queryCount = spec?.queries.length ?? 1;
+const queryIndexes = values["query-indexes"] === undefined ? Array.from({ length: queryCount }, (_, index) => index)
+  : values["query-indexes"].split(",").map(value => value.trim() === "" ? NaN : Number(value));
+if (queryIndexes.length === 0 || new Set(queryIndexes).size !== queryIndexes.length
+  || queryIndexes.some(index => !Number.isSafeInteger(index) || index < 0 || index >= queryCount)) {
+  throw new Error("query-indexes must select unique indexes from the unchanged input spec");
+}
 if (spec !== null && dirname(resolve(spec.deviceTemplate)) !== resolve(spec.deviceRoot)) {
   throw new Error("Sample devices must be siblings of the template to preserve device-relative registry/configuration paths");
 }
 const script = fileURLToPath(new URL(spec === null ? "./recall-sample.mjs" : "./recall-entry-sample.mjs", import.meta.url));
 let failures = 0;
-for (let pair = 0; pair < 15; pair += 1) {
+for (let pair = startPair; pair < startPair + groups; pair += 1) {
   const modes = pair % 2 === 0 ? ["baseline", "candidate"] : ["candidate", "baseline"];
-  for (let queryIndex = 0; queryIndex < (spec?.queries.length ?? 1); queryIndex += 1) {
+  for (const queryIndex of queryIndexes) {
     for (const mode of [...modes, "candidate-observed"]) {
       const repository = mode === "baseline" ? baseline : candidate;
       const observed = mode === "candidate-observed" ? "1" : "0";
@@ -51,6 +69,8 @@ for (let pair = 0; pair < 15; pair += 1) {
         }
       }
       console.log(JSON.stringify({ pair, queryIndex, mode, exit: result.status, signal: result.signal, lifecycleElapsedMs,
+        invocation: { command: osTime ? "/usr/bin/time" : process.execPath, argv: osTime ? ["-lp", process.execPath, ...args] : args, cwd: process.cwd(),
+          environmentSha256: createHash("sha256").update(JSON.stringify(Object.entries(environment).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))).digest("hex"), deviceHome: device ?? null },
         lifecycleBoundary: osTime ? "spawn /usr/bin/time -lp Node through close" : "spawn Node through close",
         osUserSeconds: Number.isFinite(osUserSeconds) ? osUserSeconds : null,
         osSystemSeconds: Number.isFinite(osSystemSeconds) ? osSystemSeconds : null,

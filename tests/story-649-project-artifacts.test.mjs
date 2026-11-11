@@ -3,13 +3,14 @@ import "./helpers/device-home.mjs";
 import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { inflateSync } from "node:zlib";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { initializeLibrary } from "../dist/build/packages/core/src/index.js";
+import { appendEvents, initializeLibrary } from "../dist/build/packages/core/src/index.js";
+import { createWorkspaceSettingRecord } from "../dist/build/packages/core/src/settings.js";
 standInForAtelier();
 const at = "2026-11-10T16:00:00Z";
 async function cli(args) {
@@ -46,7 +47,14 @@ test("Story649: direct absolute selection, project isolation, fresh reads, actua
   await writeFile(invalidFile, "file");
   const link = join(base, "symlink");
   await symlink(roots[0], link);
-  for (const invalid of [invalidFile, link, join(base, "missing", "disk"), workspace, `${roots[0]}/../a`, `${roots[0]}\u0000`]) {
+  const alias = join(base, "control-alias");
+  await symlink(workspace, alias);
+  const controlChild = join(workspace, "control-child");
+  await mkdir(controlChild);
+  const deviceChild = join(process.env.EINZBERN_HOME, "artifact-boundary");
+  await mkdir(deviceChild, { recursive: true });
+  for (const invalid of [invalidFile, link, join(alias, "control-child"), deviceChild, join(base, "missing", "disk"), workspace,
+    `${roots[0]}/../a`, `${roots[0]}\u0000`, `${roots[0]}\\bad`, "../outside", "binding:unknown", "binding:paths.artifacts/../escape"]) {
     await assert.rejects(set(a, invalid));
     assert.equal((await catalog(a)).deviceValue, roots[0]);
     assert.equal((await catalog(b)).deviceValue, roots[1]);
@@ -62,8 +70,21 @@ test("Story649: direct absolute selection, project isolation, fresh reads, actua
   const unavailable = `${roots[0]}-unavailable`;
   await rename(roots[0], unavailable);
   await assert.rejects(cli(["artifact-verify", "--workspace", workspace, "--project-id", a]), { reasonCode: "ARTIFACT_PATH_INVALID" });
+  await assert.rejects(cli(["artifact-put", "--workspace", workspace, "--project-id", a, "--file", join(base, "source-0"), "--at", at]), { reasonCode: "ARTIFACT_PATH_INVALID" });
   assert.equal((await catalog(b)).deviceValue, roots[1]);
   await rename(unavailable, roots[0]);
+  const readonly = join(base, "readonly");
+  await mkdir(readonly);
+  await chmod(readonly, 0o555);
+  try {
+    // Exercise the real process credentials; a string-only path rejection cannot prove permissions.
+    await assert.rejects(writeFile(join(readonly, "permission-probe"), "probe"), error => ["EACCES", "EPERM"].includes(error.code));
+    await assert.rejects(set(a, readonly), { reasonCode: "ARTIFACT_PATH_INVALID" });
+    assert.equal((await catalog(a)).deviceValue, roots[0]);
+    assert.equal((await catalog(b)).deviceValue, roots[1]);
+  } finally {
+    await chmod(readonly, 0o755);
+  }
   t.diagnostic(`actual filesystem devices: library=${(await stat(workspace)).dev}; target=${(await stat(roots[0])).dev}; cross-volume proof only when device numbers differ`);
 });
 
@@ -113,6 +134,46 @@ test("F649-1: a new device can read all settings and repair only its missing art
   } finally { process.env.EINZBERN_HOME = previous; }
   const original = (await cli(["settings-catalog", ...args])).settings.find(row => row.key === "workspace.generatedArtifactsPath");
   assert.equal(original.deviceValue, targets[0]);
+});
+
+test("Story649: historical absolute records, relative roots and existing machine bindings generate and restart through the public CLI", async t => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "story649-compatibility-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const workspace = join(base, "library");
+  await initializeLibrary({ root: workspace, createdAt: at });
+  const absolute = join(base, "historical-absolute");
+  const bound = join(base, "machine-bound");
+  await mkdir(absolute);
+  await mkdir(join(bound, "suffix"), { recursive: true });
+  await cli(["machine-settings-set", "--at", at, "--key", "paths.artifacts", "--value", bound]);
+  for (const [index, value, destination] of [
+    [0, absolute, absolute],
+    [1, "relative-generated", join(workspace, "relative-generated")],
+    [2, "binding:paths.artifacts", bound],
+    [3, "binding:paths.artifacts/suffix", join(bound, "suffix")],
+  ]) {
+    const id = (await cli(["project-create", "--workspace", workspace, "--at", at, "--external-key", `COMPAT-649-${index}`, "--name", `Compatibility ${index}`])).record.id;
+    const args = ["--workspace", workspace, "--project-id", id];
+    if (index === 0) {
+      // Historical event fixture via the engine append API; the current writer stores a device binding instead.
+      const record = { ...createWorkspaceSettingRecord("workspace.generatedArtifactsPath", "artifacts", 1, at, workspace, id), value };
+      await appendEvents(workspace, [state => ({ payload: { operation: "settings.updated", record }, projects: state.projects, work: state.work, settings: state.settings })], { occurredAt: at });
+    } else {
+      await cli(["settings-set", ...args, "--at", at, "--key", "workspace.generatedArtifactsPath", "--value", value]);
+    }
+    const file = join(base, `source-${index}.txt`);
+    await writeFile(file, `compatibility artifact ${index}`);
+    const fresh = spawnSync(process.execPath, [resolve("scripts/einzbern.mjs"), "artifact-put", ...args, "--file", file, "--at", at], { encoding: "utf8", env: process.env });
+    assert.equal(fresh.status, 0, fresh.stderr);
+    const put = JSON.parse(fresh.stdout);
+    assert.equal(inflateSync(await readFile(join(destination, put.blobName))).toString(), `compatibility artifact ${index}`);
+    const restarted = spawnSync(process.execPath, [resolve("scripts/einzbern.mjs"), "artifact-verify", ...args], { encoding: "utf8", env: process.env });
+    assert.equal(restarted.status, 0, restarted.stderr);
+    assert.equal(JSON.parse(restarted.stdout).checked, 1);
+    const row = (await cli(["settings-catalog", ...args])).settings.find(setting => setting.key === "workspace.generatedArtifactsPath");
+    assert.equal(row.currentValue, value);
+    assert.equal(row.source.projectId, id);
+  }
 });
 
 test("F649-1: Atelier directory control stays editable and explicitly unset without local binding", async () => {

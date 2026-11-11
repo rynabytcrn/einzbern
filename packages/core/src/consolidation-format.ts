@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { LibraryManifest } from "./ether-library.js";
 import { validateLibraryManifest } from "./ether-library.js";
 import { assertStrictInstant } from "../../protocol/src/index.js";
+import { observeMetadataBytes, observeMetadataRead } from "./recall-observation.js";
 
 export interface ConsolidationSource {
   readonly manifest: LibraryManifest;
@@ -55,10 +56,14 @@ export function validateConsolidationIndex(input: unknown): ConsolidationIndex {
   return value;
 }
 export async function readConsolidationIndex(root: string, manifest: LibraryManifest): Promise<ConsolidationIndex | null> {
-  if (manifest.consolidation === undefined) return null;
-  const bytes = await readFile(join(root, manifest.consolidation.index));
-  if (digestBytes(bytes) !== manifest.consolidation.sha256) throw new ConsolidationError("CONSOLIDATION_DIGEST_MISMATCH", "consolidation index digest differs from the library manifest");
-  const index = validateConsolidationIndex(JSON.parse(bytes.toString("utf8")));
-  if (index.primaryLibraryId !== manifest.libraryId) throw new ConsolidationError("CONSOLIDATION_INDEX_INVALID", "the shared library must retain its coordination identity");
-  return index;
+  const provenance = manifest.consolidation;
+  if (provenance === undefined) return null;
+  return observeMetadataRead(async () => {
+    const bytes = await readFile(join(root, provenance.index));
+    observeMetadataBytes(bytes.length);
+    if (digestBytes(bytes) !== provenance.sha256) throw new ConsolidationError("CONSOLIDATION_DIGEST_MISMATCH", "consolidation index digest differs from the library manifest");
+    const index = validateConsolidationIndex(JSON.parse(bytes.toString("utf8")));
+    if (index.primaryLibraryId !== manifest.libraryId) throw new ConsolidationError("CONSOLIDATION_INDEX_INVALID", "the shared library must retain its coordination identity");
+    return index;
+  });
 }

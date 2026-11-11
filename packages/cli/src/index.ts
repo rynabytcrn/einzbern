@@ -1,6 +1,5 @@
 import { isProjectArtifactBinding, resolveProjectArtifactBinding } from "../../core/src/artifact-path-binding.js";
 import { withRecallObservation } from "../../core/src/recall-observation.js";
-import { logCliRecall } from "../../core/src/recall-observation-log.js";
 import { readRecallAuthority } from "../../core/src/recall-authority.js";
 import { MEMORY_LEASE_VARIABLE } from "../../../scripts/lib/memory-budget.mjs";
 import { readWorkContentImpact } from "../../core/src/work-requirements.js";
@@ -2093,16 +2092,29 @@ export async function runCli(arguments_: readonly string[], io: CliIo): Promise<
   try {
     await withRecallObservation(() => runCliUnobserved(arguments_, { write(value) {
       let reasonCode = "CLI_RECALL_RESULT";
-      try { const parsed = JSON.parse(value) as { reasonCode?: unknown }; if (typeof parsed.reasonCode === "string") reasonCode = parsed.reasonCode; } catch { /* Non-JSON output is not copied into telemetry. */ }
-      results.push({ reasonCode, outcome: "result" });
+      try {
+        const parsed = JSON.parse(value) as { reasonCode?: unknown };
+        if (typeof parsed.reasonCode === "string") reasonCode = parsed.reasonCode;
+      } catch { /* Non-JSON output is not copied into telemetry. */ }
+      const outcome = reasonCode === "RECALL_READY" ? "hit"
+        : reasonCode === "RECALL_NO_STRONG_HIT" ? "no-hit" : "result";
+      results.push({ reasonCode, outcome });
       io.write(value);
     } }), value => { observation = value; });
   } catch (error) {
     const reason = (error as { reasonCode?: unknown }).reasonCode;
-    results.push({ reasonCode: typeof reason === "string" ? reason : "CLI_RECALL_FAILED", outcome: "error" });
+    const queryPosition = arguments_.indexOf("--query");
+    const query = queryPosition < 0 ? undefined : arguments_[queryPosition + 1];
+    const empty = typeof query === "string" && query.trim().length === 0
+      && (error as { message?: unknown }).message === "query"
+      && (reason === "CLI_ARGUMENT_MISSING" || reason === "CLI_ARGUMENT_MALFORMED");
+    results.push({ reasonCode: typeof reason === "string" ? reason : "CLI_RECALL_FAILED", outcome: empty ? "empty" : "error" });
     throw error;
   } finally {
-    if (observation !== undefined) await logCliRecall(observation, results);
+    if (observation !== undefined) {
+      const { logCliRecall } = await import("../../core/src/recall-observation-log.js");
+      await logCliRecall(observation, results);
+    }
   }
 }
 
@@ -4003,7 +4015,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const decisions: DecisionStatusFilter = status.status === "obsolete" || status.status === "all" ? status.status : "valid";
     const workspace = values.workspace ?? "";
     const query = values.query ?? "";
-    if (query.length === 0 || query.length > RUNTIME_CAPACITY.stringCodeUnits || !query.isWellFormed()) fail("CLI_ARGUMENT_MALFORMED", "query");
+    if (query.trim().length === 0 || query.length > RUNTIME_CAPACITY.stringCodeUnits || !query.isWellFormed()) fail("CLI_ARGUMENT_MALFORMED", "query");
     const limit = values.limit === undefined ? undefined : integerValue(values, "limit");
     if (limit !== undefined && (limit < 1 || !Number.isSafeInteger(limit))) fail("CLI_ARGUMENT_MALFORMED", "limit");
     const { state: rawState, authority } = await readRecallAuthority(workspace, true);

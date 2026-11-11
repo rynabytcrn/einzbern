@@ -34,6 +34,8 @@ import {
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
+import { readRecallAuthority } from "../dist/build/packages/core/src/recall-authority.js";
+import { readRecallCards } from "../dist/build/packages/core/src/recall-inputs.js";
 import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
 const AT = "2026-09-26T09:00:00.000Z";
@@ -271,6 +273,10 @@ test("MIN-225, R17: a stale card and a store past the old default lose nothing",
     const freshness = (await evaluateKnowledgeFreshness(fx.workspace, at)).records.find((record) => record.id === stale.id);
     assert.deepEqual([listed.lifecycle, freshness.state], ["active", "stale"], `${at}: past maximumAgeDays the card is stale, not retired`);
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at })).records.some((record) => record.id === stale.id), false, "and default retrieval leaves it out");
+    const { authority } = await readRecallAuthority(fx.workspace);
+    const reused = await readRecallCards(fx.workspace, { at }, authority);
+    assert.deepEqual(reused, await readRecallCards(fx.workspace, { at }), "645: freshness expiry is identical with request authority");
+    assert.equal(reused.cards.some(card => card.id === stale.id), false);
   }
   assert.deepEqual(await storeBytes(fx, { cardsOnly: true }), cards, "its metadata and body are byte-identical");
 
@@ -326,6 +332,10 @@ test("historical records stay readable, and knowledge-recover still completes a 
   const retired = all.find((record) => record.id === swept.id);
   assert.deepEqual([retired.lifecycle, retired.retirement?.sweptAt], ["retired", "2026-09-01T00:47:10.039Z"], "the historical retirement record stays readable");
   assert.deepEqual((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.map((record) => record.id), [kept.id], "and default retrieval leaves the retired card out");
+  const { authority } = await readRecallAuthority(fx.workspace);
+  for (const status of ["valid", "removed", "all"]) {
+    assert.deepEqual(await readRecallCards(fx.workspace, { at: AT, status }, authority), await readRecallCards(fx.workspace, { at: AT, status }), "645: historical retirement selection is identical with request authority");
+  }
   for (const verb of ["telemetry-list", "telemetry-stats", "telemetry-observation"]) {
     const refused = await refusalOf(() => runCli([verb, "--workspace", fx.workspace], { write() {} }));
     assert.equal(refused?.reasonCode, "CLI_COMMAND_UNKNOWN", `${verb} is retired with the store`);

@@ -25,9 +25,6 @@
 import { appendFileSync, closeSync, constants, fstatSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
-import { withRecallObservation } from "../dist/build/packages/core/src/recall-observation.js";
-import { CACHE_VIEWS_SCHEMA_VERSION } from "../dist/build/packages/core/src/library-cache.js";
-import { FRAMEWORK_VERSION } from "../dist/build/packages/core/src/framework-version.js";
 import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
 import { AGENT_OUTPUT_MAX_BYTES } from "../dist/build/packages/core/src/runtime-input-contract.js";
 // Held equal to scripts/einzbern-hook-launcher.mjs (LOG_DIRECTORY, LOG_FILE, LOG_SCHEMA_VERSION).
@@ -44,7 +41,7 @@ function absolute(value) {
 
 // One line in log/hook.ndjson for one recall, written as the launcher writes its note: the
 // directory 0700, the file 0600, and every failure dropped.
-function noteRecall(device, event, cwd, reasonCode, host, observation) {
+function noteRecall(device, event, cwd, reasonCode, host, observation, versions = {}) {
   try {
     const logDirectory = join(device, LOG_DIRECTORY);
     try {
@@ -53,7 +50,7 @@ function noteRecall(device, event, cwd, reasonCode, host, observation) {
       if (error?.code !== "EEXIST") return;
     }
     const outcome = reasonCode === "HOOK_RECALL_ANSWERED" ? "hit" : reasonCode === "HOOK_RECALL_NO_HITS" ? "no-hit" : reasonCode === "HOOK_RECALL_PROMPT_EMPTY" ? "empty" : "refused-or-error";
-    const line = { schemaVersion: LOG_SCHEMA_VERSION, at: new Date().toISOString(), event, cwd, reasonCode, host, ...(observation === undefined ? {} : { outcome, observation, engineVersion: FRAMEWORK_VERSION, projectionVersion: CACHE_VIEWS_SCHEMA_VERSION }) };
+    const line = { schemaVersion: LOG_SCHEMA_VERSION, at: new Date().toISOString(), event, cwd, reasonCode, host, ...(observation === undefined ? {} : { outcome, observation, ...versions }) };
     appendFileSync(join(logDirectory, LOG_FILE), `${JSON.stringify(line)}\n`, { mode: 0o600 });
   } catch {
     // A hook never blocks a session, and a line it cannot write changes nothing it answers.
@@ -76,6 +73,19 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
     import("../dist/build/packages/core/src/device-home.js"),
     import("../dist/build/packages/core/src/kiro-host.js"),
   ]);
+  // Observation is opt-in. Loading its version/cache dependencies before every
+  // unobserved event changed startup allocation even on navigation-only paths.
+  let observe;
+  let versions;
+  if (process.env.EINZBERN_RECALL_OBSERVATION === "1") {
+    const [observation, cache, framework] = await Promise.all([
+      import("../dist/build/packages/core/src/recall-observation.js"),
+      import("../dist/build/packages/core/src/library-cache.js"),
+      import("../dist/build/packages/core/src/framework-version.js"),
+    ]);
+    observe = observation.withRecallObservation;
+    versions = { engineVersion: framework.FRAMEWORK_VERSION, projectionVersion: cache.CACHE_VIEWS_SCHEMA_VERSION };
+  }
   const body = payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   // Read once, for the recall and for its log line alike.
   const host = hookHost(process.env);
@@ -89,9 +99,9 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
   // DSH retains its existing navigation contract; its next feature batch is separate.
   if (name === "SubagentStart" && host === "dsh") {
     const result = `${navigationPointerAnswer(host, name).output}\n`;
-    if (process.env.EINZBERN_RECALL_OBSERVATION === "1") {
-      const { observation } = await withRecallObservation(async () => result);
-      noteRecall(deviceHome(process.env), event, absolute(cwd) ?? absolute(body.cwd) ?? process.cwd(), "HOOK_RECALL_PROMPT_EMPTY", host, observation);
+    if (observe !== undefined) {
+      const { observation } = await observe(async () => result);
+      noteRecall(deviceHome(process.env), event, absolute(cwd) ?? absolute(body.cwd) ?? process.cwd(), "HOOK_RECALL_PROMPT_EMPTY", host, observation, versions);
     }
     return result;
   }
@@ -149,14 +159,14 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
           host,
           cwd: directory,
         });
-        if (process.env.EINZBERN_RECALL_OBSERVATION === "1") {
-          ({ value: outcome, observation } = await withRecallObservation(operation, value => { observation = value; }));
+        if (observe !== undefined) {
+          ({ value: outcome, observation } = await observe(operation, value => { observation = value; }));
         } else { outcome = await operation(); }
       } catch (error) {
-        noteRecall(device, event, directory, typeof error?.reasonCode === "string" ? error.reasonCode : UNCODED_FAILURE, host, observation);
+        noteRecall(device, event, directory, typeof error?.reasonCode === "string" ? error.reasonCode : UNCODED_FAILURE, host, observation, versions);
         throw error;
       }
-      noteRecall(device, event, directory, outcome.reasonCode, host, observation);
+      noteRecall(device, event, directory, outcome.reasonCode, host, observation, versions);
       if (name === "SubagentStart") {
         const pointer = navigationPointerAnswer(host, name);
         return `${hookProtocolOutput(host, name, [...pointer.lines, ...(outcome.answer?.lines ?? [])])}\n`;

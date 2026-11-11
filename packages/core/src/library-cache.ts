@@ -22,6 +22,7 @@ import { join } from "node:path";
 
 import { isAtomicTemporaryName, writeFileAtomic } from "./atomic-file.js";
 import { cachePath } from "./device-home.js";
+import { observeCacheRead, observeCacheWrite, observeAuthorityWork } from "./recall-observation.js";
 
 export const LIBRARY_CACHE_DIRECTORIES = Object.freeze({ views: "views", snapshots: "snapshots" } as const);
 export const CACHE_SNAPSHOT_SCHEMA_VERSION = "einzbern.cache-snapshot.v1" as const;
@@ -79,7 +80,7 @@ function viewsDirectory(libraryId: string, home?: string): string {
 }
 
 function sha256(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
+  return observeAuthorityWork("cacheHash", () => createHash("sha256").update(text, "utf8").digest("hex"));
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -118,7 +119,9 @@ function snapshotHeader(value: unknown, libraryId: string): CacheSnapshotHeader 
 
 async function readText(path: string): Promise<string | null> {
   try {
-    return await readFile(path, "utf8");
+    const bytes = await readFile(path);
+    observeCacheRead(bytes.length);
+    return bytes.toString("utf8");
   } catch {
     return null;
   }
@@ -162,6 +165,7 @@ export async function writeCacheSnapshot(
   const stateText = `${JSON.stringify(snapshot.state)}\n`;
   const stateDigest = sha256(stateText);
   await writeFileAtomic(join(directory, `${stateDigest}.json`), stateText);
+  observeCacheWrite(Buffer.byteLength(stateText));
   const header: CacheSnapshotHeader = {
     schemaVersion: CACHE_SNAPSHOT_SCHEMA_VERSION,
     libraryId: snapshot.libraryId,
@@ -171,7 +175,9 @@ export async function writeCacheSnapshot(
     streams: snapshot.streams,
     stateDigest,
   };
-  await writeFileAtomic(join(directory, SNAPSHOT_HEADER_FILE), `${JSON.stringify(header)}\n`);
+  const headerText = `${JSON.stringify(header)}\n`;
+  await writeFileAtomic(join(directory, SNAPSHOT_HEADER_FILE), headerText);
+  observeCacheWrite(Buffer.byteLength(headerText));
   // States no header names any more. Another writer's state that its header has not named yet
   // may go too; that header then fails to verify and the next read writes a new snapshot.
   for (const name of await readdir(directory)) {
@@ -235,11 +241,16 @@ export async function writeCacheViews(libraryId: string, documents: Readonly<Rec
   const directory = viewsDirectory(libraryId, home);
   await mkdir(directory, { recursive: true });
   await rm(join(directory, VIEWS_STAMP_FILE), { force: true });
-  for (const [name, text] of Object.entries(documents)) await writeFileAtomic(join(directory, name), text);
+  for (const [name, text] of Object.entries(documents)) {
+    await writeFileAtomic(join(directory, name), text);
+    observeCacheWrite(Buffer.byteLength(text));
+  }
   for (const name of await readdir(directory)) {
     if (!Object.hasOwn(documents, name) && name !== VIEWS_STAMP_FILE && !isAtomicTemporaryName(name)) await rm(join(directory, name), { force: true });
   }
-  await writeFileAtomic(join(directory, VIEWS_STAMP_FILE), `${JSON.stringify(stamp)}\n`);
+  const stampText = `${JSON.stringify(stamp)}\n`;
+  await writeFileAtomic(join(directory, VIEWS_STAMP_FILE), stampText);
+  observeCacheWrite(Buffer.byteLength(stampText));
 }
 
 /** One cached view document, or null when the cache does not hold it. */

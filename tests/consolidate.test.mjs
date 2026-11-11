@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, realpath, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -304,4 +304,329 @@ test("647: warm checkpoint rejects coherently rehashed source history at unchang
   segment.sha256 = createHash("sha256").update(text).digest("hex");
   await writeFile(manifestPath, canonicalJson(manifest));
   await assert.rejects(materializeLibrary(f.to), { reasonCode: "CONSOLIDATION_SOURCE_CHANGED" });
+});
+
+test("647: incremental source-stream matrix preserves status, queries and governance across restart", async t => {
+  const f = await fixture(t);
+  for (const source of f.sources) {
+    for (let index = 0; index < 4; index += 1) await createWork(source.path, {
+      projectId: source.projectId, externalKey: `${source.role}-${source.projectId.slice(-8)}-${index}`,
+      kind: "Initiative", parentId: null, title: `Calibration ${index}`, scope: "Calibrated assembly evidence", occurredAt: at,
+    });
+  }
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary, workspaceViewDocuments, transitionWorkDelta } = await import("../dist/build/packages/core/src/workspace.js");
+  const { workContentContext } = await import("../dist/build/packages/core/src/work-content-context.js");
+  const { recall, recallDocuments, resetRecallCache } = await import("../dist/build/packages/core/src/recall.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  const { readCacheSnapshot, writeCacheSnapshot } = await import("../dist/build/packages/core/src/library-cache.js");
+  const libraryId = (await openLibrary(f.to)).manifest.libraryId;
+  t.after(resetRecallCache);
+  await materializeLibrary(f.to);
+  const samples = [];
+  const compare = async (scenario, replayedEvents) => {
+    const candidate = await withRecallObservation(() => materializeLibrary(f.to));
+    const full = await withRecallObservation(() => materializeWorkspaceFromGenesis(f.to));
+    assert.deepEqual(candidate.value, full.value, scenario);
+    assert.deepEqual(workspaceViewDocuments(candidate.value), workspaceViewDocuments(full.value), `${scenario}: status/index/readback`);
+    for (const source of f.sources) {
+      const cached = scopedWorkspaceState(candidate.value, source.projectId);
+      const genesis = scopedWorkspaceState(full.value, source.projectId);
+      assert.deepEqual(chainIdentity(cached), chainIdentity(genesis), `${scenario}: scoped authority`);
+      const query = (state, mode) => recall({
+        cacheKey: `${scenario}:${source.projectId}:${mode}`, checkpoint: state.headEventHash,
+        documents: () => recallDocuments(recallInputsFromState(state, [], { projectId: source.projectId })),
+        query: "Calibration", tau: 0,
+      });
+      const answer = query(cached, "candidate");
+      assert.ok(answer.records.length > 0);
+      assert.deepEqual(answer, query(genesis, "genesis"), `${scenario}: query results/scores`);
+      const id = cached.work.find(work => work.projectId === source.projectId).id;
+      assert.deepEqual(workContentContext(candidate.value, id), workContentContext(full.value, id), `${scenario}: inherited governance`);
+      const input = { id, status: "ready", occurredAt: at };
+      assert.deepEqual(transitionWorkDelta(input)(candidate.value), transitionWorkDelta(input)(full.value), `${scenario}: transition admission`);
+      for (const state of [candidate.value, full.value]) assert.throws(() => transitionWorkDelta({ ...input, status: "active" })(state), { reasonCode: "INVALID_TRANSITION" });
+    }
+    assert.equal(candidate.observation.replayedEvents, replayedEvents, scenario);
+    assert.equal(candidate.observation.logicalEventBytes, full.observation.logicalEventBytes, "647 still verifies every source byte");
+    assert.equal(candidate.observation.eventReadsBySource.reduce((bytes, source) => bytes + source.bytes, 0), candidate.observation.logicalEventBytes);
+    assert.ok(candidate.observation.eventReadsBySource.some(source => source.scope === "archive"));
+    assert.ok(candidate.observation.metadataReadBytes > 0);
+    assert.ok(candidate.observation.cacheReadBytes > 0);
+    assert.ok(candidate.observation.segmentHashCpuMicros > 0);
+    assert.ok(candidate.observation.eventValidationCpuMicros > 0);
+    samples.push({ scenario, candidate: candidate.observation, full: full.observation });
+    return candidate.value;
+  };
+  await compare("unchanged", 0);
+  let checkpoint = await readCacheSnapshot(libraryId);
+  await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "7", occurredAt: at });
+  await writeCacheSnapshot(checkpoint);
+  await compare("one stream, one append", 1);
+  checkpoint = await readCacheSnapshot(libraryId);
+  await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "8", occurredAt: at });
+  await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "9", occurredAt: at });
+  await writeCacheSnapshot(checkpoint);
+  await compare("one stream, multiple appends", 2);
+  checkpoint = await readCacheSnapshot(libraryId);
+  const home = process.env.EINZBERN_HOME;
+  try {
+    for (const device of ["laptop", "desktop"]) {
+      process.env.EINZBERN_HOME = join(f.root, device);
+      await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: device === "laptop" ? "10" : "11", occurredAt: at });
+    }
+  } finally {
+    process.env.EINZBERN_HOME = home;
+  }
+  await writeCacheSnapshot(checkpoint);
+  const expected = await compare("multiple source streams append", 2);
+  const { spawnSync } = await import("node:child_process");
+  const module = new URL("../dist/build/packages/core/src/workspace.js", import.meta.url).href;
+  const observer = new URL("../dist/build/packages/core/src/recall-observation.js", import.meta.url).href;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `import {materializeLibrary} from ${JSON.stringify(module)}; import {withRecallObservation} from ${JSON.stringify(observer)}; console.log(JSON.stringify(await withRecallObservation(()=>materializeLibrary(process.argv[1]))));`, f.to], { env: process.env, encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  const restarted = JSON.parse(child.stdout);
+  assert.deepEqual(restarted.value, expected);
+  assert.equal(restarted.observation.replayedEvents, 0);
+  for (let pair = 0; pair < 15; pair += 1) {
+    const run = async full => withRecallObservation(() => full ? materializeWorkspaceFromGenesis(f.to) : materializeLibrary(f.to));
+    const firstFull = pair % 2 === 0;
+    const first = await run(firstFull), second = await run(!firstFull);
+    assert.deepEqual(first.value, second.value);
+    samples.push({ pair, candidate: (firstFull ? second : first).observation, full: (firstFull ? first : second).observation });
+  }
+  t.diagnostic(JSON.stringify({ matrix: samples, restarted: restarted.observation, testProcessResources: process.resourceUsage() }));
+});
+
+test("648: full verification detects authentic same-length, same-name, missing and incomplete source anomalies", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  const library = await openLibrary(f.to);
+  const index = await readConsolidationIndex(f.to, library.manifest);
+  const source = index.sources[1];
+  const entry = source.inventory.find(file => /akasha\/.*\.ndjson$/u.test(file.path));
+  const path = join(f.to, source.archive, entry.path);
+  const original = await readFile(path), originalStat = await stat(path);
+  const expected = await materializeWorkspaceFromGenesis(f.to);
+  await materializeLibrary(f.to);
+  const warm = await withRecallObservation(() => materializeLibrary(f.to));
+  assert.deepEqual(warm.value, expected);
+  assert.ok(warm.observation.cacheReadBytes > 0);
+  assert.equal(warm.observation.cacheWriteBytes, 0);
+  const observations = [{ scenario: "warm unchanged, no trusted identity bridge", observation: warm.observation }];
+  const rejects = async (scenario, predicate) => {
+    let observation;
+    await assert.rejects(withRecallObservation(() => materializeLibrary(f.to), value => { observation = value; }), predicate);
+    assert.ok(observation.logicalEventBytes > 0, scenario);
+    observations.push({ scenario, observation });
+  };
+  const restore = async () => {
+    await writeFile(path, original);
+    await utimes(path, originalStat.atime, originalStat.mtime);
+  };
+  const changed = Buffer.from(original);
+  changed[changed.length - 2] ^= 1;
+  await writeFile(path, changed);
+  await utimes(path, originalStat.atime, originalStat.mtime);
+  await rejects("in-place same-length corruption with restored mtime");
+  await restore();
+  await writeFile(`${path}.replacement`, changed);
+  await utimes(`${path}.replacement`, originalStat.atime, originalStat.mtime);
+  await rename(`${path}.replacement`, path);
+  await rejects("same-name same-length replacement with restored mtime");
+  await restore();
+  await writeFile(`${path}.replacement`, original);
+  await rename(`${path}.replacement`, path);
+  const replaced = await withRecallObservation(() => materializeLibrary(f.to));
+  assert.deepEqual(replaced.value, expected, "byte-identical replacement is valid after full verification");
+  assert.equal(replaced.observation.logicalEventBytes, warm.observation.logicalEventBytes);
+  observations.push({ scenario: "byte-identical replacement fully read", observation: replaced.observation });
+  await rename(path, `${path}.missing`);
+  await rejects("missing historical segment", { reasonCode: "AKASHA_SEGMENT_CORRUPT" });
+  await rename(`${path}.missing`, path);
+  await writeFile(path, original.subarray(0, Math.floor(original.length / 2)));
+  await rejects("partially populated historical segment", { reasonCode: "AKASHA_SEGMENT_CORRUPT" });
+  await restore();
+  const indexPath = join(f.to, library.manifest.consolidation.index);
+  const originalIndex = await readFile(indexPath);
+  await writeFile(indexPath, Buffer.concat([originalIndex, Buffer.from(" ")]));
+  await rejects("index digest mismatch", { reasonCode: "CONSOLIDATION_DIGEST_MISMATCH" });
+  await writeFile(indexPath, originalIndex);
+  const { readStreamManifest, readStreamEvents, buildStreamEvents, appendStreamEvents } = await import("../dist/build/packages/core/src/akasha.js");
+  const archive = join(f.to, source.archive);
+  const deviceId = Object.keys(source.versionVector)[0];
+  const manifest = await readStreamManifest(archive, deviceId, { archivedManifest: source.manifest });
+  const events = await readStreamEvents(archive, manifest, { archivedManifest: source.manifest });
+  const setting = events.find(event => event.payload.operation === "settings.updated");
+  await appendStreamEvents({ root: archive, manifest: source.manifest }, manifest, buildStreamEvents(manifest, [{ occurredAt: at, payload: setting.payload }], manifest.clockHighWater));
+  await rejects("authentic source append under an unchanged consolidation index", /CONSOLIDATION_SOURCE_CHANGED/u);
+  t.diagnostic(JSON.stringify({ fullReadAnomalies: observations, nativeHelperInvocations: 0, readSkipAcceptance: "unclaimed" }));
+});
+
+test("648: a real mmap mutation cannot be hidden by a warm replay checkpoint", { skip: process.platform !== "darwin" }, async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  await materializeLibrary(f.to);
+  const index = await readConsolidationIndex(f.to, (await openLibrary(f.to)).manifest);
+  const source = index.sources[1];
+  const entry = source.inventory.find(file => /akasha\/.*\.ndjson$/u.test(file.path));
+  const path = join(f.to, source.archive, entry.path);
+  const { spawn } = await import("node:child_process");
+  const python = spawn("/usr/bin/python3", ["-c", "import mmap,sys\nf=open(sys.argv[1],'r+b')\nm=mmap.mmap(f.fileno(),0)\nm[-2]=m[-2]^1\nprint('mapped',flush=True)\nsys.stdin.read(1)\nm.close()\nf.close()", path], { stdio: ["pipe", "pipe", "pipe"] });
+  const finished = new Promise((resolve, reject) => { python.once("error", reject); python.once("exit", (code, signal) => resolve({ code, signal })); });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("mmap fixture did not become ready")), 3000);
+      python.stdout.once("data", data => { clearTimeout(timer); data.toString().includes("mapped") ? resolve() : reject(new Error("unexpected mmap fixture output")); });
+      python.once("error", error => { clearTimeout(timer); reject(error); });
+      python.once("exit", code => { clearTimeout(timer); reject(new Error(`mmap fixture exited early: ${code}`)); });
+    });
+    await assert.rejects(materializeLibrary(f.to));
+  } finally {
+    python.stdin.end("\n");
+    const timer = setTimeout(() => python.kill("SIGTERM"), 3000);
+    try { assert.deepEqual(await finished, { code: 0, signal: null }); } finally { clearTimeout(timer); }
+  }
+});
+
+test("647: a new supported consolidation generation invalidates the previous base and replays changed sources", async t => {
+  const f = await fixture(t);
+  const copies = [];
+  for (const source of f.sources) {
+    const path = join(f.root, "next-sources", source.projectId);
+    await cp(source.path, path, { recursive: true });
+    copies.push({ ...source, path });
+  }
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  const { readCacheSnapshot, writeCacheSnapshot } = await import("../dist/build/packages/core/src/library-cache.js");
+  await materializeLibrary(f.to);
+  const previous = await readCacheSnapshot(f.sources[0].id);
+  for (const source of copies.slice(1)) await setWorkspaceSetting(source.path, { key: "design.repository", value: `https://example.test/next-${source.projectId}`, occurredAt: at });
+  for (const source of copies) await registerLibrary({ projectPath: source.projectPath, projectId: source.projectId, libraryPath: source.path, registeredAt: at, gitRemote: null });
+  const next = join(f.root, "next-shared");
+  await consolidateLibraries({ primary: copies[0].path, sources: copies.map(source => ({ path: source.path, bindings: [{ projectPath: source.projectPath, projectId: source.projectId, role: source.role }] })) }, next, f.options);
+  await writeCacheSnapshot(previous);
+  const changed = await withRecallObservation(() => materializeLibrary(next));
+  assert.ok(changed.observation.cacheReasons.includes("consolidation-checkpoint-miss-full-replay"));
+  assert.ok(changed.observation.replayedEvents > 0);
+  assert.deepEqual(changed.value, await materializeWorkspaceFromGenesis(next));
+  for (const source of copies.slice(1)) assert.equal(scopedWorkspaceState(changed.value, source.projectId).settings.find(setting => setting.key === "design.repository").value, `https://example.test/next-${source.projectId}`);
+  const warm = await withRecallObservation(() => materializeLibrary(next));
+  assert.equal(warm.observation.replayedEvents, 0);
+  assert.deepEqual(warm.value, changed.value);
+});
+
+test("647: valid checkpoint payload paired with foreign or damaged coverage never seeds replay", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  const { readCacheSnapshot, writeCacheSnapshot, discardCacheSnapshot } = await import("../dist/build/packages/core/src/library-cache.js");
+  const expected = await materializeWorkspaceFromGenesis(f.to);
+  await materializeLibrary(f.to);
+  const valid = await readCacheSnapshot(f.sources[0].id);
+  for (const [scenario, checkpoint] of [
+    ["foreign engine", { ...valid, engineVersion: "0.0.0" }],
+    ["damaged coverage", { ...valid, maxClock: valid.maxClock + 1 }],
+    ["foreign base", { ...valid, state: { ...valid.state, consolidationBinding: "foreign-base" } }],
+    ["incompatible checkpoint", { ...valid, state: { ...valid.state, consolidationCheckpoint: null } }],
+    ["damaged projection shape", { ...valid, state: { ...valid.state, work: null } }],
+  ]) {
+    await writeCacheSnapshot(checkpoint);
+    const result = await withRecallObservation(() => materializeLibrary(f.to));
+    assert.ok(result.observation.cacheReasons.includes("consolidation-checkpoint-miss-full-replay"), scenario);
+    assert.deepEqual(result.value, expected, scenario);
+  }
+  await discardCacheSnapshot(f.sources[0].id);
+  assert.deepEqual(await materializeLibrary(f.to), expected, "missing checkpoint");
+  const oldState = await readCacheSnapshot(f.sources[0].id);
+  await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "13", occurredAt: at });
+  const { readAllStreams } = await import("../dist/build/packages/core/src/akasha.js");
+  const advanced = await readAllStreams(f.to);
+  const appended = await materializeWorkspaceFromGenesis(f.to);
+  // A torn/mispaired header claims the new tail is already materialized while
+  // its valid, hashed projection still contains only the older state.
+  await writeCacheSnapshot({
+    ...oldState, version: appended.version,
+    maxClock: Math.max(...advanced.events.map(entry => entry.clock)),
+    streams: advanced.streams.filter(stream => stream.manifest?.headEventHash).map(({ manifest }) => ({ deviceId: manifest.deviceId, streamId: manifest.streamId, sequence: manifest.sequence, eventHash: manifest.headEventHash })),
+  });
+  const repaired = await withRecallObservation(() => materializeLibrary(f.to));
+  assert.ok(repaired.observation.cacheReasons.includes("consolidation-checkpoint-miss-full-replay"));
+  assert.deepEqual(repaired.value, appended, "a valid old state cannot skip a newly committed event");
+});
+
+test("648: a checksum-valid cache claim is not authority for unread source bytes", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { createHash } = await import("node:crypto");
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { readCacheSnapshot } = await import("../dist/build/packages/core/src/library-cache.js");
+  const expected = await materializeWorkspaceFromGenesis(f.to);
+  await materializeLibrary(f.to);
+  const library = await openLibrary(f.to);
+  const index = await readConsolidationIndex(f.to, library.manifest);
+  const source = index.sources[1];
+  const entry = source.inventory.find(file => /akasha\/.*\.ndjson$/u.test(file.path));
+  const path = join(f.to, source.archive, entry.path);
+  const snapshot = await readCacheSnapshot(library.manifest.libraryId);
+  const proofClaim = {
+    libraryId: library.manifest.libraryId,
+    sourceId: source.manifest.libraryId,
+    segment: entry.path,
+    bytes: entry.bytes,
+    sha256: entry.sha256,
+    indexDigest: library.manifest.consolidation.sha256,
+    sourceHead: source.headEventHash,
+    versionVector: source.versionVector,
+    verification: "claimed-by-cache-writer",
+  };
+  // Model a writer of the existing cache files, without calling the engine's
+  // cache writer or changing permissions. A content digest is publicly
+  // recomputable, so it detects damage but does not identify this writer.
+  const stateText = `${JSON.stringify({ ...snapshot.state, sourceByteVerification: proofClaim })}\n`;
+  const stateDigest = createHash("sha256").update(stateText).digest("hex");
+  const directory = join(cachePath(library.manifest.libraryId), "snapshots");
+  const header = JSON.parse(await readFile(join(directory, "snapshot.json"), "utf8"));
+  await writeFile(join(directory, `${stateDigest}.json`), stateText);
+  await writeFile(join(directory, "snapshot.json"), `${JSON.stringify({ ...header, stateDigest })}\n`);
+  assert.deepEqual((await readCacheSnapshot(library.manifest.libraryId)).state.sourceByteVerification, proofClaim);
+  assert.deepEqual(await materializeLibrary(f.to), expected, "a disposable cache extension changes no authority");
+  const before = await stat(path);
+  const original = await readFile(path);
+  const changed = Buffer.from(original);
+  changed[changed.length - 2] ^= 1;
+  await writeFile(path, changed);
+  await utimes(path, before.atime, before.mtime);
+  await assert.rejects(materializeLibrary(f.to), "even a checksum-valid claim cannot conceal same-length source corruption");
+});
+
+test("648: the source event API still reads its actual archive after a warm consolidated checkpoint", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { readStreamManifest, readStreamEvents } = await import("../dist/build/packages/core/src/akasha.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  const state = await materializeLibrary(f.to);
+  await materializeLibrary(f.to);
+  const index = await readConsolidationIndex(f.to, (await openLibrary(f.to)).manifest);
+  for (const source of index.sources) {
+    const archive = join(f.to, source.archive);
+    const { readdir } = await import("node:fs/promises");
+    for (const deviceId of await readdir(join(archive, "akasha"))) {
+      const options = { archivedManifest: source.manifest };
+      const manifest = await readStreamManifest(archive, deviceId, options);
+      if (manifest === null) continue;
+      const read = await withRecallObservation(() => readStreamEvents(archive, manifest, options));
+      assert.equal(read.value.length, manifest.sequence);
+      assert.equal(read.observation.logicalEventBytes, manifest.segments.reduce((total, segment) => total + segment.bytes, 0));
+      assert.ok(read.observation.eventReadsBySource.every(entry => entry.scope === "archive"));
+      for (const event of read.value) assert.deepEqual(state.events.find(entry => entry.id === event.id), event);
+    }
+  }
 });

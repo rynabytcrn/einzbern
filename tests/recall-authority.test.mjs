@@ -2,7 +2,7 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -75,4 +75,32 @@ test("645: a fresh raw read excludes artifact writing and unobserved CLI exclude
   `], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: join(base, "device") } });
   assert.equal(child.status, 0, child.stderr);
   assert.equal(child.stdout, "");
+});
+
+test("645: entry benchmark keeps completed memory before reporting and retains the reporter lifecycle", async t => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "recall-reporter-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const root = join(base, "library");
+  const at = "2026-11-10T12:00:00Z";
+  await initializeLibrary({ root, createdAt: at });
+  const spec = join(base, "spec.json");
+  await writeFile(spec, JSON.stringify({ entry: "cli", at, queries: ["reporter boundary"] }));
+  const child = spawnSync(process.execPath, ["scripts/performance/recall-entry-sample.mjs", ".", root, spec, "0", "0"], {
+    encoding: "utf8", env: { ...process.env, EINZBERN_HOME: join(base, "device") },
+  });
+  assert.equal(child.status, 0, child.stderr);
+  const sample = JSON.parse(child.stdout);
+  const reporter = JSON.parse(child.stderr);
+  assert.equal(reporter.schemaVersion, "einzbern.performance.reporter.v1");
+  assert.equal(sample.error, null);
+  assert.equal(JSON.parse(sample.output).reasonCode, "RECALL_NO_STRONG_HIT");
+  assert.deepEqual(sample.completedMemory, reporter.beforeReport.memory);
+  assert.equal(sample.maxRss, reporter.beforeReport.usage.maxRSS);
+  assert.equal(sample.processCpuMicros, reporter.beforeReport.usage.userCPUTime + reporter.beforeReport.usage.systemCPUTime);
+  assert.equal(reporter.reportBytes, Buffer.byteLength(child.stdout));
+  const phases = [reporter.beforeReport, reporter.afterSort, reporter.afterEncoding, reporter.afterWriteCall, reporter.beforeExit];
+  for (let index = 1; index < phases.length; index += 1) {
+    assert.ok(phases[index].elapsedMs >= phases[index - 1].elapsedMs);
+    assert.ok(phases[index].usage.maxRSS >= phases[index - 1].usage.maxRSS);
+  }
 });

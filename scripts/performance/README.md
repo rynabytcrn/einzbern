@@ -138,6 +138,18 @@ is separate from the internal operation interval. On macOS, optional system
 Node's separately sampled `maxRSS` remains in KiB. The native time CPU counters
 have centisecond output resolution. Block operation counts are not OS I/O bytes.
 
+The entry sample snapshots `completedMemory` and Node resource usage before its
+reporter runs. Source inventory uses code-unit path ordering, so preparing the
+inventory does not initialize locale data in the target process. Reporter sort,
+JSON encoding, write call and natural `beforeExit` snapshots are emitted to
+stderr as `einzbern.performance.reporter.v1`; the paired runner preserves them
+alongside native system-time output. Reporter snapshots report their own CPU,
+elapsed time, memory and Node peak. The system peak and lifecycle still include
+the complete child process, output flushing and reporter. Earlier series using
+locale sorting and post-sort `completedMemory` have different reporter allocation
+conditions and remain separate evidence. This correction alone does not explain
+an operation-timer or pre-report Node RSS regression.
+
 Import `summarizePairedSamples` from `recall-summary.mjs` to summarize the JSON
 rows. It uses nearest-rank P50/P95 per query/input, retains failure counts, and
 refuses to treat a null/unconfirmed authority head as a successful performance

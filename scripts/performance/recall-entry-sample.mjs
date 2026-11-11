@@ -101,9 +101,18 @@ try {
   process.exitCode = 1;
 }
 process.stdout.write = write;
-const usage = process.resourceUsage();
-const loadedSources = metrics.loadedSources.sort((a, b) => a.file.localeCompare(b.file));
-write(`${JSON.stringify({
+function reportCheckpoint() {
+  return { elapsedMs: performance.now(), usage: process.resourceUsage(), memory: process.memoryUsage() };
+}
+// Keep operation-complete memory beside Node's pre-report resource snapshot.
+// The reporter's allocations and the full-process system peak stay separate.
+const beforeReport = reportCheckpoint();
+const usage = beforeReport.usage;
+// Source paths need deterministic ordering, without initializing locale data in
+// the measured process solely to prepare its benchmark inventory.
+const loadedSources = metrics.loadedSources.sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
+const afterSort = reportCheckpoint();
+const encodedReport = `${JSON.stringify({
   entry: spec.entry, observe: observe === "1", at: spec.at, query,
   authorityHead: metrics.authorityHead,
   semanticSha256: createHash("sha256").update(output).digest("hex"),
@@ -115,8 +124,18 @@ write(`${JSON.stringify({
   logicalEventBytes: metrics.segmentReads.reduce((total, read) => total + read.bytes, 0),
   segmentReads: metrics.segmentReads.length, reads: metrics.segmentReads,
   materializations: metrics.materializations,
-  loadedMemory: metrics.loadedMemory, completedMemory: process.memoryUsage(),
+  loadedMemory: metrics.loadedMemory, completedMemory: beforeReport.memory,
   loadedSourceBytes: loadedSources.reduce((total, file) => total + file.bytes, 0),
   loadedSourceSha256: createHash("sha256").update(JSON.stringify(loadedSources)).digest("hex"),
   osIoBytes: null,
-})}\n`);
+})}\n`;
+const afterEncoding = reportCheckpoint();
+write(encodedReport);
+const afterWriteCall = reportCheckpoint();
+process.once("beforeExit", () => {
+  const beforeExit = reportCheckpoint();
+  process.stderr.write(`${JSON.stringify({ schemaVersion: "einzbern.performance.reporter.v1",
+    beforeReport, afterSort, afterEncoding, afterWriteCall, beforeExit,
+    reportBytes: Buffer.byteLength(encodedReport),
+  })}\n`);
+});

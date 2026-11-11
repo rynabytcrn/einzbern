@@ -111,6 +111,7 @@ import type {
 } from "./setup.js";
 import { installSkillCopies, skillCopyRoots, skillCopiesRecordPath, skillCopyPath, verifySkillCopies } from "./skill-copies.js";
 import { KIRO_USER_HOOKS_FILE, applyKiroHookPlan, kiroSelectionStatus, planKiroHookScopes } from "./kiro-host.js";
+import { ANTIGRAVITY_USER_HOOKS_FILE, antigravityConfigRoot, antigravitySelectionStatus, applyAntigravityHookPlans, planAntigravityHookScopes } from "./antigravity-host.js";
 import { createProject, initializeLibrary, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
 import { canonicalSha256 } from "../../protocol/src/index.js";
 import { projectLineage, scopedWorkspaceState } from "./project-scope.js";
@@ -541,10 +542,11 @@ async function planRegistry(recorder: SetupRecorder, input: WiringPlanInput, lib
   if (!current || !await registryPathsPortable(input.deviceHome)) recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
 }
 
-async function planSkillCopies(recorder: SetupRecorder, digest: string, home: string, deviceHome: string, includeKiro = false): Promise<void> {
+async function planSkillCopies(recorder: SetupRecorder, digest: string, home: string, deviceHome: string, includeKiro = false, includeAntigravity = false): Promise<void> {
   const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
-  for (const root of skillCopyRoots(includeKiro)) {
-    const path = skillCopyPath(home, root, kiroHome);
+  const antigravityConfigHome = process.env.ANTIGRAVITY_CONFIG_DIR ?? join(home, ".gemini", "config");
+  for (const root of skillCopyRoots(includeKiro, includeAntigravity)) {
+    const path = skillCopyPath(home, root, kiroHome, antigravityConfigHome);
     const kind = await entryKind(path);
     if (kind === null) {
       recorder.write("skill-copies", path, "create");
@@ -557,7 +559,7 @@ async function planSkillCopies(recorder: SetupRecorder, digest: string, home: st
     }
   }
   const record = skillCopiesRecordPath(deviceHome);
-  const verification = await recorder.attempt("skill-copies", record, () => verifySkillCopies({ home, deviceHome, includeKiro, kiroHome }));
+  const verification = await recorder.attempt("skill-copies", record, () => verifySkillCopies({ home, deviceHome, includeKiro, kiroHome, includeAntigravity, antigravityConfigHome }));
   if (verification === null) return;
   for (const copy of verification.copies) {
     if (copy.recorded !== null && copy.actual !== null && copy.actual !== copy.recorded && copy.actual !== digest) {
@@ -607,6 +609,31 @@ export async function planHooks(recorder: SetupRecorder, home: string, deviceHom
     const plans = await recorder.attempt("host-hooks", target, () => planKiroHookScopes({
       home, kiroHome, projectRoot, deviceHome, install, navigation: navigation === "declined" ? "declined" : "always",
     }));
+    if (plans !== null) for (const plan of plans) {
+      if (!plan.changed) continue;
+      recorder.write("host-hooks", plan.path, plan.before === null ? "create" : "update");
+      if (plan.before !== null) recorder.backup("host-hooks", plan.path);
+    }
+  }
+  const antigravitySelected = antigravitySelectionStatus({ home, projectRoot }) === "selected";
+  if (!install || antigravitySelected) {
+    const antigravityConfigHome = antigravityConfigRoot({
+      home,
+      ...(process.env.ANTIGRAVITY_CONFIG_DIR === undefined ? {} : { antigravityConfigHome: process.env.ANTIGRAVITY_CONFIG_DIR }),
+    });
+    const target = join(antigravityConfigHome, ...ANTIGRAVITY_USER_HOOKS_FILE.split("/"));
+    let plans: Awaited<ReturnType<typeof planAntigravityHookScopes>> | null = null;
+    try {
+      plans = await planAntigravityHookScopes({
+        home, antigravityConfigHome, projectRoot, deviceHome, install, navigation: navigation === "declined" ? "declined" : "always",
+      });
+    } catch (error) {
+      const reasonCode = reasonOf(error);
+      if (reasonCode === null) throw error;
+      const detailRecord = (error as { readonly details?: Readonly<Record<string, unknown>> })?.details;
+      const detailPath = detailRecord?.path ?? detailRecord?.file;
+      recorder.block("host-hooks", typeof detailPath === "string" ? detailPath : target, reasonCode, messageOf(error));
+    }
     if (plans !== null) for (const plan of plans) {
       if (!plan.changed) continue;
       recorder.write("host-hooks", plan.path, plan.before === null ? "create" : "update");
@@ -705,9 +732,10 @@ async function coordinationSectionsRoot(libraryPath: string, projectRoot: string
 export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
   const { projectRoot, home, deviceHome, library, navigation, steps } = input;
   const kiroSelected = kiroSelectionStatus({ home, projectRoot }) === "selected";
+  const antigravitySelected = antigravitySelectionStatus({ home, projectRoot }) === "selected";
   if (library !== null && runs(steps, "registry")) await planRegistry(recorder, input, library);
   const skillDigest = input.engine?.skillDigest ?? null;
-  if (skillDigest !== null && runs(steps, "skill-copies")) await planSkillCopies(recorder, skillDigest, home, deviceHome, kiroSelected);
+  if (skillDigest !== null && runs(steps, "skill-copies")) await planSkillCopies(recorder, skillDigest, home, deviceHome, kiroSelected, antigravitySelected);
   if (input.engine !== null && runs(steps, "launchers")) await planLaunchers(recorder, input.engine.launchers, deviceHome);
   if (runs(steps, "host-hooks")) await planHooks(recorder, home, deviceHome, navigation, true, input.codexAdmission, input.enableHooksAuthorized === true, projectRoot);
   if (library !== null && runs(steps, "writable-roots")) await planRoots(recorder, projectRoot, library.path);
@@ -800,14 +828,16 @@ async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput, l
 async function applySkillCopies(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
   const { home, deviceHome, at } = input;
   const includeKiro = kiroSelectionStatus({ home, projectRoot: input.projectRoot }) === "selected";
+  const includeAntigravity = antigravitySelectionStatus({ home, projectRoot: input.projectRoot }) === "selected";
   const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
+  const antigravityConfigHome = process.env.ANTIGRAVITY_CONFIG_DIR ?? join(home, ".gemini", "config");
   const record = skillCopiesRecordPath(deviceHome);
   const recordAction: SetupWriteAction = await entryKind(record) === null ? "create" : "update";
   const source = join(input.engineDirectory, ...FRESH_ENGINE_TREE.skill.split("/"));
   const desired = (await computeInstallTreeDigest(source)).sha256;
-  const verification = await verifySkillCopies({ home, deviceHome, includeKiro, kiroHome });
+  const verification = await verifySkillCopies({ home, deviceHome, includeKiro, kiroHome, includeAntigravity, antigravityConfigHome });
   if (verification.copies.some(copy => copy.recorded !== null && copy.actual !== null && copy.actual !== copy.recorded && copy.actual !== desired)) setupFail("SETUP_SKILL_USER_EDITED", "Preserve and review user-modified Skill before replacement");
-  const copies = await installSkillCopies({ source: join(input.engineDirectory, ...FRESH_ENGINE_TREE.skill.split("/")), now: at, home, deviceHome, includeKiro, kiroHome });
+  const copies = await installSkillCopies({ source: join(input.engineDirectory, ...FRESH_ENGINE_TREE.skill.split("/")), now: at, home, deviceHome, includeKiro, kiroHome, includeAntigravity, antigravityConfigHome });
   for (const copy of copies.copies) {
     if (copy.action === "reused") continue;
     recorder.write("skill-copies", copy.path, copy.action === "created" ? "create" : "update");
@@ -869,6 +899,23 @@ export async function applyHooks(recorder: SetupRecorder, input: {
     });
     for (const plan of plans) {
       await applyKiroHookPlan(plan, { at, deviceHome });
+      if (!plan.changed) continue;
+      recorder.write("host-hooks", plan.path, plan.before === null ? "create" : "update");
+      if (plan.before !== null) recorder.backup("host-hooks", plan.path);
+    }
+  }
+  const antigravitySelected = antigravitySelectionStatus({ home, projectRoot: input.projectRoot }) === "selected";
+  if (input.install === false || antigravitySelected) {
+    const antigravityConfigHome = antigravityConfigRoot({
+      home,
+      ...(process.env.ANTIGRAVITY_CONFIG_DIR === undefined ? {} : { antigravityConfigHome: process.env.ANTIGRAVITY_CONFIG_DIR }),
+    });
+    const plans = await planAntigravityHookScopes({
+      home, antigravityConfigHome, projectRoot: input.projectRoot, deviceHome, install: input.install ?? true,
+      navigation: navigation === "declined" ? "declined" : "always",
+    });
+    await applyAntigravityHookPlans(plans, { at, deviceHome });
+    for (const plan of plans) {
       if (!plan.changed) continue;
       recorder.write("host-hooks", plan.path, plan.before === null ? "create" : "update");
       if (plan.before !== null) recorder.backup("host-hooks", plan.path);

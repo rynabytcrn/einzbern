@@ -394,7 +394,12 @@ export function unansweredReason(entries, found) {
 }
 
 function promptDirectory(payload) {
-  const cwd = typeof payload.cwd === "string" && payload.cwd.length > 0 && isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
+  const workspacePath = Array.isArray(payload.workspacePaths) && typeof payload.workspacePaths[0] === "string" && payload.workspacePaths[0].length > 0 && isAbsolute(payload.workspacePaths[0])
+    ? payload.workspacePaths[0]
+    : null;
+  const cwd = typeof payload.cwd === "string" && payload.cwd.length > 0 && isAbsolute(payload.cwd)
+    ? payload.cwd
+    : (workspacePath ?? process.cwd());
   return realpathSync.native(cwd);
 }
 
@@ -523,13 +528,16 @@ function launchedDirectly() {
 }
 
 if (launchedDirectly()) {
+  const antigravityEmpty = () => (process.argv[2] === "pre-tool-use" ? `${JSON.stringify({ decision: "allow" })}\n` : "{}\n");
   process.on("uncaughtException", report);
   process.on("unhandledRejection", report);
   try {
     const output = await launch(process.argv.slice(2), process.env);
     if (output !== null) process.stdout.write(output);
+    else if (process.env.EINZBERN_HOST === "antigravity") process.stdout.write(antigravityEmpty());
   } catch (error) {
     report(error);
+    if (process.env.EINZBERN_HOST === "antigravity") process.stdout.write(antigravityEmpty());
   }
   process.exitCode = 0;
 }

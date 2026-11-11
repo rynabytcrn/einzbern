@@ -90,6 +90,11 @@ at all, and doctor does not report it.
   workspace scope and refresh its Skill copy from recorded ownership evidence. A managed Hook
   whose trigger or action was edited is preserved and reported as a conflict; other Kiro Agents,
   trust, permissions and hooks remain intact.
+- When Antigravity is selected, update and repair reconcile only the top-level `"einzbern"` group
+  into `${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/config}/hooks.json` (retiring redundant unedited
+  `"einzbern"` entries from the current and registered workspace `.agents/hooks.json` files on the device) and refresh its Skill copy from recorded
+  ownership evidence. User-edited `"einzbern"` entries or commands are preserved and reported as a
+  conflict; all other Antigravity hook groups, skills, rules and plugins remain intact.
 - When upgrading from an engine whose update receipt has no `managedUpdates`, finish the same
   approved update with the newly installed engine: use `library-list` and `rule-list` to identify
   existing configured outputs, run `agents-render --project <registered output> --at <UTC>` for

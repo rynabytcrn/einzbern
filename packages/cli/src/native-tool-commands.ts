@@ -25,13 +25,23 @@ import { prepareNativeDispatch, recordNativeDispatch, reserveDispatchArtifact, w
 import type { NativeDispatchPreparation } from "../../core/src/dispatch-workflow.js";
 import { normalizeNativeToolEvidence } from "../../core/src/native-tool-evidence.js";
 import type { NativeToolAttempt, NativeToolResponseInput, NativeRetryReconciliation } from "../../core/src/native-tool-evidence.js";
-import { inspectKiroProcessPreparation, normalizeKiroProcessEvidence, recordKiroProcessEvidence } from "../../core/src/native-tool-evidence.js";
+import {
+  inspectAntigravityProcessPreparation,
+  inspectKiroProcessPreparation,
+  normalizeAntigravityProcessEvidence,
+  normalizeKiroProcessEvidence,
+  recordAntigravityProcessEvidence,
+  recordKiroProcessEvidence,
+} from "../../core/src/native-tool-evidence.js";
 import { planSharedSubmit, readSharedSubmitAdvisory, validateSharedSubmitAdvisory, writeSharedSubmitAdvisory } from "../../core/src/shared-submit.js";
 import type { SharedSubmitInput } from "../../core/src/shared-submit.js";
 import type { WorkspaceState, WorkspaceWriteLockOptions } from "../../core/src/workspace.js";
 
 const flag = (name: string, required: boolean, valueKind = "path", valueShape?: string): RuntimeCommandFlag => ({ name, required, valueKind: valueKind === "path" ? "string" : valueKind, ...(valueShape === undefined ? {} : { valueShape }) });
 export const NATIVE_TOOL_COMMAND_CATALOG: readonly RuntimeCommandCatalogEntry[] = Object.freeze([
+  { name: "execution-antigravity-preflight", availability: "cli", mutates: true, flags: [flag("binding", true, "path", "Saved HostExecutionPreparation v1 JSON; validates Antigravity CLI scope without launching a process."), flag("reserve-output", false, "path", "Optionally reserve the private create-new evidence destination before launching Antigravity CLI.")] },
+  { name: "execution-antigravity-record", availability: "cli", mutates: true, flags: [flag("binding", true, "path", "Saved Antigravity HostExecutionPreparation v1 JSON."), flag("result", false, "path", "Actual Antigravity child process return JSON; omit only for a refused preflight."), flag("output", true, "path", "Create-new private Antigravity process evidence outside device/library roots.")] },
+  { name: "execution-antigravity-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true, "path", "Antigravity process evidence JSON.")] },
   { name: "execution-codex-peer-record", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("manifest", true), flag("records", true), flag("capacity", true), flag("codex-admission", false), flag("role-change", false), flag("actor", false, "string"), flag("delivery", false), flag("prior", false), flag("output", true)] },
   { name: "execution-codex-peer-evidence", availability: "cli", mutates: false, flags: [flag("from-file", true)] },
   { name: "execution-host-prepare", availability: "cli", mutates: true, flags: [flag("workspace", true), flag("request", true, "path", "HostExecutionRequest v1 JSON"), flag("arguments", true, "path", "{selection, argumentsValue} actual request JSON"), flag("codex-peer-worker", false, "boolean"), flag("codex-admission", false), flag("codex-settings-intent", false, "path", "Existing Owner decision and exact settings target source; never a query permission"), flag("output", true)] },
@@ -134,6 +144,20 @@ export async function runNativeToolCommand(command: string, values: Readonly<Rec
     return json(result);
   }
   if (command === "execution-host-evidence") return json(normalizeHostNativeRecord(await input(values["from-file"]!)));
+  if (command === "execution-antigravity-preflight") {
+    const preflight = inspectAntigravityProcessPreparation(await input(values.binding!));
+    if (values["reserve-output"] === undefined) return json(preflight);
+    const reservation = await reserveDispatchArtifact(values["reserve-output"], [], context.home);
+    return json({ ...preflight, reservation });
+  }
+  if (command === "execution-antigravity-record") {
+    const preparation = await input(values.binding!);
+    const processReturn = values.result === undefined ? undefined : await input(values.result!);
+    const result = recordAntigravityProcessEvidence(preparation, processReturn);
+    await writeDispatchArtifact(values.output!, result, [], context.home);
+    return json(result);
+  }
+  if (command === "execution-antigravity-evidence") return json(normalizeAntigravityProcessEvidence(await input(values["from-file"]!)));
   if (command === "execution-kiro-preflight") {
     const preflight = inspectKiroProcessPreparation(await input(values.binding!));
     if (values["reserve-output"] === undefined) return json(preflight);

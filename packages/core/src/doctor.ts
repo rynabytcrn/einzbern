@@ -65,6 +65,7 @@ import { inspectDshPlugin } from "./dsh-plugin.js";
 import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, hookLauncherPath, isEinzbernHookCommand, planHostHooks, readHostHooks } from "./host-hooks.js";
 import type { HostHookFileHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
 import { inspectKiroHookScope, kiroSelectionStatus, planKiroHookScopes, probeKiroHost } from "./kiro-host.js";
+import { antigravityConfigRoot, antigravitySelectionStatus, inspectAntigravityHookScope, planAntigravityHookScopes, probeAntigravityHost } from "./antigravity-host.js";
 import { managedSectionRecordKey, managedSectionRecordsFor, planManagedWrite } from "./managed-sections.js";
 import { readAgentsNavigation } from "./machine-settings.js";
 import { listRules } from "./rules.js";
@@ -391,6 +392,60 @@ async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
   const kiroFiles: JsonValue[] = kiroScopes.map(scope => ({ path: scope.path, hooks: scope.count, ...(scope.error === null ? {} : { error: scope.error }) }));
   causes.push(...kiroCauses);
   hosts.push({ host: "kiro", applicability: kiroApplicability, selection: kiroSelection, cliVersion: kiroIdentity.cli.version, cliStatus: kiroIdentity.cli.status, ideBundleId: kiroIdentity.ide.bundleId, ideVersion: kiroIdentity.ide.version, hooks: kiroCount, files: kiroFiles, causes: [...unique(kiroCauses)] });
+
+  const antigravityIdentity = probeAntigravityHost({ home: context.home, env: { ...context.cloud.env } as NodeJS.ProcessEnv });
+  const antigravitySelection = antigravitySelectionStatus({
+    home: context.home,
+    projectRoot: context.projectRoot,
+    ...(context.cloud.env.ANTIGRAVITY_CONFIG_DIR === undefined ? {} : { antigravityConfigHome: context.cloud.env.ANTIGRAVITY_CONFIG_DIR }),
+  });
+  const antigravityDetected = antigravitySelection === "selected";
+  const antigravityConfigHome = antigravityConfigRoot({
+    home: context.home,
+    ...(context.cloud.env.ANTIGRAVITY_CONFIG_DIR === undefined ? {} : { antigravityConfigHome: context.cloud.env.ANTIGRAVITY_CONFIG_DIR }),
+  });
+  const antigravityUserScope = await inspectAntigravityHookScope(antigravityConfigHome, "user");
+  const antigravityProjectScope = await inspectAntigravityHookScope(context.projectRoot, "project");
+  const antigravityScopes = antigravityUserScope.path === antigravityProjectScope.path ? [antigravityUserScope] : [antigravityUserScope, antigravityProjectScope];
+  const antigravityCount = antigravityScopes.reduce((sum, scope) => sum + scope.count, 0);
+  const antigravityCauses: string[] = [];
+  let antigravityApplicability = antigravitySelection === "not-selected" ? "not-selected" : "selection-unknown";
+  if (antigravityDetected) {
+    antigravityApplicability = "selected";
+    for (const scope of antigravityScopes) if (scope.error !== null) antigravityCauses.push("ANTIGRAVITY_HOOKS_FILE_UNREADABLE");
+    if (antigravityCauses.length === 0 && antigravityCount === 0) antigravityCauses.push("HOOK_MISSING");
+    if (antigravityCauses.length === 0 && antigravityScopes.filter(scope => scope.count > 0).length > 1) antigravityCauses.push("HOOK_DUPLICATED");
+    if (antigravityCauses.length === 0 && launcher !== null) {
+      try {
+        const plans = await planAntigravityHookScopes({
+          home: context.home,
+          antigravityConfigHome,
+          projectRoot: context.projectRoot,
+          deviceHome: context.deviceHome,
+          install: true,
+          navigation: await readAgentsNavigation(context.deviceHome) === "declined" ? "declined" : "always",
+          platform: context.platform,
+          coordinateRegisteredProjects: false,
+        });
+        if (plans.some(plan => plan.changed)) antigravityCauses.push("HOOK_NOT_AS_EXPECTED");
+      } catch (error) {
+        antigravityCauses.push((error as { readonly reasonCode?: string }).reasonCode === "ANTIGRAVITY_HOOKS_OWNERSHIP_CONFLICT" ? "HOOK_NOT_AS_EXPECTED" : "ANTIGRAVITY_HOOKS_FILE_UNREADABLE");
+      }
+    }
+  }
+  const antigravityFiles: JsonValue[] = antigravityScopes.map(scope => ({ path: scope.path, hooks: scope.count, ...(scope.error === null ? {} : { error: scope.error }) }));
+  causes.push(...antigravityCauses);
+  hosts.push({
+    host: "antigravity",
+    applicability: antigravityApplicability,
+    selection: antigravitySelection,
+    cliVersion: antigravityIdentity.cli.version,
+    cliStatus: antigravityIdentity.cli.status,
+    surfaces: antigravityIdentity.surfaces as unknown as JsonValue,
+    hooks: antigravityCount,
+    files: antigravityFiles,
+    causes: [...unique(antigravityCauses)],
+  });
   // TCRN-CROSS-STORY-548 R4: DSH keeps no hook file; when this home has DSH profiles, its entry says
   // what each profile's plugin would run. A launcher other than this device directory's is red; a
   // profile without the plugin, or one that cannot be read, is a hint and leaves the check as it is.
@@ -426,7 +481,13 @@ async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
 async function skillCopiesCheck(context: DoctorContext): Promise<DoctorCheck> {
   const includeKiro = kiroSelectionStatus({ home: context.home, projectRoot: context.projectRoot, ...(context.cloud.env.KIRO_HOME === undefined ? {} : { kiroHome: context.cloud.env.KIRO_HOME }) }) === "selected";
   const kiroHome = context.cloud.env.KIRO_HOME ?? join(context.home, ".kiro");
-  const verification = await verifySkillCopies({ home: context.home, deviceHome: context.deviceHome, includeKiro, kiroHome });
+  const includeAntigravity = antigravitySelectionStatus({
+    home: context.home,
+    projectRoot: context.projectRoot,
+    ...(context.cloud.env.ANTIGRAVITY_CONFIG_DIR === undefined ? {} : { antigravityConfigHome: context.cloud.env.ANTIGRAVITY_CONFIG_DIR }),
+  }) === "selected";
+  const antigravityConfigHome = context.cloud.env.ANTIGRAVITY_CONFIG_DIR ?? join(context.home, ".gemini", "config");
+  const verification = await verifySkillCopies({ home: context.home, deviceHome: context.deviceHome, includeKiro, kiroHome, includeAntigravity, antigravityConfigHome });
   return result("skill-copies", verification.ok ? [] : [verification.reasonCode], {
     record: verification.record,
     copies: verification.copies.map((copy) => ({ host: copy.host, path: copy.path, reasonCode: copy.reasonCode })),

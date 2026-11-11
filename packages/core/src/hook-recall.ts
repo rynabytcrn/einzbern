@@ -96,13 +96,16 @@ export function hookHost(env: NodeJS.ProcessEnv = process.env): HostHookHost {
 
 /**
  * The context a host reads from stdout for `event`. Claude Code, Codex and DSH use the shared JSON
- * additionalContext shape; Kiro CLI reads the same lines as plain text from its hook action.
+ * additionalContext shape; Kiro CLI reads the same lines as plain text from its hook action;
+ * Antigravity reads injectSteps[].systemMessage.systemMessage JSON.
  */
 export function hookProtocolOutput(host: HostHookHost, event: string, lines: readonly string[]): string {
   if (!HOST_HOOK_HOSTS.includes(host)) fail("HOOK_INPUT_INVALID", `host must be one of ${HOST_HOOK_HOSTS.join(", ")}`, { host: String(host) });
   if (!Object.hasOwn(hookEventWords(), event)) fail("HOOK_INPUT_INVALID", `${String(event)} is not an event Einzbern hooks`, { event: String(event) });
   if (!Array.isArray(lines) || lines.some((line) => typeof line !== "string")) fail("HOOK_INPUT_INVALID", "lines must be strings");
-  return host === "kiro" ? lines.join("\n") : JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: lines.join("\n") } });
+  if (host === "kiro") return lines.join("\n");
+  if (host === "antigravity") return JSON.stringify({ injectSteps: [{ systemMessage: { systemMessage: lines.join("\n") } }] });
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: lines.join("\n") } });
 }
 
 /**

@@ -45,7 +45,7 @@ export const SKILL_COPIES_FILES = Object.freeze({
   entry: "SKILL.md",
 } as const);
 
-export type SkillCopyHost = "claude" | "codex" | "kiro";
+export type SkillCopyHost = "claude" | "codex" | "kiro" | "antigravity";
 
 export interface SkillCopyRoot {
   readonly host: SkillCopyHost;
@@ -59,9 +59,14 @@ export const SKILL_COPY_ROOTS: readonly SkillCopyRoot[] = Object.freeze([
   { host: "codex", root: ".agents/skills" },
 ]);
 export const KIRO_SKILL_COPY_ROOT: SkillCopyRoot = Object.freeze({ host: "kiro", root: ".kiro/skills" });
+export const ANTIGRAVITY_SKILL_COPY_ROOT: SkillCopyRoot = Object.freeze({ host: "antigravity", root: ".gemini/config/skills" });
 
-export function skillCopyRoots(includeKiro = false): readonly SkillCopyRoot[] {
-  return includeKiro ? [...SKILL_COPY_ROOTS, KIRO_SKILL_COPY_ROOT] : SKILL_COPY_ROOTS;
+export function skillCopyRoots(includeKiro = false, includeAntigravity = false): readonly SkillCopyRoot[] {
+  return [
+    ...SKILL_COPY_ROOTS,
+    ...(includeKiro ? [KIRO_SKILL_COPY_ROOT] : []),
+    ...(includeAntigravity ? [ANTIGRAVITY_SKILL_COPY_ROOT] : []),
+  ];
 }
 
 // Every root the legacy helper was ever copied into: both roots above and Codex's older one.
@@ -127,9 +132,16 @@ export function skillCopiesRecordPath(home: string = currentDeviceHome()): strin
 }
 
 /** Where a host's copy of the skill lives under a home directory. */
-export function skillCopyPath(home: string, root: SkillCopyRoot, kiroHome?: string): string {
-  const parent = root.host === "kiro" ? resolve(kiroHome ?? process.env.KIRO_HOME ?? join(home, ".kiro")) : home;
-  return join(parent, ...(root.host === "kiro" ? ["skills"] : root.root.split("/")), BRAND.helper.id);
+export function skillCopyPath(home: string, root: SkillCopyRoot, kiroHome?: string, antigravityConfigHome?: string): string {
+  if (root.host === "kiro") {
+    const parent = resolve(kiroHome ?? process.env.KIRO_HOME ?? join(home, ".kiro"));
+    return join(parent, "skills", BRAND.helper.id);
+  }
+  if (root.host === "antigravity") {
+    const parent = resolve(antigravityConfigHome ?? process.env.ANTIGRAVITY_CONFIG_DIR ?? join(home, ".gemini", "config"));
+    return join(parent, "skills", BRAND.helper.id);
+  }
+  return join(home, ...root.root.split("/"), BRAND.helper.id);
 }
 
 // The UTC second as a directory name that is legal on every platform: 20260926T140000Z.
@@ -210,7 +222,7 @@ type LoadedRecord =
 const RECORD_FIELDS = ["copies", "installedAt", "schemaVersion", "skill"];
 const COPY_FIELDS = ["host", "installTreeDigest", "path"];
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
-const HOSTS: readonly string[] = skillCopyRoots(true).map((root) => root.host);
+const HOSTS: readonly string[] = skillCopyRoots(true, true).map((root) => root.host);
 
 function exactFields(value: unknown, fields: readonly string[]): value is Readonly<Record<string, unknown>> {
   return value !== null && typeof value === "object" && !Array.isArray(value) &&
@@ -280,6 +292,9 @@ export interface InstallSkillCopiesInput {
   /** Install Kiro's standard global Skill copy when the Kiro surface is applicable. */
   readonly includeKiro?: boolean;
   readonly kiroHome?: string;
+  /** Install Antigravity's global Skill copy when the Antigravity surface is applicable. */
+  readonly includeAntigravity?: boolean;
+  readonly antigravityConfigHome?: string;
 }
 
 export type SkillCopyAction = "created" | "replaced" | "reused";
@@ -395,10 +410,12 @@ export async function installSkillCopies(input: InstallSkillCopiesInput): Promis
     const planned: PlannedCopy[] = [];
     const previous = await loadRecord(skillCopiesRecordPath(device));
     const includeKiro = input.includeKiro === true || previous.state === "valid" && previous.record.copies.some(copy => copy.host === "kiro");
-    const roots = skillCopyRoots(includeKiro);
+    const includeAntigravity = input.includeAntigravity === true || previous.state === "valid" && previous.record.copies.some(copy => copy.host === "antigravity");
+    const roots = skillCopyRoots(includeKiro, includeAntigravity);
     const kiroHome = input.kiroHome ?? process.env.KIRO_HOME ?? join(home, ".kiro");
+    const antigravityConfigHome = input.antigravityConfigHome ?? process.env.ANTIGRAVITY_CONFIG_DIR ?? join(home, ".gemini", "config");
     for (const root of roots) {
-      const path = skillCopyPath(home, root, kiroHome);
+      const path = skillCopyPath(home, root, kiroHome, antigravityConfigHome);
       const existing = await lstatOrNull(path);
       let action: SkillCopyAction = "created";
       if (existing !== null) {
@@ -485,18 +502,27 @@ async function legacySkillCopies(home: string): Promise<{ readonly root: string;
  * Compare both copies with skills.json and look for a legacy helper copy in the three roots it was
  * ever placed in (TCRN-CROSS-STORY-479 R4, R5). Nothing is written.
  */
-export async function verifySkillCopies(input: { readonly home?: string; readonly deviceHome?: string; readonly includeKiro?: boolean; readonly kiroHome?: string } = {}): Promise<SkillCopiesVerification> {
+export async function verifySkillCopies(input: {
+  readonly home?: string;
+  readonly deviceHome?: string;
+  readonly includeKiro?: boolean;
+  readonly kiroHome?: string;
+  readonly includeAntigravity?: boolean;
+  readonly antigravityConfigHome?: string;
+} = {}): Promise<SkillCopiesVerification> {
   const home = resolve(input.home ?? homedir());
   const device = resolve(input.deviceHome ?? currentDeviceHome());
   const recordPath = skillCopiesRecordPath(device);
   const loaded = await loadRecord(recordPath);
   const recorded = loaded.state === "valid" ? loaded.record.copies : [];
   const includeKiro = input.includeKiro === true || recorded.some(copy => copy.host === "kiro");
-  const roots = skillCopyRoots(includeKiro);
+  const includeAntigravity = input.includeAntigravity === true || recorded.some(copy => copy.host === "antigravity");
+  const roots = skillCopyRoots(includeKiro, includeAntigravity);
   const kiroHome = input.kiroHome ?? process.env.KIRO_HOME ?? join(home, ".kiro");
+  const antigravityConfigHome = input.antigravityConfigHome ?? process.env.ANTIGRAVITY_CONFIG_DIR ?? join(home, ".gemini", "config");
   const copies: SkillCopyVerification[] = [];
   for (const root of roots) {
-    const path = skillCopyPath(home, root, kiroHome);
+    const path = skillCopyPath(home, root, kiroHome, antigravityConfigHome);
     const entry = recorded.find((copy) => copy.host === root.host && copy.path === path);
     const stats = await lstatOrNull(path);
     const actual = stats !== null && stats.isDirectory() ? await treeDigestOrNull(path) : null;

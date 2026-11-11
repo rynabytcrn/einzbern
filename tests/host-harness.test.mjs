@@ -37,7 +37,7 @@ const DEVICE = Object.freeze({ darwin: "/srv/einzbern/device", linux: "/srv/einz
 
 test("INC-220, 477-R1: common hooks stay shared and Codex does not reinstall a collector stop", () => {
   // TCRN-CROSS-STORY-548 R1: DSH runs the hook too, but only these two keep a hook file.
-  assert.deepEqual([...HOST_HOOK_HOSTS], ["claude-code", "codex", "dsh", "kiro"]);
+  assert.deepEqual([...HOST_HOOK_HOSTS], ["claude-code", "codex", "dsh", "kiro", "antigravity"]);
   assert.deepEqual([...HOST_HOOK_FILE_HOSTS], ["claude-code", "codex"]);
   assert.deepEqual(Object.keys(HOST_HOOK_EVENTS), ["UserPromptSubmit", "SubagentStart", "PreToolUse"]);
   assert.deepEqual(CODEX_HOOK_EVENTS, { PostToolUse: "post-tool-use", Stop: "stop" });

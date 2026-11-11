@@ -51,7 +51,7 @@ const REFERENCES = Object.freeze(["doctor.md", "install.md", "kiro-specs.md", "m
 const SPECIFICATIONS = Object.freeze([
   "coding-style-v1.md",
   "installed-paths-v2.md", "work-practices-v1.md", "dot-task-recovery-v1.md", "batch-execution-v1.md", "resource-cleanup-v1.md", "unattended-execution-v1.md", "design-consumption-v1.md", "configuration-contract-v1.md", "settings-catalog-v1.md",
-  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md", "kiro-host-v1.md",
+  "dispatch-admission-evidence-v1.md", "dot-execution-v1.md", "native-tool-evidence-v1.md", "host-fallback-v1.md", "engine-model-policy-v1.md", "kiro-host-v1.md", "antigravity-host-v1.md",
   "shared-submit-v1.md", "config-backup-v1.md", "dot-rules-v1.md", "context-v1.md", "work-content-v1.md", "engine-hook-events-v2.md",
 ]);
 
@@ -378,6 +378,7 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
     "dot-execution-v1.md": ["actualCapabilityEvidenceRefs", "authorizationEvidenceRef", "occupancyObservation", "revisionBinding", "contextRead", "effectiveRoots", "exactDelegation"],
     "native-tool-evidence-v1.md": ["rawResponseValue", "statusPointer", "statusMapping", "terminalObservation", "providerPointers", "NativeRetryReconciliation", "--prior", "--retry-from", "--reconciliation"],
     "kiro-host-v1.md": ["SessionStart", "UserPromptSubmit", "PreToolUse", "KIRO_API_KEY", "mcp-startup-failure"],
+    "antigravity-host-v1.md": ["SessionStart", "PreInvocation", "PreToolUse", "ANTIGRAVITY_CONFIG_DIR", "invoke_subagent", "agy-run.mjs"],
     "shared-submit-v1.md": ["completeInventoryDigest", "engineOutputMembers", "writerHandoff", "observedAt", "contentBase64", "memberSetDigest", "lastError"],
   })) for (const field of fields) assert.ok(byPath.get(`specs/${name}`).bytes.toString("utf8").includes(field), `${name} documents ${field}`);
   assert.ok(byPath.get("atelier/ds-static-bridges.snapshot.js").bytes.equals(await readFile(join(repositoryRoot, "portal/ds-static-bridges.snapshot.js"))), "the archive retains exact published bridge bytes");

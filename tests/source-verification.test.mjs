@@ -357,3 +357,20 @@ test("native protocol returns the complete packed attributes without buffer padd
   await warm(f);
   assert.ok(queried > 0);
 });
+
+
+test("a failed cost precheck preserves the full reader's earlier source error", { skip: !native }, async t => {
+  const f = await fixture(t, false);
+  const [device] = await fs.readdir(join(f.library, "akasha"));
+  const [segment] = (await fs.readdir(join(f.library, "akasha", device))).filter(name => name.endsWith(".ndjson"));
+  const path = join(f.library, "akasha", device, segment);
+  const original = await fs.readFile(path, "utf8");
+  const changed = original.replace('"name":"coordination"', '"name":"Coordination"');
+  assert.notEqual(changed, original);
+  await fs.writeFile(path, changed);
+  const index = join(f.library, "artifacts/consolidation/index.json");
+  await fs.writeFile(index, (await fs.readFile(index, "utf8")).replace("agent:codex", "agent:other"));
+  for (const read of [materializeLibrary, materializeWorkspaceFromGenesis]) {
+    await assert.rejects(read(f.library), error => error.reasonCode === "AKASHA_EVENT_CORRUPT" && error.details?.break === "payloadHash");
+  }
+});

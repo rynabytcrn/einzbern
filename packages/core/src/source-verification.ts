@@ -37,7 +37,9 @@ export async function withSourceVerification<T>(library: Library, operation: () 
   // source contract. Select full verification below a conservative 4 MiB of
   // archived events; this is only a cost choice, never evidence of authenticity.
   // The normal reader still validates the current index and every source.
-  const index = await readConsolidationIndex(library.root, library.manifest);
+  // A failed cost precheck delegates errors to the original reader, which may
+  // encounter an earlier corrupt event before reaching the index.
+  const index = await readConsolidationIndex(library.root, library.manifest).catch(() => null);
   const archiveBytes = index?.sources.reduce((sum, source) => sum + source.inventory.reduce((bytes, file) => bytes + (/^akasha\/[^/]+\/[^/]+\.ndjson$/u.test(file.path) ? file.bytes : 0), 0), 0) ?? 0;
   if (archiveBytes < 4 * 1024 * 1024) {
     observeCacheReason("source-verification-full-cost-path");

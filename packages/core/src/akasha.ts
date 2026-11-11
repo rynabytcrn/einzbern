@@ -58,6 +58,7 @@ import { assertLibrarySupported, upgradeReadiness } from "./format-version.js";
 import type { DeviceEngine, UpgradeReadiness } from "./format-version.js";
 import { DIRECTORY } from "./names.js";
 import { FRAMEWORK_VERSION } from "./framework-version.js";
+import { verifiedStreamSegments } from "./source-verification.js";
 
 export const STREAM_MANIFEST_SCHEMA_VERSION = "einzbern.stream-manifest.v1" as const;
 export const STREAM_MANIFEST_FILE = "manifest.json" as const;
@@ -384,7 +385,7 @@ function parseSegment(manifest: StreamManifest, segment: StreamSegment, bytes: B
 }
 
 /** Read one segment's committed bytes: exactly the recorded length, which must hash as recorded. */
-async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, segment: StreamSegment, readFile: ReadBytes, scope: "live" | "archive"): Promise<{ readonly bytes: Buffer; readonly digestMatches: boolean }> {
+async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, segment: StreamSegment, readFile: ReadBytes, scope: "live" | "archive", prepared?: Buffer): Promise<{ readonly bytes: Buffer; readonly digestMatches: boolean }> {
   // A replay checkpoint is derived state, not an authenticated receipt of a
   // prior source verification. A checksum or serialized generation binding in
   // that cache cannot authorize skipping these bytes (STORY-648).
@@ -392,7 +393,7 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
   let content: Buffer;
   try {
     const file = `${DIRECTORY.events}/${manifest.deviceId}/${segment.name}`;
-    content = await readInternalFile(
+    content = prepared ?? await readInternalFile(
       join(streamDirectory(libraryRoot, manifest.deviceId), segment.name),
       readFile,
       (message) => fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} ${message}`, { deviceId: manifest.deviceId, streamId: manifest.streamId, segment: segment.name, file }),
@@ -403,7 +404,7 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
     if (code === "EISDIR") fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is not a file`, where);
     throw error;
   }
-  observeEventRead(content.length, manifest.streamId, scope);
+  if (prepared === undefined) observeEventRead(content.length, manifest.streamId, scope);
   if (content.length < segment.bytes) fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is shorter than its manifest records`, where);
   const committed = content.subarray(0, segment.bytes);
   return { bytes: committed, digestMatches: observeAuthorityWork("segmentHash", () => sha256(committed) === segment.sha256) };
@@ -419,8 +420,9 @@ export async function readStreamEvents(libraryRoot: string, manifest: StreamMani
   const readFile = options.readFile ?? defaultReadBytes;
   const events: EventRecord[] = [];
   let mismatched: StreamSegment | null = null;
+  const prepared = readFile === defaultReadBytes ? await verifiedStreamSegments(libraryRoot, manifest, options.archivedManifest) : null;
   for (const segment of manifest.segments) {
-    const { bytes, digestMatches } = await readSegmentBytes(libraryRoot, manifest, segment, readFile, options.archivedManifest === undefined ? "live" : "archive");
+    const { bytes, digestMatches } = await readSegmentBytes(libraryRoot, manifest, segment, readFile, options.archivedManifest === undefined ? "live" : "archive", prepared?.get(segment.name));
     if (!digestMatches && mismatched === null) mismatched = segment;
     events.push(...observeAuthorityWork("eventValidation", () => parseSegment(manifest, segment, bytes)));
   }

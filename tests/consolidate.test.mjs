@@ -415,7 +415,7 @@ test("648: full verification detects authentic same-length, same-name, missing a
   assert.deepEqual(warm.value, expected);
   assert.ok(warm.observation.cacheReadBytes > 0);
   assert.equal(warm.observation.cacheWriteBytes, 0);
-  const observations = [{ scenario: "warm unchanged, no trusted identity bridge", observation: warm.observation }];
+  const observations = [{ scenario: "warm unchanged, per-file provider metadata unavailable", observation: warm.observation }];
   const rejects = async (scenario, predicate) => {
     let observation;
     await assert.rejects(withRecallObservation(() => materializeLibrary(f.to), value => { observation = value; }), predicate);
@@ -462,7 +462,7 @@ test("648: full verification detects authentic same-length, same-name, missing a
   const setting = events.find(event => event.payload.operation === "settings.updated");
   await appendStreamEvents({ root: archive, manifest: source.manifest }, manifest, buildStreamEvents(manifest, [{ occurredAt: at, payload: setting.payload }], manifest.clockHighWater));
   await rejects("authentic source append under an unchanged consolidation index", /CONSOLIDATION_SOURCE_CHANGED/u);
-  t.diagnostic(JSON.stringify({ fullReadAnomalies: observations, nativeHelperInvocations: 0, readSkipAcceptance: "unclaimed" }));
+  t.diagnostic(JSON.stringify({ fullReadAnomalies: observations, helperScriptBytes: observations.reduce((bytes, sample) => bytes + sample.observation.verificationHelperScriptBytes, 0), readSkipAcceptance: "unclaimed" }));
 });
 
 test("648: a real mmap mutation cannot be hidden by a warm replay checkpoint", { skip: process.platform !== "darwin" }, async t => {

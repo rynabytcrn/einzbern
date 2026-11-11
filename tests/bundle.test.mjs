@@ -78,9 +78,9 @@ test("the CLI entry bundles into one file that runs with no node_modules and no 
   const { path, directory, report } = await bundleAlone(base, cliEntry, "einzbern.mjs");
   assert.equal(report.entry, "scripts/einzbern.mjs");
   assert.ok(report.modules > 2, "the entry and the engine modules it reaches");
-  // The knowledge provenance policy is read when the engine loads. The dispatch defaults were the
-  // other file until TCRN-CROSS-STORY-484 R3 retired them (models-tiers.ts holds the default tiers).
-  assert.equal(report.files, 1);
+  // The provenance policy and the system-JXA descriptor helper are carried
+  // resources, available without the original source/build directories.
+  assert.equal(report.files, 2);
 
   const code = await readFile(path, "utf8");
   const named = namedModules(code);

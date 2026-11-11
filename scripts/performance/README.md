@@ -198,12 +198,15 @@ not establish the strict no-latency/CPU/RSS-regression acceptance.
 
 ## Story 648 C2: native query and receipt boundary
 
-The [source-verification investigation](../../docs/design/consolidation-source-verification.md)
-records a working inherited-fd macOS query and positive per-file Google Drive
-metadata for the actual archive and actual cache. It also records a concrete
-unsigned receipt forgery through the real product reader, 29 full-read
-differential scenarios, resource decomposition and unavailable formal
-build/package gates. Story 648 remains unimplemented; the probe is not a shipped
-helper or a persistent credential hit. C1's original 25-event whole-process CPU
-P95 remains 10,929 us checkpoint versus 10,236 us genesis, independently of its
-reducer CPU result. Earlier B/645 failures and their samples remain unchanged.
+The [source-verification design](../../docs/design/consolidation-source-verification.md)
+describes the materializer's device-local record and untrusted verified-byte
+cache, packaged system-JXA descriptor queries, and full-read fallbacks. Public
+source-event reads remain complete. Per-source source/cache bytes, local record
+bytes and helper protocol/script bytes must be reported together; zero source
+bytes does not mean zero history I/O. Local provider keys that are absent remain
+unknown. Controlled provider/native mismatch tests are labeled separately from
+actual independent-process provider-backed hits. OS reboot, remount and real
+partial hydration are not inferred from those controls. C2's checksum-forgery
+counterexample and failed formal gates are retained as history in the design.
+C1's 25-event whole-process CPU P95 remains 10,929 us checkpoint versus 10,236 us
+genesis; earlier B/645 failures and B5's fixed successful samples are unchanged.

@@ -1,6 +1,7 @@
 import { validateSettingValue } from "./settings.js";
 import { bindProjectArtifactPath, projectArtifactBinding } from "./artifact-path-binding.js";
 import { observeMaterialization, observeStage, observeCheckpoint, observeCacheReason, observeReplay } from "./recall-observation.js";
+import { hasPendingSourceVerification, withSourceVerification } from "./source-verification.js";
 import { WORK_CONTENT_KEY, workContent, validateWorkContent, contentFail } from "./work-content.js";
 import type { ContentWorkKind } from "./work-content.js";
 import { WORK_CONTENT_POLICY_KEY, readWorkContentPolicy, validateWorkContentPolicy, workContentPolicyApplies, workContentRolloutReadiness } from "./work-content-templates.js";
@@ -3576,7 +3577,7 @@ function consolidationCheckpointBinding(snapshot: Pick<CacheSnapshot, "libraryId
   });
 }
 
-async function replayLibraryResultThroughCache(library: Library, read: LibraryRead): Promise<LibraryReplayResult> {
+async function replayLibraryResultThroughCache(library: Library, read: LibraryRead, forceAuthorityReplay = false): Promise<LibraryReplayResult> {
   if (read.consolidation !== undefined) {
     // Revalidate the index's expected source heads before trusting a prior merge.
     // Stream self-consistency and an unchanged version vector alone do not prove
@@ -3592,7 +3593,7 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
     let replay: LibraryReplayResult | null = null;
     let cachedVersion: number | null = null;
     try {
-      const snapshot = await readCacheSnapshot(library.manifest.libraryId);
+      const snapshot = forceAuthorityReplay ? null : await readCacheSnapshot(library.manifest.libraryId);
       const value = snapshot?.state as { consolidationBinding?: unknown; consolidationCheckpoint?: unknown } | undefined;
       if (snapshot !== null && value?.consolidationBinding === binding && value.consolidationCheckpoint === consolidationCheckpointBinding(snapshot, binding, baseEvents.length)) {
         const cached = seedFromSnapshot({ ...snapshot, version: snapshot.version - baseEvents.length }, { ...read, events: tail });
@@ -3612,7 +3613,7 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
       const sourceStates: WorkspaceState[] = [];
       for (const { source, read: sourceRead } of read.consolidation.sources) {
         const sourceLibrary = { root: `${library.root}/${source.archive}`, manifest: source.manifest };
-        sourceStates.push((await replayLibraryResultThroughCache(sourceLibrary, sourceRead)).state);
+        sourceStates.push((await replayLibraryResultThroughCache(sourceLibrary, sourceRead, forceAuthorityReplay)).state);
       }
       replay = replayLibrary(library, read, undefined, sourceStates);
     }
@@ -3642,7 +3643,7 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
     }
     return replay;
   }
-  const cached = await cachedSeed(library, read);
+  const cached = forceAuthorityReplay ? null : await cachedSeed(library, read);
   let replay: LibraryReplayResult | null = null;
   if (cached !== null) {
     try {
@@ -3658,17 +3659,22 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
 }
 
 async function replayLibraryThroughCache(library: Library, read: LibraryRead): Promise<WorkspaceState> {
-  return (await replayLibraryResultThroughCache(library, read)).state;
+  return (await replayLibraryResultThroughCache(library, read, hasPendingSourceVerification())).state;
 }
 
 /** Read every stream of a library and replay them merged, through this device's cache. */
 export async function materializeLibrary(libraryOrRoot: Library | string, options: LibraryReadOptions = {}): Promise<WorkspaceState> {
   observeMaterialization();
   const library = typeof libraryOrRoot === "string" ? await openLibrary(libraryOrRoot) : libraryOrRoot;
-  const read = await observeStage("authority-read", () => readAllStreams(library.root, options));
-  const state = await observeStage("replay", () => replayLibraryThroughCache(library, read));
-  observeCheckpoint(state.headEventHash);
-  return state;
+  const operation = async () => {
+    const read = await observeStage("authority-read", () => readAllStreams(library.root, options));
+    const state = await observeStage("replay", () => replayLibraryThroughCache(library, read));
+    observeCheckpoint(state.headEventHash);
+    return { value: state, read, accepted: (state.library?.rejectedEvents.length ?? 0) === 0 };
+  };
+  return options.readFile !== undefined || options.timeoutMs !== undefined || options.archivedManifest !== undefined
+    ? (await operation()).value
+    : withSourceVerification(library, operation);
 }
 
 /** The keys a record was renamed from, and the records renamed away from its key (TCRN-CROSS-STORY-468 R5). */

@@ -14,6 +14,12 @@ export interface RecallObservation {
   readonly metadataReadBytes: number;
   readonly cacheReadBytes: number;
   readonly cacheWriteBytes: number;
+  readonly verificationRecordBytes: number;
+  readonly verificationHelperScriptBytes: number;
+  readonly verificationHelperInputBytes: number;
+  readonly verificationHelperOutputBytes: number;
+  readonly verificationHelperElapsedMs: number;
+  readonly verifiedSegmentsBySource: readonly { readonly scope: "live" | "archive"; readonly streamId: string; readonly cacheBytes: number; readonly segments: number }[];
   readonly metadataCpuMicros: number;
   readonly metadataElapsedMs: number;
   readonly segmentHashCpuMicros: number;
@@ -38,6 +44,12 @@ interface Counters {
   metadataReadBytes: number;
   cacheReadBytes: number;
   cacheWriteBytes: number;
+  verificationRecordBytes: number;
+  verificationHelperScriptBytes: number;
+  verificationHelperInputBytes: number;
+  verificationHelperOutputBytes: number;
+  verificationHelperElapsedMs: number;
+  verifiedSegmentsBySource: { scope: "live" | "archive"; streamId: string; cacheBytes: number; segments: number }[];
   metadataCpuMicros: number;
   metadataElapsedMs: number;
   segmentHashCpuMicros: number;
@@ -72,6 +84,26 @@ export function observeEventRead(bytes: number, streamId: string | null = null, 
 export function observeMetadataBytes(bytes: number): void { const counters = active?.getStore(); if (counters !== undefined) counters.metadataReadBytes += bytes; }
 export function observeCacheRead(bytes: number): void { const counters = active?.getStore(); if (counters !== undefined) counters.cacheReadBytes += bytes; }
 export function observeCacheWrite(bytes: number): void { const counters = active?.getStore(); if (counters !== undefined) counters.cacheWriteBytes += bytes; }
+export function observeVerificationRecord(bytes: number): void { const counters = active?.getStore(); if (counters !== undefined) counters.verificationRecordBytes += bytes; }
+export function observeVerificationHelper(script: number, input: number, output: number, elapsedMs: number): void {
+  const counters = active?.getStore();
+  if (counters === undefined) return;
+  counters.verificationHelperScriptBytes += script;
+  counters.verificationHelperInputBytes += input;
+  counters.verificationHelperOutputBytes += output;
+  counters.verificationHelperElapsedMs += elapsedMs;
+}
+export function observeVerifiedSegment(bytes: number, streamId: string, scope: "live" | "archive"): void {
+  const counters = active?.getStore();
+  if (counters === undefined) return;
+  let source = counters.verifiedSegmentsBySource.find(entry => entry.scope === scope && entry.streamId === streamId);
+  if (source === undefined) {
+    source = { scope, streamId, cacheBytes: 0, segments: 0 };
+    counters.verifiedSegmentsBySource.push(source);
+  }
+  source.cacheBytes += bytes;
+  source.segments += 1;
+}
 export function observeMaterialization(): void { const counters = active?.getStore(); if (counters !== undefined) counters.materializations += 1; }
 export function observeRecall(reason: string): void {
   const counters = active?.getStore();
@@ -82,6 +114,8 @@ export async function withRecallObservation<T>(operation: () => Promise<T>, comp
   const counters: Counters = {
     logicalEventBytes: 0, segmentReads: 0, eventReadsBySource: [], metadataReadBytes: 0,
     cacheReadBytes: 0, cacheWriteBytes: 0, metadataCpuMicros: 0, metadataElapsedMs: 0,
+    verificationRecordBytes: 0, verificationHelperScriptBytes: 0, verificationHelperInputBytes: 0,
+    verificationHelperOutputBytes: 0, verificationHelperElapsedMs: 0, verifiedSegmentsBySource: [],
     segmentHashCpuMicros: 0, segmentHashElapsedMs: 0, cacheHashCpuMicros: 0, cacheHashElapsedMs: 0,
     eventValidationCpuMicros: 0, eventValidationElapsedMs: 0,
     materializations: 0, recallCalls: 0, replayedEvents: 0, replayCpuMicros: 0, replayElapsedMs: 0,

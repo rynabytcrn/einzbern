@@ -1,8 +1,133 @@
-# Consolidation source verification: Story 648 C2
+# Consolidation source verification: device-local records
 
-This investigation does **not** implement or accept Story 648. The normal CLI,
-Consolidation reader and source event API continue to read and verify source
-bytes. A replay checkpoint hit is not an incremental source read hit.
+The materializer can reuse previously verified segment bytes on a narrowly
+eligible macOS path. The public source-event API and genesis reader still read
+source files. This is an implementation with explicit fallbacks, not a claim
+that every filesystem, provider or release acceptance criterion has passed.
+
+## Trust and storage boundary
+
+`device-home.ts` keeps identity, registry and installed engines in `deviceHome`.
+`storage-location.ts` redirects `runtimeHome`; `storage-configure.ts` moves only
+cache, locks and backups. Consequently an existing runtime cache can share a
+provider and writer with the library. Its checksum cannot establish prior
+verification. The C2 forgery below remains a valid counterexample to that design.
+
+The materializer places a small record at
+`<deviceHome>/source-verification/<library>/<segment-key>.json`, alongside the
+existing local authorities, bypassing `runtimeHome`. Verified byte copies live
+at `<cachePath>/verified-segments/<segment-key>.bin` and remain untrusted. No
+secret, credential service, account, issuer, key store, permission change or
+resident process is involved.
+
+Before reading or writing records, the engine resolves actual device, library,
+configured library/runtime and cache paths. A record directory inside a source
+or configured synchronization/runtime subtree, an alias into the record store,
+a linked record directory, an invalid/missing device identity, or an unresolved
+boundary disables this optimization. Record names come only from engine-hashed
+library/source/stream/segment identities; event bodies, source metadata and cache
+payloads cannot supply a destination. Normal source/sync ingestion and runtime
+relocation have no write path into this separate directory.
+
+This uses the same integrity assumption as local identity, registry, engine and
+configuration. It is **not an OS permission boundary** against a process or user
+already able to edit those local authorities, including an arbitrarily
+compromised synchronization process. A checksum detects accidental record damage;
+it is the independent placement and writer scope that distinguish the record
+from the untrusted cache. Local record loss is harmless: full verification
+rebuilds it. Engine/projection/device/boot/mount changes invalidate matching
+records. Cache loss or corruption also requires full reads. Entries are bounded
+by segment keys, overwritten after re-verification, and never transported by the
+storage relocation API. Removing this local record directory disables reuse
+until the next successful verification; it contains no unique source truth.
+
+## Proof used by the reader
+
+The system JXA host runs the packaged `darwin-source-identity.mjs` in short-lived
+batches of up to 24 inherited descriptors. It uses Foundation and a C bridge to
+`fgetattrlist` and `sysctlbyname`. The normal build copies the helper and the
+release bundler carries its bytes through the normal relative resource URL.
+Runtime does not compile code or require Python, developer tools or a service.
+A missing resource, failed host or five-second timeout returns to the original
+reader; after a host failure the rest of that operation does not repeat it.
+
+Both descriptor queries must agree on a real boot UUID, filesystem/mount
+identity, nonzero volume UUID, file object ID, nonzero generation, length, flags,
+provider resource identity and download state. Returned attribute masks and the
+volume's supported masks must satisfy the exact requested fields. Only a local
+volume, a single-link regular source, a name still identifying that held object,
+and a stable descriptor stat qualify. Generation zero (including active mmap),
+dataless flags, unsupported attributes and network volumes do not qualify.
+
+Provider eligibility is **per file**. The first implementation requires explicit
+Foundation ubiquitous-item state and resource identity, `DownloadingStatusCurrent`,
+`isDownloading=false` and no download/resource error on both queries. Missing
+keys are unknown, even for an ordinary local file. This deliberately retains
+full reads on local files where the system does not supply that proof; it does
+not infer a global absence of FileProvider activity or claim all local files
+are impossible to support.
+
+A local record binds the device identity, root library and source IDs, archive
+position, stream/device/segment identity, committed length/digest and coverage,
+root/source manifest digests, prior stream manifest/head/vector, a digest of the
+complete verified index/head/vector metadata tree, native identity, engine and
+projection versions, and the exact cached bytes' SHA256. The cache must have its
+recorded length and hash under that independent record. A shared writer can
+recompute an ordinary cache checksum but cannot update the record through its
+source/cache input paths.
+
+Every byte returned from this cache still traverses the existing canonical
+segment, hash, event identity, payload/event hash, chain, clock and head checks.
+The current index/source vector/head checks and authority replay remain in
+place. New records are published only after complete source reads with stable
+pre/post descriptor identity and a successful full authority replay, never from
+a replay checkpoint alone. A read that stages any new record bypasses prior
+replay seeds throughout that materialization. Rejected authority does not issue
+records. Cache/record failures do not suppress a source error.
+
+On append, a segment descriptor or native generation that changes forces a full
+read of that entire segment, including its old prefix. New segments are read
+whole. Unchanged old segments can reuse their independently verified bytes;
+the current complete stream chain/head and index/authority checks still run.
+The record keeps the metadata context under which verification originally
+succeeded, while append does not require the *old* stream head to remain the
+current head. A new flat consolidation generation changes its root binding and
+requires verification before it can establish new records.
+
+## Evidence and resource accounting
+
+Native regression tests exercise the complete materializer with real inherited
+FD/native attributes and a clearly controlled provider response on local
+fixtures. They cover unchanged reuse, append/rollover, relocated runtime, unsafe
+device placement, record/cache loss and corruption, device/library/source/
+engine/projection/boot/mount/volume/generation/coverage mismatches, unsupported
+attributes, generation zero, network/download/unknown-provider fallbacks,
+helper absence/failure/timeout, tampering, replacement, rename, hardlinks and
+concurrent change. Controlled provider or boot/mount tests are not real
+hydration, reboot or remount experiments.
+
+Separate actual provider-backed reads through a private device directory and
+truly independent processes observed 83 eligible segments: a cold read consumed
+134,522,127 source bytes; each of two restarts consumed zero source bytes and
+153,966,535 cache bytes. Complete normalized states matched the full genesis
+reader. These are actual byte-reuse hits, with cached history explicitly counted.
+They are not a production SLA, a P50/P95 claim or proof of every platform branch.
+
+Observation separates source bytes delivered to the process by stream/scope, cache
+bytes, local record bytes, helper script/request/response bytes and helper wall
+time. Reducer/operation/process CPU and elapsed spans are separate and must not
+be added to overlapping spans; helper child CPU/RSS requires independent process
+measurement. OS I/O, network traffic, provider-daemon CPU, real OS reboot,
+unmount/remount and controlled partial hydration remain unknown unless a
+specific experiment measures them. Source byte reduction is not automatically a
+reduction in total bytes: this path reads cached history and record metadata.
+Private raw evidence stays outside the distributable source and contracts.
+
+## Preserved C1/C2 history
+
+The following is the earlier C2 investigation and its limitations at that time.
+It is retained as history; its unimplemented/gate-failure statements describe C2,
+not the current normal build or this implementation.
 
 The source baseline is `a97217705a2f0f5bebaa288f1e9da83496cb315d`. C1's
 Story 647 delivery, its incomplete Story 648 history, and the earlier B/645
@@ -10,7 +135,7 @@ failures remain separate historical results. C1's 25-event whole-process CPU P95
 remains **10,929 us with checkpoint versus 10,236 us from genesis**. Reducer work
 saved by 647 does not establish a whole-process CPU benefit.
 
-## Native attributes and actual per-file observations
+### Native attributes and actual per-file observations
 
 Apple's [getattrlist contract](https://raw.githubusercontent.com/apple-oss-distributions/xnu/main/bsd/man/man2/getattrlist.2)
 permits descriptor queries, describes volume attribute support, and defines
@@ -45,7 +170,7 @@ These observations do not establish an atomic provider/download barrier or a
 permission to skip reads. No OS reboot, unmount/remount, real partial hydration,
 or unsupported-volume experiment was performed.
 
-## The receipt authentication gap
+### The receipt authentication gap
 
 The existing writer scope is concrete:
 
@@ -92,7 +217,7 @@ writer of the existing cache may silently acquire that authority. C2 introduced
 no key store, permission change, trust switch, service or platform extension to
 create that boundary.
 
-## Actual behavior and resource evidence
+### Actual behavior and resource evidence
 
 C2 compared the real CLI parser/output and `materializeLibrary` with the existing
 genesis reader on identical fixture libraries. The 29 scenarios include warm and
@@ -129,7 +254,7 @@ startup and termination. Executable-page I/O and the existing provider daemon's
 CPU were not measured. Earlier helper samples remain separately retained. These
 were diagnostic executions; production invoked neither helper.
 
-## Validation and unfinished acceptance
+### Validation and unfinished acceptance
 
 The focused consolidation/cache/authority/Recall tests passed **48/48**, including
 two new regressions for a checksum-valid cache claim and the source event API.
@@ -145,19 +270,3 @@ boot/mount credential mismatch, or real provider partial-download handling.
 Story 648 R01/AC01 remain unmet: no authenticated persistent receipt was
 established and no source-byte fast path survived a process restart. R02's full
 verification is retained; safety checks are not weakened to claim completion.
-
-Private evidence is rooted at the platform workspace, under
-`.tcrn-artifacts/initiatives/init090-takeover-20261111/c2-incremental/`:
-
-- `worker-*-live*.json`: this worker's installed-engine reads.
-- `native-fd-matrix-final.json`: native attributes, per-file provider observations,
-  bridge artifact digests and complete-child resources; earlier samples and the
-  bridge source are retained beside it.
-- `unsigned-credential-counterexample.json` and `fixtures/unsigned-credential-counterexample/`:
-  rejected experiment, original/corrupt input and honest/forged receipts.
-- `matrix-results.json`, `matrix-samples/`, `fixtures/cases/`: all differential
-  results and inputs; invalid fixture setup attempts are retained separately.
-- `resource-summary-selected.json`, `per-source-resource-summary.json`: physical
-  bytes, component spans, replay and complete-process resources.
-- `c2-focused-regressions.json`, `required-*.json`, `source-runtime-emission.json`:
-  commands, output, failures and the distinct runtime preparation basis.

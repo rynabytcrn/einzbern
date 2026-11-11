@@ -652,6 +652,8 @@ async function build() {
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/memory-executors.json", `${JSON.stringify(createMemoryExecutorContract(repositoryRoot))}\n`);
   const storageLocation = await readSourceFile(resolve(repositoryRoot, "scripts/lib/storage-location.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/storage-location.mjs", storageLocation);
+  const sourceIdentity = await readSourceFile(resolve(repositoryRoot, "scripts/lib/darwin-source-identity.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/darwin-source-identity.mjs", sourceIdentity);
   const memoryBudget = await readSourceFile(resolve(repositoryRoot, "scripts/lib/memory-budget.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/memory-budget.mjs", memoryBudget);
   const memoryWorkerCheck = await readSourceFile(resolve(repositoryRoot, "scripts/lib/memory-worker-check.mjs"));

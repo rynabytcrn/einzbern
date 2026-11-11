@@ -379,6 +379,36 @@
 | `--limit` | 可选 | `integer` |
 | `--offset` | 可选 | `integer` |
 
+## `execution-antigravity-evidence`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--from-file` | 必填 | `string` | `Antigravity process evidence JSON.` |
+
+## `execution-antigravity-preflight`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--binding` | 必填 | `string` | `Saved HostExecutionPreparation v1 JSON; validates Antigravity CLI scope without launching a process.` |
+| `--reserve-output` | 可选 | `string` | `Optionally reserve the private create-new evidence destination before launching Antigravity CLI.` |
+
+## `execution-antigravity-record`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 | 写法 |
+| --- | --- | --- | --- |
+| `--binding` | 必填 | `string` | `Saved Antigravity HostExecutionPreparation v1 JSON.` |
+| `--result` | 可选 | `string` | `Actual Antigravity child process return JSON; omit only for a refused preflight.` |
+| `--output` | 必填 | `string` | `Create-new private Antigravity process evidence outside device/library roots.` |
+
 ## `execution-codex-peer-evidence`
 
 - 可用范围：`cli`。

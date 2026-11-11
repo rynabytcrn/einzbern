@@ -3,7 +3,7 @@ import { parseStrictInstant } from "../../protocol/src/index.js";
 /** Tool contracts describe requests, not a claim that a model was actually used. */
 export const HOST_EXECUTION_REQUEST_VERSION = "tcrn.host-execution-request.v1" as const;
 export const HOST_EXECUTION_DECISION_VERSION = "tcrn.host-execution-decision.v1" as const;
-export type HostKind = "codex" | "claude" | "dot" | "kiro-cli";
+export type HostKind = "codex" | "claude" | "dot" | "kiro-cli" | "antigravity";
 export type HostAction = "decomposition" | "research" | "coordination" | "implementation";
 export type HostTuple = { readonly runner: string; readonly model: string; readonly effort: string };
 export type HostSelection = { readonly kind: "explicit"; readonly tuple: HostTuple } | { readonly kind: "host-managed" };
@@ -49,7 +49,7 @@ export function validateHostSelection(value: unknown): HostSelection {
 }
 export function validateHostCapabilities(value: unknown): HostCapabilities {
   const c = hostObject(value, "capabilities", ["hostKind", "invocationKind", "selectionControl", "toolName", "toolAvailable", "combinations", "selectionObservations", "requestedSelectionSupported", "hostManagedSupported", "platformCapacity", "usage", "sessionRef", "contractRef"]);
-  if (!["codex", "claude", "dot", "kiro-cli"].includes(String(c.hostKind)) || c.invocationKind !== "native-tool" || !["explicit", "host-managed", "unknown"].includes(String(c.selectionControl))) throw new HostExecutionError("unsupported host/call/selection dimensions");
+  if (!["codex", "claude", "dot", "kiro-cli", "antigravity"].includes(String(c.hostKind)) || c.invocationKind !== "native-tool" || !["explicit", "host-managed", "unknown"].includes(String(c.selectionControl))) throw new HostExecutionError("unsupported host/call/selection dimensions");
   hostText(c.toolName, "toolName");
   if (typeof c.toolAvailable !== "boolean" || typeof c.hostManagedSupported !== "boolean" || !["supported", "unsupported", "unknown"].includes(String(c.requestedSelectionSupported))) throw new HostExecutionError("actual tool contract availability required");
   if (c.hostKind === "dot" && c.selectionControl === "explicit") throw new HostExecutionError("dot self-model selection is host-managed, not explicit");

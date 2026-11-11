@@ -51,7 +51,7 @@ function fail(reasonCode: SkillRenderReasonCode, message: string, details: Reado
 }
 
 /** Description A, extended with coding-task discovery for Einzbern-managed projects. */
-export const SKILL_DESCRIPTION = "The Grail grants wishes; Mana Orchestrate makes the mana flow to the right place at the right moment. It brings Einzbern, project memory, into Claude Code, Codex, Kiro and DeepSeek Harness: recall before you start, write results back to the work item, record decisions as minutes, keep lessons as cards. Where Einzbern is not installed yet, it is the wizard: install, restore, update, migrate, uninstall, health check. Use for Einzbern-managed coding, work items, knowledge cards, minutes, .ether, Atelier, installation or updates." as const;
+export const SKILL_DESCRIPTION = "The Grail grants wishes; Mana Orchestrate makes the mana flow to the right place at the right moment. It brings Einzbern, project memory, into Claude Code, Codex, Kiro, Antigravity and DeepSeek Harness: recall before you start, write results back to the work item, record decisions as minutes, keep lessons as cards. Where Einzbern is not installed yet, it is the wizard: install, restore, update, migrate, uninstall, health check. Use for Einzbern-managed coding, work items, knowledge cards, minutes, .ether, Atelier, installation or updates." as const;
 
 /** One row of the navigation table: at this moment, run these verbs, like this. */
 export interface SkillNavigationEntry {
@@ -71,7 +71,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "Draft by work type",
     verbs: ["work-draft"],
-    action: "Types/defects, inherited constraints and source gaps: `specs/work-content-v1.md`. One native content, not a second acceptance copy.",
+    action: "Types/defects, inherited constraints, gaps: `specs/work-content-v1.md`. One native content, not a second acceptance copy.",
   },
   {
     moment: "Need the full text",
@@ -79,19 +79,19 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
     action: "Use each target's `handoff` for native dispatch/gates (`EINZBERN_PROJECT_CONTEXT`). Unresolved targets block only dependent work; coordination-only needs no development target. `specs/context-v1.md`. `--execution-request`: `dispatchAdmitted=true`; selected runner/model/effort, never substitute. Keep stdout/stderr/exit code; no reusable permit. `execution-evidence --from-file <json>` remains read-only validation, not authentication. `specs/dispatch-admission-evidence-v1.md`.",
   },
   {
-    moment: "Native dispatch (Codex, Claude, dot, Kiro CLI)",
+    moment: "Native dispatch (Codex, Claude, dot, Kiro CLI, Antigravity)",
     verbs: ["execution-policy-resolve", "execution-host-prepare", "execution-host-record", "execution-host-evidence", "execution-codex-peer-record", "execution-codex-peer-evidence"],
-    action: "Resolve host/category/rejection policy; not permission. Class fallback/hard limits; normal prompt reports. Parent reads before dispatch, child reads before work. scope/permission, targets=[], machine-assembled raw returns/reports, attempt association (`--binding`/`--prior`), unknown/cancel/finality/review: `specs/host-fallback-v1.md`. Dot model selection is host-managed. Codex only: independent main/economy peers, no collector; `collaboration.spawn_agent`; workers native final; coordinator reports to manifest.main; reports threadId/hostId/prompt only; authorized settings/query exits: `docs/codex-native-controller.md`. Kiro: `specs/kiro-host-v1.md`. Other hosts keep their workflow.",
+    action: "Resolve host/category/rejection policy; not permission. Class fallback/hard limits; normal prompt reports. Parent reads before dispatch, child reads before work. scope/permission, targets=[], machine-assembled raw returns/reports, attempt association (`--binding`/`--prior`), unknown/cancel/finality/review: `specs/host-fallback-v1.md`. Dot model selection is host-managed. Codex only: independent main/economy peers, no collector; `collaboration.spawn_agent`; workers native final; coordinator reports to manifest.main; reports threadId/hostId/prompt only; authorized settings/query exits: `docs/codex-native-controller.md`. Kiro: `specs/kiro-host-v1.md`; Antigravity: `specs/antigravity-host-v1.md`. Other hosts keep their workflow.",
   },
   {
     moment: "Shared submission",
     verbs: ["shared-submit-plan", "shared-submit-evidence", "shared-submit-advisory-read", "shared-submit-advisory-write"],
-    action: "Complete baseline and engine changes; one complete pre-submit refresh and engine reapply; serial handoff; segments before manifest; verify remote bytes and complete destination replay; observe release. Advisory is not a lock; absence/age grants nothing. Query unknown publication before retry. `specs/shared-submit-v1.md`.",
+    action: "Complete baseline/engine changes; one complete pre-submit refresh + engine reapply; serial handoff; segments before manifest; verify remote bytes + complete destination replay; observe release. Advisory is not a lock; absence/age grants nothing. Query unknown publication before retry. `specs/shared-submit-v1.md`.",
   },
   {
     moment: "Configuration backup or restore",
     verbs: ["config-backup-plan", "config-backup-create", "config-backup-prepare", "config-backup-commit", "config-backup-verify", "config-backup-list", "config-backup-resume", "config-backup-retire", "config-restore-plan", "config-restore-apply"],
-    action: "Allowlist; approved retention. Remote prepare/readback/commit; same-ID recovery, not authentication. Local create unchanged. `specs/config-backup-v1.md`.",
+    action: "Allowlist; approved retention. Remote prepare/readback/commit; same-ID recovery, not authentication. Local unchanged. `specs/config-backup-v1.md`.",
   },
   {
     moment: "Work is done",
@@ -106,7 +106,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "A lesson is learned",
     verbs: ["knowledge-create", "knowledge-capture"],
-    action: "Capture at most five new sourced lessons per approved batch; read back. Use stable project IDs and repository-relative evidence paths. No progress in AGENTS.",
+    action: "Capture at most five new sourced lessons; read back. Stable IDs, repository-relative evidence paths. No progress in AGENTS.",
   },
   {
     moment: "Configuration / UI",
@@ -165,7 +165,7 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     "## Navigation",
     "",
-    `Root: nonempty \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\` (absolute), else \`~/${DIRECTORY.device}\`. \`node "<root>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb>\`; install if absent. \`library-resolve --cwd <cwd>\`: \`libraryPath\` for \`--workspace\`, work's \`projectId\` for \`--project-id\` where accepted. \`commands\`/\`<verb> --help\`: flags; UTC \`--at\` if required. Read engine bundle \`specs/\` beside \`scripts/\`, not this Skill.`,
+    `Root: nonempty abs \`${DEVICE_HOME_ENVIRONMENT_VARIABLE}\`, else \`~/${DIRECTORY.device}\`. \`node "<root>/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_FILES.launcher}" <verb>\`; install if absent. \`library-resolve --cwd <cwd>\`: \`libraryPath\` for \`--workspace\`, work's \`projectId\` for \`--project-id\`. \`commands\`/\`<verb> --help\`: flags; UTC \`--at\`. Read engine bundle \`specs/\` beside \`scripts/\`, not this Skill.`,
     "",
     "Local writes queue together, not cross-device exclusion. Remote submission needs serial handoff. Dot installs no native hook, lifecycle manager or sync service.",
     "",

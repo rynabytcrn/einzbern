@@ -39,6 +39,11 @@ function absolute(value) {
   return typeof value === "string" && value.length > 0 && isAbsolute(value) ? value : null;
 }
 
+function payloadDirectory(cwd, body) {
+  const workspacePath = Array.isArray(body?.workspacePaths) ? absolute(body.workspacePaths[0]) : null;
+  return absolute(cwd) ?? absolute(body?.cwd) ?? workspacePath ?? process.cwd();
+}
+
 // One line in log/hook.ndjson for one recall, written as the launcher writes its note: the
 // directory 0700, the file 0600, and every failure dropped.
 function noteRecall(device, event, cwd, reasonCode, host) {
@@ -67,17 +72,22 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
   // file. Keep this guard for direct callers too: a hook answers nothing, and the CLI is where the
   // floor is reported (ENGINE_NODE_TOO_OLD).
   if (!meetsNodeFloor(process.versions.node)) return null;
-  const [{ hookEventName, hookHost, navigationPointerAnswer, promptRecallOutcome, hookProtocolOutput }, { deviceHome }, { kiroHookEventName }] = await Promise.all([
+  const [{ hookEventName, hookHost, navigationPointerAnswer, promptRecallOutcome, hookProtocolOutput }, { deviceHome }, { kiroHookEventName }, { antigravityHookEventName }] = await Promise.all([
     import("../dist/build/packages/core/src/hook-recall.js"),
     import("../dist/build/packages/core/src/device-home.js"),
     import("../dist/build/packages/core/src/kiro-host.js"),
+    import("../dist/build/packages/core/src/antigravity-host.js"),
   ]);
   const body = payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   // Read once, for the recall and for its log line alike.
   const host = hookHost(process.env);
-  const name = host === "kiro" ? (kiroHookEventName(event) ?? hookEventName(event)) : hookEventName(event);
+  const name = host === "kiro"
+    ? (kiroHookEventName(event) ?? hookEventName(event))
+    : host === "antigravity"
+      ? (antigravityHookEventName(event) ?? hookEventName(event))
+      : hookEventName(event);
   // Stale owned SubagentStop commands are inert until normal setup retires them.
-  if (event === "subagent-stop") return null;
+  if (event === "subagent-stop") return host === "antigravity" ? "{}\n" : null;
   if (["UserPromptSubmit", "SubagentStart"].includes(name) && host === "codex" && !peerGuardObserved) {
     const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
     await runCodexPeerHook(name, body, deviceHome(process.env));
@@ -86,7 +96,7 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
   if (name === "SubagentStart" && host === "dsh") return `${navigationPointerAnswer(host, name).output}\n`;
   switch (name) {
     case "PreToolUse": {
-      const directory = absolute(cwd) ?? absolute(body.cwd) ?? process.cwd();
+      const directory = payloadDirectory(cwd, body);
       if (host === "kiro") {
         const observation = kiroReadGuardObservation(body, directory);
         if (observation.status === "denied") {
@@ -95,6 +105,14 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
         }
         noteRecall(deviceHome(process.env), event, directory, observation.reasonCode, host);
         return null;
+      }
+      if (host === "antigravity") {
+        const observation = antigravityReadGuardObservation(body, directory);
+        noteRecall(deviceHome(process.env), event, directory, observation.reasonCode, host);
+        if (observation.status === "denied") {
+          return `${JSON.stringify({ decision: "deny", reason: observation.reason })}\n`;
+        }
+        return `${JSON.stringify({ decision: "allow" })}\n`;
       }
       if (host === "codex" && !peerGuardObserved) {
         const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
@@ -108,26 +126,32 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
     }
     case "PostToolUse":
     case "Stop": {
-      if (host !== "codex") return null;
+      if (host !== "codex") return host === "antigravity" ? "{}\n" : null;
       if (peerGuardObserved) return null;
       const { runCodexPeerHook } = await import("../dist/build/packages/core/src/codex-peer-hooks.js");
       const result = await runCodexPeerHook(name, body, deviceHome(process.env));
       if (result.reasonCode !== "HOOK_PEER_NOT_APPLICABLE") {
-        noteRecall(deviceHome(process.env), event, absolute(cwd) ?? absolute(body.cwd) ?? process.cwd(), result.reasonCode, host);
+        noteRecall(deviceHome(process.env), event, payloadDirectory(cwd, body), result.reasonCode, host);
       }
       return result.output;
     }
     case "SubagentStart":
     case "UserPromptSubmit": {
-      if (typeof libraryPath !== "string") return null;
-      const directory = absolute(cwd) ?? absolute(body.cwd) ?? process.cwd();
+      if (typeof libraryPath !== "string") return host === "antigravity" ? "{}\n" : null;
+      const directory = payloadDirectory(cwd, body);
       const device = deviceHome(process.env);
+      if (host === "antigravity" && name === "UserPromptSubmit" && body.invocationNum !== undefined && body.invocationNum !== 0) {
+        noteRecall(device, event, directory, "HOOK_ANTIGRAVITY_INVOCATION_SKIPPED", host);
+        return "{}\n";
+      }
       let outcome;
       try {
         // A payload without a prompt string is an empty prompt (HOOK_RECALL_PROMPT_EMPTY).
         const prompt = host === "kiro" && typeof process.env.USER_PROMPT === "string"
           ? process.env.USER_PROMPT
-          : (typeof body.prompt === "string" ? body.prompt : "");
+          : host === "antigravity" && typeof body.lastUserInput === "string"
+            ? body.lastUserInput
+            : (typeof body.prompt === "string" ? body.prompt : "");
         outcome = await promptRecallOutcome({
           libraryPath,
           // Native SubagentStart has agent_type, not a task prompt. Never read
@@ -146,12 +170,13 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
         const pointer = navigationPointerAnswer(host, name);
         return `${hookProtocolOutput(host, name, [...pointer.lines, ...(outcome.answer?.lines ?? [])])}\n`;
       }
-      return outcome.answer === null ? null : `${outcome.answer.output}\n`;
+      if (outcome.answer === null) return host === "antigravity" ? "{}\n" : null;
+      return `${outcome.answer.output}\n`;
     }
     case "SessionStart":
       return `${navigationPointerAnswer(host, name).output}\n`;
     default:
-      return null;
+      return host === "antigravity" ? "{}\n" : null;
   }
 }
 
@@ -252,4 +277,55 @@ function kiroReadGuardObservation(payload, cwd) {
   return reason === null
     ? { status: "allowed", reasonCode: "HOOK_KIRO_PRETOOL_INPUT_OBSERVED" }
     : { status: "denied", reasonCode: "HOOK_KIRO_PRETOOL_INPUT_DENIED", reason };
+}
+
+/** Antigravity PreToolUse inspects toolCall.{name,args} for read_file and view_file (1-based inclusive StartLine..EndLine). */
+function antigravityReadGuardObservation(payload, cwd) {
+  const call = payload?.toolCall;
+  const args = call !== null && typeof call === "object" && !Array.isArray(call) ? call.args : null;
+  const rawPath =
+    args !== null && typeof args === "object" && !Array.isArray(args)
+      ? typeof args.Path === "string" && args.Path.length > 0
+        ? args.Path
+        : typeof args.AbsolutePath === "string" && args.AbsolutePath.length > 0
+          ? args.AbsolutePath
+          : null
+      : null;
+  if (!call || (call.name !== "read_file" && call.name !== "view_file") || rawPath === null) {
+    return { status: "unknown", reasonCode: "HOOK_ANTIGRAVITY_PRETOOL_INPUT_UNKNOWN" };
+  }
+  let path;
+  let file;
+  try {
+    path = resolve(cwd, rawPath);
+    file = statSync(path);
+    if (!file.isFile()) return { status: "unknown", reasonCode: "HOOK_ANTIGRAVITY_PRETOOL_INPUT_UNKNOWN" };
+  } catch {
+    return { status: "unknown", reasonCode: "HOOK_ANTIGRAVITY_PRETOOL_INPUT_UNKNOWN" };
+  }
+  if (file.size <= AGENT_OUTPUT_MAX_BYTES) {
+    return { status: "allowed", reasonCode: "HOOK_ANTIGRAVITY_PRETOOL_INPUT_OBSERVED" };
+  }
+  try {
+    const startLine = args.StartLine;
+    const endLine = args.EndLine;
+    const byteOffsetOk = args.ByteOffset === undefined || (Number.isSafeInteger(args.ByteOffset) && args.ByteOffset >= 0);
+    const bounded =
+      byteOffsetOk &&
+      Number.isSafeInteger(startLine) &&
+      startLine >= 1 &&
+      Number.isSafeInteger(endLine) &&
+      endLine >= startLine &&
+      endLine - startLine + 1 <= 200;
+    if (bounded && !readWindowExceedsLimit(path, startLine, endLine - startLine + 1)) {
+      return { status: "allowed", reasonCode: "HOOK_ANTIGRAVITY_PRETOOL_INPUT_OBSERVED" };
+    }
+    return {
+      status: "denied",
+      reasonCode: "HOOK_ANTIGRAVITY_PRETOOL_INPUT_DENIED",
+      reason: `Read a window of at most 200 lines and ${AGENT_OUTPUT_MAX_BYTES} bytes (set StartLine and EndLine with EndLine - StartLine + 1 <= 200). If one line exceeds the byte limit, extract a smaller excerpt with a tool.`,
+    };
+  } catch {
+    return { status: "unknown", reasonCode: "HOOK_ANTIGRAVITY_PRETOOL_INPUT_UNKNOWN" };
+  }
 }

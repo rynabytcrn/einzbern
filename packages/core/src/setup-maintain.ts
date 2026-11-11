@@ -96,7 +96,7 @@ import {
   setupTargetState,
 } from "./setup-fresh.js";
 import type { EngineFiles, EngineSource, LibraryState } from "./setup-fresh.js";
-import { KIRO_SKILL_COPY_ROOT, SKILL_COPIES_FILES, SKILL_COPY_ROOTS, skillCopyPath, verifySkillCopies, skillCopiesRecordPath } from "./skill-copies.js";
+import { ANTIGRAVITY_SKILL_COPY_ROOT, KIRO_SKILL_COPY_ROOT, SKILL_COPIES_FILES, SKILL_COPY_ROOTS, skillCopyPath, verifySkillCopies, skillCopiesRecordPath } from "./skill-copies.js";
 import { materializeWorkspaceFromGenesis } from "./workspace.js";
 import { scopedWorkspaceState } from "./project-scope.js";
 import { applySetupManagedUpdates, planSetupManagedUpdates, runSetupEngineCommand } from "./setup-managed-update.js";
@@ -764,13 +764,22 @@ export async function planUninstallSetup(input: SetupModeInput): Promise<SetupMo
   }
   const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
   const kiroPath = skillCopyPath(home, KIRO_SKILL_COPY_ROOT, kiroHome);
-  const kiroVerification = await verifySkillCopies({ home, deviceHome, includeKiro: true, kiroHome });
-  const kiroCopy = kiroVerification.copies.find(copy => copy.host === "kiro" && copy.path === kiroPath);
+  const antigravityConfigHome = process.env.ANTIGRAVITY_CONFIG_DIR ?? join(home, ".gemini", "config");
+  const antigravityPath = skillCopyPath(home, ANTIGRAVITY_SKILL_COPY_ROOT, kiroHome, antigravityConfigHome);
+  const optionalVerification = await verifySkillCopies({ home, deviceHome, includeKiro: true, kiroHome, includeAntigravity: true, antigravityConfigHome });
+  const kiroCopy = optionalVerification.copies.find(copy => copy.host === "kiro" && copy.path === kiroPath);
   if (kiroCopy?.ok) {
     recorder.write("skill-copies", kiroPath, "move");
     recorder.backup("skill-copies", kiroPath);
   } else if (kiroCopy !== undefined && await entryKind(kiroPath) !== null && kiroCopy.recorded !== null) {
     recorder.block("skill-copies", kiroPath, "SETUP_SKILL_USER_EDITED", "The Kiro Skill copy differs from its ownership digest; preserve and review it before uninstall.");
+  }
+  const antigravityCopy = optionalVerification.copies.find(copy => copy.host === "antigravity" && copy.path === antigravityPath);
+  if (antigravityCopy?.ok) {
+    recorder.write("skill-copies", antigravityPath, "move");
+    recorder.backup("skill-copies", antigravityPath);
+  } else if (antigravityCopy !== undefined && await entryKind(antigravityPath) !== null && antigravityCopy.recorded !== null) {
+    recorder.block("skill-copies", antigravityPath, "SETUP_SKILL_USER_EDITED", "The Antigravity Skill copy differs from its ownership digest; preserve and review it before uninstall.");
   }
   const record = skillCopiesRecordPath(deviceHome);
   if (await entryKind(record) !== null) {
@@ -837,12 +846,20 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
   }
   const kiroHome = process.env.KIRO_HOME ?? join(home, ".kiro");
   const kiroPath = skillCopyPath(home, KIRO_SKILL_COPY_ROOT, kiroHome);
-  const kiroVerification = await verifySkillCopies({ home, deviceHome, includeKiro: true, kiroHome });
-  const kiroCopy = kiroVerification.copies.find(copy => copy.host === "kiro" && copy.path === kiroPath);
+  const antigravityConfigHome = process.env.ANTIGRAVITY_CONFIG_DIR ?? join(home, ".gemini", "config");
+  const antigravityPath = skillCopyPath(home, ANTIGRAVITY_SKILL_COPY_ROOT, kiroHome, antigravityConfigHome);
+  const optionalVerification = await verifySkillCopies({ home, deviceHome, includeKiro: true, kiroHome, includeAntigravity: true, antigravityConfigHome });
+  const kiroCopy = optionalVerification.copies.find(copy => copy.host === "kiro" && copy.path === kiroPath);
   if (kiroCopy?.ok && await entryKind(kiroPath) !== null) {
     await moveIntoBackup(kiroPath, skillCopyBackup(recorder, KIRO_SKILL_COPY_ROOT.root));
     recorder.write("skill-copies", kiroPath, "move");
     recorder.backup("skill-copies", kiroPath);
+  }
+  const antigravityCopy = optionalVerification.copies.find(copy => copy.host === "antigravity" && copy.path === antigravityPath);
+  if (antigravityCopy?.ok && await entryKind(antigravityPath) !== null) {
+    await moveIntoBackup(antigravityPath, skillCopyBackup(recorder, ANTIGRAVITY_SKILL_COPY_ROOT.root));
+    recorder.write("skill-copies", antigravityPath, "move");
+    recorder.backup("skill-copies", antigravityPath);
   }
   const record = skillCopiesRecordPath(deviceHome);
   if (await entryKind(record) !== null) {

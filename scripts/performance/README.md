@@ -87,3 +87,63 @@ CPU 48.55 to 28.65 seconds and RSS 730868 to 631776 KiB, with identical authorit
 head and semantic digest. That is one pair, **not** a 15-pair P50/P95 claim; its
 private-authority receipt is not published with this source. 648's mutable-filesystem
 trust limitation remains.
+
+## B-package entry measurements
+
+The CLI observation now distinguishes `hit`, `no-hit`, `empty` and `error`.
+An empty argument keeps `CLI_ARGUMENT_MISSING`; a whitespace-only query is
+rejected with `CLI_ARGUMENT_MALFORMED` before authority reads or indexing.
+Neither query text nor output/card bodies enter the observation log.
+
+`recall-ab.mjs` still accepts its original three arguments for the core sample.
+An optional fourth argument is a JSON entry specification:
+
+```json
+{
+  "entry": "cli",
+  "host": "claude-code",
+  "projectPath": "/owned/synthetic-project",
+  "at": "2026-11-10T15:00:00Z",
+  "queries": ["Recall performance", "PERF-STORY-13", "nonexistent-zxy-needle"],
+  "deviceTemplate": "/owned/devices/template",
+  "deviceRoot": "/owned/devices",
+  "devicePrefix": "unique-series-",
+  "osTime": true
+}
+```
+
+Create the synthetic library and register its project using a separate owned
+device home. Remove only that setup's derived cache/log/locks before preserving
+the template. Template and sample devices must be siblings: registry/config paths
+are device-relative. Every sample exclusively creates a new device, then copies
+the same template. Use a new prefix for another series. `entry: "hook"` calls the
+actual hook event entry; `entry: "cli"` runs `scripts/einzbern.mjs`, including its
+parser, output and failure wrapper. Hook wall-clock dates are pinned to `at` in
+the sample process because that event has no public time flag. The monotonic
+elapsed and CPU clocks remain real.
+
+```sh
+node scripts/performance/recall-ab.mjs BASELINE CANDIDATE LIBRARY SPEC.json > samples.ndjson
+```
+
+Each query gets 15 alternating A/B groups and an observer-on process per group.
+All stdout, stderr, order, failed samples and actual result logs are retained.
+The script does not stop at the first child failure. Event-file reads are counted
+through file handles. Identical in-memory module probes count complete library
+materializations and time the real CLI operation without changing baseline files.
+Their overhead is included, and the loaded source digest/size and memory samples
+are recorded; these are instrumented measurements. Parent spawn-to-close elapsed
+is separate from the internal operation interval. On macOS, optional system
+`time -lp` adds post-exit process CPU seconds and maximum RSS in its native bytes;
+Node's separately sampled `maxRSS` remains in KiB. The native time CPU counters
+have centisecond output resolution. Block operation counts are not OS I/O bytes.
+
+Import `summarizePairedSamples` from `recall-summary.mjs` to summarize the JSON
+rows. It uses nearest-rank P50/P95 per query/input, retains failure counts, and
+refuses to treat a null/unconfirmed authority head as a successful performance
+comparison. It also reconciles the actual logs through `summarizeRecall`.
+Cold device caches do not imply a cold OS/file-provider cache. Negative observed
+differences do not establish negative observer overhead. The historical small
+fixture RSS regression and its raw samples above remain part of the evidence;
+larger or nonempty corpora cannot replace that criterion. These tools alone do
+not establish the strict no-latency/CPU/RSS-regression acceptance.

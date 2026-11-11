@@ -198,3 +198,32 @@ test("644/646: native host role-only navigation and subsequent actual prompt out
   assert.ok(lines.some(line => line.outcome === "refused-or-error" && line.observation.stages.length > 0));
   assert.equal(JSON.stringify(lines).includes(PROMPT), false);
 });
+
+test("646: Kiro PromptSubmit uses real USER_PROMPT text and AgentSpawn remains navigation", async context => {
+  const { directory, library } = await registeredProject(context);
+  const previousPrompt = process.env.USER_PROMPT;
+  context.after(() => {
+    if (previousPrompt === undefined) delete process.env.USER_PROMPT;
+    else process.env.USER_PROMPT = previousPrompt;
+  });
+  process.env.EINZBERN_HOST = "kiro";
+  const { runHookEvent } = await import(pathToFileURL(join(repositoryRoot, "scripts/einzbern-hook.mjs")).href);
+  process.env.USER_PROMPT = PROMPT;
+  const answer = await withRecallObservation(() => runHookEvent({
+    event: "PromptSubmit", payload: { prompt: "unfindablexyzzyunfindable" }, libraryPath: library, cwd: directory,
+  }));
+  assert.match(answer.value, /HOOK-STORY/u);
+  assert.equal(answer.observation.materializations, 1);
+  assert.equal(answer.observation.segmentReads, 1);
+  assert.equal(answer.observation.recallCalls, 1);
+  const spawn = await withRecallObservation(() => runHookEvent({
+    event: "AgentSpawn", payload: { prompt: PROMPT, agent_type: "zebrafish" }, libraryPath: library, cwd: directory,
+  }));
+  assert.match(spawn.value, /Mana Orchestrate/u);
+  assert.doesNotMatch(spawn.value, /HOOK-STORY/u);
+  assert.equal(spawn.observation.materializations, 0);
+  assert.equal(spawn.observation.segmentReads, 0);
+  assert.equal(spawn.observation.recallCalls, 0);
+  process.env.USER_PROMPT = " \n\t ";
+  assert.equal(await runHookEvent({ event: "PromptSubmit", payload: { prompt: PROMPT }, libraryPath: library, cwd: directory }), null);
+});

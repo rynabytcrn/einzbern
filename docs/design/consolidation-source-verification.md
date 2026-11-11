@@ -82,7 +82,7 @@ identity, an actual resource lookup error or unsupported native proof retains th
 full reader. No global FileProvider assertion is introduced.
 
 A local record binds the device identity, root library and source IDs, archive
-position, stream/device/segment identity, committed length/digest and coverage,
+position, stream/device/segment identity and event identity scheme, committed length/digest and coverage,
 root/source manifest digests, prior stream manifest/head/vector, a digest of the
 complete verified index/head/vector metadata tree, native identity, engine and
 projection versions, and the compressed event projection's length and SHA256.
@@ -110,7 +110,9 @@ whole. Unchanged old segments can reuse their independently verified projections
 the current segment boundaries, stream head and index/authority checks still run.
 The record keeps the metadata context under which verification originally
 succeeded, while append does not require the *old* stream head to remain the
-current head. A new flat consolidation generation changes its root binding and
+current head. The actual reader's stream ID and identity scheme must also match
+the prepared descriptor binding; metadata changes between preparation and reading
+cannot reuse an older identity contract. A new flat consolidation generation changes its root binding and
 requires verification before it can establish new records.
 
 ## Evidence and resource accounting

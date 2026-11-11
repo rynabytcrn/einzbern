@@ -46,6 +46,7 @@ interface SegmentBinding {
   readonly archive: string;
   readonly streamId: string;
   readonly deviceId: string;
+  readonly identityScheme: StreamManifest["identityScheme"];
   readonly segment: StreamSegment;
   readonly rootManifest: string;
   readonly sourceManifest: string;
@@ -271,7 +272,7 @@ async function prepareFiles(session: VerificationSession): Promise<boolean> {
         const path = join(sourceRoot, "akasha", manifest.deviceId, segment.name);
         if (session.files.has(path)) throw new Error("aliased source descriptor");
         const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-        const binding: SegmentBinding = { libraryId: session.library.manifest.libraryId, sourceId: source.libraryId, archive, streamId: manifest.streamId, deviceId: manifest.deviceId, segment, rootManifest: canonicalSha256(session.library.manifest), sourceManifest: canonicalSha256(source) };
+        const binding: SegmentBinding = { libraryId: session.library.manifest.libraryId, sourceId: source.libraryId, archive, streamId: manifest.streamId, deviceId: manifest.deviceId, identityScheme: manifest.identityScheme, segment, rootManifest: canonicalSha256(session.library.manifest), sourceManifest: canonicalSha256(source) };
         session.files.set(path, { handle, path, segment, binding, key: canonicalSha256({ libraryId: binding.libraryId, sourceId: binding.sourceId, archive, streamId: binding.streamId, segment: segment.name }) });
       }
     }
@@ -322,7 +323,7 @@ export async function verifiedStreamSegments(libraryRoot: string, manifest: Stre
   const result = new Map<string, VerifiedSegment>();
   for (const segment of manifest.segments) {
     const file = session.files.get(join(sourceRoot, "akasha", manifest.deviceId, segment.name));
-    if (file === undefined || file.native === null || file.native === undefined || canonicalSha256(file.binding.segment) !== canonicalSha256(segment) || file.binding.sourceManifest !== canonicalSha256(source)) continue;
+    if (file === undefined || file.native === null || file.native === undefined || file.binding.streamId !== manifest.streamId || file.binding.deviceId !== manifest.deviceId || file.binding.identityScheme !== manifest.identityScheme || canonicalSha256(file.binding.segment) !== canonicalSha256(segment) || file.binding.sourceManifest !== canonicalSha256(source)) continue;
     const prior = await priorRecord(session, file, file.native);
     if (prior !== null) {
       let cached;

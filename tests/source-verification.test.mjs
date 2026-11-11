@@ -230,6 +230,26 @@ test("a coherent shared projection cannot replace the independent local digest",
   assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
 });
 
+for (const duringProbe of [false, true]) {
+  test(`current identity scheme remains authoritative ${duringProbe ? "across metadata preparation" : "after a warm projection"}`, { skip: !native }, async t => {
+    const f = await fixture(t);
+    let mutate = false;
+    const devices = await fs.readdir(join(f.library, "akasha"));
+    const path = join(f.library, "akasha", devices[0], "manifest.json");
+    const manifest = JSON.parse(await fs.readFile(path, "utf8"));
+    const changed = canonicalJson({ ...manifest, identityScheme: "legacy" });
+    provider(t, () => {
+      if (mutate) { mutate = false; writeFileSync(path, changed); }
+    });
+    await warm(f);
+    if (duringProbe) mutate = true;
+    else await fs.writeFile(path, changed);
+    for (const read of [() => materializeLibrary(f.library), () => materializeWorkspaceFromGenesis(f.library)]) {
+      await assert.rejects(read, error => error.reasonCode === "AKASHA_EVENT_CORRUPT" && error.details?.break === "identity");
+    }
+  });
+}
+
 for (const kind of ["zero-generation", "unsupported-attributes", "network-volume", "incomplete-download", "provider-unknown", "helper-failure", "helper-timeout"]) {
   test(`${kind} preserves the full reader`, { skip: !native }, async t => {
     const f = await fixture(t);

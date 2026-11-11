@@ -323,6 +323,8 @@ export const HOST_NATIVE_PREPARATION_VERSION = "tcrn.host-native-preparation.v1"
 export const HOST_NATIVE_RECORD_VERSION = "tcrn.host-native-record.v1" as const;
 export const KIRO_PROCESS_RETURN_VERSION = "tcrn.kiro-process-return.v1" as const;
 export const KIRO_PROCESS_EVIDENCE_VERSION = "tcrn.kiro-process-evidence.v1" as const;
+export const ANTIGRAVITY_PROCESS_RETURN_VERSION = "tcrn.antigravity-process-return.v1" as const;
+export const ANTIGRAVITY_PROCESS_EVIDENCE_VERSION = "tcrn.antigravity-process-evidence.v1" as const;
 export interface HostNativePreparation {
   readonly schemaVersion: typeof HOST_NATIVE_PREPARATION_VERSION;
   readonly context: Record<string, unknown>;
@@ -360,6 +362,37 @@ export interface KiroProcessEvidence {
   readonly actual: { readonly harness: "unknown"; readonly model: "unknown"; readonly effort: "unknown"; readonly usage: "unknown"; readonly taskFinality: "unknown" };
   readonly validation: { readonly status: "valid"; readonly authentication: "caller-supplied-process-report-not-authenticated" };
   readonly processReturn: KiroProcessReturn | null;
+  readonly digest: string;
+}
+export interface AntigravityProcessReturn {
+  readonly schemaVersion: typeof ANTIGRAVITY_PROCESS_RETURN_VERSION;
+  readonly source: "agy-cli-process-return";
+  readonly preparationDigest: string;
+  readonly attemptId: string;
+  readonly processStarted: boolean;
+  readonly processClosed: boolean;
+  readonly spawnError: string | null;
+  readonly launchBlock: string | null;
+  readonly startedAt: string | null;
+  readonly finishedAt: string | null;
+  readonly exitCode: number | null;
+  readonly signal: string | null;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly cancellationRequested: boolean;
+}
+export interface AntigravityProcessEvidence {
+  readonly schemaVersion: typeof ANTIGRAVITY_PROCESS_EVIDENCE_VERSION;
+  readonly preparation: HostNativePreparation;
+  readonly dispatch: { readonly status: "allowed" | "refused"; readonly reason: string | null };
+  readonly requested: { readonly surface: "agy-print"; readonly selection: unknown; readonly model: unknown; readonly effort: unknown; readonly fallbackBoundary: unknown };
+  readonly process: { readonly status: "not-started" | "exited-zero" | "exited-nonzero" | "signaled" | "unknown"; readonly startedAt: string | null; readonly finishedAt: string | null; readonly exitCode: number | null; readonly signal: string | null; readonly stdout: string | null; readonly stderr: string | null; readonly finality: "confirmed" | "unknown" };
+  readonly refusal: { readonly status: "observed" | "not-observed-in-return" | "unknown"; readonly kind: "permission-refused" | null; readonly evidence: string | null };
+  readonly serviceError: { readonly status: "unknown"; readonly kind: null; readonly evidence: null; readonly reason: string };
+  readonly cancellation: { readonly requested: boolean; readonly signalObserved: string | null };
+  readonly actual: { readonly surface: "unknown"; readonly model: "unknown"; readonly effort: "unknown"; readonly usage: "unknown"; readonly taskFinality: "unknown" };
+  readonly validation: { readonly status: "valid"; readonly authentication: "caller-supplied-process-report-not-authenticated" };
+  readonly processReturn: AntigravityProcessReturn | null;
   readonly digest: string;
 }
 export type HostNativeStatus = "unknown" | "accepted" | "running" | "completed" | "failed" | "cancelled";
@@ -515,6 +548,175 @@ export function normalizeKiroProcessEvidence(value: unknown): KiroProcessEvidenc
   if (record.schemaVersion !== KIRO_PROCESS_EVIDENCE_VERSION) throw new HostExecutionError("unknown Kiro process evidence protocol");
   const rebuilt = recordKiroProcessEvidence(record.preparation, record.processReturn === null ? undefined : record.processReturn);
   if (dotDigest(rebuilt) !== dotDigest(record)) throw new HostExecutionError("Kiro process evidence differs from its retained preflight and return");
+  return rebuilt;
+}
+
+function antigravityProcessReturn(value: unknown, preparation: HostNativePreparation): AntigravityProcessReturn {
+  const row = hostObject(value, "Antigravity process return", ["schemaVersion", "source", "preparationDigest", "attemptId", "processStarted", "processClosed", "spawnError", "launchBlock", "startedAt", "finishedAt", "exitCode", "signal", "stdout", "stderr", "cancellationRequested"]);
+  if (row.schemaVersion !== ANTIGRAVITY_PROCESS_RETURN_VERSION || row.source !== "agy-cli-process-return" || typeof row.processStarted !== "boolean" || typeof row.processClosed !== "boolean") {
+    throw new HostExecutionError("Antigravity process return must state process start and close observations");
+  }
+  if (row.preparationDigest !== preparation.digest || row.attemptId !== preparation.attempt?.id) {
+    throw new HostExecutionError("Antigravity process return belongs to another prepared invocation");
+  }
+  if (row.processStarted === true && row.processClosed !== true || row.processStarted === false && row.processClosed === true) {
+    throw new HostExecutionError("Antigravity process start/close observations conflict");
+  }
+  if (row.spawnError !== null && (typeof row.spawnError !== "string" || !row.spawnError.trim())) {
+    throw new HostExecutionError("Antigravity spawnError must be nonempty text or null");
+  }
+  if (row.launchBlock !== null && (typeof row.launchBlock !== "string" || !row.launchBlock.trim())) {
+    throw new HostExecutionError("Antigravity launchBlock must be nonempty text or null");
+  }
+  if (row.processStarted === false && (Number(row.spawnError !== null) + Number(row.launchBlock !== null) !== 1)) {
+    throw new HostExecutionError("a process that did not start needs exactly one observed spawn error or launch block");
+  }
+  if (row.processStarted === true && (row.spawnError !== null || row.launchBlock !== null)) {
+    throw new HostExecutionError("a started process cannot carry a prelaunch failure");
+  }
+  if (row.processStarted) dotInstant(row.startedAt, "Antigravity process startedAt");
+  else if (row.startedAt !== null) throw new HostExecutionError("an unstarted process cannot have a start instant");
+  if (row.processClosed) {
+    if (row.finishedAt === null) throw new HostExecutionError("a closed process needs a finish instant");
+    const finish = dotInstant(row.finishedAt, "Antigravity process finishedAt");
+    if (finish < dotInstant(row.startedAt, "Antigravity process startedAt")) {
+      throw new HostExecutionError("Antigravity process finishedAt predates startedAt");
+    }
+  } else if (row.finishedAt !== null) {
+    throw new HostExecutionError("an open or unstarted process cannot have a finish instant");
+  }
+  if (row.exitCode !== null && (!Number.isSafeInteger(row.exitCode) || Number(row.exitCode) < 0)) {
+    throw new HostExecutionError("Antigravity process exitCode must be a nonnegative integer or null");
+  }
+  if (row.processStarted === false && (row.exitCode !== null || row.signal !== null)) {
+    throw new HostExecutionError("a process that did not start cannot return an exit code or signal");
+  }
+  if (row.signal !== null && (typeof row.signal !== "string" || !row.signal.trim())) {
+    throw new HostExecutionError("Antigravity process signal must be nonempty text or null");
+  }
+  for (const key of ["stdout", "stderr"]) {
+    if (typeof row[key] !== "string") throw new HostExecutionError(`Antigravity process ${key} must be retained text`);
+  }
+  if (typeof row.cancellationRequested !== "boolean") {
+    throw new HostExecutionError("Antigravity cancellation request must be a boolean");
+  }
+  return value as AntigravityProcessReturn;
+}
+
+/** Validates an existing host-native preflight; it never starts an Antigravity process. */
+export function inspectAntigravityProcessPreparation(value: unknown): {
+  readonly status: "ready" | "refused";
+  readonly preparation: HostNativePreparation;
+  readonly reason: string | null;
+  readonly requested: AntigravityProcessEvidence["requested"];
+} {
+  const preparation = validateHostNativePreparation(value);
+  const request = preparation.decision.request;
+  if (request.capabilities.hostKind !== "antigravity" || request.capabilities.toolName !== "agy") {
+    throw new HostExecutionError("Antigravity preflight must name hostKind antigravity and toolName agy");
+  }
+  const allowed = preparation.attempt !== null && executionDecisionEligibility(preparation.decision) === "executable";
+  const selection = preparation.decision.requestedSelection;
+  const explicit = selection.kind === "explicit";
+  if (allowed && explicit && selection.tuple.runner !== "antigravity") {
+    throw new HostExecutionError("explicit Antigravity selection runner must be antigravity");
+  }
+  const args = preparation.attempt?.argumentsValue;
+  if (allowed) {
+    const prompt = hostObject(args, "Antigravity invocation arguments", ["prompt"]);
+    if (typeof prompt.prompt !== "string" || !prompt.prompt.trim()) {
+      throw new HostExecutionError("Antigravity invocation requires a nonempty prompt");
+    }
+  }
+  return {
+    status: allowed ? "ready" : "refused",
+    preparation,
+    reason: allowed ? null : preparation.decision.reasons.join("; ") || "host-native preflight refused invocation",
+    requested: {
+      surface: "agy-print",
+      selection,
+      model: explicit ? { status: "requested", value: selection.tuple.model } : { status: "unknown", reason: "host-managed selection" },
+      effort: explicit ? { status: "requested", value: selection.tuple.effort } : { status: "unknown", reason: "host-managed selection" },
+      fallbackBoundary: request.authorization.fallbackBoundaryAssessment ?? "unknown",
+    },
+  };
+}
+
+/** Retains an Antigravity CLI process outcome separately from model selection and task finality. */
+export function recordAntigravityProcessEvidence(preparationValue: unknown, processReturnValue?: unknown): AntigravityProcessEvidence {
+  const preflight = inspectAntigravityProcessPreparation(preparationValue);
+  if (preflight.status === "ready" && processReturnValue === undefined) {
+    throw new HostExecutionError("ready Antigravity invocation needs its actual process return");
+  }
+  if (preflight.status === "refused" && processReturnValue !== undefined) {
+    throw new HostExecutionError("refused Antigravity preflight cannot be paired with a process return");
+  }
+  const processReturn = processReturnValue === undefined ? null : antigravityProcessReturn(processReturnValue, preflight.preparation);
+  let process: AntigravityProcessEvidence["process"] = {
+    status: "not-started",
+    startedAt: null,
+    finishedAt: null,
+    exitCode: null,
+    signal: null,
+    stdout: null,
+    stderr: null,
+    finality: "unknown",
+  };
+  let refusal: AntigravityProcessEvidence["refusal"] = {
+    status: preflight.status === "refused" ? "observed" : "unknown",
+    kind: null,
+    evidence: preflight.status === "refused" ? preflight.reason : null,
+  };
+  const serviceError: AntigravityProcessEvidence["serviceError"] = {
+    status: "unknown",
+    kind: null,
+    evidence: null,
+    reason: "Antigravity CLI does not document a distinct service-error exit code; the raw return remains authoritative",
+  };
+  let cancellation: AntigravityProcessEvidence["cancellation"] = { requested: false, signalObserved: null };
+  if (processReturn !== null) {
+    const status = !processReturn.processStarted ? "not-started" as const
+      : processReturn.signal !== null ? "signaled" as const
+        : processReturn.exitCode === 0 ? "exited-zero" as const
+          : processReturn.exitCode === null ? "unknown" as const : "exited-nonzero" as const;
+    process = {
+      status,
+      startedAt: processReturn.startedAt,
+      finishedAt: processReturn.finishedAt,
+      exitCode: processReturn.exitCode,
+      signal: processReturn.signal,
+      stdout: processReturn.stdout,
+      stderr: processReturn.stderr,
+      finality: processReturn.processClosed ? "confirmed" : "unknown",
+    };
+    refusal = { status: "not-observed-in-return", kind: null, evidence: null };
+    cancellation = { requested: processReturn.cancellationRequested, signalObserved: processReturn.signal };
+  }
+  const payload = {
+    schemaVersion: ANTIGRAVITY_PROCESS_EVIDENCE_VERSION,
+    preparation: preflight.preparation,
+    dispatch: { status: preflight.status === "ready" ? "allowed" as const : "refused" as const, reason: preflight.reason },
+    requested: preflight.requested,
+    process,
+    refusal,
+    serviceError,
+    cancellation,
+    actual: { surface: "unknown" as const, model: "unknown" as const, effort: "unknown" as const, usage: "unknown" as const, taskFinality: "unknown" as const },
+    validation: { status: "valid" as const, authentication: "caller-supplied-process-report-not-authenticated" as const },
+    processReturn,
+  };
+  return { ...payload, digest: dotDigest(payload) };
+}
+
+export function normalizeAntigravityProcessEvidence(value: unknown): AntigravityProcessEvidence {
+  const record = hostObject(value, "Antigravity process evidence", ["schemaVersion", "preparation", "dispatch", "requested", "process", "refusal", "serviceError", "cancellation", "actual", "validation", "processReturn", "digest"]);
+  if (record.schemaVersion !== ANTIGRAVITY_PROCESS_EVIDENCE_VERSION) {
+    throw new HostExecutionError("unknown Antigravity process evidence protocol");
+  }
+  const rebuilt = recordAntigravityProcessEvidence(record.preparation, record.processReturn === null ? undefined : record.processReturn);
+  if (dotDigest(rebuilt) !== dotDigest(record)) {
+    throw new HostExecutionError("Antigravity process evidence differs from its retained preflight and return");
+  }
   return rebuilt;
 }
 

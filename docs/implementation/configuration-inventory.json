@@ -1156,7 +1156,9 @@
         "allowedValues": [
           "claude-code",
           "codex",
-          "dsh"
+          "dsh",
+          "kiro",
+          "antigravity"
         ],
         "defaultDescription": "claude-code when CLAUDE_PROJECT_DIR is nonempty, otherwise codex",
         "precedence": [
@@ -8357,6 +8359,63 @@
             "name": "offset",
             "required": false,
             "valueKind": "integer"
+          }
+        ]
+      },
+      {
+        "name": "execution-antigravity-evidence",
+        "availability": "cli",
+        "mutates": false,
+        "flags": [
+          {
+            "name": "from-file",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Antigravity process evidence JSON."
+          }
+        ]
+      },
+      {
+        "name": "execution-antigravity-preflight",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "binding",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Saved HostExecutionPreparation v1 JSON; validates Antigravity CLI scope without launching a process."
+          },
+          {
+            "name": "reserve-output",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "Optionally reserve the private create-new evidence destination before launching Antigravity CLI."
+          }
+        ]
+      },
+      {
+        "name": "execution-antigravity-record",
+        "availability": "cli",
+        "mutates": true,
+        "flags": [
+          {
+            "name": "binding",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Saved Antigravity HostExecutionPreparation v1 JSON."
+          },
+          {
+            "name": "result",
+            "required": false,
+            "valueKind": "string",
+            "valueShape": "Actual Antigravity child process return JSON; omit only for a refused preflight."
+          },
+          {
+            "name": "output",
+            "required": true,
+            "valueKind": "string",
+            "valueShape": "Create-new private Antigravity process evidence outside device/library roots."
           }
         ]
       },

@@ -23,6 +23,11 @@ moves the Skill copy only when its current bytes still match the recorded digest
 Agents, user-edited Skills, trust, permissions and unrelated configuration remain. The removed
 Hook files and owned Skill copy are listed for backup in the uninstall plan.
 
+When Antigravity was selected, uninstall removes only the verified `"einzbern"` top-level group
+from Antigravity's `hooks.json` (backing up the file first and removing `hooks.json` only when no
+other groups remain) and moves the Antigravity Skill copy only when its current bytes still match
+the recorded digest. Unrelated hook groups and user-edited Skills remain intact.
+
 ## Questions (one screen)
 
 There is one question, asked once for all managed sections together, never section by section.

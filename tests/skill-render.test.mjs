@@ -313,7 +313,8 @@ test("INIT065 generated normal Skill directs each native host to matching versio
   const { checkHostSkillCompatibility, HOST_SKILL_PROTOCOL_MARKER } = await import("../dist/build/packages/core/src/skill-render.js");
   const markdown = render();
   assert.ok(markdown.includes(HOST_SKILL_PROTOCOL_MARKER));
-  assert.ok(markdown.includes("Native dispatch (Codex, Claude, dot, Kiro CLI)"));
+  assert.ok(markdown.includes("Native dispatch (Codex, Claude, dot, Kiro CLI, Antigravity)"));
+  assert.ok(markdown.includes("Antigravity: `specs/antigravity-host-v1.md`"));
   assert.ok(markdown.includes("Parent reads before dispatch, child reads before work"));
   assert.ok(markdown.includes("targets=[]"));
   assert.ok(!markdown.includes("stop its dispatch"));

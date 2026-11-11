@@ -154,7 +154,7 @@ test("device root and the two CLI home conventions stay distinct and preserve co
 });
 
 test("host declarations are untrusted context and internal handoff/lease controls are not editable settings", () => {
-  for (const host of ["claude-code", "codex", "dsh"]) assert.equal(hookHost({ EINZBERN_HOST: host, CLAUDE_PROJECT_DIR: "/present" }), host);
+  for (const host of ["claude-code", "codex", "dsh", "kiro", "antigravity"]) assert.equal(hookHost({ EINZBERN_HOST: host, CLAUDE_PROJECT_DIR: "/present" }), host);
   assert.equal(hookHost({ EINZBERN_HOST: "unknown", CLAUDE_PROJECT_DIR: "/present" }), "claude-code");
   assert.equal(hookHost({ EINZBERN_HOST: "", CLAUDE_PROJECT_DIR: "" }), "codex");
   for (const name of ["EINZBERN_SURFACE", "EINZBERN_PROJECT_CONTEXT", "EINZBERN_GATE_RUN_PRIOR", "EINZBERN_HEAVY_SLOT"]) {

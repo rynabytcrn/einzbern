@@ -530,7 +530,7 @@ test("478-AC5, BL34/35: declined navigation adds SessionStart; subagent recall a
 
 
 test("DOT-I01: chatgpt-dot is not a traditional hook host or fallback", () => {
-  assert.deepEqual(HOST_HOOK_HOSTS, ["claude-code", "codex", "dsh", "kiro"]);
+  assert.deepEqual(HOST_HOOK_HOSTS, ["claude-code", "codex", "dsh", "kiro", "antigravity"]);
   assert.throws(() => planHostHooks({ host: "chatgpt-dot", scope: "user", deviceHome: "/fixture/device" }), error => error.reasonCode === "HOST_HOOKS_INPUT_INVALID");
 });
 

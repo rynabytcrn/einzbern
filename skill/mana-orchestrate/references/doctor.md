@@ -55,6 +55,11 @@ missing Kiro Hooks do not make the check fail. When selected, doctor checks the 
 global and workspace files and reports the path and owned-hook count. A conflict or unreadable
 standalone file is left for review before repair.
 
+Antigravity CLI and surface observations are likewise reported in `detail.hosts` with independent
+`selection` and `applicability`. When not selected, missing Antigravity Hooks do not fail the
+check. When selected, doctor inspects the single effective global or workspace `hooks.json` scope
+for the owned `"einzbern"` group and leaves any ownership conflict or unreadable file for review.
+
 DSH keeps no hook file: its Mana Orchestrate plugin runs the launcher. When the user's home has
 `.dsh/profiles/`, `detail.hosts` also has a `dsh` entry with one row per profile: whether its
 `package.json` lists `dsh-mana-orchestrate`, the installed version, and the launcher the plugin
@@ -67,8 +72,8 @@ DSH profile; installing or configuring the plugin is done in DSH.
 
 ### skill-copies
 
-The skill copies for Claude Code and Codex match what this device recorded for them; the Kiro copy
-is included when that surface is selected or previously recorded. Not ok:
+The skill copies for Claude Code and Codex match what this device recorded for them; the Kiro and
+Antigravity copies are included when those surfaces are selected or previously recorded. Not ok:
 `DOCTOR_SKILL_COPIES_MISMATCH`. No record (`SKILL_COPIES_NOT_RECORDED`), an unreadable record
 (`SKILL_COPIES_RECORD_INVALID`), or a copy that is missing or differs (`SKILL_COPIES_DRIFTED`):
 repair, which backs up a copy the user changed before it replaces it. The old helper's copies are
@@ -182,7 +187,7 @@ with exit code 0 and prints nothing. Either way it keeps a log: `log/hook.ndjson
 directory, which is `.einzbern` in the user's home unless `EINZBERN_HOME` names another place.
 Each line is one JSON object with `schemaVersion` (`einzbern.hook-log.v1`), `at`, `event`, `cwd`
 and `reasonCode`, and says why one prompt got what it got. The lines of a registered project's
-recall also carry `host` after `reasonCode`: `claude-code`, `codex` or `dsh`, the host the hook ran
+recall also carry `host` after `reasonCode`: `claude-code`, `codex`, `dsh`, `kiro` or `antigravity`, the host the hook ran
 under (`EINZBERN_HOST` when it names one of them, otherwise read from the environment). `host` is an
 additive field of `einzbern.hook-log.v1`; the launcher's lines for prompts outside a registered
 project do not carry it.

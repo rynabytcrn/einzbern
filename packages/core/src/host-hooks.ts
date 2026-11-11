@@ -77,11 +77,11 @@ function unsupported(file: string, reason: string): never {
   return fail("HOST_HOOKS_FILE_UNSUPPORTED", `${file}: ${reason}`, { file });
 }
 
-// Every host the hook may run under. DSH runs the same launcher through its plugin; Kiro uses its
-// standalone Hooks JSON. HOST_HOOK_FILE_HOSTS names only grouped files rendered by this module.
-export type HostHookHost = "claude-code" | "codex" | "dsh" | "kiro";
-export const HOST_HOOK_HOSTS: readonly HostHookHost[] = Object.freeze(["claude-code", "codex", "dsh", "kiro"]);
-export type HostHookFileHost = Exclude<HostHookHost, "dsh" | "kiro">;
+// Every host the hook may run under. DSH runs the same launcher through its plugin; Kiro and
+// Antigravity use their own managed JSON layouts. HOST_HOOK_FILE_HOSTS names only grouped files rendered by this module.
+export type HostHookHost = "claude-code" | "codex" | "dsh" | "kiro" | "antigravity";
+export const HOST_HOOK_HOSTS: readonly HostHookHost[] = Object.freeze(["claude-code", "codex", "dsh", "kiro", "antigravity"]);
+export type HostHookFileHost = Exclude<HostHookHost, "dsh" | "kiro" | "antigravity">;
 export const HOST_HOOK_FILE_HOSTS: readonly HostHookFileHost[] = Object.freeze(["claude-code", "codex"]);
 export type HostHookScope = "user" | "project";
 export const HOST_HOOK_SCOPES: readonly HostHookScope[] = Object.freeze(["user", "project"]);
@@ -224,6 +224,13 @@ export function hostHookCommand(launcher: string, event: string, userHome: strin
   if (paths.isAbsolute(device)) fail("HOST_HOOKS_PATH_UNSUPPORTED", "the device directory needs a relative home binding", { launcher });
   const literal = device.replaceAll("'", "\\'");
   const hostBinding = runningHost === undefined ? "" : `process.env.EINZBERN_HOST='${runningHost}';`;
+  if (runningHost === "antigravity") {
+    const emptyWrite = word === "pre-tool-use"
+      ? "process.stdout.write(JSON.stringify({decision:'allow'})+'\\n')"
+      : "process.stdout.write('{}\\n')";
+    const code = `/*einzbern-hook*/const p=require('node:path');const d=p.resolve(process.env.EINZBERN_HOME||p.resolve(require('node:os').homedir(),'${literal}'));process.env.EINZBERN_HOME=d;${hostBinding}import(require('node:url').pathToFileURL(p.join(d,'engine/hook.mjs')).href).then(m=>m.launch(process.argv.slice(1),process.env)).then(s=>{if(s)process.stdout.write(s);else ${emptyWrite}}).catch(e=>{process.stderr.write(JSON.stringify({ok:false,reasonCode:e.reasonCode||'HOOK_LAUNCH_FAILED',error:e.message})+'\\n');${emptyWrite}})`;
+    return `node -e "${code}" ${word}`;
+  }
   const code = `/*einzbern-hook*/const p=require('node:path');const d=p.resolve(process.env.EINZBERN_HOME||p.resolve(require('node:os').homedir(),'${literal}'));process.env.EINZBERN_HOME=d;${hostBinding}import(require('node:url').pathToFileURL(p.join(d,'engine/hook.mjs')).href).then(m=>m.launch(process.argv.slice(1),process.env)).then(s=>{if(s)process.stdout.write(s)}).catch(e=>process.stderr.write(JSON.stringify({ok:false,reasonCode:e.reasonCode||'HOOK_LAUNCH_FAILED',error:e.message})+'\\n'))`;
   return `node -e "${code}" ${word}`;
 }

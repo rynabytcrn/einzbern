@@ -140,7 +140,7 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
       if (typeof libraryPath !== "string") return host === "antigravity" ? "{}\n" : null;
       const directory = payloadDirectory(cwd, body);
       const device = deviceHome(process.env);
-      if (host === "antigravity" && name === "UserPromptSubmit" && body.invocationNum !== undefined && body.invocationNum !== 1) {
+      if (host === "antigravity" && name === "UserPromptSubmit" && body.invocationNum !== undefined && body.invocationNum !== 0) {
         noteRecall(device, event, directory, "HOOK_ANTIGRAVITY_INVOCATION_SKIPPED", host);
         return "{}\n";
       }

@@ -1138,7 +1138,8 @@
         "tests/story-346-pg-disabled.test.mjs",
         "tests/story-378-incident-replay.test.mjs",
         "tests/story-rule-conservation.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Atelier.md": {
       "readers": [
@@ -1154,7 +1155,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/CLI-Reference.md": {
       "readers": [
@@ -1322,7 +1324,8 @@
         "tests/story-rule-conservation.test.mjs",
         "tests/wiki-cli-reference.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Ether-Layout.md": {
       "readers": [
@@ -1338,7 +1341,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/FAQ.md": {
       "readers": [
@@ -1354,7 +1358,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Gates.md": {
       "readers": [
@@ -1372,7 +1377,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Glossary.md": {
       "readers": [
@@ -1391,7 +1397,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Home.md": {
       "readers": [
@@ -1409,7 +1416,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Install-Wizard.md": {
       "readers": [
@@ -1425,7 +1433,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Managed-Sections-and-Command-Spell.md": {
       "readers": [
@@ -1442,7 +1451,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Migrating-from-TCRN-Workflow.md": {
       "readers": [
@@ -1458,7 +1468,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Multi-Device-and-Cloud.md": {
       "readers": [
@@ -1474,7 +1485,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Variables.md": {
       "readers": [
@@ -1490,7 +1502,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/_Sidebar.md": {
       "readers": [
@@ -1506,7 +1519,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     }
   },
   "documentConsumers": {
@@ -1528,13 +1542,16 @@
   "sourceAudit": {
     ".editorconfig": "a6b98ea7cb6d61ed8d430dd0dffa46c87012b5cf859d4ce7207898954951fdcd",
     ".gitattributes": "167a38ccfe4c1ce36faeacbee047b2fc9c55d286710271d9fdc78d966d205069",
-    ".github/dependabot.yml": "9b74887725ee7ece5774faa1de3fc16d6997c82ef01f163700f6218e64f38dd7",
     ".github/ISSUE_TEMPLATE/bug.yml": "97a14a86b0d1b88eed0473c1edf940c1a65c44027403b89a171e3075cdd20877",
     ".github/ISSUE_TEMPLATE/config.yml": "8b09e7df09fc7534371988062769ee427af2954a02c04c763e8a8005be0f2be4",
+    ".github/dependabot.yml": "9b74887725ee7ece5774faa1de3fc16d6997c82ef01f163700f6218e64f38dd7",
     ".github/workflows/ci.yml": "31c798a010e1995dd5d623d069b78c64ad18738db4bcc2289f2049943a07225d",
     ".gitignore": "8aa3efa989924a589b76af2fa0cc23f965335b3b52eb3f2041885b754ce7a264",
     ".node-version": "2722b61f414f07f08be7f1f1316012813818f26f1c40d6a24a748686cec7d2ff",
     ".npmrc": "05be9eca5ed913f6c49da4b40233c7b2cd26ef7da80437104f2232701cdf5bcb",
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "NOTICE": "045fa532821b114e93e7c1c1ba41a80f642d7a4d57967e6d51e8d3c53a7a98dd",
+    "THIRD_PARTY_NOTICES.txt": "4ed9fbf62ca58c4588755446b7563e411645d156b6a2542181641e4716d64af1",
     "docs/dispatch/2026-10-26-codex-subagentstop-to-dot/state.json": "7a59fe5433019798112ba0d6d3c10891b74ee1a54e7e921f7c4eac652ef6765b",
     "docs/implementation/configuration-inventory.json": "3edfec6915b629c8ad22455905ddf3275d41ea59de2db98a65cb811590796aad",
     "docs/implementation/integrated-engine-acceptance.txt": "0eddea5d85b327172bfa21d03087acfa13428885664db9cdea4255e2a4445611",
@@ -1573,8 +1590,6 @@
     "fixtures/protocol/v1/property/determinism.json": "280332581a6fafcc91583c9724ff9c2df380d84dd3546263fcab20e68e9fa3d6",
     "fixtures/protocol/v1/property/portable-order.json": "c8abcd6569ef6dec212710af895fc6af8a6f85c5548ef1821d62c4779794c520",
     "fixtures/protocol/v1/schema-cases.json": "90e705247b663cb4e5dbaba50f8cbccda9127052b049133901c9de753c9e1e2e",
-    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
-    "NOTICE": "045fa532821b114e93e7c1c1ba41a80f642d7a4d57967e6d51e8d3c53a7a98dd",
     "package.json": "5b3dec64c7c192ea81bfed51a73b18ba27d53310d63c7be2a359043eb926bd67",
     "packages/cli/package.json": "15e31752c5acc196175662c579877f7d9c7a20c6d17ace3efcbc99abb830ff2b",
     "packages/cli/src/config-backup-commands.ts": "5d839d8b0165b1cdd334c0169c7705461d0f6c6fde14153075e8692aa5703a71",
@@ -1599,7 +1614,7 @@
     "packages/core/src/actor-attestation.ts": "5f9d7e677c99f721a8daa0f9eac811afd391b96e765c65080af14c2bcc857706",
     "packages/core/src/agents-sections.ts": "aa22e8dcbea1f207eb2b68f94976612bc5399c2b35165fee5d0e41c65e6af6a6",
     "packages/core/src/akasha.ts": "5ec7b9d8d77c8b61c871fefe9c7a91f3b90484eb245a83ad3d4dbd667626d6df",
-    "packages/core/src/antigravity-host.ts": "0f4a46bad66e8f58ed4c852562bbfec1f868c69effad081f11dd52e2fd70115b",
+    "packages/core/src/antigravity-host.ts": "3771be76036d58bfa77a63cef8c1c016ec37a0dab1b570a5f65f750b6d978727",
     "packages/core/src/artifact-store.ts": "2bb38b1763711e79a37e7df91ccfaca11b0dff4380033b1c9d9e688241f207ce",
     "packages/core/src/assignment-gate.ts": "46742d45eba073e8ae6d4d8e3cea5a9c6d45f40ac74bedd82f7b707bcef2a458",
     "packages/core/src/atomic-file.ts": "efc6b466cd5f9a9642e9eb3faf089a10a1d62ef35fb6af8899b7220a1655b1d3",
@@ -1702,7 +1717,7 @@
     "packages/core/src/runtime-input-contract.ts": "17cea78a31bacd14f80a6c21a19d634a6cc15421347908b6131bdf1eacb91416",
     "packages/core/src/runtime-transport.ts": "ea0d245d30be0a86ada2679fb2af382350d0d4e86d6a88dc025d389eb9092a8d",
     "packages/core/src/settings.ts": "5d7e704874790aeb8f587b74821072a6d6b71a70bfa998780b20dc27fdae156b",
-    "packages/core/src/setup-fresh.ts": "e1882e76fa1de75809dc67ad3c51e56766a73344eca8f4075360397b9132b86b",
+    "packages/core/src/setup-fresh.ts": "b27db38cc31bdbf46bf86a5394f9bcceb618d3088a57753acf9d00f7c75064e6",
     "packages/core/src/setup-maintain.ts": "9ee8a9b34ee6254d4994ec45470051b54fec4350e699bf9d0740008bb4122fa8",
     "packages/core/src/setup-managed-update.ts": "fa6abdecc9e890cb7b315c5bb982752f64d875a77aaaf2646a004cf51d398776",
     "packages/core/src/setup-restore.ts": "34a09dbba97d41477767cdf81e7adb224b6dc0ae65b0ff09e8ccd16b98a9061f",
@@ -1833,7 +1848,7 @@
     "scripts/ds-component-css-proof.mjs": "74089e3462a3f086802111401c178edb086b010f1a49f612fc048664005cfec7",
     "scripts/ds-component-css-reconcile.mjs": "385a922467edb4c9a9818acc52e5731b7112e89e5e59226db9b6942ebd9deca6",
     "scripts/einzbern-hook-launcher.mjs": "56bc3d501955299e9ad9f68969d279ff9bef1ebfc3d9cf269c5cf8670aeecf04",
-    "scripts/einzbern-hook.mjs": "c859a647049763725ad333d26db5407ca5fe8f280c7301925af22b08ee17ae52",
+    "scripts/einzbern-hook.mjs": "151e7e08101e126d512437c1de74546e0fee129d755e3acf925ec38c71beaa8d",
     "scripts/einzbern-launcher.mjs": "c454acbbc9464bef1ed459e55074bbf2dfd02e91b47f3b5dd9e6b30551a5b183",
     "scripts/einzbern.mjs": "0590155c5a5caf780cbf46b6bced7c7e61994fef0ab3a9682fa31e247730ad47",
     "scripts/embed-ds-component-css-snapshot.mjs": "f792f63f30ee9ab3c7c78b3f2b8baeab9081e4833280b0ec3fd8bfbd576f7cd3",
@@ -1955,7 +1970,7 @@
     "scripts/verify-staged-privacy.mjs": "c0708a01a9a05001e2ddcf0a4d166405efecd70f041dc2278254aa2b09821ab0",
     "scripts/wiki-cli-reference.mjs": "d62e0b1b8d48701cd22f8bc86fa56fa1c39fbbddbd27c133211032af635a71c7",
     "skill/mana-orchestrate/agents/openai.yaml": "5921286d1e1ccbd994d53e1276e7085bd842c57bfed377d0163425823af13f65",
-    "skill/mana-orchestrate/scripts/agy-run.mjs": "e9e8c5b1fb6469d71b8b01b706035f34c22666c2809597151b3d25ff9a220ade",
+    "skill/mana-orchestrate/scripts/agy-run.mjs": "1294888d6eedb1b5c8f712b8d1bf7133ea2647c43e7c746232840a486248c9de",
     "skill/mana-orchestrate/scripts/install.mjs": "86d17f9350a597d94bf000b34e27ec483468ab796b888bfcfeb3e653abe8d36f",
     "skill/mana-orchestrate/scripts/kiro-run.mjs": "9fd5c8c750aa771e05f40c94d2b09ad3b3522225db36a6b2bbd419aa62797428",
     "skill/mana-orchestrate/scripts/kiro-specs.mjs": "59ee6d70f7e9359115bc6af20fdac4876da68cb4bb2f492342295c9a0e39ee45",
@@ -1970,8 +1985,8 @@
     "tests/akasha-merge.test.mjs": "58502820f6e1537a965848aae2f4f676c9e6f46b3cfd6db6291026bf8aa2d6ed",
     "tests/akasha-segment-ordinal.test.mjs": "d6f36516c2f7dba8d5f0b370d30c6d69b9a92ed7faeb8a1792dc7fe2272ac472",
     "tests/akasha-stream.test.mjs": "7a3ea3d22bf7ded51d4f7bf0da2d0cde954c69609c0a19bfea50483ca4b2f423",
-    "tests/antigravity-hooks.test.mjs": "01c5c561df277b349d17550b807dab0158a2c08bb20a1d06f4b82f33b0119af4",
-    "tests/antigravity-native-execution.test.mjs": "f222bd0deb541c387eaa8519804b8ac8f12e751917b9ad903ab4a24fcc54547b",
+    "tests/antigravity-hooks.test.mjs": "7961610452618743a0cc51c68cc2663292ac687daa336cc12471a2480e42e147",
+    "tests/antigravity-native-execution.test.mjs": "e7dc0badef15f8b6094bc99b6eba65346ff278ef288a3f02f3c7ee3875ee4890",
     "tests/archive-cleanup-refusal-audit.test.mjs": "03557600d5885f1d171991d676ce05549e6eb88674dde4fa2b7ab299b74e7259",
     "tests/artifact-snapshot-lock-scope.test.mjs": "37ee7cc70f41d8c65fb81c6bc80977e04b9409a7b70419153b4a3d4ac90e247a",
     "tests/artifact-store-io-errors.test.mjs": "07274df6248e57f272d34e6cc6e8b801c5e55f7b52b65d03315b1087680d089b",
@@ -2357,7 +2372,6 @@
     "tests/workspace-lock-holder.test.mjs": "0f416a685ab17596f97923d41ea34525aacc4ce434c46546fd29eb3de06347a0",
     "tests/workspace-lock-scope.test.mjs": "44656fdfdb921cac1608f64b3f9100efaa37b925268ad6f8dbb9736669b64de5",
     "tests/write-authorization.test.mjs": "db1407b2201e25aa0b5314353f73737462dca7a6b78c973ab9ab3688803c5717",
-    "THIRD_PARTY_NOTICES.txt": "4ed9fbf62ca58c4588755446b7563e411645d156b6a2542181641e4716d64af1",
     "tsconfig.build.json": "bf5c6cc45229b059f840fd161891ba48ebec798b8ec7831b07628547947f23f3",
     "tsconfig.json": "62d03c05312274643c24c37cc6ed8ea9cb2e6119aad318f989fb9dc494011d73"
   },

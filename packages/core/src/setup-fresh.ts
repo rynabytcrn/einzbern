@@ -622,9 +622,17 @@ export async function planHooks(recorder: SetupRecorder, home: string, deviceHom
       ...(process.env.ANTIGRAVITY_CONFIG_DIR === undefined ? {} : { antigravityConfigHome: process.env.ANTIGRAVITY_CONFIG_DIR }),
     });
     const target = join(antigravityConfigHome, ...ANTIGRAVITY_USER_HOOKS_FILE.split("/"));
-    const plans = await recorder.attempt("host-hooks", target, () => planAntigravityHookScopes({
-      home, antigravityConfigHome, projectRoot, deviceHome, install, navigation: navigation === "declined" ? "declined" : "always",
-    }));
+    let plans: Awaited<ReturnType<typeof planAntigravityHookScopes>> | null = null;
+    try {
+      plans = await planAntigravityHookScopes({
+        home, antigravityConfigHome, projectRoot, deviceHome, install, navigation: navigation === "declined" ? "declined" : "always",
+      });
+    } catch (error) {
+      const reasonCode = reasonOf(error);
+      if (reasonCode === null) throw error;
+      const detailPath = (error as { readonly details?: { readonly path?: unknown } })?.details?.path;
+      recorder.block("host-hooks", typeof detailPath === "string" ? detailPath : target, reasonCode, messageOf(error));
+    }
     if (plans !== null) for (const plan of plans) {
       if (!plan.changed) continue;
       recorder.write("host-hooks", plan.path, plan.before === null ? "create" : "update");

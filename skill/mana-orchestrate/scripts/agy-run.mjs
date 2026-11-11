@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 
-// Antigravity's non-interactive print runner consumes an existing host-native preparation.
+// Antigravity's non-interactive headless runner consumes an existing host-native preparation.
 // It does not make an admission decision, choose a fallback, bypass tool permissions, or claim
 // that the requested model was actually used.
 
@@ -66,13 +66,13 @@ function resolveDefaultAgyExecutable(options = {}) {
   return "agy";
 }
 
-/** Flags are derived only from the validated preflight's request. Prompt text goes via stdin. */
+/** Flags are derived only from the validated preflight's request. Prompt NDJSON goes via stdin. */
 export function buildAntigravityCliArgs(preflight) {
   if (preflight?.status !== "ready" || preflight?.preparation?.attempt === null) {
     throw new Error("Antigravity CLI arguments require a ready prepared attempt");
   }
   const selection = preflight.requested?.selection;
-  const args = ["--print", "--output-format", "stream-json"];
+  const args = ["--input-format", "stream-json", "--output-format", "stream-json"];
   if (selection?.kind === "explicit") {
     const tuple = selection.tuple;
     if (tuple?.runner !== "antigravity" || typeof tuple.model !== "string" || !tuple.model.trim() || typeof tuple.effort !== "string" || !tuple.effort.trim()) {
@@ -85,6 +85,14 @@ export function buildAntigravityCliArgs(preflight) {
     throw new Error("Antigravity preflight selection is unknown");
   }
   return args;
+}
+
+/** Formats the prepared prompt as a single-line Antigravity stream-json user message. */
+export function buildAntigravityStdinPayload(prompt) {
+  if (typeof prompt !== "string" || !prompt.trim()) {
+    throw new Error("prepared Antigravity attempt does not retain a nonempty prompt");
+  }
+  return `${JSON.stringify({ event: "user", message: { content: prompt } })}\n`;
 }
 
 function cliResult(child, argv, options = {}) {
@@ -147,9 +155,7 @@ export async function collectAntigravityProcess(preflight, options = {}) {
   });
   const env = options.env ?? process.env;
   const prompt = attempt.argumentsValue?.prompt;
-  if (typeof prompt !== "string" || !prompt.trim()) {
-    throw new Error("prepared Antigravity attempt does not retain a nonempty prompt");
-  }
+  const stdinPayload = buildAntigravityStdinPayload(prompt);
   const args = buildAntigravityCliArgs(preflight);
   const executable = resolveDefaultAgyExecutable(options);
   let child;
@@ -204,7 +210,7 @@ export async function collectAntigravityProcess(preflight, options = {}) {
       child.stdin?.on("error", error => {
         if (error?.code !== "EPIPE") stderr += `${String(error?.message ?? error)}\n`;
       });
-      child.stdin?.end(prompt);
+      child.stdin?.end(stdinPayload);
     });
   } finally {
     signals.removeListener("SIGINT", onInterrupt);

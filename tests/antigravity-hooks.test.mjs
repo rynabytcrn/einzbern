@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -38,7 +38,7 @@ const originalAntigravityConfig = process.env.ANTIGRAVITY_CONFIG_DIR;
 const oldHookExitCode = process.exitCode;
 
 async function fixture(t) {
-  const root = await mkdtemp(join(tmpdir(), "einzbern-agy-hooks-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-agy-hooks-")));
   t.after(async () => {
     if (originalHost === undefined) delete process.env.EINZBERN_HOST;
     else process.env.EINZBERN_HOST = originalHost;
@@ -142,7 +142,7 @@ test("INIT091-A2: Antigravity hooks merge only the einzbern group, preserve othe
   const repeated = await planAntigravityHooks(request(configRoot, { home: f.home, deviceHome: f.deviceHome, navigation: "declined" }));
   assert.equal(repeated.changed, false, "identical setup writes nothing on repeat");
 
-  const relocatedDevice = join(f.root, "relocated", "device");
+  const relocatedDevice = join(f.root, "relocated", "team's device");
   const relocated = await planAntigravityHooks(request(configRoot, { home: f.home, deviceHome: relocatedDevice, navigation: "always" }));
   assert.equal(relocated.changed, true);
   await applyAntigravityHookPlan(relocated, { at: "2026-11-11T00:01:00Z", deviceHome: f.deviceHome });
@@ -181,29 +181,166 @@ test("INIT091-A2: Antigravity hooks merge only the einzbern group, preserve othe
   await assert.rejects(planAntigravityHooks(request(configRoot, { home: f.home, deviceHome: f.deviceHome })), { reasonCode: "ANTIGRAVITY_HOOKS_FILE_UNSUPPORTED" });
 });
 
-test("INIT091-A2: workspace .agents/hooks.json takes precedence over global hooks.json without duplicate execution", async (t) => {
+test("INIT091-A2: edited PreInvocation or PreToolUse commands report ANTIGRAVITY_HOOKS_OWNERSHIP_CONFLICT and preserve edits across update, repair, and uninstall", async (t) => {
   const f = await fixture(t);
   await mkdirFixture(f);
   const configRoot = antigravityConfigRoot({ home: f.home });
   await mkdir(configRoot, { recursive: true });
-  const globalPlans = await planAntigravityHookScopes({ home: f.home, antigravityConfigHome: configRoot, projectRoot: f.project, deviceHome: f.deviceHome, navigation: "always" });
-  assert.equal(globalPlans[0].changed, true);
-  assert.equal(globalPlans[1].changed, false);
-  await applyAntigravityHookPlan(globalPlans[0], { at: "2026-11-11T00:02:00Z", deviceHome: f.deviceHome });
+  delete process.env.ANTIGRAVITY_CONFIG_DIR;
+  const userHookFile = join(configRoot, ANTIGRAVITY_USER_HOOKS_FILE);
 
-  const projectInitial = { "project-lint": { PostToolUse: [{ matcher: "write_file", hooks: [{ type: "command", command: "echo lint", timeout: 10 }] }] } };
-  const projectMerged = mergeAntigravityHookDocument(projectInitial, request(f.project, { home: f.home, deviceHome: f.deviceHome, scope: "project", navigation: "declined" })).document;
+  const installBaseline = async () => {
+    const plan = await planAntigravityHooks(request(configRoot, { home: f.home, deviceHome: f.deviceHome, navigation: "always" }));
+    await applyAntigravityHookPlan(plan, { at: "2026-11-11T00:01:30Z", deviceHome: f.deviceHome });
+  };
+
+  for (const mutate of [
+    (doc) => {
+      doc.einzbern.PreInvocation[0].command = doc.einzbern.PreInvocation[0].command.replace(
+        "process.env.EINZBERN_HOST='antigravity';",
+        "process.env.EINZBERN_HOST='antigravity';process.env.TEAM_HOOK_MODE='custom-pre-invocation';",
+      );
+      return "custom-pre-invocation";
+    },
+    (doc) => {
+      doc.einzbern.PreToolUse[0].hooks[0].command = doc.einzbern.PreToolUse[0].hooks[0].command.replace(
+        "process.env.EINZBERN_HOST='antigravity';",
+        "process.env.EINZBERN_HOST='antigravity';process.env.TEAM_HOOK_MODE='custom-pre-tool-use';",
+      );
+      return "custom-pre-tool-use";
+    },
+  ]) {
+    await rm(f.deviceHome, { recursive: true, force: true });
+    await rm(userHookFile, { force: true });
+    await installBaseline();
+    const doc = JSON.parse(await readFile(userHookFile, "utf8"));
+    const marker = mutate(doc);
+    const editedBytes = `${JSON.stringify(doc, null, 2)}\n`;
+    await writeFile(userHookFile, editedBytes);
+
+    // Direct planner refuses on both install=true (update/repair) and install=false (uninstall).
+    await assert.rejects(
+      planAntigravityHooks(request(configRoot, { home: f.home, deviceHome: f.deviceHome, navigation: "always", install: true })),
+      { reasonCode: "ANTIGRAVITY_HOOKS_OWNERSHIP_CONFLICT" },
+    );
+    await assert.rejects(
+      planAntigravityHooks(request(configRoot, { home: f.home, deviceHome: f.deviceHome, navigation: "always", install: false })),
+      { reasonCode: "ANTIGRAVITY_HOOKS_OWNERSHIP_CONFLICT" },
+    );
+
+    // Setup planHooks blocks update/repair (navigation written & declined) and uninstall (install=false) while preserving file bytes.
+    for (const [label, nav, install] of [
+      ["repair", "written", true],
+      ["update-declined", "declined", true],
+      ["uninstall", null, false],
+    ]) {
+      const recorder = new SetupRecorder(f.deviceHome, "2026-11-11T00:01:45Z");
+      await planHooks(recorder, f.home, f.deviceHome, nav, install, undefined, false, f.project);
+      assert.ok(
+        recorder.blockers.some((b) => b.path === userHookFile && b.reasonCode === "ANTIGRAVITY_HOOKS_OWNERSHIP_CONFLICT"),
+        `${label} must block on edited ${marker}`,
+      );
+      assert.equal(recorder.writes.some((w) => w.path === userHookFile), false);
+      await assert.rejects(
+        applyHooks(new SetupRecorder(f.deviceHome, "2026-11-11T00:01:50Z"), {
+          home: f.home,
+          projectRoot: f.project,
+          deviceHome: f.deviceHome,
+          at: "2026-11-11T00:01:50Z",
+          navigation: nav,
+          install,
+        }),
+        { reasonCode: "ANTIGRAVITY_HOOKS_OWNERSHIP_CONFLICT" },
+      );
+      const preserved = await readFile(userHookFile, "utf8");
+      assert.equal(preserved, editedBytes);
+      assert.equal(preserved.includes(marker), true);
+    }
+  }
+
+  // Also protect user-edited project-local .agents/hooks.json during scope retirement and uninstall.
+  await rm(f.deviceHome, { recursive: true, force: true });
+  await rm(userHookFile, { force: true });
+  await installBaseline();
+  const projectHookFile = join(f.project, ANTIGRAVITY_HOOKS_FILE);
   await mkdir(join(f.project, ".agents"), { recursive: true });
-  await writeFile(join(f.project, ANTIGRAVITY_HOOKS_FILE), `${JSON.stringify(projectMerged, null, 2)}\n`);
+  const localDoc = mergeAntigravityHookDocument({}, request(f.project, { home: f.home, deviceHome: f.deviceHome, scope: "project", navigation: "always" })).document;
+  localDoc.einzbern.PreToolUse[0].hooks[0].command = localDoc.einzbern.PreToolUse[0].hooks[0].command.replace(
+    "process.env.EINZBERN_HOST='antigravity';",
+    "process.env.EINZBERN_HOST='antigravity';process.env.TEAM_HOOK_MODE='custom-local';",
+  );
+  const editedLocalBytes = `${JSON.stringify(localDoc, null, 2)}\n`;
+  await writeFile(projectHookFile, editedLocalBytes);
+  const localRepairRecorder = new SetupRecorder(f.deviceHome, "2026-11-11T00:01:55Z");
+  await planHooks(localRepairRecorder, f.home, f.deviceHome, "written", true, undefined, false, f.project);
+  assert.ok(localRepairRecorder.blockers.some((b) => b.path === projectHookFile && b.reasonCode === "ANTIGRAVITY_HOOKS_OWNERSHIP_CONFLICT"));
+  assert.equal(await readFile(projectHookFile, "utf8"), editedLocalBytes);
+});
 
-  const scopes = await planAntigravityHookScopes({ home: f.home, antigravityConfigHome: configRoot, projectRoot: f.project, deviceHome: f.deviceHome, navigation: "declined" });
-  assert.deepEqual(scopes[0].removed, [ANTIGRAVITY_OWNED_HOOK_GROUP], "global einzbern group is retired when workspace scope owns hooks");
-  assert.equal(scopes[1].changed, false);
-  await applyAntigravityHookPlan(scopes[0], { at: "2026-11-11T00:03:00Z", deviceHome: f.deviceHome });
-  assert.deepEqual(JSON.parse(await readFile(join(configRoot, ANTIGRAVITY_USER_HOOKS_FILE), "utf8")), {});
-  const activeProject = JSON.parse(await readFile(join(f.project, ANTIGRAVITY_HOOKS_FILE), "utf8"));
-  assert.ok("project-lint" in activeProject);
-  assert.ok(ANTIGRAVITY_OWNED_HOOK_GROUP in activeProject);
+test("INIT091-A2: multi-project repair preserves global hooks for sibling projects, retires redundant unedited local group, keeps unmanaged groups, and stays idempotent", async (t) => {
+  const f = await fixture(t);
+  const projectA = join(f.root, "project-a");
+  const projectB = join(f.root, "project-b");
+  const configRoot = antigravityConfigRoot({ home: f.home });
+  await mkdir(configRoot, { recursive: true });
+  await mkdir(join(projectA, ".agents"), { recursive: true });
+  await mkdir(projectB, { recursive: true });
+  await mkdir(join(f.deviceHome, "engine"), { recursive: true });
+  await writeFile(hookLauncherPath(f.deviceHome, "linux"), "// launcher\n");
+
+  await writeFile(
+    join(configRoot, ANTIGRAVITY_USER_HOOKS_FILE),
+    `${JSON.stringify({ "user-security": { PreToolUse: [{ matcher: "run_command", hooks: [{ type: "command", command: "echo guard", timeout: 10 }] }] } }, null, 2)}\n`,
+  );
+
+  const common = { home: f.home, antigravityConfigHome: configRoot, deviceHome: f.deviceHome, navigation: "always", platform: "linux" };
+  const repair = async (projectRoot, at) => {
+    const plans = await planAntigravityHookScopes({ ...common, projectRoot });
+    for (const plan of plans) {
+      await applyAntigravityHookPlan(plan, { at, deviceHome: f.deviceHome });
+    }
+    return plans;
+  };
+
+  // Project B relies on global hooks.json.
+  await repair(projectB, "2026-11-11T00:02:00Z");
+  assert.equal((await inspectAntigravityHookScope(configRoot, "user")).count, 2);
+  assert.equal((await inspectAntigravityHookScope(projectB, "project")).count, 0);
+
+  // Project A has an unmanaged local group plus an unedited owned local "einzbern" group.
+  const projectInitial = { "project-lint": { PostToolUse: [{ matcher: "write_file", hooks: [{ type: "command", command: "echo lint", timeout: 10 }] }] } };
+  const projectMerged = mergeAntigravityHookDocument(projectInitial, request(projectA, { home: f.home, deviceHome: f.deviceHome, scope: "project", navigation: "always" })).document;
+  await writeFile(join(projectA, ANTIGRAVITY_HOOKS_FILE), `${JSON.stringify(projectMerged, null, 2)}\n`);
+
+  // Repairing A must NOT delete B's global dependency, and must retire A's redundant owned group while keeping "project-lint".
+  const aFirstPlans = await repair(projectA, "2026-11-11T00:03:00Z");
+  assert.equal(aFirstPlans[0].changed, false, "global hooks remain intact when repairing A");
+  assert.deepEqual(aFirstPlans[1].removed, [ANTIGRAVITY_OWNED_HOOK_GROUP], "redundant unedited local einzbern group is retired");
+  assert.equal((await inspectAntigravityHookScope(configRoot, "user")).count, 2);
+  assert.equal((await inspectAntigravityHookScope(projectA, "project")).count, 0);
+  assert.equal((await inspectAntigravityHookScope(projectB, "project")).count, 0);
+
+  const globalAfterA = JSON.parse(await readFile(join(configRoot, ANTIGRAVITY_USER_HOOKS_FILE), "utf8"));
+  assert.deepEqual(Object.keys(globalAfterA), ["user-security", ANTIGRAVITY_OWNED_HOOK_GROUP]);
+  const localAfterA = JSON.parse(await readFile(join(projectA, ANTIGRAVITY_HOOKS_FILE), "utf8"));
+  assert.deepEqual(Object.keys(localAfterA), ["project-lint"]);
+
+  // Alternating repairs across B and A remain 100% idempotent with exactly one effective owned group per project.
+  const bSecondPlans = await repair(projectB, "2026-11-11T00:03:10Z");
+  assert.equal(bSecondPlans.every((plan) => !plan.changed), true);
+  const aSecondPlans = await repair(projectA, "2026-11-11T00:03:20Z");
+  assert.equal(aSecondPlans.every((plan) => !plan.changed), true);
+  assert.equal((await inspectAntigravityHookScope(configRoot, "user")).count, 2);
+  assert.equal((await inspectAntigravityHookScope(projectA, "project")).count, 0);
+  assert.equal((await inspectAntigravityHookScope(projectB, "project")).count, 0);
+
+  for (const projectRoot of [projectA, projectB]) {
+    const docHost = (await runDoctor({ projectRoot, home: f.home, deviceHome: f.deviceHome, platform: "linux", env: { ...process.env, ANTIGRAVITY_CONFIG_DIR: configRoot } }))
+      .find((entry) => entry.check === "hooks-present")
+      .detail.hosts.find((host) => host.host === "antigravity");
+    assert.equal(docHost.hooks, 2);
+    assert.deepEqual(docHost.causes, []);
+  }
 });
 
 test("INIT091-A2: fresh/uninstall wiring honors ANTIGRAVITY_CONFIG_DIR, manages skill copies, and passes doctor checks", async (t) => {
@@ -256,17 +393,17 @@ test("INIT091-A2: fresh/uninstall wiring honors ANTIGRAVITY_CONFIG_DIR, manages 
   assert.deepEqual(Object.keys(JSON.parse(await readFile(hookPath, "utf8"))), ["keep-me"]);
 });
 
-test("INIT091-A3: PreInvocation deduplicates invocationNum > 1, resolves workspacePaths, and PreToolUse enforces Read Guard with JSON stdout", async (t) => {
+test("INIT091-A3a: PreInvocation recalls on 0-indexed first turn for main and subagent sessions, skips tool-loop turns, and resolves workspacePaths", async (t) => {
   const f = await fixture(t);
   await mkdirFixture(f);
   process.env.EINZBERN_HOST = "antigravity";
   process.env.EINZBERN_HOME = f.deviceHome;
 
   // Unregistered project still returns valid JSON "{}\n" on exit 0.
-  assert.equal(await runHookEvent({ event: "PreInvocation", payload: { invocationNum: 1, lastUserInput: "hello" }, cwd: f.root }), "{}\n");
+  assert.equal(await runHookEvent({ event: "PreInvocation", payload: { invocationNum: 0, lastUserInput: "hello" }, cwd: f.root }), "{}\n");
 
-  // Initialize a real library & work items to test workspacePaths recall and invocationNum === 2 skip.
-  const libraryPath = join(f.root, "library.ether");
+  // Canonicalize libraryPath via realpath so macOS /var/folders vs /private/var/folders matches registry.
+  const libraryPath = join(await realpath(f.root), "library.ether");
   await initializeLibrary({ root: libraryPath, createdAt: "2026-11-11T00:00:00Z" });
   const projectId = (await createProject(libraryPath, { occurredAt: "2026-11-11T00:00:01Z", externalKey: "AGY-PROJECT", name: "Antigravity" })).projects[0].id;
   await createWork(libraryPath, {
@@ -298,25 +435,72 @@ test("INIT091-A3: PreInvocation deduplicates invocationNum > 1, resolves workspa
     acceptance: "GIVEN Antigravity WHEN PreInvocation fires THEN Zephyr Quartz recalls",
   });
   await setWorkspaceSetting(libraryPath, { occurredAt: "2026-11-11T00:00:05Z", key: "retrieval.tau", value: "1" });
-  await registerLibrary({ projectPath: f.project, libraryPath, registeredAt: "2026-11-11T00:00:09Z" });
+  const registered = await registerLibrary({ projectPath: f.project, libraryPath, registeredAt: "2026-11-11T00:00:09Z" });
+  assert.equal(registered.libraryPath, libraryPath);
 
-  // When cwd is omitted, workspacePaths[0] resolves f.project!
-  const turnOne = await runHookEvent({
+  // Main session first model invocation (invocationNum: 0) with workspacePaths fallback (no cwd).
+  const mainFirst = await runHookEvent({
     event: "PreInvocation",
-    payload: { invocationNum: 1, lastUserInput: "Antigravity Zephyr Quartz Protocol", workspacePaths: [f.project] },
-    libraryPath,
+    payload: {
+      conversationId: "conv-main-session",
+      invocationNum: 0,
+      lastUserInput: "Antigravity Zephyr Quartz Protocol",
+      workspacePaths: [f.project],
+    },
+    libraryPath: registered.libraryPath,
   });
-  const parsedTurnOne = JSON.parse(turnOne);
-  assert.ok(parsedTurnOne.injectSteps?.[0]?.systemMessage?.systemMessage?.includes("Zephyr Quartz"), turnOne);
+  const parsedMainFirst = JSON.parse(mainFirst);
+  assert.ok(parsedMainFirst.injectSteps?.[0]?.systemMessage?.systemMessage?.includes("Zephyr Quartz"), mainFirst);
 
-  const turnTwo = await runHookEvent({
+  // Subsequent tool-loop invocations in the same conversation (invocationNum: 1, 2) do not re-inject.
+  for (const loopTurn of [1, 2]) {
+    const skipped = await runHookEvent({
+      event: "PreInvocation",
+      payload: {
+        conversationId: "conv-main-session",
+        invocationNum: loopTurn,
+        lastUserInput: "Antigravity Zephyr Quartz Protocol",
+        workspacePaths: [f.project],
+      },
+      libraryPath: registered.libraryPath,
+    });
+    assert.equal(skipped, "{}\n");
+  }
+
+  // Separate subagent conversation starts at invocationNum: 0 and injects before its first work turn.
+  const subagentFirst = await runHookEvent({
     event: "PreInvocation",
-    payload: { invocationNum: 2, lastUserInput: "Antigravity Zephyr Quartz Protocol", workspacePaths: [f.project] },
-    libraryPath,
+    payload: {
+      conversationId: "conv-subagent-session",
+      invocationNum: 0,
+      lastUserInput: "Antigravity Zephyr Quartz Protocol",
+      workspacePaths: [f.project],
+    },
+    libraryPath: registered.libraryPath,
   });
-  assert.equal(turnTwo, "{}\n");
-  const hookLog = await readFile(join(f.deviceHome, "log", "hook.ndjson"), "utf8");
-  assert.ok(hookLog.includes("HOOK_ANTIGRAVITY_INVOCATION_SKIPPED"));
+  const parsedSubagentFirst = JSON.parse(subagentFirst);
+  assert.ok(parsedSubagentFirst.injectSteps?.[0]?.systemMessage?.systemMessage?.includes("Zephyr Quartz"), subagentFirst);
+
+  const hookLogLines = (await readFile(join(f.deviceHome, "log", "hook.ndjson"), "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(
+    hookLogLines.map((entry) => entry.reasonCode),
+    [
+      "HOOK_RECALL_ANSWERED",
+      "HOOK_ANTIGRAVITY_INVOCATION_SKIPPED",
+      "HOOK_ANTIGRAVITY_INVOCATION_SKIPPED",
+      "HOOK_RECALL_ANSWERED",
+    ],
+  );
+});
+
+test("INIT091-A3b: PreToolUse enforces 200-line and 32-KiB Read Guard with JSON stdout on exit 0", async (t) => {
+  const f = await fixture(t);
+  await mkdirFixture(f);
+  process.env.EINZBERN_HOST = "antigravity";
+  process.env.EINZBERN_HOME = f.deviceHome;
 
   // PreToolUse Read Guard: <= 32 KiB allowed; > 32 KiB without range or > 200 lines denied; <= 200 lines within 32 KiB allowed.
   const { AGENT_OUTPUT_MAX_BYTES } = await import("../dist/build/packages/core/src/runtime-input-contract.js");

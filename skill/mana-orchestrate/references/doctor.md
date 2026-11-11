@@ -57,8 +57,9 @@ standalone file is left for review before repair.
 
 Antigravity CLI and surface observations are likewise reported in `detail.hosts` with independent
 `selection` and `applicability`. When not selected, missing Antigravity Hooks do not fail the
-check. When selected, doctor inspects the single effective global or workspace `hooks.json` scope
-for the owned `"einzbern"` group and leaves any ownership conflict or unreadable file for review.
+check. When selected, doctor inspects both the user `${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/config}/hooks.json`
+and workspace `.agents/hooks.json` scopes for the owned `"einzbern"` group and leaves any ownership
+conflict, duplicate scope, or unreadable file for review.
 
 DSH keeps no hook file: its Mana Orchestrate plugin runs the launcher. When the user's home has
 `.dsh/profiles/`, `detail.hosts` also has a `dsh` entry with one row per profile: whether its

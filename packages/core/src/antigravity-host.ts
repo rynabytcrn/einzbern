@@ -3,8 +3,10 @@
 // Antigravity's CLI, IDE and App are separate surfaces sharing customization contracts.
 // CLI version discovery proves neither which surface a later session selected nor which model
 // that session actually used. Antigravity hooks live in a top-level named-group JSON map
-// (user: ${ANTIGRAVITY_CONFIG_DIR:-~/.gemini/config}/hooks.json, project: .agents/hooks.json)
-// and are managed solely under the owned "einzbern" group key so unrelated hook groups remain intact.
+// (user: ${ANTIGRAVITY_CONFIG_DIR:-~/.gemini/config}/hooks.json, project: .agents/hooks.json).
+// Einzbern installs its owned "einzbern" group in the user-scope hooks.json and retires redundant
+// unedited project-scope "einzbern" groups so multi-project setups share a single active hook
+// without duplicate execution while preserving unrelated hook groups and user edits.
 
 import { spawnSync } from "node:child_process";
 import * as fsModule from "node:fs";
@@ -91,10 +93,12 @@ export interface AntigravityHookFilePlan {
 
 export class AntigravityHostError extends Error {
   readonly reasonCode: string;
-  constructor(reasonCode: string, message: string) {
+  readonly details: Readonly<Record<string, string>>;
+  constructor(reasonCode: string, message: string, details: Readonly<Record<string, string>> = {}) {
     super(message);
     this.name = "AntigravityHostError";
     this.reasonCode = reasonCode;
+    this.details = details;
   }
 }
 
@@ -263,6 +267,25 @@ function wantedAntigravityGroup(request: AntigravityHooksRequest): AntigravityOw
   return { PreInvocation: preInvocation, PreToolUse: preToolUse };
 }
 
+const ANTIGRAVITY_COMMAND_PREFIX = "node -e \"/*einzbern-hook*/const p=require('node:path');const d=p.resolve(process.env.EINZBERN_HOME||p.resolve(require('node:os').homedir(),'";
+
+function isCanonicalAntigravityHookCommand(
+  command: string,
+  expectedWord: "session-start" | "user-prompt-submit" | "pre-tool-use",
+): boolean {
+  const emptyWrite = expectedWord === "pre-tool-use"
+    ? "process.stdout.write(JSON.stringify({decision:'allow'})+'\\n')"
+    : "process.stdout.write('{}\\n')";
+  const suffix = `'));process.env.EINZBERN_HOME=d;process.env.EINZBERN_HOST='antigravity';import(require('node:url').pathToFileURL(p.join(d,'engine/hook.mjs')).href).then(m=>m.launch(process.argv.slice(1),process.env)).then(s=>{if(s)process.stdout.write(s);else ${emptyWrite}}).catch(e=>{process.stderr.write(JSON.stringify({ok:false,reasonCode:e.reasonCode||'HOOK_LAUNCH_FAILED',error:e.message})+'\\n');${emptyWrite}})" ${expectedWord}`;
+  if (command.length <= ANTIGRAVITY_COMMAND_PREFIX.length + suffix.length) return false;
+  if (!command.startsWith(ANTIGRAVITY_COMMAND_PREFIX) || !command.endsWith(suffix)) return false;
+  const escapedLiteral = command.slice(ANTIGRAVITY_COMMAND_PREFIX.length, command.length - suffix.length);
+  const rawDevice = escapedLiteral.replaceAll("\\'", "'");
+  if (rawDevice.length === 0 || rawDevice.startsWith("/") || /^[A-Za-z]:/u.test(rawDevice)) return false;
+  if (/[\u0000-\u001f\u007f\\"$`%]/u.test(rawDevice)) return false;
+  return rawDevice.replaceAll("'", "\\'") === escapedLiteral;
+}
+
 function isOwnedFlatEventHandlers(value: unknown, expectedWord: "session-start" | "user-prompt-submit"): boolean {
   if (!Array.isArray(value) || value.length !== 1) return false;
   const entry = value[0];
@@ -272,8 +295,7 @@ function isOwnedFlatEventHandlers(value: unknown, expectedWord: "session-start" 
   return (
     entry.type === "command" &&
     typeof entry.command === "string" &&
-    isEinzbernHookCommand(entry.command) &&
-    entry.command.endsWith(` ${expectedWord}`) &&
+    isCanonicalAntigravityHookCommand(entry.command, expectedWord) &&
     entry.timeout === ANTIGRAVITY_HOOK_TIMEOUT
   );
 }
@@ -293,8 +315,7 @@ function isOwnedPreToolUseGroups(value: unknown): boolean {
   return (
     handler.type === "command" &&
     typeof handler.command === "string" &&
-    isEinzbernHookCommand(handler.command) &&
-    handler.command.endsWith(" pre-tool-use") &&
+    isCanonicalAntigravityHookCommand(handler.command, "pre-tool-use") &&
     handler.timeout === ANTIGRAVITY_HOOK_TIMEOUT
   );
 }
@@ -302,7 +323,7 @@ function isOwnedPreToolUseGroups(value: unknown): boolean {
 export function isOwnedAntigravityHookGroup(value: unknown): boolean {
   if (!isObject(value)) return false;
   const keys = Object.keys(value);
-  if (keys.length === 0) return false;
+  if (keys.length === 0 || !("PreInvocation" in value) || !("PreToolUse" in value)) return false;
   for (const key of keys) {
     if (key === "SessionStart") {
       if (!isOwnedFlatEventHandlers(value.SessionStart, "session-start")) return false;
@@ -421,7 +442,15 @@ export async function planAntigravityHooks(request: AntigravityHooksRequest): Pr
       throw new AntigravityHostError("ANTIGRAVITY_HOOKS_FILE_UNSUPPORTED", `${path} is not a Hooks object`);
     }
   }
-  const merged = mergeAntigravityHookDocument(existing, request);
+  let merged: ReturnType<typeof mergeAntigravityHookDocument>;
+  try {
+    merged = mergeAntigravityHookDocument(existing, request);
+  } catch (error) {
+    if (error instanceof AntigravityHostError) {
+      throw new AntigravityHostError(error.reasonCode, error.message, { ...error.details, path });
+    }
+    throw error;
+  }
   const rendered = `${JSON.stringify(merged.document, null, 2)}\n`;
   const same = before !== null && stable(JSON.parse(before)) === stable(merged.document);
   const after = same ? before! : rendered;
@@ -439,7 +468,11 @@ export async function planAntigravityHooks(request: AntigravityHooksRequest): Pr
   };
 }
 
-/** Plan effective global/workspace scope so a workspace hook takes precedence without double execution. */
+/**
+ * Plan effective user/workspace scopes: Einzbern manages its owned "einzbern" group in user scope
+ * so all projects on the same home/device share one active hook, and retires any redundant unedited
+ * owned "einzbern" group from workspace .agents/hooks.json while preserving unmanaged workspace groups.
+ */
 export async function planAntigravityHookScopes(input: {
   readonly home: string;
   readonly antigravityConfigHome?: string;
@@ -479,11 +512,6 @@ export async function planAntigravityHookScopes(input: {
     return [await planAntigravityHooks(globalRequest), ...(samePath ? [] : [await planAntigravityHooks(projectRequest)])];
   }
   if (samePath) return [await planAntigravityHooks(globalRequest)];
-  const projectInspection = await inspectAntigravityHookScope(projectRoot, "project");
-  const projectOwns = projectInspection.count > 0;
-  if (projectOwns) {
-    return [await planAntigravityHooks({ ...globalRequest, install: false }), await planAntigravityHooks(projectRequest)];
-  }
   return [await planAntigravityHooks(globalRequest), await planAntigravityHooks({ ...projectRequest, install: false })];
 }
 

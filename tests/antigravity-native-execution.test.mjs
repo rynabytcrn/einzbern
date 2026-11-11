@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { PassThrough } from "node:stream";
@@ -19,7 +20,12 @@ import {
 } from "../dist/build/packages/core/src/native-tool-evidence.js";
 import { runNativeToolCommand, NATIVE_TOOL_COMMAND_CATALOG } from "../dist/build/packages/cli/src/native-tool-commands.js";
 import { COMMAND_CATALOG } from "../dist/build/packages/cli/src/index.js";
-import { buildAntigravityCliArgs, collectAntigravityProcess, run } from "../skill/mana-orchestrate/scripts/agy-run.mjs";
+import {
+  buildAntigravityCliArgs,
+  buildAntigravityStdinPayload,
+  collectAntigravityProcess,
+  run,
+} from "../skill/mana-orchestrate/scripts/agy-run.mjs";
 import { nativeFixture, at } from "./helpers/host-native-fixture.mjs";
 
 const mainTuple = { runner: "antigravity", model: "gemini-4-carbon-medium", effort: "medium" };
@@ -57,8 +63,13 @@ function antigravityRequest(f, extra = {}) {
   };
 }
 
-async function prepare(f, request = antigravityRequest(f), selection = request.selection) {
-  return prepareHostNativeDispatch(f.state, request, { selection, argumentsValue: { prompt: "fixture prompt; never sent to Antigravity" } }, f.home);
+async function prepare(
+  f,
+  request = antigravityRequest(f),
+  selection = request.selection,
+  prompt = "fixture prompt / 中文\nsecond line",
+) {
+  return prepareHostNativeDispatch(f.state, request, { selection, argumentsValue: { prompt } }, f.home);
 }
 
 function processReturn(preparation, values = {}) {
@@ -188,7 +199,12 @@ test("INIT091-B2: Antigravity CLI preparation checks tool scope, fallback, capac
     authorization: { fallbackBoundaryAssessment: "covered" },
   }), managedSelection);
   assert.notEqual(covered.attempt, null);
-  assert.deepEqual(buildAntigravityCliArgs(inspectAntigravityProcessPreparation(covered)), ["--print", "--output-format", "stream-json"]);
+  assert.deepEqual(buildAntigravityCliArgs(inspectAntigravityProcessPreparation(covered)), [
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+  ]);
 
   const unconfiguredHome = join(f.root, "unconfigured-device");
   const defaultEffortPrep = await prepareHostNativeDispatch(
@@ -199,40 +215,139 @@ test("INIT091-B2: Antigravity CLI preparation checks tool scope, fallback, capac
   );
   assert.deepEqual(
     buildAntigravityCliArgs(inspectAntigravityProcessPreparation(defaultEffortPrep)),
-    ["--print", "--output-format", "stream-json", "--model", "gemini-3.8-flash-medium"],
+    ["--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-3.8-flash-medium"],
   );
 });
 
-test("INIT091-B2: agy-run passes explicit model/effort, pipes prompt via stdin, never skips permissions, and keeps actual.* unknown", async (t) => {
+test("INIT091-B2: agy-run uses stream-json input/output protocol, preserves multiline/Chinese prompt and model/effort, never skips permissions, and keeps actual.* unknown", async (t) => {
   const f = await nativeFixture(t);
   await configureAntigravityPolicy(f);
-  const preparation = await prepare(f);
+  const expectedPrompt = "fixture prompt / 中文\nsecond line";
+  const preparation = await prepare(f, antigravityRequest(f), explicitMain, expectedPrompt);
   const preflight = inspectAntigravityProcessPreparation(preparation);
   const args = buildAntigravityCliArgs(preflight);
-  assert.deepEqual(args, ["--print", "--output-format", "stream-json", "--model", "gemini-4-carbon-medium", "--effort", "medium"]);
+  assert.deepEqual(args, [
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--model",
+    "gemini-4-carbon-medium",
+    "--effort",
+    "medium",
+  ]);
+  assert.equal(args.includes("--print"), false);
+  assert.equal(args.includes("-p"), false);
   assert.equal(args.includes("--dangerously-skip-permissions"), false);
-  assert.equal(args.includes("fixture prompt; never sent to Antigravity"), false);
+  assert.equal(args.some((arg) => arg.includes("fixture prompt")), false);
 
-  const executable = join(f.root, "fake-agy");
+  const stdinPayload = buildAntigravityStdinPayload(expectedPrompt);
+  assert.equal(stdinPayload.endsWith("\n"), true);
+  assert.equal(stdinPayload.trimEnd().includes("\n"), false, "NDJSON message must be encoded on a single line");
+  assert.deepEqual(JSON.parse(stdinPayload), { event: "user", message: { content: expectedPrompt } });
+
+  // Strict protocol-parsing probe matching official agy 1.5.5 CLI flag + stream-json stdin behavior without live network calls.
+  const executable = join(f.root, "strict-agy-probe");
   const script = [
     "#!/usr/bin/env node",
-    "let input = '';",
-    "for await (const chunk of process.stdin) input += chunk;",
-    "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), input }) + '\\n');",
-    "process.stderr.write('Tool permission denied in non-interactive mode\\n');",
-    "process.exitCode = 1;",
+    "const argv = process.argv.slice(2);",
+    "let printPrompt = null;",
+    "let inputFormat = null;",
+    "let outputFormat = null;",
+    "let model = null;",
+    "let effort = null;",
+    "const positionals = [];",
+    "for (let i = 0; i < argv.length; i += 1) {",
+    "  const arg = argv[i];",
+    "  if (arg === '--print' || arg === '-p') {",
+    "    const next = argv[i + 1];",
+    "    if (next === undefined) { process.stderr.write('Error: --print requires a prompt value\\n'); process.exit(2); }",
+    "    printPrompt = next; i += 1;",
+    "    if (next.startsWith('-')) {",
+    "      process.stderr.write(`Error: --print took ${JSON.stringify(next)} as its prompt, so the intended prompt was left as an argument and ignored.\\n`);",
+    "      process.exit(2);",
+    "    }",
+    "  } else if (arg.startsWith('--print=')) {",
+    "    printPrompt = arg.slice('--print='.length);",
+    "  } else if (arg === '--input-format') {",
+    "    inputFormat = argv[++i] ?? null;",
+    "  } else if (arg === '--output-format') {",
+    "    outputFormat = argv[++i] ?? null;",
+    "  } else if (arg === '--model' || arg === '-m') {",
+    "    model = argv[++i] ?? null;",
+    "  } else if (arg === '--effort') {",
+    "    effort = argv[++i] ?? null;",
+    "  } else if (arg.startsWith('-')) {",
+    "    process.stderr.write(`Error: unknown or forbidden flag ${arg}\\n`);",
+    "    process.exit(2);",
+    "  } else {",
+    "    positionals.push(arg);",
+    "  }",
+    "}",
+    "if (printPrompt !== null && inputFormat === 'stream-json') {",
+    "  process.stderr.write('Error: --print cannot be combined with --input-format stream-json\\n');",
+    "  process.exit(2);",
+    "}",
+    "if (positionals.length > 0 || inputFormat !== 'stream-json' || outputFormat !== 'stream-json') {",
+    "  process.stderr.write(`Error: invalid stream-json invocation: input=${String(inputFormat)} output=${String(outputFormat)} positionals=${JSON.stringify(positionals)}\\n`);",
+    "  process.exit(2);",
+    "}",
+    "let raw = '';",
+    "process.stdin.setEncoding('utf8');",
+    "for await (const chunk of process.stdin) raw += chunk;",
+    "if (!raw.endsWith('\\n')) { process.stderr.write('Error: stream-json stdin must end with newline\\n'); process.exit(2); }",
+    "const lines = raw.split('\\n').filter((line) => line.length > 0);",
+    "if (lines.length !== 1) { process.stderr.write(`Error: expected 1 user event, received ${lines.length}\\n`); process.exit(2); }",
+    "let parsed;",
+    "try { parsed = JSON.parse(lines[0]); } catch { process.stderr.write('Error: invalid JSON on stdin\\n'); process.exit(2); }",
+    "if (parsed?.event !== 'user' || typeof parsed?.message?.content !== 'string' || Object.keys(parsed).length !== 2 || Object.keys(parsed.message).length !== 1) {",
+    "  process.stderr.write('Error: malformed stream-json user message\\n');",
+    "  process.exit(2);",
+    "}",
+    "process.stdout.write(JSON.stringify({ type: 'init', session_id: 'probe-session' }) + '\\n');",
+    "process.stdout.write(JSON.stringify({ type: 'result', status: 'probe_observed', receivedCount: lines.length, content: parsed.message.content, model, effort }) + '\\n');",
+    "if (process.env.PROBE_EXIT_CODE === '1') {",
+    "  process.stderr.write('Tool permission denied in non-interactive mode\\n');",
+    "  process.exitCode = 1;",
+    "}",
   ].join("\n");
   await writeFile(executable, `${script}\n`, { encoding: "utf8", mode: 0o700, flag: "wx" });
 
-  const returned = await collectAntigravityProcess(preflight, { env: { PATH: process.env.PATH ?? "", HOME: f.root }, cwd: f.root, executable });
-  assert.equal(returned.processStarted, true);
-  assert.equal(returned.processClosed, true);
-  assert.equal(returned.exitCode, 1);
-  const parsedOut = JSON.parse(returned.stdout);
-  assert.deepEqual(parsedOut.argv, args);
-  assert.equal(parsedOut.input, "fixture prompt; never sent to Antigravity");
+  // Regression guard: confirm the probe rejects the legacy broken `--print --output-format stream-json` argv with exit 2.
+  const brokenProbe = spawnSync(executable, ["--print", "--output-format", "stream-json"], {
+    encoding: "utf8",
+    input: expectedPrompt,
+  });
+  assert.equal(brokenProbe.status, 2);
+  assert.match(brokenProbe.stderr, /--print took "--output-format" as its prompt/u);
 
-  const evidence = recordAntigravityProcessEvidence(preparation, returned);
+  const okReturned = await collectAntigravityProcess(preflight, {
+    env: { PATH: process.env.PATH ?? "", HOME: f.root },
+    cwd: f.root,
+    executable,
+  });
+  assert.equal(okReturned.exitCode, 0, okReturned.stderr);
+  const outEvents = okReturned.stdout.trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(outEvents.length, 2);
+  assert.deepEqual(outEvents[1], {
+    type: "result",
+    status: "probe_observed",
+    receivedCount: 1,
+    content: expectedPrompt,
+    model: "gemini-4-carbon-medium",
+    effort: "medium",
+  });
+
+  const nonzeroReturned = await collectAntigravityProcess(preflight, {
+    env: { PATH: process.env.PATH ?? "", HOME: f.root, PROBE_EXIT_CODE: "1" },
+    cwd: f.root,
+    executable,
+  });
+  assert.equal(nonzeroReturned.processStarted, true);
+  assert.equal(nonzeroReturned.processClosed, true);
+  assert.equal(nonzeroReturned.exitCode, 1);
+
+  const evidence = recordAntigravityProcessEvidence(preparation, nonzeroReturned);
   assert.equal(evidence.dispatch.status, "allowed");
   assert.equal(evidence.process.status, "exited-nonzero");
   assert.equal(evidence.refusal.status, "not-observed-in-return");
@@ -266,19 +381,30 @@ test("INIT091-B2: CLI exposes execution-antigravity-{preflight,record,evidence} 
 
   let calls = 0;
   const signals = new EventEmitter();
-  const fakeSpawn = (_executable, _args, options) => {
+  const fakeSpawn = (_executable, spawnArgs, options) => {
     calls += 1;
     assert.equal(options.shell, false);
+    assert.deepEqual(spawnArgs.slice(0, 4), ["--input-format", "stream-json", "--output-format", "stream-json"]);
     const child = new EventEmitter();
     child.stdin = new PassThrough();
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
     child.kill = () => true;
-    setImmediate(() => {
-      child.emit("spawn");
-      child.stdout.end("{\"type\":\"fixture\"}\n");
-      child.stderr.end();
-      child.emit("close", 0, null);
+    let stdinText = "";
+    child.stdin.setEncoding("utf8");
+    child.stdin.on("data", (chunk) => { stdinText += chunk; });
+    child.stdin.on("end", () => {
+      const lines = stdinText.split("\n").filter(Boolean);
+      assert.equal(lines.length, 1);
+      const parsed = JSON.parse(lines[0]);
+      assert.equal(parsed.event, "user");
+      assert.equal(parsed.message.content, "fixture prompt / 中文\nsecond line");
+      setImmediate(() => {
+        child.emit("spawn");
+        child.stdout.end("{\"type\":\"result\",\"status\":\"success\"}\n");
+        child.stderr.end();
+        child.emit("close", 0, null);
+      });
     });
     return child;
   };

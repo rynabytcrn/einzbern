@@ -13,7 +13,7 @@ import {
   initializeLibrary, createProject, declareChainIdentity, setWorkspaceSetting,
   createWork, consolidateLibraries, materializeLibrary, materializeWorkspaceFromGenesis,
   openLibrary, readConsolidationIndex, readAllStreams, cachePath, configureStorageLocation,
-  registerLibrary,
+  registerLibrary, appendEvents, createWorkDelta,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 import { withRecallObservation } from "../dist/build/packages/core/src/recall-observation.js";
@@ -23,7 +23,7 @@ const native = process.platform === "darwin";
 const spawnSync = childProcess.spawnSync;
 const hits = observation => observation.verifiedSegmentsBySource.reduce((sum, source) => sum + source.segments, 0);
 
-async function fixture(t) {
+async function fixture(t, large = true) {
   const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), "einzbern-source-verification-")));
   const previous = process.env.EINZBERN_HOME;
   const home = join(root, "device");
@@ -41,7 +41,13 @@ async function fixture(t) {
     const role = name === "coordination" ? "coordination" : "project";
     await declareChainIdentity(path, { role, coordinationLibraryId: sources[0]?.id ?? initial.metadata.workspaceId, ...(role === "project" ? { primaryProjectId: projectId } : {}) }, { occurredAt: at });
     await setWorkspaceSetting(path, { key: "storage.segmentBytes", value: "4096", occurredAt: at });
-    for (let n = 0; n < 3; n += 1) await createWork(path, { projectId, externalKey: `VERIFY-${name}-${n}`, kind: "Initiative", parentId: null, title: `Calibration ${name} ${n}`, scope: "calibration ".repeat(80), occurredAt: at });
+    // Native integrity cases need a workload on which the cost policy selects
+    // native verification. Batch the synthetic records without changing trust.
+    await appendEvents(path, Array.from({ length: large ? 10 : 3 }, (_, n) => createWorkDelta({
+      projectId, externalKey: `VERIFY-${name}-${n}`, kind: "Initiative", parentId: null,
+      title: `Calibration ${name} ${n}`, scope: "calibration ".repeat(80),
+      ...(large ? { body: "calibration ".repeat(22000) } : {}), occurredAt: at,
+    })), { occurredAt: at });
     sources.push({ path, id: initial.metadata.workspaceId, projectId, role });
   }
   for (const source of sources) {
@@ -253,11 +259,14 @@ for (const duringProbe of [false, true]) {
   });
 }
 
-for (const kind of ["zero-generation", "unsupported-attributes", "network-volume", "incomplete-download", "provider-unknown", "helper-failure", "helper-timeout"]) {
+for (const kind of ["zero-generation", "unsupported-attributes", "network-volume", "incomplete-download", "provider-unknown", "attribute-short", "extent-mismatch", "extent-truncated", "helper-failure", "helper-timeout"]) {
   test(`${kind} preserves the full reader`, { skip: !native }, async t => {
     const f = await fixture(t);
     provider(t, value => {
       for (const file of value.files) {
+        if (kind === "attribute-short") file.file.bytes = Buffer.alloc(4).toString("base64");
+        if (kind === "extent-mismatch") { const bytes = Buffer.from(file.file.bytes, "base64"); bytes.writeUInt32LE(bytes.length + 1, 0); file.file.bytes = bytes.toString("base64"); }
+        if (kind === "extent-truncated") file.volume.bytes = Buffer.from(file.volume.bytes, "base64").subarray(0, 100).toString("base64");
         if (kind === "zero-generation") { const bytes = Buffer.from(file.file.bytes, "base64"); bytes.writeUInt32LE(0, 40); file.file.bytes = bytes.toString("base64"); }
         if (kind === "unsupported-attributes") { const bytes = Buffer.from(file.volume.bytes, "base64"); bytes.writeUInt32LE(0, 92); file.volume.bytes = bytes.toString("base64"); }
         if (kind === "network-volume") { const bytes = Buffer.from(file.volume.bytes, "base64"); bytes.writeUInt32LE(0, 32); file.volume.bytes = bytes.toString("base64"); }
@@ -312,3 +321,39 @@ for (const kind of ["in-place", "same-name-replacement", "rename", "hardlink", "
     await assert.rejects(materializeWorkspaceFromGenesis(f.library));
   });
 }
+
+
+test("small consolidated sources keep full verification without starting a helper", { skip: !native }, async t => {
+  const f = await fixture(t, false);
+  let calls = 0;
+  t.mock.method(childProcess, "spawnSync", (...args) => { calls += 1; return spawnSync(...args); });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  for (let n = 0; n < 2; n += 1) {
+    const result = await read(f);
+    assert.equal(calls, 0);
+    assert.equal(hits(result.observation), 0);
+    assert.equal(result.observation.verificationHelperOutputBytes, 0);
+    assert.ok(result.observation.logicalEventBytes > 0);
+    assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
+  }
+  await fs.writeFile(f.target, await corrupt(f));
+  await assert.rejects(materializeLibrary(f.library));
+  await assert.rejects(materializeWorkspaceFromGenesis(f.library));
+});
+
+test("native protocol returns the complete packed attributes without buffer padding", { skip: !native }, async t => {
+  const f = await fixture(t);
+  let queried = 0;
+  provider(t, value => {
+    for (const file of value.files) for (const attributes of [file.file, file.volume]) {
+      const bytes = Buffer.from(attributes.bytes, "base64");
+      assert.equal(attributes.result, 0);
+      assert.equal(bytes.readUInt32LE(), bytes.length);
+      assert.ok(bytes.length >= 24 && bytes.length < 8192);
+      queried += 1;
+    }
+  });
+  await warm(f);
+  assert.ok(queried > 0);
+});

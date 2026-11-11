@@ -132,6 +132,36 @@ the prepared descriptor binding; metadata changes between preparation and readin
 cannot reuse an older identity contract. A new flat consolidation generation changes its root binding and
 requires verification before it can establish new records.
 
+## Runtime cost selection
+
+The digest-bound consolidation inventory selects the ordinary full-source path
+when its archived event segments total less than 4 MiB. In the bounded runtime
+calibration, full verification was cheaper for the 38,205-byte small input and
+slightly cheaper for the roughly 3.9 MB medium input; the roughly 30.6 MB input
+benefited from native reuse. The conservative boundary is an internal cost
+choice based on those counterexamples, not a performance promise for unmeasured
+sizes, a user setting or an authenticity check. It uses metadata before opening
+native descriptors or starting either helper. The ordinary reader revalidates
+the current index and every event source; reducer checkpoint proof remains
+required on this path. Large sources, restart and append still use all existing
+native eligibility and fallback checks.
+
+The source reader and materializer share a private lazy module boundary. Its
+native implementation alone owns the AsyncLocalStorage verification scope;
+there is no caller-provided callback registration, state or trust flag. Requests
+outside that scope, including the public source-event API and genesis, cannot
+consume verified event projections. Reducer checkpoint records are separate so
+full-source reads do not have to load the native helper implementation. Host
+setup/doctor logic and the host-specific hook event adapters are also loaded
+only at their actual call boundaries, preserving Kiro and Antigravity behavior.
+
+The helper still allocates the same bounded kernel attribute buffer, validates
+the successful return and its extent, and sends every returned attribute byte.
+Only unused capacity after that extent is omitted. Node checks the exact
+returned length and masks before reading fields; a short, mismatched or truncated
+extent falls back. Descriptor budgets, timeout, maxBuffer and all before/after
+identity, generation, boot/mount and provider checks remain unchanged.
+
 ## Evidence and resource accounting
 
 Native regression tests exercise the complete materializer with real held-object

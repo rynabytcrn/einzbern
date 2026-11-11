@@ -64,8 +64,6 @@ import { ENGINE_FORMAT_VERSION, librarySupportRefusal } from "./format-version.j
 import { inspectDshPlugin } from "./dsh-plugin.js";
 import { HOST_HOOK_FILES, HOST_HOOK_FILE_HOSTS, hookLauncherPath, isEinzbernHookCommand, planHostHooks, readHostHooks } from "./host-hooks.js";
 import type { HostHookFileHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
-import { inspectKiroHookScope, kiroSelectionStatus, planKiroHookScopes, probeKiroHost } from "./kiro-host.js";
-import { antigravityConfigRoot, antigravitySelectionStatus, inspectAntigravityHookScope, planAntigravityHookScopes, probeAntigravityHost } from "./antigravity-host.js";
 import { managedSectionRecordKey, managedSectionRecordsFor, planManagedWrite } from "./managed-sections.js";
 import { readAgentsNavigation } from "./machine-settings.js";
 import { listRules } from "./rules.js";
@@ -314,6 +312,8 @@ function changedFiles(plan: HostHooksPlan): readonly string[] {
 }
 
 async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
+  const { inspectKiroHookScope, kiroSelectionStatus, planKiroHookScopes, probeKiroHost } = await import("./kiro-host.js");
+  const { antigravityConfigRoot, antigravitySelectionStatus, inspectAntigravityHookScope, planAntigravityHookScopes, probeAntigravityHost } = await import("./antigravity-host.js");
   const causes: string[] = [];
   let launcher: string | null = null;
   try {
@@ -479,6 +479,8 @@ async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
 // ---- skill-copies ----
 
 async function skillCopiesCheck(context: DoctorContext): Promise<DoctorCheck> {
+  const { kiroSelectionStatus } = await import("./kiro-host.js");
+  const { antigravitySelectionStatus } = await import("./antigravity-host.js");
   const includeKiro = kiroSelectionStatus({ home: context.home, projectRoot: context.projectRoot, ...(context.cloud.env.KIRO_HOME === undefined ? {} : { kiroHome: context.cloud.env.KIRO_HOME }) }) === "selected";
   const kiroHome = context.cloud.env.KIRO_HOME ?? join(context.home, ".kiro");
   const includeAntigravity = antigravitySelectionStatus({

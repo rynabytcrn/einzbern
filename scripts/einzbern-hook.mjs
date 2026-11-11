@@ -73,11 +73,9 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
   // file. Keep this guard for direct callers too: a hook answers nothing, and the CLI is where the
   // floor is reported (ENGINE_NODE_TOO_OLD).
   if (!meetsNodeFloor(process.versions.node)) return null;
-  const [{ hookEventName, hookHost, navigationPointerAnswer, promptRecallOutcome, hookProtocolOutput }, { deviceHome }, { kiroHookEventName }, { antigravityHookEventName }] = await Promise.all([
+  const [{ hookEventName, hookHost, navigationPointerAnswer, promptRecallOutcome, hookProtocolOutput }, { deviceHome }] = await Promise.all([
     import("../dist/build/packages/core/src/hook-recall.js"),
     import("../dist/build/packages/core/src/device-home.js"),
-    import("../dist/build/packages/core/src/kiro-host.js"),
-    import("../dist/build/packages/core/src/antigravity-host.js"),
   ]);
   // Observation is opt-in. Loading its version/cache dependencies before every
   // unobserved event changed startup allocation even on navigation-only paths.
@@ -96,9 +94,9 @@ export async function runHookEvent({ event, payload, libraryPath, cwd, peerGuard
   // Read once, for the recall and for its log line alike.
   const host = hookHost(process.env);
   const name = host === "kiro"
-    ? (kiroHookEventName(event) ?? hookEventName(event))
+    ? ((await import("../dist/build/packages/core/src/kiro-host.js")).kiroHookEventName(event) ?? hookEventName(event))
     : host === "antigravity"
-      ? (antigravityHookEventName(event) ?? hookEventName(event))
+      ? ((await import("../dist/build/packages/core/src/antigravity-host.js")).antigravityHookEventName(event) ?? hookEventName(event))
       : hookEventName(event);
   // Stale owned SubagentStop commands are inert until normal setup retires them.
   if (event === "subagent-stop") return host === "antigravity" ? "{}\n" : null;

@@ -23,7 +23,23 @@ function run(arguments_) {
         var list = $.NSData.alloc.initWithBase64EncodedStringOptions(encoded, 0);
         var bytes = $.NSMutableData.dataWithLength(8192);
         var result = $.fgetattrlist(descriptor, list.bytes, bytes.mutableBytes, bytes.length, 32);
-        return { result: result, bytes: ObjC.unwrap(bytes.base64EncodedStringWithOptions(0)) };
+        // fgetattrlist stores the actual packed extent in its first uint32.
+        // Read that four-byte header before encoding only that validated range;
+        // the rest of the fixed-capacity buffer is unreturned zero padding.
+        if (result !== 0) return { result: result, bytes: null };
+        var header = ObjC.unwrap(bytes.subdataWithRange($.NSMakeRange(0, 4)).base64EncodedStringWithOptions(0));
+        var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        var returnedLength = 0, packed = 0, bits = 0, offset = 0;
+        for (var i = 0; i < header.length && header[i] !== "="; i++) {
+          packed = (packed << 6) | alphabet.indexOf(header[i]);
+          bits += 6;
+          if (bits >= 8) {
+            bits -= 8;
+            returnedLength += ((packed >>> bits) & 255) * Math.pow(256, offset++);
+          }
+        }
+        if (offset !== 4 || returnedLength < 24 || returnedLength > bytes.length) return { result: result, bytes: null };
+        return { result: result, bytes: ObjC.unwrap(bytes.subdataWithRange($.NSMakeRange(0, returnedLength)).base64EncodedStringWithOptions(0)) };
       }
       var url = $.NSURL.fileURLWithPath(file.path);
       url.removeAllCachedResourceValues;

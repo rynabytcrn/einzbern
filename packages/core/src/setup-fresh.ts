@@ -110,8 +110,6 @@ import type {
   SetupWriteAction,
 } from "./setup.js";
 import { installSkillCopies, skillCopyRoots, skillCopiesRecordPath, skillCopyPath, verifySkillCopies } from "./skill-copies.js";
-import { KIRO_USER_HOOKS_FILE, applyKiroHookPlan, kiroSelectionStatus, planKiroHookScopes } from "./kiro-host.js";
-import { ANTIGRAVITY_USER_HOOKS_FILE, antigravityConfigRoot, antigravitySelectionStatus, applyAntigravityHookPlans, planAntigravityHookScopes } from "./antigravity-host.js";
 import { createProject, initializeLibrary, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
 import { canonicalSha256 } from "../../protocol/src/index.js";
 import { projectLineage, scopedWorkspaceState } from "./project-scope.js";
@@ -592,6 +590,8 @@ async function planLaunchers(recorder: SetupRecorder, launchers: EngineFiles["la
 
 /** The host-hooks step of a plan: each host's user files, rendered with (or, install false, without) the Einzbern hooks. */
 export async function planHooks(recorder: SetupRecorder, home: string, deviceHome: string, navigation: AgentsNavigationChoice | null, install = true, codexAdmission?: CodexHookAdmission, enableHooksAuthorized = false, projectRoot = home): Promise<void> {
+  const { KIRO_USER_HOOKS_FILE, kiroSelectionStatus, planKiroHookScopes } = await import("./kiro-host.js");
+  const { ANTIGRAVITY_USER_HOOKS_FILE, antigravityConfigRoot, antigravitySelectionStatus, planAntigravityHookScopes } = await import("./antigravity-host.js");
   for (const host of HOST_HOOK_FILE_HOSTS) {
     const plan = await recorder.attempt("host-hooks", join(home, ...HOST_HOOK_FILES[host].split("/")),
       async () => readHostHooks(planHostHooks({ host, scope: "user", deviceHome, userHome: home, navigation, install, ...(codexAdmission ? { codexAdmission } : {}), enableHooksAuthorized }), { root: home, home }));
@@ -730,6 +730,8 @@ async function coordinationSectionsRoot(libraryPath: string, projectRoot: string
  * (coordinationSectionsRoot).
  */
 export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
+  const { kiroSelectionStatus } = await import("./kiro-host.js");
+  const { antigravitySelectionStatus } = await import("./antigravity-host.js");
   const { projectRoot, home, deviceHome, library, navigation, steps } = input;
   const kiroSelected = kiroSelectionStatus({ home, projectRoot }) === "selected";
   const antigravitySelected = antigravitySelectionStatus({ home, projectRoot }) === "selected";
@@ -826,6 +828,8 @@ async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput, l
 }
 
 async function applySkillCopies(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
+  const { kiroSelectionStatus } = await import("./kiro-host.js");
+  const { antigravitySelectionStatus } = await import("./antigravity-host.js");
   const { home, deviceHome, at } = input;
   const includeKiro = kiroSelectionStatus({ home, projectRoot: input.projectRoot }) === "selected";
   const includeAntigravity = antigravitySelectionStatus({ home, projectRoot: input.projectRoot }) === "selected";
@@ -880,6 +884,8 @@ export async function applyHooks(recorder: SetupRecorder, input: {
   readonly codexAdmission?: CodexHookAdmission;
   readonly enableHooksAuthorized?: boolean;
 }): Promise<void> {
+  const { applyKiroHookPlan, kiroSelectionStatus, planKiroHookScopes } = await import("./kiro-host.js");
+  const { antigravityConfigRoot, antigravitySelectionStatus, applyAntigravityHookPlans, planAntigravityHookScopes } = await import("./antigravity-host.js");
   const { home, deviceHome, at, navigation } = input;
   for (const host of HOST_HOOK_FILE_HOSTS) {
     const hooks = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome, userHome: home, navigation, install: input.install ?? true, ...(input.codexAdmission ? { codexAdmission: input.codexAdmission } : {}), enableHooksAuthorized: input.enableHooksAuthorized === true }), { root: home, home });

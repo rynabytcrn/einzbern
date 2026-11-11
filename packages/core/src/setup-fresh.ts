@@ -111,7 +111,7 @@ import type {
 } from "./setup.js";
 import { installSkillCopies, skillCopyRoots, skillCopiesRecordPath, skillCopyPath, verifySkillCopies } from "./skill-copies.js";
 import { KIRO_USER_HOOKS_FILE, applyKiroHookPlan, kiroSelectionStatus, planKiroHookScopes } from "./kiro-host.js";
-import { ANTIGRAVITY_USER_HOOKS_FILE, antigravityConfigRoot, antigravitySelectionStatus, applyAntigravityHookPlan, planAntigravityHookScopes } from "./antigravity-host.js";
+import { ANTIGRAVITY_USER_HOOKS_FILE, antigravityConfigRoot, antigravitySelectionStatus, applyAntigravityHookPlans, planAntigravityHookScopes } from "./antigravity-host.js";
 import { createProject, initializeLibrary, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
 import { canonicalSha256 } from "../../protocol/src/index.js";
 import { projectLineage, scopedWorkspaceState } from "./project-scope.js";
@@ -630,7 +630,8 @@ export async function planHooks(recorder: SetupRecorder, home: string, deviceHom
     } catch (error) {
       const reasonCode = reasonOf(error);
       if (reasonCode === null) throw error;
-      const detailPath = (error as { readonly details?: { readonly path?: unknown } })?.details?.path;
+      const detailRecord = (error as { readonly details?: Readonly<Record<string, unknown>> })?.details;
+      const detailPath = detailRecord?.path ?? detailRecord?.file;
       recorder.block("host-hooks", typeof detailPath === "string" ? detailPath : target, reasonCode, messageOf(error));
     }
     if (plans !== null) for (const plan of plans) {
@@ -913,8 +914,8 @@ export async function applyHooks(recorder: SetupRecorder, input: {
       home, antigravityConfigHome, projectRoot: input.projectRoot, deviceHome, install: input.install ?? true,
       navigation: navigation === "declined" ? "declined" : "always",
     });
+    await applyAntigravityHookPlans(plans, { at, deviceHome });
     for (const plan of plans) {
-      await applyAntigravityHookPlan(plan, { at, deviceHome });
       if (!plan.changed) continue;
       recorder.write("host-hooks", plan.path, plan.before === null ? "create" : "update");
       if (plan.before !== null) recorder.backup("host-hooks", plan.path);

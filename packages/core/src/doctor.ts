@@ -425,6 +425,7 @@ async function hooksPresentCheck(context: DoctorContext): Promise<DoctorCheck> {
           install: true,
           navigation: await readAgentsNavigation(context.deviceHome) === "declined" ? "declined" : "always",
           platform: context.platform,
+          coordinateRegisteredProjects: false,
         });
         if (plans.some(plan => plan.changed)) antigravityCauses.push("HOOK_NOT_AS_EXPECTED");
       } catch (error) {

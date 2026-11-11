@@ -1138,8 +1138,7 @@
         "tests/story-346-pg-disabled.test.mjs",
         "tests/story-378-incident-replay.test.mjs",
         "tests/story-rule-conservation.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Atelier.md": {
       "readers": [
@@ -1155,8 +1154,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/CLI-Reference.md": {
       "readers": [
@@ -1324,8 +1322,7 @@
         "tests/story-rule-conservation.test.mjs",
         "tests/wiki-cli-reference.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Ether-Layout.md": {
       "readers": [
@@ -1341,8 +1338,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/FAQ.md": {
       "readers": [
@@ -1358,8 +1354,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Gates.md": {
       "readers": [
@@ -1377,8 +1372,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Glossary.md": {
       "readers": [
@@ -1397,8 +1391,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Home.md": {
       "readers": [
@@ -1416,8 +1409,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Install-Wizard.md": {
       "readers": [
@@ -1433,8 +1425,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Managed-Sections-and-Command-Spell.md": {
       "readers": [
@@ -1451,8 +1442,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Migrating-from-TCRN-Workflow.md": {
       "readers": [
@@ -1468,8 +1458,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Multi-Device-and-Cloud.md": {
       "readers": [
@@ -1485,8 +1474,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/Variables.md": {
       "readers": [
@@ -1502,8 +1490,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     },
     "docs/wiki/_Sidebar.md": {
       "readers": [
@@ -1519,8 +1506,7 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ],
-      "portalTests": []
+      ]
     }
   },
   "documentConsumers": {
@@ -1614,7 +1600,7 @@
     "packages/core/src/actor-attestation.ts": "5f9d7e677c99f721a8daa0f9eac811afd391b96e765c65080af14c2bcc857706",
     "packages/core/src/agents-sections.ts": "aa22e8dcbea1f207eb2b68f94976612bc5399c2b35165fee5d0e41c65e6af6a6",
     "packages/core/src/akasha.ts": "5ec7b9d8d77c8b61c871fefe9c7a91f3b90484eb245a83ad3d4dbd667626d6df",
-    "packages/core/src/antigravity-host.ts": "3771be76036d58bfa77a63cef8c1c016ec37a0dab1b570a5f65f750b6d978727",
+    "packages/core/src/antigravity-host.ts": "70ee1f35f2d5f3cb6cc156fcd2c133a68ca9d46f03487c8bbddd98f7a24225d2",
     "packages/core/src/artifact-store.ts": "2bb38b1763711e79a37e7df91ccfaca11b0dff4380033b1c9d9e688241f207ce",
     "packages/core/src/assignment-gate.ts": "46742d45eba073e8ae6d4d8e3cea5a9c6d45f40ac74bedd82f7b707bcef2a458",
     "packages/core/src/atomic-file.ts": "efc6b466cd5f9a9642e9eb3faf089a10a1d62ef35fb6af8899b7220a1655b1d3",
@@ -1645,7 +1631,7 @@
     "packages/core/src/device-identity.ts": "9315dd06807cdf9f320ee76b15eb5c0812841ca85728d8659072cc50c8719308",
     "packages/core/src/dispatch-evidence.ts": "9a19f0aa8ba1c2ad1c11478a666d0766c250d7756946ef1d289c8e6c325e12ed",
     "packages/core/src/dispatch-workflow.ts": "ef4e5735e3b51cd352d4a1d5dcf3bcc7e1304e075bc32df58e9f12a1127e2eb8",
-    "packages/core/src/doctor.ts": "eb3df176e20e73f60f12a125587cd5428f22c181bd1a6a29b89b35e52a9bdcc6",
+    "packages/core/src/doctor.ts": "366022219918aa487442617f1c4a507e1f732cb632861b4dd503aff759b05c83",
     "packages/core/src/dot-agents.ts": "642e66b3829f06657e0aeacbb0038c28675525404c3789f3f6caf5003928db81",
     "packages/core/src/dot-execution.ts": "3f0cfc192fc41d9dcf318810b58f6c908a250f6f65dc8b827d6baa0295463128",
     "packages/core/src/dot-extension-source.ts": "a6714ee4e64f7ffda5e756197fb5c508a08509d2a2cba0c1d15d1bb7ae87e829",
@@ -1717,7 +1703,7 @@
     "packages/core/src/runtime-input-contract.ts": "17cea78a31bacd14f80a6c21a19d634a6cc15421347908b6131bdf1eacb91416",
     "packages/core/src/runtime-transport.ts": "ea0d245d30be0a86ada2679fb2af382350d0d4e86d6a88dc025d389eb9092a8d",
     "packages/core/src/settings.ts": "5d7e704874790aeb8f587b74821072a6d6b71a70bfa998780b20dc27fdae156b",
-    "packages/core/src/setup-fresh.ts": "b27db38cc31bdbf46bf86a5394f9bcceb618d3088a57753acf9d00f7c75064e6",
+    "packages/core/src/setup-fresh.ts": "9e98d78b2b0736f43f4f98349e056bc84fcd7a4e720749a81466d8b3d51b31ec",
     "packages/core/src/setup-maintain.ts": "9ee8a9b34ee6254d4994ec45470051b54fec4350e699bf9d0740008bb4122fa8",
     "packages/core/src/setup-managed-update.ts": "fa6abdecc9e890cb7b315c5bb982752f64d875a77aaaf2646a004cf51d398776",
     "packages/core/src/setup-restore.ts": "34a09dbba97d41477767cdf81e7adb224b6dc0ae65b0ff09e8ccd16b98a9061f",
@@ -1987,6 +1973,7 @@
     "tests/akasha-stream.test.mjs": "7a3ea3d22bf7ded51d4f7bf0da2d0cde954c69609c0a19bfea50483ca4b2f423",
     "tests/antigravity-hooks.test.mjs": "7961610452618743a0cc51c68cc2663292ac687daa336cc12471a2480e42e147",
     "tests/antigravity-native-execution.test.mjs": "e7dc0badef15f8b6094bc99b6eba65346ff278ef288a3f02f3c7ee3875ee4890",
+    "tests/antigravity-review-boundaries.test.mjs": "5ccdee06c8923bdbf6b61896f0c468c8a8d4d05abc88ed55ecb6d59b6206e5f8",
     "tests/archive-cleanup-refusal-audit.test.mjs": "03557600d5885f1d171991d676ce05549e6eb88674dde4fa2b7ab299b74e7259",
     "tests/artifact-snapshot-lock-scope.test.mjs": "37ee7cc70f41d8c65fb81c6bc80977e04b9409a7b70419153b4a3d4ac90e247a",
     "tests/artifact-store-io-errors.test.mjs": "07274df6248e57f272d34e6cc6e8b801c5e55f7b52b65d03315b1087680d089b",

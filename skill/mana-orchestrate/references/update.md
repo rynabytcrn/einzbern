@@ -92,7 +92,7 @@ at all, and doctor does not report it.
   trust, permissions and hooks remain intact.
 - When Antigravity is selected, update and repair reconcile only the top-level `"einzbern"` group
   into `${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/config}/hooks.json` (retiring redundant unedited
-  `"einzbern"` entries from workspace `.agents/hooks.json`) and refresh its Skill copy from recorded
+  `"einzbern"` entries from the current and registered workspace `.agents/hooks.json` files on the device) and refresh its Skill copy from recorded
   ownership evidence. User-edited `"einzbern"` entries or commands are preserved and reported as a
   conflict; all other Antigravity hook groups, skills, rules and plugins remain intact.
 - When upgrading from an engine whose update receipt has no `managedUpdates`, finish the same

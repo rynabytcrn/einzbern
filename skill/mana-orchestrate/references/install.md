@@ -382,7 +382,7 @@ application.
 When Antigravity is selected by `${ANTIGRAVITY_CONFIG_DIR}`, `.gemini/{config,antigravity-cli,antigravity-ide,antigravity}`
 under `$HOME`, or a project `.agents/hooks.json` regular file, fresh setup also manages only the
 top-level `"einzbern"` group in `${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/config}/hooks.json`, retires
-any redundant unedited `"einzbern"` group from `<project>/.agents/hooks.json`, and installs
+any redundant unedited `"einzbern"` group from the current and registered workspace `.agents/hooks.json` files on the device, and installs
 the global Skill copy under `${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/config}/skills/mana-orchestrate`.
 Unrelated hook groups, skills, rules and plugins are preserved; setup does not install `agy`,
 Antigravity IDE or Antigravity App.

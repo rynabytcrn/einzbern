@@ -9,14 +9,16 @@
 // without duplicate execution while preserving unrelated hook groups and user edits.
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import * as fsModule from "node:fs";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { writeFileAtomic } from "./atomic-file.js";
 import { backupsPath, ensureDeviceDirectory } from "./device-home.js";
 import { hookLauncherPath, hostHookCommand, isEinzbernHookCommand } from "./host-hooks.js";
+import { readRegistry } from "./registry.js";
 
 export const ANTIGRAVITY_HOOKS_FILE = ".agents/hooks.json" as const;
 export const ANTIGRAVITY_USER_HOOKS_FILE = "hooks.json" as const;
@@ -272,6 +274,7 @@ const ANTIGRAVITY_COMMAND_PREFIX = "node -e \"/*einzbern-hook*/const p=require('
 function isCanonicalAntigravityHookCommand(
   command: string,
   expectedWord: "session-start" | "user-prompt-submit" | "pre-tool-use",
+  platform: NodeJS.Platform = process.platform,
 ): boolean {
   const emptyWrite = expectedWord === "pre-tool-use"
     ? "process.stdout.write(JSON.stringify({decision:'allow'})+'\\n')"
@@ -282,11 +285,16 @@ function isCanonicalAntigravityHookCommand(
   const escapedLiteral = command.slice(ANTIGRAVITY_COMMAND_PREFIX.length, command.length - suffix.length);
   const rawDevice = escapedLiteral.replaceAll("\\'", "'");
   if (rawDevice.length === 0 || rawDevice.startsWith("/") || /^[A-Za-z]:/u.test(rawDevice)) return false;
-  if (/[\u0000-\u001f\u007f\\"$`%]/u.test(rawDevice)) return false;
+  if (/[\u0000-\u001f\u007f\\"$`]/u.test(rawDevice)) return false;
+  if (platform === "win32" && rawDevice.includes("%")) return false;
   return rawDevice.replaceAll("'", "\\'") === escapedLiteral;
 }
 
-function isOwnedFlatEventHandlers(value: unknown, expectedWord: "session-start" | "user-prompt-submit"): boolean {
+function isOwnedFlatEventHandlers(
+  value: unknown,
+  expectedWord: "session-start" | "user-prompt-submit",
+  platform: NodeJS.Platform,
+): boolean {
   if (!Array.isArray(value) || value.length !== 1) return false;
   const entry = value[0];
   if (!isObject(entry)) return false;
@@ -295,12 +303,12 @@ function isOwnedFlatEventHandlers(value: unknown, expectedWord: "session-start" 
   return (
     entry.type === "command" &&
     typeof entry.command === "string" &&
-    isCanonicalAntigravityHookCommand(entry.command, expectedWord) &&
+    isCanonicalAntigravityHookCommand(entry.command, expectedWord, platform) &&
     entry.timeout === ANTIGRAVITY_HOOK_TIMEOUT
   );
 }
 
-function isOwnedPreToolUseGroups(value: unknown): boolean {
+function isOwnedPreToolUseGroups(value: unknown, platform: NodeJS.Platform): boolean {
   if (!Array.isArray(value) || value.length !== 1) return false;
   const group = value[0];
   if (!isObject(group)) return false;
@@ -315,22 +323,22 @@ function isOwnedPreToolUseGroups(value: unknown): boolean {
   return (
     handler.type === "command" &&
     typeof handler.command === "string" &&
-    isCanonicalAntigravityHookCommand(handler.command, "pre-tool-use") &&
+    isCanonicalAntigravityHookCommand(handler.command, "pre-tool-use", platform) &&
     handler.timeout === ANTIGRAVITY_HOOK_TIMEOUT
   );
 }
 
-export function isOwnedAntigravityHookGroup(value: unknown): boolean {
+export function isOwnedAntigravityHookGroup(value: unknown, platform: NodeJS.Platform = process.platform): boolean {
   if (!isObject(value)) return false;
   const keys = Object.keys(value);
   if (keys.length === 0 || !("PreInvocation" in value) || !("PreToolUse" in value)) return false;
   for (const key of keys) {
     if (key === "SessionStart") {
-      if (!isOwnedFlatEventHandlers(value.SessionStart, "session-start")) return false;
+      if (!isOwnedFlatEventHandlers(value.SessionStart, "session-start", platform)) return false;
     } else if (key === "PreInvocation") {
-      if (!isOwnedFlatEventHandlers(value.PreInvocation, "user-prompt-submit")) return false;
+      if (!isOwnedFlatEventHandlers(value.PreInvocation, "user-prompt-submit", platform)) return false;
     } else if (key === "PreToolUse") {
-      if (!isOwnedPreToolUseGroups(value.PreToolUse)) return false;
+      if (!isOwnedPreToolUseGroups(value.PreToolUse, platform)) return false;
     } else {
       return false;
     }
@@ -357,7 +365,8 @@ export function mergeAntigravityHookDocument(
   }
   const source = isObject(existingValue) ? existingValue : {};
   const hadOwned = ANTIGRAVITY_OWNED_HOOK_GROUP in source;
-  if (hadOwned && !isOwnedAntigravityHookGroup(source[ANTIGRAVITY_OWNED_HOOK_GROUP])) {
+  const platform = request.platform ?? process.platform;
+  if (hadOwned && !isOwnedAntigravityHookGroup(source[ANTIGRAVITY_OWNED_HOOK_GROUP], platform)) {
     throw new AntigravityHostError(
       "ANTIGRAVITY_HOOKS_OWNERSHIP_CONFLICT",
       `managed hook group ${ANTIGRAVITY_OWNED_HOOK_GROUP} was edited; preserve it for review`,
@@ -468,10 +477,18 @@ export async function planAntigravityHooks(request: AntigravityHooksRequest): Pr
   };
 }
 
+async function canonicalHookFileKey(root: string, scope: AntigravityHookScope): Promise<string> {
+  const resolvedRoot = await realpath(root).catch(() => resolve(root));
+  const hookPath = join(resolvedRoot, ...hooksRelativePath(scope).split("/"));
+  const parent = await realpath(dirname(hookPath)).catch(() => resolve(dirname(hookPath)));
+  return join(parent, basename(hookPath));
+}
+
 /**
  * Plan effective user/workspace scopes: Einzbern manages its owned "einzbern" group in user scope
  * so all projects on the same home/device share one active hook, and retires any redundant unedited
- * owned "einzbern" group from workspace .agents/hooks.json while preserving unmanaged workspace groups.
+ * owned "einzbern" group from the current and registered workspace .agents/hooks.json files while
+ * preserving unmanaged workspace groups and blocking on user edits.
  */
 export async function planAntigravityHookScopes(input: {
   readonly home: string;
@@ -481,6 +498,7 @@ export async function planAntigravityHookScopes(input: {
   readonly install?: boolean;
   readonly navigation?: "always" | "declined" | null;
   readonly platform?: NodeJS.Platform;
+  readonly coordinateRegisteredProjects?: boolean;
 }): Promise<readonly AntigravityHookFilePlan[]> {
   const configHome = antigravityConfigRoot({
     home: input.home,
@@ -496,23 +514,35 @@ export async function planAntigravityHookScopes(input: {
     ...(input.install === undefined ? {} : { install: input.install }),
     ...(input.navigation === undefined ? {} : { navigation: input.navigation }),
   };
-  const projectRequest: AntigravityHooksRequest = {
-    root: projectRoot,
-    deviceHome: input.deviceHome,
-    userHome: input.home,
-    scope: "project",
-    ...(input.platform === undefined ? {} : { platform: input.platform }),
-    ...(input.install === undefined ? {} : { install: input.install }),
-    ...(input.navigation === undefined ? {} : { navigation: input.navigation }),
-  };
-  const globalPath = join(configHome, ...ANTIGRAVITY_USER_HOOKS_FILE.split("/"));
-  const projectPath = join(projectRoot, ...ANTIGRAVITY_HOOKS_FILE.split("/"));
-  const samePath = globalPath === projectPath;
-  if (input.install === false) {
-    return [await planAntigravityHooks(globalRequest), ...(samePath ? [] : [await planAntigravityHooks(projectRequest)])];
+  const globalKey = await canonicalHookFileKey(configHome, "user");
+  const candidateRoots = [projectRoot];
+  if (input.coordinateRegisteredProjects !== false) {
+    const registry = await readRegistry(resolve(input.deviceHome));
+    for (const entry of registry.entries) {
+      candidateRoots.push(resolve(entry.projectPath));
+    }
   }
-  if (samePath) return [await planAntigravityHooks(globalRequest)];
-  return [await planAntigravityHooks(globalRequest), await planAntigravityHooks({ ...projectRequest, install: false })];
+  const seenKeys = new Set<string>([globalKey]);
+  const plans: AntigravityHookFilePlan[] = [await planAntigravityHooks(globalRequest)];
+  for (let index = 0; index < candidateRoots.length; index += 1) {
+    const candidateRoot = candidateRoots[index]!;
+    const key = await canonicalHookFileKey(candidateRoot, "project");
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    const projectPlan = await planAntigravityHooks({
+      root: candidateRoot,
+      deviceHome: input.deviceHome,
+      userHome: input.home,
+      scope: "project",
+      install: false,
+      ...(input.platform === undefined ? {} : { platform: input.platform }),
+      ...(input.navigation === undefined ? {} : { navigation: input.navigation }),
+    });
+    if (index === 0 || projectPlan.before !== null || projectPlan.changed) {
+      plans.push(projectPlan);
+    }
+  }
+  return plans;
 }
 
 export async function applyAntigravityHookPlan(
@@ -531,7 +561,17 @@ export async function applyAntigravityHookPlan(
   await ensureDeviceDirectory(dirname(plan.path));
   if (current !== null) {
     const time = input.at.replace(/[-:]/gu, "").replace(/T/u, "T");
-    const backup = join(backupsPath(input.deviceHome), time, "host-hooks", "antigravity", plan.scope, ...hooksRelativePath(plan.scope).split("/"));
+    const scopeSegment = plan.scope === "user"
+      ? ["user"]
+      : ["project", createHash("sha256").update(plan.root).digest("hex").slice(0, 16)];
+    const backup = join(
+      backupsPath(input.deviceHome),
+      time,
+      "host-hooks",
+      "antigravity",
+      ...scopeSegment,
+      ...hooksRelativePath(plan.scope).split("/"),
+    );
     await ensureDeviceDirectory(dirname(backup));
     try {
       await lstat(backup);
@@ -543,6 +583,22 @@ export async function applyAntigravityHookPlan(
     await writeFileAtomic(backup, current);
   }
   await writeFileAtomic(plan.path, plan.after);
+}
+
+export async function applyAntigravityHookPlans(
+  plans: readonly AntigravityHookFilePlan[],
+  input: { readonly at: string; readonly deviceHome: string },
+): Promise<void> {
+  for (const plan of plans) {
+    const exists = await regularFile(plan.path);
+    const current = exists ? await readFile(plan.path, "utf8") : null;
+    if (current !== plan.before) {
+      throw new AntigravityHostError("ANTIGRAVITY_HOOKS_CONCURRENT_MODIFICATION", `${plan.path} changed after planning`);
+    }
+  }
+  for (const plan of plans) {
+    await applyAntigravityHookPlan(plan, input);
+  }
 }
 
 function countOwnedEventCommands(group: unknown): number {

@@ -567,6 +567,63 @@ test("647: valid checkpoint payload paired with foreign or damaged coverage neve
   assert.deepEqual(repaired.value, appended, "a valid old state cannot skip a newly committed event");
 });
 
+test("647/648: recomputing a snapshot checksum cannot attest a forged reducer projection", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  const { readCacheSnapshot, writeCacheSnapshot } = await import("../dist/build/packages/core/src/library-cache.js");
+  const expected = await materializeWorkspaceFromGenesis(f.to);
+  await materializeLibrary(f.to, { readFile });
+  for (const [mode, options] of [["checkpoint-full", { readFile }], ["native", {}]]) {
+    const snapshot = await readCacheSnapshot(f.sources[0].id);
+    await writeCacheSnapshot({ ...snapshot, state: { ...snapshot.state, projects: snapshot.state.projects.map((project, index) => index === 0 ? { ...project, name: "Forged cached projection" } : project) } });
+    assert.equal((await readCacheSnapshot(f.sources[0].id)).state.projects[0].name, "Forged cached projection", "the ordinary checksum is valid");
+    const result = await withRecallObservation(() => materializeLibrary(f.to, options));
+    assert.ok(result.observation.cacheReasons.includes("consolidation-checkpoint-miss-full-replay"), mode);
+    assert.ok(result.observation.replayedEvents > 0, mode);
+    assert.deepEqual(result.value, expected, mode);
+    const warm = await withRecallObservation(() => materializeLibrary(f.to, options));
+    assert.equal(warm.observation.replayedEvents, 0, `${mode}: the newly attested projection remains reusable`);
+  }
+});
+
+test("647: absent or damaged independent projection proof requires authority replay", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  const expected = await materializeWorkspaceFromGenesis(f.to);
+  await materializeLibrary(f.to, { readFile });
+  const proof = join(process.env.EINZBERN_HOME, "replay-projections", f.sources[0].id.replace(":", "-"), "projection.json");
+  for (const kind of ["missing", "damaged"]) {
+    if (kind === "missing") await rm(proof);
+    else await writeFile(proof, "damaged independent proof\n");
+    const result = await withRecallObservation(() => materializeLibrary(f.to, { readFile }));
+    assert.ok(result.observation.cacheReasons.includes("consolidation-checkpoint-miss-full-replay"), kind);
+    assert.ok(result.observation.replayedEvents > 0, kind);
+    assert.deepEqual(result.value, expected, kind);
+    assert.equal((await withRecallObservation(() => materializeLibrary(f.to, { readFile }))).observation.replayedEvents, 0);
+  }
+});
+
+test("647: a root proof miss cannot attest an unverified source snapshot", async t => {
+  const f = await fixture(t);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { readCacheSnapshot, writeCacheSnapshot } = await import("../dist/build/packages/core/src/library-cache.js");
+  await setWorkspaceSetting(f.sources[1].path, { key: "storage.snapshotEveryEvents", value: "1", occurredAt: at });
+  await materializeLibrary(f.sources[1].path);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const expected = await materializeWorkspaceFromGenesis(f.to);
+  await materializeLibrary(f.to, { readFile });
+  const source = await readCacheSnapshot(f.sources[1].id);
+  assert.ok(source);
+  await writeCacheSnapshot({ ...source, state: { ...source.state, projects: source.state.projects.map(project => ({ ...project, name: "Forged source projection" })) } });
+  await rm(join(process.env.EINZBERN_HOME, "replay-projections", f.sources[0].id.replace(":", "-"), "projection.json"));
+  assert.deepEqual(await materializeLibrary(f.to, { readFile }), expected);
+  assert.deepEqual(await materializeLibrary(f.to, { readFile }), expected, "the newly attested root still matches genesis");
+});
+
 test("648: a checksum-valid cache claim is not authority for unread source bytes", async t => {
   const f = await fixture(t);
   await consolidateLibraries(f.mapping, f.to, f.options);

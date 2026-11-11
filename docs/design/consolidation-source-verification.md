@@ -20,6 +20,23 @@ at `<cachePath>/verified-segments/<segment-key>.bin` and remain untrusted. No
 secret, credential service, account, issuer, key store, permission change or
 resident process is involved.
 
+The consolidated reducer checkpoint has its own small independent record at
+`<deviceHome>/replay-projections/<library>/projection.json`. It binds the exact
+snapshot header (including its state-byte digest, engine, stream coverage and
+clock) to the current manifest/index projection binding and device identity.
+It retains prior attested header digests within the existing 64 KiB record
+budget so an older valid prefix can resume after several appended events.
+Evicting a digest only requires full replay; a changed engine/device/base binding
+starts a new catalogue. The ordinary snapshot checksum remains only a damage check. Changing cached
+state and recomputing that checksum cannot update the independently stored
+projection digest. This protection also applies to checkpoint-full reads with
+native source reuse disabled. A missing, damaged, mismatched or unsafe local
+record requires full authority replay of every consolidated source, bypassing
+their unverified snapshot seeds before issuing a new root record. A verified
+prefix plus a correctly replayed tail can issue its updated projection. The
+record uses the already checked state digest rather than hashing the large
+projection again. It adds no credential or broader attacker claim.
+
 Before reading or writing records, the engine resolves actual device, library,
 configured library/runtime and cache paths. A record directory inside a source
 or configured synchronization/runtime subtree, an alias into the record store,

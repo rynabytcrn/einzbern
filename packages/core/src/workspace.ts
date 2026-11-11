@@ -1,7 +1,7 @@
 import { validateSettingValue } from "./settings.js";
 import { bindProjectArtifactPath, projectArtifactBinding } from "./artifact-path-binding.js";
 import { observeMaterialization, observeStage, observeCheckpoint, observeCacheReason, observeReplay } from "./recall-observation.js";
-import { hasPendingSourceVerification, withSourceVerification } from "./source-verification.js";
+import { hasPendingSourceVerification, hasVerifiedReplayProjection, recordVerifiedReplayProjection, withSourceVerification } from "./source-verification.js";
 import { WORK_CONTENT_KEY, workContent, validateWorkContent, contentFail } from "./work-content.js";
 import type { ContentWorkKind } from "./work-content.js";
 import { WORK_CONTENT_POLICY_KEY, readWorkContentPolicy, validateWorkContentPolicy, workContentPolicyApplies, workContentRolloutReadiness } from "./work-content-templates.js";
@@ -3595,7 +3595,7 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
     try {
       const snapshot = forceAuthorityReplay ? null : await readCacheSnapshot(library.manifest.libraryId);
       const value = snapshot?.state as { consolidationBinding?: unknown; consolidationCheckpoint?: unknown } | undefined;
-      if (snapshot !== null && value?.consolidationBinding === binding && value.consolidationCheckpoint === consolidationCheckpointBinding(snapshot, binding, baseEvents.length)) {
+      if (snapshot !== null && value?.consolidationBinding === binding && value.consolidationCheckpoint === consolidationCheckpointBinding(snapshot, binding, baseEvents.length) && await hasVerifiedReplayProjection(library, binding, snapshot)) {
         const cached = seedFromSnapshot({ ...snapshot, version: snapshot.version - baseEvents.length }, { ...read, events: tail });
         if (cached !== null) {
           const seed = { ...cached.seed, version: snapshot.version, prefixEvents: [...baseEvents, ...cached.seed.prefixEvents] };
@@ -3613,7 +3613,9 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
       const sourceStates: WorkspaceState[] = [];
       for (const { source, read: sourceRead } of read.consolidation.sources) {
         const sourceLibrary = { root: `${library.root}/${source.archive}`, manifest: source.manifest };
-        sourceStates.push((await replayLibraryResultThroughCache(sourceLibrary, sourceRead, forceAuthorityReplay)).state);
+        // A miss must not turn an unverified source snapshot into a newly
+        // attested root projection. Re-establish every source's authority.
+        sourceStates.push((await replayLibraryResultThroughCache(sourceLibrary, sourceRead, true)).state);
       }
       replay = replayLibrary(library, read, undefined, sourceStates);
     }
@@ -3626,7 +3628,7 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
           maxClock: tail.reduce((largest, entry) => Math.max(largest, entry.clock), 0),
           streams: read.streams.flatMap(stream => stream.manifest === null || stream.manifest.headEventHash === null ? [] : [{ deviceId: stream.deviceId, streamId: stream.manifest.streamId, sequence: stream.manifest.sequence, eventHash: stream.manifest.headEventHash }]),
         };
-        await writeCacheSnapshot({
+        const header = await writeCacheSnapshot({
           ...checkpoint,
           state: {
             ...Object.fromEntries(SNAPSHOT_COLLECTIONS.map(name => [name, replay.state[name]])),
@@ -3637,6 +3639,7 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
             merge: replay.merge.checkpoint(),
           },
         });
+        if ((replay.state.library?.rejectedEvents.length ?? 0) === 0) await recordVerifiedReplayProjection(library, binding, header);
       }
     } catch {
       // A disposable cache write does not change the authority result.

@@ -181,6 +181,9 @@ test("a device home inside the source cannot issue or consume records", { skip: 
   const result = await read(f);
   assert.equal(hits(result.observation), 0);
   assert.ok(result.observation.logicalEventBytes > 0);
+  assert.ok(result.observation.replayedEvents > 0);
+  assert.equal(result.observation.cacheReasons.includes("consolidation-checkpoint-validated"), false);
+  assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
 });
 
 for (const field of ["boot", "mount", "volume", "generation", "deviceIdentity", "engineVersion", "projection", "library", "source", "coverage"]) {

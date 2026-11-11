@@ -15,6 +15,7 @@ import { writeFileAtomic } from "./atomic-file.js";
 import { cachePath, deviceHome, libraryDirectoryName } from "./device-home.js";
 import { readDevice } from "./device-identity.js";
 import type { Library, LibraryManifest } from "./ether-library.js";
+import type { CacheSnapshotHeader } from "./library-cache.js";
 import { FRAMEWORK_VERSION } from "./framework-version.js";
 import { readStorageLocation } from "./storage-location.js";
 import { observeAuthorityWork, observeCacheRead, observeCacheWrite, observeCacheReason, observeEventRead, observeVerificationHelper, observeVerificationRecord, observeVerifiedSegment } from "./recall-observation.js";
@@ -22,6 +23,9 @@ import { observeAuthorityWork, observeCacheRead, observeCacheWrite, observeCache
 const SCHEMA = "einzbern.source-verification.v2";
 const PROJECTION = "einzbern.verified-segment-events.v1";
 const RECORD_DIRECTORY = "source-verification";
+const REPLAY_RECORD_DIRECTORY = "replay-projections";
+const REPLAY_SCHEMA = "einzbern.verified-replay-projection.v1";
+const RECORD_MAX_BYTES = 65_536;
 const FILE_COMMON = 0x8a0c0006;
 const VOLUME = 0xc006d000;
 const EXTENDED_FLAGS = 0x200;
@@ -205,15 +209,14 @@ async function queryNative(files: readonly OpenSegment[]): Promise<readonly (Nat
 /** This is the existing identity/registry/engine boundary, not runtimeHome.
  * Synchronization controls library/runtime subtrees, never this sibling. No
  * chmod, secret, issuer or claim against a writer of local config is involved. */
-async function recordBoundary(library: Library): Promise<VerificationSession | null> {
-  if (process.platform !== "darwin") return null;
+async function recordBoundary(library: Library, recordDirectory = RECORD_DIRECTORY): Promise<VerificationSession | null> {
   try {
     const home = await realpath(deviceHome());
     const device = await readDevice(home);
     if (device === null) return null;
     const root = await realpath(library.root);
     const storage = readStorageLocation(deviceHome());
-    const records = join(home, RECORD_DIRECTORY, libraryDirectoryName(library.manifest.libraryId));
+    const records = join(home, recordDirectory, libraryDirectoryName(library.manifest.libraryId));
     const cache = join(cachePath(library.manifest.libraryId), "verified-segments");
     // Resolve existing ancestors, including relocated cache forwarding links.
     const cacheRoot = await realpath(cachePath(library.manifest.libraryId)).catch(() => realpath(join(cachePath(library.manifest.libraryId), "..")));
@@ -223,7 +226,7 @@ async function recordBoundary(library: Library): Promise<VerificationSession | n
     if (storage !== null) writerRoots.push(await realpath(storage.library), await realpath(storage.runtime));
     if (writerRoots.some(writer => inside(writer, records))) return null;
     if (!(await lstat(home)).isDirectory()) return null;
-    for (const directory of [join(home, RECORD_DIRECTORY), records]) {
+    for (const directory of [join(home, recordDirectory), records]) {
       const info = await lstat(directory).catch(error => { if (error.code === "ENOENT") return null; throw error; });
       if (info !== null && (!info.isDirectory() || info.isSymbolicLink())) return null;
     }
@@ -231,6 +234,75 @@ async function recordBoundary(library: Library): Promise<VerificationSession | n
   } catch {
     return null;
   }
+}
+
+// readCacheSnapshot has already verified stateDigest against the state bytes.
+// Bind its complete header without serialising or hashing the large state again.
+function replayProjectionDigest(snapshot: CacheSnapshotHeader): string {
+  return canonicalSha256({
+    schemaVersion: snapshot.schemaVersion,
+    libraryId: snapshot.libraryId,
+    engineVersion: snapshot.engineVersion,
+    version: snapshot.version,
+    maxClock: snapshot.maxClock,
+    streams: snapshot.streams,
+    stateDigest: snapshot.stateDigest,
+  });
+}
+
+/** A shared/runtime cache checksum is not authority to skip the reducer. Only
+ * the independent device record, issued from a validated replay, can attest
+ * this exact checkpoint's state and coverage. This applies without native 648. */
+async function replayProjectionDigests(boundary: VerificationSession, binding: string): Promise<readonly string[]> {
+  let handle;
+  try {
+    handle = await open(join(boundary.records, "projection.json"), constants.O_RDONLY | constants.O_NOFOLLOW);
+    const info = await handle.stat();
+    if (!info.isFile() || info.nlink !== 1 || info.size > RECORD_MAX_BYTES) return [];
+    const bytes = await handle.readFile();
+    observeVerificationRecord(bytes.length);
+    const envelope: unknown = JSON.parse(bytes.toString("utf8"));
+    if (!object(envelope) || !object(envelope.record) || envelope.checksum !== canonicalSha256(envelope.record)) return [];
+    const record = envelope.record;
+    return record.schemaVersion === REPLAY_SCHEMA && record.engineVersion === FRAMEWORK_VERSION
+      && record.deviceIdentity === boundary.deviceIdentity && record.binding === binding
+      && Array.isArray(record.projectionDigests) && record.projectionDigests.every(value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value))
+      ? record.projectionDigests as string[] : [];
+  } catch {
+    return [];
+  } finally {
+    await handle?.close();
+  }
+}
+
+export async function hasVerifiedReplayProjection(library: Library, binding: string, snapshot: CacheSnapshotHeader): Promise<boolean> {
+  const boundary = await recordBoundary(library, REPLAY_RECORD_DIRECTORY);
+  return boundary !== null && (await replayProjectionDigests(boundary, binding)).includes(replayProjectionDigest(snapshot));
+}
+
+/** Called only after a full authority replay or a verified prefix plus replayed
+ * tail. The caller passes the header actually written by writeCacheSnapshot. */
+export async function recordVerifiedReplayProjection(library: Library, binding: string, snapshot: CacheSnapshotHeader): Promise<void> {
+  const boundary = await recordBoundary(library, REPLAY_RECORD_DIRECTORY);
+  if (boundary === null) return;
+  const prior = await replayProjectionDigests(boundary, binding);
+  const projectionDigest = replayProjectionDigest(snapshot);
+  if (prior.includes(projectionDigest)) return;
+  await mkdir(boundary.records, { recursive: true });
+  // Retain prior authenticated prefixes: another legitimate reader may restore
+  // an older checkpoint before replaying several new tail events. The existing
+  // bounded record size caps this disposable catalogue; eviction only causes
+  // full replay, and a binding/device/engine change starts a new catalogue.
+  const projectionDigests = [...prior, projectionDigest];
+  let text: string;
+  do {
+    const record = { schemaVersion: REPLAY_SCHEMA, engineVersion: FRAMEWORK_VERSION, deviceIdentity: boundary.deviceIdentity, binding, projectionDigests };
+    text = canonicalJson({ record, checksum: canonicalSha256(record) });
+    if (Buffer.byteLength(text) <= RECORD_MAX_BYTES) break;
+    projectionDigests.shift();
+  } while (projectionDigests.length > 0);
+  await writeFileAtomic(join(boundary.records, "projection.json"), text);
+  observeCacheWrite(Buffer.byteLength(text));
 }
 
 async function priorRecord(session: VerificationSession, file: OpenSegment, native: NativeIdentity): Promise<PriorVerification | null> {
@@ -383,7 +455,7 @@ function authorityMetadata(read: LibraryRead): unknown {
 /** Only the materializer enters this scope. Public source-event readers always
  * read source bytes. Issuance follows a successful full authority replay. */
 export async function withSourceVerification<T>(library: Library, operation: () => Promise<{ readonly value: T; readonly read: LibraryRead; readonly accepted: boolean }>): Promise<T> {
-  const session = library.manifest.consolidation === undefined ? null : await recordBoundary(library);
+  const session = process.platform !== "darwin" || library.manifest.consolidation === undefined ? null : await recordBoundary(library);
   if (session === null) return (await operation()).value;
   try {
     if (!await prepareFiles(session)) return (await operation()).value;

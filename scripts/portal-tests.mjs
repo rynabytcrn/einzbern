@@ -12,7 +12,7 @@ import { selectTestFiles } from "./lib/test-roster.mjs";
 
 // Match the Core suite's device isolation: tests may initialize engine identity,
 // but never in the caller's device home. Other explicit test inputs are retained.
-export async function runPortalTestFiles(tests, environment = process.env) {
+export async function runPortalTestFiles(tests, environment = process.env, { stdio = "inherit" } = {}) {
   const slot = await acquireHeavySlot({ command: "portal:test", env: environment });
   let deviceDirectory;
   try {
@@ -21,8 +21,12 @@ export async function runPortalTestFiles(tests, environment = process.env) {
       const child = spawn(process.execPath, memoryTestArguments(["--test", ...tests]), {
         cwd: repositoryRoot,
         env: { ...environment, EINZBERN_HOME: join(deviceDirectory, "einzbern"), EINZBERN_TEST_DEVICE_ROOT: deviceDirectory },
-        stdio: "inherit",
+        stdio,
       });
+      // Callers under the Core controller pass pipes explicitly. Drain them so
+      // a failed Portal fixture cannot fill a pipe and stall cleanup.
+      child.stdout?.pipe(process.stdout);
+      child.stderr?.pipe(process.stderr);
       child.once("error", reject);
       child.once("close", code => resolveResult(code ?? 1));
     });

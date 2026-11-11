@@ -58,7 +58,7 @@ import { assertLibrarySupported, upgradeReadiness } from "./format-version.js";
 import type { DeviceEngine, UpgradeReadiness } from "./format-version.js";
 import { DIRECTORY } from "./names.js";
 import { FRAMEWORK_VERSION } from "./framework-version.js";
-import { verifiedStreamSegments } from "./source-verification.js";
+import { recordVerifiedStreamEvents, verifiedStreamSegments } from "./source-verification.js";
 
 export const STREAM_MANIFEST_SCHEMA_VERSION = "einzbern.stream-manifest.v1" as const;
 export const STREAM_MANIFEST_FILE = "manifest.json" as const;
@@ -421,19 +421,42 @@ export async function readStreamEvents(libraryRoot: string, manifest: StreamMani
   const events: EventRecord[] = [];
   let mismatched: StreamSegment | null = null;
   const prepared = readFile === defaultReadBytes ? await verifiedStreamSegments(libraryRoot, manifest, options.archivedManifest) : null;
+  const reused = new Set<string>();
   for (const segment of manifest.segments) {
-    const { bytes, digestMatches } = await readSegmentBytes(libraryRoot, manifest, segment, readFile, options.archivedManifest === undefined ? "live" : "archive", prepared?.get(segment.name));
+    const verified = prepared?.get(segment.name);
+    if (verified?.events !== undefined) {
+      events.push(...verified.events);
+      reused.add(segment.name);
+      continue;
+    }
+    const { bytes, digestMatches } = await readSegmentBytes(libraryRoot, manifest, segment, readFile, options.archivedManifest === undefined ? "live" : "archive", verified?.bytes);
     if (!digestMatches && mismatched === null) mismatched = segment;
     events.push(...observeAuthorityWork("eventValidation", () => parseSegment(manifest, segment, bytes)));
   }
   // A segment that no longer hashes as recorded is still read, so a change made in place is
   // reported where the stream stops being provable (TCRN-CROSS-STORY-467 AC3); a digest that
   // is wrong while every event checks out is reported against the segment.
-  const found = observeAuthorityWork("eventValidation", () => findStreamChainBreak(events, {
-    streamId: manifest.streamId,
-    eventId: (sequence) => streamEventId(manifest, sequence),
-    ...(manifest.identityScheme === "einzbern" ? { deviceId: manifest.deviceId } : {}),
-  }));
+  const found = observeAuthorityWork("eventValidation", () => {
+    for (const segment of manifest.segments) {
+      const prior = events[segment.firstSequence - 2];
+      const first = events[segment.firstSequence - 1];
+      const expected = {
+        streamId: manifest.streamId,
+        eventId: (sequence: number) => streamEventId(manifest, sequence),
+        ...(manifest.identityScheme === "einzbern" ? { deviceId: manifest.deviceId } : {}),
+        firstSequence: segment.firstSequence,
+        priorHash: prior?.eventHash ?? null,
+        priorClock: prior === undefined ? 0 : eventClock(prior),
+      };
+      // The local record binds every event inside a reused segment. Its link to
+      // the preceding segment is still checked against this read's actual head.
+      if (reused.has(segment.name) && first?.priorHash === expected.priorHash
+        && eventClock(first) > expected.priorClock) continue;
+      const broken = findStreamChainBreak(events.slice(segment.firstSequence - 1, segment.lastSequence), expected);
+      if (broken !== null) return broken;
+    }
+    return null;
+  });
   if (found !== null) {
     const holding = manifest.segments.find((segment) => segment.firstSequence <= found.sequence && found.sequence <= segment.lastSequence);
     fail("AKASHA_EVENT_CORRUPT", `stream ${manifest.streamId} of device ${manifest.deviceId} breaks at sequence ${found.sequence} (${found.kind})`, {
@@ -457,6 +480,7 @@ export async function readStreamEvents(libraryRoot: string, manifest: StreamMani
       break: "head",
     });
   }
+  await recordVerifiedStreamEvents(libraryRoot, manifest, events);
   return events;
 }
 

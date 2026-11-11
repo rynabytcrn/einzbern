@@ -211,7 +211,10 @@ test("647: validated source snapshots preserve consolidated state and corrupt ca
 test("647: full consolidated checkpoint skips replay, survives restart and resumes necessary tail", async t => {
   const f = await fixture(t);
   await consolidateLibraries(f.mapping, f.to, f.options);
-  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { materializeLibrary: cachedMaterializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  // Exercise 647 independently: the existing actual-byte reader seam disables
+  // 648 while keeping consolidation checkpoints and all original assertions.
+  const materializeLibrary = root => cachedMaterializeLibrary(root, { readFile });
   const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
   await materializeLibrary(f.to);
   const same = await withRecallObservation(() => materializeLibrary(f.to));
@@ -225,7 +228,7 @@ test("647: full consolidated checkpoint skips replay, survives restart and resum
   const { spawnSync } = await import("node:child_process");
   const module = new URL("../dist/build/packages/core/src/workspace.js", import.meta.url).href;
   const observer = new URL("../dist/build/packages/core/src/recall-observation.js", import.meta.url).href;
-  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `import {materializeLibrary} from ${JSON.stringify(module)}; import {withRecallObservation} from ${JSON.stringify(observer)}; console.log(JSON.stringify((await withRecallObservation(()=>materializeLibrary(process.argv[1]))).observation));`, f.to], { env: process.env, encoding: "utf8" });
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `import {readFile} from "node:fs/promises"; import {materializeLibrary} from ${JSON.stringify(module)}; import {withRecallObservation} from ${JSON.stringify(observer)}; console.log(JSON.stringify((await withRecallObservation(()=>materializeLibrary(process.argv[1],{readFile}))).observation));`, f.to], { env: process.env, encoding: "utf8" });
   assert.equal(child.status, 0, child.stderr);
   assert.equal(JSON.parse(child.stdout).replayedEvents, 0);
   await setWorkspaceSetting(f.to, { key: "storage.snapshotEveryEvents", value: "2", occurredAt: at });
@@ -315,7 +318,10 @@ test("647: incremental source-stream matrix preserves status, queries and govern
     });
   }
   await consolidateLibraries(f.mapping, f.to, f.options);
-  const { materializeLibrary, workspaceViewDocuments, transitionWorkDelta } = await import("../dist/build/packages/core/src/workspace.js");
+  const { materializeLibrary: cachedMaterializeLibrary, workspaceViewDocuments, transitionWorkDelta } = await import("../dist/build/packages/core/src/workspace.js");
+  // Exercise 647 independently: the existing actual-byte reader seam disables
+  // 648 while keeping consolidation checkpoints and all original assertions.
+  const materializeLibrary = root => cachedMaterializeLibrary(root, { readFile });
   const { workContentContext } = await import("../dist/build/packages/core/src/work-content-context.js");
   const { recall, recallDocuments, resetRecallCache } = await import("../dist/build/packages/core/src/recall.js");
   const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
@@ -383,7 +389,7 @@ test("647: incremental source-stream matrix preserves status, queries and govern
   const { spawnSync } = await import("node:child_process");
   const module = new URL("../dist/build/packages/core/src/workspace.js", import.meta.url).href;
   const observer = new URL("../dist/build/packages/core/src/recall-observation.js", import.meta.url).href;
-  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `import {materializeLibrary} from ${JSON.stringify(module)}; import {withRecallObservation} from ${JSON.stringify(observer)}; console.log(JSON.stringify(await withRecallObservation(()=>materializeLibrary(process.argv[1]))));`, f.to], { env: process.env, encoding: "utf8" });
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `import {readFile} from "node:fs/promises"; import {materializeLibrary} from ${JSON.stringify(module)}; import {withRecallObservation} from ${JSON.stringify(observer)}; console.log(JSON.stringify(await withRecallObservation(()=>materializeLibrary(process.argv[1],{readFile}))));`, f.to], { env: process.env, encoding: "utf8" });
   assert.equal(child.status, 0, child.stderr);
   const restarted = JSON.parse(child.stdout);
   assert.deepEqual(restarted.value, expected);
@@ -415,7 +421,7 @@ test("648: full verification detects authentic same-length, same-name, missing a
   assert.deepEqual(warm.value, expected);
   assert.ok(warm.observation.cacheReadBytes > 0);
   assert.equal(warm.observation.cacheWriteBytes, 0);
-  const observations = [{ scenario: "warm unchanged, per-file provider metadata unavailable", observation: warm.observation }];
+  const observations = [{ scenario: "warm unchanged, native resident-file proof", observation: warm.observation }];
   const rejects = async (scenario, predicate) => {
     let observation;
     await assert.rejects(withRecallObservation(() => materializeLibrary(f.to), value => { observation = value; }), predicate);
@@ -441,7 +447,7 @@ test("648: full verification detects authentic same-length, same-name, missing a
   await rename(`${path}.replacement`, path);
   const replaced = await withRecallObservation(() => materializeLibrary(f.to));
   assert.deepEqual(replaced.value, expected, "byte-identical replacement is valid after full verification");
-  assert.equal(replaced.observation.logicalEventBytes, warm.observation.logicalEventBytes);
+  assert.equal(replaced.observation.logicalEventBytes, original.length, "only the changed object needs full source verification");
   observations.push({ scenario: "byte-identical replacement fully read", observation: replaced.observation });
   await rename(path, `${path}.missing`);
   await rejects("missing historical segment", { reasonCode: "AKASHA_SEGMENT_CORRUPT" });

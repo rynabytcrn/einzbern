@@ -3,11 +3,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
+import type { BigIntStats } from "node:fs";
 import { lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { canonicalJson, canonicalSha256 } from "../../protocol/src/index.js";
 import type { LibraryRead, StreamManifest, StreamSegment } from "./akasha.js";
+import type { EventRecord } from "../../protocol/src/index.js";
+import { readConsolidationIndex } from "./consolidation-format.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { cachePath, deviceHome, libraryDirectoryName } from "./device-home.js";
 import { readDevice } from "./device-identity.js";
@@ -16,8 +19,8 @@ import { FRAMEWORK_VERSION } from "./framework-version.js";
 import { readStorageLocation } from "./storage-location.js";
 import { observeAuthorityWork, observeCacheRead, observeCacheWrite, observeCacheReason, observeEventRead, observeVerificationHelper, observeVerificationRecord, observeVerifiedSegment } from "./recall-observation.js";
 
-const SCHEMA = "einzbern.source-verification.v1";
-const PROJECTION = "einzbern.verified-segment-bytes.v1";
+const SCHEMA = "einzbern.source-verification.v2";
+const PROJECTION = "einzbern.verified-segment-events.v1";
 const RECORD_DIRECTORY = "source-verification";
 const FILE_COMMON = 0x8a0c0006;
 const VOLUME = 0xc006d000;
@@ -60,11 +63,13 @@ interface PriorVerification {
   readonly authority: string;
   readonly digest: string;
   readonly coverage: number;
+  readonly projectionDigest: string;
+  readonly projectionBytes: number;
 }
 interface Candidate {
   readonly key: string;
-  readonly record: Omit<PriorVerification, "authority">;
-  readonly bytes: Buffer;
+  readonly record: Omit<PriorVerification, "authority" | "projectionDigest" | "projectionBytes">;
+  events?: readonly EventRecord[];
 }
 interface VerificationSession {
   readonly library: Library;
@@ -73,7 +78,9 @@ interface VerificationSession {
   readonly records: string;
   readonly cache: string;
   readonly pending: Candidate[];
+  readonly reused: { readonly bytes: number; readonly streamId: string; readonly scope: "live" | "archive" }[];
   helperUnavailable: boolean;
+  readonly files: Map<string, OpenSegment>;
 }
 interface OpenSegment {
   readonly handle: FileHandle;
@@ -81,6 +88,13 @@ interface OpenSegment {
   readonly segment: StreamSegment;
   readonly binding: SegmentBinding;
   readonly key: string;
+  native?: NativeIdentity | null;
+  stat?: BigIntStats;
+}
+
+export interface VerifiedSegment {
+  readonly bytes?: Buffer;
+  readonly events?: readonly EventRecord[];
 }
 
 function digest(bytes: Uint8Array): string {
@@ -116,14 +130,18 @@ function attributeString(bytes: Buffer, at: number): string | null {
 }
 
 /** Apple attr.h's packed 4-byte layout, with exact returned and supported sets.
- * Missing provider keys are unknown. Only positively current cloud files enter
- * this first implementation; ordinary local files retain the full reader. */
+ * Native generation and resident-data flags apply even when Foundation omits
+ * iCloud-only keys. Their absence is not a claim that no provider manages a file. */
 function nativeIdentity(value: unknown, boot: string, path: string): NativeIdentity | null {
   if (!object(value) || value.resourceError !== null || !object(value.resources)) return null;
   const provider = value.resources;
-  if (provider.NSURLIsUbiquitousItemKey !== true && provider.NSURLIsUbiquitousItemKey !== 1) return null;
-  if (provider.NSURLUbiquitousItemIsDownloadingKey !== false && provider.NSURLUbiquitousItemIsDownloadingKey !== 0) return null;
-  if (provider.NSURLUbiquitousItemDownloadingStatusKey !== "NSURLUbiquitousItemDownloadingStatusCurrent" || provider.NSURLUbiquitousItemDownloadingErrorKey !== null || typeof provider.NSURLFileResourceIdentifierKey !== "string") return null;
+  const ubiquitous = provider.NSURLIsUbiquitousItemKey === true || provider.NSURLIsUbiquitousItemKey === 1;
+  const current = (provider.NSURLIsUbiquitousItemKey === true || provider.NSURLIsUbiquitousItemKey === 1)
+    && (provider.NSURLUbiquitousItemIsDownloadingKey === false || provider.NSURLUbiquitousItemIsDownloadingKey === 0)
+    && provider.NSURLUbiquitousItemDownloadingStatusKey === "NSURLUbiquitousItemDownloadingStatusCurrent";
+  if ((ubiquitous && !current) || provider.NSURLUbiquitousItemIsDownloadingKey === true || provider.NSURLUbiquitousItemIsDownloadingKey === 1
+    || (provider.NSURLUbiquitousItemDownloadingStatusKey !== undefined && provider.NSURLUbiquitousItemDownloadingStatusKey !== "NSURLUbiquitousItemDownloadingStatusCurrent")
+    || provider.NSURLUbiquitousItemDownloadingErrorKey !== null || typeof provider.NSURLFileResourceIdentifierKey !== "string") return null;
   const file = attributeBytes(value.file, FILE_COMMON, 0, DATA_LENGTH, EXTENDED_FLAGS);
   const volume = attributeBytes(value.volume, 0x80000000, VOLUME & 0x7fffffff, 0, 0);
   if (file === null || file.length < 76 || volume === null || volume.length < 132) return null;
@@ -163,9 +181,9 @@ async function queryNative(files: readonly OpenSegment[]): Promise<readonly (Nat
     if (session !== undefined) session.helperUnavailable = true;
     return null;
   }
-  const request = JSON.stringify({ fileAttributes: attributes(FILE_COMMON, 0, DATA_LENGTH, EXTENDED_FLAGS), volumeAttributes: attributes(0x80000000, VOLUME), files: files.map((file, index) => ({ fd: index + 3, path: file.path })) });
+  const request = JSON.stringify({ fileAttributes: attributes(FILE_COMMON, 0, DATA_LENGTH, EXTENDED_FLAGS), volumeAttributes: attributes(0x80000000, VOLUME), files: files.map(file => ({ path: file.path })) });
   const started = performance.now();
-  const result = spawnSync("/usr/bin/osascript", ["-l", "JavaScript", "-", request], { input: script, encoding: "utf8", stdio: ["pipe", "pipe", "pipe", ...files.map(file => file.handle.fd)], timeout: 5_000, maxBuffer: 2_097_152 });
+  const result = spawnSync("/usr/bin/osascript", ["-l", "JavaScript", "-", request], { input: script, encoding: "utf8", stdio: "pipe", timeout: 5_000, maxBuffer: 65_536 + files.length * 24_576 });
   observeVerificationHelper(Buffer.byteLength(script), Buffer.byteLength(request), Buffer.byteLength(result.stdout ?? "") + Buffer.byteLength(result.stderr ?? ""), performance.now() - started);
   if (result.status !== 0 || result.error !== undefined) {
     observeCacheReason("source-verification-helper-unavailable");
@@ -208,7 +226,7 @@ async function recordBoundary(library: Library): Promise<VerificationSession | n
       const info = await lstat(directory).catch(error => { if (error.code === "ENOENT") return null; throw error; });
       if (info !== null && (!info.isDirectory() || info.isSymbolicLink())) return null;
     }
-    return { library: { ...library, root }, home, deviceIdentity: canonicalSha256(device), records, cache, pending: [], helperUnavailable: false };
+    return { library: { ...library, root }, home, deviceIdentity: canonicalSha256(device), records, cache, pending: [], reused: [], helperUnavailable: false, files: new Map() };
   } catch {
     return null;
   }
@@ -225,7 +243,7 @@ async function priorRecord(session: VerificationSession, file: OpenSegment, nati
     const envelope: unknown = JSON.parse(bytes.toString("utf8"));
     if (!object(envelope) || typeof envelope.checksum !== "string" || !object(envelope.record) || canonicalSha256(envelope.record) !== envelope.checksum) return null;
     const record = envelope.record;
-    if (record.schemaVersion !== SCHEMA || record.deviceIdentity !== session.deviceIdentity || record.engineVersion !== FRAMEWORK_VERSION || record.projection !== PROJECTION || canonicalSha256(record.binding) !== canonicalSha256(file.binding) || canonicalSha256(record.native) !== canonicalSha256(native) || record.digest !== file.segment.sha256 || record.coverage !== file.segment.bytes || typeof record.authority !== "string" || !/^[a-f0-9]{64}$/u.test(record.authority)) return null;
+    if (record.schemaVersion !== SCHEMA || record.deviceIdentity !== session.deviceIdentity || record.engineVersion !== FRAMEWORK_VERSION || record.projection !== PROJECTION || canonicalSha256(record.binding) !== canonicalSha256(file.binding) || canonicalSha256(record.native) !== canonicalSha256(native) || record.digest !== file.segment.sha256 || record.coverage !== file.segment.bytes || typeof record.projectionDigest !== "string" || !/^[a-f0-9]{64}$/u.test(record.projectionDigest) || !Number.isSafeInteger(record.projectionBytes) || Number(record.projectionBytes) < 1 || typeof record.authority !== "string" || !/^[a-f0-9]{64}$/u.test(record.authority)) return null;
     return record as unknown as PriorVerification;
   } catch {
     return null;
@@ -234,85 +252,118 @@ async function priorRecord(session: VerificationSession, file: OpenSegment, nati
   }
 }
 
-/** Prepared bytes are still passed through Akasha's normal segment hash,
- * canonical event, chain and head validators. This never returns a state. */
-export async function verifiedStreamSegments(libraryRoot: string, manifest: StreamManifest, sourceManifest?: LibraryManifest): Promise<ReadonlyMap<string, Buffer> | null> {
-  const session = active.getStore();
-  if (session === undefined || manifest.segments.length === 0) return null;
-  const files: OpenSegment[] = [];
-  const result = new Map<string, Buffer>();
-  const candidates: Candidate[] = [];
-  const reusedSegments: OpenSegment[] = [];
-  try {
-    const sourceRoot = await realpath(libraryRoot);
-    if (!inside(session.library.root, sourceRoot)) return null;
+/** Open the operation's native descriptors together. This small metadata pass
+ * lets one before/after helper cover every stream, rather than starting a JXA
+ * process twice per stream. The normal reader still validates current metadata. */
+async function prepareFiles(session: VerificationSession): Promise<boolean> {
+  const { listStreamDevices, readStreamManifest } = await import("./akasha.js");
+  async function collect(root: string, source: LibraryManifest): Promise<void> {
+    const sourceRoot = await realpath(root);
+    if (!inside(session.library.root, sourceRoot)) throw new Error("source outside library");
     const archive = relative(session.library.root, sourceRoot).split("\\").join("/");
-    const source = sourceManifest ?? session.library.manifest;
-    // Bound descriptor batches avoid a dependency on the user's fd limit.
-    for (let offset = 0; offset < manifest.segments.length; offset += 24) {
-      const batch: OpenSegment[] = [];
-      for (const segment of manifest.segments.slice(offset, offset + 24)) {
+    for (const deviceId of await listStreamDevices(sourceRoot)) {
+      const manifest = await readStreamManifest(sourceRoot, deviceId, { archivedManifest: source });
+      if (manifest === null) continue;
+      for (const segment of manifest.segments) {
+        // Keep the complete batch below the native descriptor budget. Larger
+        // libraries use the original reader instead of dropping any checks.
+        if (session.files.size >= 128) throw new Error("native descriptor budget");
         const path = join(sourceRoot, "akasha", manifest.deviceId, segment.name);
+        if (session.files.has(path)) throw new Error("aliased source descriptor");
         const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
         const binding: SegmentBinding = { libraryId: session.library.manifest.libraryId, sourceId: source.libraryId, archive, streamId: manifest.streamId, deviceId: manifest.deviceId, segment, rootManifest: canonicalSha256(session.library.manifest), sourceManifest: canonicalSha256(source) };
-        const file = { handle, path, segment, binding, key: canonicalSha256({ libraryId: binding.libraryId, sourceId: binding.sourceId, archive, streamId: binding.streamId, segment: segment.name }) };
-        files.push(file);
-        batch.push(file);
+        session.files.set(path, { handle, path, segment, binding, key: canonicalSha256({ libraryId: binding.libraryId, sourceId: binding.sourceId, archive, streamId: binding.streamId, segment: segment.name }) });
       }
-      const before = await queryNative(batch);
-      if (before === null || before.every(entry => entry === null)) return null;
-      const stats = await Promise.all(batch.map(file => file.handle.stat({ bigint: true })));
-      const reused = new Set<string>();
-      for (const [index, file] of batch.entries()) {
-        const native = before[index];
-        const stat = stats[index]!;
-        if (!stat.isFile() || stat.nlink !== 1n) return null;
-        const bound = native !== null && native !== undefined && native.fileId === stat.ino.toString() && native.device === Number(stat.dev) && native.length === stat.size.toString();
-        const prior = bound ? await priorRecord(session, file, native) : null;
-        let bytes: Buffer | null = null;
-        if (prior !== null) {
-          let cached;
-          try {
-            cached = await open(join(session.cache, `${file.key}.bin`), constants.O_RDONLY | constants.O_NOFOLLOW);
-            const info = await cached.stat();
-            if (info.isFile() && info.nlink === 1 && info.size === prior.coverage) {
-              bytes = await cached.readFile();
-              observeCacheRead(bytes.length);
-              if (bytes.length !== prior.coverage || digest(bytes) !== prior.digest) bytes = null;
-            }
-          } catch { bytes = null; } finally { await cached?.close(); }
-        }
-        if (bytes === null) {
-          bytes = await file.handle.readFile();
-          observeEventRead(bytes.length, manifest.streamId, sourceManifest === undefined ? "live" : "archive");
-          if (bound && bytes.length === file.segment.bytes && digest(bytes) === file.segment.sha256) {
-            candidates.push({ key: file.key, bytes, record: { schemaVersion: SCHEMA, engineVersion: FRAMEWORK_VERSION, deviceIdentity: session.deviceIdentity, projection: PROJECTION, binding: file.binding, native, streamManifest: canonicalSha256(manifest), head: manifest.headEventHash, vector: manifest.sequence, digest: file.segment.sha256, coverage: file.segment.bytes } });
-          }
-        } else {
-          reused.add(file.key);
-        }
-        result.set(file.segment.name, bytes);
-      }
-      const after = await queryNative(batch);
-      if (after === null) return null;
-      for (const [index, file] of batch.entries()) {
-        const held = await file.handle.stat({ bigint: true });
-        const named = await lstat(file.path, { bigint: true });
-        const stat = stats[index]!;
-        if (!named.isFile() || named.nlink !== 1n || held.nlink !== 1n || named.dev !== held.dev || named.ino !== held.ino || stat.dev !== held.dev || stat.ino !== held.ino || stat.size !== held.size || stat.mtimeNs !== held.mtimeNs || stat.ctimeNs !== held.ctimeNs || canonicalSha256(before[index]) !== canonicalSha256(after[index])) return null;
-        if (reused.has(file.key)) reusedSegments.push(file);
-      }
-      for (const file of batch) await file.handle.close();
     }
-    session.pending.push(...candidates);
-    for (const file of reusedSegments) observeVerifiedSegment(result.get(file.segment.name)!.length, manifest.streamId, sourceManifest === undefined ? "live" : "archive");
-    return result;
+    const index = await readConsolidationIndex(sourceRoot, source);
+    for (const entry of index?.sources ?? []) await collect(join(sourceRoot, entry.archive), entry.manifest);
+  }
+  try {
+    await collect(session.library.root, session.library.manifest);
+    const files = [...session.files.values()];
+    if (files.length === 0) return false;
+    const before = await active.run(session, () => queryNative(files));
+    if (before === null || before.every(value => value === null)) return false;
+    for (const [index, file] of files.entries()) {
+      const stat = await file.handle.stat({ bigint: true });
+      const native = before[index];
+      file.stat = stat;
+      file.native = stat.isFile() && stat.nlink === 1n && native !== undefined && native !== null
+        && native.fileId === stat.ino.toString() && native.device === Number(stat.dev) && native.length === stat.size.toString() ? native : null;
+    }
+    return true;
   } catch {
-    // A probe/cache/record fault is never a replacement source error. Akasha
-    // performs its original full read and reports its original error meaning.
-    return null;
-  } finally {
-    await Promise.all(files.map(file => file.handle.close().catch(() => undefined)));
+    observeCacheReason("source-verification-native-preparation-failed");
+    return false;
+  }
+}
+
+async function filesUnchanged(session: VerificationSession): Promise<boolean> {
+  const files = [...session.files.values()];
+  const after = await active.run(session, () => queryNative(files));
+  if (after === null) return false;
+  for (const [index, file] of files.entries()) {
+    if (file.native === null || file.native === undefined) continue;
+    const held = await file.handle.stat({ bigint: true });
+    const named = await lstat(file.path, { bigint: true });
+    const stat = file.stat!;
+    if (!named.isFile() || named.nlink !== 1n || held.nlink !== 1n || named.dev !== held.dev || named.ino !== held.ino || stat.dev !== held.dev || stat.ino !== held.ino || stat.size !== held.size || stat.mtimeNs !== held.mtimeNs || stat.ctimeNs !== held.ctimeNs || canonicalSha256(file.native) !== canonicalSha256(after[index])) return false;
+  }
+  return true;
+}
+
+/** A local record authenticates the compressed, previously validated event
+ * projection. Shared cache bytes alone cannot skip source or event validation. */
+export async function verifiedStreamSegments(libraryRoot: string, manifest: StreamManifest, sourceManifest?: LibraryManifest): Promise<ReadonlyMap<string, VerifiedSegment> | null> {
+  const session = active.getStore();
+  if (session === undefined || manifest.segments.length === 0) return null;
+  const sourceRoot = await realpath(libraryRoot);
+  const source = sourceManifest ?? session.library.manifest;
+  const result = new Map<string, VerifiedSegment>();
+  for (const segment of manifest.segments) {
+    const file = session.files.get(join(sourceRoot, "akasha", manifest.deviceId, segment.name));
+    if (file === undefined || file.native === null || file.native === undefined || canonicalSha256(file.binding.segment) !== canonicalSha256(segment) || file.binding.sourceManifest !== canonicalSha256(source)) continue;
+    const prior = await priorRecord(session, file, file.native);
+    if (prior !== null) {
+      let cached;
+      try {
+        cached = await open(join(session.cache, `${file.key}.bin`), constants.O_RDONLY | constants.O_NOFOLLOW);
+        const info = await cached.stat();
+        if (info.isFile() && info.nlink === 1 && info.size === prior.projectionBytes) {
+          const bytes = await cached.readFile();
+          observeCacheRead(bytes.length);
+          if (bytes.length === prior.projectionBytes && digest(bytes) === prior.projectionDigest) {
+            const { gunzipSync } = await import("node:zlib");
+            const events: unknown = JSON.parse(gunzipSync(bytes, { maxOutputLength: segment.bytes * 2 }).toString("utf8"));
+            if (Array.isArray(events) && events.length === segment.lastSequence - segment.firstSequence + 1) {
+              result.set(segment.name, { events: events as EventRecord[] });
+              session.reused.push({ bytes: bytes.length, streamId: manifest.streamId, scope: sourceManifest === undefined ? "live" : "archive" });
+              continue;
+            }
+          }
+        }
+      } catch { /* A missing or damaged projection uses the original reader. */ }
+      finally { await cached?.close(); }
+    }
+    const bytes = await file.handle.readFile();
+    observeEventRead(bytes.length, manifest.streamId, sourceManifest === undefined ? "live" : "archive");
+    result.set(segment.name, { bytes });
+    if (bytes.length === segment.bytes && digest(bytes) === segment.sha256) {
+      session.pending.push({ key: file.key, record: { schemaVersion: SCHEMA, engineVersion: FRAMEWORK_VERSION, deviceIdentity: session.deviceIdentity, projection: PROJECTION, binding: file.binding, native: file.native, streamManifest: canonicalSha256(manifest), head: manifest.headEventHash, vector: manifest.sequence, digest: segment.sha256, coverage: segment.bytes } });
+    }
+  }
+  return result;
+}
+
+/** Called only after Akasha has validated the complete stream including head. */
+export async function recordVerifiedStreamEvents(libraryRoot: string, manifest: StreamManifest, events: readonly EventRecord[]): Promise<void> {
+  const session = active.getStore();
+  if (session === undefined) return;
+  const archive = relative(session.library.root, await realpath(libraryRoot)).split("\\").join("/");
+  for (const candidate of session.pending) {
+    if (candidate.record.binding.archive !== archive || candidate.record.binding.streamId !== manifest.streamId || candidate.events !== undefined) continue;
+    const segment = candidate.record.binding.segment;
+    candidate.events = events.slice(segment.firstSequence - 1, segment.lastSequence);
   }
 }
 
@@ -333,29 +384,40 @@ function authorityMetadata(read: LibraryRead): unknown {
 export async function withSourceVerification<T>(library: Library, operation: () => Promise<{ readonly value: T; readonly read: LibraryRead; readonly accepted: boolean }>): Promise<T> {
   const session = library.manifest.consolidation === undefined ? null : await recordBoundary(library);
   if (session === null) return (await operation()).value;
-  const answer = await active.run(session, operation);
-  if (answer.accepted && session.pending.length > 0) {
-    try {
-      // Recheck the real destination after reading untrusted inputs; no path in
-      // an event, index, source or shared cache chooses a local record name.
-      const boundary = await recordBoundary(library);
-      if (boundary === null || boundary.records !== session.records || boundary.cache !== session.cache || boundary.deviceIdentity !== session.deviceIdentity) return answer.value;
-      await mkdir(session.records, { recursive: true });
-      await mkdir(session.cache, { recursive: true });
-      const authority = canonicalSha256({ manifest: library.manifest, read: authorityMetadata(answer.read) });
-      for (const candidate of session.pending) {
-        const cacheFile = join(session.cache, `${candidate.key}.bin`);
-        // Use the established atomic writer, which also accepts Buffer data.
-        await writeFileAtomic(cacheFile, candidate.bytes.toString("utf8"));
-        observeCacheWrite(candidate.bytes.length);
-        const record: PriorVerification = { ...candidate.record, authority };
-        const text = canonicalJson({ record, checksum: canonicalSha256(record) });
-        await writeFileAtomic(join(session.records, `${candidate.key}.json`), text);
-        observeCacheWrite(Buffer.byteLength(text));
-      }
-    } catch {
-      observeCacheReason("source-verification-record-write-failed");
+  try {
+    if (!await prepareFiles(session)) return (await operation()).value;
+    const answer = await active.run(session, operation);
+    if (!await filesUnchanged(session)) {
+      observeCacheReason("source-verification-source-changed");
+      return (await operation()).value;
     }
+    for (const reused of session.reused) observeVerifiedSegment(reused.bytes, reused.streamId, reused.scope);
+    if (answer.accepted && session.pending.length > 0) {
+      try {
+        // No source, index or cache value selects this device-local destination.
+        const boundary = await recordBoundary(library);
+        if (boundary === null || boundary.records !== session.records || boundary.cache !== session.cache || boundary.deviceIdentity !== session.deviceIdentity) return answer.value;
+        await mkdir(session.records, { recursive: true });
+        await mkdir(session.cache, { recursive: true });
+        const authority = canonicalSha256({ manifest: library.manifest, read: authorityMetadata(answer.read) });
+        const { gzipSync } = await import("node:zlib");
+        for (const candidate of session.pending) {
+          if (candidate.events === undefined) continue;
+          const bytes = gzipSync(JSON.stringify(candidate.events));
+          const cacheFile = join(session.cache, `${candidate.key}.bin`);
+          await writeFileAtomic(cacheFile, bytes);
+          observeCacheWrite(bytes.length);
+          const record: PriorVerification = { ...candidate.record, authority, projectionBytes: bytes.length, projectionDigest: digest(bytes) };
+          const text = canonicalJson({ record, checksum: canonicalSha256(record) });
+          await writeFileAtomic(join(session.records, `${candidate.key}.json`), text);
+          observeCacheWrite(Buffer.byteLength(text));
+        }
+      } catch {
+        observeCacheReason("source-verification-record-write-failed");
+      }
+    }
+    return answer.value;
+  } finally {
+    await Promise.all([...session.files.values()].map(file => file.handle.close().catch(() => undefined)));
   }
-  return answer.value;
 }

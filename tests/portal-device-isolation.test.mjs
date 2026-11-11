@@ -19,7 +19,7 @@ for (const failing of [false, true]) test(`Portal runner isolates first identity
   const runner = new URL("../scripts/portal-tests.mjs", import.meta.url).href;
   const environment = { ...process.env };
   delete environment.NODE_TEST_CONTEXT;
-  const run = spawnSync(process.execPath, ["--input-type=module", "-e", `import {runPortalTestFiles} from ${JSON.stringify(runner)}; process.exitCode=await runPortalTestFiles([${JSON.stringify(fixture)}]);`], {
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", `import {runPortalTestFiles} from ${JSON.stringify(runner)}; process.exitCode=await runPortalTestFiles([${JSON.stringify(fixture)}],process.env,{stdio:"pipe"});`], {
     encoding: "utf8", env: { ...environment, EINZBERN_HOME: parentHome, EINZBERN_HEAVY_LOCK_DIR: join(base, "locks"), NODE_ENV: "test" },
   });
   assert.equal(run.status, failing ? 1 : 0, run.stderr + run.stdout);

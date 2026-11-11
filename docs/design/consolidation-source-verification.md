@@ -1,6 +1,6 @@
 # Consolidation source verification: device-local records
 
-The materializer can reuse previously verified segment bytes on a narrowly
+The materializer can reuse previously validated event projections on a narrowly
 eligible macOS path. The public source-event API and genesis reader still read
 source files. This is an implementation with explicit fallbacks, not a claim
 that every filesystem, provider or release acceptance criterion has passed.
@@ -15,7 +15,7 @@ verification. The C2 forgery below remains a valid counterexample to that design
 
 The materializer places a small record at
 `<deviceHome>/source-verification/<library>/<segment-key>.json`, alongside the
-existing local authorities, bypassing `runtimeHome`. Verified byte copies live
+existing local authorities, bypassing `runtimeHome`. Compressed event projections live
 at `<cachePath>/verified-segments/<segment-key>.bin` and remain untrusted. No
 secret, credential service, account, issuer, key store, permission change or
 resident process is involved.
@@ -44,7 +44,15 @@ until the next successful verification; it contains no unique source truth.
 ## Proof used by the reader
 
 The system JXA host runs the packaged `darwin-source-identity.mjs` in short-lived
-batches of up to 24 inherited descriptors. It uses Foundation and a C bridge to
+batches covering the operation's held source objects. A metadata-only pass
+opens at most 128 Node descriptors; larger inputs retain the complete original
+reader. Two helper invocations cover the operation, including all sources. The
+helper opens metadata descriptors with `O_NOFOLLOW | O_NONBLOCK`, uses file and
+volume attributes from that same descriptor, then closes it. Its real device,
+file ID and length must exactly match the original Node FD. That original stays
+open throughout the operation; final name, descriptor stat and native generation
+checks must still agree. Pipe-only stdio transfers no caller output or source FD
+and satisfies the unchanged test controller. It uses Foundation and a C bridge to
 `fgetattrlist` and `sysctlbyname`. The normal build copies the helper and the
 release bundler carries its bytes through the normal relative resource URL.
 Runtime does not compile code or require Python, developer tools or a service.
@@ -59,36 +67,44 @@ volume, a single-link regular source, a name still identifying that held object,
 and a stable descriptor stat qualify. Generation zero (including active mmap),
 dataless flags, unsupported attributes and network volumes do not qualify.
 
-Provider eligibility is **per file**. The first implementation requires explicit
-Foundation ubiquitous-item state and resource identity, `DownloadingStatusCurrent`,
-`isDownloading=false` and no download/resource error on both queries. Missing
-keys are unknown, even for an ordinary local file. This deliberately retains
-full reads on local files where the system does not supply that proof; it does
-not infer a global absence of FileProvider activity or claim all local files
-are impossible to support.
+Provider eligibility is **per file**. A positive Foundation ubiquitous-item
+response requires `DownloadingStatusCurrent`, `isDownloading=false`, a resource
+identity and no download/resource error on both queries. Foundation normally omits
+iCloud-only keys for ordinary files. Those files use the descriptor's supported
+nonzero generation, resident-data flags, per-file resource identity and stable
+before/after checks. No known download/error indication is allowed. Missing keys
+do not establish that a provider is absent: native unchanged-resident-data proof
+is the basis, independent of which provider may manage that file. Missing resource
+identity, an actual resource lookup error or unsupported native proof retains the
+full reader. No global FileProvider assertion is introduced.
 
 A local record binds the device identity, root library and source IDs, archive
 position, stream/device/segment identity, committed length/digest and coverage,
 root/source manifest digests, prior stream manifest/head/vector, a digest of the
 complete verified index/head/vector metadata tree, native identity, engine and
-projection versions, and the exact cached bytes' SHA256. The cache must have its
-recorded length and hash under that independent record. A shared writer can
+projection versions, and the compressed event projection's length and SHA256.
+The cache must have its recorded length and hash under that independent record. A shared writer can
 recompute an ordinary cache checksum but cannot update the record through its
 source/cache input paths.
 
-Every byte returned from this cache still traverses the existing canonical
-segment, hash, event identity, payload/event hash, chain, clock and head checks.
-The current index/source vector/head checks and authority replay remain in
-place. New records are published only after complete source reads with stable
-pre/post descriptor identity and a successful full authority replay, never from
-a replay checkpoint alone. A read that stages any new record bypasses prior
+First verification still performs canonical segment parsing, source digest,
+event identity, payload/event hash, chain and clock checks. Only that parsed
+result can become a projection, and only after the complete stream head and
+full authority replay succeed. On reuse the independent local record authenticates
+the compressed projection; its digest is checked before decompression and parsing.
+Repeated canonical serialization and per-event hash rebuilding inside that same
+unchanged segment are unnecessary. Every cross-segment link/clock, current stream
+head, index, source vector/head and authority binding remains checked. The native
+descriptors stay open through the operation and must match both their names and
+their before identities afterward; a mismatch reruns the original full reader.
+New records are never issued from a replay checkpoint alone. A read that stages any new record bypasses prior
 replay seeds throughout that materialization. Rejected authority does not issue
 records. Cache/record failures do not suppress a source error.
 
 On append, a segment descriptor or native generation that changes forces a full
 read of that entire segment, including its old prefix. New segments are read
-whole. Unchanged old segments can reuse their independently verified bytes;
-the current complete stream chain/head and index/authority checks still run.
+whole. Unchanged old segments can reuse their independently verified projections;
+the current segment boundaries, stream head and index/authority checks still run.
 The record keeps the metadata context under which verification originally
 succeeded, while append does not require the *old* stream head to remain the
 current head. A new flat consolidation generation changes its root binding and
@@ -96,7 +112,7 @@ requires verification before it can establish new records.
 
 ## Evidence and resource accounting
 
-Native regression tests exercise the complete materializer with real inherited
+Native regression tests exercise the complete materializer with real held-object
 FD/native attributes and a clearly controlled provider response on local
 fixtures. They cover unchanged reuse, append/rollover, relocated runtime, unsafe
 device placement, record/cache loss and corruption, device/library/source/
@@ -106,12 +122,14 @@ helper absence/failure/timeout, tampering, replacement, rename, hardlinks and
 concurrent change. Controlled provider or boot/mount tests are not real
 hydration, reboot or remount experiments.
 
-Separate actual provider-backed reads through a private device directory and
+The preserved C3 actual provider-backed reads through a private device directory and
 truly independent processes observed 83 eligible segments: a cold read consumed
 134,522,127 source bytes; each of two restarts consumed zero source bytes and
 153,966,535 cache bytes. Complete normalized states matched the full genesis
 reader. These are actual byte-reuse hits, with cached history explicitly counted.
-They are not a production SLA, a P50/P95 claim or proof of every platform branch.
+C3 did not skip parsing or validation and regressed total wall time. These
+historical samples are not C4 measurements, a production SLA, a P50/P95 claim or
+proof of every platform branch. C4's paired measurements are retained separately.
 
 Observation separates source bytes delivered to the process by stream/scope, cache
 bytes, local record bytes, helper script/request/response bytes and helper wall

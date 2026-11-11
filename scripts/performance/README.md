@@ -199,12 +199,13 @@ not establish the strict no-latency/CPU/RSS-regression acceptance.
 ## Story 648 C2: native query and receipt boundary
 
 The [source-verification design](../../docs/design/consolidation-source-verification.md)
-describes the materializer's device-local record and untrusted verified-byte
+describes the materializer's device-local record and untrusted compressed-event
 cache, packaged system-JXA descriptor queries, and full-read fallbacks. Public
 source-event reads remain complete. Per-source source/cache bytes, local record
 bytes and helper protocol/script bytes must be reported together; zero source
-bytes does not mean zero history I/O. Local provider keys that are absent remain
-unknown. Controlled provider/native mismatch tests are labeled separately from
+bytes does not mean zero history I/O. Ordinary files use supported native resident-data/generation proof even when
+Foundation omits iCloud-only keys; this does not assert that a provider is absent.
+Missing resource identity or native proof still falls back. Controlled provider/native mismatch tests are labeled separately from
 actual independent-process provider-backed hits. OS reboot, remount and real
 partial hydration are not inferred from those controls. C2's checksum-forgery
 counterexample and failed formal gates are retained as history in the design.

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Executed by the system JXA host, never imported by Node. Descriptors are
-// inherited from the reader; this helper opens no source and reads no data.
+// opened without following links and bound to the reader's held descriptors by
+// exact device/file identity. No source data or caller output FD is inherited.
 ObjC.import("Foundation");
+ObjC.bindFunction("open", ["int", ["char *", "int"]]);
+ObjC.bindFunction("close", ["int", ["int"]]);
 ObjC.bindFunction("fgetattrlist", ["int", ["int", "void *", "void *", "unsigned long", "unsigned long"]]);
 ObjC.bindFunction("sysctlbyname", ["int", ["char *", "void *", "void *", "void *", "unsigned long"]]);
 
@@ -11,36 +14,44 @@ function run(arguments_) {
   var length = $.NSMutableData.alloc.initWithBase64EncodedStringOptions("gAAAAAAAAAA=", 0);
   var bootResult = $.sysctlbyname("kern.bootsessionuuid", boot.mutableBytes, length.mutableBytes, null, 0);
   var records = request.files.map(function (file) {
-    function attributes(encoded) {
-      var list = $.NSData.alloc.initWithBase64EncodedStringOptions(encoded, 0);
-      var bytes = $.NSMutableData.dataWithLength(8192);
-      var result = $.fgetattrlist(file.fd, list.bytes, bytes.mutableBytes, bytes.length, 32);
-      return { result: result, bytes: ObjC.unwrap(bytes.base64EncodedStringWithOptions(0)) };
+    // Darwin O_NOFOLLOW | O_NONBLOCK, with O_RDONLY (zero). The Node reader
+    // retains its original FD throughout both probes and checks this identity
+    // against it, so a different named object never authorizes its bytes.
+    var descriptor = $.open(file.path, 0x0104);
+    try {
+      function attributes(encoded) {
+        var list = $.NSData.alloc.initWithBase64EncodedStringOptions(encoded, 0);
+        var bytes = $.NSMutableData.dataWithLength(8192);
+        var result = $.fgetattrlist(descriptor, list.bytes, bytes.mutableBytes, bytes.length, 32);
+        return { result: result, bytes: ObjC.unwrap(bytes.base64EncodedStringWithOptions(0)) };
+      }
+      var url = $.NSURL.fileURLWithPath(file.path);
+      url.removeAllCachedResourceValues;
+      var error = Ref();
+      var values = url.resourceValuesForKeysError($([
+        $.NSURLIsUbiquitousItemKey,
+        $.NSURLUbiquitousItemIsDownloadingKey,
+        $.NSURLUbiquitousItemDownloadingStatusKey,
+        $.NSURLUbiquitousItemDownloadingErrorKey,
+        $.NSURLFileResourceIdentifierKey,
+      ]), error);
+      var resources = {};
+      if (values) {
+        resources = ObjC.deepUnwrap(values);
+        var identity = values.objectForKey($.NSURLFileResourceIdentifierKey);
+        resources.NSURLFileResourceIdentifierKey = ObjC.unwrap(identity.description) || null;
+        var downloadError = values.objectForKey($.NSURLUbiquitousItemDownloadingErrorKey);
+        resources.NSURLUbiquitousItemDownloadingErrorKey = ObjC.unwrap(downloadError.description) || null;
+      }
+      return {
+        file: attributes(request.fileAttributes),
+        volume: attributes(request.volumeAttributes),
+        resources: resources,
+        resourceError: ObjC.unwrap(error[0].description) || null,
+      };
+    } finally {
+      if (descriptor >= 0) $.close(descriptor);
     }
-    var url = $.NSURL.fileURLWithPath(file.path);
-    url.removeAllCachedResourceValues;
-    var error = Ref();
-    var values = url.resourceValuesForKeysError($([
-      $.NSURLIsUbiquitousItemKey,
-      $.NSURLUbiquitousItemIsDownloadingKey,
-      $.NSURLUbiquitousItemDownloadingStatusKey,
-      $.NSURLUbiquitousItemDownloadingErrorKey,
-      $.NSURLFileResourceIdentifierKey,
-    ]), error);
-    var resources = {};
-    if (values) {
-      resources = ObjC.deepUnwrap(values);
-      var identity = values.objectForKey($.NSURLFileResourceIdentifierKey);
-      resources.NSURLFileResourceIdentifierKey = ObjC.unwrap(identity.description) || null;
-      var downloadError = values.objectForKey($.NSURLUbiquitousItemDownloadingErrorKey);
-      resources.NSURLUbiquitousItemDownloadingErrorKey = ObjC.unwrap(downloadError.description) || null;
-    }
-    return {
-      file: attributes(request.fileAttributes),
-      volume: attributes(request.volumeAttributes),
-      resources: resources,
-      resourceError: ObjC.unwrap(error[0].description) || null,
-    };
   });
   return JSON.stringify({
     schemaVersion: "einzbern.darwin-source-identity.v1",

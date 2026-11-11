@@ -865,7 +865,8 @@
         "tests/story-346-pg-disabled.test.mjs",
         "tests/story-378-incident-replay.test.mjs",
         "tests/story-rule-conservation.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Atelier.md": {
       "readers": [
@@ -881,7 +882,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/CLI-Reference.md": {
       "readers": [
@@ -1049,7 +1051,8 @@
         "tests/story-rule-conservation.test.mjs",
         "tests/wiki-cli-reference.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Ether-Layout.md": {
       "readers": [
@@ -1065,7 +1068,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/FAQ.md": {
       "readers": [
@@ -1081,7 +1085,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Gates.md": {
       "readers": [
@@ -1099,7 +1104,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Glossary.md": {
       "readers": [
@@ -1118,7 +1124,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Home.md": {
       "readers": [
@@ -1136,7 +1143,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Install-Wizard.md": {
       "readers": [
@@ -1152,7 +1160,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Managed-Sections-and-Command-Spell.md": {
       "readers": [
@@ -1169,7 +1178,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Migrating-from-TCRN-Workflow.md": {
       "readers": [
@@ -1185,7 +1195,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Multi-Device-and-Cloud.md": {
       "readers": [
@@ -1201,7 +1212,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/Variables.md": {
       "readers": [
@@ -1217,7 +1229,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     },
     "docs/wiki/_Sidebar.md": {
       "readers": [
@@ -1233,7 +1246,8 @@
         "tests/privacy-boundary.test.mjs",
         "tests/push-wiki.test.mjs",
         "tests/wiki-pages.test.mjs"
-      ]
+      ],
+      "portalTests": []
     }
   },
   "documentConsumers": {
@@ -1602,7 +1616,7 @@
     "NOTICE": "045fa532821b114e93e7c1c1ba41a80f642d7a4d57967e6d51e8d3c53a7a98dd",
     "THIRD_PARTY_NOTICES.txt": "4ed9fbf62ca58c4588755446b7563e411645d156b6a2542181641e4716d64af1",
     "docs/dispatch/2026-10-26-codex-subagentstop-to-dot/state.json": "7a59fe5433019798112ba0d6d3c10891b74ee1a54e7e921f7c4eac652ef6765b",
-    "docs/implementation/configuration-inventory.json": "96876e4f5546380d8eaae8c6464d52b8d8a55edc524c4a6428299f71753730af",
+    "docs/implementation/configuration-inventory.json": "0664b650a12deede5ed5fa9c2bdea803620d32626610741941728272151dc147",
     "docs/implementation/integrated-engine-acceptance.txt": "0eddea5d85b327172bfa21d03087acfa13428885664db9cdea4255e2a4445611",
     "docs/reports/init-020/STORY-191-adapter-equivalence-matrix.json": "7fa136385de3d67e2d16436c58778dabdae7425bf0f6351dbd0c8498adc4836f",
     "docs/verification/2026-07-20-event-chain-ceiling-samples.json": "95cd11ea156c02e39d85a4af22dfb17d2f1da1aeb554a657b5a0ed06d1a98bb3",
@@ -1662,7 +1676,7 @@
     "packages/core/schema/workspace-v1.schema.json": "5e680a94abd6ec495b16945b2929bbfe83478369d826f37b4c3e953148887cf0",
     "packages/core/src/actor-attestation.ts": "5f9d7e677c99f721a8daa0f9eac811afd391b96e765c65080af14c2bcc857706",
     "packages/core/src/agents-sections.ts": "aa22e8dcbea1f207eb2b68f94976612bc5399c2b35165fee5d0e41c65e6af6a6",
-    "packages/core/src/akasha.ts": "369cd02f7ca566a3d40bba50bc0ea83aeafcc50b1fa8ada9f7a64705e6a3a634",
+    "packages/core/src/akasha.ts": "210e7aa8ae66c0f23e2f12548388229cd356448ee7259610c9b1b486c0856fff",
     "packages/core/src/antigravity-host.ts": "70ee1f35f2d5f3cb6cc156fcd2c133a68ca9d46f03487c8bbddd98f7a24225d2",
     "packages/core/src/artifact-path-binding.ts": "cb03061510ed8ca31f6ecf1590411d0f32977b0e7375d1ba4b386cb26d724079",
     "packages/core/src/artifact-store.ts": "1a7db9ac2f0c30a92331103532498164f54f9d03e1834fd1e5b50e604ae2d5d6",
@@ -1719,7 +1733,7 @@
     "packages/core/src/gates-done.ts": "d2e3d2b45a5ad07b9fe606ecf75181c10f4af048f64ea282b2baafed8b2ae8fe",
     "packages/core/src/gates-plan.ts": "3439417f1194549eb27bbc4cf7958d43635599bd942d89a6c5bccf7f8277d7af",
     "packages/core/src/gates-run.ts": "3029450263d012115be1dd587414116be587671d4fca76d6ae7a04ad5049b2e3",
-    "packages/core/src/hook-recall.ts": "0c4179b71e1825a476f7537e0ba7f801f92a9ac47befe545ded3e351cad3bddd",
+    "packages/core/src/hook-recall.ts": "eb51220e1e89ee2e034ac0477164fc1a8c59322c38294a5da516b8abc974dc19",
     "packages/core/src/host-capabilities.ts": "d3573b6956e677567f1afa37cd4068f7006f7bd8a5902e0ff3f9d12b1f0b13e4",
     "packages/core/src/host-hooks.ts": "97488edb62dc10f901fdbcf90dbb4e021ae979a0120babe7821ef3478a5bd04a",
     "packages/core/src/host-probe.ts": "d01b5568150e6a4f0b3de082259873fa0d24d15b05d85e7ea1ca704e286ae251",
@@ -1767,7 +1781,7 @@
     "packages/core/src/root-identity.ts": "235c083b962ffdd5b7b7057d5a43c8160186fcba2d10a503844fb8f4672f0554",
     "packages/core/src/rules-catalog.ts": "ff42f3774d999a85a1c2d46daf3409799d398e599d777b21b98078a690c1e4fd",
     "packages/core/src/rules.ts": "7ae8bd742b396c1c6b3effa93005cd5d05b6ae984473d4c08f9258be87d07990",
-    "packages/core/src/runtime-input-contract.ts": "479b5d1b84c5411f6e7adcdb828f51070489e8b1b1de94b927d72a48a564ce06",
+    "packages/core/src/runtime-input-contract.ts": "e54437d4206bf0c56ccb730f58bc96f3e91ab605b3726c95df4bcc508b123f91",
     "packages/core/src/runtime-transport.ts": "ea0d245d30be0a86ada2679fb2af382350d0d4e86d6a88dc025d389eb9092a8d",
     "packages/core/src/settings.ts": "e630e3db4a9606373d68392fd272479321b7eecaf0605028c7f5af60d7f942c2",
     "packages/core/src/setup-fresh.ts": "9e98d78b2b0736f43f4f98349e056bc84fcd7a4e720749a81466d8b3d51b31ec",
@@ -1778,7 +1792,7 @@
     "packages/core/src/shared-submit.ts": "192488df67226251011e80480966af110d21ec4e96746d3121c920f912678aee",
     "packages/core/src/skill-copies.ts": "6584428b252088bcde151417ca7bd18adf3668f1a08deaf0d42a5ca4afe6daa7",
     "packages/core/src/skill-render.ts": "d374432b6855f6fb128c40a8ee6809922a704e98ae464740c65f41707b6abfd6",
-    "packages/core/src/source-verification.ts": "4546df41e0dca56370a4354c1742b82fbcf2366d6163969e92c49b54bb0d841b",
+    "packages/core/src/source-verification.ts": "0045526a59e09d7058a5c0f793f686f6047b894c70fedeeb82b1f035dcacf4dc",
     "packages/core/src/storage-configure.ts": "5e50338d945b3e11f2a5c153d09d26def165f7d0441847c1aec6f5abb7593b01",
     "packages/core/src/storage-consolidate.ts": "cff924eca47c67a753c0d246c38f5c4e379e060f396e906901e02e635f47d821",
     "packages/core/src/storage-location.ts": "764f20833985388c1a9116a4587c6af466eefaef5994e8aa3908b4fdea9c6618",
@@ -1902,7 +1916,7 @@
     "scripts/ds-component-css-proof.mjs": "74089e3462a3f086802111401c178edb086b010f1a49f612fc048664005cfec7",
     "scripts/ds-component-css-reconcile.mjs": "385a922467edb4c9a9818acc52e5731b7112e89e5e59226db9b6942ebd9deca6",
     "scripts/einzbern-hook-launcher.mjs": "56bc3d501955299e9ad9f68969d279ff9bef1ebfc3d9cf269c5cf8670aeecf04",
-    "scripts/einzbern-hook.mjs": "3aebdcc34d9df72f5e3a18d0d9bbc95cd3e16bd76724c75444d49e60fcf325b0",
+    "scripts/einzbern-hook.mjs": "569a7a69b70debfc99292eb4f16a8415bb03dab6709b067494b7e1c498590578",
     "scripts/einzbern-launcher.mjs": "c454acbbc9464bef1ed459e55074bbf2dfd02e91b47f3b5dd9e6b30551a5b183",
     "scripts/einzbern.mjs": "0590155c5a5caf780cbf46b6bced7c7e61994fef0ab3a9682fa31e247730ad47",
     "scripts/embed-ds-component-css-snapshot.mjs": "f792f63f30ee9ab3c7c78b3f2b8baeab9081e4833280b0ec3fd8bfbd576f7cd3",
@@ -1924,7 +1938,7 @@
     "scripts/lib/config-backup-format.mjs": "7c58d3bedb5985d621b513a9d8ec935cbfb9a8efa0b35d84bb2f9476cb48ef32",
     "scripts/lib/config-backup-reservation.d.mts": "f6cc4514797c3a2eb6623a4d608c21ba07bd4d590a7f3f970728f7cce25dd08d",
     "scripts/lib/config-backup-reservation.mjs": "94a91e54a0b77e81a863d4498a3ced0fc2e32969f3c3841544fcf2415e4c4af9",
-    "scripts/lib/darwin-source-identity.mjs": "4370ef833f27cde35dc3ff721dc00130a19f4945455f49dad41ce832b86779ba",
+    "scripts/lib/darwin-source-identity.mjs": "260823bb3a8046d09e626b3f073b8b1d26152fb2f162385768efb0f4d46c7263",
     "scripts/lib/dependency-graph.mjs": "1d8b9539d8fa5fc5c435371b445ce9b68e8d1ee519de99f90e6e8ab5558d9e51",
     "scripts/lib/dependency-materialization.mjs": "cf385f1c7fd692b6d139d441f5b2ea3c707b28419ca39650a5b007c37f73b407",
     "scripts/lib/ds-candidate-source.mjs": "84fea81f4deabd756450ce95d6ab60c404e1e60905bc966e8ebd8bb10f972c52",
@@ -1997,7 +2011,7 @@
     "scripts/policy/story-rule-conservation.json": "ae2f56af7765ccef9219b6d85f4d5fb034f851bc4fa92e8ba7b85d221327a843",
     "scripts/policy/test-wiring.json": "229f056d3df9e827b8efcee52b2da3adcab8dcb7df68ec84b40ca9e039d322e8",
     "scripts/policy/vendored-runtime.json": "4158fb518c6d4594ef080cd8efc38e598dbccc929ce313ec58e80f368ce9752a",
-    "scripts/portal-tests.mjs": "490aae6284afc86acc4b1b03b5eb9d83f096abbdbc2857aef8b4603f0eb3cb6a",
+    "scripts/portal-tests.mjs": "e4d32acdba0221b7300162869c190e14d9f01ac37ef0fb98ca4a48182fd8d487",
     "scripts/preflight.mjs": "5164cce112e36370cb46462a9851bfa43b40bba788a62fdf0c6c4c2ce4945385",
     "scripts/push-gate.mjs": "d7ad7532d7bd0d7c2f3f6779b3ecc8592a4467c15e7b03436097301f0013cb39",
     "scripts/push-wiki.mjs": "5879b6bb6ae7413978b952eb694b228e27503280c6e76f232d9ae657c18a1622",
@@ -2095,7 +2109,7 @@
     "tests/configuration-portability.test.mjs": "10fe17420a418edc83cce35dfd9e01f57e474d395e1d5cc22cf71f1bc6f02f58",
     "tests/configuration-projections.test.mjs": "db807d794d1f5850b98029aa15d6a5083d69695be6d7d839480a653dac84b237",
     "tests/conflict-family.test.mjs": "46a0bf0ed7d85212e1b9008fd5943798af88db8e035622ca6773c15f7bdeea16",
-    "tests/consolidate.test.mjs": "c856dd62ebc944b8b0671ec7cd1bb97ea97a4a4fc28af589691354801dfa8709",
+    "tests/consolidate.test.mjs": "2242c4a05c351b6d343602c771e7ad73b5433b1edb13c2d2eaf5ebcfd1de2d70",
     "tests/coordination-knowledge-language.test.mjs": "8d6fbb57a502e1fc6ac8274c0b33a94074aeba1ff37259f5d04e516e1d9f3dff",
     "tests/coordination-managed-sections.test.mjs": "60d16b4f1855f9e88cc31cdad2c2882b2262ea2922031fce78dc41bba1be8827",
     "tests/cross-repo-privacy.test.mjs": "1d2431fc55050a31641e368ef4b41a4b756d508c1e11a9e961ab20f1c9cde057",
@@ -2314,7 +2328,7 @@
     "tests/platform-chain-backup.test.mjs": "f8f67dd2e3626b54b1039a0fec4a3bcfef380e493051ef936e21217282f137e6",
     "tests/platform-doctor-current.test.mjs": "1351e2e9e02beb3e334f65b2c50584d31b87a9db6819a751af9b5c7e24667098",
     "tests/platform-doctor.test.mjs": "8a06dfbad6a979f0b88d4d62f4ce919fa220422fd5a339b0f0cd720887386525",
-    "tests/portal-device-isolation.test.mjs": "044f54e1b15f9b13aabd2415dd9638b2a7fbdb582c4e451961a3174762d35e3a",
+    "tests/portal-device-isolation.test.mjs": "14f54513db74b6aff08f1e2d983f2efd3b491041eef23ee22638e84ffc823016",
     "tests/portal-knowledge-pagination.test.mjs": "50491db0144369c7b6672d234802553b741bd9a43756dedf5230563356f635f1",
     "tests/preflight.test.mjs": "7c434cfb7624a656affadd05562012da47bf14553beaf020db4cc92e0700dcb1",
     "tests/privacy-boundary.test.mjs": "4867df4b04265e09c87f718f5be1ad36cb5ca8980a2552d7583164c8aa62860d",
@@ -2385,7 +2399,7 @@
     "tests/skill-references.test.mjs": "d396bd3ff754fd0d081135dab8d70d27326f4e6dcc942ce2e615a1c3cdbd302a",
     "tests/skill-render-cli.test.mjs": "63c6a3639e98ff57bc362c45072724c5ab33f223d74d31f84640e897c4714b4e",
     "tests/skill-render.test.mjs": "c42ceece9913a54557faba9194a697e6dbdce795d7341d65fdf48d99e2d893fb",
-    "tests/source-verification.test.mjs": "3e2a47cdc0fabd5eb143fc2c5b08ef75bf64897a9678cadd9080deacbdf68d3e",
+    "tests/source-verification.test.mjs": "c1092f59e10420e36f390811c7a59befd572d0e3841e1d553cff25933d560983",
     "tests/spawn-guard.test.mjs": "0f07cf0eb7f9e87f93fed4da430d833526e2f55f1fdd782cb2e1c135fffea908",
     "tests/staged-privacy-origin-diagnostics.test.mjs": "de482c754285815f00b034ed1ec4a48f95d1a81005fbe883191d42ed7d2feda2",
     "tests/staged-privacy-reviewed-paths.test.mjs": "7860d78f905b06ecfaa6592c8f373dbc74a9711c889e85fbc26f8c8cf7dbefec",

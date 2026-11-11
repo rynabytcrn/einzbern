@@ -8,6 +8,7 @@ import { writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gzipSync, gunzipSync } from "node:zlib";
 import {
   initializeLibrary, createProject, declareChainIdentity, setWorkspaceSetting,
   createWork, consolidateLibraries, materializeLibrary, materializeWorkspaceFromGenesis,
@@ -59,7 +60,7 @@ async function fixture(t) {
 }
 
 // A controlled provider response exercises the eligibility branches on local
-// fixtures. fgetattrlist, inherited descriptors, boot, mount and generations
+// fixtures. fgetattrlist, held-object identity, boot, mount and generations
 // still come from the system helper. These tests do not claim real hydration.
 function provider(t, change = () => {}) {
   let queries = 0;
@@ -108,11 +109,33 @@ async function corrupt(f) {
   return Buffer.from(changed);
 }
 
-test("unknown per-file provider status preserves full source reads", async t => {
+test("unknown per-file provider status preserves full source reads", { skip: !native }, async t => {
   const f = await fixture(t);
+  provider(t, value => { for (const file of value.files) file.resources = {}; });
   const result = await read(f);
   assert.equal(hits(result.observation), 0);
   assert.ok(result.observation.logicalEventBytes > 0);
+  assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
+});
+
+test("resident native local files reuse without provider-only download keys", { skip: !native }, async t => {
+  const f = await fixture(t);
+  const result = await warm(f);
+  assert.ok(result.observation.cacheReadBytes > 0);
+  assert.ok(result.observation.verificationRecordBytes > 0);
+});
+
+test("verified projections avoid repeated event validation and batch native helpers", { skip: !native }, async t => {
+  const f = await fixture(t);
+  provider(t);
+  const first = await read(f);
+  const result = await read(f);
+  assert.ok(hits(result.observation) > 0);
+  assert.equal(result.observation.logicalEventBytes, 0);
+  assert.ok(result.observation.verificationHelperScriptBytes > 0);
+  const helper = await fs.readFile(new URL("../scripts/lib/darwin-source-identity.mjs", import.meta.url));
+  assert.equal(result.observation.verificationHelperScriptBytes, helper.length * 2);
+  assert.ok(result.observation.cacheReadBytes < first.observation.logicalEventBytes + first.observation.cacheReadBytes);
   assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
 });
 
@@ -193,6 +216,19 @@ for (const kind of ["record-missing", "record-damaged", "cache-missing", "cache-
     assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
   });
 }
+
+test("a coherent shared projection cannot replace the independent local digest", { skip: !native }, async t => {
+  const f = await fixture(t);
+  provider(t);
+  await warm(f);
+  const path = join(f.cache, (await fs.readdir(f.cache)).find(name => name.endsWith(".bin")));
+  const events = JSON.parse(gunzipSync(await fs.readFile(path)).toString("utf8"));
+  events[0].payload = { ...events[0].payload, forgedProjection: "shared writer" };
+  await fs.writeFile(path, gzipSync(JSON.stringify(events)));
+  const result = await read(f);
+  assert.ok(result.observation.logicalEventBytes > 0);
+  assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
+});
 
 for (const kind of ["zero-generation", "unsupported-attributes", "network-volume", "incomplete-download", "provider-unknown", "helper-failure", "helper-timeout"]) {
   test(`${kind} preserves the full reader`, { skip: !native }, async t => {

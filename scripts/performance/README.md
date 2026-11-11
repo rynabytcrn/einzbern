@@ -195,3 +195,15 @@ differences do not establish negative observer overhead. The historical small
 fixture RSS regression and its raw samples above remain part of the evidence;
 larger or nonempty corpora cannot replace that criterion. These tools alone do
 not establish the strict no-latency/CPU/RSS-regression acceptance.
+
+## Story 648 C2: native query and receipt boundary
+
+The [source-verification investigation](../../docs/design/consolidation-source-verification.md)
+records a working inherited-fd macOS query and positive per-file Google Drive
+metadata for the actual archive and actual cache. It also records a concrete
+unsigned receipt forgery through the real product reader, 29 full-read
+differential scenarios, resource decomposition and unavailable formal
+build/package gates. Story 648 remains unimplemented; the probe is not a shipped
+helper or a persistent credential hit. C1's original 25-event whole-process CPU
+P95 remains 10,929 us checkpoint versus 10,236 us genesis, independently of its
+reducer CPU result. Earlier B/645 failures and their samples remain unchanged.

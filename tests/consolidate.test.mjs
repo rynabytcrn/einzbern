@@ -560,3 +560,73 @@ test("647: valid checkpoint payload paired with foreign or damaged coverage neve
   assert.ok(repaired.observation.cacheReasons.includes("consolidation-checkpoint-miss-full-replay"));
   assert.deepEqual(repaired.value, appended, "a valid old state cannot skip a newly committed event");
 });
+
+test("648: a checksum-valid cache claim is not authority for unread source bytes", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { createHash } = await import("node:crypto");
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { readCacheSnapshot } = await import("../dist/build/packages/core/src/library-cache.js");
+  const expected = await materializeWorkspaceFromGenesis(f.to);
+  await materializeLibrary(f.to);
+  const library = await openLibrary(f.to);
+  const index = await readConsolidationIndex(f.to, library.manifest);
+  const source = index.sources[1];
+  const entry = source.inventory.find(file => /akasha\/.*\.ndjson$/u.test(file.path));
+  const path = join(f.to, source.archive, entry.path);
+  const snapshot = await readCacheSnapshot(library.manifest.libraryId);
+  const proofClaim = {
+    libraryId: library.manifest.libraryId,
+    sourceId: source.manifest.libraryId,
+    segment: entry.path,
+    bytes: entry.bytes,
+    sha256: entry.sha256,
+    indexDigest: library.manifest.consolidation.sha256,
+    sourceHead: source.headEventHash,
+    versionVector: source.versionVector,
+    verification: "claimed-by-cache-writer",
+  };
+  // Model a writer of the existing cache files, without calling the engine's
+  // cache writer or changing permissions. A content digest is publicly
+  // recomputable, so it detects damage but does not identify this writer.
+  const stateText = `${JSON.stringify({ ...snapshot.state, sourceByteVerification: proofClaim })}\n`;
+  const stateDigest = createHash("sha256").update(stateText).digest("hex");
+  const directory = join(cachePath(library.manifest.libraryId), "snapshots");
+  const header = JSON.parse(await readFile(join(directory, "snapshot.json"), "utf8"));
+  await writeFile(join(directory, `${stateDigest}.json`), stateText);
+  await writeFile(join(directory, "snapshot.json"), `${JSON.stringify({ ...header, stateDigest })}\n`);
+  assert.deepEqual((await readCacheSnapshot(library.manifest.libraryId)).state.sourceByteVerification, proofClaim);
+  assert.deepEqual(await materializeLibrary(f.to), expected, "a disposable cache extension changes no authority");
+  const before = await stat(path);
+  const original = await readFile(path);
+  const changed = Buffer.from(original);
+  changed[changed.length - 2] ^= 1;
+  await writeFile(path, changed);
+  await utimes(path, before.atime, before.mtime);
+  await assert.rejects(materializeLibrary(f.to), "even a checksum-valid claim cannot conceal same-length source corruption");
+});
+
+test("648: the source event API still reads its actual archive after a warm consolidated checkpoint", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { readStreamManifest, readStreamEvents } = await import("../dist/build/packages/core/src/akasha.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  const state = await materializeLibrary(f.to);
+  await materializeLibrary(f.to);
+  const index = await readConsolidationIndex(f.to, (await openLibrary(f.to)).manifest);
+  for (const source of index.sources) {
+    const archive = join(f.to, source.archive);
+    const { readdir } = await import("node:fs/promises");
+    for (const deviceId of await readdir(join(archive, "akasha"))) {
+      const options = { archivedManifest: source.manifest };
+      const manifest = await readStreamManifest(archive, deviceId, options);
+      if (manifest === null) continue;
+      const read = await withRecallObservation(() => readStreamEvents(archive, manifest, options));
+      assert.equal(read.value.length, manifest.sequence);
+      assert.equal(read.observation.logicalEventBytes, manifest.segments.reduce((total, segment) => total + segment.bytes, 0));
+      assert.ok(read.observation.eventReadsBySource.every(entry => entry.scope === "archive"));
+      for (const event of read.value) assert.deepEqual(state.events.find(entry => entry.id === event.id), event);
+    }
+  }
+});

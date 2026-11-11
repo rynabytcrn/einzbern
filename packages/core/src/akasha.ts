@@ -385,8 +385,9 @@ function parseSegment(manifest: StreamManifest, segment: StreamSegment, bytes: B
 
 /** Read one segment's committed bytes: exactly the recorded length, which must hash as recorded. */
 async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, segment: StreamSegment, readFile: ReadBytes, scope: "live" | "archive"): Promise<{ readonly bytes: Buffer; readonly digestMatches: boolean }> {
-  // A replay checkpoint does not authorize skipping this source read. Native
-  // generation counters alone do not establish provider/download inactivity.
+  // A replay checkpoint is derived state, not an authenticated receipt of a
+  // prior source verification. A checksum or serialized generation binding in
+  // that cache cannot authorize skipping these bytes (STORY-648).
   const where = { deviceId: manifest.deviceId, streamId: manifest.streamId, segment: segment.name };
   let content: Buffer;
   try {

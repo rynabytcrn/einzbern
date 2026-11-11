@@ -1,6 +1,5 @@
 import { validateSettingValue } from "./settings.js";
 import { bindProjectArtifactPath, projectArtifactBinding } from "./artifact-path-binding.js";
-import { assertGeneratedArtifactsRoot } from "./artifact-store.js";
 import { observeMaterialization, observeStage, observeCheckpoint, observeCacheReason, observeReplay } from "./recall-observation.js";
 import { WORK_CONTENT_KEY, workContent, validateWorkContent, contentFail } from "./work-content.js";
 import type { ContentWorkKind } from "./work-content.js";
@@ -5494,6 +5493,8 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
     const state = await materializeWorkspace(workspaceRoot);
     assertScopedSettingWriteConsistent(state, input.key, value, input.configurationProjectId);
     validateSettingValue(input.key, value, workspaceRoot);
+    // Keep the artifact writer out of read-only workspace/Recall imports.
+    const { assertGeneratedArtifactsRoot } = await import("./artifact-store.js");
     await assertGeneratedArtifactsRoot(workspaceRoot, value, undefined, true);
     value = projectArtifactBinding(state.metadata.workspaceId, input.configurationProjectId);
   }
@@ -5533,6 +5534,7 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
       };
     }, input, async (root, committed) => {
       if (input.key === "workspace.generatedArtifactsPath" && isAbsolute(input.value) && input.configurationProjectId) {
+        const { assertGeneratedArtifactsRoot } = await import("./artifact-store.js");
         await assertGeneratedArtifactsRoot(root, input.value, undefined, true);
         await bindProjectArtifactPath(committed.metadata.workspaceId, input.configurationProjectId, input.value);
       }

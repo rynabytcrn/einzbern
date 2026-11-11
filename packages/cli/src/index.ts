@@ -1,6 +1,5 @@
 import { isProjectArtifactBinding, resolveProjectArtifactBinding } from "../../core/src/artifact-path-binding.js";
 import { withRecallObservation } from "../../core/src/recall-observation.js";
-import { logCliRecall } from "../../core/src/recall-observation-log.js";
 import { readRecallAuthority } from "../../core/src/recall-authority.js";
 import { MEMORY_LEASE_VARIABLE } from "../../../scripts/lib/memory-budget.mjs";
 import { readWorkContentImpact } from "../../core/src/work-requirements.js";
@@ -2112,7 +2111,10 @@ export async function runCli(arguments_: readonly string[], io: CliIo): Promise<
     results.push({ reasonCode: typeof reason === "string" ? reason : "CLI_RECALL_FAILED", outcome: empty ? "empty" : "error" });
     throw error;
   } finally {
-    if (observation !== undefined) await logCliRecall(observation, results);
+    if (observation !== undefined) {
+      const { logCliRecall } = await import("../../core/src/recall-observation-log.js");
+      await logCliRecall(observation, results);
+    }
   }
 }
 

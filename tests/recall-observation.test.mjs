@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { openLibrary } from "../dist/build/packages/core/src/ether-library.js";
 import { summarizeRecall, summarizePairedSamples } from "../scripts/performance/recall-summary.mjs";
 import { withRecallObservation, observeStage, observeEventRead, observeRecall } from "../dist/build/packages/core/src/recall-observation.js";
 test("644: fractional windows, duplicate results and nested spans are separate counts", () => {
@@ -17,6 +21,19 @@ test("644: concurrent observations do not mix counters or payloads", async () =>
   assert.equal(a.observation.logicalEventBytes, 10); assert.equal(b.observation.logicalEventBytes, 20);
   assert.equal(a.observation.recallCalls, 1); assert.equal(b.observation.recallCalls, 0);
   assert.equal(JSON.stringify(a.observation).includes("secret"), false);
+});
+
+test("648: rejected malformed UTF-8 metadata counts the original bytes exactly", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "einzbern-observed-metadata-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const bytes = Buffer.concat([Buffer.from('{"schemaVersion":"'), Buffer.from([0xff]), Buffer.from('"}\n')]);
+  await writeFile(join(directory, "manifest.json"), bytes);
+  let observation;
+  await assert.rejects(withRecallObservation(() => openLibrary(directory), value => { observation = value; }), { reasonCode: "LIBRARY_MANIFEST_INVALID" });
+  assert.equal(observation.metadataReadBytes, bytes.length);
+  assert.equal(observation.logicalEventBytes, 0);
+  assert.equal(observation.cacheReadBytes, 0);
+  assert.equal(observation.cpuScope, "process-wide-delta");
 });
 
 test("645: paired summaries retain failed samples and cannot accept an unconfirmed library", () => {

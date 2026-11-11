@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { cp, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, realpath, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -349,6 +349,12 @@ test("647: incremental source-stream matrix preserves status, queries and govern
     }
     assert.equal(candidate.observation.replayedEvents, replayedEvents, scenario);
     assert.equal(candidate.observation.logicalEventBytes, full.observation.logicalEventBytes, "647 still verifies every source byte");
+    assert.equal(candidate.observation.eventReadsBySource.reduce((bytes, source) => bytes + source.bytes, 0), candidate.observation.logicalEventBytes);
+    assert.ok(candidate.observation.eventReadsBySource.some(source => source.scope === "archive"));
+    assert.ok(candidate.observation.metadataReadBytes > 0);
+    assert.ok(candidate.observation.cacheReadBytes > 0);
+    assert.ok(candidate.observation.segmentHashCpuMicros > 0);
+    assert.ok(candidate.observation.eventValidationCpuMicros > 0);
     samples.push({ scenario, candidate: candidate.observation, full: full.observation });
     return candidate.value;
   };
@@ -389,7 +395,101 @@ test("647: incremental source-stream matrix preserves status, queries and govern
     assert.deepEqual(first.value, second.value);
     samples.push({ pair, candidate: (firstFull ? second : first).observation, full: (firstFull ? first : second).observation });
   }
-  t.diagnostic(JSON.stringify({ matrix: samples, restarted: restarted.observation }));
+  t.diagnostic(JSON.stringify({ matrix: samples, restarted: restarted.observation, testProcessResources: process.resourceUsage() }));
+});
+
+test("648: full verification detects authentic same-length, same-name, missing and incomplete source anomalies", async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
+  const library = await openLibrary(f.to);
+  const index = await readConsolidationIndex(f.to, library.manifest);
+  const source = index.sources[1];
+  const entry = source.inventory.find(file => /akasha\/.*\.ndjson$/u.test(file.path));
+  const path = join(f.to, source.archive, entry.path);
+  const original = await readFile(path), originalStat = await stat(path);
+  const expected = await materializeWorkspaceFromGenesis(f.to);
+  await materializeLibrary(f.to);
+  const warm = await withRecallObservation(() => materializeLibrary(f.to));
+  assert.deepEqual(warm.value, expected);
+  assert.ok(warm.observation.cacheReadBytes > 0);
+  assert.equal(warm.observation.cacheWriteBytes, 0);
+  const observations = [{ scenario: "warm unchanged, no trusted identity bridge", observation: warm.observation }];
+  const rejects = async (scenario, predicate) => {
+    let observation;
+    await assert.rejects(withRecallObservation(() => materializeLibrary(f.to), value => { observation = value; }), predicate);
+    assert.ok(observation.logicalEventBytes > 0, scenario);
+    observations.push({ scenario, observation });
+  };
+  const restore = async () => {
+    await writeFile(path, original);
+    await utimes(path, originalStat.atime, originalStat.mtime);
+  };
+  const changed = Buffer.from(original);
+  changed[changed.length - 2] ^= 1;
+  await writeFile(path, changed);
+  await utimes(path, originalStat.atime, originalStat.mtime);
+  await rejects("in-place same-length corruption with restored mtime");
+  await restore();
+  await writeFile(`${path}.replacement`, changed);
+  await utimes(`${path}.replacement`, originalStat.atime, originalStat.mtime);
+  await rename(`${path}.replacement`, path);
+  await rejects("same-name same-length replacement with restored mtime");
+  await restore();
+  await writeFile(`${path}.replacement`, original);
+  await rename(`${path}.replacement`, path);
+  const replaced = await withRecallObservation(() => materializeLibrary(f.to));
+  assert.deepEqual(replaced.value, expected, "byte-identical replacement is valid after full verification");
+  assert.equal(replaced.observation.logicalEventBytes, warm.observation.logicalEventBytes);
+  observations.push({ scenario: "byte-identical replacement fully read", observation: replaced.observation });
+  await rename(path, `${path}.missing`);
+  await rejects("missing historical segment", { reasonCode: "AKASHA_SEGMENT_CORRUPT" });
+  await rename(`${path}.missing`, path);
+  await writeFile(path, original.subarray(0, Math.floor(original.length / 2)));
+  await rejects("partially populated historical segment", { reasonCode: "AKASHA_SEGMENT_CORRUPT" });
+  await restore();
+  const indexPath = join(f.to, library.manifest.consolidation.index);
+  const originalIndex = await readFile(indexPath);
+  await writeFile(indexPath, Buffer.concat([originalIndex, Buffer.from(" ")]));
+  await rejects("index digest mismatch", { reasonCode: "CONSOLIDATION_DIGEST_MISMATCH" });
+  await writeFile(indexPath, originalIndex);
+  const { readStreamManifest, readStreamEvents, buildStreamEvents, appendStreamEvents } = await import("../dist/build/packages/core/src/akasha.js");
+  const archive = join(f.to, source.archive);
+  const deviceId = Object.keys(source.versionVector)[0];
+  const manifest = await readStreamManifest(archive, deviceId, { archivedManifest: source.manifest });
+  const events = await readStreamEvents(archive, manifest, { archivedManifest: source.manifest });
+  const setting = events.find(event => event.payload.operation === "settings.updated");
+  await appendStreamEvents({ root: archive, manifest: source.manifest }, manifest, buildStreamEvents(manifest, [{ occurredAt: at, payload: setting.payload }], manifest.clockHighWater));
+  await rejects("authentic source append under an unchanged consolidation index", /CONSOLIDATION_SOURCE_CHANGED/u);
+  t.diagnostic(JSON.stringify({ fullReadAnomalies: observations, nativeHelperInvocations: 0, readSkipAcceptance: "unclaimed" }));
+});
+
+test("648: a real mmap mutation cannot be hidden by a warm replay checkpoint", { skip: process.platform !== "darwin" }, async t => {
+  const f = await fixture(t);
+  await consolidateLibraries(f.mapping, f.to, f.options);
+  const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
+  await materializeLibrary(f.to);
+  const index = await readConsolidationIndex(f.to, (await openLibrary(f.to)).manifest);
+  const source = index.sources[1];
+  const entry = source.inventory.find(file => /akasha\/.*\.ndjson$/u.test(file.path));
+  const path = join(f.to, source.archive, entry.path);
+  const { spawn } = await import("node:child_process");
+  const python = spawn("/usr/bin/python3", ["-c", "import mmap,sys\nf=open(sys.argv[1],'r+b')\nm=mmap.mmap(f.fileno(),0)\nm[-2]=m[-2]^1\nprint('mapped',flush=True)\nsys.stdin.read(1)\nm.close()\nf.close()", path], { stdio: ["pipe", "pipe", "pipe"] });
+  const finished = new Promise((resolve, reject) => { python.once("error", reject); python.once("exit", (code, signal) => resolve({ code, signal })); });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("mmap fixture did not become ready")), 3000);
+      python.stdout.once("data", data => { clearTimeout(timer); data.toString().includes("mapped") ? resolve() : reject(new Error("unexpected mmap fixture output")); });
+      python.once("error", error => { clearTimeout(timer); reject(error); });
+      python.once("exit", code => { clearTimeout(timer); reject(new Error(`mmap fixture exited early: ${code}`)); });
+    });
+    await assert.rejects(materializeLibrary(f.to));
+  } finally {
+    python.stdin.end("\n");
+    const timer = setTimeout(() => python.kill("SIGTERM"), 3000);
+    try { assert.deepEqual(await finished, { code: 0, signal: null }); } finally { clearTimeout(timer); }
+  }
 });
 
 test("647: a new supported consolidation generation invalidates the previous base and replays changed sources", async t => {

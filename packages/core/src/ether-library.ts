@@ -28,6 +28,7 @@ import { ENGINE_FORMAT_VERSION, assertLibrarySupported } from "./format-version.
 import type { LibraryVersionFields } from "./format-version.js";
 import { DIRECTORY, renderLibraryReadme } from "./names.js";
 import { FRAMEWORK_VERSION } from "./framework-version.js";
+import { observeMetadataBytes, observeMetadataRead, observeAuthorityWork } from "./recall-observation.js";
 
 export const LIBRARY_MANIFEST_SCHEMA_VERSION = "einzbern.library-manifest.v1" as const;
 // The format a new library and every stream manifest is written in: the newest this engine reads
@@ -172,11 +173,17 @@ interface ManifestRead {
 }
 
 async function readManifest(rootInput: string): Promise<ManifestRead> {
+  return observeMetadataRead(() => readManifestFile(rootInput));
+}
+
+async function readManifestFile(rootInput: string): Promise<ManifestRead> {
   const root = await realLibraryPath(rootInput);
   const path = join(root, LIBRARY_FILES.manifest);
   let text: string;
   try {
-    text = await readFile(path, "utf8");
+    const bytes = await readFile(path);
+    observeMetadataBytes(bytes.length);
+    text = bytes.toString("utf8");
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code === "ENOENT" || code === "ENOTDIR") fail("LIBRARY_NOT_FOUND", `${root} is not a library`, { library: root });
@@ -205,11 +212,13 @@ function versionFields(parsed: unknown): LibraryVersionFields | null {
  */
 export async function openLibrary(rootInput: string): Promise<Library> {
   const { root, path, text, parsed } = await readManifest(rootInput);
-  const fields = versionFields(parsed);
-  if (fields !== null) assertLibrarySupported(fields, { engineVersion: FRAMEWORK_VERSION, where: `library ${root}` });
-  const manifest = validateLibraryManifest(parsed, path);
-  if (canonicalJson(manifest) !== text) fail("LIBRARY_MANIFEST_INVALID", `${path} is not in canonical form`, { manifest: path });
-  return { root, manifest };
+  return observeAuthorityWork("metadata", () => {
+    const fields = versionFields(parsed);
+    if (fields !== null) assertLibrarySupported(fields, { engineVersion: FRAMEWORK_VERSION, where: `library ${root}` });
+    const manifest = validateLibraryManifest(parsed, path);
+    if (canonicalJson(manifest) !== text) fail("LIBRARY_MANIFEST_INVALID", `${path} is not in canonical form`, { manifest: path });
+    return { root, manifest };
+  });
 }
 
 /**

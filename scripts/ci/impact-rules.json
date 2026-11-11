@@ -2111,7 +2111,7 @@
     "tests/configuration-portability.test.mjs": "10fe17420a418edc83cce35dfd9e01f57e474d395e1d5cc22cf71f1bc6f02f58",
     "tests/configuration-projections.test.mjs": "db807d794d1f5850b98029aa15d6a5083d69695be6d7d839480a653dac84b237",
     "tests/conflict-family.test.mjs": "46a0bf0ed7d85212e1b9008fd5943798af88db8e035622ca6773c15f7bdeea16",
-    "tests/consolidate.test.mjs": "7c9f5a3ef72fe540bde490d7e2cc088898e64890557be54a26df9b777d75ccdb",
+    "tests/consolidate.test.mjs": "db73878ccd79755530168c78fc35e5814044102f548a9a54723d43a284fd2aa2",
     "tests/coordination-knowledge-language.test.mjs": "8d6fbb57a502e1fc6ac8274c0b33a94074aeba1ff37259f5d04e516e1d9f3dff",
     "tests/coordination-managed-sections.test.mjs": "60d16b4f1855f9e88cc31cdad2c2882b2262ea2922031fce78dc41bba1be8827",
     "tests/cross-repo-privacy.test.mjs": "1d2431fc55050a31641e368ef4b41a4b756d508c1e11a9e961ab20f1c9cde057",

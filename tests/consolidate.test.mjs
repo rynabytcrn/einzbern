@@ -11,7 +11,7 @@ import {
   consolidateLibraries, cleanConsolidatedSources, materializeWorkspaceFromGenesis, scopedWorkspaceState, readRegistry,
   setConfigRecord, chainIdentity, resolveProjectTarget, readConsolidationIndex, openLibrary,
   configureStorageLocation, defaultSharedLibraryPath, cachePath, lockPath,
-  createWork,
+  createWork, appendEvents, createWorkDelta,
 } from "../dist/build/packages/core/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { promptRecallContext } from "../dist/build/packages/core/src/hook-recall.js";
@@ -406,6 +406,15 @@ test("647: incremental source-stream matrix preserves status, queries and govern
 
 test("648: full verification detects authentic same-length, same-name, missing and incomplete source anomalies", async t => {
   const f = await fixture(t);
+  // This scenario asserts native partial reads. Give that real path enough
+  // archived work to be eligible, while leaving the changed alpha object and
+  // all integrity/byte assertions unchanged. Small full reads have own coverage.
+  const beta = f.sources[2];
+  await appendEvents(beta.path, Array.from({ length: 20 }, (_, n) => createWorkDelta({
+    projectId: beta.projectId, externalKey: `NATIVE-INTEGRITY-${n}`, kind: "Initiative", parentId: null,
+    title: `Native integrity payload ${n}`, scope: "Native integrity input",
+    body: "calibration ".repeat(20000), occurredAt: at,
+  })), { occurredAt: at });
   await consolidateLibraries(f.mapping, f.to, f.options);
   const { materializeLibrary } = await import("../dist/build/packages/core/src/workspace.js");
   const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
@@ -421,6 +430,7 @@ test("648: full verification detects authentic same-length, same-name, missing a
   assert.deepEqual(warm.value, expected);
   assert.ok(warm.observation.cacheReadBytes > 0);
   assert.equal(warm.observation.cacheWriteBytes, 0);
+  if (process.platform === "darwin") assert.ok(warm.observation.verifiedSegmentsBySource.length > 0, "the eligible input must actually use native verification");
   const observations = [{ scenario: "warm unchanged, native resident-file proof", observation: warm.observation }];
   const rejects = async (scenario, predicate) => {
     let observation;

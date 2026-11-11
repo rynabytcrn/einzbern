@@ -133,7 +133,7 @@ test("verified projections avoid repeated event validation and batch native help
   assert.ok(hits(result.observation) > 0);
   assert.equal(result.observation.logicalEventBytes, 0);
   assert.ok(result.observation.verificationHelperScriptBytes > 0);
-  const helper = await fs.readFile(new URL("../scripts/lib/darwin-source-identity.mjs", import.meta.url));
+  const helper = await fs.readFile(new URL("../packages/core/src/darwin-source-identity.mjs", import.meta.url));
   assert.equal(result.observation.verificationHelperScriptBytes, helper.length * 2);
   assert.ok(result.observation.cacheReadBytes < first.observation.logicalEventBytes + first.observation.cacheReadBytes);
   assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));

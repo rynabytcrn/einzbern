@@ -175,7 +175,7 @@ async function queryNative(files: readonly OpenSegment[]): Promise<readonly (Nat
   try {
     // The normal build copies this resource. The release bundler carries this
     // exact URL in the CLI, so users need only Node and macOS's system JXA host.
-    script = await readFile(new URL("../../../scripts/lib/darwin-source-identity.mjs", import.meta.url), "utf8");
+    script = await readFile(new URL("./darwin-source-identity.mjs", import.meta.url), "utf8");
   } catch {
     observeCacheReason("source-verification-helper-missing");
     if (session !== undefined) session.helperUnavailable = true;

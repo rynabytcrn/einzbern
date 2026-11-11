@@ -218,7 +218,7 @@ test("647: full consolidated checkpoint skips replay, survives restart and resum
   const { withRecallObservation } = await import("../dist/build/packages/core/src/recall-observation.js");
   await materializeLibrary(f.to);
   const same = await withRecallObservation(() => materializeLibrary(f.to));
-  assert.ok(same.observation.cacheReasons.includes("consolidation-checkpoint-validated-full-byte-read"));
+  assert.ok(same.observation.cacheReasons.includes("consolidation-checkpoint-validated"));
   assert.equal(same.observation.replayedEvents, 0);
   const full = await withRecallObservation(() => materializeWorkspaceFromGenesis(f.to));
   assert.deepEqual(same.value, full.value);

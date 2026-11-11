@@ -43,7 +43,8 @@ until the next successful verification; it contains no unique source truth.
 
 ## Proof used by the reader
 
-The system JXA host runs the packaged `darwin-source-identity.mjs` in short-lived
+The system JXA host runs the packaged, core-owned
+`packages/core/src/darwin-source-identity.mjs` in short-lived
 batches covering the operation's held source objects. A metadata-only pass
 opens at most 128 Node descriptors; larger inputs retain the complete original
 reader. Two helper invocations cover the operation, including all sources. The
@@ -55,7 +56,9 @@ checks must still agree. Pipe-only stdio transfers no caller output or source FD
 and satisfies the unchanged test controller. It uses Foundation and a C bridge to
 `fgetattrlist` and `sysctlbyname`. The normal build copies the helper and the
 release bundler carries its bytes through the normal relative resource URL.
-Runtime does not compile code or require Python, developer tools or a service.
+The normal build places this resource beside its core consumer; the same local
+URL works in an ordinary build and in the release bundle. Runtime does not
+compile code or require Python, developer tools or a service.
 A missing resource, failed host or five-second timeout returns to the original
 reader; after a host failure the rest of that operation does not repeat it.
 

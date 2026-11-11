@@ -3601,7 +3601,7 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
           const seed = { ...cached.seed, version: snapshot.version, prefixEvents: [...baseEvents, ...cached.seed.prefixEvents] };
           replay = replayLibrary(library, read, { seed, merge: cached.merge, consolidatedTailVersion: cached.seed.version });
           cachedVersion = snapshot.version;
-          observeCacheReason("consolidation-checkpoint-validated-full-byte-read");
+          observeCacheReason("consolidation-checkpoint-validated");
         }
       }
     } catch {

@@ -10,11 +10,13 @@ export interface RecallObservation {
   readonly materializations: number;
   readonly recallCalls: number;
   readonly replayedEvents: number;
+  readonly replayCpuMicros: number;
+  readonly replayElapsedMs: number;
   readonly cacheReasons: readonly string[];
   readonly stages: readonly { name: string; startMs: number; endMs: number; cpuMicros: number }[];
   readonly checkpoint: string | null;
 }
-interface Counters { logicalEventBytes: number; segmentReads: number; materializations: number; recallCalls: number; replayedEvents: number; cacheReasons: string[]; stages: { name: string; startMs: number; endMs: number; cpuMicros: number }[]; checkpoint: string | null }
+interface Counters { logicalEventBytes: number; segmentReads: number; materializations: number; recallCalls: number; replayedEvents: number; replayCpuMicros: number; replayElapsedMs: number; cacheReasons: string[]; stages: { name: string; startMs: number; endMs: number; cpuMicros: number }[]; checkpoint: string | null }
 let active: AsyncLocalStorage<Counters> | undefined;
 export function observeEventRead(bytes: number): void {
   const counters = active?.getStore();
@@ -27,7 +29,7 @@ export function observeRecall(reason: string): void {
 }
 /** Opt-in request-local counters. Logical bytes are not OS I/O, network bytes or token cost. */
 export async function withRecallObservation<T>(operation: () => Promise<T>, completed?: (observation: RecallObservation) => void): Promise<{ value: T; observation: RecallObservation }> {
-  const counters: Counters = { logicalEventBytes: 0, segmentReads: 0, materializations: 0, recallCalls: 0, replayedEvents: 0, cacheReasons: [], stages: [], checkpoint: null };
+  const counters: Counters = { logicalEventBytes: 0, segmentReads: 0, materializations: 0, recallCalls: 0, replayedEvents: 0, replayCpuMicros: 0, replayElapsedMs: 0, cacheReasons: [], stages: [], checkpoint: null };
   const { AsyncLocalStorage } = await import("node:async_hooks");
   active ??= new AsyncLocalStorage<Counters>();
   const correlationId = crypto.randomUUID();
@@ -62,4 +64,19 @@ export async function observeStage<T>(name: string, operation: () => Promise<T>)
   try { return await operation(); } finally { const used = process.cpuUsage(cpu); counters.stages.push({ name, startMs, endMs: performance.now(), cpuMicros: used.user + used.system }); }
 }
 
-export function observeReplay(events: number): void { const counters = active?.getStore(); if (counters !== undefined) counters.replayedEvents += events; }
+/** Reducer invocations are synchronous and disjoint, so their CPU is counted once.
+ * The surrounding replay stage also includes checkpoint I/O and consolidation. */
+export function observeReplay<T>(events: number, operation: () => T): T {
+  const counters = active?.getStore();
+  if (counters === undefined) return operation();
+  counters.replayedEvents += events;
+  const started = performance.now();
+  const cpu = process.cpuUsage();
+  try {
+    return operation();
+  } finally {
+    const used = process.cpuUsage(cpu);
+    counters.replayCpuMicros += used.user + used.system;
+    counters.replayElapsedMs += performance.now() - started;
+  }
+}

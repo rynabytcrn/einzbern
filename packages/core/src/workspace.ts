@@ -2233,7 +2233,10 @@ function replayModelPlanMutation(
 }
 
 function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[], snapshot?: ReplaySeed, merge?: MergeReplay): WorkspaceState {
-  observeReplay(events.length);
+  return observeReplay(events.length, () => materializeEvents(metadata, events, snapshot, merge));
+}
+
+function materializeEvents(metadata: WorkspaceMetadata, events: readonly EventRecord[], snapshot?: ReplaySeed, merge?: MergeReplay): WorkspaceState {
   if (snapshot === undefined) {
     recordFullMaterialize();
   } else {
@@ -3558,6 +3561,21 @@ function consolidationEvents(read: LibraryReadShape): readonly EventRecord[] {
   return [...sources.flatMap(source => consolidationEvents(source.read)), ...read.events.filter(entry => entry.event.sequence > (index.primaryVersionVector[entry.deviceId] ?? 0)).map(entry => entry.event)];
 }
 
+// The hashed state names its coverage as well as its base. A valid state file
+// paired with a damaged/replaced header must never resume at another boundary.
+function consolidationCheckpointBinding(snapshot: Pick<CacheSnapshot, "libraryId" | "engineVersion" | "version" | "maxClock" | "streams">, baseBinding: string, baseVersion: number): string {
+  return canonicalSha256({
+    schemaVersion: "einzbern.consolidation-replay.v2",
+    baseBinding,
+    baseVersion,
+    libraryId: snapshot.libraryId,
+    engineVersion: snapshot.engineVersion,
+    version: snapshot.version,
+    maxClock: snapshot.maxClock,
+    streams: snapshot.streams,
+  });
+}
+
 async function replayLibraryResultThroughCache(library: Library, read: LibraryRead): Promise<LibraryReplayResult> {
   if (read.consolidation !== undefined) {
     // Revalidate the index's expected source heads before trusting a prior merge.
@@ -3566,7 +3584,7 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
     for (const { source, read: sourceRead } of read.consolidation.sources) {
       const streams = sourceRead.streams.flatMap(stream => stream.manifest === null ? [] : [streamHead(stream.manifest)]);
       const head = source.manifest.consolidation === undefined ? libraryHeadDigest(streams) : canonicalSha256({ schemaVersion: "einzbern.shared-head.v1", provenance: source.manifest.consolidation.sha256, head: libraryHeadDigest(streams) });
-      if (head !== source.headEventHash || Boolean(source.manifest.consolidation) !== Boolean(sourceRead.consolidation)) throw new ConsolidationError("CONSOLIDATION_SOURCE_CHANGED", "validated source head differs from the consolidation index");
+      if (head !== source.headEventHash || canonicalSha256(sourceRead.versionVector) !== canonicalSha256(source.versionVector) || Boolean(source.manifest.consolidation) !== Boolean(sourceRead.consolidation)) throw new ConsolidationError("CONSOLIDATION_SOURCE_CHANGED", "validated source head/vector differs from the consolidation index");
     }
     const binding = canonicalSha256({ projection: FRAMEWORK_VERSION, manifest: library.manifest, index: read.consolidation.index });
     const baseEvents = read.consolidation.sources.flatMap(source => consolidationEvents(source.read));
@@ -3575,8 +3593,8 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
     let cachedVersion: number | null = null;
     try {
       const snapshot = await readCacheSnapshot(library.manifest.libraryId);
-      const value = snapshot?.state as { consolidationBinding?: unknown } | undefined;
-      if (snapshot !== null && value?.consolidationBinding === binding) {
+      const value = snapshot?.state as { consolidationBinding?: unknown; consolidationCheckpoint?: unknown } | undefined;
+      if (snapshot !== null && value?.consolidationBinding === binding && value.consolidationCheckpoint === consolidationCheckpointBinding(snapshot, binding, baseEvents.length)) {
         const cached = seedFromSnapshot({ ...snapshot, version: snapshot.version - baseEvents.length }, { ...read, events: tail });
         if (cached !== null) {
           const seed = { ...cached.seed, version: snapshot.version, prefixEvents: [...baseEvents, ...cached.seed.prefixEvents] };
@@ -3599,12 +3617,26 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
       replay = replayLibrary(library, read, undefined, sourceStates);
     }
     try {
-      if (cachedVersion !== replay.state.version) await writeCacheSnapshot({
-        libraryId: library.manifest.libraryId, engineVersion: FRAMEWORK_VERSION,
-        version: replay.state.version, maxClock: tail.reduce((largest, entry) => Math.max(largest, entry.clock), 0),
-        streams: read.streams.flatMap(stream => stream.manifest === null || stream.manifest.headEventHash === null ? [] : [{ deviceId: stream.deviceId, streamId: stream.manifest.streamId, sequence: stream.manifest.sequence, eventHash: stream.manifest.headEventHash }]),
-        state: { ...Object.fromEntries(SNAPSHOT_COLLECTIONS.map(name => [name, replay.state[name]])), attestationEnabledAtSequence: replay.state.attestationEnabledAtSequence, consolidationBinding: binding, executionConfig: replay.replayExecutionConfig, merge: replay.merge.checkpoint() },
-      });
+      if (cachedVersion !== replay.state.version) {
+        const checkpoint = {
+          libraryId: library.manifest.libraryId,
+          engineVersion: FRAMEWORK_VERSION,
+          version: replay.state.version,
+          maxClock: tail.reduce((largest, entry) => Math.max(largest, entry.clock), 0),
+          streams: read.streams.flatMap(stream => stream.manifest === null || stream.manifest.headEventHash === null ? [] : [{ deviceId: stream.deviceId, streamId: stream.manifest.streamId, sequence: stream.manifest.sequence, eventHash: stream.manifest.headEventHash }]),
+        };
+        await writeCacheSnapshot({
+          ...checkpoint,
+          state: {
+            ...Object.fromEntries(SNAPSHOT_COLLECTIONS.map(name => [name, replay.state[name]])),
+            attestationEnabledAtSequence: replay.state.attestationEnabledAtSequence,
+            consolidationBinding: binding,
+            consolidationCheckpoint: consolidationCheckpointBinding(checkpoint, binding, baseEvents.length),
+            executionConfig: replay.replayExecutionConfig,
+            merge: replay.merge.checkpoint(),
+          },
+        });
+      }
     } catch {
       // A disposable cache write does not change the authority result.
     }

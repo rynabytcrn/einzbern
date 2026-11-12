@@ -41,7 +41,7 @@ test("645: opaque request authority reuses one raw read and rejects fabricated/o
   assert.equal(JSON.stringify(observed.observation).includes("prompt"), false);
 });
 
-test("645: a fresh raw read excludes artifact writing and unobserved CLI excludes its optional logger", async t => {
+test("645: ordinary reads defer source verification, artifact writing and the optional logger", async t => {
   const base = await realpath(await mkdtemp(join(tmpdir(), "recall-lazy-modules-")));
   t.after(() => rm(base, { recursive: true, force: true }));
   const root = join(base, "library");
@@ -59,6 +59,8 @@ test("645: a fresh raw read excludes artifact writing and unobserved CLI exclude
     const { readRecallAuthority } = await import(${JSON.stringify(new URL("../dist/build/packages/core/src/recall-authority.js", import.meta.url).href)});
     await readRecallAuthority(${JSON.stringify(root)});
     assert.equal(has("artifact-store"), false);
+    assert.equal(has("source-verification"), false);
+    assert.equal(has("source-verification-native"), false);
     const { runCli } = await import(${JSON.stringify(new URL("../dist/build/packages/cli/src/index.js", import.meta.url).href)});
     const { resetRecallCache } = await import(${JSON.stringify(new URL("../dist/build/packages/core/src/recall.js", import.meta.url).href)});
     const args = ["recall", "--workspace", ${JSON.stringify(root)}, "--query", "alloy calibration", "--at", ${JSON.stringify(at)}];
@@ -71,6 +73,8 @@ test("645: a fresh raw read excludes artifact writing and unobserved CLI exclude
     process.env.EINZBERN_RECALL_OBSERVATION = "1";
     await runCli(args, { write(value) { observed = value; } });
     assert.equal(has("recall-observation-log"), true);
+    assert.equal(has("source-verification"), false);
+    assert.equal(has("source-verification-native"), false);
     assert.equal(observed, unobserved);
   `], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: join(base, "device") } });
   assert.equal(child.status, 0, child.stderr);

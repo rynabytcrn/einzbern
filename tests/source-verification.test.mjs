@@ -14,6 +14,7 @@ import {
   createWork, consolidateLibraries, materializeLibrary, materializeWorkspaceFromGenesis,
   openLibrary, readConsolidationIndex, readAllStreams, cachePath, configureStorageLocation,
   registerLibrary, appendEvents, createWorkDelta,
+  digestBytes,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 import { withRecallObservation } from "../dist/build/packages/core/src/recall-observation.js";
@@ -362,6 +363,89 @@ test("small consolidated sources keep full verification without starting a helpe
   await fs.writeFile(f.target, await corrupt(f));
   await assert.rejects(materializeLibrary(f.library));
   await assert.rejects(materializeWorkspaceFromGenesis(f.library));
+});
+
+test("the full cost path shares one immutable parse while rereading the current index", { skip: !native }, async t => {
+  const f = await fixture(t, false);
+  const path = join(f.library, f.manifest.consolidation.index);
+  const originalRead = fs.readFile;
+  const originalParse = JSON.parse;
+  let reads = 0;
+  let parses = 0;
+  t.mock.method(fs, "readFile", async (file, ...args) => {
+    if (file === path) reads += 1;
+    return originalRead(file, ...args);
+  });
+  t.mock.method(JSON, "parse", (...args) => {
+    const value = originalParse(...args);
+    if (value?.schemaVersion === "einzbern.consolidation.v1") parses += 1;
+    return value;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  for (let request = 1; request <= 2; request += 1) {
+    const result = await read(f);
+    assert.equal(reads, request * 2, "the original reader must independently read the current index");
+    assert.equal(parses, request, "reuse ends with each materialization request");
+    assert.ok(result.observation.logicalEventBytes > 0);
+    assert.equal(hits(result.observation), 0);
+  }
+  const { withConsolidationIndexParseReuse } = await import("../dist/build/packages/core/src/consolidation-format.js");
+  await withConsolidationIndexParseReuse(async () => {
+    const index = await readConsolidationIndex(f.library, f.manifest);
+    assert.ok(Object.isFrozen(index));
+    assert.ok(Object.isFrozen(index.sources[0].inventory[0]));
+    assert.throws(() => { index.sources[0].inventory[0].bytes += 1; }, TypeError);
+    assert.equal(await readConsolidationIndex(f.library, f.manifest), index);
+  });
+});
+
+test("an index corrupted after the cost precheck is rejected by the original reader", { skip: !native }, async t => {
+  const f = await fixture(t, false);
+  const path = join(f.library, f.manifest.consolidation.index);
+  const originalRead = fs.readFile;
+  let reads = 0;
+  t.mock.method(fs, "readFile", async (file, ...args) => {
+    const bytes = await originalRead(file, ...args);
+    if (file === path && ++reads === 1) await fs.writeFile(path, bytes.toString("utf8").replace("agent:codex", "agent:other"));
+    return bytes;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  await assert.rejects(materializeLibrary(f.library), { reasonCode: "CONSOLIDATION_DIGEST_MISMATCH" });
+  assert.equal(reads, 2);
+  await assert.rejects(materializeWorkspaceFromGenesis(f.library), { reasonCode: "CONSOLIDATION_DIGEST_MISMATCH" });
+});
+
+test("a changed valid index replaces the cost parse and still verifies source authority", { skip: !native }, async t => {
+  const f = await fixture(t, false);
+  const path = join(f.library, f.manifest.consolidation.index);
+  const originalRead = fs.readFile;
+  const originalParse = JSON.parse;
+  let reads = 0;
+  let parses = 0;
+  t.mock.method(JSON, "parse", (...args) => {
+    const value = originalParse(...args);
+    if (value?.schemaVersion === "einzbern.consolidation.v1") parses += 1;
+    return value;
+  });
+  t.mock.method(fs, "readFile", async (file, ...args) => {
+    const bytes = await originalRead(file, ...args);
+    if (file === path && ++reads === 1) {
+      const index = originalParse(bytes.toString("utf8"));
+      index.sources[1].headEventHash = "0".repeat(64);
+      const changed = canonicalJson(index);
+      await fs.writeFile(path, changed);
+      await fs.writeFile(join(f.library, "manifest.json"), canonicalJson({ ...f.manifest, consolidation: { ...f.manifest.consolidation, sha256: digestBytes(changed) } }));
+    }
+    return bytes;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  await assert.rejects(materializeLibrary(f.library), { reasonCode: "CONSOLIDATION_SOURCE_CHANGED" });
+  assert.equal(reads, 2);
+  assert.equal(parses, 2, "changed current bytes cannot reuse the cost parse");
+  await assert.rejects(materializeWorkspaceFromGenesis(f.library), { reasonCode: "CONSOLIDATION_SOURCE_CHANGED" });
 });
 
 test("native protocol returns the complete packed attributes without buffer padding", { skip: !native }, async t => {

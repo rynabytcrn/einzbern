@@ -1,7 +1,6 @@
 import { validateSettingValue } from "./settings.js";
 import { bindProjectArtifactPath, projectArtifactBinding } from "./artifact-path-binding.js";
 import { observeMaterialization, observeStage, observeCheckpoint, observeCacheReason, observeReplay } from "./recall-observation.js";
-import { hasPendingSourceVerification, hasVerifiedReplayProjection, recordVerifiedReplayProjection, withSourceVerification } from "./source-verification.js";
 import { WORK_CONTENT_KEY, workContent, validateWorkContent, contentFail } from "./work-content.js";
 import type { ContentWorkKind } from "./work-content.js";
 import { WORK_CONTENT_POLICY_KEY, readWorkContentPolicy, validateWorkContentPolicy, workContentPolicyApplies, workContentRolloutReadiness } from "./work-content-templates.js";
@@ -3579,6 +3578,7 @@ function consolidationCheckpointBinding(snapshot: Pick<CacheSnapshot, "libraryId
 
 async function replayLibraryResultThroughCache(library: Library, read: LibraryRead, forceAuthorityReplay = false): Promise<LibraryReplayResult> {
   if (read.consolidation !== undefined) {
+    const { hasVerifiedReplayProjection, recordVerifiedReplayProjection } = await import("./source-verification.js");
     // Revalidate the index's expected source heads before trusting a prior merge.
     // Stream self-consistency and an unchanged version vector alone do not prove
     // that an archive has not been coherently rewritten at the same sequences.
@@ -3662,7 +3662,8 @@ async function replayLibraryResultThroughCache(library: Library, read: LibraryRe
 }
 
 async function replayLibraryThroughCache(library: Library, read: LibraryRead): Promise<WorkspaceState> {
-  return (await replayLibraryResultThroughCache(library, read, hasPendingSourceVerification())).state;
+  const forceAuthorityReplay = read.consolidation !== undefined && (await import("./source-verification.js")).hasPendingSourceVerification();
+  return (await replayLibraryResultThroughCache(library, read, forceAuthorityReplay)).state;
 }
 
 /** Read every stream of a library and replay them merged, through this device's cache. */
@@ -3677,6 +3678,7 @@ export async function materializeLibrary(libraryOrRoot: Library | string, option
     observeCheckpoint(state.headEventHash);
     return state;
   }
+  const { withSourceVerification } = await import("./source-verification.js");
   return withSourceVerification(library, async () => {
     const read = await observeStage("authority-read", () => readAllStreams(library.root, options));
     const state = await observeStage("replay", () => replayLibraryThroughCache(library, read));

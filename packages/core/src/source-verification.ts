@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { readConsolidationIndex } from "./consolidation-format.js";
+import { readConsolidationIndex, withConsolidationIndexParseReuse } from "./consolidation-format.js";
 import { observeCacheReason } from "./recall-observation.js";
 import type { LibraryRead, StreamManifest } from "./akasha.js";
 import type { EventRecord } from "../../protocol/src/index.js";
@@ -39,11 +39,13 @@ export async function withSourceVerification<T>(library: Library, operation: () 
   // The normal reader still validates the current index and every source.
   // A failed cost precheck delegates errors to the original reader, which may
   // encounter an earlier corrupt event before reaching the index.
-  const index = await readConsolidationIndex(library.root, library.manifest).catch(() => null);
-  const archiveBytes = index?.sources.reduce((sum, source) => sum + source.inventory.reduce((bytes, file) => bytes + (/^akasha\/[^/]+\/[^/]+\.ndjson$/u.test(file.path) ? file.bytes : 0), 0), 0) ?? 0;
-  if (archiveBytes < 4 * 1024 * 1024) {
-    observeCacheReason("source-verification-full-cost-path");
-    return (await operation()).value;
-  }
-  return (await nativeVerifier()).withSourceVerification(library, operation);
+  return withConsolidationIndexParseReuse(async () => {
+    const index = await readConsolidationIndex(library.root, library.manifest).catch(() => null);
+    const archiveBytes = index?.sources.reduce((sum, source) => sum + source.inventory.reduce((bytes, file) => bytes + (/^akasha\/[^/]+\/[^/]+\.ndjson$/u.test(file.path) ? file.bytes : 0), 0), 0) ?? 0;
+    if (archiveBytes < 4 * 1024 * 1024) {
+      observeCacheReason("source-verification-full-cost-path");
+      return (await operation()).value;
+    }
+    return (await nativeVerifier()).withSourceVerification(library, operation);
+  });
 }

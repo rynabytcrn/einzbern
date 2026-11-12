@@ -58,7 +58,6 @@ import { assertLibrarySupported, upgradeReadiness } from "./format-version.js";
 import type { DeviceEngine, UpgradeReadiness } from "./format-version.js";
 import { DIRECTORY } from "./names.js";
 import { FRAMEWORK_VERSION } from "./framework-version.js";
-import { recordVerifiedStreamEvents, verifiedStreamSegments } from "./source-verification.js";
 
 export const STREAM_MANIFEST_SCHEMA_VERSION = "einzbern.stream-manifest.v1" as const;
 export const STREAM_MANIFEST_FILE = "manifest.json" as const;
@@ -318,7 +317,7 @@ export async function readStreamManifest(libraryRoot: string, deviceId: string, 
   return manifest;
 }
 
-async function assertDerivedStreamIdentity(libraryRoot: string, manifest: StreamManifest, archivedManifest?: LibraryManifest): Promise<void> {
+async function assertDerivedStreamIdentity(libraryRoot: string, manifest: StreamManifest, archivedManifest?: LibraryManifest): Promise<LibraryManifest | undefined> {
   if (manifest.identityScheme === "legacy") return;
   const libraryManifest = archivedManifest ?? (await openLibrary(libraryRoot)).manifest;
   const expected = deriveStreamId(libraryManifest.libraryId, manifest.deviceId);
@@ -330,6 +329,7 @@ async function assertDerivedStreamIdentity(libraryRoot: string, manifest: Stream
       streamId: manifest.streamId,
     });
   }
+  return libraryManifest;
 }
 
 function validateSegmentEvent(value: unknown, manifest: StreamManifest, segment: StreamSegment, index: number): EventRecord {
@@ -416,12 +416,16 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
  * device, stream and sequence where the stream stops being provable.
  */
 export async function readStreamEvents(libraryRoot: string, manifest: StreamManifest, options: StreamReadOptions = {}): Promise<readonly EventRecord[]> {
-  await assertDerivedStreamIdentity(libraryRoot, manifest, options.archivedManifest);
+  const libraryManifest = await assertDerivedStreamIdentity(libraryRoot, manifest, options.archivedManifest);
   const readFile = options.readFile ?? defaultReadBytes;
   const events: EventRecord[] = [];
   let mismatched: StreamSegment | null = null;
-  const verification = readFile === defaultReadBytes ? verifiedStreamSegments(libraryRoot, manifest, options.archivedManifest) : null;
-  const prepared = verification === null ? null : await verification;
+  // This manifest was already read for stream identity. Ordinary streams have
+  // no verification scope, so they need neither its module nor its callbacks.
+  const verifier = readFile === defaultReadBytes && (manifest.identityScheme === "legacy" || options.archivedManifest !== undefined || libraryManifest?.consolidation !== undefined)
+    ? await import("./source-verification.js") : undefined;
+  const verification = verifier?.verifiedStreamSegments(libraryRoot, manifest, options.archivedManifest);
+  const prepared = verification === null || verification === undefined ? null : await verification;
   let reused: Set<string> | undefined;
   for (const segment of manifest.segments) {
     const verified = prepared?.get(segment.name);
@@ -482,7 +486,7 @@ export async function readStreamEvents(libraryRoot: string, manifest: StreamMani
       break: "head",
     });
   }
-  const recording = recordVerifiedStreamEvents(libraryRoot, manifest, events);
+  const recording = verifier?.recordVerifiedStreamEvents(libraryRoot, manifest, events);
   if (recording !== undefined) await recording;
   return events;
 }

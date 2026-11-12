@@ -2,6 +2,7 @@
 // A consolidation records the original libraries, not a re-authored event history. The root
 // manifest commits this small index; the archived streams keep their original identities/hashes.
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { LibraryManifest } from "./ether-library.js";
@@ -30,6 +31,28 @@ export class ConsolidationError extends Error {
   constructor(readonly reasonCode: string, message: string) { super(message); this.name = "ConsolidationError"; }
 }
 export const digestBytes = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("hex");
+interface IndexParse {
+  readonly bytes: Buffer;
+  readonly index: ConsolidationIndex;
+}
+let indexParses: AsyncLocalStorage<Map<string, IndexParse>> | undefined;
+
+/** Private request scope: current file reads and validations are never cached. */
+export function withConsolidationIndexParseReuse<T>(operation: () => Promise<T>): Promise<T> {
+  indexParses ??= new AsyncLocalStorage<Map<string, IndexParse>>();
+  return indexParses.run(new Map(), operation);
+}
+
+function freezeIndex(value: unknown): void {
+  const pending = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === null || typeof current !== "object") continue;
+    Object.freeze(current);
+    for (const child of Object.values(current)) pending.push(child);
+  }
+}
+
 export function validateConsolidationIndex(input: unknown): ConsolidationIndex {
   const value = input as ConsolidationIndex;
   const fail = (): never => { throw new ConsolidationError("CONSOLIDATION_INDEX_INVALID", "invalid consolidation provenance"); };
@@ -59,11 +82,21 @@ export async function readConsolidationIndex(root: string, manifest: LibraryMani
   const provenance = manifest.consolidation;
   if (provenance === undefined) return null;
   return observeMetadataRead(async () => {
-    const bytes = await readFile(join(root, provenance.index));
+    const path = join(root, provenance.index);
+    const bytes = await readFile(path);
     observeMetadataBytes(bytes.length);
     if (digestBytes(bytes) !== provenance.sha256) throw new ConsolidationError("CONSOLIDATION_DIGEST_MISMATCH", "consolidation index digest differs from the library manifest");
-    const index = validateConsolidationIndex(JSON.parse(bytes.toString("utf8")));
+    const parses = indexParses?.getStore();
+    const previous = parses?.get(path);
+    // The cost precheck and the normal reader still authenticate their own
+    // current bytes, in their original order. Equal bytes can share only the
+    // private immutable parse, never a prior validation result or a source read.
+    const index = validateConsolidationIndex(previous?.bytes.equals(bytes) === true ? previous.index : JSON.parse(bytes.toString("utf8")));
     if (index.primaryLibraryId !== manifest.libraryId) throw new ConsolidationError("CONSOLIDATION_INDEX_INVALID", "the shared library must retain its coordination identity");
+    if (parses !== undefined && previous?.index !== index) {
+      freezeIndex(index);
+      parses.set(path, { bytes, index });
+    }
     return index;
   });
 }

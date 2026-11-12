@@ -15,11 +15,11 @@ async function nativeVerifier(): Promise<typeof import("./source-verification-na
   return verifier ??= await import("./source-verification-native.js");
 }
 
-export async function verifiedStreamSegments(root: string, manifest: StreamManifest, source?: LibraryManifest): Promise<ReadonlyMap<string, VerifiedSegment> | null> {
-  return verifier?.verifiedStreamSegments(root, manifest, source) ?? null;
+export function verifiedStreamSegments(root: string, manifest: StreamManifest, source?: LibraryManifest): Promise<ReadonlyMap<string, VerifiedSegment> | null> | null {
+  return verifier?.hasActiveSourceVerification() === true ? verifier.verifiedStreamSegments(root, manifest, source) : null;
 }
-export async function recordVerifiedStreamEvents(root: string, manifest: StreamManifest, events: readonly EventRecord[]): Promise<void> {
-  await verifier?.recordVerifiedStreamEvents(root, manifest, events);
+export function recordVerifiedStreamEvents(root: string, manifest: StreamManifest, events: readonly EventRecord[]): Promise<void> | undefined {
+  return verifier?.hasActiveSourceVerification() === true ? verifier.recordVerifiedStreamEvents(root, manifest, events) : undefined;
 }
 export function hasPendingSourceVerification(): boolean {
   return verifier?.hasPendingSourceVerification() ?? false;

@@ -330,6 +330,10 @@ export async function recordVerifiedStreamEvents(libraryRoot: string, manifest: 
   }
 }
 
+export function hasActiveSourceVerification(): boolean {
+  return active.getStore() !== undefined;
+}
+
 export function hasPendingSourceVerification(): boolean {
   return (active.getStore()?.pending.length ?? 0) > 0;
 }

@@ -3669,15 +3669,20 @@ async function replayLibraryThroughCache(library: Library, read: LibraryRead): P
 export async function materializeLibrary(libraryOrRoot: Library | string, options: LibraryReadOptions = {}): Promise<WorkspaceState> {
   observeMaterialization();
   const library = typeof libraryOrRoot === "string" ? await openLibrary(libraryOrRoot) : libraryOrRoot;
-  const operation = async () => {
+  // Ordinary reads need no native callback or retained verification envelope.
+  if (options.readFile !== undefined || options.timeoutMs !== undefined || options.archivedManifest !== undefined
+    || process.platform !== "darwin" || library.manifest.consolidation === undefined) {
+    const read = await observeStage("authority-read", () => readAllStreams(library.root, options));
+    const state = await observeStage("replay", () => replayLibraryThroughCache(library, read));
+    observeCheckpoint(state.headEventHash);
+    return state;
+  }
+  return withSourceVerification(library, async () => {
     const read = await observeStage("authority-read", () => readAllStreams(library.root, options));
     const state = await observeStage("replay", () => replayLibraryThroughCache(library, read));
     observeCheckpoint(state.headEventHash);
     return { value: state, read, accepted: (state.library?.rejectedEvents.length ?? 0) === 0 };
-  };
-  return options.readFile !== undefined || options.timeoutMs !== undefined || options.archivedManifest !== undefined
-    ? (await operation()).value
-    : withSourceVerification(library, operation);
+  });
 }
 
 /** The keys a record was renamed from, and the records renamed away from its key (TCRN-CROSS-STORY-468 R5). */

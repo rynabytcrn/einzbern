@@ -420,12 +420,14 @@ export async function readStreamEvents(libraryRoot: string, manifest: StreamMani
   const readFile = options.readFile ?? defaultReadBytes;
   const events: EventRecord[] = [];
   let mismatched: StreamSegment | null = null;
-  const prepared = readFile === defaultReadBytes ? await verifiedStreamSegments(libraryRoot, manifest, options.archivedManifest) : null;
-  const reused = new Set<string>();
+  const verification = readFile === defaultReadBytes ? verifiedStreamSegments(libraryRoot, manifest, options.archivedManifest) : null;
+  const prepared = verification === null ? null : await verification;
+  let reused: Set<string> | undefined;
   for (const segment of manifest.segments) {
     const verified = prepared?.get(segment.name);
     if (verified?.events !== undefined) {
       events.push(...verified.events);
+      reused ??= new Set<string>();
       reused.add(segment.name);
       continue;
     }
@@ -450,7 +452,7 @@ export async function readStreamEvents(libraryRoot: string, manifest: StreamMani
       };
       // The local record binds every event inside a reused segment. Its link to
       // the preceding segment is still checked against this read's actual head.
-      if (reused.has(segment.name) && first?.priorHash === expected.priorHash
+      if (reused?.has(segment.name) === true && first?.priorHash === expected.priorHash
         && eventClock(first) > expected.priorClock) continue;
       const broken = findStreamChainBreak(events.slice(segment.firstSequence - 1, segment.lastSequence), expected);
       if (broken !== null) return broken;
@@ -480,7 +482,8 @@ export async function readStreamEvents(libraryRoot: string, manifest: StreamMani
       break: "head",
     });
   }
-  await recordVerifiedStreamEvents(libraryRoot, manifest, events);
+  const recording = recordVerifiedStreamEvents(libraryRoot, manifest, events);
+  if (recording !== undefined) await recording;
   return events;
 }
 

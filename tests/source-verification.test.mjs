@@ -390,7 +390,7 @@ test("the full cost path shares one immutable parse while rereading the current 
     assert.ok(result.observation.logicalEventBytes > 0);
     assert.equal(hits(result.observation), 0);
   }
-  const { withConsolidationIndexParseReuse } = await import("../dist/build/packages/core/src/consolidation-format.js");
+  const { withConsolidationIndexParseReuse } = await import("../dist/build/packages/core/src/source-verification.js");
   await withConsolidationIndexParseReuse(async () => {
     const index = await readConsolidationIndex(f.library, f.manifest);
     assert.ok(Object.isFrozen(index));

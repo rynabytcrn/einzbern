@@ -1,11 +1,58 @@
 // SPDX-License-Identifier: Apache-2.0
-import { readConsolidationIndex, withConsolidationIndexParseReuse } from "./consolidation-format.js";
-import { observeCacheReason } from "./recall-observation.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { ConsolidationError, digestBytes, readConsolidationIndex, validateConsolidationIndex } from "./consolidation-format.js";
+import type { ConsolidationIndex } from "./consolidation-format.js";
+import { observeCacheReason, observeMetadataBytes } from "./recall-observation.js";
 import type { LibraryRead, StreamManifest } from "./akasha.js";
 import type { EventRecord } from "../../protocol/src/index.js";
 import type { Library, LibraryManifest } from "./ether-library.js";
 import type { CacheSnapshotHeader } from "./library-cache.js";
 import type { VerifiedSegment } from "./source-verification-native.js";
+
+interface IndexParse {
+  readonly bytes: Buffer;
+  readonly index: ConsolidationIndex;
+}
+let indexParses: AsyncLocalStorage<Map<string, IndexParse>> | undefined;
+
+/** Private request scope: current file reads and validations are never cached. */
+export function withConsolidationIndexParseReuse<T>(operation: () => Promise<T>): Promise<T> {
+  indexParses ??= new AsyncLocalStorage<Map<string, IndexParse>>();
+  return indexParses.run(new Map(), operation);
+}
+
+function freezeIndex(value: unknown): void {
+  const pending = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === null || typeof current !== "object") continue;
+    Object.freeze(current);
+    for (const child of Object.values(current)) pending.push(child);
+  }
+}
+
+/** The public reader's original metadata span includes this complete current read. */
+export async function readCurrentConsolidationIndex(root: string, manifest: LibraryManifest): Promise<ConsolidationIndex | null> {
+  const provenance = manifest.consolidation;
+  if (provenance === undefined) return null;
+  const path = join(root, provenance.index);
+  const bytes = await readFile(path);
+  observeMetadataBytes(bytes.length);
+  if (digestBytes(bytes) !== provenance.sha256) throw new ConsolidationError("CONSOLIDATION_DIGEST_MISMATCH", "consolidation index digest differs from the library manifest");
+  const parses = indexParses?.getStore();
+  const previous = parses?.get(path);
+  // Each reader authenticates its current bytes, in the original order. Equal
+  // bytes share only a private immutable parse, never a validation result.
+  const index = validateConsolidationIndex(previous?.bytes.equals(bytes) === true ? previous.index : JSON.parse(bytes.toString("utf8")));
+  if (index.primaryLibraryId !== manifest.libraryId) throw new ConsolidationError("CONSOLIDATION_INDEX_INVALID", "the shared library must retain its coordination identity");
+  if (parses !== undefined && previous?.index !== index) {
+    freezeIndex(index);
+    parses.set(path, { bytes, index });
+  }
+  return index;
+}
 
 // Akasha and the materializer share this private module, not a caller-supplied
 // callback or state. Only the native module owns its request-local verification

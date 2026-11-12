@@ -912,8 +912,7 @@ export * from "./project-chain.js";
 export { prepareDispatch, recordDispatch, writeDispatchArtifact } from "./dispatch-workflow.js";
 
 export * from "./consolidate.js";
-export { ConsolidationError, digestBytes, readConsolidationIndex, validateConsolidationIndex } from "./consolidation-format.js";
-export type { ConsolidationIndex, ConsolidationSource } from "./consolidation-format.js";
+export * from "./consolidation-format.js";
 
 export * from "./storage-location.js";
 export * from "./storage-consolidate.js";

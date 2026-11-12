@@ -239,6 +239,28 @@ test("a coherent shared projection cannot replace the independent local digest",
   assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
 });
 
+test("an archived duplicate projection still authenticates its own cache bytes", { skip: !native }, async t => {
+  const f = await fixture(t);
+  provider(t);
+  await warm(f);
+  const records = await Promise.all((await fs.readdir(f.records)).filter(name => name.endsWith(".json")).map(async name => ({
+    key: name.slice(0, -5),
+    record: JSON.parse(await fs.readFile(join(f.records, name), "utf8")).record,
+  })));
+  const duplicate = records.find(({ record }) => record.binding.archive !== "" && records.some(other =>
+    other.record.binding.archive === "" && other.record.projectionDigest === record.projectionDigest));
+  assert.ok(duplicate, "live and archived sources must exercise an identical authenticated projection");
+  const path = join(f.cache, `${duplicate.key}.bin`);
+  const bytes = await fs.readFile(path);
+  bytes[0] ^= 1;
+  await fs.writeFile(path, bytes);
+  const result = await read(f);
+  assert.ok(result.observation.logicalEventBytes >= duplicate.record.coverage);
+  assert.ok(result.observation.eventReadsBySource.some(source => source.scope === "archive" && source.streamId === duplicate.record.binding.streamId));
+  assert.ok(hits(result.observation) > 0, "other authenticated segments still reuse");
+  assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
+});
+
 for (const duringProbe of [false, true]) {
   test(`current identity scheme remains authoritative ${duringProbe ? "across metadata preparation" : "after a warm projection"}`, { skip: !native }, async t => {
     const f = await fixture(t);

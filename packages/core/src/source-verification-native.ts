@@ -73,6 +73,7 @@ interface Candidate {
 interface VerificationSession extends VerificationBoundary {
   readonly pending: Candidate[];
   readonly reused: { readonly bytes: number; readonly streamId: string; readonly scope: "live" | "archive" }[];
+  readonly projections: Map<string, readonly EventRecord[]>;
   helperUnavailable: boolean;
   readonly files: Map<string, OpenSegment>;
 }
@@ -296,9 +297,18 @@ export async function verifiedStreamSegments(libraryRoot: string, manifest: Stre
           const bytes = await cached.readFile();
           observeCacheRead(bytes.length);
           if (bytes.length === prior.projectionBytes && digest(bytes) === prior.projectionDigest) {
-            const { gunzipSync } = await import("node:zlib");
-            const events: unknown = JSON.parse(gunzipSync(bytes, { maxOutputLength: segment.bytes * 2 }).toString("utf8"));
+            // Live and archived copies can carry identical events. Share their
+            // decoded graph only after each file's own record and cache bytes
+            // authenticate; the digest never substitutes for those checks.
+            // Equal coverage also preserves this file's decode size bound.
+            const projectionKey = `${prior.projectionDigest}:${segment.bytes}`;
+            let events: unknown = session.projections.get(projectionKey);
+            if (events === undefined) {
+              const { gunzipSync } = await import("node:zlib");
+              events = JSON.parse(gunzipSync(bytes, { maxOutputLength: segment.bytes * 2 }).toString("utf8"));
+            }
             if (Array.isArray(events) && events.length === segment.lastSequence - segment.firstSequence + 1) {
+              session.projections.set(projectionKey, events as EventRecord[]);
               result.set(segment.name, { events: events as EventRecord[] });
               session.reused.push({ bytes: bytes.length, streamId: manifest.streamId, scope: sourceManifest === undefined ? "live" : "archive" });
               continue;
@@ -351,7 +361,7 @@ function authorityMetadata(read: LibraryRead): unknown {
 export async function withSourceVerification<T>(library: Library, operation: () => Promise<{ readonly value: T; readonly read: LibraryRead; readonly accepted: boolean }>): Promise<T> {
   const boundary = process.platform !== "darwin" || library.manifest.consolidation === undefined ? null : await recordBoundary(library);
   if (boundary === null) return (await operation()).value;
-  const session: VerificationSession = { ...boundary, pending: [], reused: [], helperUnavailable: false, files: new Map() };
+  const session: VerificationSession = { ...boundary, pending: [], reused: [], projections: new Map(), helperUnavailable: false, files: new Map() };
   try {
     if (!await prepareFiles(session)) return (await operation()).value;
     const answer = await active.run(session, operation);

@@ -1,4 +1,4 @@
-import { isProjectArtifactBinding, resolveProjectArtifactBinding } from "../../core/src/artifact-path-binding.js";
+import { isProjectArtifactBinding, resolveProjectArtifactBinding } from "../../core/src/portable-path.js";
 import { withRecallObservation } from "../../core/src/recall-observation.js";
 import { readRecallAuthority } from "../../core/src/recall-authority.js";
 import { MEMORY_LEASE_VARIABLE } from "../../../scripts/lib/memory-budget.mjs";

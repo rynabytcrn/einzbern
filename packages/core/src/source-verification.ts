@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 import { AsyncLocalStorage } from "node:async_hooks";
-import { readFile } from "node:fs/promises";
+import { mkdir, open, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ConsolidationError, digestBytes, readConsolidationIndex, validateConsolidationIndex } from "./consolidation-format.js";
 import type { ConsolidationIndex } from "./consolidation-format.js";
-import { observeCacheReason, observeMetadataBytes } from "./recall-observation.js";
+import { observeCacheRead, observeCacheReason, observeCacheWrite, observeMetadataBytes } from "./recall-observation.js";
 import type { LibraryRead, StreamManifest } from "./akasha.js";
 import type { EventRecord } from "../../protocol/src/index.js";
 import type { Library, LibraryManifest } from "./ether-library.js";
 import type { CacheSnapshotHeader } from "./library-cache.js";
+import { cachePath } from "./device-home.js";
+import { writeFileAtomic } from "./atomic-file.js";
 import type { VerifiedSegment } from "./source-verification-native.js";
 
 interface IndexParse {
@@ -77,19 +79,61 @@ export async function hasVerifiedReplayProjection(library: Library, binding: str
 export async function recordVerifiedReplayProjection(library: Library, binding: string, snapshot: CacheSnapshotHeader): Promise<void> {
   await (await import("./source-verification-records.js")).recordVerifiedReplayProjection(library, binding, snapshot);
 }
+const FULL_READ_MAX_BYTES = 4 * 1024 * 1024;
+const COST_HINT_SCHEMA = "einzbern.consolidation-cost.v1";
+function costHintPath(library: Library): string {
+  return join(cachePath(library.manifest.libraryId), "consolidation-cost.json");
+}
+
+/** Disposable scheduling advice only. Source/index/replay verification never
+ * trusts this file: either selected reader must independently prove its input. */
+async function readArchiveCostHint(library: Library): Promise<number | null> {
+  let handle;
+  try {
+    handle = await open(costHintPath(library), "r");
+    const bytes = Buffer.alloc(513);
+    const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
+    observeCacheRead(bytesRead);
+    if (bytesRead > 512) return null;
+    const hint = JSON.parse(bytes.subarray(0, bytesRead).toString("utf8"));
+    return hint?.schemaVersion === COST_HINT_SCHEMA && hint.libraryId === library.manifest.libraryId
+      && hint.indexSha256 === library.manifest.consolidation?.sha256
+      && Number.isSafeInteger(hint.archiveBytes) && hint.archiveBytes >= 0 ? hint.archiveBytes : null;
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
 export async function withSourceVerification<T>(library: Library, operation: () => Promise<{ readonly value: T; readonly read: LibraryRead; readonly accepted: boolean }>): Promise<T> {
   if (process.platform !== "darwin" || library.manifest.consolidation === undefined) return (await operation()).value;
-  // Two system JXA starts cost more than full verification on the measured
-  // small and medium inputs. The digest-bound archive inventory is already part of the
-  // source contract. Select full verification below a conservative 4 MiB of
-  // archived events; this is only a cost choice, never evidence of authenticity.
-  // The normal reader still validates the current index and every source.
-  // A failed cost precheck delegates errors to the original reader, which may
-  // encounter an earlier corrupt event before reaching the index.
+  const hintedBytes = await readArchiveCostHint(library);
+  if (hintedBytes !== null) {
+    if (hintedBytes < FULL_READ_MAX_BYTES) {
+      observeCacheReason("source-verification-full-cost-path");
+      return (await operation()).value;
+    }
+    return withConsolidationIndexParseReuse(async () => (await nativeVerifier()).withSourceVerification(library, operation));
+  }
+  // Without a current-index-bound hint, retain the measured 4 MiB cost choice.
+  // Its precheck cannot replace the normal reader: that reader still reads and
+  // validates its current bytes, in its original error order. Only the native
+  // path (or a hint miss) needs the private immutable index parse scope.
   return withConsolidationIndexParseReuse(async () => {
     const index = await readConsolidationIndex(library.root, library.manifest).catch(() => null);
     const archiveBytes = index?.sources.reduce((sum, source) => sum + source.inventory.reduce((bytes, file) => bytes + (/^akasha\/[^/]+\/[^/]+\.ndjson$/u.test(file.path) ? file.bytes : 0), 0), 0) ?? 0;
-    if (archiveBytes < 4 * 1024 * 1024) {
+    if (index !== null) {
+      try {
+        const text = JSON.stringify({ schemaVersion: COST_HINT_SCHEMA, libraryId: library.manifest.libraryId, indexSha256: library.manifest.consolidation!.sha256, archiveBytes });
+        await mkdir(cachePath(library.manifest.libraryId), { recursive: true });
+        await writeFileAtomic(costHintPath(library), text);
+        observeCacheWrite(Buffer.byteLength(text));
+      } catch {
+        // Missing/unwritable disposable advice does not change verification.
+      }
+    }
+    if (archiveBytes < FULL_READ_MAX_BYTES) {
       observeCacheReason("source-verification-full-cost-path");
       return (await operation()).value;
     }

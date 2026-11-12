@@ -1,9 +1,33 @@
-import { isProjectArtifactBinding, resolveProjectArtifactBinding } from "./artifact-path-binding.js";
 // SPDX-License-Identifier: Apache-2.0
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { validateMachineSettingsFile } from "./machine-settings.js";
 import { deviceHome } from "./device-home.js";
+
+const PREFIX = "binding:projectArtifacts/";
+export function isProjectArtifactBinding(value: string): boolean {
+  return /^binding:projectArtifacts\/[a-f0-9]{64}$/u.test(value);
+}
+function invalid(message: string): never {
+  throw Object.assign(new Error(message), { reasonCode: "PATH_BINDING_UNCONFIGURED" });
+}
+export function resolveProjectArtifactBinding(value: string, home: string = deviceHome()): string {
+  if (!isProjectArtifactBinding(value)) return invalid("invalid project artifact binding");
+  let record;
+  try { record = JSON.parse(readFileSync(join(home, "artifact-paths", `${value.slice(PREFIX.length)}.json`), "utf8")); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return invalid("project artifact directory is not configured on this device");
+    throw error;
+  }
+  if (record === null || typeof record !== "object" || Array.isArray(record) || typeof record.libraryId !== "string" || typeof record.projectId !== "string" ||
+      record.schemaVersion !== "einzbern.project-artifact-path.v1" || typeof record.path !== "string" || !isAbsolute(record.path) ||
+      projectArtifactBinding(record.libraryId, record.projectId) !== value) return invalid("project artifact binding is invalid");
+  return record.path;
+}
+export function projectArtifactBinding(libraryId: string, projectId: string): string {
+  return PREFIX + createHash("sha256").update(JSON.stringify([libraryId, projectId])).digest("hex");
+}
 
 const PORTABLE_PATH_BINDINGS = ["paths.artifacts", "paths.knowledgeArticles"] as const;
 export function isPortablePathBinding(value: string): boolean {

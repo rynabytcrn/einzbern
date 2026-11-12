@@ -192,3 +192,23 @@ test("F649-1: Atelier directory control stays editable and explicitly unset with
   assert.match(result, /data-cli-action="settings-set"/u);
   assert.doesNotMatch(result, /disabled|binding:projectArtifacts/u);
 });
+
+
+test("ordinary CLI loading retains synchronous binding reads without loading the artifact-path writer", () => {
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import assert from 'node:assert/strict';
+    import { registerHooks } from 'node:module';
+    const loaded=[];
+    registerHooks({load(url,context,next){loaded.push(url);return next(url,context);}});
+    const { runCli }=await import('./dist/build/packages/cli/src/index.js');
+    assert.equal(typeof runCli,'function');
+    const { isProjectArtifactBinding }=await import('./dist/build/packages/core/src/portable-path.js');
+    assert.equal(isProjectArtifactBinding('binding:projectArtifacts/'+'a'.repeat(64)),true);
+    assert.equal(isProjectArtifactBinding('binding:projectArtifacts/'+'A'.repeat(64)),false);
+    assert.equal(loaded.some(url=>url.endsWith('/artifact-path-binding.js')),false);
+    const original=await import('./dist/build/packages/core/src/artifact-path-binding.js');
+    assert.equal(original.isProjectArtifactBinding,isProjectArtifactBinding);
+    assert.equal(typeof original.bindProjectArtifactPath,'function');
+  `], { encoding: "utf8", env: process.env });
+  assert.equal(child.status, 0, child.stderr);
+});

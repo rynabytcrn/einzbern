@@ -365,9 +365,10 @@ test("small consolidated sources keep full verification without starting a helpe
   await assert.rejects(materializeWorkspaceFromGenesis(f.library));
 });
 
-test("the full cost path shares one immutable parse while rereading the current index", { skip: !native }, async t => {
+test("a current cost hint lets the full reader validate one index without retaining a parse scope", { skip: !native }, async t => {
   const f = await fixture(t, false);
   const path = join(f.library, f.manifest.consolidation.index);
+  await fs.rm(join(cachePath(f.manifest.libraryId), "consolidation-cost.json"), { force: true });
   const originalRead = fs.readFile;
   const originalParse = JSON.parse;
   let reads = 0;
@@ -385,7 +386,7 @@ test("the full cost path shares one immutable parse while rereading the current 
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
   for (let request = 1; request <= 2; request += 1) {
     const result = await read(f);
-    assert.equal(reads, request * 2, "the original reader must independently read the current index");
+    assert.equal(reads, request + 1, "only a hint miss needs a precheck; each normal reader still validates its current index");
     assert.equal(parses, request, "reuse ends with each materialization request");
     assert.ok(result.observation.logicalEventBytes > 0);
     assert.equal(hits(result.observation), 0);
@@ -403,6 +404,7 @@ test("the full cost path shares one immutable parse while rereading the current 
 test("an index corrupted after the cost precheck is rejected by the original reader", { skip: !native }, async t => {
   const f = await fixture(t, false);
   const path = join(f.library, f.manifest.consolidation.index);
+  await fs.rm(join(cachePath(f.manifest.libraryId), "consolidation-cost.json"), { force: true });
   const originalRead = fs.readFile;
   let reads = 0;
   t.mock.method(fs, "readFile", async (file, ...args) => {
@@ -420,6 +422,7 @@ test("an index corrupted after the cost precheck is rejected by the original rea
 test("a changed valid index replaces the cost parse and still verifies source authority", { skip: !native }, async t => {
   const f = await fixture(t, false);
   const path = join(f.library, f.manifest.consolidation.index);
+  await fs.rm(join(cachePath(f.manifest.libraryId), "consolidation-cost.json"), { force: true });
   const originalRead = fs.readFile;
   const originalParse = JSON.parse;
   let reads = 0;
@@ -478,5 +481,49 @@ test("a failed cost precheck preserves the full reader's earlier source error", 
   await fs.writeFile(index, (await fs.readFile(index, "utf8")).replace("agent:codex", "agent:other"));
   for (const read of [materializeLibrary, materializeWorkspaceFromGenesis]) {
     await assert.rejects(read(f.library), error => error.reasonCode === "AKASHA_EVENT_CORRUPT" && error.details?.break === "payloadHash");
+  }
+});
+
+
+test("untrusted cost hints cannot skip current index or historical source validation", { skip: !native }, async t => {
+  const f = await fixture(t, false);
+  await read(f);
+  const hint = join(cachePath(f.manifest.libraryId), "consolidation-cost.json");
+  const prior = JSON.parse(await fs.readFile(hint, "utf8"));
+  assert.equal(prior.indexSha256, f.manifest.consolidation.sha256);
+  assert.equal(prior.libraryId, f.manifest.libraryId);
+  // Forged advice can choose either existing reader; neither receives authority.
+  for (const archiveBytes of [0, 4 * 1024 * 1024]) {
+    await fs.writeFile(hint, JSON.stringify({ ...prior, archiveBytes }));
+    assert.deepEqual((await read(f)).value, await materializeWorkspaceFromGenesis(f.library));
+  }
+  await fs.writeFile(f.target, await corrupt(f));
+  for (const archiveBytes of [0, 4 * 1024 * 1024]) {
+    await fs.writeFile(hint, JSON.stringify({ ...prior, archiveBytes }));
+    await assert.rejects(materializeLibrary(f.library), { reasonCode: "AKASHA_EVENT_CORRUPT" });
+  }
+  // Matching advice still cannot make a changed current index valid.
+  const index = join(f.library, f.manifest.consolidation.index);
+  await fs.writeFile(index, (await fs.readFile(index, "utf8")).replace("agent:codex", "agent:other"));
+  await fs.writeFile(hint, JSON.stringify({ ...prior, archiveBytes: 0 }));
+  await assert.rejects(materializeLibrary(f.library), { reasonCode: "CONSOLIDATION_DIGEST_MISMATCH" });
+});
+
+test("stale, foreign, malformed and oversized cost hints fall back and refresh from the checked index", { skip: !native }, async t => {
+  const f = await fixture(t, false);
+  await read(f);
+  const hint = join(cachePath(f.manifest.libraryId), "consolidation-cost.json");
+  const prior = JSON.parse(await fs.readFile(hint, "utf8"));
+  for (const text of [
+    JSON.stringify({ ...prior, indexSha256: "0".repeat(64), archiveBytes: 4 * 1024 * 1024 }),
+    JSON.stringify({ ...prior, libraryId: "library:" + "0".repeat(24), archiveBytes: 4 * 1024 * 1024 }),
+    JSON.stringify({ ...prior, archiveBytes: -1 }),
+    "{", " ".repeat(513),
+  ]) {
+    await fs.writeFile(hint, text);
+    const result = await read(f);
+    assert.deepEqual(result.value, await materializeWorkspaceFromGenesis(f.library));
+    assert.equal(result.observation.verificationHelperOutputBytes, 0);
+    assert.deepEqual(JSON.parse(await fs.readFile(hint, "utf8")), prior);
   }
 });

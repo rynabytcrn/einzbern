@@ -1,7 +1,6 @@
-import { isProjectArtifactBinding } from "./artifact-path-binding.js";
 import { normalizeWorkContentPolicy } from "./work-content-templates.js";
 import { pathIsInside } from "./path-containment.js";
-import { isPortablePathBinding, resolvePortablePath } from "./portable-path.js";
+import { isPortablePathBinding, isProjectArtifactBinding, resolvePortablePath } from "./portable-path.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
